@@ -1,0 +1,41 @@
+{
+  "name": "klyra-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "App de bureau interne KLYRA : chat avec des rôles (Principal, Dev, UX/UI, DA), projets et fichiers.",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "desktop": "pnpm build:electron && concurrently -k -n web,app -c gray,black \"next dev -p 3100\" \"wait-on http://localhost:3100 && env -u ELECTRON_RUN_AS_NODE KLYRA_DEV_URL=http://localhost:3100 electron .\"",
+    "build": "next build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "start:desktop": "pnpm build && pnpm build:electron && env -u ELECTRON_RUN_AS_NODE electron .",
+    "test:smoke": "pnpm build && pnpm build:electron && env -u ELECTRON_RUN_AS_NODE KLYRA_SMOKE_TEST=1 electron .",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "klyra-ui": "github:CorentinQueuche/klyra-ui#main",
+    "lucide-react": "^0.563.0",
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "concurrently": "^10.0.5",
+    "electron": "^44.6.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "wait-on": "^9.5.1"
+  },
+  "packageManager": "pnpm@11.0.4"
+}

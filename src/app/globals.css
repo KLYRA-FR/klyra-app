@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+/* Tailwind doit scanner klyra-ui, sinon les classes de ses composants sont purgées. */
+@source "../../node_modules/klyra-ui/src";
+
+/* ==========================================================================
+   KLYRA — tokens, version noir et blanc (phase maquette).
+
+   Copie de klyra-ui/src/styles/tokens.css (inlinée : l'@import cross-package
+   fait planter Turbopack, cf. klyra-site). Seules les couleurs de marque
+   changent : les bleus K1/K2/K3 et leurs dérivés deviennent des gris.
+   Pour repasser en couleur : remettre les valeurs de klyra-ui ci-dessous.
+
+   `@theme static` écrit toutes les variables dans :root — indispensable,
+   car les composants klyra-ui lisent var(--color-k1) en style inline.
+   ========================================================================== */
+@theme static {
+  /* ---- Marque → gris (temporaire) ----------------------------------- */
+  --color-k1: #111111;
+  --color-k2: #3D3D3D;
+  --color-k3: #8C8C8C;
+  --color-blue-deep: #000000;
+  --color-blue-pale: #6B6B6B;
+  --color-blue-mist: #BDBDBD;
+  --color-blue-bg:   #F2F2F2;
+  --color-blue-halo: #EBEBEB;
+
+  /* ---- Neutrals ----------------------------------------------------- */
+  --color-black: #000000;
+  --color-ink:   #202020;
+  --color-ink-2: #303030;
+  --color-gray-k1: #E0E0E0;
+  --color-gray-k2: #DEDEE9;
+  --color-gray-3:  #D9D9D9;
+  --color-white:   #FFFFFF;
+  --color-paper:   #FAFAFB;
+
+  /* ---- Semantic ----------------------------------------------------- */
+  --color-fg-1: #202020;
+  --color-fg-2: rgba(32, 32, 32, 0.72);
+  --color-fg-3: rgba(32, 32, 32, 0.50);
+  --color-fg-on-dark-1: #FFFFFF;
+  --color-fg-on-dark-2: rgba(255, 255, 255, 0.75);
+  --color-fg-on-dark-3: rgba(255, 255, 255, 0.35);
+  --color-border-1: #E0E0E0;
+  --color-border-2: rgba(0, 0, 0, 0.08);
+  --color-border-on-dark: rgba(255, 255, 255, 0.12);
+
+  /* ---- Surfaces de l'app (sidebar, bulles, sélection) --------------- */
+  --color-surface-1: #F9F9F9;
+  --color-surface-2: #F0F0F0;
+  --color-surface-3: #E8E8E8;
+
+  /* ---- Typography --------------------------------------------------- */
+  --font-sans: var(--font-google-sans-flex, "Google Sans Flex"), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+
+  --tracking-display: -0.05em;
+  --tracking-title:   -0.0325em;
+  --tracking-body:    -0.0125em;
+  --tracking-micro:   0em;
+
+  --leading-display: 0.925;
+  --leading-title:   0.9;
+  --leading-tight:   1;
+  --leading-body:    1.4;
+
+  --text-display-xl: 160px;
+  --text-display-l:  105px;
+  --text-display-m:  70px;
+  --text-display-s:  60px;
+  --text-h1: 48px;
+  --text-h2: 40px;
+  --text-h3: 28px;
+  --text-h4: 24px;
+  --text-body-l: 22px;
+  --text-body:   18px;
+  --text-body-s: 16px;
+  --text-caption: 14px;
+  --text-micro:   12px;
+
+  /* Échelle d'interface de l'app (plus dense que le site) */
+  --text-ui:     14px;
+  --text-ui-s:   13px;
+  --text-ui-xs:  12px;
+  --text-ui-2xs: 11px;
+  --text-ui-3xs: 10px;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  --spacing-gutter: 52px;
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-med:  220ms;
+  --duration-slow: 480ms;
+}
+
+:root {
+  --klyra-white-75: rgba(255, 255, 255, 0.75);
+  --klyra-white-50: rgba(255, 255, 255, 0.50);
+  --klyra-white-35: rgba(255, 255, 255, 0.35);
+  --klyra-white-25: rgba(255, 255, 255, 0.25);
+
+  /* Gradients autorisés, en gris pour la phase noir et blanc */
+  --grad-deep:   linear-gradient(180deg, #111111 0%, #000000 100%);
+  --grad-bright: linear-gradient(180deg, #111111 0%, #3D3D3D 100%);
+  --grad-ink:    linear-gradient(180deg, #000000 0%, #202020 100%);
+  --grad-paper:  linear-gradient(180deg, #E0E0E0 0%, #FFFFFF 100%);
+  --grad-cta:    linear-gradient(180deg, #111111 0%, #3D3D3D 100%);
+
+  /* Ombres neutres le temps de la phase noir et blanc (bleutées en marque) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 22px 60px rgba(0, 0, 0, 0.18), 0 8px 20px rgba(0, 0, 0, 0.06);
+  --shadow-cta: none;
+  --shadow-cta-hover: none;
+  --shadow-glass: none;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: var(--font-sans);
+  color: var(--color-fg-1);
+  background: var(--color-white);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  letter-spacing: -0.0125em;
+  overflow: hidden;
+}
+
+.klyra-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-k1);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
