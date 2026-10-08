@@ -2,6 +2,8 @@
 
 App de bureau interne KLYRA (Electron + Next.js 16). Les règles studio (brand, `klyra-ui`, conventions code) sont dans `../CLAUDE.md` et s’appliquent ici. Ce fichier ne liste que ce qui est propre à ce dépôt.
 
+**ALWAYS lire `docs/JOURNAL.md` en début de session** (décisions, maquettes Figma, ce qui reste à faire) et le mettre à jour en fin de session : c’est l’historique partagé entre les ordis.
+
 ## Phase actuelle
 
 Front seul, **noir et blanc**, données factices. Les maquettes de référence sont dans Figma (section « App KLYRA — wireframes desktop »). On intègre un écran à la fois, dans l’ordre de la checklist du README.
