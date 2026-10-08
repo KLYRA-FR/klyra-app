@@ -53,7 +53,9 @@
 
   /* ---- Typography --------------------------------------------------- */
   --font-sans: var(--font-google-sans-flex, "Google Sans Flex"), system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+  /* Une seule police chez KLYRA : le « mono » de klyra-ui pointe aussi sur
+     Google Sans Flex (chiffres alignés via tabular-nums sur .klyra-mono). */
+  --font-mono: var(--font-google-sans-flex, "Google Sans Flex"), system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --tracking-display: -0.05em;
   --tracking-title:   -0.0325em;
