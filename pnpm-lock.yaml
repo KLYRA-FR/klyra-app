@@ -17,9 +17,6 @@ importers:
       klyra-ui:
         specifier: github:CorentinQueuche/klyra-ui#main
         version: https://codeload.github.com/CorentinQueuche/klyra-ui/tar.gz/b565f97ce93c80f26ca1ce3a6621c6ae7eb45114(next@16.4.0(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      lucide-react:
-        specifier: ^0.563.0
-        version: 0.563.0(react@19.3.0)
       next:
         specifier: 16.4.0
         version: 16.4.0(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

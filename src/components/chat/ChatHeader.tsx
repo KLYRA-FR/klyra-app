@@ -1,8 +1,9 @@
 "use client";
 
-import { Avatar, Button, IconButton, Stack } from "klyra-ui";
-import { MoreHorizontalIcon, PanelRightIcon, UsersIcon } from "lucide-react";
+import { Avatar, Stack } from "klyra-ui";
+import { Icon } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import type { Chat, Project } from "@/types/domain";
 
 interface ChatHeaderProps {
@@ -15,32 +16,32 @@ interface ChatHeaderProps {
 export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: ChatHeaderProps) {
   const roleCount = chat.roleIds.length;
   return (
-    <header className="flex items-center gap-3 border-b border-border-1 px-5 py-3 in-data-[shell=desktop]:[-webkit-app-region:drag]">
+    <header className="@container flex items-center gap-3 border-b border-bordure-subtile px-5 py-3">
       <Stack gap={2} className="min-w-0 flex-1">
-        <h1 className="truncate text-ui font-semibold">{chat.title}</h1>
-        <span className="truncate text-ui-xs text-fg-3">
+        <h1 className="m-0 truncate text-ui font-semibold">{chat.title}</h1>
+        <span className="truncate text-ui-xs text-texte-tertiaire">
           {project?.name} · {roleCount} {roleCount > 1 ? "rôles" : "rôle"} dans ce chat
         </span>
       </Stack>
 
-      <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
-        <Avatar.Group size="sm" aria-label="Rôles du chat">
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Avatar.Group size="sm" aria-label="Rôles du chat" className="mr-1 hidden @xl:flex">
           {chat.roleIds.map((roleId) => (
-            <RoleAvatar key={roleId} roleId={roleId} size="sm" className="ring-2 ring-white" />
+            <RoleAvatar key={roleId} roleId={roleId} size="sm" className="ring-2 ring-fond-surface" />
           ))}
         </Avatar.Group>
-        <Button variant="ghost" size="sm" iconLeft={<UsersIcon size={14} />}>
+        <Bouton variant="blanc" taille="compact" iconeGauche={<Icon name="users-profiles-01" size={16} />}>
           Rôles
-        </Button>
-        <IconButton
-          variant={previewOpen ? "outline" : "ghost"}
-          size="sm"
-          icon={<PanelRightIcon size={16} />}
-          ariaLabel={previewOpen ? "Masquer l’aperçu" : "Afficher l’aperçu"}
+        </Bouton>
+        <BoutonIcone
+          taille="compact"
+          actif={previewOpen}
+          icone={<Icon name="layout-right" size={16} />}
+          libelle={previewOpen ? "Masquer l’aperçu" : "Afficher l’aperçu"}
           aria-pressed={previewOpen}
           onClick={onTogglePreview}
         />
-        <IconButton variant="ghost" size="sm" icon={<MoreHorizontalIcon size={18} />} ariaLabel="Plus d’options" />
+        <BoutonIcone taille="compact" icone={<Icon name="dot-horizontal" size={16} />} libelle="Plus d’options" />
       </div>
     </header>
   );

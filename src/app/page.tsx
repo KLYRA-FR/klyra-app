@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shell/ComingSoon";
+import { Suspense } from "react";
+import { HomeScreen } from "@/components/home/HomeScreen";
 
 export const metadata: Metadata = { title: "Accueil — KLYRA" };
 
+/** `/?a=dev` présélectionne un agent dans le composeur. */
 export default function HomePage() {
-  return <ComingSoon title="Accueil" description="L’accueil arrive bientôt : composeur central, accès direct aux rôles et ce que fait l’équipe." />;
+  return (
+    <Suspense>
+      <HomeScreen />
+    </Suspense>
+  );
 }

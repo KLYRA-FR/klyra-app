@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Button, EmptyState } from "klyra-ui";
+import { EmptyState } from "klyra-ui";
 import { PreviewPanel } from "@/components/preview/PreviewPanel";
+import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { formatTime } from "@/lib/format";
 import { useChat, useChatMessages, useProjects, useRoles } from "@/lib/workspace";
 import { ChatHeader } from "./ChatHeader";
@@ -36,11 +37,7 @@ export function ChatScreen() {
         <EmptyState
           title="Ce chat n’existe pas"
           description="Il a peut-être été supprimé. Choisis un chat récent dans la barre latérale."
-          action={
-            <Button asChild href="/" variant="dark" size="sm">
-              Retour à l’accueil
-            </Button>
-          }
+          action={<BoutonPrincipal href="/">Retour à l’accueil</BoutonPrincipal>}
         />
       </div>
     );

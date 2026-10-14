@@ -24,6 +24,8 @@ Remplacer VS Code par **notre propre outil** pour travailler avec l’IA, en plu
 | 08/10/2026 | Une seule police : Google Sans Flex | Règle du design system KLYRA |
 | 07/10/2026 | Fichiers façon **Finder** (grille de miniatures à faire défiler + panneau d’infos), **pas** de vue image par image avec des flèches | Beaucoup de captures, on veut scroller et cliquer |
 | 07/10/2026 | L’IA renomme et étiquette les fichiers à l’import (on peut annuler) | Les fichiers sont souvent nommés 1, 2, 3… |
+| 14/10/2026 | **Les rôles = les 11 sous-agents Claude Code** (Hugo, Iris, Jules, Agathe, Thomas, Mathilde, Sacha, Olivier, Val, Diego, Lou) + le Principal qui orchestre | L’app pilote les vrais agents du studio |
+| 14/10/2026 | **Fin du noir et blanc** : l’app prend les couleurs, icônes et composants du design system KLYRA | Elle doit ressembler à un vrai produit, pas à une maquette |
 
 ## Maquettes (Figma)
 
@@ -63,11 +65,16 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 - [x] Modèle de données + données factices + store unique (`src/lib/workspace.tsx`)
 - [x] Barre latérale
 - [x] Écran de conversation (fil multi-rôles, envoi de message, @mention, réponses simulées, aperçu)
+- [x] Passage au design system KLYRA : tokens, icônes officielles, logo, Bouton / BoutonIcone / BoutonPrincipal, Onglets, PixelCheck
 
 ### À faire, dans l’ordre
-1. [ ] Accueil
-2. [ ] Projets (tableau) et fiche projet
-3. [ ] Équipe et fenêtre « Attribuer les rôles »
+1. [x] Accueil de l’IA (inspiration Figma `544-2769`) : titre d’accueil, composeur commun (`PromptBox`, puces projet et rôle), suggestions par rôle, projets à reprendre. Envoyer ouvre un nouveau chat.
+2. [x] Mode projet (inspiration Figma `546-2777`) : dans un chat ou sur `/projet?id=`, le menu devient un rail noir, un panneau blanc montre les projets et tout le dossier du projet (fichiers modifiés par les agents en K1), puis chat et aperçu. Panneau replié d’office sous 1280 px. Page projet : brief, nouveau chat, chats du projet.
+   [ ] Projets (tableau de tous les projets)
+   [ ] Lire la vraie arborescence sur le disque (Electron) à la place de `src/data/files.ts`
+3. [x] Équipe : les 11 sous-agents de `~/.claude/agents/` (données dans `src/data/agents.ts`), cartes à halo pixel (inspiration Figma `544-2770`), fiche complète par agent (`/equipe?agent=<id>`), circuits de passation
+   [x] Agents réels (14/10) : l’app lit, surveille et écrit `~/.claude/agents/*.md` ; installation de l’équipe sur un poste vierge ; modifier une fiche (historique + détection des conflits) ; créer un agent (présenté aux autres fiches) ; « Modifier avec Lou » via Claude Code en local, avec avant / après. Test : `pnpm test:agents`.
+   [ ] Fenêtre « Attribuer les rôles »
 4. [ ] Fichiers façon Finder
 5. [ ] Mémoire du projet
 6. [ ] Palette ⌘K
@@ -75,8 +82,11 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 8. [ ] Fichier d’installation .dmg pour l’équipe (compte développeur Apple, 99 $ par an)
 
 ### Points ouverts
-- **Bleu codé en dur dans `klyra-ui`** (Tabs, certains Badge / Tag / IconButton, Sidebar webapp) : on ne peut pas le passer en gris par le thème. À signaler à Corentin pour qu’il utilise les variables de couleur.
-- Les réponses des rôles sont des phrases fixes en attendant les vrais agents.
+- **`klyra-ui` en retard sur le design system** : `Button` en pilule, survols bleus codés en dur. L’app utilise ses propres `Bouton` / `Onglets` en attendant. À signaler à Corentin.
+- **À ajouter au design system** : la variante `discret` du Bouton (action d’outil sans fond au repos) et la bulle de chat (K1 pour Pelin, gris pour les rôles) n’y existent pas encore.
+- Bulle de l’utilisateur en `fond-accent` (K1) : à valider avec Pelin.
+- Dans les chats, les réponses des agents sont encore des phrases fixes : seule « Modifier avec Lou » appelle déjà le vrai Claude Code.
+- Sur le Mac de Pelin, `~/.claude/agents/` n’existe pas encore : l’installation de l’équipe depuis l’app reste à faire (à décider : elle ajoute les 11 agents à Claude Code pour tous les projets).
 
 ## Reprendre sur un autre Mac
 
@@ -94,3 +104,4 @@ Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app
 
 - **07/10/2026** — Veille des interfaces de chat IA, 9 wireframes desktop noir et blanc dans Figma.
 - **08/10/2026** — Choix app de bureau (Electron). Création du dépôt, fondations, barre latérale et écran de conversation. Police unique Google Sans Flex.
+- **14/10/2026** — Sortie du noir et blanc : tokens, icônes, logo et composants du design system KLYRA ; lucide-react retiré. Nouveau cadre d’après l’inspiration Figma `543-2765` : barre du haut (logo, recherche, actions), menu sur le fond de page (élément actif sombre, Projets, Réglages, carte utilisateur), contenu dans un panneau blanc arrondi. « Chats récents » retiré du menu.

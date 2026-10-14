@@ -1,0 +1,126 @@
+import type { CSSProperties } from "react";
+import Link from "next/link";
+import { cn } from "@/lib/cn";
+import type { Role } from "@/types/domain";
+import { couleurAgent, fondCarte } from "./AgentVisuel";
+
+/** Longueur des compétences affichées sur la carte : trois lignes, à peu près. */
+const LONGUEUR_COMPETENCES = 110;
+
+/** Les compétences qui tiennent en entier, sans couper au milieu d'un mot (la fiche les a toutes). */
+function competencesEntieres(skills: string[], longueur = LONGUEUR_COMPETENCES): string {
+  const gardees: string[] = [];
+  for (const skill of skills) {
+    if (gardees.length > 0 && [...gardees, skill].join(" · ").length > longueur) break;
+    gardees.push(skill);
+  }
+  return gardees.join(" · ");
+}
+
+/**
+ * Carte d'un agent, forme « carte blanche » (maquette « Workspace card »,
+ * à la hauteur de son contenu) : le dégradé pastel autour de deux blocs
+ * blancs, qui il est, puis sa part des chats de l'équipe.
+ * Toute la carte ouvre sa fiche.
+ */
+/** Le mot du rôle long qui correspond au rôle court : « Designer » pour
+ *  « Design », « Prompt » pour « Prompts », « mail » pour « Mails ». */
+function motCorrespondant(title: string, tag: string): { debut: number; fin: number } | null {
+  const court = tag.toLowerCase();
+  for (const m of title.matchAll(/[\p{L}]+/gu)) {
+    const mot = m[0].toLowerCase();
+    const proche = mot.startsWith(court) || (court.startsWith(mot) && mot.length >= 4);
+    if (proche) return { debut: m.index, fin: m.index + m[0].length };
+  }
+  return null;
+}
+
+/**
+ * Le rôle sur une seule ligne, sans répéter : le mot court en gras dans le
+ * rôle long (« **Ops** et automatisation »), ou devant s'il n'y figure pas
+ * (« **Ventes** · Head of sales »), ou seul s'ils sont identiques (« **QA** »).
+ */
+export function LigneRole({ tag, title }: { tag: string; title: string }) {
+  if (!title || title.toLowerCase() === tag.toLowerCase()) return <span className="font-semibold">{tag}</span>;
+  const mot = motCorrespondant(title, tag);
+  if (!mot) {
+    return (
+      <>
+        <span className="font-semibold">{tag}</span> <span className="text-texte-secondaire">· {title}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      {title.slice(0, mot.debut)}
+      <span className="font-semibold">{title.slice(mot.debut, mot.fin)}</span>
+      {title.slice(mot.fin)}
+    </>
+  );
+}
+
+/** Cascade des cartes : la première arrive après le bandeau, puis une toutes les 60 ms. */
+const DEBUT_CASCADE = 240;
+const PAS_CASCADE = 60;
+
+export function AgentCard({
+  role,
+  chatCount,
+  totalChats,
+  ordre = 0,
+}: {
+  role: Role;
+  chatCount: number;
+  totalChats: number;
+  /** Rang dans la grille : règle le moment de son entrée. */
+  ordre?: number;
+}) {
+  const delai = DEBUT_CASCADE + ordre * PAS_CASCADE;
+  const part = totalChats > 0 ? Math.round((chatCount / totalChats) * 100) : 0;
+  const BLOC = "relative z-10 flex shrink-0 flex-col rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm";
+
+  return (
+    <Link
+      href={`/equipe?agent=${role.id}`}
+      style={{ backgroundImage: fondCarte(role.teinte), "--delai": `${delai}ms` } as CSSProperties}
+      className={cn(
+        "klyra-entree group relative isolate flex flex-col gap-2 overflow-hidden rounded-2xl p-2 no-underline",
+        "transition-[box-shadow,transform] duration-[300ms] ease-sortie hover:-translate-y-0.5 hover:shadow-ombre-ambiante",
+      )}
+    >
+      {/* Qui il est : prénom en haut, son rôle, puis ce qu'il couvre en bas. */}
+      <div className={cn(BLOC, "gap-2")}>
+        <div className="flex flex-col gap-0.5">
+          <h2 className="m-0 truncate text-h4 leading-[28px] font-semibold tracking-[-0.02em] text-texte-principal">{role.name}</h2>
+          <p className="m-0 flex min-w-0 items-center gap-1.5 text-ui-s leading-[1.35] text-texte-principal">
+            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ background: couleurAgent(role.teinte) }} />
+            <span className="truncate">
+              <LigneRole tag={role.tag} title={role.title} />
+            </span>
+          </p>
+        </div>
+        {/* Toujours deux lignes de haut : toutes les cartes ont la même hauteur. */}
+        <p className="m-0 line-clamp-2 min-h-[2lh] text-ui-xs leading-[1.35] text-texte-tertiaire">{competencesEntieres(role.skills, 80)}</p>
+      </div>
+
+      {/* Sa part des chats de l'équipe, dans un bloc à part : plus lisible. */}
+      <div className={cn(BLOC, "gap-1.5")}>
+        <span className="flex items-baseline justify-between gap-2 text-ui-xs">
+          <span className="text-texte-principal">
+            <span className="font-semibold">{chatCount}</span> {chatCount > 1 ? "chats" : "chat"}
+            <span className="text-texte-tertiaire"> sur {totalChats}</span>
+          </span>
+          <span className="text-texte-tertiaire transition-colors duration-[120ms] group-hover:text-texte-accent">Voir la fiche</span>
+        </span>
+        <span className="block h-1 overflow-hidden rounded-pill bg-fond-surface-grise">
+          {/* En noir : la carte porte déjà la couleur de l'agent, la barre n'en rajoute pas. */}
+          {/* Se remplit une fois la carte arrivée. */}
+          <span
+            className="klyra-barre-progres block h-full rounded-pill bg-fond-inverse-fort"
+            style={{ width: `${Math.max(part, 4)}%`, "--delai": `${delai + 300}ms` } as CSSProperties}
+          />
+        </span>
+      </div>
+    </Link>
+  );
+}

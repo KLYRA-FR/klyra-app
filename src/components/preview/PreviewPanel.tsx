@@ -1,29 +1,28 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { Button, EmptyState, IconButton, Input } from "klyra-ui";
-import {
-  CodeIcon,
-  FileCodeIcon,
-  GlobeIcon,
-  ListTodoIcon,
-  MonitorIcon,
-  RefreshCwIcon,
-  RocketIcon,
-  SmartphoneIcon,
-} from "lucide-react";
+import { useState } from "react";
+import { EmptyState, Input } from "klyra-ui";
+import { Icon } from "@/components/icons/Icon";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { Onglets, type Onglet } from "@/components/ui/Onglets";
 import type { Project } from "@/types/domain";
 import { SiteMock } from "./SiteMock";
 
 type PreviewTab = "apercu" | "code" | "fichiers" | "taches";
 type Device = "desktop" | "mobile";
 
-const TABS: { id: PreviewTab; label: string; icon: ReactNode; empty: string }[] = [
-  { id: "apercu", label: "Aperçu", icon: <GlobeIcon size={14} />, empty: "" },
-  { id: "code", label: "Code", icon: <CodeIcon size={14} />, empty: "Le code modifié par le Dev s’affichera ici, fichier par fichier." },
-  { id: "fichiers", label: "Fichiers", icon: <FileCodeIcon size={14} />, empty: "Les fichiers du projet s’afficheront ici." },
-  { id: "taches", label: "Tâches", icon: <ListTodoIcon size={14} />, empty: "Les tâches réparties par le Principal s’afficheront ici." },
+const TABS: Onglet<PreviewTab>[] = [
+  { id: "apercu", label: "Aperçu", icone: <Icon name="globe-01" size={16} /> },
+  { id: "code", label: "Code", icone: <Icon name="code-01" size={16} /> },
+  { id: "fichiers", label: "Fichiers", icone: <Icon name="file-code" size={16} /> },
+  { id: "taches", label: "Tâches", icone: <Icon name="list" size={16} /> },
 ];
+
+const EMPTY: Record<Exclude<PreviewTab, "apercu">, string> = {
+  code: "Le code modifié par le Dev s’affichera ici, fichier par fichier.",
+  fichiers: "Les fichiers du projet s’afficheront ici.",
+  taches: "Les tâches réparties par le Principal s’afficheront ici.",
+};
 
 interface PreviewPanelProps {
   project: Project | undefined;
@@ -40,61 +39,59 @@ export function PreviewPanel({ project, modifiedLabel }: PreviewPanelProps) {
   return (
     <aside
       aria-label="Aperçu du projet"
-      className="flex h-full w-[clamp(380px,38vw,560px)] shrink-0 flex-col border-l border-border-1 bg-surface-1"
+      className="@container flex h-full w-[clamp(380px,38vw,560px)] shrink-0 flex-col border-l border-bordure-subtile bg-fond-surface"
     >
-      <div className="flex items-center gap-1 px-4 py-3 in-data-[shell=desktop]:[-webkit-app-region:drag]">
-        <div role="tablist" aria-label="Vues du projet" className="flex gap-1 [-webkit-app-region:no-drag]">
-          {TABS.map((t) => (
-            <Button
-              key={t.id}
-              role="tab"
-              aria-selected={t.id === tab}
-              variant={t.id === tab ? "dark" : "ghost"}
-              size="sm"
-              iconLeft={t.icon}
-              onClick={() => setTab(t.id)}
-              className="px-3 py-1.5"
-            >
-              {t.label}
-            </Button>
-          ))}
-        </div>
-        <Button
-          variant="dark"
-          size="sm"
-          iconLeft={<RocketIcon size={14} />}
-          className="ml-auto px-3 py-1.5 [-webkit-app-region:no-drag]"
+      <div className="flex items-center gap-2 px-4 py-3">
+        <Onglets
+          libelle="Vues du projet"
+          onglets={TABS}
+          valeur={tab}
+          onChange={setTab}
+          etiquettes="large"
+          
+        />
+        <Bouton
+          variant="sombre"
+          taille="compact"
+          iconeGauche={<Icon name="upload-01" size={16} />}
+          title="Déployer"
+          className="ml-auto"
         >
-          Déployer
-        </Button>
+          <span className="sr-only @md:not-sr-only">Déployer</span>
+        </Bouton>
       </div>
 
       {tab === "apercu" ? (
         <>
-          <div className="flex items-center gap-2 px-4 pb-3">
-            <IconButton variant="ghost" size="sm" icon={<RefreshCwIcon size={14} />} ariaLabel="Recharger l’aperçu" />
+          <div className="flex items-center gap-1.5 px-4 pb-3">
+            <BoutonIcone
+              taille="compact"
+              icone={<Icon name="refresh-01" size={16} />}
+              libelle="Recharger l’aperçu"
+              className="text-icone-secondaire hover:text-icone-defaut"
+            />
             <div className="flex-1">
               <Input
                 size="sm"
                 readOnly
                 aria-label="Adresse de l’aperçu"
                 value={project?.previewUrl ?? ""}
-                className="klyra-mono rounded-pill text-ui-2xs"
+                className="klyra-mono rounded-sm border-bordure-champ text-ui-2xs text-texte-secondaire"
               />
             </div>
-            <IconButton
-              variant={device === "desktop" ? "outline" : "ghost"}
-              size="sm"
-              icon={<MonitorIcon size={14} />}
-              ariaLabel="Aperçu ordinateur"
+            <BoutonIcone
+              taille="compact"
+              actif={device === "desktop"}
+              icone={<Icon name="computer" size={16} />}
+              libelle="Aperçu ordinateur"
               aria-pressed={device === "desktop"}
               onClick={() => setDevice("desktop")}
             />
-            <IconButton
-              variant={device === "mobile" ? "outline" : "ghost"}
-              size="sm"
-              icon={<SmartphoneIcon size={14} />}
-              ariaLabel="Aperçu téléphone"
+            <BoutonIcone
+              taille="compact"
+              actif={device === "mobile"}
+              icone={<Icon name="iphone-02" size={16} />}
+              libelle="Aperçu téléphone"
               aria-pressed={device === "mobile"}
               onClick={() => setDevice("mobile")}
             />
@@ -103,8 +100,8 @@ export function PreviewPanel({ project, modifiedLabel }: PreviewPanelProps) {
             <div
               className={
                 device === "mobile"
-                  ? "h-full w-[340px] overflow-hidden rounded-xl border border-border-1"
-                  : "h-full w-full overflow-hidden rounded-md border border-border-1"
+                  ? "h-full w-[340px] overflow-hidden rounded-3xl border border-bordure-subtile shadow-ombre-ambiante"
+                  : "h-full w-full overflow-hidden rounded-md border border-bordure-subtile shadow-ombre-ambiante"
               }
             >
               <SiteMock device={device} modifiedLabel={modifiedLabel} />
@@ -113,7 +110,7 @@ export function PreviewPanel({ project, modifiedLabel }: PreviewPanelProps) {
         </>
       ) : (
         <div className="flex flex-1 items-center justify-center p-6">
-          <EmptyState title={current.label} description={current.empty} />
+          <EmptyState title={current.label} description={EMPTY[tab]} />
         </div>
       )}
     </aside>

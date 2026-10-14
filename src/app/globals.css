@@ -4,52 +4,127 @@
 @source "../../node_modules/klyra-ui/src";
 
 /* ==========================================================================
-   KLYRA — tokens, version noir et blanc (phase maquette).
+   KLYRA — tokens de l'app, repris du design system KLYRA
+   (https://claude.ai/artifact/C3Tqnor89ed3qjk6n1Wben, tokens.json).
 
-   Copie de klyra-ui/src/styles/tokens.css (inlinée : l'@import cross-package
-   fait planter Turbopack, cf. klyra-site). Seules les couleurs de marque
-   changent : les bleus K1/K2/K3 et leurs dérivés deviennent des gris.
-   Pour repasser en couleur : remettre les valeurs de klyra-ui ci-dessous.
+   Deux jeux de noms :
+   - les rôles du design system (`texte-principal`, `fond-page`, `bordure-subtile`…)
+     → classes `text-texte-principal`, `bg-fond-page`… À utiliser dans l'app.
+   - les anciens noms de klyra-ui (`k1`, `ink`, `fg-1`, `border-1`…), qu'il lit
+     en var() dans ses composants : ils pointent sur les mêmes valeurs.
 
    `@theme static` écrit toutes les variables dans :root — indispensable,
    car les composants klyra-ui lisent var(--color-k1) en style inline.
    ========================================================================== */
 @theme static {
-  /* ---- Marque → gris (temporaire) ----------------------------------- */
-  --color-k1: #111111;
-  --color-k2: #3D3D3D;
-  --color-k3: #8C8C8C;
-  --color-blue-deep: #000000;
-  --color-blue-pale: #6B6B6B;
-  --color-blue-mist: #BDBDBD;
-  --color-blue-bg:   #F2F2F2;
-  --color-blue-halo: #EBEBEB;
+  /* ---- Teintes (construisent les rôles) ----------------------------- */
+  --color-bleu-k1-0:   #e5ecfc;
+  --color-bleu-k1-50:  #ccd9fa;
+  --color-bleu-k1-100: #b2c5f7;
+  --color-bleu-k1-200: #99b2f4;
+  --color-bleu-k1-300: #668cef;
+  --color-bleu-k1-400: #3365e9;
+  --color-bleu-k1-500: #003fe4;
+  --color-bleu-k1-600: #0032b6;
+  --color-bleu-k1-1000: #000d2e;
+  --color-bleu-k2-500: #01a4ff;
+  --color-bleu-k3-500: #00ddff;
+  --color-gris-k1-0:   #eaeaea;
+  --color-gris-k1-50:  #d6d6d6;
+  --color-gris-k1-100: #c1c1c1;
+  --color-gris-k1-300: #838383;
+  --color-gris-k1-400: #595959;
+  --color-gris-k1-500: #303030;
+  --color-gris-k1-600: #262626;
+  --color-gris-k1-1050: #050505;
+  --color-gris-k2-0:   #fcfcfc;
+  --color-gris-k2-50:  #f9f9f9;
+  --color-gris-k2-200: #f3f3f3;
+  --color-gris-k2-300: #ececec;
+  --color-gris-k2-500: #e0e0e0;
+  --color-gris-k2-600: #b3b3b3;
+  --color-orange-k1-500: #fc5404;
+  /* Palette étendue : UNIQUEMENT pour les illustrations (halo des agents). */
+  --color-violet-500: #7d47ff;
+  --color-orange-k2-500: #ff8400;
+  --color-rouge-500: #fa1327;
+  --color-vert-k2-600: #99c96a;
+  --color-vert-k1-400: #407a66;
+  --color-jaune-600: #d1c434;
+  --color-rose-600: #d487d9;
+  --color-ocre-500: #d8bc7b;
+  --color-rouge-600: #c80f1f;
+  --color-rouge-700: #960b17;
 
-  /* ---- Neutrals ----------------------------------------------------- */
+  /* ---- Rôles du design system --------------------------------------- */
+  --color-texte-principal:   #303030;
+  --color-texte-secondaire:  #595959;
+  --color-texte-tertiaire:   #838383;
+  --color-texte-accent:      #003fe4;
+  --color-texte-accent-orange: #fc5404;
+  --color-texte-inverse:     #ffffff;
+  --color-texte-inverse-secondaire: #d6d6d6;
+  --color-texte-erreur:      #960b17;
+  --color-texte-placeholder: #838383;
+  --color-fond-page:          #f9f9f9;
+  --color-fond-surface:       #ffffff;
+  --color-fond-surface-douce: #fcfcfc;
+  --color-fond-surface-grise: #ececec;
+  --color-fond-survol:        #f3f3f3;
+  --color-fond-teinte-bleue:  #e5ecfc;
+  --color-fond-accent:        #003fe4;
+  --color-fond-inverse:       #262626;
+  --color-fond-inverse-fort:  #050505;
+  --color-fond-nuit:          #000d2e;
+  --color-fond-tag-orange:    rgba(252, 84, 4, 0.1);
+  --color-bordure-subtile:      #f3f3f3;
+  --color-bordure-defaut:       #eaeaea;
+  --color-bordure-forte:        #e0e0e0;
+  --color-bordure-champ:        rgba(0, 0, 0, 0.08);
+  --color-bordure-champ-survol: #99b2f4;
+  --color-bordure-accent-legere: rgba(0, 63, 228, 0.08);
+  --color-bordure-accent-survol: rgba(0, 63, 228, 0.25);
+  --color-bordure-inverse:       rgba(255, 255, 255, 0.15);
+  --color-bordure-erreur:        #c80f1f;
+  --color-focus:            #003fe4;
+  --color-icone-defaut:     #303030;
+  --color-icone-secondaire: #838383;
+  --color-icone-accent:     #003fe4;
+  --color-icone-inverse:    #ffffff;
+
+  /* ---- Noms de klyra-ui, alignés sur le design system --------------- */
+  --color-k1: #003fe4;
+  --color-k2: #01a4ff;
+  --color-k3: #00ddff;
+  --color-blue-deep: #000d2e;
+  --color-blue-pale: #668cef;
+  --color-blue-mist: #b2c5f7;
+  --color-blue-bg:   #e5ecfc;
+  --color-blue-halo: #ccd9fa;
+
   --color-black: #000000;
-  --color-ink:   #202020;
-  --color-ink-2: #303030;
-  --color-gray-k1: #E0E0E0;
-  --color-gray-k2: #DEDEE9;
-  --color-gray-3:  #D9D9D9;
-  --color-white:   #FFFFFF;
-  --color-paper:   #FAFAFB;
+  --color-ink:   #303030;
+  --color-ink-2: #262626;
+  --color-gray-k1: #e0e0e0;
+  --color-gray-k2: #ececec;
+  --color-gray-3:  #e0e0e0;
+  --color-white:   #ffffff;
+  --color-paper:   #f9f9f9;
 
-  /* ---- Semantic ----------------------------------------------------- */
-  --color-fg-1: #202020;
-  --color-fg-2: rgba(32, 32, 32, 0.72);
-  --color-fg-3: rgba(32, 32, 32, 0.50);
-  --color-fg-on-dark-1: #FFFFFF;
-  --color-fg-on-dark-2: rgba(255, 255, 255, 0.75);
-  --color-fg-on-dark-3: rgba(255, 255, 255, 0.35);
-  --color-border-1: #E0E0E0;
-  --color-border-2: rgba(0, 0, 0, 0.08);
-  --color-border-on-dark: rgba(255, 255, 255, 0.12);
+  --color-fg-1: #303030;
+  --color-fg-2: #595959;
+  --color-fg-3: #838383;
+  --color-fg-on-dark-1: #ffffff;
+  --color-fg-on-dark-2: #d6d6d6;
+  --color-fg-on-dark-3: rgba(255, 255, 255, 0.6);
+  --color-border-1: #e0e0e0;
+  --color-border-2: #f3f3f3;
+  --color-border-on-dark: rgba(255, 255, 255, 0.15);
 
   /* ---- Surfaces de l'app (sidebar, bulles, sélection) --------------- */
-  --color-surface-1: #F9F9F9;
-  --color-surface-2: #F0F0F0;
-  --color-surface-3: #E8E8E8;
+  --color-surface-1: #f9f9f9; /* fond-page */
+  --color-surface-2: #f3f3f3; /* fond-survol */
+  --color-surface-3: #ececec; /* fond-surface-grise */
 
   /* ---- Typography --------------------------------------------------- */
   --font-sans: var(--font-google-sans-flex, "Google Sans Flex"), system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -67,12 +142,8 @@
   --leading-tight:   1;
   --leading-body:    1.4;
 
-  --text-display-xl: 160px;
-  --text-display-l:  105px;
-  --text-display-m:  70px;
-  --text-display-s:  60px;
   --text-h1: 48px;
-  --text-h2: 40px;
+  --text-h2: 42px;
   --text-h3: 28px;
   --text-h4: 24px;
   --text-body-l: 22px;
@@ -88,17 +159,37 @@
   --text-ui-2xs: 11px;
   --text-ui-3xs: 10px;
 
-  /* Radii */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
+  /* ---- Rayons (rayon-* du design system) ---------------------------- */
+  --radius-2xs: 4px;   /* rayon-2xs : tuiles, petites marques */
+  --radius-xs:  6px;   /* rayon-xs : tous les boutons */
+  --radius-sm:  8px;   /* rayon-sm : tags, liens, rangées de menu */
+  --radius-md-: 10px;  /* rayon-md- : onglets, items */
+  --radius-md:  12px;  /* rayon-md : champs, cartes internes */
+  --radius-lg-: 14px;
+  --radius-lg:  16px;
+  --radius-xl:  20px;  /* rayon-xl : cartes */
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
   --radius-pill: 999px;
+
+  /* ---- Ombres (ombre-* du design system) ---------------------------- */
+  --shadow-ombre-xs: 0 1px 2px 0 rgba(0, 45, 164, 0.05);
+  --shadow-ombre-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.06), 0 1px 1px 0 rgba(0, 0, 0, 0.04);
+  --shadow-ombre-ambiante: 0 0 14px 0 rgba(0, 0, 0, 0.04), 0 0 36px 0 rgba(0, 0, 0, 0.04);
+  --shadow-ombre-navbar: 0 0 9px 0 rgba(0, 0, 0, 0.03);
+  --shadow-ombre-md: 0 4px 16px 0 rgba(17, 17, 18, 0.08);
+  --shadow-ombre-lg: 0 8px 32px 0 rgba(0, 15, 60, 0.08);
+  --shadow-ombre-levee: 0 6px 18px 0 rgba(0, 45, 164, 0.1), 0 2px 6px 0 rgba(0, 45, 164, 0.05);
+  --shadow-ombre-survol: 0 8px 20px -8px rgba(0, 45, 164, 0.25);
+  --shadow-ombre-reflet: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  /* Pastille flottante de la maquette Figma IA (65:4743), ombre adoucie. */
+  --shadow-ombre-flottante: 0 2px 4px 0 rgba(0, 0, 0, 0.025), 0 6px 12px 0 rgba(0, 0, 0, 0.035);
 
   --spacing-gutter: 52px;
 
-  /* Motion */
+  /* ---- Motion (courbe-* et duree-* du design system) ---------------- */
+  --ease-sortie: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-accentuee: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
   --duration-fast: 120ms;
@@ -112,17 +203,26 @@
   --klyra-white-35: rgba(255, 255, 255, 0.35);
   --klyra-white-25: rgba(255, 255, 255, 0.25);
 
-  /* Gradients autorisés, en gris pour la phase noir et blanc */
-  --grad-deep:   linear-gradient(180deg, #111111 0%, #000000 100%);
-  --grad-bright: linear-gradient(180deg, #111111 0%, #3D3D3D 100%);
-  --grad-ink:    linear-gradient(180deg, #000000 0%, #202020 100%);
-  --grad-paper:  linear-gradient(180deg, #E0E0E0 0%, #FFFFFF 100%);
-  --grad-cta:    linear-gradient(180deg, #111111 0%, #3D3D3D 100%);
+  /* Dégradés autorisés : la famille degrade-* du design system, rien d'autre. */
+  --degrade-texte-bleu: linear-gradient(to top, #4a7cff 0%, #1c5bff 21%, #003fe4 100%);
+  --degrade-k1-k2: linear-gradient(140deg, #003fe4 0%, #01a4ff 100%);
+  --degrade-nuit-cta: linear-gradient(to bottom, #003fe4 0%, #000d2e 64%, #000000 100%);
+  --degrade-profond: linear-gradient(180deg, #003fe4 0%, #000000 100%);
+  --degrade-badge: linear-gradient(to right, rgba(0, 63, 228, 0.11), rgba(0, 63, 228, 0.7), rgba(0, 63, 228, 0.11));
+  --degrade-carte-bleue: linear-gradient(180deg, #3365e9 0%, #1c5bff 55%, #003fe4 100%);
+  --degrade-surface-sombre: radial-gradient(62.64% 82.75% at 28.14% -10.42%, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 100%);
 
-  /* Ombres neutres le temps de la phase noir et blanc (bleutées en marque) */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 22px 60px rgba(0, 0, 0, 0.18), 0 8px 20px rgba(0, 0, 0, 0.06);
+  /* Anciens noms lus par klyra-ui (Card, Hero…), branchés sur les degrade-*. */
+  --grad-deep:   var(--degrade-profond);
+  --grad-bright: var(--degrade-k1-k2);
+  --grad-ink:    linear-gradient(180deg, #050505 0%, #262626 100%);
+  --grad-paper:  linear-gradient(180deg, #ececec 0%, #ffffff 100%);
+  --grad-cta:    var(--degrade-nuit-cta);
+
+  /* Ombres lues par klyra-ui, branchées sur les ombre-*. */
+  --shadow-sm: var(--shadow-ombre-sm);
+  --shadow-md: var(--shadow-ombre-md);
+  --shadow-lg: var(--shadow-ombre-lg);
   --shadow-cta: none;
   --shadow-cta-hover: none;
   --shadow-glass: none;
@@ -132,8 +232,8 @@ html,
 body {
   height: 100%;
   font-family: var(--font-sans);
-  color: var(--color-fg-1);
-  background: var(--color-white);
+  color: var(--color-texte-principal);
+  background: var(--color-fond-surface);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -148,8 +248,225 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Fond des boutons Sombre et des états actifs (k-btn--sombre, k-pill.is-active). */
+.klyra-surface-sombre {
+  background: var(--degrade-surface-sombre), var(--color-fond-inverse);
+  box-shadow: var(--shadow-ombre-reflet);
+}
+
+/* Éclats du PixelCheck : gonflent et dégonflent en vague (comme sur klyra.fr). */
+.klyra-pixel-vague {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: klyra-pixel-vague 1600ms var(--ease-standard) infinite;
+  animation-delay: var(--delai, 0ms);
+}
+
+@keyframes klyra-pixel-vague {
+  0%, 60%, 100% { transform: scale(1); }
+  30%           { transform: scale(1.45); }
+}
+
+/* ─── Bouton Principal à écran de points (BoutonPrincipal.tsx) ──────────
+   Repris de klyra.fr (refonte-pixel-button.module.css). En classes globales :
+   la config Turbopack fait passer tous les .css par Tailwind, ce qui casse
+   les CSS modules (noms de classes non transformés). NEVER de .module.css. */
+.klyra-bouton-principal {
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px 7px 20px; /* 46 px de haut avec l'écran de 32 */
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-fond-inverse-fort);
+  color: var(--color-texte-inverse);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.2px;
+}
+
+/* Le libellé s'efface quand l'écran prend tout le bouton. */
+.klyra-bouton-principal__libelle {
+  transition: opacity 220ms var(--ease-sortie);
+}
+
+.klyra-bouton-principal:hover .klyra-bouton-principal__libelle,
+.klyra-bouton-principal:focus-visible .klyra-bouton-principal__libelle {
+  opacity: 0;
+}
+
+/* L'écran couvre tout le bouton, découpé au repos au petit carré de droite
+   (35 × 32, à 4 px du bord droit, 7 px du haut et du bas). Au survol, la
+   découpe s'ouvre jusqu'aux bords : l'écran s'étend depuis l'icône. */
+.klyra-bouton-principal__ecran {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  clip-path: inset(7px 4px 7px calc(100% - 39px) round 5px);
+  transition: clip-path 480ms var(--ease-sortie);
+}
+
+.klyra-bouton-principal:hover .klyra-bouton-principal__ecran,
+.klyra-bouton-principal:focus-visible .klyra-bouton-principal__ecran {
+  clip-path: inset(0 round 6px);
+}
+
+/* Défilement des chevrons, en permanence : un motif (28 px) en 7 crans d'une
+   colonne de points, 120 ms par cran. */
+.klyra-bouton-principal__defile {
+  animation: klyra-pixel-defile 840ms steps(7) infinite;
+}
+
+@keyframes klyra-pixel-defile {
+  from { transform: translateX(0); }
+  to   { transform: translateX(28px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-bouton-principal__libelle,
+  .klyra-bouton-principal__ecran {
+    transition: none;
+  }
+  .klyra-bouton-principal__defile {
+    animation: none;
+  }
+}
+
+/* Carte blanche flottante, d'après la pastille « Analyze data » de la
+   maquette Figma IA (65:4743) : blanc, double ombre très douce. */
+.klyra-carte-flottante {
+  background: var(--color-fond-surface);
+  box-shadow: var(--shadow-ombre-flottante);
+}
+
+/* Rond de l'icône des cartes de chiffres : bleu K1 uni, sans ombre ni
+   effet de lumière, l'icône en blanc. */
+.klyra-orbe {
+  background: var(--color-bleu-k1-500);
+  color: var(--color-texte-inverse);
+}
+
+/* « + » pixel de la carte « Nouvel agent » : une onde brève part du centre
+   vers les bouts (chaque carré pulse vite, l'un après l'autre), puis repos.
+   Au survol de la carte, les branches s'écartent un peu du centre. */
+.klyra-plus-carre {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: klyra-plus-onde 2400ms var(--ease-sortie) infinite;
+  animation-delay: var(--delai, 0ms);
+  transition: translate var(--duration-slow) var(--ease-sortie);
+}
+
+@keyframes klyra-plus-onde {
+  0%, 15%, 100% { scale: 1; }
+  6%            { scale: 1.35; }
+}
+
+.group:hover .klyra-plus-carre {
+  translate: calc(var(--dx, 0) * 3px) calc(var(--dy, 0) * 3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-plus-carre {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* ─── Entrées des pages (Apparition.tsx) ────────────────────────────
+   Fondu avec une montée de 8 px, en cascade (--delai), dès que le bloc
+   `[data-visible]` entre à l'écran. Les barres se remplissent, les traits se
+   tracent de gauche à droite. Rien ne bouge si l'on demande moins d'animations. */
+[data-visible="false"] .klyra-entree {
+  opacity: 0;
+}
+
+/* `backwards` : caché pendant l'attente, puis rendu à ses styles normaux
+   (le survol des cartes, qui les soulève, marche ensuite). */
+[data-visible="true"] .klyra-entree {
+  animation: klyra-entree var(--duree-entree, 480ms) var(--ease-sortie) backwards;
+  animation-delay: var(--delai, 0ms);
+}
+
+@keyframes klyra-entree {
+  from { opacity: 0; translate: 0 8px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
+.klyra-barre-progres,
+.klyra-trace {
+  transform-origin: left center;
+}
+
+[data-visible="false"] .klyra-barre-progres,
+[data-visible="false"] .klyra-trace {
+  scale: 0 1;
+}
+
+[data-visible="true"] .klyra-barre-progres {
+  animation: klyra-trace 700ms var(--ease-sortie) backwards;
+  animation-delay: var(--delai, 0ms);
+}
+
+[data-visible="true"] .klyra-trace {
+  animation: klyra-trace 300ms var(--ease-sortie) backwards;
+  animation-delay: var(--delai, 0ms);
+}
+
+@keyframes klyra-trace {
+  from { scale: 0 1; }
+  to   { scale: 1 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-visible] .klyra-entree,
+  [data-visible] .klyra-barre-progres,
+  [data-visible] .klyra-trace {
+    animation: none;
+    opacity: 1;
+    scale: 1 1;
+  }
+}
+
+/* Pointillés des circuits : points de 2 px au pas de 4, gris. Une lueur
+   (CircuitsAnimes) glisse dessus d'un bout à l'autre de la rangée : la rangée
+   porte sa position (--lueur-x), chaque pointillé connaît son début (--debut),
+   et une fenêtre de 80 px y fait ressortir des points plus foncés. */
+.klyra-pointilles {
+  position: relative;
+  height: 2px;
+  background-image: radial-gradient(circle, var(--color-gris-k1-100) 1px, transparent 1.2px);
+  background-size: 4px 2px;
+  background-repeat: repeat-x;
+  background-position: 0 center;
+}
+
+.klyra-pointilles::after {
+  content: "";
+  position: absolute;
+  inset: -3px 0;
+  background-image: radial-gradient(circle, var(--color-texte-principal) 1.1px, transparent 1.4px);
+  background-size: 4px 8px;
+  background-repeat: repeat-x;
+  background-position: 0 center;
+  filter: drop-shadow(0 0 2px rgba(48, 48, 48, 0.35));
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 50%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, black 50%, transparent 100%);
+  -webkit-mask-size: 80px 100%;
+  mask-size: 80px 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: calc(var(--lueur-x, -9999px) - var(--debut, 0px) - 40px) 0;
+  mask-position: calc(var(--lueur-x, -9999px) - var(--debut, 0px) - 40px) 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-pointilles::after { display: none; }
+}
+
 :where(button, a, input, textarea, select, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-k1);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
 

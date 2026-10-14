@@ -1,6 +1,21 @@
-import { app, BrowserWindow, net, protocol, shell } from "electron";
+import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  AgentError,
+  agentsDir,
+  createAgent,
+  installTeam,
+  listAgents,
+  listHistory,
+  readMeta,
+  readVersion,
+  watchAgents,
+  writeAgent,
+  writeMeta,
+  type AgentsMeta,
+} from "./agents";
+import { cancelAgent, findClaude, runAgent } from "./claude";
 
 /**
  * Process principal Electron.
@@ -12,6 +27,8 @@ import { pathToFileURL } from "node:url";
  */
 
 const DEV_URL = process.env.KLYRA_DEV_URL;
+/* Tests : données de l'app (historique, réglages) dans un dossier à part. */
+if (process.env.KLYRA_USER_DATA) app.setPath("userData", process.env.KLYRA_USER_DATA);
 const SMOKE_TEST = process.env.KLYRA_SMOKE_TEST === "1";
 const OUT_DIR = path.join(__dirname, "..", "out");
 
@@ -66,8 +83,12 @@ function createWindow() {
     show: !SMOKE_TEST,
     title: "KLYRA",
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#FFFFFF",
+    // Boutons de la fenêtre dans la bande de titre de 28 px, au-dessus du logo.
+    trafficLightPosition: { x: 14, y: 8 },
+    // fond-page, le fond de l'app sous le panneau blanc.
+    backgroundColor: "#F9F9F9",
     webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -86,8 +107,55 @@ function createWindow() {
   });
 }
 
+/* ─── Pont avec l'interface (cf. preload.ts) ───────────────────── */
+
+type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
+
+/** Chaque appel renvoie un résultat explicite : l'interface affiche l'erreur exacte. */
+function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Promise<T> | T) {
+  ipcMain.handle(channel, async (_event, ...args: unknown[]): Promise<Reponse<T>> => {
+    try {
+      return { ok: true, data: await fn(...(args as A)) };
+    } catch (error) {
+      if (error instanceof AgentError) return { ok: false, code: error.code, message: error.message };
+      return { ok: false, code: "erreur", message: error instanceof Error ? error.message : String(error) };
+    }
+  });
+}
+
+function registerBridge() {
+  handle("agents:list", async () => {
+    const listing = await listAgents();
+    watchAgents();
+    return listing;
+  });
+  handle("agents:write", (name: string, content: string, expected: number | null) => writeAgent(name, content, expected));
+  handle("agents:create", async (name: string, content: string) => {
+    const file = await createAgent(name, content);
+    watchAgents();
+    return file;
+  });
+  handle("agents:install", async (templates: { name: string; content: string }[]) => {
+    const installed = await installTeam(templates);
+    watchAgents();
+    return installed;
+  });
+  handle("agents:history", (name: string) => listHistory(name));
+  handle("agents:version", (name: string, id: string) => readVersion(name, id));
+  handle("agents:meta:read", () => readMeta());
+  handle("agents:meta:write", (meta: AgentsMeta) => writeMeta(meta));
+  handle("agents:reveal", (name: string) => {
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(name)) throw new AgentError("nom-invalide", "Nom d’agent invalide.");
+    shell.showItemInFolder(path.join(agentsDir(), `${name}.md`));
+  });
+  handle("claude:status", () => ({ path: findClaude() }));
+  handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
+  handle("claude:cancel", (requestId: string) => cancelAgent(requestId));
+}
+
 void app.whenReady().then(() => {
   if (!DEV_URL) protocol.handle("app", serveExport);
+  registerBridge();
 
   createWindow();
 

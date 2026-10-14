@@ -6,6 +6,7 @@ export const googleSansFlex = localFont({
     { path: "../../node_modules/klyra-ui/public/fonts/GoogleSansFlex_24pt-Regular.ttf", weight: "400", style: "normal" },
     { path: "../../node_modules/klyra-ui/public/fonts/GoogleSansFlex_24pt-Medium.ttf", weight: "500", style: "normal" },
     { path: "../../node_modules/klyra-ui/public/fonts/GoogleSansFlex_24pt-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "../../node_modules/klyra-ui/public/fonts/GoogleSansFlex_24pt-Bold.ttf", weight: "700", style: "normal" },
   ],
   variable: "--font-google-sans-flex",
   display: "swap",

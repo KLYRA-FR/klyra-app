@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shell/ComingSoon";
+import { Suspense } from "react";
+import { ProjectScreen } from "@/components/project/ProjectScreen";
 
-export const metadata: Metadata = { title: "Fiche projet — KLYRA" };
+export const metadata: Metadata = { title: "Projet — KLYRA" };
 
+/** `/projet?id=…` : l’id passe en paramètre, compatible avec l’export statique. */
 export default function ProjectPage() {
-  return <ComingSoon title="Fiche projet" description="Brief, chats du projet, rôles attribués et liens arrivent bientôt." />;
+  return (
+    <Suspense>
+      <ProjectScreen />
+    </Suspense>
+  );
 }

@@ -6,18 +6,92 @@
 
 /* ─── Rôles (agents) ───────────────────────────────────────────── */
 
-export type RoleId = "principal" | "dev" | "uxui" | "da";
+/** Identifiant d'un agent = son `name` de sous-agent Claude Code
+ *  (`~/.claude/agents/<id>.md`). « principal » est la session elle-même, qui
+ *  orchestre les autres : il n'a pas de fichier. */
+export type RoleId = string;
 
+/** Teinte de l'illustration d'un agent (palette étendue du design system,
+ *  réservée aux illustrations). */
+export type RoleTeinte =
+  | "bleu-k1"
+  | "bleu-k2"
+  | "bleu-k3"
+  | "violet"
+  | "orange"
+  | "orange-k2"
+  | "rouge"
+  | "vert"
+  | "vert-k2"
+  | "jaune"
+  | "rose"
+  | "ocre";
+
+export const ROLE_TEINTES: RoleTeinte[] = [
+  "bleu-k1",
+  "bleu-k2",
+  "bleu-k3",
+  "violet",
+  "rose",
+  "rouge",
+  "orange",
+  "orange-k2",
+  "jaune",
+  "ocre",
+  "vert",
+  "vert-k2",
+];
+
+/** Une section `## Titre` de la fiche, avec son texte Markdown. */
+export interface RoleSection {
+  title: string;
+  body: string;
+}
+
+/** Le fichier d'un agent, tel que lu sur le disque. */
+export interface RoleFile {
+  path: string;
+  content: string;
+  modifiedAt: number;
+}
+
+/**
+ * Un agent, tiré de sa fiche. Seuls `tag` et `teinte` sont propres à l'app
+ * (gardés à côté, pas dans le fichier que lit Claude Code).
+ */
 export interface Role {
   id: RoleId;
+  /** Prénom (`displayName`). */
   name: string;
-  /** Étiquette courte affichée à côté du nom dans le fil (« Code »). */
+  /** Rôle en un mot, affiché à côté du prénom dans le fil (« Dev »). */
   tag: string;
+  /** Rôle complet, début de la description (« Dev frontend et backend »). */
+  title: string;
   /** Lettre de l'avatar. */
   initial: string;
+  teinte: RoleTeinte;
+  /** Description complète, lue par Claude pour choisir l'agent. */
   description: string;
+  /** La phrase « Appelle Hugo dès que… ». */
+  whenToCall: string;
+  /** Ce qu'il couvre, tiré de la description. */
   skills: string[];
-  tools: string[];
+  /** Titre de la fiche (« Hugo — Dev »). */
+  heading: string;
+  /** Présentation, à la première personne. */
+  pitch: string;
+  sections: RoleSection[];
+  model: string;
+  memory: string;
+  /** null pour le Principal, et pour les fiches d'exemple hors app de bureau. */
+  file: RoleFile | null;
+}
+
+/** Circuit de passation entre agents (« Construire un écran »). */
+export interface TeamCircuit {
+  id: string;
+  title: string;
+  steps: { roleId: RoleId | null; label: string }[];
 }
 
 /* ─── Utilisateur ──────────────────────────────────────────────── */
@@ -43,7 +117,19 @@ export interface Project {
   roleIds: RoleId[];
   brief: string;
   previewUrl: string;
+  /** Dossier du projet sur le disque. */
+  folder: string;
+  files: FileNode[];
   updatedAt: string;
+}
+
+/** Fichier ou dossier d'un projet, tel qu'il est sur le disque (tout le
+ *  dossier : code, public, scripts, docs…). Chemins relatifs à la racine. */
+export interface FileNode {
+  name: string;
+  path: string;
+  kind: "dossier" | "fichier";
+  children?: FileNode[];
 }
 
 /* ─── Chats et messages ────────────────────────────────────────── */

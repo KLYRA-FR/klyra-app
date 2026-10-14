@@ -9,7 +9,7 @@ import { MessagePartView } from "./MessageParts";
 
 function DaySeparator({ iso }: { iso: string }) {
   return (
-    <div className="klyra-mono py-1 text-center text-ui-3xs uppercase tracking-[0.06em] text-fg-3">
+    <div className="py-1 text-center text-ui-2xs font-medium text-texte-tertiaire">
       {formatDaySeparator(iso)}
     </div>
   );
@@ -41,8 +41,8 @@ function RoleMessage({
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex items-baseline gap-2">
           <span className="text-ui-s font-semibold">{role.name}</span>
-          <span className="klyra-mono text-ui-3xs uppercase tracking-[0.04em] text-fg-3">{role.tag}</span>
-          <span className="klyra-mono text-ui-3xs text-fg-3">{formatTime(message.createdAt)}</span>
+          <span className="text-ui-2xs text-texte-tertiaire">{role.tag}</span>
+          <span className="klyra-mono text-ui-3xs text-texte-tertiaire">{formatTime(message.createdAt)}</span>
         </div>
         {message.parts.map((part, i) => (
           <MessagePartView key={i} part={part} tone="role" onAction={(label) => onAction(label, roleId)} />
@@ -55,7 +55,7 @@ function RoleMessage({
 function TypingIndicator({ roleId }: { roleId: RoleId }) {
   const role = useRole(roleId);
   return (
-    <div className="flex items-center gap-2 text-ui-xs text-fg-3" aria-live="polite">
+    <div className="flex items-center gap-2 text-ui-xs text-texte-tertiaire" aria-live="polite">
       <RoleAvatar roleId={roleId} size="sm" />
       {role.name} écrit…
     </div>
