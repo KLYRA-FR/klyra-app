@@ -1,24 +1,15 @@
-import { Avatar, type AvatarSize } from "klyra-ui";
-import { useRole } from "@/lib/workspace";
 import type { RoleId } from "@/types/domain";
+import { AgentRond } from "./AgentRond";
 
 interface RoleAvatarProps {
   roleId: RoleId;
-  size?: AvatarSize;
+  size?: "xs" | "sm" | "md" | "lg" | "xl";
   className?: string;
 }
 
-/** Avatar d'un rôle : plein pour le Principal, neutre pour les autres. */
+const TAILLES = { xs: 20, sm: 24, md: 32, lg: 40, xl: 48 } as const;
+
+/** Avatar d'un rôle aux tailles nommées : le rond pastel de l'agent (cf. AgentRond). */
 export function RoleAvatar({ roleId, size = "md", className }: RoleAvatarProps) {
-  const role = useRole(roleId);
-  return (
-    <Avatar
-      shape="circle"
-      size={size}
-      initials={role.initial}
-      alt={role.name}
-      gradient={roleId === "principal"}
-      className={className}
-    />
-  );
+  return <AgentRond roleId={roleId} taille={TAILLES[size]} className={className} />;
 }

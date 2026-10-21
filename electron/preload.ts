@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 /**
  * Pont entre l'interface et le système : uniquement ces fonctions, rien
@@ -27,5 +27,31 @@ contextBridge.exposeInMainWorld("klyra", {
     status: () => ipcRenderer.invoke("claude:status"),
     run: (requestId: string, agent: string, prompt: string) => ipcRenderer.invoke("claude:run", requestId, agent, prompt),
     cancel: (requestId: string) => ipcRenderer.invoke("claude:cancel", requestId),
+    stream: (requestId: string, options: unknown) => ipcRenderer.invoke("claude:stream", requestId, options),
+    onEvent: (callback: (requestId: string, event: unknown) => void) => {
+      const listener = (_e: unknown, requestId: string, event: unknown) => callback(requestId, event);
+      ipcRenderer.on("claude:event", listener);
+      return () => ipcRenderer.removeListener("claude:event", listener);
+    },
+    utilisation: () => ipcRenderer.invoke("claude:utilisation"),
+    actualiserUtilisation: () => ipcRenderer.invoke("claude:utilisation:actualiser"),
+    onUtilisation: (callback: (u: unknown) => void) => {
+      const listener = (_e: unknown, u: unknown) => callback(u);
+      ipcRenderer.on("claude:utilisation", listener);
+      return () => ipcRenderer.removeListener("claude:utilisation", listener);
+    },
+  },
+  projets: {
+    dossierExiste: (dossier: string) => ipcRenderer.invoke("projets:dossier-existe", dossier),
+  },
+  fichiers: {
+    choisir: () => ipcRenderer.invoke("fichiers:choisir"),
+    montrer: (chemin: string) => ipcRenderer.invoke("fichiers:montrer", chemin),
+    /** Chemin sur le disque d'un fichier glissé dans la fenêtre. */
+    cheminDe: (file: File) => webUtils.getPathForFile(file),
+  },
+  conversations: {
+    read: () => ipcRenderer.invoke("conversations:read"),
+    write: (data: unknown) => ipcRenderer.invoke("conversations:write", data),
   },
 });

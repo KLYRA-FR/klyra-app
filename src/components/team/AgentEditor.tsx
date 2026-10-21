@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Input, Select } from "klyra-ui";
 import { AGENT_TEMPLATES } from "@/data/agent-templates.generated";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
+import { CHAMP, Champ } from "@/components/ui/Champ";
 import {
   addToRoster,
   getField,
@@ -45,37 +46,6 @@ const BLOC_COMMUN = (() => {
   );
   return section ? `## ${section.title}\n\n${section.body}` : "";
 })();
-
-/** Champ du design system (k-champ) : libellé, contrôle, aide ou erreur. */
-function Champ({
-  label,
-  aide,
-  erreur,
-  children,
-  className,
-}: {
-  label: string;
-  aide?: ReactNode;
-  erreur?: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={cn("flex flex-col gap-2", className)}>
-      <span className="text-ui-s font-medium text-texte-principal">{label}</span>
-      {children}
-      {erreur ? (
-        <span role="alert" className="text-ui-xs text-texte-erreur">
-          {erreur}
-        </span>
-      ) : (
-        aide && <span className="text-ui-xs leading-[1.45] text-texte-tertiaire">{aide}</span>
-      )}
-    </label>
-  );
-}
-
-const CHAMP = "rounded-md border-bordure-champ text-ui";
 
 type Etat = { kind: "edition" } | { kind: "enregistrement" } | { kind: "conflit" } | { kind: "erreur"; message: string };
 

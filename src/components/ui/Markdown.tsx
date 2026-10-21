@@ -9,6 +9,8 @@ import { cn } from "@/lib/cn";
 
 type Block =
   | { kind: "p"; text: string }
+  /** Titre `#`, `##`… : une ligne en semi-gras (les réponses des agents en ont). */
+  | { kind: "h"; text: string }
   | { kind: "code"; text: string }
   | { kind: "list"; ordered: boolean; items: { text: string; children: Block[] }[] };
 
@@ -32,6 +34,19 @@ function parseBlocks(source: string): Block[] {
       blocks.push({ kind: "code", text: code.join("\n") });
       continue;
     }
+    const titre = line.match(/^#{1,6}\s+(.*)$/);
+    if (titre) {
+      blocks.push({ kind: "h", text: titre[1] });
+      i++;
+      continue;
+    }
+    // Tableau : gardé tel quel, en bloc à chasse fixe, pour que les colonnes restent alignées.
+    if (line.trim().startsWith("|")) {
+      const rangees: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) rangees.push(lines[i++].trim());
+      blocks.push({ kind: "code", text: rangees.filter((r) => !/^\|[\s:|-]+\|$/.test(r)).join("\n") });
+      continue;
+    }
     const item = line.match(LIST_ITEM);
     if (item && item[1].length === 0) {
       const ordered = /\d/.test(item[2]);
@@ -53,7 +68,9 @@ function parseBlocks(source: string): Block[] {
       continue;
     }
     const para: string[] = [];
-    while (i < lines.length && lines[i].trim() && !lines[i].match(LIST_ITEM) && !lines[i].trim().startsWith("```")) {
+    const finDeParagraphe = (l: string) =>
+      !l.trim() || !!l.match(LIST_ITEM) || l.trim().startsWith("```") || /^#{1,6}\s/.test(l) || l.trim().startsWith("|");
+    while (i < lines.length && !finDeParagraphe(lines[i])) {
       para.push(lines[i++].trim());
     }
     blocks.push({ kind: "p", text: para.join(" ") });
@@ -92,6 +109,13 @@ function renderBlocks(blocks: Block[], renderItem?: (text: string) => ReactNode,
     if (block.kind === "p") {
       return (
         <p key={i} className="m-0">
+          <Inline text={block.text} />
+        </p>
+      );
+    }
+    if (block.kind === "h") {
+      return (
+        <p key={i} className="m-0 font-semibold text-texte-principal">
           <Inline text={block.text} />
         </p>
       );

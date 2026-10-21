@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { EmptyState } from "klyra-ui";
 import { PreviewPanel } from "@/components/preview/PreviewPanel";
@@ -10,6 +10,7 @@ import { useChat, useChatMessages, useProjects, useRoles } from "@/lib/workspace
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageThread } from "./MessageThread";
+import { PanneauLateral, usePanneauLateral } from "./PanneauLateral";
 
 /** « Modifié par Dev · 09:52 » : dernier journal de travail du chat. */
 function useModifiedLabel(chatId: string): string | null {
@@ -24,12 +25,31 @@ function useModifiedLabel(chatId: string): string | null {
   }, [messages, roles]);
 }
 
+/** Largeur de fenêtre sous laquelle le panneau de l'agent part fermé. */
+const PANNEAU_MIN_FENETRE = 1280;
+
 export function ChatScreen() {
   const chatId = useSearchParams().get("id");
   const chat = useChat(chatId);
   const project = useProjects().find((p) => p.id === chat?.projectId);
   const [previewOpen, setPreviewOpen] = useState(true);
   const modifiedLabel = useModifiedLabel(chat?.id ?? "");
+  /* Conversation directe : le panneau de l'agent (réglages, fichiers, tâches) à droite. */
+  // Sous 1280 px, conversation + panneaux ne tiennent pas : le panneau part fermé.
+  const [panneauOuvert, setPanneauOuvert] = useState(() => window.innerWidth >= PANNEAU_MIN_FENETRE);
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth < PANNEAU_MIN_FENETRE) setPanneauOuvert(false);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const [maximise, setMaximise] = useState(false);
+  const [etatPanneau, setEtatPanneau] = usePanneauLateral();
+  const fermerPanneau = useCallback(() => {
+    setPanneauOuvert(false);
+    setMaximise(false);
+  }, []);
 
   if (!chat) {
     return (
@@ -45,17 +65,31 @@ export function ChatScreen() {
 
   return (
     <div className="flex h-full min-h-0">
-      <section aria-label={chat.title} className="flex min-w-0 flex-1 flex-col">
+      {/* Panneau agrandi : il prend toute la place, la conversation se cache. */}
+      <section aria-label={chat.title} className={maximise ? "hidden" : "relative flex min-w-0 flex-1 flex-col"}>
         <ChatHeader
           chat={chat}
           project={project}
-          previewOpen={previewOpen}
-          onTogglePreview={() => setPreviewOpen((v) => !v)}
+          previewOpen={chat.kind === "direct" ? panneauOuvert : previewOpen}
+          onTogglePreview={() =>
+            chat.kind === "direct" ? setPanneauOuvert((v) => !v) : setPreviewOpen((v) => !v)
+          }
         />
         <MessageThread key={chat.id} chatId={chat.id} />
         <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
       </section>
-      {previewOpen && <PreviewPanel project={project} modifiedLabel={modifiedLabel} />}
+      {/* Conversation directe : pas de projet, donc pas d'aperçu. */}
+      {previewOpen && chat.kind === "equipe" && <PreviewPanel project={project} modifiedLabel={modifiedLabel} />}
+      {panneauOuvert && chat.kind === "direct" && (
+        <PanneauLateral
+          chat={chat}
+          maximise={maximise}
+          onMaximiser={() => setMaximise((v) => !v)}
+          onFermer={fermerPanneau}
+          etat={etatPanneau}
+          setEtat={setEtatPanneau}
+        />
+      )}
     </div>
   );
 }

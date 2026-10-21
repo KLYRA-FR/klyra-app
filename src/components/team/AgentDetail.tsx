@@ -124,7 +124,7 @@ export function AgentDetail({ role }: { role: Role }) {
             )}
             {/* Actions, sous l'identité : la place est là, à côté de l'illustration. */}
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <BoutonPrincipal href={role.id === "principal" ? "/" : `/?a=${role.id}`}>Écrire à {role.name}</BoutonPrincipal>
+              <BoutonPrincipal href={`/chat?id=dm-${role.id}`}>Écrire à {role.name}</BoutonPrincipal>
               <Bouton
                 variant="blanc"
                 taille="md"

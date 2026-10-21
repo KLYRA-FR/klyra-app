@@ -32,6 +32,38 @@ export interface ClaudeResult {
   costUsd?: number;
 }
 
+/** Événements d'un agent qui travaille (cf. electron/claude.ts). */
+export type AgentEvent =
+  | { type: "session"; sessionId: string }
+  | { type: "texte"; delta: string; nouveauBloc: boolean }
+  | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
+  | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
+  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string };
+
+/** Utilisation de l'abonnement Claude (cf. electron/claude.ts). */
+export interface FenetreUtilisation {
+  /** Part utilisée, de 0 à 1. */
+  utilise: number;
+  reinitialiseA: number | null;
+}
+
+export interface Utilisation {
+  session: FenetreUtilisation | null;
+  semaine: FenetreUtilisation | null;
+  statut: string;
+  misAJour: number;
+}
+
+export interface StreamOptions {
+  agent: string | null;
+  prompt: string;
+  dossier: string | null;
+  sessionId: string | null;
+  modele?: string | null;
+  effort?: string | null;
+  fichiers?: string[];
+}
+
 export interface KlyraBridge {
   agents: {
     list: () => Promise<Reponse<AgentsListing>>;
@@ -49,6 +81,26 @@ export interface KlyraBridge {
     status: () => Promise<Reponse<{ path: string | null }>>;
     run: (requestId: string, agent: string, prompt: string) => Promise<Reponse<ClaudeResult>>;
     cancel: (requestId: string) => Promise<Reponse<void>>;
+    stream: (requestId: string, options: StreamOptions) => Promise<Reponse<null>>;
+    onEvent: (callback: (requestId: string, event: AgentEvent) => void) => () => void;
+    utilisation: () => Promise<Reponse<Utilisation | null>>;
+    actualiserUtilisation: () => Promise<Reponse<Utilisation | null>>;
+    onUtilisation: (callback: (u: Utilisation) => void) => () => void;
+  };
+  projets: {
+    dossierExiste: (dossier: string) => Promise<Reponse<boolean>>;
+  };
+  fichiers: {
+    /** Ouvre le sélecteur de fichiers du système ; renvoie les chemins choisis. */
+    choisir: () => Promise<Reponse<string[]>>;
+    /** Montre le fichier dans le Finder. */
+    montrer: (chemin: string) => Promise<Reponse<void>>;
+    /** Chemin sur le disque d'un fichier glissé dans la fenêtre ("" s'il n'en a pas). */
+    cheminDe: (file: File) => string;
+  };
+  conversations: {
+    read: () => Promise<Reponse<unknown>>;
+    write: (data: unknown) => Promise<Reponse<void>>;
   };
 }
 

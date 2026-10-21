@@ -134,12 +134,34 @@ export interface FileNode {
 
 /* ─── Chats et messages ────────────────────────────────────────── */
 
+/**
+ * Une conversation. `direct` : en tête-à-tête avec un agent (une par agent,
+ * id `dm-<agent>`), hors projet. `equipe` : dans un projet, avec plusieurs
+ * agents ; sans mention, c'est le Principal qui répond et répartit.
+ */
 export interface Chat {
   id: string;
-  projectId: string;
+  kind: "direct" | "equipe";
+  projectId: string | null;
   title: string;
   roleIds: RoleId[];
   updatedAt: string;
+  /** Session Claude Code de chaque agent dans cette conversation : il s'en souvient d'un message à l'autre. */
+  sessions: Record<RoleId, string>;
+  /** Dernier message lu, pour les non-lus de la barre latérale. */
+  luJusqua: string | null;
+  /** Modèle choisi pour cette conversation (« opus »…) ; absent : celui de la fiche de l'agent. */
+  modele?: string | null;
+  /** Effort de réflexion choisi (« high »…) ; absent : celui par défaut. */
+  effort?: string | null;
+  /** La liste de tâches que l'agent tient pendant son travail (outil TodoWrite de Claude Code). */
+  taches?: TacheAgent[];
+}
+
+/** Une tâche de la liste de l'agent. */
+export interface TacheAgent {
+  texte: string;
+  statut: "a-faire" | "en-cours" | "fait";
 }
 
 export type MessageAuthor = { kind: "user" } | { kind: "role"; roleId: RoleId };
@@ -174,8 +196,26 @@ export interface MessageAction {
 }
 
 /** Un message est une suite de blocs : texte, tâches, livrable, journal, actions. */
+/** Une étape du travail d'un agent : lire, modifier, lancer une commande, confier à un collègue. */
+export interface Etape {
+  id: string;
+  outil: string;
+  /** « Lit src/app/page.tsx », « Lance pnpm build »… */
+  libelle: string;
+  statut: "en-cours" | "fait" | "erreur";
+  /** Étape faite par un collègue à qui l'agent a confié une partie. */
+  parent: string | null;
+  /** Fichier lu ou modifié par l'étape, chemin complet. */
+  chemin?: string;
+}
+
 export type MessagePart =
   | { type: "text"; text: string }
+  /** Fichiers joints par l'utilisateur (chemins complets). */
+  | { type: "fichiers"; chemins: string[] }
+  | { type: "etapes"; etapes: Etape[] }
+  /** L'agent confie une partie du travail à un collègue. */
+  | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur" }
   | { type: "tasks"; tasks: Task[] }
   | { type: "options"; options: DeliverableOption[] }
   | { type: "worklog"; durationMin: number; files: ChangedFile[] }
@@ -187,4 +227,57 @@ export interface Message {
   author: MessageAuthor;
   createdAt: string;
   parts: MessagePart[];
+  /** Réponse d'agent : en cours d'écriture, finie, ou arrêtée sur une erreur. */
+  statut?: "en-cours" | "fait" | "erreur";
+  erreur?: string;
+}
+
+/* ─── Planning ─────────────────────────────────────────────────── */
+
+/** Quand une tâche planifiée se relance. Heures au format « 09:00 ». */
+export type Frequence =
+  | { type: "heure" }
+  | { type: "jour"; heure: string }
+  | { type: "jours-ouvres"; heure: string }
+  /** `jour` : 1 = lundi … 7 = dimanche. */
+  | { type: "semaine"; jour: number; heure: string }
+  /** `jour` : le jour du mois, de 1 à 28. */
+  | { type: "mois"; jour: number; heure: string };
+
+/** Une exécution passée d'une tâche planifiée. */
+export interface ExecutionRoutine {
+  at: string;
+  chatId: string;
+  /** Rattrapée : l'heure était passée pendant que l'app était fermée. */
+  rattrapee: boolean;
+}
+
+/**
+ * Une tâche planifiée : une consigne confiée à un agent, qui se relance toute
+ * seule. Elle part dans la conversation directe de l'agent, ou dans une
+ * conversation d'équipe du projet si elle en a un.
+ */
+export interface Routine {
+  id: string;
+  nom: string;
+  roleId: RoleId;
+  consigne: string;
+  frequence: Frequence;
+  projectId: string | null;
+  active: boolean;
+  creeLe: string;
+  prochaine: string;
+  historique: ExecutionRoutine[];
+}
+
+/* ─── Artefacts ────────────────────────────────────────────────── */
+
+/** Une page publiée par Claude (claude.ai/artifact/…) : design system, document, présentation… */
+export interface Artefact {
+  id: string;
+  titre: string;
+  url: string;
+  description: string;
+  projectId: string | null;
+  ajouteLe: string;
 }

@@ -476,3 +476,38 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ─── Conversation ─────────────────────────────────────────────── */
+
+/* Les trois points d'un agent qui travaille : ils s'allument l'un après l'autre. */
+.klyra-point-travail {
+  animation: klyra-point-travail 900ms var(--ease-sortie) infinite;
+}
+
+@keyframes klyra-point-travail {
+  0%, 100% { opacity: 0.35; }
+  40%      { opacity: 1; }
+}
+
+/* Le libellé « Hugo travaille… » respire doucement, sans dégradé. */
+.klyra-respire {
+  animation: klyra-respire 2200ms var(--ease-sortie) infinite;
+}
+
+@keyframes klyra-respire {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* Un message qui arrive dans le fil. */
+.klyra-arrivee {
+  animation: klyra-entree 300ms var(--ease-sortie) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-point-travail,
+  .klyra-respire,
+  .klyra-arrivee {
+    animation: none;
+  }
+}

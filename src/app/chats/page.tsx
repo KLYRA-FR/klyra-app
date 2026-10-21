@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shell/ComingSoon";
+import { ChatsAccueil } from "@/components/chat/ChatsAccueil";
 
-export const metadata: Metadata = { title: "Tous les chats — KLYRA" };
+export const metadata: Metadata = { title: "Chats — KLYRA" };
 
+/** `/chats` : le panneau des agents et des conversations s'ouvre à côté du rail (cf. AppShell). */
 export default function ChatsPage() {
-  return <ComingSoon title="Tous les chats" description="La liste complète des chats arrive bientôt. En attendant, ouvre un chat récent dans la barre latérale." />;
+  return <ChatsAccueil />;
 }

@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { Avatar, Kbd, Stack } from "klyra-ui";
 import { cn } from "@/lib/cn";
 import { Icon, type IconName } from "@/components/icons/Icon";
+import { CarteUtilisation } from "@/components/chat/CarteUtilisation";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { useProjects, useRoles, useWorkspace } from "@/lib/workspace";
 
@@ -68,9 +69,9 @@ export function AppSidebar() {
   const nav: { href: string; label: string; icon: IconName; count?: number }[] = [
     { href: "/", label: "Accueil", icon: "home-01" },
     { href: "/chats", label: "Chats", icon: "message-square", count: state.chats.length },
-    { href: "/projets", label: "Projets", icon: "folder", count: projects.length },
-    { href: "/fichiers", label: "Fichiers", icon: "image-01" },
+    { href: "/planning", label: "Planning", icon: "calendar-01", count: state.routines.filter((r) => r.active).length },
     { href: "/equipe", label: "Équipe", icon: "users-profiles-01", count: roles.length - 1 },
+    { href: "/artefacts", label: "Artefacts", icon: "layers-01", count: state.artefacts.length },
   ];
 
   return (
@@ -92,56 +93,61 @@ export function AppSidebar() {
         <span className="mr-auto">Nouveau chat</span>
       </Bouton>
 
-      <nav aria-label="Navigation principale" className="mt-6 flex flex-col gap-0.5">
-        <SectionTitle>Menu</SectionTitle>
-        {nav.map((item) => (
-          <MenuItem
-            key={item.href}
-            href={item.href}
-            active={pathname === item.href}
-            icon={<Icon name={item.icon} size={16} />}
-            trailing={item.count}
-          >
-            {item.label}
-          </MenuItem>
-        ))}
-      </nav>
+      {/* Menu et projets défilent si la fenêtre est basse : l'utilisation,
+          les réglages et le compte restent toujours visibles en bas. */}
+      <div className="-mx-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 [scrollbar-width:none]">
+        <nav aria-label="Navigation principale" className="mt-6 flex flex-col gap-0.5">
+          <SectionTitle>Menu</SectionTitle>
+          {nav.map((item) => (
+            <MenuItem
+              key={item.href}
+              href={item.href}
+              active={pathname === item.href}
+              icon={<Icon name={item.icon} size={16} />}
+              trailing={item.count}
+            >
+              {item.label}
+            </MenuItem>
+          ))}
+        </nav>
 
-      <div className="mt-6 flex flex-col gap-0.5">
-        <SectionTitle
-          action={
-            <BoutonIcone
-              taille="mini"
-              icone={<Icon name="plus-01" size={16} />}
-              libelle="Nouveau projet"
-              className="text-icone-secondaire"
-            />
-          }
-        >
-          Projets
-        </SectionTitle>
-        {projects.map((project) => (
-          <MenuItem
-            key={project.id}
-            href={`/projet?id=${project.id}`}
-            active={pathname === "/projet" && currentId === project.id}
-            icon={
-              /* Marque carrée du projet, pleine en K1 quand il est épinglé. */
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "size-2 rounded-[1px]",
-                  project.pinned ? "bg-bleu-k1-500" : "border-[1.25px] border-current",
-                )}
+        <div className="mt-6 flex flex-col gap-0.5">
+          <SectionTitle
+            action={
+              <BoutonIcone
+                taille="mini"
+                icone={<Icon name="plus-01" size={16} />}
+                libelle="Nouveau projet"
+                className="text-icone-secondaire"
               />
             }
           >
-            {project.name}
-          </MenuItem>
-        ))}
+            Projets
+          </SectionTitle>
+          {projects.map((project) => (
+            <MenuItem
+              key={project.id}
+              href={`/projet?id=${project.id}`}
+              active={pathname === "/projet" && currentId === project.id}
+              icon={
+                /* Marque carrée du projet, pleine en K1 quand il est épinglé. */
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "size-2 rounded-[1px]",
+                    project.pinned ? "bg-bleu-k1-500" : "border-[1.25px] border-current",
+                  )}
+                />
+              }
+            >
+              {project.name}
+            </MenuItem>
+          ))}
+        </div>
       </div>
 
-      <div className="mt-auto flex flex-col gap-2">
+      <div className="flex shrink-0 flex-col gap-2">
+        <CarteUtilisation />
         <MenuItem href="/reglages" active={pathname === "/reglages"} icon={<Icon name="settings" size={16} />}>
           Réglages
         </MenuItem>

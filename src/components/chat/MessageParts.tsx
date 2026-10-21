@@ -1,15 +1,22 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Stack } from "klyra-ui";
 import { cn } from "@/lib/cn";
 import { Icon } from "@/components/icons/Icon";
+import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
+import { Markdown } from "@/components/ui/Markdown";
 import { PixelCheck } from "@/components/ui/PixelCheck";
-import { useRole } from "@/lib/workspace";
+import { getBridge } from "@/lib/bridge";
+import { iconeEtape } from "@/lib/etapes";
+import { idDirect, useRole } from "@/lib/workspace";
+import { PastilleExtension } from "./PastilleExtension";
 import type {
   ChangedFile,
   DeliverableOption,
+  Etape,
   MessageAction,
   MessagePart,
   Task,
@@ -24,15 +31,146 @@ const PART_CARD = "rounded-md border border-bordure-subtile bg-fond-surface shad
 
 /* ─── Texte ────────────────────────────────────────────────────── */
 
+/**
+ * Bulle de texte. Toi : à droite, en noir comme le bouton principal, le texte
+ * tel que tu l'as tapé. Un agent : à gauche, en gris clair, sa réponse en
+ * Markdown (titres, listes, code).
+ */
 export function TextBubble({ text, tone }: { text: string; tone: "user" | "role" }) {
+  if (tone === "user") {
+    return (
+      <div className="klyra-surface-sombre w-fit max-w-[560px] rounded-xl px-3.5 py-2 text-ui leading-[1.55] whitespace-pre-wrap text-texte-inverse [overflow-wrap:anywhere]">
+        {text}
+      </div>
+    );
+  }
   return (
-    <div
-      className={cn(
-        "w-fit max-w-[440px] whitespace-pre-wrap rounded-lg px-3.5 py-2.5 text-ui leading-[1.45]",
-        tone === "user" ? "bg-fond-accent text-texte-inverse" : "bg-fond-survol text-texte-principal",
+    <div className="w-fit max-w-[680px] min-w-0 rounded-xl bg-fond-survol px-3.5 py-2.5 [overflow-wrap:anywhere]">
+      <Markdown source={text} className="gap-2 text-ui leading-[1.6] text-texte-principal" />
+    </div>
+  );
+}
+
+/* ─── Fichiers joints ──────────────────────────────────────────── */
+
+/** Les fichiers joints à un message : une carte par fichier, un clic le montre dans le Finder. */
+export function FichiersJoints({ chemins }: { chemins: string[] }) {
+  const bridge = getBridge();
+  return (
+    <div className="flex w-[min(100%,256px)] flex-col gap-1.5">
+      {chemins.map((chemin) => {
+        const nom = chemin.split("/").pop() ?? chemin;
+        return (
+          <button
+            key={chemin}
+            type="button"
+            title={`${chemin}\nClic pour le montrer dans le Finder`}
+            onClick={() => bridge && void bridge.fichiers.montrer(chemin)}
+            className="flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-md border border-bordure-subtile bg-fond-surface p-2 text-left transition-colors duration-[120ms] hover:border-bordure-forte"
+          >
+            <PastilleExtension chemin={chemin} />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-ui-xs font-medium text-texte-principal">{nom}</span>
+              <span className="truncate text-ui-3xs text-texte-tertiaire">{chemin.replace(/^\/Users\/[^/]+/, "~")}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Étapes du travail d'un agent ─────────────────────────────── */
+
+/**
+ * Ce que l'agent a fait pour répondre (lire, modifier, lancer une commande),
+ * replié en une ligne : « 6 étapes · 2 fichiers modifiés ». Ouvert pendant
+ * qu'il travaille, l'étape en cours en dernier.
+ */
+export function EtapesView({ etapes, enCours }: { etapes: Etape[]; enCours: boolean }) {
+  const [ouvert, setOuvert] = useState(false);
+  const propres = etapes.filter((e) => e.parent === null);
+  const modifies = new Set(propres.filter((e) => /Write|Edit/.test(e.outil)).map((e) => e.libelle)).size;
+  const erreurs = propres.filter((e) => e.statut === "erreur").length;
+  const derniere = propres[propres.length - 1];
+  const resume = [
+    `${propres.length} étape${propres.length > 1 ? "s" : ""}`,
+    modifies > 0 && `${modifies} fichier${modifies > 1 ? "s" : ""} modifié${modifies > 1 ? "s" : ""}`,
+    erreurs > 0 && `${erreurs} en erreur`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  if (!propres.length) return null;
+
+  return (
+    <div className="flex max-w-[680px] flex-col gap-1">
+      <button
+        type="button"
+        aria-expanded={ouvert}
+        onClick={() => setOuvert((v) => !v)}
+        className="flex h-7 w-fit max-w-full cursor-pointer items-center gap-1.5 rounded-sm border-0 bg-transparent px-1.5 text-left text-ui-xs text-texte-tertiaire transition-colors duration-[120ms] hover:bg-fond-survol hover:text-texte-principal"
+      >
+        <Icon
+          name="chevron-right"
+          size={14}
+          className={cn("shrink-0 transition-transform duration-[220ms] ease-sortie", ouvert && "rotate-90")}
+        />
+        {enCours && derniere?.statut === "en-cours" && !ouvert ? (
+          <span className="klyra-respire truncate font-medium text-texte-principal">{derniere.libelle}…</span>
+        ) : (
+          <span className="truncate">{resume}</span>
+        )}
+      </button>
+      {ouvert && (
+        <ol className="m-0 ml-[11px] flex list-none flex-col gap-0.5 border-l border-bordure-subtile p-0 pl-3">
+          {propres.map((etape) => (
+            <li key={etape.id} className="flex min-w-0 items-center gap-2 py-0.5 text-ui-xs text-texte-secondaire">
+              <Icon
+                name={etape.statut === "en-cours" ? "loader-01" : iconeEtape(etape.outil)}
+                size={14}
+                className={cn(
+                  "shrink-0",
+                  etape.statut === "en-cours" && "animate-spin text-icone-accent [animation-duration:1.5s]",
+                  etape.statut === "erreur" ? "text-texte-erreur" : "text-icone-secondaire",
+                )}
+              />
+              <span className={cn("truncate", etape.statut === "erreur" && "text-texte-erreur")}>{etape.libelle}</span>
+            </li>
+          ))}
+        </ol>
       )}
-    >
-      {text}
+    </div>
+  );
+}
+
+/* ─── Passation à un collègue ──────────────────────────────────── */
+
+/** « Confié à Iris · Concevoir la hero », centré dans le fil, sans bulle. */
+export function PassationView({
+  roleId,
+  consigne,
+  statut,
+  etapes,
+}: {
+  roleId: string;
+  consigne: string;
+  statut: "en-cours" | "fait" | "erreur";
+  etapes: number;
+}) {
+  const role = useRole(roleId);
+  const libelle = statut === "en-cours" ? "Confié à" : statut === "fait" ? "Rendu par" : "Arrêté chez";
+  return (
+    <div className="flex min-h-6 max-w-[680px] flex-wrap items-center justify-center gap-x-1.5 gap-y-1 self-center px-4 text-center text-ui-xs text-texte-tertiaire">
+      <span className={cn(statut === "en-cours" && "klyra-respire")}>{libelle}</span>
+      <Link
+        href={`/chat?id=${idDirect(roleId)}`}
+        className="inline-flex h-6 items-center gap-1.5 rounded-pill border border-bordure-subtile bg-fond-surface pr-2.5 pl-0.5 font-medium text-texte-principal no-underline transition-colors duration-[120ms] hover:border-bordure-forte"
+      >
+        <AgentRond roleId={roleId} taille={20} />
+        {role.name}
+      </Link>
+      {consigne && <span className="truncate">· {consigne}</span>}
+      {etapes > 0 && <span>· {etapes} étape{etapes > 1 ? "s" : ""}</span>}
     </div>
   );
 }
@@ -188,14 +326,26 @@ export function MessagePartView({
   part,
   tone,
   onAction,
+  enCours = false,
+  etapesDe = () => 0,
 }: {
   part: MessagePart;
   tone: "user" | "role";
   onAction: (label: string) => void;
+  /** La réponse est en train de s'écrire. */
+  enCours?: boolean;
+  /** Nombre d'étapes faites par le collègue d'une passation. */
+  etapesDe?: (etapeId: string) => number;
 }) {
   switch (part.type) {
     case "text":
-      return <TextBubble text={part.text} tone={tone} />;
+      return part.text.trim() ? <TextBubble text={part.text} tone={tone} /> : null;
+    case "fichiers":
+      return <FichiersJoints chemins={part.chemins} />;
+    case "etapes":
+      return <EtapesView etapes={part.etapes} enCours={enCours} />;
+    case "passation":
+      return <PassationView roleId={part.roleId} consigne={part.consigne} statut={part.statut} etapes={etapesDe(part.etapeId)} />;
     case "tasks":
       return <TaskList tasks={part.tasks} />;
     case "options":

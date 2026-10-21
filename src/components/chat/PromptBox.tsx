@@ -15,6 +15,19 @@ interface PromptBoxProps {
   puces?: ReactNode;
   /** `grand` pour l'accueil, `compact` sous un fil de chat. */
   taille?: "grand" | "compact";
+  /** Un agent travaille : sans texte, le bouton d'envoi devient Stop. */
+  occupe?: boolean;
+  onArreter?: () => void;
+  /** Touche gérée avant l'envoi (liste des mentions) : renvoie vrai si elle est prise. */
+  onToucheAvant?: (event: KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  /** Suit la position du curseur (pour les mentions). */
+  onCurseur?: (position: number) => void;
+  /** Pièces jointes, au-dessus du texte. */
+  pieces?: ReactNode;
+  /** Le trombone : joindre des fichiers. */
+  onJoindre?: () => void;
+  /** Il y a des pièces jointes : on peut envoyer sans texte. */
+  aDesPieces?: boolean;
   className?: string;
 }
 
@@ -24,20 +37,38 @@ interface PromptBoxProps {
  * l'envoi (bouton Sombre). Entrée envoie, Maj + Entrée va à la ligne.
  */
 export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(function PromptBox(
-  { value, onChange, onSubmit, placeholder, puces, taille = "compact", className },
+  {
+    value,
+    onChange,
+    onSubmit,
+    placeholder,
+    puces,
+    taille = "compact",
+    occupe = false,
+    onArreter,
+    onToucheAvant,
+    onCurseur,
+    pieces,
+    onJoindre,
+    aDesPieces = false,
+    className,
+  },
   ref,
 ) {
-  const canSend = value.trim().length > 0;
+  const canSend = value.trim().length > 0 || aDesPieces;
+  const stop = occupe && !canSend && !!onArreter;
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (canSend) onSubmit();
+    if (stop) onArreter();
+    else if (canSend) onSubmit();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (onToucheAvant?.(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      submit();
+      if (canSend) onSubmit();
     }
   };
 
@@ -50,13 +81,18 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
         className,
       )}
     >
+      {pieces}
       <Textarea
         ref={ref}
         variant="ghost"
         size="sm"
         autoGrow
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          onCurseur?.(e.target.selectionStart);
+        }}
+        onSelect={(e) => onCurseur?.(e.currentTarget.selectionStart)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label="Message"
@@ -71,7 +107,8 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
           variant="blanc"
           taille="compact"
           icone={<Icon name="paperclip" size={16} />}
-          libelle="Joindre un fichier"
+          libelle="Joindre des fichiers"
+          onClick={onJoindre}
         />
         {puces}
         <BoutonIcone
@@ -84,9 +121,15 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
           type="submit"
           variant="sombre"
           taille="compact"
-          disabled={!canSend}
-          icone={<Icon name="arrow-up" size={16} />}
-          libelle="Envoyer"
+          disabled={!canSend && !stop}
+          icone={
+            stop ? (
+              <Icon name="stop-01" size={16} />
+            ) : (
+              <Icon name="arrow-up" size={16} />
+            )
+          }
+          libelle={stop ? "Arrêter l’agent" : occupe ? "Mettre en attente" : "Envoyer"}
         />
       </div>
     </form>

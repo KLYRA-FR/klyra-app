@@ -49,7 +49,7 @@ export function createMockWorkspace(now: number = Date.now()): MockWorkspace {
       roleIds: ["principal", "designer", "dev"],
       brief: "Mise à jour des pages offres et du portfolio.",
       previewUrl: "localhost:3002",
-      folder: "~/Documents/Base-KLYRA-main/KLYRA-site/klyra-site",
+      folder: "~/Documents/Base-KLYRA-main/KLYRA-site /klyra-site",
       files: PROJECT_FILES.siteNext(),
       updatedAt: ago(33),
     },
@@ -82,10 +82,10 @@ export function createMockWorkspace(now: number = Date.now()): MockWorkspace {
   ];
 
   const chats: Chat[] = [
-    { id: "hero-home", projectId: "bizwhoo", title: "Hero de la home", roleIds: ["principal", "dev", "designer", "qa"], updatedAt: ago(11) },
-    { id: "palette", projectId: "klyra-fr", title: "Palette de la marque", roleIds: ["principal", "designer"], updatedAt: ago(33) },
-    { id: "parcours-diagnostic", projectId: "diagnostic", title: "Parcours diagnostic", roleIds: ["principal", "designer"], updatedAt: ago(60 * 20) },
-    { id: "planning-bizwhoo", projectId: "bizwhoo", title: "Planning Bizwhoo", roleIds: ["principal"], updatedAt: ago(60 * 22) },
+    { id: "hero-home", kind: "equipe", projectId: "bizwhoo", title: "Hero de la home", roleIds: ["principal", "dev", "designer", "qa"], updatedAt: ago(11), sessions: {}, luJusqua: new Date(now).toISOString() },
+    { id: "palette", kind: "equipe", projectId: "klyra-fr", title: "Palette de la marque", roleIds: ["principal", "designer"], updatedAt: ago(33), sessions: {}, luJusqua: new Date(now).toISOString() },
+    { id: "parcours-diagnostic", kind: "equipe", projectId: "diagnostic", title: "Parcours diagnostic", roleIds: ["principal", "designer"], updatedAt: ago(60 * 20), sessions: {}, luJusqua: new Date(now).toISOString() },
+    { id: "planning-bizwhoo", kind: "equipe", projectId: "bizwhoo", title: "Planning Bizwhoo", roleIds: ["principal"], updatedAt: ago(60 * 22), sessions: {}, luJusqua: new Date(now).toISOString() },
   ];
 
   const messages: Message[] = [

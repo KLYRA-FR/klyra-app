@@ -84,9 +84,9 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 ### Points ouverts
 - **`klyra-ui` en retard sur le design system** : `Button` en pilule, survols bleus codés en dur. L’app utilise ses propres `Bouton` / `Onglets` en attendant. À signaler à Corentin.
 - **À ajouter au design system** : la variante `discret` du Bouton (action d’outil sans fond au repos) et la bulle de chat (K1 pour Pelin, gris pour les rôles) n’y existent pas encore.
-- Bulle de l’utilisateur en `fond-accent` (K1) : à valider avec Pelin.
-- Dans les chats, les réponses des agents sont encore des phrases fixes : seule « Modifier avec Lou » appelle déjà le vrai Claude Code.
-- Sur le Mac de Pelin, `~/.claude/agents/` n’existe pas encore : l’installation de l’équipe depuis l’app reste à faire (à décider : elle ajoute les 11 agents à Claude Code pour tous les projets).
+- Bulle de l’utilisateur en noir (`klyra-surface-sombre`), bulle d’agent en gris : à valider avec Pelin.
+- Accès des agents : fichiers du dossier du projet en lecture et écriture (`acceptEdits`), et seulement les commandes de `COMMANDES_AUTORISEES` (electron/claude.ts). Pelin voulait l’accès complet ; `--dangerously-skip-permissions` a été refusé par le contrôle des permissions de Claude Code. Élargir la liste au besoin.
+- Dossiers des projets d’exemple : seuls klyra.fr et l’app interne existent sur le disque ; Bizwhoo et Diagnostic répondent « dossier introuvable » tant que leur vrai chemin n’est pas renseigné.
 
 ## Reprendre sur un autre Mac
 
@@ -105,3 +105,4 @@ Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app
 - **07/10/2026** — Veille des interfaces de chat IA, 9 wireframes desktop noir et blanc dans Figma.
 - **08/10/2026** — Choix app de bureau (Electron). Création du dépôt, fondations, barre latérale et écran de conversation. Police unique Google Sans Flex.
 - **14/10/2026** — Sortie du noir et blanc : tokens, icônes, logo et composants du design system KLYRA ; lucide-react retiré. Nouveau cadre d’après l’inspiration Figma `543-2765` : barre du haut (logo, recherche, actions), menu sur le fond de page (élément actif sombre, Projets, Réglages, carte utilisateur), contenu dans un panneau blanc arrondi. « Chats récents » retiré du menu.
+- **21/10/2026** — Conversation à la façon d’OpenBot : les agents répondent pour de vrai (Claude Code en `stream-json`, session reprise par agent et par conversation), étapes repliables, passations (« Confié à Iris »), « Hugo réfléchit… 12 s », Stop, file d’attente, liste @. Barre latérale en messagerie : Équipe (une ligne par agent : rond pastel, rôle, dernier message, statut), Projets, Conversations d’équipe. Conversations directes `dm-<agent>`, conversations gardées dans `userData/conversations.json`.

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -15,7 +15,21 @@ import {
   writeMeta,
   type AgentsMeta,
 } from "./agents";
-import { cancelAgent, findClaude, runAgent } from "./claude";
+import { readFile, writeFile } from "node:fs/promises";
+import {
+  actualiserUtilisation,
+  cancelAgent,
+  derniereUtilisation,
+  dossierExiste,
+  findClaude,
+  restaurerUtilisation,
+  runAgent,
+  streamAgent,
+  surUtilisation,
+  type StreamOptions,
+  type Utilisation,
+} from "./claude";
+import { readConversations, writeConversations } from "./conversations";
 
 /**
  * Process principal Electron.
@@ -151,6 +165,41 @@ function registerBridge() {
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
   handle("claude:cancel", (requestId: string) => cancelAgent(requestId));
+  /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
+  handle("claude:stream", (requestId: string, options: StreamOptions) => {
+    const sender = BrowserWindow.getAllWindows()[0]?.webContents;
+    streamAgent(requestId, options, (agentEvent) => {
+      if (sender && !sender.isDestroyed()) sender.send("claude:event", requestId, agentEvent);
+    });
+    return null;
+  });
+  handle("projets:dossier-existe", (dossier: string) => dossierExiste(dossier));
+  handle("fichiers:choisir", async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const choix = win
+      ? await dialog.showOpenDialog(win, { properties: ["openFile", "multiSelections"], title: "Joindre des fichiers" })
+      : await dialog.showOpenDialog({ properties: ["openFile", "multiSelections"], title: "Joindre des fichiers" });
+    return choix.canceled ? [] : choix.filePaths;
+  });
+  handle("fichiers:montrer", (chemin: string) => {
+    if (typeof chemin !== "string" || !path.isAbsolute(chemin)) throw new Error("Chemin invalide.");
+    shell.showItemInFolder(chemin);
+  });
+  handle("conversations:read", () => readConversations());
+  handle("conversations:write", (data: unknown) => writeConversations(data));
+
+  /* Utilisation de Claude : la dernière connue, gardée sur le disque et
+     envoyée à l'interface dès qu'une réponse d'agent la met à jour. */
+  const fichierUtilisation = path.join(app.getPath("userData"), "utilisation.json");
+  void readFile(fichierUtilisation, "utf8")
+    .then((brut) => restaurerUtilisation(JSON.parse(brut) as Utilisation))
+    .catch(() => {});
+  surUtilisation((u) => {
+    void writeFile(fichierUtilisation, JSON.stringify(u), "utf8").catch(() => {});
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("claude:utilisation", u);
+  });
+  handle("claude:utilisation", () => derniereUtilisation());
+  handle("claude:utilisation:actualiser", () => actualiserUtilisation());
 }
 
 void app.whenReady().then(() => {
