@@ -2,14 +2,16 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
-import { Avatar, Kbd, Stack } from "klyra-ui";
+import { Kbd } from "klyra-ui";
 import { cn } from "@/lib/cn";
-import { Icon, type IconName } from "@/components/icons/Icon";
+import { Icon } from "@/components/icons/Icon";
 import { CarteUtilisation } from "@/components/chat/CarteUtilisation";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { useProjects, useRoles, useWorkspace } from "@/lib/workspace";
+import { CarteCompte } from "./CarteCompte";
+import { NAVIGATION } from "./navigation";
 
 /* Élément du menu. Actif : fond sombre du design system (comme la PillFiltre
    active), un seul à la fois. */
@@ -60,19 +62,21 @@ function SectionTitle({ children, action }: { children: ReactNode; action?: Reac
 
 /** Menu de gauche, sur toute la hauteur, posé sur le fond de page. Le logo est en haut. */
 export function AppSidebar() {
+  const router = useRouter();
   const pathname = usePathname();
   const currentId = useSearchParams().get("id");
   const { state } = useWorkspace();
   const projects = useProjects();
   const roles = useRoles();
 
-  const nav: { href: string; label: string; icon: IconName; count?: number }[] = [
-    { href: "/", label: "Accueil", icon: "home-01" },
-    { href: "/chats", label: "Chats", icon: "message-square", count: state.chats.length },
-    { href: "/planning", label: "Planning", icon: "calendar-01", count: state.routines.filter((r) => r.active).length },
-    { href: "/equipe", label: "Équipe", icon: "users-profiles-01", count: roles.length - 1 },
-    { href: "/artefacts", label: "Artefacts", icon: "layers-01", count: state.artefacts.length },
-  ];
+  /* Les mêmes pages que le rail (cf. navigation.ts), avec leur nombre. */
+  const nombres: Record<string, number> = {
+    "/chats": state.chats.length,
+    "/planning": state.routines.filter((r) => r.active).length,
+    "/equipe": roles.length - 1,
+    "/artefacts": state.artefacts.length,
+  };
+  const nav = NAVIGATION.map((item) => ({ ...item, count: nombres[item.href] }));
 
   return (
     <aside className="flex h-full w-[248px] shrink-0 flex-col px-3 pb-2">
@@ -118,12 +122,24 @@ export function AppSidebar() {
                 taille="mini"
                 icone={<Icon name="plus-01" size={16} />}
                 libelle="Nouveau projet"
+                onClick={() => router.push("/projets?nouveau=1")}
                 className="text-icone-secondaire"
               />
             }
           >
-            Projets
+            <Link href="/projets" className="text-inherit no-underline hover:text-texte-principal">
+              Projets
+            </Link>
           </SectionTitle>
+          {projects.length === 0 && (
+            <Link
+              href="/projets?nouveau=1"
+              className="flex h-9 items-center gap-3 rounded-sm px-3 text-ui-s text-texte-tertiaire no-underline hover:bg-fond-survol hover:text-texte-principal"
+            >
+              <Icon name="plus-01" size={16} />
+              Ajouter un projet
+            </Link>
+          )}
           {projects.map((project) => (
             <MenuItem
               key={project.id}
@@ -151,17 +167,7 @@ export function AppSidebar() {
         <MenuItem href="/reglages" active={pathname === "/reglages"} icon={<Icon name="settings" size={16} />}>
           Réglages
         </MenuItem>
-        <button
-          type="button"
-          className="flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-bordure-subtile bg-fond-surface p-2.5 text-left shadow-ombre-xs transition-colors duration-[120ms] hover:border-bordure-forte"
-        >
-          <Avatar shape="circle" size="md" initials={state.currentUser.initial} alt="" gradient={false} />
-          <Stack gap={1} className="min-w-0 flex-1">
-            <span className="truncate text-ui-s font-medium text-texte-principal">{state.currentUser.name}</span>
-            <span className="truncate text-ui-xs text-texte-tertiaire">{state.currentUser.title}</span>
-          </Stack>
-          <Icon name="chevron-down" size={16} className="text-icone-secondaire" />
-        </button>
+        <CarteCompte />
       </div>
     </aside>
   );

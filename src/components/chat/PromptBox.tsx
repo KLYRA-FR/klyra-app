@@ -56,16 +56,21 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
   ref,
 ) {
   const canSend = value.trim().length > 0 || aDesPieces;
-  const stop = occupe && !canSend && !!onArreter;
+  const peutArreter = occupe && !!onArreter;
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (stop) onArreter();
-    else if (canSend) onSubmit();
+    if (canSend) onSubmit();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (onToucheAvant?.(event)) return;
+    // Échap arrête l'agent qui travaille.
+    if (event.key === "Escape" && peutArreter) {
+      event.preventDefault();
+      onArreter?.();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       if (canSend) onSubmit();
@@ -117,20 +122,26 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
           libelle="Dicter"
           className="ml-auto text-icone-secondaire hover:text-icone-defaut"
         />
-        <BoutonIcone
-          type="submit"
-          variant="sombre"
-          taille="compact"
-          disabled={!canSend && !stop}
-          icone={
-            stop ? (
-              <Icon name="stop-01" size={16} />
-            ) : (
-              <Icon name="arrow-up" size={16} />
-            )
-          }
-          libelle={stop ? "Arrêter l’agent" : occupe ? "Mettre en attente" : "Envoyer"}
-        />
+        {/* Pendant que l'agent travaille : le Stop reste là, même si tu as commencé à écrire. */}
+        {peutArreter && (
+          <BoutonIcone
+            variant="blanc"
+            taille="compact"
+            icone={<Icon name="stop-01" size={16} />}
+            libelle="Arrêter l’agent (Échap)"
+            onClick={onArreter}
+          />
+        )}
+        {(!occupe || canSend) && (
+          <BoutonIcone
+            type="submit"
+            variant="sombre"
+            taille="compact"
+            disabled={!canSend}
+            icone={<Icon name="arrow-up" size={16} />}
+            libelle={occupe ? "Mettre en attente" : "Envoyer"}
+          />
+        )}
       </div>
     </form>
   );

@@ -36,3 +36,8 @@ export function writeConversations(data: unknown): Promise<void> {
   });
   return enCours;
 }
+
+/** Attend la fin des écritures en cours (avant de quitter l'app). */
+export function ecrituresTerminees(): Promise<void> {
+  return enCours.catch(() => {});
+}

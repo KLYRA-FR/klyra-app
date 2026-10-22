@@ -511,3 +511,8 @@ body {
     animation: none;
   }
 }
+
+/* Pendant qu'on étire un panneau, les aperçus (iframe) ne captent pas la souris. */
+body[data-glisse] iframe {
+  pointer-events: none;
+}

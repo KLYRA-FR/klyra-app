@@ -1,11 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { PanneauConversations } from "@/components/chat/PanneauConversations";
 import { ProjectPanel } from "@/components/project/ProjectPanel";
+import { Visionneuse, type DemandeFichier } from "@/components/project/Visionneuse";
 import { useIsClient } from "@/hooks/useIsClient";
 import { cn } from "@/lib/cn";
+import { CompteClaudeProvider } from "@/lib/compte-claude";
 import { DIRECT, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
 import { AppRail } from "./AppRail";
@@ -41,6 +43,15 @@ function useEnConversation(): boolean {
 function ShellLayout({ children }: { children: ReactNode }) {
   const project = useOpenProject();
   const enConversation = useEnConversation();
+
+  /* Un fichier cliqué dans le panneau du projet ou l'aperçu : la visionneuse. */
+  const [fichier, setFichier] = useState<DemandeFichier | null>(null);
+  const fermerFichier = useCallback(() => setFichier(null), []);
+  useEffect(() => {
+    const ouvrir = (e: Event) => setFichier((e as CustomEvent<DemandeFichier>).detail);
+    window.addEventListener("klyra:fichier", ouvrir);
+    return () => window.removeEventListener("klyra:fichier", ouvrir);
+  }, []);
   const [conversationsOpen, setConversationsOpen] = useState(true);
   // Sous 1280 px, chat + aperçu + fichiers ne tiennent pas : le panneau des
   // fichiers part replié, et se replie si la fenêtre passe sous ce seuil.
@@ -60,7 +71,13 @@ function ShellLayout({ children }: { children: ReactNode }) {
       <div className="flex h-full">
         <AppRail panneau="fichiers" filesOpen={filesOpen} onToggleFiles={() => setFilesOpen((v) => !v)} />
         {filesOpen && <ProjectPanel project={project} onClose={() => setFilesOpen(false)} />}
-        <main className={cn("m-2", MAIN)}>{children}</main>
+        {/* La visionneuse d'un fichier s'ouvre par-dessus le contenu. */}
+        <main className={cn("relative m-2", MAIN)}>
+          {children}
+          {fichier?.projectId === project.id && (
+            <Visionneuse key={fichier.chemin} project={project} chemin={fichier.chemin} onFermer={fermerFichier} />
+          )}
+        </main>
       </div>
     );
   }
@@ -104,11 +121,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <WorkspaceProvider>
-      <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
-        <Suspense>
-          <ShellLayout>{children}</ShellLayout>
-        </Suspense>
-      </div>
+      <CompteClaudeProvider>
+        <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
+          <Suspense>
+            <ShellLayout>{children}</ShellLayout>
+          </Suspense>
+        </div>
+      </CompteClaudeProvider>
     </WorkspaceProvider>
   );
 }

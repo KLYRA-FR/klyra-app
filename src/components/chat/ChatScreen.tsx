@@ -11,6 +11,7 @@ import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageThread } from "./MessageThread";
 import { PanneauLateral, usePanneauLateral } from "./PanneauLateral";
+import type { DemandeApercu } from "@/components/ui/Lien";
 
 /** « Modifié par Dev · 09:52 » : dernier journal de travail du chat. */
 function useModifiedLabel(chatId: string): string | null {
@@ -46,6 +47,21 @@ export function ChatScreen() {
   }, []);
   const [maximise, setMaximise] = useState(false);
   const [etatPanneau, setEtatPanneau] = usePanneauLateral();
+  /* Un lien local cliqué dans une conversation de projet : il s'ouvre dans l'aperçu. */
+  const [adresseApercu, setAdresseApercu] = useState<{ url: string; n: number } | null>(null);
+  const equipe = chat?.kind === "equipe";
+  useEffect(() => {
+    if (!equipe) return;
+    const prendre = (e: Event) => {
+      const demande = (e as CustomEvent<DemandeApercu>).detail;
+      demande.pris = true;
+      setPreviewOpen(true);
+      setAdresseApercu((a) => ({ url: demande.url, n: (a?.n ?? 0) + 1 }));
+    };
+    window.addEventListener("klyra:apercu", prendre);
+    return () => window.removeEventListener("klyra:apercu", prendre);
+  }, [equipe]);
+
   const fermerPanneau = useCallback(() => {
     setPanneauOuvert(false);
     setMaximise(false);
@@ -79,7 +95,7 @@ export function ChatScreen() {
         <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
       </section>
       {/* Conversation directe : pas de projet, donc pas d'aperçu. */}
-      {previewOpen && chat.kind === "equipe" && <PreviewPanel project={project} modifiedLabel={modifiedLabel} />}
+      {previewOpen && chat.kind === "equipe" && <PreviewPanel key={project?.id} project={project} chat={chat} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} />}
       {panneauOuvert && chat.kind === "direct" && (
         <PanneauLateral
           chat={chat}

@@ -77,13 +77,23 @@ function useChrono(debut: number | null): string | null {
 }
 
 /** « Hugo réfléchit… 12 s » : l'agent a commencé mais n'a encore rien montré. */
-function EnTravail({ roleId, travail, vide }: { roleId: RoleId; travail: Travail; vide: boolean }) {
+function EnTravail({
+  roleId,
+  travail,
+  vide,
+  attente,
+}: {
+  roleId: RoleId;
+  travail: Travail;
+  vide: boolean;
+  attente: boolean;
+}) {
   const role = useRole(roleId);
   const chrono = useChrono(travail.debut);
   return (
     <div aria-live="polite" className="flex h-6 items-center gap-1.5 text-ui-xs text-texte-tertiaire">
       <span className="klyra-respire font-medium text-texte-secondaire">
-        {vide ? `${role.name} réfléchit…` : `${role.name} travaille…`}
+        {attente ? `${role.name} attend ton accord` : vide ? `${role.name} réfléchit…` : `${role.name} travaille…`}
       </span>
       {chrono && <span>{chrono}</span>}
     </div>
@@ -104,6 +114,7 @@ function RoleMessage({
   onAction: (label: string, roleId: RoleId) => void;
 }) {
   const role = useRole(roleId);
+  const { repondreAutorisation } = useWorkspace();
   const enCours = message.statut === "en-cours";
   const visibles = message.parts.filter((p) => p.type !== "text" || p.text.trim());
   // Étapes de chaque collègue à qui l'agent a confié une partie.
@@ -130,10 +141,17 @@ function RoleMessage({
             tone="role"
             enCours={enCours}
             etapesDe={etapesDe}
+            nomAgent={role.name}
+            onAutorisation={(demandeId, decision) => repondreAutorisation(message.id, demandeId, decision)}
             onAction={(label) => onAction(label, roleId)}
           />
         ))}
-        {enCours && travail && <EnTravail roleId={roleId} travail={travail} vide={visibles.length === 0} />}
+        {enCours && travail && <EnTravail
+            roleId={roleId}
+            travail={travail}
+            vide={visibles.length === 0}
+            attente={message.parts.some((p) => p.type === "autorisation" && p.statut === "attente")}
+          />}
         {message.statut === "erreur" && (
           <p role="alert" className="m-0 max-w-[680px] rounded-md border border-bordure-erreur bg-fond-surface px-3 py-2 text-ui-s text-texte-erreur">
             {message.erreur ?? "L’agent s’est arrêté sur une erreur."}

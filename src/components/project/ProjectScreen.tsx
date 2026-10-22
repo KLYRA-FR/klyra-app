@@ -7,6 +7,7 @@ import { Avatar, EmptyState } from "klyra-ui";
 import { PromptBox } from "@/components/chat/PromptBox";
 import { Icon } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
+import { Bouton } from "@/components/ui/Bouton";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
@@ -44,7 +45,8 @@ export function ProjectScreen() {
   const router = useRouter();
   const project = useProject(useSearchParams().get("id"));
   const roles = useRoles();
-  const { startChat } = useWorkspace();
+  const { startChat, retirerProjet } = useWorkspace();
+  const [retirer, setRetirer] = useState(false);
   const chats = useRecentChats().filter((c) => c.projectId === project?.id);
   const [text, setText] = useState("");
   const [to, setTo] = useState<RoleId | typeof AUTO>(AUTO);
@@ -71,16 +73,52 @@ export function ProjectScreen() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex max-w-[760px] flex-col gap-8 px-8 pt-12 pb-12">
         <header className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className={cn("rounded-pill px-2.5 py-0.5 text-ui-2xs font-medium", status.className)}>{status.label}</span>
-            <span className="klyra-mono text-ui-xs text-texte-tertiaire">{project.previewUrl}</span>
+            {project.previewUrl && <span className="klyra-mono text-ui-xs text-texte-tertiaire">{project.previewUrl}</span>}
+            <span className="ml-auto flex gap-1">
+              <Bouton
+                variant="discret"
+                taille="compact"
+                iconeGauche={<Icon name="file-code" size={16} />}
+                onClick={() => router.push(`/projets?modifier=${project.id}`)}
+              >
+                Modifier
+              </Bouton>
+              <Bouton variant="discret" taille="compact" iconeGauche={<Icon name="trash-01" size={16} />} onClick={() => setRetirer(true)}>
+                Retirer
+              </Bouton>
+            </span>
           </div>
+          {retirer && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
+              <span className="flex-1 text-ui-s text-texte-principal">
+                Retirer {project.name} de l’app ? Son dossier reste sur ton Mac, rien n’est effacé.
+              </span>
+              <Bouton
+                variant="sombre"
+                taille="compact"
+                onClick={() => {
+                  retirerProjet(project.id);
+                  router.push("/projets");
+                }}
+              >
+                Retirer
+              </Bouton>
+              <Bouton variant="blanc" taille="compact" onClick={() => setRetirer(false)}>
+                Annuler
+              </Bouton>
+            </div>
+          )}
           {/* Titre KLYRA : semi-gras + regular, même couleur. */}
           <h1 className="m-0 text-h2 leading-[1] tracking-[-0.05em] text-texte-principal">
             <span className="font-semibold">{project.name}</span>{" "}
-            <span className="font-normal">· {project.subtitle}</span>
+            {project.subtitle && <span className="font-normal">· {project.subtitle}</span>}
           </h1>
-          <p className="m-0 text-body-s leading-[1.45] text-texte-secondaire">{project.brief}</p>
+          {project.brief && <p className="m-0 text-body-s leading-[1.45] text-texte-secondaire">{project.brief}</p>}
+          <span className="klyra-mono text-ui-xs text-texte-tertiaire [overflow-wrap:anywhere]">
+            {project.folder.replace(/^\/Users\/[^/]+/, "~")}
+          </span>
           <div className="flex items-center gap-3">
             <Avatar.Group size="sm" aria-label="Agents du projet">
               {project.roleIds.map((roleId) => (

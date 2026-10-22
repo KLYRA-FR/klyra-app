@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { NIVEAUX_ACCES } from "@/lib/acces";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
@@ -84,7 +86,8 @@ function Reglages({ chat }: { chat: Chat }) {
   const role = useRole(chat.roleIds[0] ?? "principal");
   const project = useProject(chat.projectId);
   const travail = useTravail(chat.id);
-  const { nouvelleConversation } = useWorkspace();
+  const { nouvelleConversation, state } = useWorkspace();
+  const acces = state.acces;
   const [confirmer, setConfirmer] = useState(false);
   const dossier = chat.kind === "equipe" ? (project?.folder ?? "—") : "~/.klyra/atelier";
 
@@ -126,7 +129,14 @@ function Reglages({ chat }: { chat: Chat }) {
       <Groupe titre="Travail">
         <div className="flex flex-col divide-y divide-bordure-subtile rounded-md border border-bordure-subtile px-3">
           <Ligne libelle="Dossier" valeur={<span className="klyra-mono text-ui-xs [overflow-wrap:anywhere]">{dossier}</span>} />
-          <Ligne libelle="Accès" valeur="Fichiers du dossier, commandes de travail" />
+          <Ligne
+            libelle="Accès"
+            valeur={
+              <Link href="/reglages" className="text-texte-principal underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
+                {NIVEAUX_ACCES.find((n) => n.id === acces)?.nom}
+              </Link>
+            }
+          />
           <Ligne libelle="Mémoire" valeur={role.memory || "—"} />
         </div>
       </Groupe>

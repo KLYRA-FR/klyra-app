@@ -214,6 +214,18 @@ export type MessagePart =
   /** Fichiers joints par l'utilisateur (chemins complets). */
   | { type: "fichiers"; chemins: string[] }
   | { type: "etapes"; etapes: Etape[] }
+  /** L'agent demande ton accord avant d'utiliser un outil hors de son accès. */
+  | {
+      type: "autorisation";
+      id: string;
+      outil: string;
+      /** « Lance open https://klyra.fr ». */
+      libelle: string;
+      /** La commande, le fichier ou l'adresse concernés. */
+      detail: string;
+      description: string;
+      statut: "attente" | "acceptee" | "refusee";
+    }
   /** L'agent confie une partie du travail à un collègue. */
   | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur" }
   | { type: "tasks"; tasks: Task[] }
@@ -280,4 +292,59 @@ export interface Artefact {
   description: string;
   projectId: string | null;
   ajouteLe: string;
+  /** « claude » : venu de la synchronisation avec le compte ; « manuel » : ajouté à la main. */
+  source?: "claude" | "manuel";
+  /** Dernière modification de la page sur claude.ai, si connue. */
+  misAJour?: string | null;
+  /** Le titre a été changé dans l'app : la synchronisation ne l'écrase plus. */
+  titrePerso?: boolean;
+}
+
+/* ─── Tâches et calendrier ─────────────────────────────────────── */
+
+/** Une tâche, façon Rappels : à cocher, avec une échéance, une priorité et des notes. */
+export interface Tache {
+  id: string;
+  titre: string;
+  notes: string;
+  /** L'id de sa catégorie (« perso », « clients »…), cf. Categorie. */
+  liste: string;
+  /** Jour d'échéance « 2026-10-22 », ou null. */
+  date: string | null;
+  /** Heure « 14:00 » : à cette heure, une notification. null = toute la journée. */
+  heure: string | null;
+  /** 0 aucune, 1 basse (!), 2 moyenne (!!), 3 haute (!!!). */
+  priorite: 0 | 1 | 2 | 3;
+  signalee: boolean;
+  faite: boolean;
+  faiteLe: string | null;
+  projectId: string | null;
+  creeLe: string;
+  /** La notification est déjà partie. */
+  notifiee: boolean;
+}
+
+/** Un événement du calendrier : un rendez-vous, une échéance, une réunion. */
+export interface Evenement {
+  id: string;
+  titre: string;
+  /** Jour « 2026-10-22 ». */
+  date: string;
+  /** « 10:00 » ; null = toute la journée. */
+  debut: string | null;
+  fin: string | null;
+  notes: string;
+  projectId: string | null;
+  /** Notification envoyée (10 min avant le début). */
+  notifie: boolean;
+}
+
+/** Une catégorie de rappels : une colonne, avec sa couleur et son icône. */
+export interface Categorie {
+  id: string;
+  nom: string;
+  /** Une des teintes pastel des agents. */
+  teinte: RoleTeinte;
+  /** Une icône du set officiel. */
+  icone: string;
 }

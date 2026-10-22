@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { useCompteClaude } from "@/lib/compte-claude";
 import { findMention } from "@/lib/mentions";
 import { useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Project, Role, RoleId } from "@/types/domain";
@@ -135,7 +138,9 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const roles = useRoles();
   const { sendMessage, arreter } = useWorkspace();
   const travail = useTravail(chat.id);
-  const [text, setText] = useState("");
+  // `?brouillon=…` : on arrive avec un message déjà prêt (ex. « Modifier avec un agent » depuis un artefact).
+  const brouillon = useSearchParams().get("brouillon");
+  const [text, setText] = useState(brouillon ?? "");
   const [to, setTo] = useState<RoleId | typeof AUTO>(AUTO);
   const [curseur, setCurseur] = useState(0);
   const [actif, setActif] = useState(0);
@@ -144,6 +149,8 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const direct = chat.kind === "direct";
   const agent = useRole(chat.roleIds[0] ?? "principal");
   const bridge = getBridge();
+  const { compte } = useCompteClaude();
+  const deconnecte = !!compte && (!compte.installe || !compte.connecte);
   const [fichiers, setFichiers] = useState<string[]>([]);
   const [depot, setDepot] = useState(false);
   const [alerte, setAlerte] = useState<string | null>(null);
@@ -313,6 +320,14 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           }
         />
       </div>
+      {deconnecte && (
+        <p role="alert" className="mt-2 mb-0 flex flex-wrap items-center gap-x-2 px-1 text-ui-2xs font-medium text-texte-erreur">
+          {compte?.installe ? "Claude n’est pas connecté : les agents ne pourront pas répondre." : "Claude Code est introuvable sur ce poste."}
+          <Link href="/reglages" className="text-texte-principal underline underline-offset-2">
+            Ouvrir les réglages
+          </Link>
+        </p>
+      )}
       {alerte && (
         <p role="alert" className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-erreur">
           {alerte}

@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import { PRINCIPAL } from "@/data/agents";
 import { createMockWorkspace, type MockWorkspace } from "@/data/mock";
 import { AgentsProvider, useAgents } from "@/lib/agents";
-import { getBridge, type AgentEvent } from "@/lib/bridge";
+import { getBridge, type Acces, type AgentEvent } from "@/lib/bridge";
 import { libelleEtape } from "@/lib/etapes";
 import { prochainPassage } from "@/lib/planning";
 import type {
@@ -17,8 +17,26 @@ import type {
   Role,
   RoleId,
   Routine,
+  Tache,
   TacheAgent,
+  Evenement,
+  Categorie,
+  User,
 } from "@/types/domain";
+
+/** Les catégories de rappels à la première ouverture. */
+const CATEGORIES_DE_DEPART: Categorie[] = [
+  { id: "perso", nom: "Perso", teinte: "violet", icone: "home-01" },
+  { id: "clients", nom: "Clients", teinte: "bleu-k2", icone: "users-profiles-01" },
+  { id: "ecole", nom: "École", teinte: "jaune", icone: "file-01" },
+];
+
+/** Les catégories enregistrées. Les anciennes « listes » (de simples noms) laissent place aux catégories de départ ;
+ *  un rappel dont la catégorie n'existe plus s'affiche dans la première. */
+function lireCategories(brut: unknown): Categorie[] | null {
+  if (!Array.isArray(brut) || !brut.length || typeof brut[0] === "string") return null;
+  return brut as Categorie[];
+}
 
 /** Les artefacts déjà connus à la première ouverture : le design system KLYRA. */
 const ARTEFACTS_DE_DEPART: Artefact[] = [
@@ -62,14 +80,43 @@ interface WorkspaceState extends MockWorkspace {
   file: Record<string, EnAttente[]>;
   routines: Routine[];
   artefacts: Artefact[];
+  /** Ce que les agents peuvent faire sans demander (réglage de ce poste). */
+  acces: Acces;
+  taches: Tache[];
+  evenements: Evenement[];
+  /** Les catégories de rappels, dans l'ordre des colonnes. */
+  categories: Categorie[];
 }
 
 type WorkspaceAction =
-  | { type: "charger"; chats: Chat[]; messages: Message[]; routines: Routine[]; artefacts: Artefact[] }
+  | {
+      type: "charger";
+      chats: Chat[];
+      messages: Message[];
+      routines: Routine[];
+      artefacts: Artefact[];
+      projects: Project[];
+      currentUser: User | null;
+      acces: Acces | null;
+      taches: Tache[];
+      evenements: Evenement[];
+      categories: Categorie[] | null;
+    }
+  | { type: "tache/enregistrer"; tache: Tache }
+  | { type: "tache/supprimer"; id: string }
+  | { type: "evenement/enregistrer"; evenement: Evenement }
+  | { type: "evenement/supprimer"; id: string }
+  | { type: "categories/changer"; categories: Categorie[] }
+  | { type: "acces/choisir"; acces: Acces }
+  | { type: "projet/enregistrer"; project: Project }
+  | { type: "projet/supprimer"; id: string }
+  | { type: "profil/enregistrer"; user: User }
   | { type: "routine/enregistrer"; routine: Routine }
   | { type: "routine/supprimer"; id: string }
   | { type: "artefact/ajouter"; artefact: Artefact }
   | { type: "artefact/supprimer"; id: string }
+  | { type: "artefact/modifier"; id: string; patch: Partial<Artefact> }
+  | { type: "artefact/synchroniser"; liste: { titre: string; url: string; misAJour: string | null }[] }
   | { type: "chat/add"; chat: Chat }
   | { type: "chat/update"; id: string; patch: (chat: Chat) => Chat }
   | { type: "chat/vider"; id: string }
@@ -89,8 +136,51 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
         messages: action.messages,
         routines: action.routines,
         artefacts: action.artefacts,
+        projects: action.projects,
+        currentUser: action.currentUser ?? state.currentUser,
+        acces: action.acces ?? state.acces,
+        taches: action.taches,
+        evenements: action.evenements,
+        categories: action.categories ?? state.categories,
         charge: true,
       };
+    case "tache/enregistrer": {
+      const existe = state.taches.some((t) => t.id === action.tache.id);
+      return {
+        ...state,
+        taches: existe ? state.taches.map((t) => (t.id === action.tache.id ? action.tache : t)) : [...state.taches, action.tache],
+      };
+    }
+    case "tache/supprimer":
+      return { ...state, taches: state.taches.filter((t) => t.id !== action.id) };
+    case "evenement/enregistrer": {
+      const existe = state.evenements.some((e) => e.id === action.evenement.id);
+      return {
+        ...state,
+        evenements: existe
+          ? state.evenements.map((e) => (e.id === action.evenement.id ? action.evenement : e))
+          : [...state.evenements, action.evenement],
+      };
+    }
+    case "evenement/supprimer":
+      return { ...state, evenements: state.evenements.filter((e) => e.id !== action.id) };
+    case "categories/changer":
+      return { ...state, categories: action.categories };
+    case "acces/choisir":
+      return { ...state, acces: action.acces };
+    case "projet/enregistrer": {
+      const existe = state.projects.some((p) => p.id === action.project.id);
+      return {
+        ...state,
+        projects: existe
+          ? state.projects.map((p) => (p.id === action.project.id ? action.project : p))
+          : [...state.projects, action.project],
+      };
+    }
+    case "projet/supprimer":
+      return { ...state, projects: state.projects.filter((p) => p.id !== action.id) };
+    case "profil/enregistrer":
+      return { ...state, currentUser: action.user };
     case "routine/enregistrer": {
       const existe = state.routines.some((r) => r.id === action.routine.id);
       return {
@@ -106,6 +196,38 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       return { ...state, artefacts: [action.artefact, ...state.artefacts] };
     case "artefact/supprimer":
       return { ...state, artefacts: state.artefacts.filter((a) => a.id !== action.id) };
+    case "artefact/modifier":
+      return { ...state, artefacts: state.artefacts.map((a) => (a.id === action.id ? { ...a, ...action.patch } : a)) };
+    case "artefact/synchroniser": {
+      // Par lien : on met à jour ceux qu'on a déjà (sans écraser un titre changé dans l'app), on ajoute les nouveaux.
+      const cle = (url: string) => url.replace(/\/$/, "");
+      const parUrl = new Map(state.artefacts.map((a) => [cle(a.url), a]));
+      const maintenant = new Date().toISOString();
+      const nouveaux: Artefact[] = [];
+      for (const x of action.liste) {
+        const avant = parUrl.get(cle(x.url));
+        if (avant) {
+          parUrl.set(cle(x.url), {
+            ...avant,
+            titre: avant.titrePerso ? avant.titre : x.titre,
+            misAJour: x.misAJour ?? avant.misAJour ?? null,
+            source: avant.source ?? "claude",
+          });
+        } else {
+          nouveaux.push({
+            id: crypto.randomUUID(),
+            titre: x.titre,
+            url: x.url,
+            description: "",
+            projectId: null,
+            ajouteLe: maintenant,
+            source: "claude",
+            misAJour: x.misAJour,
+          });
+        }
+      }
+      return { ...state, artefacts: [...nouveaux, ...state.artefacts.map((a) => parUrl.get(cle(a.url)) ?? a)] };
+    }
     case "chat/add":
       if (state.chats.some((c) => c.id === action.chat.id)) return state;
       return { ...state, chats: [action.chat, ...state.chats] };
@@ -288,6 +410,22 @@ interface WorkspaceApi {
   /** Lance une tâche planifiée tout de suite, sans attendre son heure. */
   lancerRoutine: (id: string) => void;
   ajouterArtefact: (artefact: Omit<Artefact, "id" | "ajouteLe">) => void;
+  modifierArtefact: (id: string, patch: Partial<Artefact>) => void;
+  /** Lit les artefacts du compte Claude et met la liste à jour ; renvoie combien sont arrivés. */
+  synchroniserArtefacts: () => Promise<{ total: number; nouveaux: number }>;
+  /** Crée ou modifie un projet (le dossier reste où il est sur le disque). */
+  enregistrerProjet: (project: Project) => void;
+  /** Retire un projet de l'app ; son dossier et ses conversations restent. */
+  retirerProjet: (id: string) => void;
+  enregistrerProfil: (user: User) => void;
+  choisirAcces: (acces: Acces) => void;
+  enregistrerTache: (tache: Tache) => void;
+  supprimerTache: (id: string) => void;
+  enregistrerEvenement: (evenement: Evenement) => void;
+  supprimerEvenement: (id: string) => void;
+  changerCategories: (categories: Categorie[]) => void;
+  /** Ta réponse à une demande d'autorisation d'un agent. */
+  repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
   supprimerArtefact: (id: string) => void;
 }
 
@@ -304,13 +442,31 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           ...mock,
           chats: [],
           messages: [],
+          // Les projets et le profil de chacun sont sur son poste, lus juste après.
+          projects: [],
+          currentUser: { id: "moi", name: "", title: "", initial: "" },
           charge: false,
           travail: {},
           file: {},
           routines: [],
           artefacts: [],
+          acces: "projet",
+          taches: [],
+          evenements: [],
+          categories: CATEGORIES_DE_DEPART,
         }
-      : { ...mock, charge: true, travail: {}, file: {}, routines: [], artefacts: ARTEFACTS_DE_DEPART };
+      : {
+          ...mock,
+          charge: true,
+          travail: {},
+          file: {},
+          routines: [],
+          artefacts: ARTEFACTS_DE_DEPART,
+          acces: "projet",
+          taches: [],
+          evenements: [],
+          categories: CATEGORIES_DE_DEPART,
+        };
   });
 
   /* Les fonctions ci-dessous lisent toujours l'état le plus récent. */
@@ -336,6 +492,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             messages?: Message[];
             routines?: Routine[];
             artefacts?: Artefact[];
+            projects?: Project[];
+            currentUser?: User;
+            acces?: Acces;
+            taches?: Tache[];
+            evenements?: Evenement[];
+            listes?: string[];
+            categories?: Categorie[];
           } | null)
         : null;
       const valide = data?.version === VERSION_STOCKAGE;
@@ -355,6 +518,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         messages,
         routines: valide ? (data.routines ?? []) : [],
         artefacts: valide && data.artefacts ? data.artefacts : ARTEFACTS_DE_DEPART,
+        projects: valide ? (data.projects ?? []) : [],
+        currentUser: valide ? (data.currentUser ?? null) : null,
+        acces: valide ? (data.acces ?? null) : null,
+        taches: valide ? (data.taches ?? []) : [],
+        evenements: valide ? (data.evenements ?? []) : [],
+        categories: valide ? lireCategories(data.categories ?? data.listes) : null,
       });
     });
     return () => {
@@ -372,10 +541,38 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         messages: state.messages,
         routines: state.routines,
         artefacts: state.artefacts,
+        projects: state.projects,
+        currentUser: state.currentUser,
+        acces: state.acces,
+        taches: state.taches,
+        evenements: state.evenements,
+        categories: state.categories,
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts]);
+  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories]);
+
+  /* Fermeture de l'app : le dernier état part tout de suite, sans attendre le regroupement. */
+  useEffect(() => {
+    if (!bridge) return;
+    return bridge.conversations.avantFermeture(() => {
+      const etat = stateRef.current;
+      if (!etat.charge) return;
+      void bridge.conversations.write({
+        version: VERSION_STOCKAGE,
+        chats: etat.chats,
+        messages: etat.messages,
+        routines: etat.routines,
+        artefacts: etat.artefacts,
+        projects: etat.projects,
+        currentUser: etat.currentUser,
+        acces: etat.acces,
+        taches: etat.taches,
+        evenements: etat.evenements,
+        categories: etat.categories,
+      });
+    });
+  }, [bridge]);
 
   /* Un seul abonnement aux événements des agents, distribués par demande. */
   useEffect(() => {
@@ -556,6 +753,36 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
               parts: finirEtape(m.parts, event.id, event.ok),
             }));
             break;
+          case "autorisation": {
+            const e = event.entree;
+            const detail = [e.command, e.file_path, e.notebook_path, e.url, e.pattern].find((v) => typeof v === "string");
+            maj((m) => ({
+              ...m,
+              parts: [
+                ...m.parts,
+                {
+                  type: "autorisation",
+                  id: event.id,
+                  outil: event.outil,
+                  libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
+                  detail: typeof detail === "string" ? detail : "",
+                  description: event.description,
+                  statut: "attente",
+                },
+              ],
+            }));
+            break;
+          }
+          case "autorisation-fin":
+            maj((m) => ({
+              ...m,
+              parts: m.parts.map((p) =>
+                p.type === "autorisation" && p.id === event.id && p.statut === "attente"
+                  ? { ...p, statut: event.accepte ? "acceptee" : "refusee" }
+                  : p,
+              ),
+            }));
+            break;
           case "fin":
             maj((m) => {
               const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
@@ -589,6 +816,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           sessionId: chat.sessions[roleId] ?? null,
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
+          acces: stateRef.current.acces,
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
         })
         .then((r) => {
@@ -812,6 +1040,99 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     });
   }, []);
   const supprimerArtefact = useCallback((id: string) => dispatch({ type: "artefact/supprimer", id }), []);
+  const modifierArtefact = useCallback(
+    (id: string, patch: Partial<Artefact>) => dispatch({ type: "artefact/modifier", id, patch }),
+    [],
+  );
+  const synchroniserArtefacts = useCallback(async () => {
+    if (!bridge) throw new Error("La synchronisation marche dans l’app de bureau.");
+    const r = await bridge.artefacts.lister();
+    if (!r.ok) throw new Error(r.message);
+    const connus = new Set(stateRef.current.artefacts.map((a) => a.url.replace(/\/$/, "")));
+    dispatch({ type: "artefact/synchroniser", liste: r.data });
+    return { total: r.data.length, nouveaux: r.data.filter((a) => !connus.has(a.url.replace(/\/$/, ""))).length };
+  }, [bridge]);
+
+  const enregistrerProjet = useCallback((project: Project) => dispatch({ type: "projet/enregistrer", project }), []);
+  const retirerProjet = useCallback((id: string) => dispatch({ type: "projet/supprimer", id }), []);
+  const enregistrerProfil = useCallback((user: User) => dispatch({ type: "profil/enregistrer", user }), []);
+  const choisirAcces = useCallback((acces: Acces) => dispatch({ type: "acces/choisir", acces }), []);
+  const enregistrerTache = useCallback((tache: Tache) => dispatch({ type: "tache/enregistrer", tache }), []);
+  const supprimerTache = useCallback((id: string) => dispatch({ type: "tache/supprimer", id }), []);
+  const enregistrerEvenement = useCallback((evenement: Evenement) => dispatch({ type: "evenement/enregistrer", evenement }), []);
+  const supprimerEvenement = useCallback((id: string) => dispatch({ type: "evenement/supprimer", id }), []);
+  const changerCategories = useCallback(
+    (categories: Categorie[]) => dispatch({ type: "categories/changer", categories }),
+    [],
+  );
+
+  /* Rappels : une notification macOS à l'heure d'une tâche, et 10 min avant un événement.
+     Vérifié toutes les 30 s tant que l'app est ouverte. */
+  useEffect(() => {
+    if (!state.charge || typeof Notification === "undefined") return;
+    const verifier = () => {
+      const maintenant = Date.now();
+      for (const t of stateRef.current.taches) {
+        if (t.faite || t.notifiee || !t.date || !t.heure) continue;
+        if (new Date(`${t.date}T${t.heure}`).getTime() > maintenant) continue;
+        const categorie = stateRef.current.categories.find((c) => c.id === t.liste)?.nom ?? "Rappel";
+        new Notification(t.titre, { body: t.notes || categorie, silent: false });
+        dispatch({ type: "tache/enregistrer", tache: { ...t, notifiee: true } });
+      }
+      for (const e of stateRef.current.evenements) {
+        if (e.notifie || !e.debut) continue;
+        const debut = new Date(`${e.date}T${e.debut}`).getTime();
+        if (debut - 10 * 60_000 > maintenant || debut < maintenant - 60 * 60_000) continue;
+        new Notification(e.titre, { body: `À ${e.debut}${e.notes ? ` · ${e.notes}` : ""}`, silent: false });
+        dispatch({ type: "evenement/enregistrer", evenement: { ...e, notifie: true } });
+      }
+    };
+    verifier();
+    const id = setInterval(verifier, 30_000);
+    return () => clearInterval(id);
+  }, [state.charge]);
+
+  const repondreAutorisation = useCallback(
+    (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => {
+      if (!bridge) return;
+      const accepte = decision !== "non";
+      dispatch({
+        type: "message/update",
+        id: messageId,
+        patch: (m) => ({
+          ...m,
+          parts: m.parts.map((p) =>
+            p.type === "autorisation" && p.id === demandeId ? { ...p, statut: accepte ? "acceptee" : "refusee" } : p,
+          ),
+        }),
+      });
+      void bridge.claude.autoriser(messageId, demandeId, decision);
+    },
+    [bridge],
+  );
+
+  /* Premier lancement : le profil part du nom de la session Mac. */
+  useEffect(() => {
+    if (!bridge || !state.charge || state.currentUser.name) return;
+    let actif = true;
+    void bridge.systeme.utilisateur().then((r) => {
+      if (!actif || !r.ok) return;
+      // Le prénom : le mot du nom complet qui correspond à l'identifiant de session
+      // (« Bagcaci Pelin » + « pelin » → « Pelin »), sinon le premier mot.
+      const mots = r.data.nom.split(/\s+/).filter(Boolean);
+      const name =
+        mots.find((m) => m.toLowerCase() === r.data.identifiant.toLowerCase()) ??
+        mots[0] ??
+        r.data.identifiant.charAt(0).toUpperCase() + r.data.identifiant.slice(1);
+      dispatch({
+        type: "profil/enregistrer",
+        user: { id: r.data.identifiant, name, title: "KLYRA", initial: name.charAt(0).toUpperCase() },
+      });
+    });
+    return () => {
+      actif = false;
+    };
+  }, [bridge, state.charge, state.currentUser.name]);
 
   const value = useMemo(
     () => ({
@@ -828,6 +1149,18 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       lancerRoutine,
       ajouterArtefact,
       supprimerArtefact,
+      modifierArtefact,
+      synchroniserArtefacts,
+      enregistrerProjet,
+      retirerProjet,
+      enregistrerProfil,
+      choisirAcces,
+      repondreAutorisation,
+      enregistrerTache,
+      supprimerTache,
+      enregistrerEvenement,
+      supprimerEvenement,
+      changerCategories,
     }),
     [
       state,
@@ -843,6 +1176,18 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       lancerRoutine,
       ajouterArtefact,
       supprimerArtefact,
+      modifierArtefact,
+      synchroniserArtefacts,
+      enregistrerProjet,
+      retirerProjet,
+      enregistrerProfil,
+      choisirAcces,
+      repondreAutorisation,
+      enregistrerTache,
+      supprimerTache,
+      enregistrerEvenement,
+      supprimerEvenement,
+      changerCategories,
     ],
   );
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
@@ -987,16 +1332,35 @@ export function useProject(id: string | null): Project | undefined {
   return useProjects().find((p) => p.id === id);
 }
 
-/** Fichiers touchés par les agents dans les chats d'un projet (journaux de travail). */
+/** Fichiers modifiés par les agents dans les chats d'un projet, en chemins relatifs à son dossier. */
 export function useModifiedFiles(projectId: string | null): Set<string> {
-  const { chats, messages } = useWorkspace().state;
+  const { chats, messages, projects } = useWorkspace().state;
   return useMemo(() => {
+    const dossier = projects.find((p) => p.id === projectId)?.folder.replace(/\/$/, "") ?? null;
     const chatIds = new Set(chats.filter((c) => c.projectId === projectId).map((c) => c.id));
     const paths = new Set<string>();
     for (const message of messages) {
       if (!chatIds.has(message.chatId)) continue;
-      for (const part of message.parts) if (part.type === "worklog") part.files.forEach((f) => paths.add(f.path));
+      for (const part of message.parts) {
+        if (part.type === "worklog") part.files.forEach((f) => paths.add(f.path));
+        if (part.type === "etapes" && dossier) {
+          for (const e of part.etapes) {
+            if (e.chemin && e.statut === "fait" && /Write|Edit/.test(e.outil) && e.chemin.startsWith(`${dossier}/`)) {
+              paths.add(e.chemin.slice(dossier.length + 1));
+            }
+          }
+        }
+      }
     }
     return paths;
-  }, [chats, messages, projectId]);
+  }, [chats, messages, projects, projectId]);
+}
+
+/** Vrai si l'agent de cette conversation attend ton accord. */
+export function useAttenteAccord(chatId: string): boolean {
+  const { messages, travail } = useWorkspace().state;
+  const t = travail[chatId];
+  if (!t) return false;
+  const m = messages.find((x) => x.id === t.messageId);
+  return !!m?.parts.some((p) => p.type === "autorisation" && p.statut === "attente");
 }

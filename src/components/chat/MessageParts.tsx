@@ -143,6 +143,57 @@ export function EtapesView({ etapes, enCours }: { etapes: Etape[]; enCours: bool
   );
 }
 
+/* ─── Demande d'autorisation ───────────────────────────────────── */
+
+/**
+ * L'agent demande ton accord : ce qu'il veut faire, la commande exacte, et
+ * tes trois réponses. Une fois répondue, la carte se résume en une ligne.
+ */
+export function CarteAutorisation({
+  part,
+  nomAgent,
+  onRepondre,
+}: {
+  part: Extract<MessagePart, { type: "autorisation" }>;
+  nomAgent: string;
+  onRepondre?: (decision: "oui" | "toujours" | "non") => void;
+}) {
+  if (part.statut !== "attente") {
+    return (
+      <div className="flex max-w-[680px] items-center gap-1.5 px-1 text-ui-xs text-texte-tertiaire">
+        <Icon name={part.statut === "acceptee" ? "check-01" : "x-01"} size={14} />
+        <span className="truncate">
+          {part.statut === "acceptee" ? "Accordé" : "Refusé"} : {part.libelle}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div role="alert" className="flex w-full max-w-[680px] flex-col gap-3 rounded-lg border border-bleu-k1-500 bg-fond-surface p-4 shadow-ombre-xs">
+      <div className="flex flex-col gap-1">
+        <span className="text-ui-s font-semibold text-texte-principal">{nomAgent} demande ton accord</span>
+        <span className="text-ui-s text-texte-secondaire">{part.description || part.libelle}</span>
+      </div>
+      {part.detail && (
+        <pre className="klyra-mono m-0 overflow-x-auto rounded-md border border-bordure-subtile bg-fond-page px-3 py-2 text-ui-xs whitespace-pre-wrap text-texte-principal [overflow-wrap:anywhere]">
+          {part.detail}
+        </pre>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Bouton variant="sombre" taille="compact" onClick={() => onRepondre?.("oui")}>
+          Autoriser
+        </Bouton>
+        <Bouton variant="blanc" taille="compact" onClick={() => onRepondre?.("toujours")}>
+          Toujours, pour cette conversation
+        </Bouton>
+        <Bouton variant="blanc" taille="compact" onClick={() => onRepondre?.("non")}>
+          Refuser
+        </Bouton>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Passation à un collègue ──────────────────────────────────── */
 
 /** « Confié à Iris · Concevoir la hero », centré dans le fil, sans bulle. */
@@ -328,6 +379,8 @@ export function MessagePartView({
   onAction,
   enCours = false,
   etapesDe = () => 0,
+  nomAgent = "L’agent",
+  onAutorisation,
 }: {
   part: MessagePart;
   tone: "user" | "role";
@@ -336,12 +389,17 @@ export function MessagePartView({
   enCours?: boolean;
   /** Nombre d'étapes faites par le collègue d'une passation. */
   etapesDe?: (etapeId: string) => number;
+  /** Le prénom de l'agent, pour ses demandes d'autorisation. */
+  nomAgent?: string;
+  onAutorisation?: (demandeId: string, decision: "oui" | "toujours" | "non") => void;
 }) {
   switch (part.type) {
     case "text":
       return part.text.trim() ? <TextBubble text={part.text} tone={tone} /> : null;
     case "fichiers":
       return <FichiersJoints chemins={part.chemins} />;
+    case "autorisation":
+      return <CarteAutorisation part={part} nomAgent={nomAgent} onRepondre={(d) => onAutorisation?.(part.id, d)} />;
     case "etapes":
       return <EtapesView etapes={part.etapes} enCours={enCours} />;
     case "passation":

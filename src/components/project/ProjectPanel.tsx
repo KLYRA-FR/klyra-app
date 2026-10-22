@@ -1,21 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { useArbreProjet } from "@/lib/arbre-projet";
 import { useModifiedFiles, useProjects, useWorkspace } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
 import { FileTree } from "./FileTree";
+import { ouvrirFichier } from "./Visionneuse";
 
 /**
  * Panneau blanc du projet, à côté du rail : les projets pour passer de l'un à
  * l'autre, puis tout le contenu du dossier du projet.
  */
 export function ProjectPanel({ project, onClose }: { project: Project; onClose: () => void }) {
+  const router = useRouter();
   const projects = useProjects();
   const { chats } = useWorkspace().state;
   const modified = useModifiedFiles(project.id);
+  const arbre = useArbreProjet(project);
 
   return (
     <aside
@@ -26,7 +31,13 @@ export function ProjectPanel({ project, onClose }: { project: Project; onClose: 
       <div className="flex flex-col gap-0.5 border-b border-bordure-subtile p-2 in-data-[shell=desktop]:pt-3">
         <div className="flex h-8 items-center justify-between pr-0.5 pl-2">
           <span className="text-ui font-semibold text-texte-principal">Projets</span>
-          <BoutonIcone taille="mini" icone={<Icon name="plus-01" size={16} />} libelle="Nouveau projet" className="text-icone-secondaire" />
+          <BoutonIcone
+            taille="mini"
+            icone={<Icon name="plus-01" size={16} />}
+            libelle="Nouveau projet"
+            onClick={() => router.push("/projets?nouveau=1")}
+            className="text-icone-secondaire"
+          />
         </div>
         {projects.map((p) => {
           const active = p.id === project.id;
@@ -66,12 +77,23 @@ export function ProjectPanel({ project, onClose }: { project: Project; onClose: 
         />
       </div>
       <p className="m-0 px-4 pb-2 text-ui-2xs leading-[1.4] text-texte-tertiaire">
-        <span className="klyra-mono">{project.folder}</span>
+        <span className="klyra-mono [overflow-wrap:anywhere]">{project.folder.replace(/^\/Users\/[^/]+/, "~")}</span>
         <br />
-        Clic pour un aperçu · double-clic pour éditer · ⌘P pour chercher
+        Clic sur un fichier pour le voir
       </p>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <FileTree key={project.id} nodes={project.files} modified={modified} />
+        {arbre.erreur ? (
+          <p role="alert" className="m-0 px-2 py-2 text-ui-xs text-texte-erreur">
+            Dossier illisible : {arbre.erreur}
+          </p>
+        ) : (
+          <FileTree
+            key={project.id}
+            nodes={arbre.noeuds}
+            modified={modified}
+            onOuvrir={(chemin) => ouvrirFichier({ projectId: project.id, chemin })}
+          />
+        )}
       </div>
     </aside>
   );

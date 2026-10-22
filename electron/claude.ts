@@ -105,8 +105,16 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
   });
 }
 
+/** Arrête un agent : d'abord poliment, puis de force s'il ne s'est pas arrêté au bout de 3 s. */
 export function cancelAgent(requestId: string): void {
-  running.get(requestId)?.kill("SIGTERM");
+  const child = running.get(requestId);
+  if (!child) return;
+  arretees.add(requestId);
+  child.stdin?.end();
+  child.kill("SIGTERM");
+  setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }, 3000);
 }
 
 /* ─── Conversation en direct ───────────────────────────────────── */
@@ -119,6 +127,10 @@ export type AgentEvent =
   /** Une étape : lire un fichier, lancer une commande, confier à un agent… */
   | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
   | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
+  /** L'agent demande ton accord avant d'utiliser un outil hors de son accès. */
+  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
+  /** La demande a reçu sa réponse (de toi, ou d'office en accès complet). */
+  | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string };
 
 export interface StreamOptions {
@@ -135,6 +147,43 @@ export interface StreamOptions {
   effort?: string | null;
   /** Fichiers joints au message : leurs dossiers sont ouverts en lecture à l'agent. */
   fichiers?: string[];
+  /**
+   * Ce que l'agent peut faire sans demander :
+   * - « demander » : il lit seul, et demande pour tout le reste ;
+   * - « projet » : fichiers du dossier et commandes de travail seul, il demande pour le reste ;
+   * - « tout » : tout lui est accordé, sans demander.
+   */
+  acces?: "demander" | "projet" | "tout";
+}
+
+/** Réponse à une demande d'autorisation. « toujours » : accordé pour le reste de la session. */
+export type Decision = "oui" | "toujours" | "non";
+
+/** Demandes en attente de réponse, par réponse d'agent. */
+const demandes = new Map<string, Map<string, { entree: Record<string, unknown>; suggestions: unknown[] }>>();
+/** Les réponses en cours qu'on a arrêtées toi-même. */
+const arretees = new Set<string>();
+
+function repondre(child: ChildProcess, demandeId: string, accepte: boolean, entree: Record<string, unknown>, regles: unknown[] = []) {
+  const reponse = accepte
+    ? { behavior: "allow", updatedInput: entree, ...(regles.length ? { updatedPermissions: regles } : {}) }
+    : { behavior: "deny", message: "Refusé : la personne n’a pas donné son accord." };
+  child.stdin?.write(`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: demandeId, response: reponse } })}\n`);
+}
+
+/** Ta réponse à une demande d'autorisation, depuis l'app. */
+export function autoriser(requestId: string, demandeId: string, decision: Decision): boolean {
+  const child = running.get(requestId);
+  const demande = demandes.get(requestId)?.get(demandeId);
+  if (!child || !demande) return false;
+  // « Toujours » : les règles proposées par Claude Code, valables pour cette session seulement.
+  const regles =
+    decision === "toujours"
+      ? demande.suggestions.map((r) => ({ ...(r as Record<string, unknown>), destination: "session" }))
+      : [];
+  repondre(child, demandeId, decision !== "non", demande.entree, regles);
+  demandes.get(requestId)?.delete(demandeId);
+  return true;
 }
 
 /** Commandes qu'un agent peut lancer sans demander : construire, vérifier, lire l'état git. */
@@ -192,20 +241,26 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const cwd = dossierDeTravail(options.dossier);
   if (!cwd) return fin({ type: "fin", ok: false, texte: "", erreur: `Le dossier du projet est introuvable : ${options.dossier}` });
 
-  /* Accès de travail : les fichiers du dossier en lecture et en écriture
-     (acceptEdits, limité à ce dossier), et seulement les commandes de la
-     liste. Tout le reste est refusé d'office. */
+  /* Le message part en flux sur l'entrée standard : l'app peut ainsi
+     répondre aux demandes d'autorisation pendant que l'agent travaille. Ce
+     qui sort de son accès arrive dans l'app ; rien n'est refusé en silence. */
+  const acces = options.acces ?? "projet";
   const args = [
     "-p",
+    "--input-format",
+    "stream-json",
     "--output-format",
     "stream-json",
     "--verbose",
     "--include-partial-messages",
+    "--permission-prompt-tool",
+    "stdio",
+    "--permission-prompts",
+    "host",
     "--permission-mode",
-    "acceptEdits",
-    "--allowedTools",
-    ...COMMANDES_AUTORISEES,
+    acces === "demander" ? "manual" : "acceptEdits",
   ];
+  if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES);
   if (options.agent) args.push("--agent", options.agent);
   if (options.sessionId) args.push("--resume", options.sessionId);
   if (options.modele) {
@@ -293,7 +348,36 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       }
       return;
     }
+    /* Demande d'autorisation : à toi de répondre dans l'app, sauf en accès complet. */
+    if (msg.type === "control_request") {
+      const req = msg.request as {
+        subtype?: string;
+        tool_name?: string;
+        input?: Record<string, unknown>;
+        description?: string;
+        permission_suggestions?: unknown[];
+      };
+      const demandeId = msg.request_id as string;
+      if (req?.subtype !== "can_use_tool" || typeof demandeId !== "string") return;
+      const entree = req.input ?? {};
+      if (acces === "tout") {
+        repondre(child, demandeId, true, entree);
+        return;
+      }
+      if (!demandes.has(requestId)) demandes.set(requestId, new Map());
+      demandes.get(requestId)!.set(demandeId, { entree, suggestions: req.permission_suggestions ?? [] });
+      emit({ type: "autorisation", id: demandeId, outil: req.tool_name ?? "outil", entree, description: req.description ?? "" });
+      return;
+    }
+    /* Réponse annulée par Claude Code (l'agent est passé à autre chose). */
+    if (msg.type === "control_cancel_request" && typeof msg.request_id === "string") {
+      demandes.get(requestId)?.delete(msg.request_id);
+      emit({ type: "autorisation-fin", id: msg.request_id, accepte: false });
+      return;
+    }
     if (msg.type === "result") {
+      // La réponse est finie : on ferme l'entrée, Claude Code se termine.
+      child.stdin.end();
       const ok = !msg.is_error && msg.subtype === "success";
       resultat = {
         type: "fin",
@@ -323,7 +407,9 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   child.on("close", (code, signal) => {
     clearTimeout(timeout);
     running.delete(requestId);
+    demandes.delete(requestId);
     lireLigne(tampon);
+    if (arretees.delete(requestId)) return fin({ type: "fin", ok: false, texte: "", erreur: "Arrêté par toi." });
     if (signal) return fin({ type: "fin", ok: false, texte: "", erreur: "Arrêté." });
     fin(
       resultat ?? {
@@ -335,7 +421,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     );
   });
 
-  child.stdin.end(options.prompt);
+  // Le message, en flux : l'entrée reste ouverte pour les réponses aux autorisations.
+  child.stdin.write(`${JSON.stringify({ type: "user", message: { role: "user", content: options.prompt } })}\n`);
 }
 
 /* ─── Utilisation de Claude ────────────────────────────────────── */
@@ -433,4 +520,93 @@ export function actualiserUtilisation(): Promise<Utilisation | null> {
     });
     child.stdin.end("Réponds seulement : ok");
   });
+}
+
+/* ─── Compte Claude ────────────────────────────────────────────── */
+
+/** Le compte Claude du poste, tel que Claude Code le voit (`claude auth status`). */
+export interface CompteClaude {
+  /** Claude Code est trouvé sur le poste. */
+  installe: boolean;
+  chemin: string | null;
+  version: string | null;
+  connecte: boolean;
+  /** « claude.ai » (abonnement) ou « console » (facturation à l'usage). */
+  methode: string | null;
+  email: string | null;
+  organisation: string | null;
+  /** « max », « pro », « team »… */
+  abonnement: string | null;
+  verifieLe: number;
+}
+
+/** Lance une commande de Claude Code et rend sa sortie. */
+function commandeClaude(bin: string, args: string[], delai: number): Promise<{ code: number | null; sortie: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, args, { cwd: HOME, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } });
+    let sortie = "";
+    child.stdout.on("data", (d: Buffer) => (sortie += d.toString()));
+    child.stderr.on("data", (d: Buffer) => (sortie += d.toString()));
+    const timeout = setTimeout(() => child.kill("SIGTERM"), delai);
+    child.on("error", () => {
+      clearTimeout(timeout);
+      resolve({ code: null, sortie });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      resolve({ code, sortie });
+    });
+    child.stdin.end();
+  });
+}
+
+export async function compteClaude(): Promise<CompteClaude> {
+  const bin = findClaude();
+  const vide: CompteClaude = {
+    installe: !!bin,
+    chemin: bin,
+    version: null,
+    connecte: false,
+    methode: null,
+    email: null,
+    organisation: null,
+    abonnement: null,
+    verifieLe: Date.now(),
+  };
+  if (!bin) return vide;
+  const [version, statut] = await Promise.all([
+    commandeClaude(bin, ["--version"], 15_000),
+    commandeClaude(bin, ["auth", "status", "--json"], 15_000),
+  ]);
+  const compte = { ...vide, version: version.sortie.match(/\d+\.\d+\.\d+/)?.[0] ?? null };
+  try {
+    const s = JSON.parse(statut.sortie.slice(statut.sortie.indexOf("{"))) as Record<string, unknown>;
+    const texte = (v: unknown) => (typeof v === "string" && v ? v : null);
+    return {
+      ...compte,
+      connecte: s.loggedIn === true,
+      methode: texte(s.authMethod),
+      email: texte(s.email),
+      organisation: texte(s.orgName),
+      abonnement: texte(s.subscriptionType),
+    };
+  } catch {
+    return compte;
+  }
+}
+
+/**
+ * Connexion au compte : Claude Code ouvre la page de connexion d'Anthropic
+ * dans le navigateur et attend qu'elle soit validée (5 min au plus).
+ */
+export async function connecterClaude(): Promise<CompteClaude> {
+  const bin = findClaude();
+  if (bin) await commandeClaude(bin, ["auth", "login", "--claudeai"], 5 * 60_000);
+  return compteClaude();
+}
+
+export async function deconnecterClaude(): Promise<CompteClaude> {
+  const bin = findClaude();
+  if (bin) await commandeClaude(bin, ["auth", "logout"], 30_000);
+  return compteClaude();
 }

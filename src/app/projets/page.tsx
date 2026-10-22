@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shell/ComingSoon";
+import { Suspense } from "react";
+import { ProjetsScreen } from "@/components/project/ProjetsScreen";
 
 export const metadata: Metadata = { title: "Projets — KLYRA" };
 
+/** `/projets`, `/projets?nouveau=1`, `/projets?modifier=<id>`. */
 export default function ProjectsPage() {
-  return <ComingSoon title="Projets" description="Le tableau des projets arrive bientôt." />;
+  return (
+    <Suspense>
+      <ProjetsScreen />
+    </Suspense>
+  );
 }

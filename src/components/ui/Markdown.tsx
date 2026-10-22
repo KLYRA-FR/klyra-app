@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { Lien } from "./Lien";
 
 /**
  * Rendu du Markdown des fiches d'agents : paragraphes, listes à puces et
@@ -78,9 +79,16 @@ function parseBlocks(source: string): Block[] {
   return blocks;
 }
 
-/** **gras** et `code` dans une ligne. */
+/** Adresses à rendre cliquables : http(s)://… et localhost:port. */
+const ADRESSE = /^(https?:\/\/[^\s<>()]+[^\s<>().,;:!?»"']|(?:localhost|127\.0\.0\.1):\d+(?:\/[^\s<>()]*[^\s<>().,;:!?»"'])?)$/;
+
+/** **gras**, `code`, [texte](lien) et les adresses nues, dans une ligne. */
 export function Inline({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  const parts = text
+    .split(
+      /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?»"']|(?:localhost|127\.0\.0\.1):\d+(?:\/[^\s<>()]*[^\s<>().,;:!?»"'])?)/g,
+    )
+    .filter(Boolean);
   return (
     <>
       {parts.map((part, i) => {
@@ -92,10 +100,34 @@ export function Inline({ text }: { text: string }) {
           );
         }
         if (part.startsWith("`") && part.endsWith("`")) {
+          const contenu = part.slice(1, -1);
+          // Une adresse écrite en code (`http://localhost:3002`) reste cliquable.
+          if (ADRESSE.test(contenu)) {
+            return (
+              <Lien key={i} href={contenu}>
+                <code className="klyra-mono rounded-2xs bg-fond-surface-grise px-1 py-px text-[0.92em]">{contenu}</code>
+              </Lien>
+            );
+          }
           return (
             <code key={i} className="klyra-mono rounded-2xs [overflow-wrap:anywhere] bg-fond-surface-grise px-1 py-px text-[0.92em] text-texte-principal">
-              {part.slice(1, -1)}
+              {contenu}
             </code>
+          );
+        }
+        const lien = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
+        if (lien) {
+          return (
+            <Lien key={i} href={lien[2]}>
+              {lien[1]}
+            </Lien>
+          );
+        }
+        if (ADRESSE.test(part)) {
+          return (
+            <Lien key={i} href={part}>
+              {part}
+            </Lien>
           );
         }
         return <Fragment key={i}>{part}</Fragment>;

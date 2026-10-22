@@ -2,21 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Avatar } from "klyra-ui";
+import { usePathname, useSearchParams } from "next/navigation";
 import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
-import { useWorkspace } from "@/lib/workspace";
-
-const NAV: { href: string; label: string; icon: IconName }[] = [
-  { href: "/", label: "Accueil", icon: "home-01" },
-  { href: "/chats", label: "Chats", icon: "message-square" },
-  { href: "/projets", label: "Projets", icon: "folder" },
-  { href: "/planning", label: "Planning", icon: "calendar-01" },
-  { href: "/equipe", label: "Équipe", icon: "users-profiles-01" },
-  { href: "/artefacts", label: "Artefacts", icon: "layers-01" },
-];
+import { useProjects } from "@/lib/workspace";
+import { CarteCompteRail } from "./CarteCompte";
+import { NAVIGATION } from "./navigation";
 
 /** Tuile carrée du rail : icône seule, libellé au survol. */
 const tuile = (active: boolean) =>
@@ -47,8 +39,9 @@ export function AppRail({
   onToggleFiles: () => void;
 }) {
   const bouton = PANNEAUX[panneau];
+  const projects = useProjects();
+  const currentId = useSearchParams().get("id");
   const pathname = usePathname();
-  const { state } = useWorkspace();
 
   return (
     <nav
@@ -60,7 +53,7 @@ export function AppRail({
         <Image src="/brand/logo-signe-white.svg" alt="KLYRA" width={24} height={24} priority />
       </div>
 
-      {NAV.map((item) => (
+      {NAVIGATION.map((item) => (
         <Link
           key={item.href}
           href={item.href}
@@ -68,14 +61,45 @@ export function AppRail({
           title={item.label}
           aria-current={pathname === item.href ? "page" : undefined}
           className={tuile(
-            pathname === item.href ||
-              (item.href === "/projets" && pathname === "/projet") ||
-              (item.href === "/chats" && pathname === "/chat" && panneau === "conversations"),
+            pathname === item.href || (item.href === "/chats" && pathname === "/chat" && panneau === "conversations"),
           )}
         >
           <Icon name={item.icon} size={20} />
         </Link>
       ))}
+
+      {/* Les projets, comme dans le menu déplié : une tuile par projet, son initiale. */}
+      <span aria-hidden="true" className="my-2 h-px w-6 bg-white/12" />
+      <Link
+        href="/projets"
+        aria-label="Projets"
+        title="Projets"
+        className={tuile(pathname === "/projets")}
+      >
+        <Icon name="folder" size={20} />
+      </Link>
+      {projects.map((p) => {
+        const actif = pathname === "/projet" && currentId === p.id;
+        return (
+          <Link
+            key={p.id}
+            href={`/projet?id=${p.id}`}
+            aria-label={p.name}
+            title={p.name}
+            aria-current={actif ? "page" : undefined}
+            className={cn(
+              "flex size-9 items-center justify-center rounded-sm text-ui-xs font-semibold no-underline transition-colors duration-[120ms] ease-sortie",
+              actif
+                ? "bg-texte-inverse text-texte-principal"
+                : p.pinned
+                  ? "bg-bleu-k1-500 text-texte-inverse hover:bg-bleu-k1-500/85"
+                  : "bg-white/10 text-texte-inverse hover:bg-white/16",
+            )}
+          >
+            {p.name.charAt(0).toUpperCase()}
+          </Link>
+        );
+      })}
 
       <span aria-hidden="true" className="my-2 h-px w-6 bg-white/12" />
       <button
@@ -95,7 +119,7 @@ export function AppRail({
         <Link href="/reglages" aria-label="Réglages" title="Réglages" className={tuile(pathname === "/reglages")}>
           <Icon name="settings" size={20} />
         </Link>
-        <Avatar shape="circle" size="md" initials={state.currentUser.initial} alt={state.currentUser.name} gradient={false} />
+        <CarteCompteRail />
       </div>
     </nav>
   );

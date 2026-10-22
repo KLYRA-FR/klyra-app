@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("klyra", {
     status: () => ipcRenderer.invoke("claude:status"),
     run: (requestId: string, agent: string, prompt: string) => ipcRenderer.invoke("claude:run", requestId, agent, prompt),
     cancel: (requestId: string) => ipcRenderer.invoke("claude:cancel", requestId),
+    autoriser: (requestId: string, demandeId: string, decision: string) =>
+      ipcRenderer.invoke("claude:autoriser", requestId, demandeId, decision),
     stream: (requestId: string, options: unknown) => ipcRenderer.invoke("claude:stream", requestId, options),
     onEvent: (callback: (requestId: string, event: unknown) => void) => {
       const listener = (_e: unknown, requestId: string, event: unknown) => callback(requestId, event);
@@ -34,6 +36,9 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("claude:event", listener);
     },
     utilisation: () => ipcRenderer.invoke("claude:utilisation"),
+    compte: () => ipcRenderer.invoke("claude:compte"),
+    connexion: () => ipcRenderer.invoke("claude:connexion"),
+    deconnexion: () => ipcRenderer.invoke("claude:deconnexion"),
     actualiserUtilisation: () => ipcRenderer.invoke("claude:utilisation:actualiser"),
     onUtilisation: (callback: (u: unknown) => void) => {
       const listener = (_e: unknown, u: unknown) => callback(u);
@@ -43,6 +48,29 @@ contextBridge.exposeInMainWorld("klyra", {
   },
   projets: {
     dossierExiste: (dossier: string) => ipcRenderer.invoke("projets:dossier-existe", dossier),
+    choisirDossier: () => ipcRenderer.invoke("projets:choisir-dossier"),
+    arbre: (dossier: string) => ipcRenderer.invoke("projets:arbre", dossier),
+    lireFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:lire-fichier", dossier, relatif),
+    ouvrirFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:ouvrir-fichier", dossier, relatif),
+    montrerFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:montrer-fichier", dossier, relatif),
+  },
+  artefacts: {
+    lister: () => ipcRenderer.invoke("artefacts:lister"),
+    vignette: (url: string, forcer: boolean) => ipcRenderer.invoke("artefacts:vignette", url, forcer),
+    ouvrir: (url: string, titre: string) => ipcRenderer.invoke("artefacts:ouvrir", url, titre),
+    etatSession: () => ipcRenderer.invoke("claude-ai:etat"),
+    connecter: () => ipcRenderer.invoke("claude-ai:connexion"),
+    deconnecter: () => ipcRenderer.invoke("claude-ai:deconnexion"),
+  },
+  fenetres: {
+    ouvrir: (url: string) => ipcRenderer.invoke("fenetres:ouvrir", url),
+  },
+  git: {
+    etat: (dossier: string) => ipcRenderer.invoke("git:etat", dossier),
+    publier: (dossier: string, message: string) => ipcRenderer.invoke("git:publier", dossier, message),
+  },
+  systeme: {
+    utilisateur: () => ipcRenderer.invoke("systeme:utilisateur"),
   },
   fichiers: {
     choisir: () => ipcRenderer.invoke("fichiers:choisir"),
@@ -51,6 +79,12 @@ contextBridge.exposeInMainWorld("klyra", {
     cheminDe: (file: File) => webUtils.getPathForFile(file),
   },
   conversations: {
+    /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */
+    avantFermeture: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("app:avant-fermeture", listener);
+      return () => ipcRenderer.removeListener("app:avant-fermeture", listener);
+    },
     read: () => ipcRenderer.invoke("conversations:read"),
     write: (data: unknown) => ipcRenderer.invoke("conversations:write", data),
   },

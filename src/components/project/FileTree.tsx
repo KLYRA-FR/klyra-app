@@ -19,6 +19,8 @@ interface FileTreeProps {
   nodes: FileNode[];
   /** Fichiers touchés par les agents : marqués en K1. */
   modified: Set<string>;
+  /** Clic sur un fichier : on l'ouvre dans la visionneuse. */
+  onOuvrir?: (path: string) => void;
 }
 
 /**
@@ -26,7 +28,7 @@ interface FileTreeProps {
  * fichiers modifiés par les agents marqués d'un point K1 (leurs dossiers
  * aussi, en plus discret).
  */
-export function FileTree({ nodes, modified }: FileTreeProps) {
+export function FileTree({ nodes, modified, onOuvrir }: FileTreeProps) {
   const [open, setOpen] = useState(() => dossiersOuverts(modified));
   const [selected, setSelected] = useState<string | null>(null);
   const modifiedFolders = dossiersOuverts(modified);
@@ -48,7 +50,11 @@ export function FileTree({ nodes, modified }: FileTreeProps) {
         <li key={node.path}>
           <button
             type="button"
-            onClick={() => (isFolder ? toggle(node.path) : setSelected(node.path))}
+            onClick={() => {
+              if (isFolder) return toggle(node.path);
+              setSelected(node.path);
+              onOuvrir?.(node.path);
+            }}
             aria-expanded={isFolder ? isOpen : undefined}
             style={{ paddingLeft: 8 + depth * 14 }}
             className={cn(

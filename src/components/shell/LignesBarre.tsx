@@ -33,6 +33,8 @@ const LIGNE_REPOS = "hover:bg-fond-survol";
 function etapeEnCours(messages: Message[], messageId: string): string | null {
   const message = messages.find((m) => m.id === messageId);
   if (!message) return null;
+  // Une demande d'autorisation passe avant tout : l'agent est bloqué tant que tu ne réponds pas.
+  if (message.parts.some((p) => p.type === "autorisation" && p.statut === "attente")) return "Attend ton accord";
   for (let i = message.parts.length - 1; i >= 0; i--) {
     const part = message.parts[i];
     if (part.type === "text" && part.text.trim()) return "Écrit sa réponse";

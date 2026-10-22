@@ -17,8 +17,12 @@ import {
 } from "./agents";
 import { readFile, writeFile } from "node:fs/promises";
 import {
+  autoriser,
   actualiserUtilisation,
   cancelAgent,
+  compteClaude,
+  connecterClaude,
+  deconnecterClaude,
   derniereUtilisation,
   dossierExiste,
   findClaude,
@@ -26,10 +30,21 @@ import {
   runAgent,
   streamAgent,
   surUtilisation,
+  type Decision,
   type StreamOptions,
   type Utilisation,
 } from "./claude";
-import { readConversations, writeConversations } from "./conversations";
+import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
+import { arbreDossier, cheminDansProjet, lireFichier, utilisateurSysteme } from "./projets";
+import { etatGit, publier } from "./git";
+import {
+  connecterClaudeAi,
+  deconnecterClaudeAi,
+  etatClaudeAi,
+  listerArtefacts,
+  ouvrirArtefact,
+  vignetteArtefact,
+} from "./artefacts";
 
 /**
  * Process principal Electron.
@@ -45,6 +60,14 @@ const DEV_URL = process.env.KLYRA_DEV_URL;
 if (process.env.KLYRA_USER_DATA) app.setPath("userData", process.env.KLYRA_USER_DATA);
 const SMOKE_TEST = process.env.KLYRA_SMOKE_TEST === "1";
 const OUT_DIR = path.join(__dirname, "..", "out");
+/** Icône de l'app : le logo-icône KLYRA (signe blanc sur K1), cf. resources/icon.png. */
+const ICONE = path.join(__dirname, "..", "resources", "icon.png");
+
+/* Le nom de l'app dans le Dock, le menu et « À propos ». */
+app.setName("KLYRA");
+/* Les données de la personne (conversations, projets, réglages) restent
+   toujours dans le même dossier, quel que soit le nom affiché de l'app. */
+if (!process.env.KLYRA_USER_DATA) app.setPath("userData", path.join(app.getPath("appData"), "klyra-app"));
 
 /* L'export Next injecte des scripts inline : 'unsafe-inline' reste nécessaire. */
 const CONTENT_SECURITY_POLICY = [
@@ -54,6 +77,8 @@ const CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "connect-src 'self'",
+  // L'aperçu d'un projet : son serveur de dev, sur ce Mac.
+  "frame-src http://localhost:* http://127.0.0.1:*",
 ].join("; ");
 
 protocol.registerSchemesAsPrivileged([
@@ -96,6 +121,7 @@ function createWindow() {
     minHeight: 700,
     show: !SMOKE_TEST,
     title: "KLYRA",
+    icon: ICONE,
     titleBarStyle: "hiddenInset",
     // Boutons de la fenêtre dans la bande de titre de 28 px, au-dessus du logo.
     trafficLightPosition: { x: 14, y: 8 },
@@ -165,6 +191,10 @@ function registerBridge() {
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
   handle("claude:cancel", (requestId: string) => cancelAgent(requestId));
+  handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision) => {
+    if (!["oui", "toujours", "non"].includes(decision)) throw new Error("Réponse invalide.");
+    return autoriser(requestId, demandeId, decision);
+  });
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
     const sender = BrowserWindow.getAllWindows()[0]?.webContents;
@@ -174,6 +204,49 @@ function registerBridge() {
     return null;
   });
   handle("projets:dossier-existe", (dossier: string) => dossierExiste(dossier));
+  handle("projets:choisir-dossier", async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const options = { properties: ["openDirectory" as const], title: "Choisir le dossier du projet" };
+    const choix = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    return choix.canceled ? null : (choix.filePaths[0] ?? null);
+  });
+  handle("projets:arbre", (dossier: string) => {
+    if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
+    return arbreDossier(dossier);
+  });
+  handle("systeme:utilisateur", () => utilisateurSysteme());
+  handle("projets:lire-fichier", (dossier: string, relatif: string) => lireFichier(dossier, relatif));
+  handle("projets:ouvrir-fichier", async (dossier: string, relatif: string) => {
+    const erreur = await shell.openPath(cheminDansProjet(dossier, relatif));
+    if (erreur) throw new Error(erreur);
+  });
+  handle("projets:montrer-fichier", (dossier: string, relatif: string) => shell.showItemInFolder(cheminDansProjet(dossier, relatif)));
+  handle("git:etat", (dossier: string) => etatGit(dossier));
+  /* Un lien local (serveur de dev d'un projet) cliqué dans une conversation : une fenêtre de l'app. */
+  handle("fenetres:ouvrir", (url: string) => {
+    if (typeof url !== "string" || !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(url)) {
+      throw new Error("Seules les adresses locales s’ouvrent dans l’app.");
+    }
+    const win = new BrowserWindow({
+      width: 1280,
+      height: 860,
+      title: url,
+      icon: ICONE,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    win.webContents.setWindowOpenHandler(({ url: lien }) => {
+      void shell.openExternal(lien);
+      return { action: "deny" };
+    });
+    void win.loadURL(url);
+  });
+  handle("artefacts:lister", () => listerArtefacts());
+  handle("artefacts:vignette", (url: string, forcer: boolean) => vignetteArtefact(url, !!forcer));
+  handle("artefacts:ouvrir", (url: string, titre: string) => ouvrirArtefact(url, String(titre ?? "Artefact")));
+  handle("claude-ai:etat", () => etatClaudeAi());
+  handle("claude-ai:connexion", () => connecterClaudeAi(BrowserWindow.getFocusedWindow() ?? undefined));
+  handle("claude-ai:deconnexion", () => deconnecterClaudeAi());
+  handle("git:publier", (dossier: string, message: string) => publier(dossier, message));
   handle("fichiers:choisir", async () => {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     const choix = win
@@ -199,10 +272,16 @@ function registerBridge() {
     for (const win of BrowserWindow.getAllWindows()) win.webContents.send("claude:utilisation", u);
   });
   handle("claude:utilisation", () => derniereUtilisation());
+  handle("claude:compte", () => compteClaude());
+  handle("claude:connexion", () => connecterClaude());
+  handle("claude:deconnexion", () => deconnecterClaude());
   handle("claude:utilisation:actualiser", () => actualiserUtilisation());
 }
 
 void app.whenReady().then(() => {
+  // Sans version installée, macOS prend l'icône d'Electron : on la remplace dans le Dock.
+  if (process.platform === "darwin") app.dock?.setIcon(ICONE);
+  app.setAboutPanelOptions({ applicationName: "KLYRA", iconPath: ICONE });
   if (!DEV_URL) protocol.handle("app", serveExport);
   registerBridge();
 
@@ -211,6 +290,19 @@ void app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+/* Avant de quitter : l'interface envoie son dernier état, et on attend qu'il soit écrit. */
+let quitteApresEcriture = false;
+app.on("before-quit", (event) => {
+  if (quitteApresEcriture) return;
+  event.preventDefault();
+  quitteApresEcriture = true;
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send("app:avant-fermeture");
+  // Le temps que l'interface envoie son état, puis que le fichier soit écrit (2 s au plus).
+  setTimeout(() => {
+    void Promise.race([ecrituresTerminees(), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
+  }, 300);
 });
 
 app.on("window-all-closed", () => {

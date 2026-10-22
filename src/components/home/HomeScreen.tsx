@@ -6,12 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PromptBox } from "@/components/chat/PromptBox";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
+import { MaJournee } from "./MaJournee";
 import { Onglets } from "@/components/ui/Onglets";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { findMention } from "@/lib/mentions";
-import { useChatPreview, useProjects, useRecentChats, useRoles, useWorkspace } from "@/lib/workspace";
+import { idDirect, useChatPreview, useProjects, useRecentChats, useRoles, useWorkspace } from "@/lib/workspace";
 import type { Chat, ProjectStatus, RoleId } from "@/types/domain";
 
 /* ─── Suggestions par rôle ─────────────────────────────────────── */
@@ -105,13 +106,14 @@ function RecentChatRow({ chat, projectName }: { chat: Chat; projectName: string 
 /** Accueil de l'IA : on écrit au Principal, ou on part d'une suggestion. */
 export function HomeScreen() {
   const router = useRouter();
-  const { state, startChat } = useWorkspace();
+  const { state, startChat, sendMessage } = useWorkspace();
   const roles = useRoles();
   const projects = useProjects();
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
   const [text, setText] = useState("");
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  // Sans projet : la demande part en conversation directe (au Principal, ou à l'agent choisi).
+  const [projectId, setProjectId] = useState("");
   // « Écrire à Hugo » depuis l'équipe arrive ici avec ?a=dev.
   const preselected = useSearchParams().get("a");
   const [to, setTo] = useState<RoleId | typeof AUTO>(
@@ -123,6 +125,12 @@ export function HomeScreen() {
 
   const submit = () => {
     const recipient = to === AUTO ? findMention(text, roles) : to;
+    if (!projectId) {
+      const chatId = idDirect(recipient ?? "principal");
+      sendMessage(chatId, text.trim(), null);
+      router.push(`/chat?id=${chatId}`);
+      return;
+    }
     const chatId = startChat(projectId, text.trim(), recipient);
     router.push(`/chat?id=${chatId}`);
   };
@@ -155,6 +163,9 @@ export function HomeScreen() {
           </p>
         </header>
 
+        {/* La journée d'un coup d'œil : le planning et les rappels d'aujourd'hui. */}
+        <MaJournee />
+
         <PromptBox
           ref={promptRef}
           taille="grand"
@@ -167,7 +178,7 @@ export function HomeScreen() {
               <PuceSelect
                 libelle="Projet"
                 icone={<Icon name="folder" size={16} />}
-                options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                options={[{ value: "", label: "Sans projet" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
                 value={projectId}
                 onChange={setProjectId}
               />
