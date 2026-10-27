@@ -5,8 +5,11 @@ import { PRINCIPAL } from "@/data/agents";
 import { createMockWorkspace, type MockWorkspace } from "@/data/mock";
 import { AgentsProvider, useAgents } from "@/lib/agents";
 import { getBridge, type Acces, type AgentEvent } from "@/lib/bridge";
+import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { libelleEtape } from "@/lib/etapes";
 import { prochainPassage } from "@/lib/planning";
+import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
+import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
   Artefact,
   Chat,
@@ -86,6 +89,9 @@ interface WorkspaceState extends MockWorkspace {
   evenements: Evenement[];
   /** Les catégories de rappels, dans l'ordre des colonnes. */
   categories: Categorie[];
+  workflows: Workflow[];
+  /** Les exécutions des workflows, les plus récentes d'abord. */
+  executions: ExecutionWorkflow[];
 }
 
 type WorkspaceAction =
@@ -101,6 +107,8 @@ type WorkspaceAction =
       taches: Tache[];
       evenements: Evenement[];
       categories: Categorie[] | null;
+      workflows: Workflow[];
+      executions: ExecutionWorkflow[];
     }
   | { type: "tache/enregistrer"; tache: Tache }
   | { type: "tache/supprimer"; id: string }
@@ -125,7 +133,13 @@ type WorkspaceAction =
   | { type: "travail/debut"; chatId: string; travail: Travail }
   | { type: "travail/fin"; chatId: string }
   | { type: "file/ajouter"; chatId: string; message: EnAttente }
-  | { type: "file/retirer"; chatId: string; id: string };
+  | { type: "file/retirer"; chatId: string; id: string }
+  | { type: "workflow/enregistrer"; workflow: Workflow }
+  | { type: "workflow/supprimer"; id: string }
+  | { type: "execution/enregistrer"; execution: ExecutionWorkflow };
+
+/** Les exécutions gardées par workflow. */
+const EXECUTIONS_GARDEES = 30;
 
 function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
   switch (action.type) {
@@ -142,8 +156,36 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
         taches: action.taches,
         evenements: action.evenements,
         categories: action.categories ?? state.categories,
+        workflows: action.workflows,
+        executions: action.executions,
         charge: true,
       };
+    case "workflow/enregistrer": {
+      const existe = state.workflows.some((w) => w.id === action.workflow.id);
+      return {
+        ...state,
+        workflows: existe
+          ? state.workflows.map((w) => (w.id === action.workflow.id ? action.workflow : w))
+          : [...state.workflows, action.workflow],
+      };
+    }
+    case "workflow/supprimer":
+      return {
+        ...state,
+        workflows: state.workflows.filter((w) => w.id !== action.id),
+        executions: state.executions.filter((e) => e.workflowId !== action.id),
+      };
+    case "execution/enregistrer": {
+      const e = action.execution;
+      const autres = state.executions.filter((x) => x.id !== e.id);
+      const memes = autres.filter((x) => x.workflowId === e.workflowId).slice(0, EXECUTIONS_GARDEES - 1);
+      return {
+        ...state,
+        executions: [e, ...autres.filter((x) => x.workflowId !== e.workflowId), ...memes].sort((a, b) =>
+          b.debut.localeCompare(a.debut),
+        ),
+      };
+    }
     case "tache/enregistrer": {
       const existe = state.taches.some((t) => t.id === action.tache.id);
       return {
@@ -376,6 +418,9 @@ const SIMULATED_REPLIES: Record<string, string> = {
 };
 
 /** Préfixe des conversations directes : `dm-<agent>`. */
+/** Les façons de refaire une réponse, depuis le menu sous le message. */
+export type FaconReessai = "reessayer" | "details" | "concis" | "web";
+
 export const DIRECT = "dm-";
 
 export function idDirect(roleId: RoleId): string {
@@ -399,7 +444,9 @@ interface WorkspaceApi {
   /** Repart de zéro avec l'agent : les messages et sa mémoire de cette conversation sont effacés. */
   nouvelleConversation: (chatId: string) => void;
   /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id. */
-  startChat: (projectId: string, text: string, to: RoleId | null) => string;
+  startChat: (projectId: string, text: string, to: RoleId | null, fichiers?: string[]) => string;
+  reessayer: (chatId: string, messageId: string, facon: FaconReessai, modele?: string) => void;
+  brancher: (chatId: string, messageId: string) => string | null;
   /** Arrête l'agent qui travaille dans cette conversation. */
   arreter: (chatId: string) => void;
   retirerDeLaFile: (chatId: string, id: string) => void;
@@ -427,6 +474,17 @@ interface WorkspaceApi {
   /** Ta réponse à une demande d'autorisation d'un agent. */
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
   supprimerArtefact: (id: string) => void;
+  /** Crée ou modifie un workflow ; une version auto est gardée toutes les 5 min d'édition. */
+  enregistrerWorkflow: (workflow: Workflow) => void;
+  supprimerWorkflow: (id: string) => void;
+  /** Lance un workflow (depuis un déclencheur, ou tout), ou une seule étape ; renvoie l'id de l'exécution. */
+  lancerWorkflow: (
+    id: string,
+    options?: { declencheurId?: string | null; source?: SourceExecution; charge?: string; seule?: string },
+  ) => string | null;
+  arreterExecution: (id: string) => void;
+  /** Ta décision sur une étape d'approbation. */
+  deciderApprobation: (etapeId: string, approuver: boolean) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceApi | null>(null);
@@ -454,6 +512,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           taches: [],
           evenements: [],
           categories: CATEGORIES_DE_DEPART,
+          workflows: [],
+          executions: [],
         }
       : {
           ...mock,
@@ -466,6 +526,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           taches: [],
           evenements: [],
           categories: CATEGORIES_DE_DEPART,
+          workflows: [],
+          executions: [],
         };
   });
 
@@ -478,6 +540,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   });
   const ecouteurs = useRef(new Map<string, (event: AgentEvent) => void>());
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const notifiesEquipe = useRef(new Set<string>());
 
   /* Lecture des conversations gardées sur le disque. */
   useEffect(() => {
@@ -499,6 +562,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             evenements?: Evenement[];
             listes?: string[];
             categories?: Categorie[];
+            workflows?: Workflow[];
+            executions?: ExecutionWorkflow[];
           } | null)
         : null;
       const valide = data?.version === VERSION_STOCKAGE;
@@ -524,6 +589,20 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         taches: valide ? (data.taches ?? []) : [],
         evenements: valide ? (data.evenements ?? []) : [],
         categories: valide ? lireCategories(data.categories ?? data.listes) : null,
+        workflows: valide ? (data.workflows ?? []) : [],
+        // Une exécution coupée par la fermeture de l'app ne reprendra pas.
+        executions: (valide ? (data.executions ?? []) : []).map((e) =>
+          e.statut === "en-cours" || e.statut === "approbation"
+            ? {
+                ...e,
+                statut: "arrete" as const,
+                erreur: "Interrompue : l’app a été fermée.",
+                etapes: e.etapes.map((x) =>
+                  x.statut === "en-cours" || x.statut === "approbation" ? { ...x, statut: "arrete" as const } : x,
+                ),
+              }
+            : e,
+        ),
       });
     });
     return () => {
@@ -547,10 +626,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         taches: state.taches,
         evenements: state.evenements,
         categories: state.categories,
+        workflows: state.workflows,
+        executions: state.executions,
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories]);
+  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
 
   /* Fermeture de l'app : le dernier état part tout de suite, sans attendre le regroupement. */
   useEffect(() => {
@@ -570,6 +651,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         taches: etat.taches,
         evenements: etat.evenements,
         categories: etat.categories,
+        workflows: etat.workflows,
+        executions: etat.executions,
       });
     });
   }, [bridge]);
@@ -612,12 +695,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       if (chat.kind === "equipe" && project) {
         const autres = chat.roleIds.filter((id) => id !== roleId).map(nom);
         lignes.push(
-          `Conversation d’équipe « ${chat.title} » du projet ${project.name} (${project.subtitle}). Tu travailles dans le dossier du projet : ${project.folder}.` +
+          `Conversation d’équipe « ${chat.title} » du projet ${project.name} (${project.subtitle}). Tu travailles dans le dossier du projet : ${project.folder}. Si tu lances le serveur de dev, lance-le en arrière-plan et écris son adresse (par exemple localhost:3000) dans ta réponse : l’app l’ouvre dans l’aperçu.` +
             (autres.length ? ` Sont aussi dans la conversation : ${autres.join(", ")}.` : ""),
         );
       } else {
         lignes.push("Conversation en tête-à-tête, hors projet.");
       }
+      if (chat.amorce) lignes.push(`[Conversation reprise jusqu’ici]\n${chat.amorce}`);
     }
     if (depuis.length) lignes.push(`[Depuis ta dernière réponse]\n${depuis.join("\n\n")}`);
     lignes.push(`${lignes.length ? `[Message de ${currentUser.name}]\n` : ""}${texteDe(messageUtilisateur)}`);
@@ -891,7 +975,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           : [{ type: "text", text }],
       };
       dispatch({ type: "message/add", message });
-      const roleId = chat.kind === "direct" ? chat.roleIds[0] : (to ?? "principal");
+      const parDefaut = chat.roleIds.includes("principal") ? "principal" : chat.roleIds[0];
+      const roleId = chat.kind === "direct" ? chat.roleIds[0] : (to ?? parDefaut);
       // Le message est dans l'état au prochain rendu : l'agent part juste après.
       timers.current.push(setTimeout(() => lancerRef.current(chatId, roleId, message), 0));
     },
@@ -917,7 +1002,74 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [assurerChat],
   );
 
-  const startChat = useCallback((projectId: string, text: string, to: RoleId | null) => {
+  /** Sous une réponse : la refaire, plus détaillée, plus concise, en cherchant sur le web, ou avec un autre modèle. */
+  const reessayer = useCallback(
+    (chatId: string, messageId: string, facon: FaconReessai, modele?: string) => {
+      const { messages, chats } = stateRef.current;
+      const message = messages.find((m) => m.id === messageId);
+      const chat = chats.find((c) => c.id === chatId);
+      if (!message || !chat || message.author.kind !== "role") return;
+      const roleId = message.author.roleId;
+      const fil = messages.filter((m) => m.chatId === chatId);
+      const derniere = fil.findLast((m) => m.author.kind === "role" && m.author.roleId === roleId);
+      const extrait = texteDe(message).replace(/\s+/g, " ").slice(0, 80);
+      const laquelle = derniere?.id === messageId || !extrait ? "ta dernière réponse" : `ta réponse « ${extrait}… »`;
+      if (modele) {
+        const suite = { ...chat, modele };
+        dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, modele }) });
+        stateRef.current = { ...stateRef.current, chats: chats.map((c) => (c.id === chatId ? suite : c)) };
+      }
+      const consignes: Record<FaconReessai, string> = {
+        reessayer: `Refais ${laquelle}, autrement.`,
+        details: `Reprends ${laquelle} en plus détaillé.`,
+        concis: `Reprends ${laquelle} en plus concis.`,
+        web: `Refais ${laquelle} en cherchant d’abord sur le web.`,
+      };
+      envoyerRef.current(chatId, consignes[facon], roleId, []);
+    },
+    [],
+  );
+
+  /** Une nouvelle conversation qui reprend celle-ci jusqu'à ce message ; l'originale ne bouge pas. */
+  const brancher = useCallback((chatId: string, messageId: string): string | null => {
+    const { messages, chats, currentUser } = stateRef.current;
+    const chat = chats.find((c) => c.id === chatId);
+    const fil = messages.filter((m) => m.chatId === chatId);
+    const fin = fil.findIndex((m) => m.id === messageId);
+    if (!chat || fin < 0) return null;
+    const allRoles = rolesRef.current;
+    const nom = ({ author }: Message) => {
+      if (author.kind === "user") return currentUser.name;
+      return allRoles.find((r) => r.id === author.roleId)?.name ?? author.roleId;
+    };
+    const repris = fil.slice(0, fin + 1).filter((m) => m.statut !== "en-cours");
+    const id = crypto.randomUUID();
+    const branche: Chat = {
+      id,
+      kind: "equipe",
+      projectId: chat.projectId,
+      title: `${chat.title} · branche`,
+      roleIds: chat.roleIds,
+      updatedAt: new Date().toISOString(),
+      sessions: {},
+      luJusqua: null,
+      modele: chat.modele,
+      effort: chat.effort,
+      amorce: repris
+        .map((m) => `${nom(m)} : ${texteDe(m)}`)
+        .filter((l) => !l.endsWith(": "))
+        .join("\n\n")
+        .slice(-24000),
+    };
+    dispatch({ type: "chat/add", chat: branche });
+    for (const m of repris) dispatch({ type: "message/add", message: { ...m, id: crypto.randomUUID(), chatId: id } });
+    // Les messages repris gardent leur date : la branche, elle, remonte en tête des récentes.
+    dispatch({ type: "chat/update", id, patch: (c) => ({ ...c, updatedAt: new Date().toISOString() }) });
+    stateRef.current = { ...stateRef.current, chats: [branche, ...chats] };
+    return id;
+  }, []);
+
+  const startChat = useCallback((projectId: string, text: string, to: RoleId | null, fichiers: string[] = []) => {
     const id = crypto.randomUUID();
     const roleIds: RoleId[] = to && to !== "principal" ? ["principal", to] : ["principal"];
     const chat: Chat = {
@@ -935,7 +1087,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       ...stateRef.current,
       chats: [chat, ...stateRef.current.chats],
     };
-    envoyerRef.current(id, text, to, []);
+    envoyerRef.current(id, text, to, fichiers);
     return id;
   }, []);
 
@@ -970,40 +1122,108 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /* ─── Planning ─────────────────────────────────────────────── */
 
-  /** Lance une tâche planifiée : sa consigne part à l'agent, dans sa conversation. */
+  /** Lance une routine : sa consigne part à son agent. Une routine en chaîne, ou
+   *  rangée dans un projet, a sa conversation d'équipe, avec tous les agents de la chaîne. */
   const executerRoutine = useCallback((routine: Routine, rattrapee: boolean) => {
+    const relais = routine.relais ?? [];
     let chatId = idDirect(routine.roleId);
-    if (routine.projectId) {
-      // Une conversation d'équipe par tâche planifiée, dans son projet.
+    if (routine.projectId || relais.length > 0) {
       chatId = `routine-${routine.id}`;
-      if (!stateRef.current.chats.some((c) => c.id === chatId)) {
+      const roleIds = [...new Set<RoleId>(["principal", routine.roleId, ...relais.flatMap((l) => [l.de, l.vers])])];
+      const existant = stateRef.current.chats.find((c) => c.id === chatId);
+      if (!existant) {
         const chat: Chat = {
           id: chatId,
           kind: "equipe",
           projectId: routine.projectId,
           title: routine.nom,
-          roleIds: ["principal", routine.roleId],
+          roleIds,
           updatedAt: new Date().toISOString(),
           sessions: {},
           luJusqua: null,
         };
         dispatch({ type: "chat/add", chat });
         stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
+      } else if (roleIds.some((id) => !existant.roleIds.includes(id))) {
+        // Un agent ajouté à la chaîne entre dans la conversation.
+        const patch = (c: Chat): Chat => ({ ...c, roleIds: [...new Set([...c.roleIds, ...roleIds])] });
+        dispatch({ type: "chat/update", id: chatId, patch });
+        stateRef.current = { ...stateRef.current, chats: stateRef.current.chats.map((c) => (c.id === chatId ? patch(c) : c)) };
       }
     }
     const maintenant = new Date();
     const suite: Routine = {
       ...routine,
       prochaine: prochainPassage(routine.frequence, maintenant).toISOString(),
-      historique: [{ at: maintenant.toISOString(), chatId, rattrapee }, ...routine.historique].slice(0, 30),
+      historique: [
+        {
+          at: maintenant.toISOString(),
+          chatId,
+          rattrapee,
+          ...(relais.length > 0 && {
+            etapes: [{ roleId: routine.roleId, statut: "en-cours" as const, depuis: maintenant.toISOString() }],
+          }),
+        },
+        ...routine.historique,
+      ].slice(0, 30),
     };
     dispatch({ type: "routine/enregistrer", routine: suite });
     stateRef.current = {
       ...stateRef.current,
       routines: stateRef.current.routines.map((r) => (r.id === suite.id ? suite : r)),
     };
-    envoyerRef.current(chatId, `Tâche planifiée « ${routine.nom} »\n\n${routine.consigne}`, routine.roleId, []);
+    envoyerRef.current(chatId, `Routine « ${routine.nom} »\n\n${routine.consigne}`, routine.roleId, []);
   }, []);
+
+  /* La chaîne avance : quand un agent a fini sa réponse, elle part à ceux à qui
+     il passe la main. Chaque agent ne travaille qu'une fois par passage (pas de boucle). */
+  const avancerChaines = useCallback(() => {
+    const { routines, messages } = stateRef.current;
+    for (const routine of routines) {
+      const h = routine.historique[0];
+      if (!h?.etapes?.some((e) => e.statut === "en-cours")) continue;
+      let etapes = h.etapes;
+      const envois: { vers: RoleId; texte: string }[] = [];
+      for (const e of h.etapes) {
+        if (e.statut !== "en-cours") continue;
+        const reponse = messages.find(
+          (m) =>
+            m.chatId === h.chatId &&
+            m.author.kind === "role" &&
+            m.author.roleId === e.roleId &&
+            m.createdAt >= e.depuis &&
+            m.statut !== "en-cours",
+        );
+        if (!reponse) continue;
+        const ok = reponse.statut !== "erreur";
+        etapes = etapes.map((x) => (x.roleId === e.roleId ? { ...x, statut: ok ? "fait" : "erreur" } : x));
+        if (!ok) continue;
+        const nom = rolesRef.current.find((r) => r.id === e.roleId)?.name ?? e.roleId;
+        const rendu = texteDe(reponse).slice(0, 12000);
+        for (const l of routine.relais ?? []) {
+          if (l.de !== e.roleId || etapes.some((x) => x.roleId === l.vers)) continue;
+          etapes = [...etapes, { roleId: l.vers, statut: "en-cours", depuis: new Date().toISOString() }];
+          envois.push({
+            vers: l.vers,
+            texte: `Routine « ${routine.nom} »\n\n${l.consigne.trim() || "Prends la suite."}\n\n— Ce que ${nom} a rendu :\n\n${rendu}`,
+          });
+        }
+      }
+      if (etapes === h.etapes) continue;
+      const suite: Routine = { ...routine, historique: [{ ...h, etapes }, ...routine.historique.slice(1)] };
+      dispatch({ type: "routine/enregistrer", routine: suite });
+      stateRef.current = {
+        ...stateRef.current,
+        routines: stateRef.current.routines.map((r) => (r.id === suite.id ? suite : r)),
+      };
+      for (const { vers, texte } of envois) envoyerRef.current(h.chatId, texte, vers, []);
+    }
+  }, []);
+  useEffect(() => {
+    if (!state.charge) return;
+    const id = setTimeout(avancerChaines, 0);
+    return () => clearTimeout(id);
+  }, [state.charge, state.messages, avancerChaines]);
 
   /* Toutes les 30 s, les tâches dont l'heure est passée partent. Une heure
      passée pendant que l'app était fermée est rattrapée une seule fois. */
@@ -1012,7 +1232,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const verifier = () => {
       const maintenant = Date.now();
       for (const r of stateRef.current.routines) {
-        if (!r.active || new Date(r.prochaine).getTime() > maintenant) continue;
+        if (!r.active || r.frequence.type === "manuel" || new Date(r.prochaine).getTime() > maintenant) continue;
         executerRoutine(r, maintenant - new Date(r.prochaine).getTime() > 5 * 60_000);
       }
     };
@@ -1079,6 +1299,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         new Notification(t.titre, { body: t.notes || categorie, silent: false });
         dispatch({ type: "tache/enregistrer", tache: { ...t, notifiee: true } });
       }
+      /* Les rendez-vous d'équipe : une notification par occurrence, retenue le temps de la session. */
+      const demain = new Date(maintenant + 86_400_000);
+      for (const e of evenementsEquipeEntre(new Date(maintenant), demain)) {
+        const debut = new Date(`${e.date}T${e.debut}`).getTime();
+        if (notifiesEquipe.current.has(e.id) || debut - 10 * 60_000 > maintenant || debut < maintenant) continue;
+        notifiesEquipe.current.add(e.id);
+        new Notification(e.titre, { body: `À ${e.debut} · ${e.notes}`, silent: false });
+      }
       for (const e of stateRef.current.evenements) {
         if (e.notifie || !e.debut) continue;
         const debut = new Date(`${e.date}T${e.debut}`).getTime();
@@ -1134,6 +1362,267 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     };
   }, [bridge, state.charge, state.currentUser.name]);
 
+
+  /* ─── Workflows ────────────────────────────────────────────── */
+
+  const controleurs = useRef(new Map<string, AbortController>());
+  const approbations = useRef(new Map<string, (ok: boolean) => void>());
+  /* Les étapes Agent qui attendent la réponse de leur agent. */
+  const attentesAgent = useRef<{ chatId: string; roleId: RoleId; depuis: string; resoudre: (r: Resultat) => void }[]>([]);
+  useEffect(() => {
+    if (!attentesAgent.current.length) return;
+    attentesAgent.current = attentesAgent.current.filter((a) => {
+      const reponse = state.messages.find(
+        (m) =>
+          m.chatId === a.chatId &&
+          m.author.kind === "role" &&
+          m.author.roleId === a.roleId &&
+          m.createdAt >= a.depuis &&
+          m.statut !== "en-cours",
+      );
+      if (!reponse) return true;
+      a.resoudre(
+        reponse.statut === "erreur"
+          ? { ok: false, erreur: reponse.erreur ?? "L’agent s’est arrêté sur une erreur." }
+          : { ok: true, texte: texteDe(reponse) },
+      );
+      return false;
+    });
+  }, [state.messages]);
+
+  /** Un appel au modèle, sans conversation ni outil (étapes LLM et conditions). */
+  const appelLibre = useCallback(
+    (o: { prompt: string; systeme: string; modele: string | null; effort: string | null; signal: AbortSignal }) =>
+      new Promise<Resultat>((resoudre) => {
+        if (!bridge) {
+          setTimeout(() => resoudre({ ok: true, texte: "OUI. (Réponse simulée : l’app n’est pas ouverte sur le bureau.)" }), 800);
+          return;
+        }
+        const id = crypto.randomUUID();
+        let texte = "";
+        ecouteurs.current.set(id, (event) => {
+          if (event.type === "texte") texte += event.delta;
+          // Pas d'outils ici : toute demande est refusée d'office.
+          else if (event.type === "autorisation") void bridge.claude.autoriser(id, event.id, "non");
+          else if (event.type === "fin") {
+            ecouteurs.current.delete(id);
+            resoudre(
+              event.ok
+                ? { ok: true, texte: (texte || event.texte).trim() }
+                : { ok: false, erreur: event.erreur ?? "Le modèle n’a pas répondu." },
+            );
+          }
+        });
+        o.signal.addEventListener("abort", () => void bridge.claude.cancel(id));
+        const prompt = o.systeme.trim() ? `[Consigne système]\n${o.systeme.trim()}\n\n[Demande]\n${o.prompt}` : o.prompt;
+        void bridge.claude
+          .stream(id, { agent: null, prompt, dossier: null, sessionId: null, modele: o.modele, effort: o.effort, acces: "demander" })
+          .then((r) => {
+            if (r.ok) return;
+            ecouteurs.current.delete(id);
+            resoudre({ ok: false, erreur: r.message });
+          });
+      }),
+    [bridge],
+  );
+
+  /** Ce que le moteur peut faire, pour un workflow : ses agents travaillent dans sa conversation. */
+  const outilsPour = useCallback(
+    (wf: Workflow): Outils => {
+      const chatId = `wf-${wf.id}`;
+      const assurerChat = (id: string, titre: string, roleIds: RoleId[]) => {
+        const existant = stateRef.current.chats.find((c) => c.id === id);
+        if (!existant) {
+          const chat: Chat = {
+            id,
+            kind: "equipe",
+            projectId: wf.projectId,
+            title: titre,
+            roleIds: [...new Set<RoleId>(["principal", ...roleIds])],
+            updatedAt: new Date().toISOString(),
+            sessions: {},
+            luJusqua: null,
+          };
+          dispatch({ type: "chat/add", chat });
+          stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
+        } else if (roleIds.some((r) => !existant.roleIds.includes(r))) {
+          const patch = (c: Chat): Chat => ({ ...c, roleIds: [...new Set([...c.roleIds, ...roleIds])] });
+          dispatch({ type: "chat/update", id, patch });
+          stateRef.current = { ...stateRef.current, chats: stateRef.current.chats.map((c) => (c.id === id ? patch(c) : c)) };
+        }
+      };
+      return {
+        agent: ({ roleId, consigne, fichiers, signal }) =>
+          new Promise<Resultat>((resoudre) => {
+            assurerChat(chatId, `Workflow · ${wf.titre}`, [roleId]);
+            attentesAgent.current.push({ chatId, roleId, depuis: new Date().toISOString(), resoudre });
+            signal.addEventListener("abort", () => resoudre({ ok: false, erreur: "Arrêté." }));
+            envoyerRef.current(chatId, `Workflow « ${wf.titre} »\n\n${consigne}`, roleId, fichiers);
+          }),
+        llm: appelLibre,
+        notifier: (titre, texte) => {
+          if (typeof Notification !== "undefined") new Notification(titre, { body: texte, silent: false });
+        },
+        conversation: (titre, texte) => {
+          const id = `wf-sortie-${wf.id}`;
+          assurerChat(id, titre, []);
+          dispatch({
+            type: "message/add",
+            message: {
+              id: crypto.randomUUID(),
+              chatId: id,
+              author: { kind: "role", roleId: "principal" },
+              createdAt: new Date().toISOString(),
+              parts: [{ type: "text", text: texte || "(vide)" }],
+              statut: "fait",
+            },
+          });
+          return { ok: true, texte: `Publié dans la conversation « ${titre} ».` };
+        },
+        ecrireFichier: async (chemin, texte) => {
+          const ecrire = bridge?.fichiers.ecrire;
+          if (!ecrire) return { ok: false, erreur: "Relance l’app une fois pour qu’elle puisse écrire des fichiers." };
+          const r = await ecrire(chemin, texte);
+          return r.ok ? { ok: true, texte: `Écrit dans ${r.data}.` } : { ok: false, erreur: r.message };
+        },
+        approbation: (etapeId, signal) =>
+          new Promise<boolean>((resoudre) => {
+            approbations.current.set(etapeId, resoudre);
+            signal.addEventListener("abort", () => resoudre(false));
+            if (typeof Notification !== "undefined")
+              new Notification(`${wf.titre} attend ton accord`, { body: "Ouvre le workflow pour approuver ou refuser.", silent: false });
+          }),
+      };
+    },
+    [appelLibre, bridge],
+  );
+
+  /** Garde une version du graphe (au plus 50). */
+  const avecVersion = (wf: Workflow, raison: VersionWorkflow["raison"]): Workflow => ({
+    ...wf,
+    versions: [{ id: crypto.randomUUID(), at: new Date().toISOString(), raison, graphe: wf.graphe }, ...wf.versions].slice(0, 50),
+  });
+
+  const enregistrerWorkflow = useCallback((workflow: Workflow) => {
+    const avant = stateRef.current.workflows.find((w) => w.id === workflow.id);
+    const derniere = workflow.versions[0]?.at;
+    const auto =
+      avant &&
+      avant.graphe !== workflow.graphe &&
+      (!derniere || Date.now() - new Date(derniere).getTime() > 5 * 60_000);
+    const suite = { ...(auto ? avecVersion({ ...workflow, graphe: avant.graphe }, "auto") : workflow), graphe: workflow.graphe, majLe: new Date().toISOString() };
+    dispatch({ type: "workflow/enregistrer", workflow: suite });
+    stateRef.current = {
+      ...stateRef.current,
+      workflows: stateRef.current.workflows.some((w) => w.id === suite.id)
+        ? stateRef.current.workflows.map((w) => (w.id === suite.id ? suite : w))
+        : [...stateRef.current.workflows, suite],
+    };
+  }, []);
+  const supprimerWorkflow = useCallback((id: string) => {
+    for (const e of stateRef.current.executions) if (e.workflowId === id) controleurs.current.get(e.id)?.abort();
+    dispatch({ type: "workflow/supprimer", id });
+  }, []);
+
+  const lancerWorkflow = useCallback(
+    (id: string, options: { declencheurId?: string | null; source?: SourceExecution; charge?: string; seule?: string } = {}) => {
+      const trouve = stateRef.current.workflows.find((w) => w.id === id);
+      if (!trouve) return null;
+      const wf = options.seule ? trouve : avecVersion(trouve, "execution");
+      if (wf !== trouve) {
+        dispatch({ type: "workflow/enregistrer", workflow: wf });
+        stateRef.current = { ...stateRef.current, workflows: stateRef.current.workflows.map((w) => (w.id === id ? wf : w)) };
+      }
+      const precedentes = stateRef.current.executions.filter((e) => e.workflowId === id);
+      /* Pour une étape seule : la dernière sortie de chaque nœud. */
+      const sortiesConnues: Record<string, { texte: string; fichiers?: string[] }> = {};
+      for (const e of [...precedentes].reverse())
+        for (const x of e.etapes) if (x.statut === "fait") sortiesConnues[x.noeudId] = { texte: x.sortie ?? "", fichiers: x.fichiers };
+      const exec: ExecutionWorkflow = {
+        id: crypto.randomUUID(),
+        workflowId: id,
+        numero: Math.max(0, ...precedentes.map((e) => e.numero)) + 1,
+        declencheurId: options.declencheurId ?? null,
+        seule: options.seule,
+        source: options.source ?? "manuel",
+        statut: "en-cours",
+        erreur: null,
+        debut: new Date().toISOString(),
+        fin: null,
+        etapes: [],
+        chatId: `wf-${id}`,
+      };
+      const maj = (e: ExecutionWorkflow) => {
+        dispatch({ type: "execution/enregistrer", execution: e });
+        stateRef.current = {
+          ...stateRef.current,
+          executions: [e, ...stateRef.current.executions.filter((x) => x.id !== e.id)],
+        };
+      };
+      maj(exec);
+      const ctrl = new AbortController();
+      controleurs.current.set(exec.id, ctrl);
+      void executer(exec, { wf, outils: outilsPour(wf), maj, signal: ctrl.signal, charge: options.charge, sortiesConnues }).finally(() =>
+        controleurs.current.delete(exec.id),
+      );
+      return exec.id;
+    },
+    [outilsPour],
+  );
+  const arreterExecution = useCallback((id: string) => {
+    controleurs.current.get(id)?.abort();
+    const e = stateRef.current.executions.find((x) => x.id === id);
+    if (e?.chatId) arreter(e.chatId);
+  }, [arreter]);
+  const deciderApprobation = useCallback((etapeId: string, approuver: boolean) => {
+    approbations.current.get(etapeId)?.(approuver);
+    approbations.current.delete(etapeId);
+  }, []);
+
+  /* Les déclencheurs planifiés : toutes les 30 s, ceux dont l'heure est passée partent. */
+  useEffect(() => {
+    if (!state.charge) return;
+    const verifier = () => {
+      const maintenant = new Date();
+      for (const wf of stateRef.current.workflows) {
+        let prochaines = wf.prochaines ?? {};
+        let change = false;
+        for (const n of wf.graphe.noeuds) {
+          if (n.type !== "declencheur" || n.champs.declencheur !== "planifie" || !n.frequence) continue;
+          const due = prochaines[n.id];
+          if (!due) {
+            prochaines = { ...prochaines, [n.id]: prochainPassage(n.frequence, maintenant).toISOString() };
+            change = true;
+            continue;
+          }
+          if (new Date(due) > maintenant) continue;
+          prochaines = { ...prochaines, [n.id]: prochainPassage(n.frequence, maintenant).toISOString() };
+          change = true;
+          lancerWorkflow(wf.id, { declencheurId: n.id, source: "planifie" });
+        }
+        if (change) {
+          const suite = { ...(stateRef.current.workflows.find((w) => w.id === wf.id) ?? wf), prochaines };
+          dispatch({ type: "workflow/enregistrer", workflow: suite });
+          stateRef.current = { ...stateRef.current, workflows: stateRef.current.workflows.map((w) => (w.id === wf.id ? suite : w)) };
+        }
+      }
+    };
+    verifier();
+    const id = setInterval(verifier, 30_000);
+    return () => clearInterval(id);
+  }, [state.charge, lancerWorkflow]);
+
+  /* Les webhooks locaux : un appel sur l'adresse d'un déclencheur lance son workflow. */
+  useEffect(() => {
+    const ecouter = bridge?.webhooks?.onAppel;
+    if (!ecouter) return;
+    return ecouter((secret, corps) => {
+      for (const wf of stateRef.current.workflows)
+        for (const [noeudId, s] of Object.entries(wf.webhooks ?? {}))
+          if (s === secret) lancerWorkflow(wf.id, { declencheurId: noeudId, source: "webhook", charge: corps });
+    });
+  }, [bridge, lancerWorkflow]);
+
   const value = useMemo(
     () => ({
       state,
@@ -1141,6 +1630,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirModele,
       nouvelleConversation,
       startChat,
+      reessayer,
+      brancher,
       arreter,
       retirerDeLaFile,
       marquerLu,
@@ -1161,6 +1652,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       enregistrerEvenement,
       supprimerEvenement,
       changerCategories,
+      enregistrerWorkflow,
+      supprimerWorkflow,
+      lancerWorkflow,
+      arreterExecution,
+      deciderApprobation,
     }),
     [
       state,
@@ -1168,6 +1664,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirModele,
       nouvelleConversation,
       startChat,
+      reessayer,
+      brancher,
       arreter,
       retirerDeLaFile,
       marquerLu,
@@ -1188,6 +1686,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       enregistrerEvenement,
       supprimerEvenement,
       changerCategories,
+      enregistrerWorkflow,
+      supprimerWorkflow,
+      lancerWorkflow,
+      arreterExecution,
+      deciderApprobation,
     ],
   );
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { Input } from "klyra-ui";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { Avatar, Input } from "klyra-ui";
 import { CarteUtilisation } from "@/components/chat/CarteUtilisation";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { NIVEAUX_ACCES } from "@/lib/acces";
 import { nomAbonnement, useCompteClaude } from "@/lib/compte-claude";
 import { useWorkspace } from "@/lib/workspace";
+import { Recadrage } from "./Recadrage";
 
 const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
@@ -136,6 +137,68 @@ function CompteClaudeCarte() {
   );
 }
 
+/** Ta photo : elle remplace tes initiales en bas du menu. Choisie, puis recadrée dans un rond. */
+function Photo() {
+  const { state, enregistrerProfil } = useWorkspace();
+  const choix = useRef<HTMLInputElement>(null);
+  const [aRecadrer, setARecadrer] = useState<string | null>(null);
+  const { photo, initial } = state.currentUser;
+  const fermer = useCallback(() => {
+    setARecadrer((url) => {
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      return null;
+    });
+  }, []);
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      {/* Un clic sur la photo : la recadrer (ou en choisir une, s'il n'y en a pas). */}
+      <button
+        type="button"
+        title={photo ? "Recadrer ta photo" : "Ajouter une photo"}
+        aria-label={photo ? "Recadrer ta photo" : "Ajouter une photo"}
+        onClick={() => (photo ? setARecadrer(photo) : choix.current?.click())}
+        className="cursor-pointer rounded-full border-0 bg-transparent p-0 transition-opacity duration-[120ms] hover:opacity-80"
+      >
+        <Avatar shape="circle" size="lg" src={photo ?? undefined} initials={initial} alt="" gradient={false} />
+      </button>
+      <input
+        ref={choix}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const fichier = e.target.files?.[0];
+          e.target.value = "";
+          if (fichier) setARecadrer(URL.createObjectURL(fichier));
+        }}
+      />
+      <Bouton type="button" variant="blanc" taille="compact" onClick={() => choix.current?.click()}>
+        {photo ? "Changer la photo" : "Ajouter une photo"}
+      </Bouton>
+      {photo && (
+        <>
+          <Bouton type="button" variant="blanc" taille="compact" onClick={() => setARecadrer(photo)}>
+            Recadrer
+          </Bouton>
+          <Bouton type="button" variant="discret" taille="compact" onClick={() => enregistrerProfil({ ...state.currentUser, photo: null })}>
+            Retirer
+          </Bouton>
+        </>
+      )}
+      {aRecadrer && (
+        <Recadrage
+          src={aRecadrer}
+          onAnnuler={fermer}
+          onValider={(p) => {
+            enregistrerProfil({ ...state.currentUser, photo: p });
+            fermer();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /** Ton profil sur ce poste : il s'affiche en bas du menu et les agents savent à qui ils parlent. */
 function Profil() {
   const { state, enregistrerProfil } = useWorkspace();
@@ -151,6 +214,7 @@ function Profil() {
       }}
       className="klyra-carte-flottante @container flex flex-col gap-4 rounded-lg p-4"
     >
+      <Photo />
       <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
         <Champ label="Prénom">
           <Input size="sm" value={name} onChange={(e) => setName(e.target.value)} className={CHAMP} />

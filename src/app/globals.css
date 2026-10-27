@@ -465,9 +465,13 @@ body {
   .klyra-pointilles::after { display: none; }
 }
 
-:where(button, a, input, textarea, select, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+/* Contour de focus par défaut, dans la couche de base : les classes de
+   Tailwind (outline-none…) peuvent ainsi l'enlever là où il ne sert pas. */
+@layer base {
+  :where(button, a, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

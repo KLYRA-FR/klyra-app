@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
+import { apparition } from "@/lib/mouvement";
 import { useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat } from "@/types/domain";
 
@@ -94,6 +95,7 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
 
       {ouvert && (
         <div
+          ref={apparition}
           role="dialog"
           aria-label="Modèle et effort"
           className={cn(

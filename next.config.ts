@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
   output: "export",
   transpilePackages: ["klyra-ui"],
   images: { unoptimized: true },
+  /* Le « N » de Next en bas à gauche recouvrait ton avatar dans le menu. */
+  devIndicators: false,
   turbopack: {
     rules: {
       "*.css": {

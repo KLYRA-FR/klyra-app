@@ -5,7 +5,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
-import { aujourdhui, enRetard, libelleEcheance } from "@/lib/dates";
+import { aujourdhui, echeance, enRetard, libellePeriode } from "@/lib/dates";
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte, type Tache } from "@/types/domain";
 
@@ -104,14 +104,16 @@ export function CaseTache({
 /** Une date, une heure, l'urgence : les petits réglages d'un rappel. */
 function Reglages({
   date,
+  fin,
   heure,
   priorite,
   onChange,
 }: {
   date: string | null;
+  fin: string | null;
   heure: string | null;
   priorite: Tache["priorite"];
-  onChange: (patch: Partial<Pick<Tache, "date" | "heure" | "priorite">>) => void;
+  onChange: (patch: Partial<Pick<Tache, "date" | "fin" | "heure" | "priorite">>) => void;
 }) {
   const puce = "flex h-7 items-center gap-1.5 rounded-sm border border-bordure-subtile bg-fond-surface px-2 text-ui-xs text-texte-secondaire";
   return (
@@ -121,11 +123,30 @@ function Reglages({
         <input
           type="date"
           value={date ?? ""}
-          onChange={(e) => onChange({ date: e.target.value || null, heure: e.target.value ? heure : null })}
+          onChange={(e) => {
+            const d = e.target.value || null;
+            /* Sans date, pas de fin ; une fin avant le début est retirée. */
+            onChange({ date: d, heure: d ? heure : null, fin: d && fin && fin > d ? fin : null });
+          }}
           aria-label="Date"
           className="w-[112px] border-0 bg-transparent p-0 text-ui-xs text-inherit outline-none"
         />
       </label>
+      {/* Jusqu'au : pour un rappel sur plusieurs jours. */}
+      {date && (
+        <label className={cn(puce, fin && "border-bleu-k1-500/40 text-texte-accent")}>
+          <span aria-hidden="true">→</span>
+          <input
+            type="date"
+            value={fin ?? ""}
+            min={date}
+            onChange={(e) => onChange({ fin: e.target.value && e.target.value > date ? e.target.value : null })}
+            aria-label="Jusqu’au"
+            title="Jusqu’au (facultatif)"
+            className="w-[112px] border-0 bg-transparent p-0 text-ui-xs text-inherit outline-none"
+          />
+        </label>
+      )}
       <label className={cn(puce, heure && "border-bleu-k1-500/40 text-texte-accent")}>
         <Icon name="clock-01" size={14} />
         <input
@@ -152,22 +173,21 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
   const { enregistrerTache, supprimerTache } = useWorkspace();
   const [titre, setTitre] = useState(tache.titre);
   const [ouverte, setOuverte] = useState(false);
-  const retard = !tache.faite && enRetard(tache.date, tache.heure);
+  const retard = !tache.faite && enRetard(echeance(tache), tache.fin ? null : tache.heure);
   const maj = (patch: Partial<Tache>) => enregistrerTache({ ...tache, ...patch });
 
   return (
     <li className="group/rappel flex items-start gap-2.5 border-b border-bordure-subtile py-2 last:border-b-0">
-      <span className="pt-0.5">
-        <CaseTache
-          faite={tache.faite}
-          libelle={tache.titre}
-          teinte={teinte}
-          onChange={() => maj({ faite: !tache.faite, faiteLe: tache.faite ? null : new Date().toISOString() })}
-        />
-      </span>
+      {/* Le rond (20 px) et la première ligne du texte (20 px) partagent le même centre. */}
+      <CaseTache
+        faite={tache.faite}
+        libelle={tache.titre}
+        teinte={teinte}
+        onChange={() => maj({ faite: !tache.faite, faiteLe: tache.faite ? null : new Date().toISOString() })}
+      />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-start gap-1.5">
-          {tache.priorite > 0 && <span className="shrink-0 text-ui-s leading-[1.45] font-semibold text-texte-accent">{"!".repeat(tache.priorite)}</span>}
+          {tache.priorite > 0 && <span className="shrink-0 text-ui-s leading-5 font-semibold text-texte-accent">{"!".repeat(tache.priorite)}</span>}
           {/* Le texte passe à la ligne : un long rappel se lit en entier. Entrée valide. */}
           <textarea
             rows={1}
@@ -182,7 +202,7 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
             }}
             aria-label="Rappel"
             className={cn(
-              "min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-ui-s leading-[1.45] outline-none [field-sizing:content]",
+              "min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-ui-s leading-5 outline-none [field-sizing:content]",
               tache.faite ? "text-texte-tertiaire line-through decoration-bordure-forte" : "text-texte-principal",
             )}
           />
@@ -205,11 +225,11 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
         </div>
         {!ouverte && tache.date && (
           <span className={cn("text-ui-xs", retard ? "font-medium text-texte-erreur" : "text-texte-tertiaire")}>
-            {libelleEcheance(tache.date, tache.heure)}
+            {libellePeriode(tache.date, tache.heure, tache.fin)}
           </span>
         )}
         {ouverte && (
-          <Reglages date={tache.date} heure={tache.heure} priorite={tache.priorite} onChange={(patch) => maj({ ...patch, notifiee: false })} />
+          <Reglages date={tache.date} fin={tache.fin ?? null} heure={tache.heure} priorite={tache.priorite} onChange={(patch) => maj({ ...patch, notifiee: false })} />
         )}
       </div>
     </li>
@@ -319,6 +339,7 @@ function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; tache
   const [titre, setTitre] = useState("");
   const [date, setDate] = useState<string | null>(null);
   const [heure, setHeure] = useState<string | null>(null);
+  const [fin, setFin] = useState<string | null>(null);
   const [priorite, setPriorite] = useState<Tache["priorite"]>(0);
   const [saisie, setSaisie] = useState(false);
   const champ = useRef<HTMLTextAreaElement>(null);
@@ -329,9 +350,10 @@ function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; tache
 
   const ajouter = () => {
     if (!titre.trim()) return;
-    enregistrerTache(nouvelleTache({ titre: titre.trim(), date, heure, priorite, liste: categorie.id }));
+    enregistrerTache(nouvelleTache({ titre: titre.trim(), date, fin, heure, priorite, liste: categorie.id }));
     setTitre("");
     setDate(null);
+    setFin(null);
     setHeure(null);
     setPriorite(0);
     champ.current?.focus();
@@ -365,7 +387,7 @@ function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; tache
 
         {/* La ligne toujours prête : un rond, on tape, Entrée. */}
         <li className="flex items-start gap-2.5 py-2">
-          <span aria-hidden="true" className="mt-0.5 size-5 shrink-0 rounded-full border-[1.5px] border-dashed" style={{ borderColor: accent }} />
+          <span aria-hidden="true" className="size-5 shrink-0 rounded-full border-[1.5px] border-dashed" style={{ borderColor: accent }} />
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <textarea
               ref={champ}
@@ -385,15 +407,17 @@ function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; tache
                   e.currentTarget.blur();
                 }
               }}
-              className="min-w-0 resize-none border-0 bg-transparent p-0 text-ui-s leading-[1.45] text-texte-principal outline-none [field-sizing:content] placeholder:text-texte-tertiaire"
+              className="min-w-0 resize-none border-0 bg-transparent p-0 text-ui-s leading-5 text-texte-principal outline-none [field-sizing:content] placeholder:text-texte-tertiaire"
             />
             {(saisie || titre) && (
               <Reglages
                 date={date}
+                fin={fin}
                 heure={heure}
                 priorite={priorite}
                 onChange={(p) => {
                   if ("date" in p) setDate(p.date ?? null);
+                  if ("fin" in p) setFin(p.fin ?? null);
                   if ("heure" in p) setHeure(p.heure ?? null);
                   if (p.priorite !== undefined) setPriorite(p.priorite);
                 }}

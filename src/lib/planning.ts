@@ -21,6 +21,8 @@ function aHeure(d: Date, heure: string): Date {
 
 /** Le premier passage strictement après `apres`. */
 export function prochainPassage(f: Frequence, apres: Date): Date {
+  /* À la demande : jamais d'elle-même. */
+  if (f.type === "manuel") return new Date(8.64e15);
   if (f.type === "heure") {
     const r = new Date(apres);
     r.setMinutes(0, 0, 0);
@@ -44,6 +46,7 @@ export function prochainPassage(f: Frequence, apres: Date): Date {
 /** Les passages entre deux dates (pour la vue de la semaine). */
 export function passagesEntre(f: Frequence, debut: Date, fin: Date, max = 48): Date[] {
   const out: Date[] = [];
+  if (f.type === "manuel") return out;
   let d = new Date(debut.getTime() - 1);
   while (out.length < max) {
     d = prochainPassage(f, d);
@@ -55,6 +58,8 @@ export function passagesEntre(f: Frequence, debut: Date, fin: Date, max = 48): D
 
 export function libelleFrequence(f: Frequence): string {
   switch (f.type) {
+    case "manuel":
+      return "À la demande";
     case "heure":
       return "Toutes les heures";
     case "jour":

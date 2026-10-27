@@ -77,13 +77,17 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
   };
 
   return (
-    <li ref={carte} className="klyra-carte-flottante group/artefact flex flex-col overflow-hidden rounded-lg">
+    /* Comme les cartes d'agents : un bloc gris, l'aperçu en haut, les infos dans un bloc blanc en dessous. */
+    <li
+      ref={carte}
+      className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2 transition-[box-shadow,translate] duration-[300ms] ease-sortie hover:-translate-y-0.5 hover:shadow-ombre-ambiante"
+    >
       {/* La vignette : un clic ouvre l'artefact en grand. */}
       <button
         type="button"
         onClick={ouvrir}
         aria-label={`Ouvrir ${artefact.titre}`}
-        className="relative block aspect-[16/10] w-full cursor-pointer overflow-hidden border-0 border-b border-bordure-subtile bg-fond-page p-0"
+        className="relative block aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-lg border border-white bg-fond-page p-0 shadow-ombre-sm"
       >
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element -- vignette locale en data URL
@@ -117,7 +121,7 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
             });
             setEdition(false);
           }}
-          className="flex flex-col gap-3 p-4"
+          className="flex flex-col gap-3 rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm"
         >
           <Champ label="Titre">
             <Input size="sm" value={titre} onChange={(e) => setTitre(e.target.value)} className={CHAMP} />
@@ -144,7 +148,7 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
           </div>
         </form>
       ) : (
-        <div className="flex flex-1 flex-col gap-1.5 p-4">
+        <div className="flex flex-1 flex-col gap-1.5 rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm">
           <div className="flex items-start gap-2">
             <span className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{artefact.titre}</span>
             <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover/artefact:opacity-100 focus-within:opacity-100">
@@ -313,14 +317,14 @@ export function ArtefactsScreen() {
 
         {ajout && <AjoutArtefact onFermer={() => setAjout(false)} />}
 
-        <section aria-label="Artefacts" className="flex flex-col gap-3 rounded-3xl border border-bordure-subtile bg-fond-page p-3">
-          <div className="flex flex-wrap items-center gap-2 px-1">
+        <section aria-label="Artefacts" className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="w-[260px] max-w-full">
-              <Input size="sm" placeholder="Chercher un artefact…" value={recherche} onChange={(e) => setRecherche(e.target.value)} className={cn(CHAMP, "bg-fond-surface")} />
+              <Input size="sm" placeholder="Chercher un artefact…" value={recherche} onChange={(e) => setRecherche(e.target.value)} className={CHAMP} />
             </div>
             {projects.length > 0 && (
               <div className="w-[200px]">
-                <Select size="sm" value={filtreProjet} options={[{ value: "", label: "Tous les projets" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} onChange={(e) => setFiltreProjet(e.target.value)} className={cn(CHAMP, "bg-fond-surface")} />
+                <Select size="sm" value={filtreProjet} options={[{ value: "", label: "Tous les projets" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} onChange={(e) => setFiltreProjet(e.target.value)} className={CHAMP} />
               </div>
             )}
             <span className="ml-auto text-ui-xs text-texte-tertiaire">{visibles.length} artefact{visibles.length > 1 ? "s" : ""}</span>

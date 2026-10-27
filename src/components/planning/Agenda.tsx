@@ -2,15 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Input, Select, Textarea } from "klyra-ui";
-import { Icon } from "@/components/icons/Icon";
+import { Icon, type IconName } from "@/components/icons/Icon";
+import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { CHAMP } from "@/components/ui/Champ";
 import { cn } from "@/lib/cn";
 import { aujourdhui, cleJour, depuisCle, grilleMois } from "@/lib/dates";
+import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
+import { joursSpeciauxEntre, type GenreJour, type JourSpecial } from "@/lib/jours-speciaux";
 import { passagesEntre } from "@/lib/planning";
 import { useProjects, useWorkspace } from "@/lib/workspace";
-import type { Evenement, Routine, Tache } from "@/types/domain";
+import type { Evenement, RoleTeinte, Routine, Tache } from "@/types/domain";
 import { CaseTache } from "./Rappels";
 
 /**
@@ -28,6 +31,7 @@ const DEBUT_JOURNEE = 8;
 const FIN_JOURNEE = 18;
 const JOURS = ["Lun.", "Mar.", "Mer.", "Jeu.", "Ven.", "Sam.", "Dim."];
 const fmtMois = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
+const fmtMoisCourt = new Intl.DateTimeFormat("fr-FR", { month: "short" });
 const fmtJour = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 const fmtHeure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
 const capitaliser = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -71,15 +75,75 @@ function useContenu(debut: Date, fin: Date) {
     const taches = new Map<string, Tache[]>();
     const passages = new Map<string, Passage[]>();
     const pousser = <T,>(m: Map<string, T[]>, cle: string, v: T) => m.set(cle, [...(m.get(cle) ?? []), v]);
-    for (const e of state.evenements) pousser(evenements, e.date, e);
-    for (const t of state.taches) if (t.date) pousser(taches, t.date, t);
+    for (const e of [...state.evenements, ...evenementsEquipeEntre(debut, fin)]) pousser(evenements, e.date, e);
+    for (const t of state.taches) {
+      if (!t.date) continue;
+      /* Un rappel sur plusieurs jours apparaît chaque jour, du premier au dernier. */
+      const jour = depuisCle(t.date);
+      const dernier = t.fin && t.fin > t.date ? t.fin : t.date;
+      for (let i = 0; i < 366 && cleJour(jour) <= dernier; i++, jour.setDate(jour.getDate() + 1)) pousser(taches, cleJour(jour), t);
+    }
     for (const r of state.routines) {
       if (!r.active || r.frequence.type === "heure") continue;
       for (const d of passagesEntre(r.frequence, debut, fin, 62))
         pousser(passages, cleJour(d), { routine: r, heure: fmtHeure.format(d) });
     }
-    return { evenements, taches, passages };
+    return { evenements, taches, passages, speciaux: joursSpeciauxEntre(debut, fin) };
   }, [state.evenements, state.taches, state.routines, debut, fin]);
+}
+
+/* ─── Les petites formes du calendrier, comme dans Calendrier d'Apple ── */
+
+/** Jours fériés en vert, fêtes en rose, changements d'heure en violet (pastels des catégories). */
+const TEINTE_JOUR: Record<GenreJour, RoleTeinte> = { ferie: "vert", fete: "rose", heure: "violet" };
+const ICONE_JOUR: Record<GenreJour, IconName> = { ferie: "calendar-01", fete: "calendar-01", heure: "clock-01" };
+
+/** Un jour férié, une fête ou un changement d'heure : une pastille teintée sur toute la largeur. */
+function PastilleJour({ jour }: { jour: JourSpecial }) {
+  const p = AGENT_PASTELS[TEINTE_JOUR[jour.genre]];
+  return (
+    <span title={jour.nom} className="flex h-5 min-w-0 shrink-0 items-center gap-1 rounded-full pr-2 pl-0.5 text-ui-2xs font-medium" style={{ background: p.bas, color: p.encre }}>
+      <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center rounded-full text-texte-inverse" style={{ background: p.accent }}>
+        <Icon name={ICONE_JOUR[jour.genre]} size={10} />
+      </span>
+      <span className="truncate">{jour.nom}</span>
+    </span>
+  );
+}
+
+/** Un événement sur toute la journée : pastille bleue claire. */
+function PastilleEvenement({ titre, onClick }: { titre: string; onClick?: () => void }) {
+  return (
+    <span
+      role={onClick ? "button" : undefined}
+      onClick={
+        onClick
+          ? (e) => {
+              e.stopPropagation();
+              onClick();
+            }
+          : undefined
+      }
+      className="flex h-5 min-w-0 shrink-0 items-center rounded-full bg-fond-teinte-bleue px-2 text-ui-2xs font-medium text-texte-accent"
+    >
+      <span className="truncate">{titre}</span>
+    </span>
+  );
+}
+
+type Genre = "e" | "t" | "tf" | "r";
+
+/** Devant un élément à heure : un trait pour un événement, un rond pour un rappel (plein s'il est fait). */
+function Repere({ type, couleur }: { type: Genre; couleur?: string }) {
+  if (type === "e") return <span aria-hidden="true" className="h-3.5 w-[3px] shrink-0 rounded-full bg-bleu-k1-500" />;
+  if (type === "r") return <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full border border-dashed border-bordure-forte" />;
+  return (
+    <span
+      aria-hidden="true"
+      className="size-2.5 shrink-0 rounded-full border-2 border-bordure-forte"
+      style={couleur ? (type === "tf" ? { background: couleur, borderColor: couleur } : { borderColor: couleur }) : undefined}
+    />
+  );
 }
 
 /** Les événements d'un jour placés en colonnes quand ils se chevauchent. */
@@ -247,7 +311,7 @@ function GrilleHeures({
     d.setDate(d.getDate() + 1);
     return d;
   }, [jours]);
-  const { evenements, taches, passages } = useContenu(debut, fin);
+  const { evenements, taches, passages, speciaux } = useContenu(debut, fin);
   const zone = useRef<HTMLDivElement>(null);
   const auj = aujourdhui();
   const [minute, setMinute] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
@@ -304,17 +368,13 @@ function GrilleHeures({
           const cle = cleJour(d);
           return (
             <div key={cle} className="flex min-h-8 min-w-0 flex-col gap-0.5 border-l border-bordure-subtile p-1">
+              {(speciaux.get(cle) ?? []).map((j) => (
+                <PastilleJour key={j.nom} jour={j} />
+              ))}
               {(evenements.get(cle) ?? [])
                 .filter((e) => !e.debut)
                 .map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => onOuvrir(e)}
-                    className="cursor-pointer truncate rounded-2xs border-0 bg-bleu-k1-500 px-1.5 py-0.5 text-left text-ui-3xs font-medium text-texte-inverse"
-                  >
-                    {e.titre}
-                  </button>
+                  <PastilleEvenement key={e.id} titre={e.titre} onClick={() => onOuvrir(e)} />
                 ))}
               {(taches.get(cle) ?? [])
                 .filter((t) => !t.heure)
@@ -339,6 +399,16 @@ function GrilleHeures({
       <div ref={zone} className="relative overflow-y-auto" style={{ height: (FIN_JOURNEE - DEBUT_JOURNEE) * HEURE }}>
         <div className="grid" style={{ gridTemplateColumns: colonnes, height: 24 * HEURE }}>
           <div className="relative">
+            {/* L'heure qu'il est, dans la marge, comme dans Calendrier. */}
+            {jours.some((d) => cleJour(d) === auj) && (
+              <span
+                aria-label={`Il est ${versHeure(minute)}`}
+                className="klyra-mono absolute right-1 z-20 -translate-y-1/2 rounded-full bg-bleu-k1-500 px-1.5 py-px text-ui-3xs font-semibold text-texte-inverse"
+                style={{ top: (minute / 60) * HEURE }}
+              >
+                {versHeure(minute)}
+              </span>
+            )}
             {Array.from({ length: 24 }, (_, h) => (
               <span
                 key={h}
@@ -368,31 +438,57 @@ function GrilleHeures({
                   className="pointer-events-none absolute inset-x-0 bottom-0 bg-fond-page/70"
                   style={{ top: FIN_JOURNEE * HEURE }}
                 />
-                {places.map(({ e, debut, fin, colonne, colonnes: n }) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      onOuvrir(e);
-                    }}
-                    className="absolute cursor-pointer overflow-hidden rounded-xs border-0 bg-fond-teinte-bleue px-1.5 py-0.5 text-left transition-colors duration-[120ms] hover:bg-bleu-k1-500/15"
-                    style={{
-                      top: (debut / 60) * HEURE + 1,
-                      height: Math.max(20, ((fin - debut) / 60) * HEURE - 2),
-                      left: `calc(${(colonne / n) * 100}% + 2px)`,
-                      width: `calc(${100 / n}% - 4px)`,
-                    }}
-                  >
-                    <span className="block truncate text-ui-3xs font-semibold text-texte-accent">{e.titre}</span>
-                    {fin - debut >= 45 && (
-                      <span className="klyra-mono block text-ui-3xs text-texte-accent/80">
-                        {e.debut}
-                        {e.fin ? ` – ${e.fin}` : ""}
+                {places.map(({ e, debut, fin, colonne, colonnes: n }) => {
+                  /* Comme dans Calendrier : un bloc teinté, un trait à gauche ; passé, il se grise en hachures. */
+                  const passe = cle < auj || (cle === auj && fin <= minute);
+                  const hauteur = Math.max(22, ((fin - debut) / 60) * HEURE - 2);
+                  return (
+                    <button
+                      key={e.id}
+                      type="button"
+                      disabled={e.equipe}
+                      title={e.equipe ? `${e.titre} · ${e.notes} · chaque semaine` : undefined}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        onOuvrir(e);
+                      }}
+                      className={cn(
+                        "absolute flex cursor-pointer flex-col gap-0.5 overflow-hidden rounded-sm border-0 py-1 pr-1.5 pl-3 text-left transition-[filter] duration-[120ms] hover:brightness-[0.97] disabled:cursor-default",
+                        passe ? "text-texte-tertiaire" : "bg-fond-teinte-bleue text-texte-accent",
+                      )}
+                      style={{
+                        top: (debut / 60) * HEURE + 1,
+                        height: hauteur,
+                        left: `calc(${(colonne / n) * 100}% + 2px)`,
+                        width: `calc(${100 / n}% - 4px)`,
+                        backgroundImage: passe
+                          ? "repeating-linear-gradient(135deg, var(--color-fond-surface-grise) 0 6px, var(--color-fond-page) 6px 12px)"
+                          : undefined,
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "absolute top-1 bottom-1 left-1 w-[3px] rounded-full",
+                          passe ? "bg-gris-k1-100" : e.equipe ? "bg-bleu-k2-500" : "bg-bleu-k1-500",
+                        )}
+                      />
+                      <span className="flex min-w-0 items-start gap-1">
+                        <span className="min-w-0 flex-1 truncate text-ui-2xs leading-4 font-semibold">{e.titre}</span>
+                        {e.repete && <Icon name="refresh-01" size={12} className="mt-0.5 shrink-0" />}
                       </span>
-                    )}
-                  </button>
-                ))}
+                      {hauteur >= 38 && (
+                        <span className="flex min-w-0 items-center gap-1 text-ui-3xs leading-4 opacity-85">
+                          <Icon name={e.equipe ? "users-profiles-01" : "clock-01"} size={11} className="shrink-0" />
+                          <span className="klyra-mono truncate">
+                            {e.debut}
+                            {e.fin ? ` – ${e.fin}` : ""}
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
                 {(taches.get(cle) ?? [])
                   .filter((t) => t.heure)
                   .map((t) => (
@@ -418,7 +514,7 @@ function GrilleHeures({
                 {(passages.get(cle) ?? []).map((p) => (
                   <span
                     key={`${p.routine.id}-${p.heure}`}
-                    title={`${p.routine.nom} (automatisation)`}
+                    title={`${p.routine.nom} (routine)`}
                     className="absolute right-1 left-1 flex h-5 items-center gap-1 rounded-2xs border border-dashed border-bordure-forte bg-fond-surface px-1 text-ui-3xs text-texte-secondaire"
                     style={{ top: (enMinutes(p.heure) / 60) * HEURE }}
                   >
@@ -455,7 +551,12 @@ function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
     d.setDate(d.getDate() + 1);
     return d;
   }, [jours]);
-  const { evenements, taches, passages } = useContenu(jours[0], fin);
+  const { evenements, taches, passages, speciaux } = useContenu(jours[0], fin);
+  const { state } = useWorkspace();
+  const couleurDe = (t: Tache) => {
+    const teinte = (state.categories.find((c) => c.id === t.liste) ?? state.categories[0])?.teinte;
+    return teinte ? AGENT_PASTELS[teinte]?.accent : undefined;
+  };
   const auj = aujourdhui();
 
   return (
@@ -472,69 +573,64 @@ function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
         const c = cleJour(d);
         const dansMois = d.getMonth() === ref.getMonth();
         const items = [
-          ...(evenements.get(c) ?? []).map((e) => ({ id: e.id, texte: e.titre, heure: e.debut, type: "e" as const })),
+          ...(evenements.get(c) ?? [])
+            .filter((e) => e.debut)
+            .map((e) => ({ id: e.id, texte: e.titre, heure: e.debut, type: "e" as Genre, couleur: undefined as string | undefined })),
           ...(taches.get(c) ?? []).map((t) => ({
             id: t.id,
             texte: t.titre,
             heure: t.heure,
-            type: t.faite ? ("tf" as const) : ("t" as const),
+            type: (t.faite ? "tf" : "t") as Genre,
+            couleur: couleurDe(t),
           })),
           ...(passages.get(c) ?? []).map((p) => ({
             id: `${p.routine.id}${p.heure}`,
             texte: p.routine.nom,
             heure: p.heure,
-            type: "r" as const,
+            type: "r" as Genre,
+            couleur: undefined as string | undefined,
           })),
         ].sort((a, b) => (a.heure ?? "").localeCompare(b.heure ?? ""));
+        const speciauxDuJour = speciaux.get(c) ?? [];
+        const journee = (evenements.get(c) ?? []).filter((e) => !e.debut);
+        const pastilles = speciauxDuJour.length + journee.length;
+        const reste = Math.max(0, 4 - pastilles);
+        const weekEnd = i % 7 >= 5;
         return (
           <button
             key={c}
             type="button"
             onClick={() => onJour(c)}
             className={cn(
-              "flex min-h-[96px] min-w-0 cursor-pointer flex-col gap-0.5 border-0 p-1.5 text-left hover:bg-fond-page",
+              "flex min-h-[112px] min-w-0 cursor-pointer flex-col gap-0.5 border-0 p-1.5 text-left transition-colors duration-[120ms] hover:bg-fond-survol",
               i % 7 !== 6 && "border-r border-bordure-subtile",
               i < 35 && "border-b border-bordure-subtile",
-              !dansMois && "bg-fond-page/60",
+              weekEnd ? "bg-fond-page" : "bg-fond-surface",
             )}
           >
+            {/* Le numéro en haut à droite ; le 1er du mois porte aussi le mois, comme dans Calendrier. */}
             <span
               className={cn(
-                "ml-auto flex size-6 items-center justify-center rounded-full text-ui-xs font-medium",
-                c === auj
-                  ? "bg-bleu-k1-500 text-texte-inverse"
-                  : dansMois
-                    ? "text-texte-principal"
-                    : "text-texte-tertiaire",
+                "mb-0.5 ml-auto flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 text-ui font-medium",
+                c === auj ? "bg-bleu-k1-500 text-texte-inverse" : dansMois && !weekEnd ? "text-texte-principal" : "text-texte-tertiaire",
               )}
             >
-              {d.getDate()}
+              {d.getDate() === 1 ? `1 ${fmtMoisCourt.format(d)}` : d.getDate()}
             </span>
-            {items.slice(0, 3).map((it) => (
-              <span key={it.id} className="flex min-w-0 items-center gap-1 text-ui-3xs">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    it.type === "e"
-                      ? "bg-bleu-k1-500"
-                      : it.type === "r"
-                        ? "bg-gris-k1-100"
-                        : "border border-bordure-forte",
-                  )}
-                />
-                <span
-                  className={cn(
-                    "truncate",
-                    it.type === "tf" ? "text-texte-tertiaire line-through" : "text-texte-principal",
-                  )}
-                >
-                  {it.texte}
-                </span>
-                {it.heure && <span className="klyra-mono ml-auto shrink-0 text-texte-tertiaire">{it.heure}</span>}
+            {speciauxDuJour.map((j) => (
+              <PastilleJour key={j.nom} jour={j} />
+            ))}
+            {journee.map((e) => (
+              <PastilleEvenement key={e.id} titre={e.titre} />
+            ))}
+            {items.slice(0, reste).map((it) => (
+              <span key={it.id} className="flex min-w-0 items-center gap-1.5 px-0.5 text-ui-2xs leading-5">
+                <Repere type={it.type} couleur={it.couleur} />
+                <span className={cn("truncate", it.type === "tf" ? "text-texte-tertiaire line-through" : "text-texte-principal")}>{it.texte}</span>
+                {it.heure && <span className="klyra-mono ml-auto shrink-0 text-ui-3xs text-texte-tertiaire">{it.heure}</span>}
               </span>
             ))}
-            {items.length > 3 && <span className="text-ui-3xs text-texte-tertiaire">+{items.length - 3}</span>}
+            {items.length > reste && <span className="px-0.5 text-ui-3xs text-texte-tertiaire">+ {items.length - reste} autres</span>}
           </button>
         );
       })}

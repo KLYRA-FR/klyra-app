@@ -37,6 +37,7 @@ import {
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
 import { arbreDossier, cheminDansProjet, lireFichier, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
+import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
 import {
   connecterClaudeAi,
   deconnecterClaudeAi,
@@ -258,6 +259,9 @@ function registerBridge() {
     if (typeof chemin !== "string" || !path.isAbsolute(chemin)) throw new Error("Chemin invalide.");
     shell.showItemInFolder(chemin);
   });
+  handle("fichiers:ecrire", (chemin: string, texte: string) => ecrireFichierTexte(chemin, texte));
+  handle("webhooks:adresse", (secret: string) => adresseWebhook(secret));
+  demarrerWebhooks();
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
 

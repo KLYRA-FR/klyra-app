@@ -16,10 +16,10 @@ import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
 
 /** Pas plus de 10 fichiers par message. */
-const MAX_FICHIERS = 10;
+export const MAX_FICHIERS = 10;
 
 /** Les pièces jointes avant l'envoi : une carte par fichier, avec la croix pour l'enlever. */
-function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer: (chemin: string) => void }) {
+export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer: (chemin: string) => void }) {
   if (!fichiers.length) return null;
   return (
     <div className="flex flex-wrap gap-2">

@@ -209,7 +209,7 @@ export function SectionBarre({
           onClick={() => setOuverte((v) => !v)}
           aria-expanded={ouverte}
           aria-label={ouverte ? `Replier ${titre}` : `Déplier ${titre}`}
-          className="flex size-5 cursor-pointer items-center justify-center rounded-2xs border-0 bg-transparent p-0 text-icone-secondaire opacity-0 transition-opacity duration-[120ms] group-hover/titre:opacity-100 focus-visible:opacity-100"
+          className="flex size-5 cursor-pointer items-center justify-center rounded-2xs border-0 bg-transparent p-0 text-icone-secondaire transition-colors duration-[120ms] hover:bg-fond-survol hover:text-texte-principal"
         >
           <Icon
             name="chevron-right"

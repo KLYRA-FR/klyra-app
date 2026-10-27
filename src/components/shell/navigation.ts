@@ -5,9 +5,10 @@ import type { IconName } from "@/components/icons/Icon";
  * rail noir. Les projets viennent juste après, en liste ou en tuiles.
  */
 export const NAVIGATION: { href: string; label: string; icon: IconName }[] = [
-  { href: "/", label: "Accueil", icon: "home-01" },
+  { href: "/", label: "Accueil", icon: "accueil-ronds" },
   { href: "/chats", label: "Chats", icon: "message-square" },
   { href: "/planning", label: "Planning", icon: "calendar-01" },
+  { href: "/routines", label: "Routines", icon: "lightning-01" },
   { href: "/equipe", label: "Équipe", icon: "users-profiles-01" },
-  { href: "/artefacts", label: "Artefacts", icon: "layers-01" },
+  { href: "/artefacts", label: "Artefacts", icon: "artefacts-forme" },
 ];

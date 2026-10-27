@@ -16,6 +16,8 @@ interface OngletsProps<T extends string> {
   /** `large` : libellés masqués quand le conteneur (@container) est étroit,
    *  il ne reste que l'icône (libellé au survol). */
   etiquettes?: "toujours" | "large";
+  /** `serre` : posé à 8 px du bord d'une carte de 16 px ; rail arrondi à 8, onglet à 6 (arrondis emboîtés). */
+  arrondi?: "normal" | "serre";
   className?: string;
 }
 
@@ -30,10 +32,11 @@ export function Onglets<T extends string>({
   onChange,
   libelle,
   etiquettes = "toujours",
+  arrondi = "normal",
   className,
 }: OngletsProps<T>) {
   return (
-    <div role="tablist" aria-label={libelle} className={cn("inline-flex rounded-md- bg-fond-surface-grise p-0.5", className)}>
+    <div role="tablist" aria-label={libelle} className={cn("inline-flex bg-fond-surface-grise p-0.5", arrondi === "serre" ? "rounded-sm" : "rounded-md-", className)}>
       {onglets.map((onglet) => {
         const actif = onglet.id === valeur;
         return (
@@ -45,7 +48,8 @@ export function Onglets<T extends string>({
             onClick={() => onChange(onglet.id)}
             title={onglet.label}
             className={cn(
-              "inline-flex cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 py-1 text-ui-s font-medium tracking-[-0.0125em]",
+              "inline-flex cursor-pointer items-center gap-1.5 border px-2.5 py-1 text-ui-s font-medium tracking-[-0.0125em]",
+              arrondi === "serre" ? "rounded-xs" : "rounded-sm",
               "transition-colors duration-[220ms] ease-sortie",
               actif
                 ? "border-bordure-subtile bg-fond-surface text-texte-principal"

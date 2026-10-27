@@ -19,6 +19,7 @@ const PAGES: Record<string, string> = {
   "/fichiers": "Fichiers",
   "/equipe": "Équipe",
   "/planning": "Planning",
+  "/routines": "Routines",
   "/artefacts": "Artefacts",
   "/reglages": "Réglages",
 };

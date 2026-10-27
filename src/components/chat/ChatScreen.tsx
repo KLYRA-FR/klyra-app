@@ -6,7 +6,7 @@ import { EmptyState } from "klyra-ui";
 import { PreviewPanel } from "@/components/preview/PreviewPanel";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { formatTime } from "@/lib/format";
-import { useChat, useChatMessages, useProjects, useRoles } from "@/lib/workspace";
+import { texteDe, useChat, useChatMessages, useProjects, useRoles, useWorkspace } from "@/lib/workspace";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageThread } from "./MessageThread";
@@ -24,6 +24,23 @@ function useModifiedLabel(chatId: string): string | null {
     const name = roles.find((r) => r.id === roleId)?.name;
     return `Modifié par ${name} · ${formatTime(last.createdAt)}`;
   }, [messages, roles]);
+}
+
+/** Une adresse de serveur local dans un texte : « localhost:3000 », « http://127.0.0.1:5173/page ». */
+const ADRESSE_LOCALE = /\b(?:https?:\/\/)?(?:localhost|127\.0\.0\.1):\d{2,5}(?:\/[^\s)`'"*<>]*)?/;
+
+/** La dernière adresse locale donnée par un agent (ex. après « j'ai lancé le site »), avec son message. */
+function useAdresseAnnoncee(chatId: string): { id: string; url: string } | null {
+  const messages = useChatMessages(chatId);
+  return useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.author.kind !== "role" || m.statut !== "fait") continue;
+      const trouve = texteDe(m).match(ADRESSE_LOCALE);
+      if (trouve) return { id: m.id, url: trouve[0].replace(/^https?:\/\//, "").replace(/[.,;:]+$/, "") };
+    }
+    return null;
+  }, [messages]);
 }
 
 /** Largeur de fenêtre sous laquelle le panneau de l'agent part fermé. */
@@ -50,6 +67,23 @@ export function ChatScreen() {
   /* Un lien local cliqué dans une conversation de projet : il s'ouvre dans l'aperçu. */
   const [adresseApercu, setAdresseApercu] = useState<{ url: string; n: number } | null>(null);
   const equipe = chat?.kind === "equipe";
+
+  /* Un agent annonce l'adresse du site qu'il vient de lancer : l'aperçu l'ouvre tout seul,
+     et le projet la garde pour la prochaine fois. */
+  const { enregistrerProjet } = useWorkspace();
+  const annonce = useAdresseAnnoncee(chat?.id ?? "");
+  const [annonceVue, setAnnonceVue] = useState<string | null>(null);
+  if (equipe && project && annonce && annonce.id !== annonceVue) {
+    setAnnonceVue(annonce.id);
+    setPreviewOpen(true);
+    setAdresseApercu((a) => ({ url: annonce.url, n: (a?.n ?? 0) + 1 }));
+  }
+  useEffect(() => {
+    if (!annonce || !project || !equipe) return;
+    const racine = annonce.url.replace(/\/.*$/, "");
+    if (project.previewUrl !== racine) enregistrerProjet({ ...project, previewUrl: racine });
+  }, [annonce, project, equipe, enregistrerProjet]);
+
   useEffect(() => {
     if (!equipe) return;
     const prendre = (e: Event) => {

@@ -180,6 +180,14 @@ export interface KlyraBridge {
     montrer: (chemin: string) => Promise<Reponse<void>>;
     /** Chemin sur le disque d'un fichier glissé dans la fenêtre ("" s'il n'en a pas). */
     cheminDe: (file: File) => string;
+    /** Écrit un fichier texte (sortie d'un workflow) ; renvoie son chemin complet. Absent avant la relance de l'app. */
+    ecrire?: (chemin: string, texte: string) => Promise<Reponse<string>>;
+  };
+  /** Les webhooks locaux des workflows. Absent avant la relance de l'app. */
+  webhooks?: {
+    /** L'adresse locale où appeler un déclencheur, pour ce secret. */
+    adresse: (secret: string) => Promise<Reponse<string>>;
+    onAppel: (callback: (secret: string, corps: string) => void) => () => void;
   };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;

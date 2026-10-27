@@ -18,29 +18,38 @@ interface PuceSelectProps<T extends string> extends Omit<SelectHTMLAttributes<HT
 
 /**
  * Puce de choix posée dans la barre d'un composeur (rôle, projet) : petite,
- * bordée `bordure-subtile`, rayon 6 comme les boutons. Liste native, pour le
- * clavier et l'accessibilité.
+ * bordée `bordure-subtile`, rayon 6 comme les boutons. Liste native (clavier,
+ * accessibilité), posée invisible sur toute la puce : un clic n'importe où,
+ * flèche comprise, l'ouvre.
  */
 function PuceSelectInner<T extends string>(
   { options, value, onChange, libelle, icone, className, ...rest }: PuceSelectProps<T>,
   ref: ForwardedRef<HTMLSelectElement>,
 ) {
+  const choisie = options.find((o) => o.value === value)?.label ?? "";
   return (
     <label
       className={cn(
-        "relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xs border border-bordure-subtile bg-fond-surface pr-7 pl-2.5",
+        "relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xs border border-bordure-subtile bg-fond-surface pr-2 pl-2.5",
         "text-ui-s font-medium text-texte-principal transition-colors duration-[220ms] ease-sortie hover:border-bordure-forte",
-        "focus-within:border-focus",
+        /* Le contour de focus seulement au clavier, à l'arrondi de la puce. */
+        "has-[select:focus-visible]:outline-2 has-[select:focus-visible]:outline-offset-2 has-[select:focus-visible]:outline-focus",
         className,
       )}
     >
-      {icone && <span className="text-icone-secondaire">{icone}</span>}
+      {icone && <span className="flex text-icone-secondaire">{icone}</span>}
       <span className="sr-only">{libelle}</span>
+      {/* Ce qu'on voit : le choix en cours et la flèche. */}
+      <span aria-hidden="true" className="truncate">
+        {choisie}
+      </span>
+      <Icon name="chevron-down" size={16} className="shrink-0 text-icone-secondaire" />
+      {/* La liste native couvre toute la puce, invisible : un clic n'importe où l'ouvre. */}
       <select
         ref={ref}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
-        className="cursor-pointer appearance-none bg-transparent [color:inherit] [font:inherit] outline-none"
+        className="absolute inset-0 size-full cursor-pointer appearance-none opacity-0 outline-none"
         {...rest}
       >
         {options.map((option) => (
@@ -49,7 +58,6 @@ function PuceSelectInner<T extends string>(
           </option>
         ))}
       </select>
-      <Icon name="chevron-down" size={16} className="pointer-events-none absolute right-2 text-icone-secondaire" />
     </label>
   );
 }

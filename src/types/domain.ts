@@ -101,6 +101,8 @@ export interface User {
   name: string;
   title: string;
   initial: string;
+  /** Photo de profil, recadrée en carré (data URL), gardée sur le poste ; absente : les initiales. */
+  photo?: string | null;
 }
 
 /* ─── Projets ──────────────────────────────────────────────────── */
@@ -156,6 +158,8 @@ export interface Chat {
   effort?: string | null;
   /** La liste de tâches que l'agent tient pendant son travail (outil TodoWrite de Claude Code). */
   taches?: TacheAgent[];
+  /** Branche d'une autre conversation : ce qui s'y était dit, donné à l'agent avec son premier message. */
+  amorce?: string;
 }
 
 /** Une tâche de la liste de l'agent. */
@@ -248,6 +252,8 @@ export interface Message {
 
 /** Quand une tâche planifiée se relance. Heures au format « 09:00 ». */
 export type Frequence =
+  /** Seulement quand on la lance soi-même. */
+  | { type: "manuel" }
   | { type: "heure" }
   | { type: "jour"; heure: string }
   | { type: "jours-ouvres"; heure: string }
@@ -262,6 +268,24 @@ export interface ExecutionRoutine {
   chatId: string;
   /** Rattrapée : l'heure était passée pendant que l'app était fermée. */
   rattrapee: boolean;
+  /** Où en est chaque agent de la chaîne dans ce passage. */
+  etapes?: EtapePassage[];
+}
+
+/** Un relais de la chaîne : quand `de` a répondu, sa réponse part à `vers`, avec une consigne. */
+export interface RelaisRoutine {
+  id: string;
+  de: RoleId;
+  vers: RoleId;
+  consigne: string;
+}
+
+/** La part d'un agent dans un passage de la chaîne. */
+export interface EtapePassage {
+  roleId: RoleId;
+  statut: "en-cours" | "fait" | "erreur";
+  /** Quand sa consigne lui est partie : sa réponse est le premier message d'après. */
+  depuis: string;
 }
 
 /**
@@ -280,6 +304,10 @@ export interface Routine {
   creeLe: string;
   prochaine: string;
   historique: ExecutionRoutine[];
+  /** La chaîne : à qui passe la main chaque agent, une fois sa réponse rendue. */
+  relais?: RelaisRoutine[];
+  /** Où sont posés le déclencheur et les agents sur le canevas (clé : « depart » ou l'id de l'agent). */
+  positions?: Record<string, { x: number; y: number }>;
 }
 
 /* ─── Artefacts ────────────────────────────────────────────────── */
@@ -313,6 +341,8 @@ export interface Tache {
   date: string | null;
   /** Heure « 14:00 » : à cette heure, une notification. null = toute la journée. */
   heure: string | null;
+  /** Dernier jour, pour un rappel sur plusieurs jours (« du 22 au 25 ») ; absent : un seul jour. */
+  fin?: string | null;
   /** 0 aucune, 1 basse (!), 2 moyenne (!!), 3 haute (!!!). */
   priorite: 0 | 1 | 2 | 3;
   signalee: boolean;
@@ -337,6 +367,10 @@ export interface Evenement {
   projectId: string | null;
   /** Notification envoyée (10 min avant le début). */
   notifie: boolean;
+  /** Rendez-vous de toute l'équipe (cf. lib/agenda-equipe) : en lecture seule. */
+  equipe?: boolean;
+  /** Se répète chaque semaine. */
+  repete?: boolean;
 }
 
 /** Une catégorie de rappels : une colonne, avec sa couleur et son icône. */

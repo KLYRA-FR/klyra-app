@@ -75,8 +75,17 @@ contextBridge.exposeInMainWorld("klyra", {
   fichiers: {
     choisir: () => ipcRenderer.invoke("fichiers:choisir"),
     montrer: (chemin: string) => ipcRenderer.invoke("fichiers:montrer", chemin),
+    ecrire: (chemin: string, texte: string) => ipcRenderer.invoke("fichiers:ecrire", chemin, texte),
     /** Chemin sur le disque d'un fichier glissé dans la fenêtre. */
     cheminDe: (file: File) => webUtils.getPathForFile(file),
+  },
+  webhooks: {
+    adresse: (secret: string) => ipcRenderer.invoke("webhooks:adresse", secret),
+    onAppel: (callback: (secret: string, corps: string) => void) => {
+      const listener = (_e: unknown, secret: string, corps: string) => callback(secret, corps);
+      ipcRenderer.on("webhooks:appel", listener);
+      return () => ipcRenderer.removeListener("webhooks:appel", listener);
+    },
   },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */

@@ -32,14 +32,14 @@ const PART_CARD = "rounded-md border border-bordure-subtile bg-fond-surface shad
 /* ─── Texte ────────────────────────────────────────────────────── */
 
 /**
- * Bulle de texte. Toi : à droite, en noir comme le bouton principal, le texte
+ * Bulle de texte. Toi : à droite, en noir uni (sans reflet), le texte
  * tel que tu l'as tapé. Un agent : à gauche, en gris clair, sa réponse en
  * Markdown (titres, listes, code).
  */
 export function TextBubble({ text, tone }: { text: string; tone: "user" | "role" }) {
   if (tone === "user") {
     return (
-      <div className="klyra-surface-sombre w-fit max-w-[560px] rounded-xl px-3.5 py-2 text-ui leading-[1.55] whitespace-pre-wrap text-texte-inverse [overflow-wrap:anywhere]">
+      <div className="w-fit max-w-[560px] bg-fond-inverse rounded-xl px-3.5 py-2 text-ui leading-[1.55] whitespace-pre-wrap text-texte-inverse [overflow-wrap:anywhere]">
         {text}
       </div>
     );

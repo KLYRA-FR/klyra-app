@@ -18,8 +18,8 @@ interface AgentRondProps {
 }
 
 /**
- * Avatar d'un agent, le même partout (circuits, fil, barre latérale) : son
- * pastel uni et son initiale dans sa couleur foncée. Le Principal porte le
+ * Avatar d'un agent, le même partout (circuits, fil, barre latérale) : un
+ * carré arrondi à son pastel uni, son initiale dans sa couleur foncée. Le Principal porte le
  * signe KLYRA blanc sur K1.
  */
 export function AgentRond({ roleId, taille = 32, statut = null, fondPastille = "page", className }: AgentRondProps) {
@@ -34,13 +34,15 @@ export function AgentRond({ roleId, taille = 32, statut = null, fondPastille = "
         role="img"
         aria-label={role.name}
         className={cn(
-          "flex size-full items-center justify-center rounded-full font-semibold select-none",
+          "flex size-full items-center justify-center font-semibold select-none",
           principal && "bg-bleu-k1-500",
         )}
         style={{
           background: principal ? undefined : haut,
           color: encre,
           fontSize: Math.round(taille * 0.4),
+          // Un carré, arrondi au quart de son côté : 8 px pour 32, 6 px pour 24.
+          borderRadius: Math.round(taille * 0.25),
         }}
       >
         {principal ? (

@@ -29,7 +29,7 @@ function Rond({ role, inverse = false }: { role: Role; inverse?: boolean }) {
   return (
     <span
       aria-hidden="true"
-      className="flex size-8 shrink-0 items-center justify-center rounded-full text-ui-xs font-semibold"
+      className="flex size-8 shrink-0 items-center justify-center rounded-sm text-ui-xs font-semibold"
       style={{ background: inverse ? "var(--color-fond-surface)" : haut, color: encre }}
     >
       {role.initial}
@@ -98,7 +98,7 @@ export function CircuitRow({
             const carte = (
               <span
                 className={cn(
-                  "flex h-[42px] items-center rounded-full border pr-4",
+                  "flex h-[42px] items-center rounded-md border pr-4",
                   role ? "gap-2 pl-1" : "gap-1.5 pl-3",
                   !enAvant && "border-bordure-subtile bg-fond-page",
                   role && "transition-colors duration-[220ms] ease-sortie hover:border-bordure-forte",

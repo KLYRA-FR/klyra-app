@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getBridge, type FenetreUtilisation, type Utilisation } from "@/lib/bridge";
+import { COULEUR_CLAUDE } from "@/data/marques";
 import { cn } from "@/lib/cn";
 
 /**
@@ -53,7 +54,9 @@ function Anneaux({ utilisation, sombre, taille = 34 }: { utilisation: Utilisatio
     { f: utilisation?.session ?? null, r: 11.375 },
   ];
   return (
-    <svg viewBox="0 0 34 34" width={taille} height={taille} aria-hidden="true" className="-rotate-90">
+    <svg viewBox="0 0 34 34" width={taille} height={taille} aria-hidden="true">
+      {/* Les arcs partent de midi : seuls les anneaux tournent, pas le logo au centre. */}
+      <g transform="rotate(-90 17 17)">
       {anneaux.map(({ f, r }) => {
         const pourcent = f ? reste(f) : 0;
         const bas = f !== null && pourcent < 30;
@@ -86,6 +89,10 @@ function Anneaux({ utilisation, sombre, taille = 34 }: { utilisation: Utilisatio
           </g>
         );
       })}
+      </g>
+      {/* Au centre, le logo de Claude en blanc sur un rond de sa couleur (fichier officiel de l'extension Claude Code). */}
+      <circle cx="17" cy="17" r="8" fill={COULEUR_CLAUDE} />
+      <image href="/brand/claude-logo-blanc.svg" x="11.5" y="11.5" width="11" height="11" />
     </svg>
   );
 }
@@ -210,9 +217,9 @@ function BoutonAnneaux({
   );
 }
 
-/** Dans le rail noir : les anneaux seuls. */
+/** Dans le rail : les anneaux seuls, le détail au survol. */
 export function UtilisationRail() {
-  return <BoutonAnneaux sombre placement="droite" className="size-11 justify-center rounded-md p-0" />;
+  return <BoutonAnneaux sombre placement="droite" className="size-12 justify-center rounded-md p-0" />;
 }
 
 /** Dans le menu complet : les anneaux et « Claude », sur une ligne de menu. */

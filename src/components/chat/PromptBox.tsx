@@ -82,7 +82,8 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
       onSubmit={submit}
       className={cn(
         "flex flex-col gap-2 rounded-xl border border-bordure-subtile bg-fond-surface p-3 shadow-ombre-ambiante",
-        "transition-[border-color,box-shadow] duration-[220ms] ease-sortie focus-within:border-bordure-champ-survol",
+        // Pendant qu'on écrit, rien ne s'allume : ni contour, ni bord de couleur.
+        "transition-[border-color,box-shadow] duration-[220ms] ease-sortie",
         className,
       )}
     >
@@ -102,7 +103,8 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
         placeholder={placeholder}
         aria-label="Message"
         className={cn(
-          "max-h-[240px] border-0 px-1 focus:border-0",
+          // Pas de contour propre au champ : c'est la carte arrondie autour qui s'éclaire.
+          "max-h-[240px] border-0 px-1 outline-none focus:border-0 focus:shadow-none focus:[box-shadow:none] focus-visible:outline-none",
           taille === "grand" ? "min-h-[72px] text-body-s" : "min-h-[44px] text-ui",
         )}
       />

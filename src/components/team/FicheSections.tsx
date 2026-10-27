@@ -156,9 +156,9 @@ function CapsuleCollegue({ role }: { role: Role }) {
   return (
     <Link
       href={`/equipe?agent=${role.id}`}
-      className="flex h-[42px] shrink-0 items-center gap-2 rounded-full border border-bordure-subtile bg-fond-page pr-4 pl-1 no-underline transition-colors duration-[220ms] ease-sortie hover:border-bordure-forte"
+      className="flex h-[42px] shrink-0 items-center gap-2 rounded-md border border-bordure-subtile bg-fond-page pr-4 pl-1 no-underline transition-colors duration-[220ms] ease-sortie hover:border-bordure-forte"
     >
-      <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-full text-ui-xs font-semibold" style={{ background: haut, color: encre }}>
+      <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-sm text-ui-xs font-semibold" style={{ background: haut, color: encre }}>
         {role.initial}
       </span>
       <span className="text-ui-s font-semibold text-texte-principal">{role.name}</span>

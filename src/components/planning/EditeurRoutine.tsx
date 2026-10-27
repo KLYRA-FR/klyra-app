@@ -11,6 +11,7 @@ import { useProjects, useRoles } from "@/lib/workspace";
 import type { Frequence, Routine } from "@/types/domain";
 
 const TYPES: { id: Frequence["type"]; nom: string }[] = [
+  { id: "manuel", nom: "À la demande" },
   { id: "heure", nom: "Toutes les heures" },
   { id: "jour", nom: "Chaque jour" },
   { id: "jours-ouvres", nom: "Jours ouvrés" },
@@ -58,7 +59,7 @@ export function EditeurRoutine({
 
   const changerType = (type: Frequence["type"]) => {
     const frequence: Frequence =
-      type === "heure"
+      type === "heure" || type === "manuel"
         ? { type }
         : type === "semaine"
           ? { type, jour: f.type === "semaine" ? f.jour : 1, heure }
@@ -68,7 +69,7 @@ export function EditeurRoutine({
     setR({ ...r, frequence });
   };
   const changerHeure = (h: string) => {
-    if (f.type !== "heure") setR({ ...r, frequence: { ...f, heure: h } });
+    if (f.type !== "heure" && f.type !== "manuel") setR({ ...r, frequence: { ...f, heure: h } });
   };
   const changerJour = (j: number) => {
     if (f.type === "semaine" || f.type === "mois") setR({ ...r, frequence: { ...f, jour: j } });
@@ -179,7 +180,7 @@ export function EditeurRoutine({
               />
             </Champ>
           )}
-          {f.type !== "heure" && (
+          {f.type !== "heure" && f.type !== "manuel" && (
             <Champ label="Heure" className="w-[140px]">
               <Input size="sm" type="time" value={heure} onChange={(e) => changerHeure(e.target.value)} className={CHAMP} />
             </Champ>
@@ -198,8 +199,9 @@ export function EditeurRoutine({
           </Champ>
         </div>
         <p className="m-0 text-ui-xs text-texte-tertiaire">
-          {libelleFrequence(f)} · prochain passage {dateLongue.format(prochaine)}. Elle part tant que l’app est ouverte ;
-          une heure manquée est rattrapée à l’ouverture.
+          {f.type === "manuel"
+            ? "Elle ne part que quand tu la lances, depuis son canevas."
+            : `${libelleFrequence(f)} · prochain passage ${dateLongue.format(prochaine)}. Elle part tant que l’app est ouverte ; une heure manquée est rattrapée à l’ouverture.`}
         </p>
       </fieldset>
 

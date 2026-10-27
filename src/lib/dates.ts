@@ -39,6 +39,17 @@ export function libelleEcheance(cle: string, heure: string | null): string {
   return heure ? `${jour}, ${heure}` : jour;
 }
 
+/** « Lun. 27 oct. → Jeu. 30 oct. » pour un rappel sur plusieurs jours, sinon l'échéance. */
+export function libellePeriode(cle: string, heure: string | null, fin: string | null | undefined): string {
+  if (!fin || fin <= cle) return libelleEcheance(cle, heure);
+  return `${libelleEcheance(cle, heure)} → ${libelleEcheance(fin, null)}`;
+}
+
+/** Le jour qui compte pour le retard : le dernier jour d'une période, sinon la date. */
+export function echeance(t: { date: string | null; fin?: string | null }): string | null {
+  return t.fin && t.date && t.fin > t.date ? t.fin : t.date;
+}
+
 /** En retard : la date (et l'heure) est passée. */
 export function enRetard(cle: string | null, heure: string | null): boolean {
   if (!cle) return false;

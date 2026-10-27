@@ -1,12 +1,14 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { formatDaySeparator, formatTime, isSameDay } from "@/lib/format";
 import { texteDe, useChat, useChatMessages, useRole, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
+import { ActionsReponse } from "./ActionsReponse";
 import { MessagePartView } from "./MessageParts";
 
 /** Deux messages du même auteur à moins de 5 min d'écart forment un groupe : un seul nom, un seul rond. */
@@ -51,10 +53,28 @@ function ActionsSurvol({ message, align }: { message: Message; align: "start" | 
   );
 }
 
+/** Le début d'un message envoyé par une routine (« Tâche planifiée » : l'ancien nom). */
+const DEPART_ROUTINE = /^(?:Routine|Tâche planifiée) « (.+?) »\n\n/;
+
 function UserMessage({ message, suite }: { message: Message; suite: boolean }) {
+  /* Une routine : son nom et son heure au-dessus, la consigne seule dans la bulle. */
+  const premier = message.parts[0];
+  const routine = premier?.type === "text" ? DEPART_ROUTINE.exec(premier.text) : null;
+  const parts =
+    routine && premier?.type === "text"
+      ? [{ ...premier, text: premier.text.slice(routine[0].length) }, ...message.parts.slice(1)]
+      : message.parts;
   return (
     <div className={cn("group/message flex flex-col items-end gap-1", !suite && "mt-3")}>
-      {message.parts.map((part, i) => (
+      {routine && (
+        <span className="flex items-center gap-1.5 text-ui-xs text-texte-tertiaire">
+          Routine
+          <Icon name="clock-01" size={14} className="text-icone-secondaire" />
+          <span className="font-medium text-texte-secondaire">{routine[1]}</span>
+          {formatTime(message.createdAt)}
+        </span>
+      )}
+      {parts.map((part, i) => (
         <MessagePartView key={i} part={part} tone="user" onAction={() => {}} />
       ))}
       <ActionsSurvol message={message} align="end" />
@@ -101,12 +121,16 @@ function EnTravail({
 }
 
 function RoleMessage({
+  chat,
   message,
   roleId,
   suite,
+  derniere,
   travail,
   onAction,
 }: {
+  chat: Chat;
+  derniere: boolean;
   message: Message;
   roleId: RoleId;
   suite: boolean;
@@ -157,7 +181,7 @@ function RoleMessage({
             {message.erreur ?? "L’agent s’est arrêté sur une erreur."}
           </p>
         )}
-        {!enCours && <ActionsSurvol message={message} align="start" />}
+        {!enCours && <ActionsReponse chat={chat} message={message} derniere={derniere} />}
       </div>
     </div>
   );
@@ -202,6 +226,7 @@ export function MessageThread({ chatId }: { chatId: string }) {
   }, [chatId, messages.length, dernier?.statut, marquerLu]);
 
   if (!chat) return null;
+  const derniereReponse = messages.findLast((m) => m.author.kind === "role")?.id;
 
   return (
     <div
@@ -230,6 +255,8 @@ export function MessageThread({ chatId }: { chatId: string }) {
                   <UserMessage message={message} suite={suite} />
                 ) : (
                   <RoleMessage
+                    chat={chat}
+                    derniere={message.id === derniereReponse}
                     message={message}
                     roleId={message.author.roleId}
                     suite={suite}
