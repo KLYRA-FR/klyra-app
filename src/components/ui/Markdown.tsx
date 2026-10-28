@@ -95,7 +95,8 @@ export function Inline({ text }: { text: string }) {
         if (part.startsWith("**") && part.endsWith("**")) {
           return (
             <strong key={i} className="font-semibold text-texte-principal">
-              {part.slice(2, -2)}
+              {/* Une adresse en gras reste cliquable. */}
+              <Inline text={part.slice(2, -2)} />
             </strong>
           );
         }
@@ -136,6 +137,21 @@ export function Inline({ text }: { text: string }) {
   );
 }
 
+/* Dans un bloc de code (sortie de `pnpm dev`, tableau…), les adresses restent cliquables. */
+const ADRESSES = /(https?:\/\/[^\s<>()|`]+[^\s<>().,;:!?»"'|`]|(?:localhost|127\.0\.0\.1):\d+(?:\/[^\s<>()|`]*[^\s<>().,;:!?»"'|`])?)/g;
+
+function AdressesCliquables({ texte }: { texte: string }) {
+  return texte.split(ADRESSES).map((morceau, i) =>
+    i % 2 === 1 ? (
+      <Lien key={i} href={morceau}>
+        {morceau}
+      </Lien>
+    ) : (
+      <Fragment key={i}>{morceau}</Fragment>
+    ),
+  );
+}
+
 function renderBlocks(blocks: Block[], renderItem?: (text: string) => ReactNode, colonnes = false): ReactNode {
   return blocks.map((block, i) => {
     if (block.kind === "p") {
@@ -158,7 +174,7 @@ function renderBlocks(blocks: Block[], renderItem?: (text: string) => ReactNode,
           key={i}
           className="klyra-mono m-0 overflow-x-auto rounded-md border border-bordure-subtile bg-fond-page p-3 text-ui-xs leading-[1.6] whitespace-pre text-texte-principal"
         >
-          {block.text}
+          <AdressesCliquables texte={block.text} />
         </pre>
       );
     }

@@ -163,9 +163,9 @@
   --radius-2xs: 4px;   /* rayon-2xs : tuiles, petites marques */
   --radius-xs:  6px;   /* rayon-xs : tous les boutons */
   --radius-sm:  8px;   /* rayon-sm : tags, liens, rangées de menu */
-  --radius-md-: 10px;  /* rayon-md- : onglets, items */
+  --radius-md-moins: 10px;  /* rayon-md- : onglets, items (un nom qui finit par « - » ne génère pas de classe) */
   --radius-md:  12px;  /* rayon-md : champs, cartes internes */
-  --radius-lg-: 14px;
+  --radius-lg-moins: 14px; /* rayon-lg- */
   --radius-lg:  16px;
   --radius-xl:  20px;  /* rayon-xl : cartes */
   --radius-2xl: 24px;

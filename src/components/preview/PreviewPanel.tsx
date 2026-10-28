@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { useModifiedFiles } from "@/lib/workspace";
 import type { Chat, Project } from "@/types/domain";
 import { versUrl } from "@/components/ui/Lien";
+import { getBridge } from "@/lib/bridge";
 import { ouvrirFichier } from "@/components/project/Visionneuse";
 import { Publier } from "./Publier";
 
@@ -81,6 +82,14 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
     setChargee(adresseLue);
     setTab("apercu");
   }
+
+  /* On navigue dans l'aperçu : la barre montre la page affichée (sauf pendant qu'on y tape). */
+  useEffect(() => {
+    return getBridge()?.apercu?.onAdresse((url) => {
+      if (document.activeElement?.getAttribute("aria-label") === "Adresse de l’aperçu") return;
+      setAdresse(url.replace(/^http:\/\//, ""));
+    });
+  }, []);
 
   /* Poignée : on tire le bord gauche ; double-clic pour revenir à la largeur de départ. */
   const tirer = (depart: ReactPointerEvent) => {
@@ -173,7 +182,7 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
             </div>
             {chargee && (
               <a
-                href={versUrl(chargee)}
+                href={versUrl(adresse.trim() || chargee)}
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Ouvrir dans le navigateur"

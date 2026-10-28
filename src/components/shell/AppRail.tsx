@@ -69,7 +69,7 @@ export function AppRail({
       {/* Le milieu défile si la fenêtre est basse : le bas du rail reste visible. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto [scrollbar-width:none]">
         {NAVIGATION.map((item) => {
-          const active = pathname === item.href || (item.href === "/chats" && pathname === "/chat" && panneau === "conversations");
+          const active = pathname === item.href || (item.href === "/chats" && (pathname === "/equipe" || (pathname === "/chat" && panneau === "conversations")));
           return (
             <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} title={item.label} className={entree(active)}>
               <Entree icone={item.icon} nom={item.label} active={active} />

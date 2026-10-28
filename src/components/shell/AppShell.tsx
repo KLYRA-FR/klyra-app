@@ -6,7 +6,6 @@ import { PanneauConversations } from "@/components/chat/PanneauConversations";
 import { ProjectPanel } from "@/components/project/ProjectPanel";
 import { Visionneuse, type DemandeFichier } from "@/components/project/Visionneuse";
 import { useIsClient } from "@/hooks/useIsClient";
-import { Icon } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
@@ -33,26 +32,11 @@ const FILES_MIN_WIDTH = 1280;
 const MAIN =
   "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface shadow-ombre-ambiante";
 
-/** Dans les chats : la liste des chats, ou une conversation directe avec un agent. */
+/** Dans les chats : la liste des chats, une conversation directe avec un agent, ou les fiches de l'équipe. */
 function useEnConversation(): boolean {
   const pathname = usePathname();
   const id = useSearchParams().get("id");
-  return pathname === "/chats" || (pathname === "/chat" && !!id?.startsWith(DIRECT));
-}
-
-/** Panneau replié : une languette entre le rail et le contenu, pour le rouvrir d'un clic. */
-function Languette({ libelle, onOuvrir }: { libelle: string; onOuvrir: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onOuvrir}
-      aria-label={libelle}
-      title={libelle}
-      className="group/languette my-2 ml-2 flex w-5 shrink-0 cursor-pointer items-center justify-center rounded-md border border-bordure-subtile bg-fond-surface p-0 text-icone-secondaire transition-colors duration-[120ms] ease-sortie hover:border-bordure-forte hover:text-texte-principal"
-    >
-      <Icon name="chevron-right" size={14} className="transition-transform duration-[220ms] ease-sortie group-hover/languette:translate-x-0.5" />
-    </button>
-  );
+  return pathname === "/chats" || pathname === "/equipe" || (pathname === "/chat" && !!id?.startsWith(DIRECT));
 }
 
 /** Le contenu de la page, qui arrive en douceur à chaque changement d'écran. */
@@ -95,12 +79,11 @@ function ShellLayout({ children }: { children: ReactNode }) {
     return (
       <div className="flex h-full">
         <AppRail panneau="fichiers" filesOpen={filesOpen} onToggleFiles={() => setFilesOpen((v) => !v)} />
-        {filesOpen ? (
+        {/* Replié, il se rouvre par le bouton du menu. */}
+        {filesOpen && (
           <div ref={glissement} className="flex shrink-0">
             <ProjectPanel project={project} onClose={() => setFilesOpen(false)} />
           </div>
-        ) : (
-          <Languette libelle="Afficher les fichiers du projet" onOuvrir={() => setFilesOpen(true)} />
         )}
         {/* La visionneuse d'un fichier s'ouvre par-dessus le contenu. */}
         <main className={cn("relative m-2", MAIN)}>
@@ -119,12 +102,10 @@ function ShellLayout({ children }: { children: ReactNode }) {
     return (
       <div className="flex h-full">
         <AppRail panneau="conversations" filesOpen={conversationsOpen} onToggleFiles={() => setConversationsOpen((v) => !v)} />
-        {conversationsOpen ? (
+        {conversationsOpen && (
           <div ref={glissement} className="flex shrink-0">
             <PanneauConversations onClose={() => setConversationsOpen(false)} />
           </div>
-        ) : (
-          <Languette libelle="Afficher les agents et les conversations" onOuvrir={() => setConversationsOpen(true)} />
         )}
         <main className={cn("m-2", MAIN)}>
           <Page>{children}</Page>

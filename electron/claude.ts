@@ -176,10 +176,12 @@ export function autoriser(requestId: string, demandeId: string, decision: Decisi
   const child = running.get(requestId);
   const demande = demandes.get(requestId)?.get(demandeId);
   if (!child || !demande) return false;
-  // « Toujours » : les règles proposées par Claude Code, valables pour cette session seulement.
+  // « Toujours » : les règles proposées par Claude Code, gardées dans le projet
+  // (.claude/settings.local.json), comme « Ne plus demander » dans VS Code : chaque message
+  // relance Claude Code, une règle de session serait oubliée au suivant.
   const regles =
     decision === "toujours"
-      ? demande.suggestions.map((r) => ({ ...(r as Record<string, unknown>), destination: "session" }))
+      ? demande.suggestions.map((r) => ({ ...(r as Record<string, unknown>), destination: "localSettings" }))
       : [];
   repondre(child, demandeId, decision !== "non", demande.entree, regles);
   demandes.get(requestId)?.delete(demandeId);
@@ -228,7 +230,13 @@ export function dossierExiste(dossier: string): boolean {
  * Se termine toujours par un événement `fin`.
  */
 export function streamAgent(requestId: string, options: StreamOptions, emit: (event: AgentEvent) => void): void {
-  const fin = (event: Extract<AgentEvent, { type: "fin" }>) => emit(event);
+  /* Un seul `fin` par réponse : il part dès le résultat, la fermeture du processus ne le renvoie pas. */
+  let finie = false;
+  const fin = (event: Extract<AgentEvent, { type: "fin" }>) => {
+    if (finie) return;
+    finie = true;
+    emit(event);
+  };
   const bin = findClaude();
   if (!bin) return fin({ type: "fin", ok: false, texte: "", erreur: "Claude Code est introuvable sur ce poste." });
   if (options.agent !== null && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(options.agent)) {
@@ -258,7 +266,14 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     "--permission-prompts",
     "host",
     "--permission-mode",
-    acces === "demander" ? "manual" : "acceptEdits",
+    // « projet » : le mode auto de Claude Code, comme dans VS Code — il juge seul ce qui est sans risque
+    // et ne demande que pour le reste.
+    acces === "demander" ? "manual" : acces === "projet" ? "auto" : "acceptEdits",
+    // Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait.
+    // Il pose ses questions dans sa réponse, comme à un collègue.
+    "--disallowedTools",
+    "AskUserQuestion",
+    "EnterPlanMode",
   ];
   if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES);
   if (options.agent) args.push("--agent", options.agent);
@@ -378,6 +393,11 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (msg.type === "result") {
       // La réponse est finie : on ferme l'entrée, Claude Code se termine.
       child.stdin.end();
+      // Un serveur lancé par l'agent (pnpm dev…) peut garder le processus ouvert :
+      // on n'attend pas sa fermeture pour rendre la main, et on le laisse tourner.
+      clearTimeout(timeout);
+      running.delete(requestId);
+      demandes.delete(requestId);
       const ok = !msg.is_error && msg.subtype === "success";
       resultat = {
         type: "fin",
@@ -387,6 +407,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
         costUsd: typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : undefined,
         sessionId: typeof msg.session_id === "string" ? msg.session_id : undefined,
       };
+      fin(resultat);
     }
   };
 

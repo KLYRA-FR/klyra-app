@@ -114,6 +114,9 @@ async function runSmokeTest(win: BrowserWindow) {
   app.exit(text ? 0 : 1);
 }
 
+/** Un serveur de dev sur ce Mac. */
+const ADRESSE_LOCALE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/;
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -142,10 +145,44 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  const url = DEV_URL ?? "app://klyra/";
-  void win.loadURL(SMOKE_TEST ? `${url.replace(/\/$/, "")}/chat?id=hero-home` : url).then(() => {
-    if (SMOKE_TEST) void runSmokeTest(win);
+  /* L'aperçu affiche le serveur de dev d'un projet dans une iframe. Beaucoup de
+     sites (klyra.fr compris) l'interdisent par sécurité (X-Frame-Options,
+     frame-ancestors) : l'app lève ces en-têtes, pour les serveurs locaux seulement. */
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    if (!ADRESSE_LOCALE.test(details.url) || !details.responseHeaders) return callback({});
+    const entetes = { ...details.responseHeaders };
+    for (const cle of Object.keys(entetes)) {
+      const nom = cle.toLowerCase();
+      if (nom === "x-frame-options") delete entetes[cle];
+      else if (nom === "content-security-policy") {
+        entetes[cle] = entetes[cle].map((v) =>
+          v
+            .split(";")
+            .map((d) => d.trim())
+            // upgrade-insecure-requests passerait les fichiers d'un serveur http local en https.
+            .filter((d) => d && !/^(frame-ancestors|upgrade-insecure-requests)\b/i.test(d))
+            .join("; "),
+        );
+      }
+    }
+    callback({ responseHeaders: entetes });
   });
+
+  /* La barre d'adresse de l'aperçu suit la page où l'on navigue. */
+  const signalerAdresse = (url: string, principal: boolean) => {
+    if (!principal && ADRESSE_LOCALE.test(url)) win.webContents.send("apercu:adresse", url);
+  };
+  win.webContents.on("did-frame-navigate", (_e, url, _code, _statut, principal) => signalerAdresse(url, principal));
+  win.webContents.on("did-navigate-in-page", (_e, url, principal) => signalerAdresse(url, principal));
+
+  const url = DEV_URL ?? "app://klyra/";
+  // En dev, le cache garderait d'anciens fichiers de l'app : on le vide à chaque ouverture.
+  const cache = DEV_URL ? win.webContents.session.clearCache() : Promise.resolve();
+  void cache
+    .then(() => win.loadURL(SMOKE_TEST ? `${url.replace(/\/$/, "")}/chat?id=hero-home` : url))
+    .then(() => {
+      if (SMOKE_TEST) void runSmokeTest(win);
+    });
 }
 
 /* ─── Pont avec l'interface (cf. preload.ts) ───────────────────── */

@@ -10,7 +10,7 @@ export const NIVEAUX_ACCES: { id: Acces; nom: string; detail: string }[] = [
   {
     id: "projet",
     nom: "Le projet en autonomie",
-    detail: "Il modifie les fichiers du projet et lance les commandes de travail (pnpm, git en lecture, node…) seul. Il te demande pour le reste.",
+    detail: "Comme dans VS Code : il modifie les fichiers et lance les commandes sans risque seul, et ne te demande que pour ce qui pourrait casser ou sortir du projet.",
   },
   {
     id: "tout",

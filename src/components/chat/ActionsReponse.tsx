@@ -76,6 +76,17 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
   const [parle, setParle] = useState(false);
   const [ouvert, setOuvert] = useState(false);
   const [sous, setSous] = useState<"reessayer" | "modele" | null>(null);
+  /* Le sous-menu ne se referme qu'après un court délai : le temps d'aller jusqu'à lui en diagonale. */
+  const minuteur = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const annulerSous = () => {
+    if (minuteur.current) clearTimeout(minuteur.current);
+    minuteur.current = null;
+  };
+  const viserSous = (cible: "reessayer" | "modele" | null) => {
+    annulerSous();
+    minuteur.current = setTimeout(() => setSous(cible), 300);
+  };
+  useEffect(() => annulerSous, []);
   const zone = useRef<HTMLDivElement>(null);
   const texte = texteDe(message);
   const occupe = !!travail;
@@ -172,7 +183,7 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
           </span>
           <Ligne
             icone="git-branch-01"
-            onSurvol={() => setSous(null)}
+            onSurvol={() => viserSous(null)}
             onClick={() => {
               setOuvert(false);
               const id = brancher(chat.id, message.id);
@@ -186,26 +197,29 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
               icone="refresh-01"
               sousMenu
               ouvert={sous !== null}
-              onSurvol={() => setSous((s) => s ?? "reessayer")}
+              onSurvol={() => {
+                annulerSous();
+                setSous((s) => s ?? "reessayer");
+              }}
               onClick={() => setSous((s) => (s ? null : "reessayer"))}
             >
               Réessayer
             </Ligne>
             {sous && (
-              <div ref={apparition} role="menu" aria-label="Réessayer" className={cn(MENU, "bottom-0 left-full ml-2")}>
+              <div ref={apparition} role="menu" aria-label="Réessayer" onMouseEnter={annulerSous} className={cn(MENU, "bottom-0 left-full ml-2")}>
                 <span className={ENTETE}>{nomModele(modele)} utilisé</span>
                 {occupe && <span className="px-2 pb-1 text-ui-2xs text-texte-tertiaire">L’agent travaille : ce sera fait juste après.</span>}
-                <Ligne icone="refresh-01" onSurvol={() => setSous("reessayer")} onClick={() => refaire("reessayer")}>
+                <Ligne icone="refresh-01" onSurvol={() => viserSous("reessayer")} onClick={() => refaire("reessayer")}>
                   Réessayer
                 </Ligne>
-                <Ligne icone="align-left" onSurvol={() => setSous("reessayer")} onClick={() => refaire("details")}>
+                <Ligne icone="align-left" onSurvol={() => viserSous("reessayer")} onClick={() => refaire("details")}>
                   Ajouter des détails
                 </Ligne>
-                <Ligne icone="minimise-01" onSurvol={() => setSous("reessayer")} onClick={() => refaire("concis")}>
+                <Ligne icone="minimise-01" onSurvol={() => viserSous("reessayer")} onClick={() => refaire("concis")}>
                   Plus concis
                 </Ligne>
                 <span aria-hidden="true" className="mx-2 my-1 h-px bg-bordure-subtile" />
-                <Ligne icone="globe-01" onSurvol={() => setSous("reessayer")} onClick={() => refaire("web")}>
+                <Ligne icone="globe-01" onSurvol={() => viserSous("reessayer")} onClick={() => refaire("web")}>
                   Rechercher sur le web
                 </Ligne>
                 <div className="relative">
@@ -213,13 +227,16 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
                     icone="shuffle"
                     sousMenu
                     ouvert={sous === "modele"}
-                    onSurvol={() => setSous("modele")}
+                    onSurvol={() => {
+                      annulerSous();
+                      setSous("modele");
+                    }}
                     onClick={() => setSous((s) => (s === "modele" ? "reessayer" : "modele"))}
                   >
                     Changer de modèle
                   </Ligne>
                   {sous === "modele" && (
-                    <div ref={apparition} role="menu" aria-label="Changer de modèle" className={cn(MENU, "bottom-0 left-full ml-2")}>
+                    <div ref={apparition} role="menu" aria-label="Changer de modèle" onMouseEnter={annulerSous} className={cn(MENU, "bottom-0 left-full ml-2")}>
                       {MODELES.filter((m) => m.id !== modele).map((m) => (
                         <Ligne key={m.id} icone="refresh-01" onClick={() => refaire("reessayer", m.id)}>
                           {m.nom}

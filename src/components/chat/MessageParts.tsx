@@ -184,7 +184,7 @@ export function CarteAutorisation({
           Autoriser
         </Bouton>
         <Bouton variant="blanc" taille="compact" onClick={() => onRepondre?.("toujours")}>
-          Toujours, pour cette conversation
+          Toujours, dans ce projet
         </Bouton>
         <Bouton variant="blanc" taille="compact" onClick={() => onRepondre?.("non")}>
           Refuser
@@ -215,7 +215,7 @@ export function PassationView({
       <span className={cn(statut === "en-cours" && "klyra-respire")}>{libelle}</span>
       <Link
         href={`/chat?id=${idDirect(roleId)}`}
-        className="inline-flex h-6 items-center gap-1.5 rounded-pill border border-bordure-subtile bg-fond-surface pr-2.5 pl-0.5 font-medium text-texte-principal no-underline transition-colors duration-[120ms] hover:border-bordure-forte"
+        className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-bordure-subtile bg-fond-surface pr-2.5 pl-px font-medium text-texte-principal no-underline transition-colors duration-[120ms] hover:border-bordure-forte"
       >
         <AgentRond roleId={roleId} taille={20} />
         {role.name}

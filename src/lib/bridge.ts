@@ -189,6 +189,10 @@ export interface KlyraBridge {
     adresse: (secret: string) => Promise<Reponse<string>>;
     onAppel: (callback: (secret: string, corps: string) => void) => () => void;
   };
+  /** L'adresse de la page affichée dans l'aperçu. Absent avant la relance de l'app. */
+  apercu?: {
+    onAdresse: (callback: (url: string) => void) => () => void;
+  };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;
     read: () => Promise<Reponse<unknown>>;

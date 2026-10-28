@@ -87,6 +87,14 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("webhooks:appel", listener);
     },
   },
+  apercu: {
+    /** L'aperçu (iframe) a changé de page : son adresse, pour la barre. */
+    onAdresse: (callback: (url: string) => void) => {
+      const listener = (_e: unknown, url: string) => callback(url);
+      ipcRenderer.on("apercu:adresse", listener);
+      return () => ipcRenderer.removeListener("apercu:adresse", listener);
+    },
+  },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */
     avantFermeture: (callback: () => void) => {

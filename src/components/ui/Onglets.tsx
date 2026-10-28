@@ -36,7 +36,7 @@ export function Onglets<T extends string>({
   className,
 }: OngletsProps<T>) {
   return (
-    <div role="tablist" aria-label={libelle} className={cn("inline-flex bg-fond-surface-grise p-0.5", arrondi === "serre" ? "rounded-sm" : "rounded-md-", className)}>
+    <div role="tablist" aria-label={libelle} className={cn("inline-flex bg-fond-surface-grise p-0.5", arrondi === "serre" ? "rounded-sm" : "rounded-md-moins", className)}>
       {onglets.map((onglet) => {
         const actif = onglet.id === valeur;
         return (

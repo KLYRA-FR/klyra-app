@@ -35,16 +35,26 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau }: { chat: Chat; pa
         </span>
       </div>
       <ChoixModele chat={chat} />
+      {/* Sa fiche complète (rôle, compétences, historique) : l'équipe n'est plus dans le menu. */}
       {role.id !== "principal" && (
-        <Bouton
-          variant="blanc"
-          taille="compact"
-          onClick={() => router.push(`/equipe?agent=${role.id}`)}
-          iconeGauche={<Icon name="file-code" size={16} />}
-          className="hidden @2xl:inline-flex"
-        >
-          Voir la fiche
-        </Bouton>
+        <>
+          <Bouton
+            variant="blanc"
+            taille="compact"
+            onClick={() => router.push(`/equipe?agent=${role.id}`)}
+            iconeGauche={<Icon name="user-profile-01" size={16} />}
+            className="hidden @2xl:inline-flex"
+          >
+            Profil
+          </Bouton>
+          <BoutonIcone
+            taille="compact"
+            icone={<Icon name="user-profile-01" size={16} />}
+            libelle={`Profil de ${role.name}`}
+            onClick={() => router.push(`/equipe?agent=${role.id}`)}
+            className="@2xl:hidden"
+          />
+        </>
       )}
       {/* Le point : l'agent a des tâches en cours, visibles dans le panneau. */}
       <span className="relative">
@@ -83,7 +93,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
         {/* Les visages de la conversation, qui se chevauchent. */}
         <div aria-label="Agents de la conversation" className="mr-1 hidden -space-x-2 @xl:flex">
           {chat.roleIds.map((roleId) => (
-            <AgentRond key={roleId} roleId={roleId} taille={26} className="rounded-full ring-2 ring-fond-surface" />
+            <AgentRond key={roleId} roleId={roleId} taille={26} className="rounded-sm ring-2 ring-fond-surface" />
           ))}
         </div>
         <BoutonIcone

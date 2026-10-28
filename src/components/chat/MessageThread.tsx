@@ -10,6 +10,7 @@ import { texteDe, useChat, useChatMessages, useRole, useTravail, useWorkspace, t
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse } from "./ActionsReponse";
 import { MessagePartView } from "./MessageParts";
+import { RailMessages } from "./RailMessages";
 
 /** Deux messages du même auteur à moins de 5 min d'écart forment un groupe : un seul nom, un seul rond. */
 const GROUPE_MS = 5 * 60 * 1000;
@@ -229,46 +230,49 @@ export function MessageThread({ chatId }: { chatId: string }) {
   const derniereReponse = messages.findLast((m) => m.author.kind === "role")?.id;
 
   return (
-    <div
-      ref={zone}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        enBas.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      }}
-      className="flex-1 overflow-y-auto"
-    >
-      <div className="mx-auto flex min-h-full max-w-[880px] flex-col justify-end px-7 pt-6 pb-4">
-        {messages.length === 0 && <Accueil chat={chat} />}
-        {messages.map((message, i) => {
-          const previous = messages[i - 1];
-          const showDay = !previous || !isSameDay(previous.createdAt, message.createdAt);
-          const suite =
-            !!previous &&
-            !showDay &&
-            memeAuteur(previous, message) &&
-            new Date(message.createdAt).getTime() - new Date(previous.createdAt).getTime() < GROUPE_MS;
-          return (
-            <Fragment key={message.id}>
-              {showDay && <DaySeparator iso={message.createdAt} />}
-              <div className={cn("klyra-arrivee", suite ? "mt-1.5" : "")}>
-                {message.author.kind === "user" ? (
-                  <UserMessage message={message} suite={suite} />
-                ) : (
-                  <RoleMessage
-                    chat={chat}
-                    derniere={message.id === derniereReponse}
-                    message={message}
-                    roleId={message.author.roleId}
-                    suite={suite}
-                    travail={travail?.messageId === message.id ? travail : null}
-                    onAction={(label, roleId) => sendMessage(chatId, label, roleId)}
-                  />
-                )}
-              </div>
-            </Fragment>
-          );
-        })}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={zone}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          enBas.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+        className="flex-1 overflow-y-auto [scrollbar-width:none]"
+      >
+        <div className="mx-auto flex min-h-full max-w-[880px] flex-col justify-end px-7 pt-6 pb-4">
+          {messages.length === 0 && <Accueil chat={chat} />}
+          {messages.map((message, i) => {
+            const previous = messages[i - 1];
+            const showDay = !previous || !isSameDay(previous.createdAt, message.createdAt);
+            const suite =
+              !!previous &&
+              !showDay &&
+              memeAuteur(previous, message) &&
+              new Date(message.createdAt).getTime() - new Date(previous.createdAt).getTime() < GROUPE_MS;
+            return (
+              <Fragment key={message.id}>
+                {showDay && <DaySeparator iso={message.createdAt} />}
+                <div data-message={message.id} data-auteur={message.author.kind} className={cn("klyra-arrivee", suite ? "mt-1.5" : "")}>
+                  {message.author.kind === "user" ? (
+                    <UserMessage message={message} suite={suite} />
+                  ) : (
+                    <RoleMessage
+                      chat={chat}
+                      derniere={message.id === derniereReponse}
+                      message={message}
+                      roleId={message.author.roleId}
+                      suite={suite}
+                      travail={travail?.messageId === message.id ? travail : null}
+                      onAction={(label, roleId) => sendMessage(chatId, label, roleId)}
+                    />
+                  )}
+                </div>
+              </Fragment>
+            );
+          })}
+        </div>
       </div>
+      <RailMessages zone={zone} messages={messages} />
     </div>
   );
 }
