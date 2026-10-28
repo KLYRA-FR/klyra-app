@@ -40,6 +40,7 @@ export type AgentEvent =
   | { type: "texte"; delta: string; nouveauBloc: boolean }
   | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
   | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
+  | { type: "jetons"; total: number }
   | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string };
@@ -127,6 +128,8 @@ export interface KlyraBridge {
     autoriser: (requestId: string, demandeId: string, decision: "oui" | "toujours" | "non") => Promise<Reponse<boolean>>;
     stream: (requestId: string, options: StreamOptions) => Promise<Reponse<null>>;
     onEvent: (callback: (requestId: string, event: AgentEvent) => void) => () => void;
+    /** L'agent reprend la parole de lui-même (une tâche de fond s'est terminée) : une nouvelle réponse. */
+    onSpontane?: (callback: (requestId: string, sessionId: string) => void) => () => void;
     utilisation: () => Promise<Reponse<Utilisation | null>>;
     compte: () => Promise<Reponse<CompteClaude>>;
     /** Ouvre la connexion Anthropic dans le navigateur et attend qu'elle soit validée. */

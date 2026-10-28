@@ -117,6 +117,7 @@ function EnTravail({
         {attente ? `${role.name} attend ton accord` : vide ? `${role.name} réfléchit…` : `${role.name} travaille…`}
       </span>
       {chrono && <span>{chrono}</span>}
+      {!!travail.jetons && <span>· {travail.jetons.toLocaleString("fr-FR")} tokens</span>}
     </div>
   );
 }

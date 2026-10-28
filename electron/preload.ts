@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld("klyra", {
       ipcRenderer.on("claude:event", listener);
       return () => ipcRenderer.removeListener("claude:event", listener);
     },
+    onSpontane: (callback: (requestId: string, sessionId: string) => void) => {
+      const listener = (_e: unknown, requestId: string, sessionId: string) => callback(requestId, sessionId);
+      ipcRenderer.on("claude:spontane", listener);
+      return () => ipcRenderer.removeListener("claude:spontane", listener);
+    },
     utilisation: () => ipcRenderer.invoke("claude:utilisation"),
     compte: () => ipcRenderer.invoke("claude:compte"),
     connexion: () => ipcRenderer.invoke("claude:connexion"),

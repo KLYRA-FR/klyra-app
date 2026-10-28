@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -31,6 +32,7 @@ import {
   streamAgent,
   surUtilisation,
   type Decision,
+  type AgentEvent,
   type StreamOptions,
   type Utilisation,
 } from "./claude";
@@ -236,8 +238,15 @@ function registerBridge() {
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
     const sender = BrowserWindow.getAllWindows()[0]?.webContents;
-    streamAgent(requestId, options, (agentEvent) => {
-      if (sender && !sender.isDestroyed()) sender.send("claude:event", requestId, agentEvent);
+    const envoyer = (id: string) => (agentEvent: AgentEvent) => {
+      if (sender && !sender.isDestroyed()) sender.send("claude:event", id, agentEvent);
+    };
+    // Quand une tâche de fond se termine, l'agent reprend la parole : une nouvelle réponse s'ouvre.
+    streamAgent(requestId, options, envoyer(requestId), (sessionId) => {
+      if (!sender || sender.isDestroyed()) return null;
+      const id = randomUUID();
+      sender.send("claude:spontane", id, sessionId);
+      return { requestId: id, emit: envoyer(id) };
     });
     return null;
   });

@@ -66,6 +66,8 @@ export interface Travail {
   roleId: RoleId;
   messageId: string;
   debut: number;
+  /** Tokens écrits depuis le début, estimés en direct : la preuve que l'agent avance. */
+  jetons?: number;
 }
 
 /** Un message envoyé pendant que l'agent travaille : il part dès qu'il a fini. */
@@ -131,7 +133,8 @@ type WorkspaceAction =
   | { type: "message/add"; message: Message }
   | { type: "message/update"; id: string; patch: (message: Message) => Message }
   | { type: "travail/debut"; chatId: string; travail: Travail }
-  | { type: "travail/fin"; chatId: string }
+  | { type: "travail/fin"; chatId: string; messageId?: string }
+  | { type: "travail/jetons"; chatId: string; total: number }
   | { type: "file/ajouter"; chatId: string; message: EnAttente }
   | { type: "file/retirer"; chatId: string; id: string }
   | { type: "workflow/enregistrer"; workflow: Workflow }
@@ -304,7 +307,13 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
         ...state,
         travail: { ...state.travail, [action.chatId]: action.travail },
       };
+    case "travail/jetons": {
+      const t = state.travail[action.chatId];
+      if (!t) return state;
+      return { ...state, travail: { ...state.travail, [action.chatId]: { ...t, jetons: action.total } } };
+    }
     case "travail/fin": {
+      if (action.messageId && state.travail[action.chatId]?.messageId !== action.messageId) return state;
       const travail = { ...state.travail };
       delete travail[action.chatId];
       return { ...state, travail };
@@ -727,6 +736,144 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  /** Suit une réponse d'agent au fil de l'eau, jusqu'à sa fin. */
+  const suivreReponse = useCallback(
+    (chatId: string, roleId: RoleId, messageId: string) => {
+      const maj = (patch: (m: Message) => Message) => dispatch({ type: "message/update", id: messageId, patch });
+      const terminer = () => {
+        ecouteurs.current.delete(messageId);
+        // Une réponse spontanée peut finir pendant qu'une autre est en cours : seule la sienne libère la conversation.
+        const etaitLeTravail = stateRef.current.travail[chatId]?.messageId === messageId;
+        dispatch({ type: "travail/fin", chatId, messageId });
+        if (etaitLeTravail) suivant(chatId);
+      };
+
+    ecouteurs.current.set(messageId, (event) => {
+      switch (event.type) {
+        case "session":
+          dispatch({
+            type: "chat/update",
+            id: chatId,
+            patch: (c) => ({
+              ...c,
+              sessions: { ...c.sessions, [roleId]: event.sessionId },
+            }),
+          });
+          break;
+        case "texte":
+          maj((m) => ({
+            ...m,
+            parts: ajouterTexte(m.parts, event.delta, event.nouveauBloc),
+          }));
+          break;
+        case "etape": {
+          const chemin = event.entree.file_path ?? event.entree.notebook_path;
+          const etape: Etape = {
+            id: event.id,
+            outil: event.outil,
+            libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
+            statut: "en-cours",
+            parent: event.parent,
+            ...(typeof chemin === "string" ? { chemin } : {}),
+          };
+          const taches = event.outil === "TodoWrite" ? lireTaches(event.entree) : null;
+          if (taches)
+            dispatch({
+              type: "chat/update",
+              id: chatId,
+              patch: (c) => ({ ...c, taches }),
+            });
+          maj((m) => ({
+            ...m,
+            parts: ajouterEtape(m.parts, etape, rolesRef.current, event.entree),
+          }));
+          break;
+        }
+        case "jetons":
+          dispatch({ type: "travail/jetons", chatId, total: event.total });
+          break;
+        case "etape-fin":
+          maj((m) => ({
+            ...m,
+            parts: finirEtape(m.parts, event.id, event.ok),
+          }));
+          break;
+        case "autorisation": {
+          const e = event.entree;
+          const detail = [e.command, e.file_path, e.notebook_path, e.url, e.pattern].find((v) => typeof v === "string");
+          maj((m) => ({
+            ...m,
+            parts: [
+              ...m.parts,
+              {
+                type: "autorisation",
+                id: event.id,
+                outil: event.outil,
+                libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
+                detail: typeof detail === "string" ? detail : "",
+                description: event.description,
+                statut: "attente",
+              },
+            ],
+          }));
+          break;
+        }
+        case "autorisation-fin":
+          maj((m) => ({
+            ...m,
+            parts: m.parts.map((p) =>
+              p.type === "autorisation" && p.id === event.id && p.statut === "attente"
+                ? { ...p, statut: event.accepte ? "acceptee" : "refusee" }
+                : p,
+            ),
+          }));
+          break;
+        case "fin":
+          maj((m) => {
+            const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
+            const parts = !aDuTexte && event.texte ? ajouterTexte(m.parts, event.texte, true) : m.parts;
+            return event.ok
+              ? { ...m, parts, statut: "fait" }
+              : { ...m, parts, statut: "erreur", erreur: event.erreur };
+          });
+          if (event.sessionId) {
+            const sessionId = event.sessionId;
+            dispatch({
+              type: "chat/update",
+              id: chatId,
+              patch: (c) => ({
+                ...c,
+                sessions: { ...c.sessions, [roleId]: sessionId },
+              }),
+            });
+          }
+          terminer();
+          break;
+      }
+    });
+    },
+    [suivant],
+  );
+
+  /* L'agent reprend la parole de lui-même (un agent d'arrière-plan a fini, un serveur s'est arrêté) :
+     sa réponse s'ouvre dans la conversation de cette session. */
+  useEffect(() => {
+    if (!bridge?.claude.onSpontane) return;
+    return bridge.claude.onSpontane((requestId, sessionId) => {
+      const chat = stateRef.current.chats.find((c) => Object.values(c.sessions).includes(sessionId));
+      const roleId = chat && Object.entries(chat.sessions).find(([, s]) => s === sessionId)?.[0];
+      if (!chat || !roleId) return;
+      dispatch({
+        type: "message/add",
+        message: { id: requestId, chatId: chat.id, author: { kind: "role", roleId }, createdAt: new Date().toISOString(), parts: [], statut: "en-cours" },
+      });
+      if (!stateRef.current.travail[chat.id]) {
+        dispatch({ type: "travail/debut", chatId: chat.id, travail: { roleId, messageId: requestId, debut: Date.now() } });
+      }
+      suivreReponse(chat.id, roleId, requestId);
+    });
+  }, [bridge, suivreReponse]);
+
   /** Fait répondre un agent à un message. */
   const lancer = useCallback(
     (chatId: string, roleId: RoleId, messageUtilisateur: Message) => {
@@ -790,106 +937,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         return;
       }
 
-      ecouteurs.current.set(messageId, (event) => {
-        switch (event.type) {
-          case "session":
-            dispatch({
-              type: "chat/update",
-              id: chatId,
-              patch: (c) => ({
-                ...c,
-                sessions: { ...c.sessions, [roleId]: event.sessionId },
-              }),
-            });
-            break;
-          case "texte":
-            maj((m) => ({
-              ...m,
-              parts: ajouterTexte(m.parts, event.delta, event.nouveauBloc),
-            }));
-            break;
-          case "etape": {
-            const chemin = event.entree.file_path ?? event.entree.notebook_path;
-            const etape: Etape = {
-              id: event.id,
-              outil: event.outil,
-              libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
-              statut: "en-cours",
-              parent: event.parent,
-              ...(typeof chemin === "string" ? { chemin } : {}),
-            };
-            const taches = event.outil === "TodoWrite" ? lireTaches(event.entree) : null;
-            if (taches)
-              dispatch({
-                type: "chat/update",
-                id: chatId,
-                patch: (c) => ({ ...c, taches }),
-              });
-            maj((m) => ({
-              ...m,
-              parts: ajouterEtape(m.parts, etape, rolesRef.current, event.entree),
-            }));
-            break;
-          }
-          case "etape-fin":
-            maj((m) => ({
-              ...m,
-              parts: finirEtape(m.parts, event.id, event.ok),
-            }));
-            break;
-          case "autorisation": {
-            const e = event.entree;
-            const detail = [e.command, e.file_path, e.notebook_path, e.url, e.pattern].find((v) => typeof v === "string");
-            maj((m) => ({
-              ...m,
-              parts: [
-                ...m.parts,
-                {
-                  type: "autorisation",
-                  id: event.id,
-                  outil: event.outil,
-                  libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
-                  detail: typeof detail === "string" ? detail : "",
-                  description: event.description,
-                  statut: "attente",
-                },
-              ],
-            }));
-            break;
-          }
-          case "autorisation-fin":
-            maj((m) => ({
-              ...m,
-              parts: m.parts.map((p) =>
-                p.type === "autorisation" && p.id === event.id && p.statut === "attente"
-                  ? { ...p, statut: event.accepte ? "acceptee" : "refusee" }
-                  : p,
-              ),
-            }));
-            break;
-          case "fin":
-            maj((m) => {
-              const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
-              const parts = !aDuTexte && event.texte ? ajouterTexte(m.parts, event.texte, true) : m.parts;
-              return event.ok
-                ? { ...m, parts, statut: "fait" }
-                : { ...m, parts, statut: "erreur", erreur: event.erreur };
-            });
-            if (event.sessionId) {
-              const sessionId = event.sessionId;
-              dispatch({
-                type: "chat/update",
-                id: chatId,
-                patch: (c) => ({
-                  ...c,
-                  sessions: { ...c.sessions, [roleId]: sessionId },
-                }),
-              });
-            }
-            terminer();
-            break;
-        }
-      });
+      suivreReponse(chatId, roleId, messageId);
 
       const project = stateRef.current.projects.find((p) => p.id === chat.projectId);
       void bridge.claude
@@ -913,7 +961,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             });
         });
     },
-    [bridge, construirePrompt, suivant],
+    [bridge, construirePrompt, suivant, suivreReponse],
   );
   const lancerRef = useRef(lancer);
   useEffect(() => {
