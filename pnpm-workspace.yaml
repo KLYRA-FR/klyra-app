@@ -2,3 +2,8 @@ allowBuilds:
   electron: true
   sharp: false
   unrs-resolver: false
+# Failles corrigées dans des dépendances indirectes (outillage, téléchargement d'Electron).
+overrides:
+  shell-quote: ^1.11.0
+  undici: ^7.30.1
+  zod: ^4.6.6
