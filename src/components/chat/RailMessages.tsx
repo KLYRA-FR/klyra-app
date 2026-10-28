@@ -8,30 +8,36 @@ import type { Message } from "@/types/domain";
 
 /** Distance (px) où le curseur « s'accroche » au segment le plus proche. */
 const AIMANT = 10;
-/** Écart entre deux segments, comme dans la maquette. */
+/** Écart entre deux segments, comme dans la maquette ; il se resserre jusqu'à 1 px s'il y a beaucoup d'échanges. */
 const ECART = 4;
-/** Un segment ne descend pas sous cette hauteur, même pour un message d'une ligne. */
-const SEGMENT_MIN = 4;
-/** Le rail prend au plus cette part de la hauteur de la conversation… */
-const PART_MAX = 0.6;
-/** …et un message n'y fait jamais plus du quart de sa vraie hauteur. */
+/** Un segment ne descend pas sous cette hauteur, tant que le rail a la place. */
+const SEGMENT_MIN = 3;
+/** Le rail ne grandit jamais au-delà, quelle que soit la longueur de la conversation… */
+const HAUTEUR_MAX = 220;
+/** …ni au-delà de cette part de la hauteur visible. */
+const PART_MAX = 0.5;
+/** Un échange n'y fait jamais plus du quart de sa vraie hauteur. */
 const ECHELLE_MAX = 0.25;
 /** En dessous, la conversation se lit d'un coup d'œil : pas de rail. */
-const MESSAGES_MIN = 2;
+const ECHANGES_MIN = 2;
 
+/** Un échange : ta question et les réponses qui la suivent, jusqu'à ta question suivante. */
 interface Segment {
+  /** Le premier message de l'échange (ta question, le plus souvent). */
   id: string;
-  /** Haut et bas du message dans le fil, en px depuis le haut du contenu. */
+  /** Haut et bas de l'échange dans le fil, en px depuis le haut du contenu. */
   debut: number;
   fin: number;
+  reponses: number;
 }
 
 /**
  * Le rail d'une conversation (maquette Figma « Portfolio », nœud 172:8), à la
- * place de la barre de défilement : un segment par message, aussi haut que le
- * message est long, centré sur le bord droit. Les segments à l'écran sont plus
- * foncés. Au survol, le curseur s'accroche au segment le plus proche et
- * l'aperçu du message s'affiche ; un clic y mène.
+ * place de la barre de défilement : un segment par échange (ta question et ses
+ * réponses), proportionnel à sa longueur, dans un rail de hauteur fixe centré
+ * sur le bord droit. Les segments à l'écran sont plus foncés. Au survol, le
+ * curseur s'accroche au segment le plus proche et la question s'affiche ; un
+ * clic y mène.
  */
 export function RailMessages({ zone, messages }: { zone: RefObject<HTMLDivElement | null>; messages: Message[] }) {
   const roles = useRoles();
@@ -52,7 +58,13 @@ export function RailMessages({ zone, messages }: { zone: RefObject<HTMLDivElemen
         const liste: Segment[] = [];
         el.querySelectorAll<HTMLElement>("[data-message]").forEach((n) => {
           const r = n.getBoundingClientRect();
-          liste.push({ id: n.dataset.message!, debut: r.top - base, fin: r.bottom - base });
+          const dernier = liste.at(-1);
+          if (dernier && n.dataset.auteur !== "user") {
+            dernier.fin = r.bottom - base;
+            dernier.reponses += 1;
+          } else {
+            liste.push({ id: n.dataset.message!, debut: r.top - base, fin: r.bottom - base, reponses: 0 });
+          }
         });
         setSegments(liste);
         setVue({ haut: el.scrollTop, bas: el.scrollTop + el.clientHeight, hauteur: el.clientHeight });
@@ -70,20 +82,25 @@ export function RailMessages({ zone, messages }: { zone: RefObject<HTMLDivElemen
     };
   }, [zone, messages.length]);
 
-  if (messages.length < MESSAGES_MIN || segments.length < MESSAGES_MIN) return null;
+  if (segments.length < ECHANGES_MIN) return null;
 
-  /* Les hauteurs du rail : proportionnelles aux messages, le tout tenant dans PART_MAX de l'écran. */
+  /* Les hauteurs du rail : proportionnelles aux échanges, le tout tenant dans une hauteur fixe. */
+  const n = segments.length;
+  const max = Math.min(HAUTEUR_MAX, vue.hauteur * PART_MAX);
+  const ecart = Math.max(1, Math.min(ECART, (max - n * SEGMENT_MIN) / (n - 1)));
+  const place = Math.max(n, max - ecart * (n - 1));
   const somme = segments.reduce((s, g) => s + (g.fin - g.debut), 0) || 1;
-  const place = vue.hauteur * PART_MAX - ECART * (segments.length - 1);
-  const echelle = Math.max(0, Math.min(ECHELLE_MAX, place / somme));
-  const hauteurs = segments.map((g) => Math.max(SEGMENT_MIN, (g.fin - g.debut) * echelle));
+  const echelle = Math.min(ECHELLE_MAX, place / somme);
+  const bruts = segments.map((g) => Math.max(Math.min(SEGMENT_MIN, place / n), (g.fin - g.debut) * echelle));
+  const reduction = Math.min(1, place / bruts.reduce((s, h) => s + h, 0));
+  const hauteurs = bruts.map((h) => h * reduction);
   const traces = segments.map((g, i) => ({
     ...g,
-    y: hauteurs.slice(0, i).reduce((s, h) => s + h + ECART, 0),
+    y: hauteurs.slice(0, i).reduce((s, h) => s + h + ecart, 0),
     h: hauteurs[i],
     visible: g.fin > vue.haut && g.debut < vue.bas,
   }));
-  const total = hauteurs.reduce((s, h) => s + h, 0) + ECART * (segments.length - 1);
+  const total = hauteurs.reduce((s, h) => s + h, 0) + ecart * (n - 1);
 
   const viser = (clientY: number) => {
     const r = rail.current?.getBoundingClientRect();
@@ -147,7 +164,10 @@ export function RailMessages({ zone, messages }: { zone: RefObject<HTMLDivElemen
           >
             <span className="flex items-baseline justify-between gap-2 text-ui-2xs text-texte-tertiaire">
               <span className="font-medium text-texte-secondaire">{auteur}</span>
-              {formatTime(message.createdAt)}
+              <span>
+                {formatTime(message.createdAt)}
+                {!!trace.reponses && ` · ${trace.reponses} réponse${trace.reponses > 1 ? "s" : ""}`}
+              </span>
             </span>
             <p className="m-0 mt-1 line-clamp-3 text-ui-xs leading-[1.5] text-texte-principal">{extrait || "Étapes de travail, sans texte."}</p>
           </div>

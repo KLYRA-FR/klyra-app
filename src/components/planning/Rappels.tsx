@@ -13,7 +13,8 @@ import { ROLE_TEINTES, type Categorie, type RoleTeinte, type Tache } from "@/typ
  * Rappels, comme l'app d'Apple, rangés en catégories côte à côte (Perso,
  * Clients, École…). Chaque colonne a sa couleur et son icône ; une ligne vide
  * est toujours prête en bas pour écrire un rappel. On ajoute si on veut une
- * date, une heure (notification) et l'urgence.
+ * date, une heure (notification) et l'urgence. Coché, un rappel reste dans sa
+ * colonne, barré ; seule la poubelle le supprime.
  */
 
 /** Les icônes qu'on peut donner à une catégorie (set officiel). */
@@ -434,7 +435,8 @@ function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; tache
 
 export function Rappels() {
   const { state, changerCategories } = useWorkspace();
-  const [voirFaits, setVoirFaits] = useState(false);
+  /* Un rappel coché reste là, barré : il ne part qu'avec la poubelle. */
+  const [voirFaits, setVoirFaits] = useState(true);
   const categories = state.categories;
   const ids = new Set(categories.map((c) => c.id));
   const faits = state.taches.filter((t) => t.faite).length;

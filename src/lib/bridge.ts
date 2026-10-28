@@ -144,6 +144,8 @@ export interface KlyraBridge {
     choisirDossier: () => Promise<Reponse<string | null>>;
     /** Le contenu réel du dossier d'un projet. */
     arbre: (dossier: string) => Promise<Reponse<FileNode[]>>;
+    /** Les pages du site (routes Next), pour les suggestions de la barre d'adresse de l'aperçu. */
+    pages?: (dossier: string) => Promise<Reponse<string[]>>;
     /** Le contenu d'un fichier du projet, pour la visionneuse. */
     lireFichier: (dossier: string, relatif: string) => Promise<Reponse<ContenuFichier>>;
     /** Ouvre le fichier avec l'app par défaut du Mac. */

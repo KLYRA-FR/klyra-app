@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
-import { EmptyState, Input } from "klyra-ui";
+import { EmptyState } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { FileTree } from "@/components/project/FileTree";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
@@ -14,6 +14,7 @@ import type { Chat, Project } from "@/types/domain";
 import { versUrl } from "@/components/ui/Lien";
 import { getBridge } from "@/lib/bridge";
 import { ouvrirFichier } from "@/components/project/Visionneuse";
+import { BarreAdresse, noterAdresse } from "./BarreAdresse";
 import { Publier } from "./Publier";
 
 type PreviewTab = "apercu" | "code" | "fichiers" | "taches";
@@ -81,15 +82,23 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
     setAdresse(adresseLue);
     setChargee(adresseLue);
     setTab("apercu");
+    noterAdresse(adresseLue);
   }
 
   /* On navigue dans l'aperçu : la barre montre la page affichée (sauf pendant qu'on y tape). */
   useEffect(() => {
     return getBridge()?.apercu?.onAdresse((url) => {
+      noterAdresse(url);
       if (document.activeElement?.getAttribute("aria-label") === "Adresse de l’aperçu") return;
       setAdresse(url.replace(/^http:\/\//, ""));
     });
   }, []);
+
+  const ouvrirAdresse = (url: string) => {
+    setChargee(url.trim());
+    setRecharge((n) => n + 1);
+    noterAdresse(url);
+  };
 
   /* Poignée : on tire le bord gauche ; double-clic pour revenir à la largeur de départ. */
   const tirer = (depart: ReactPointerEvent) => {
@@ -158,8 +167,7 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              setChargee(adresse.trim());
-              setRecharge((n) => n + 1);
+              ouvrirAdresse(adresse);
             }}
             className="flex items-center gap-1.5 px-4 pb-3"
           >
@@ -170,16 +178,13 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
               onClick={() => setRecharge((n) => n + 1)}
               className="text-icone-secondaire hover:text-icone-defaut"
             />
-            <div className="min-w-0 flex-1">
-              <Input
-                size="sm"
-                aria-label="Adresse de l’aperçu"
-                placeholder="localhost:3000"
-                value={adresse}
-                onChange={(e) => setAdresse(e.target.value)}
-                className="klyra-mono rounded-sm border-bordure-champ text-ui-2xs text-texte-secondaire"
-              />
-            </div>
+            <BarreAdresse
+              valeur={adresse}
+              onChange={setAdresse}
+              onOuvrir={ouvrirAdresse}
+              dossier={project?.folder ?? null}
+              chargee={chargee}
+            />
             {chargee && (
               <a
                 href={versUrl(adresse.trim() || chargee)}

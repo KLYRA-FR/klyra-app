@@ -37,7 +37,7 @@ import {
   type Utilisation,
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
-import { arbreDossier, cheminDansProjet, lireFichier, utilisateurSysteme } from "./projets";
+import { arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
 import {
@@ -260,6 +260,10 @@ function registerBridge() {
   handle("projets:arbre", (dossier: string) => {
     if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
     return arbreDossier(dossier);
+  });
+  handle("projets:pages", (dossier: string) => {
+    if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
+    return pagesDuSite(dossier);
   });
   handle("systeme:utilisateur", () => utilisateurSysteme());
   handle("projets:lire-fichier", (dossier: string, relatif: string) => lireFichier(dossier, relatif));

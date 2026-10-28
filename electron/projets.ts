@@ -66,6 +66,29 @@ export async function arbreDossier(dossier: string): Promise<Noeud[]> {
   return lire("", 0);
 }
 
+/**
+ * Les pages d'un site Next (dossier `app/` ou `src/app/`), pour les suggestions de la barre
+ * d'adresse de l'aperçu : « /secteurs/logistique-transport »… Les groupes « (marketing) »
+ * ne comptent pas dans l'adresse ; les routes dynamiques « [slug] » sont sautées.
+ */
+export async function pagesDuSite(dossier: string): Promise<string[]> {
+  const racine = absolu(dossier);
+  if (!path.isAbsolute(racine)) throw new Error("Chemin de projet invalide.");
+  const pages = new Set<string>();
+  const parcourir = async (dir: string, segments: string[], profondeur: number): Promise<void> => {
+    if (profondeur > 10 || pages.size > 500) return;
+    const entrees = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    if (entrees.some((e) => e.isFile() && /^page\.(tsx|jsx|ts|js|mdx)$/.test(e.name))) pages.add(`/${segments.join("/")}`);
+    for (const e of entrees) {
+      if (!e.isDirectory() || /^[_@[]/.test(e.name) || IGNORES.has(e.name)) continue;
+      const groupe = /^\(.*\)$/.test(e.name);
+      await parcourir(path.join(dir, e.name), groupe ? segments : [...segments, e.name], profondeur + 1);
+    }
+  };
+  for (const base of ["src/app", "app"]) await parcourir(path.join(racine, base), [], 0);
+  return [...pages].sort((a, b) => a.localeCompare(b, "fr"));
+}
+
 /** Le nom complet de la session Mac (« Pelin Dupont »), sinon l'identifiant. */
 export function utilisateurSysteme(): Promise<{ nom: string; identifiant: string }> {
   const identifiant = os.userInfo().username;
