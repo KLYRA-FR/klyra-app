@@ -32,8 +32,7 @@ jobs:
       - name: Numéro de version
         run: npm pkg set version="0.1.${{ github.run_number }}"
 
-      - run: pnpm typecheck
-
+      # next build vérifie aussi les types (ceux des routes sont générés pendant le build).
       - run: pnpm app
 
       # Les notes restent neutres : le dépôt des versions est public, le code et ses commits non.
