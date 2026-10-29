@@ -45,7 +45,10 @@ export const SECTIONS: SectionReglages[] = [
     entrees: [
       { id: "photo", titre: "Photo", mots: "avatar image recadrer modifier le profil" },
       { id: "nom", titre: "Prénom et rôle", mots: "nom titre identite modifier le profil" },
+      { id: "vue-consommation", titre: "Tout Claude Code ou seulement KLYRA", mots: "terminal ide global consommation" },
       { id: "chiffres", titre: "Jetons, messages et séries", mots: "consommation tokens record jour serie statistiques" },
+      { id: "limites", titre: "Limites de l’abonnement", mots: "session 5 h semaine quota remise a zero pourcentage" },
+      { id: "non-compte", titre: "Ce qui ne peut pas être compté", mots: "claude.ai web mobile autres ordinateurs synchronisation" },
       { id: "activite", titre: "Activité sur cet ordinateur", mots: "jours actifs calendrier chaleur annee" },
       { id: "apercu", titre: "Aperçu : fournisseur, modèle, coût estimé", mots: "facturation depense dollars prix cout consommation" },
       { id: "coequipiers", titre: "Coéquipiers les plus actifs", mots: "agents jetons classement" },
@@ -61,6 +64,7 @@ export const SECTIONS: SectionReglages[] = [
     entrees: [
       { id: "compte-claude", titre: "Compte Claude", mots: "connexion deconnexion abonnement anthropic email organisation claude code" },
       { id: "utilisation", titre: "Utilisation", mots: "quota limite session 5 h semaine consommation" },
+      { id: "cle-admin", titre: "Organisation Console : usage et coût réels", mots: "cle admin api anthropic facturation cout reel console organisation" },
     ],
   },
   {

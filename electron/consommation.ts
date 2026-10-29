@@ -1,6 +1,7 @@
 import { app } from "electron";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { lireHistorique, rattraperHistorique } from "./historique";
 
 /**
  * La consommation de l'app, réponse par réponse : les jetons et le coût que
@@ -29,6 +30,8 @@ export interface EntreeConsommation {
   jetons: Jetons;
   /** En dollars US, quand le fournisseur le donne (Claude Code). */
   coutUsd: number | null;
+  /** Passé par l'app (journal, sessions de l'app) ; faux pour le terminal ou l'IDE (historique.ts). */
+  klyra?: boolean;
 }
 
 const fichier = () => path.join(app.getPath("userData"), "consommation.jsonl");
@@ -53,8 +56,8 @@ export function enregistrerConsommation(entree: Omit<EntreeConsommation, "at">) 
     });
 }
 
-/** Les appels de l'année écoulée, et la date du premier jamais enregistré. */
-export async function lireConsommation(): Promise<{ entrees: EntreeConsommation[]; depuis: number | null }> {
+/** Les appels du journal sur l'année écoulée, et la date du premier jamais enregistré. */
+export async function lireJournal(): Promise<{ entrees: EntreeConsommation[]; depuis: number | null }> {
   let brut = "";
   try {
     brut = await readFile(fichier(), "utf8");
@@ -64,7 +67,8 @@ export async function lireConsommation(): Promise<{ entrees: EntreeConsommation[
   const limite = Date.now() - UN_AN_MS;
   const entrees: EntreeConsommation[] = [];
   let depuis: number | null = null;
-  for (const l of brut.split("\n")) {
+  // \r?\n : un fichier passé par Windows (ou un éditeur) peut avoir des fins de ligne CRLF.
+  for (const l of brut.split(/\r?\n/)) {
     if (!l.trim()) continue;
     try {
       const e = JSON.parse(l) as EntreeConsommation;
@@ -76,6 +80,20 @@ export async function lireConsommation(): Promise<{ entrees: EntreeConsommation[
     }
   }
   return { entrees, depuis };
+}
+
+/**
+ * Ce que lit le Profil : le journal, plus l'historique rattrapé des
+ * transcriptions de Claude Code d'avant le journal (historique.ts), qu'on
+ * met à jour au passage.
+ */
+export async function lireConsommation() {
+  const journal = await lireJournal();
+  const historique = await rattraperHistorique(journal.depuis ?? Date.now()).catch(() => null);
+  const limite = Date.now() - UN_AN_MS;
+  const anciennes = historique ? (await lireHistorique()).filter((e) => e.at >= limite) : [];
+  // Tout le journal passe par l'app.
+  return { entrees: [...anciennes, ...journal.entrees.map((e) => ({ ...e, klyra: true }))], depuis: journal.depuis, historique };
 }
 
 /* ─── Claude Code ─────────────────────────────────────────────── */

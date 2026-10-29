@@ -33,6 +33,8 @@ export interface Serie {
 export interface Statistiques {
   /** Messages de l'année, par jour (clé `cleJour`). */
   messagesParJour: Map<string, number>;
+  /** Pour la carte d'activité : messages du jour, ou 1 si le jour n'a que des réponses comptées (historique). */
+  activiteParJour: Map<string, number>;
   messages: number;
   joursActifs: number;
   serieActuelle: Serie;
@@ -108,12 +110,15 @@ export function calculer(messages: Message[], conso: EntreeConsommation[], maint
   for (const e of conso) {
     if (e.at < limite) continue;
     const n = totalJetons(e);
-    jetons += n;
-    ajouter(jetonsParJour, cleJour(e.at), n);
-    ajouter(fournisseurs, e.fournisseur, n);
-    ajouter(modeles, e.modele, n);
-    fournisseurDuModele.set(e.modele, e.fournisseur);
-    ajouter(agents, e.agent, n);
+    // Une ligne de coût seul (historique) ne compte ni dans les jetons ni dans les classements.
+    if (n > 0) {
+      jetons += n;
+      ajouter(jetonsParJour, cleJour(e.at), n);
+      ajouter(fournisseurs, e.fournisseur, n);
+      ajouter(modeles, e.modele, n);
+      fournisseurDuModele.set(e.modele, e.fournisseur);
+      ajouter(agents, e.agent, n);
+    }
     if (typeof e.coutUsd === "number") {
       cout += e.coutUsd;
       aDuCout = true;
@@ -121,12 +126,23 @@ export function calculer(messages: Message[], conso: EntreeConsommation[], maint
   }
 
   const actifs = new Set([...messagesParJour.keys(), ...jetonsParJour.keys()]);
+  /* La carte d'activité : les messages du jour ; un jour sans message gardé mais avec des réponses comptées vaut 1. */
+  const activiteParJour = new Map(messagesParJour);
+  for (const jour of jetonsParJour.keys()) if (!activiteParJour.has(jour)) activiteParJour.set(jour, 1);
   const { actuelle, longue } = series(actifs, aujourdhui);
   const record = trier(jetonsParJour)[0];
   const [a, m, j] = record ? record[0].split("-").map(Number) : [0, 0, 0];
+  /* Jour le plus actif : d'après les messages de l'app ; sans eux, d'après les jetons (terminal, IDE). */
+  if (!parJourSemaine.size) {
+    for (const [cle, n] of jetonsParJour) {
+      const [aa, mm, jj] = cle.split("-").map(Number);
+      ajouter(parJourSemaine, new Date(aa, mm - 1, jj).getDay(), n);
+    }
+  }
 
   return {
     messagesParJour,
+    activiteParJour,
     messages: total,
     joursActifs: actifs.size,
     serieActuelle: actuelle,
