@@ -39,6 +39,7 @@ import {
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
 import { transcrire } from "./dictee";
+import { demarrerMisesAJour } from "./maj";
 import { arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
@@ -399,6 +400,7 @@ void app.whenReady().then(() => {
   registerBridge();
 
   createWindow();
+  demarrerMisesAJour();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

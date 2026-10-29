@@ -1,0 +1,50 @@
+# À chaque push sur main : fabrique KLYRA.app et la publie dans le dépôt public
+# pelin-klyra/klyra-app-versions (l'app seule, jamais le code). Les apps installées
+# y trouvent la nouvelle version et se mettent à jour (electron/maj.ts).
+name: App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: app
+  cancel-in-progress: true
+
+jobs:
+  publier:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Un numéro par publication : 0.1.<n° de l'exécution>, toujours croissant.
+      - name: Numéro de version
+        run: npm pkg set version="0.1.${{ github.run_number }}"
+
+      - run: pnpm typecheck
+
+      - run: pnpm app
+
+      # Les notes restent neutres : le dépôt des versions est public, le code et ses commits non.
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ secrets.VERSIONS_TOKEN }}
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          gh release create "v$VERSION" \
+            --repo pelin-klyra/klyra-app-versions \
+            --title "KLYRA $VERSION" \
+            --notes "Nouvelle version de l’app de bureau KLYRA." \
+            "$HOME/.klyra/build/KLYRA-$VERSION-arm64.dmg" \
+            "$HOME/.klyra/build/KLYRA-$VERSION-arm64-mac.zip"
