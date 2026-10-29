@@ -46,6 +46,8 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       const role = roles.find((r) => r.id === entree.subagent_type);
       return role ? `Confie à ${role.name} : ${court(entree.description, 50)}` : `Lance un assistant : ${court(entree.description, 50)}`;
     }
+    case "mcp__klyra__demander_ia":
+      return `Demande à ${court(entree.ia, 20) || "une autre IA"} : ${court(entree.consigne, 50)}`;
     default:
       return outil.startsWith("mcp__") ? `Utilise ${outil.split("__").slice(1).join(" · ")}` : `Utilise ${outil}`;
   }

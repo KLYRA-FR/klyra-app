@@ -39,6 +39,8 @@ import {
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
 import { transcrire } from "./dictee";
+import { ecrirePlanning } from "./planning";
+import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
 import { demarrerMisesAJour } from "./maj";
 import { arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
@@ -370,6 +372,39 @@ function registerBridge() {
   handle("fichiers:ecrire", (chemin: string, texte: string) => ecrireFichierTexte(chemin, texte));
   handle("webhooks:adresse", (secret: string) => adresseWebhook(secret));
   demarrerWebhooks();
+  /* Les outils des fils (ouvrir, lire, écrire, arrêter, fermer) : l'interface les exécute, elle tient les conversations. */
+  const attentes = new Map<string, (r: { ok: boolean; texte: string }) => void>();
+  ipcMain.on("outils:reponse", (_e, id: string, ok: boolean, texte: string) => {
+    attentes.get(id)?.({ ok: !!ok, texte: String(texte ?? "") });
+    attentes.delete(id);
+  });
+  brancherRelaisFils(
+    (nom, args, appelant) =>
+      new Promise((resolve, reject) => {
+        const win = fenetrePrincipale;
+        if (!win) return reject(new Error("La fenêtre de l’app est fermée."));
+        const id = randomUUID();
+        const delai = setTimeout(() => {
+          attentes.delete(id);
+          reject(new Error("L’app n’a pas répondu."));
+        }, 30_000);
+        attentes.set(id, (r) => {
+          clearTimeout(delai);
+          if (r.ok) resolve(r.texte);
+          else reject(new Error(r.texte));
+        });
+        win.webContents.send("outils:appel", id, nom, args, appelant);
+      }),
+  );
+  handle("ia:fournisseurs", () => FOURNISSEURS);
+  handle("ia:lister", () => listerIa());
+  handle("ia:ajouter", (entree: { nom: string; fournisseur: Fournisseur; url: string; modele: string; cle: string }) => ajouterIa(entree));
+  handle("ia:retirer", (id: string) => retirerIa(String(id)));
+  handle("ia:tester", (id: string) => testerIa(String(id)));
+  handle("planning:ecrire", (markdown: string) => {
+    if (typeof markdown !== "string" || markdown.length > 2 * 1024 * 1024) throw new Error("Planning invalide.");
+    return ecrirePlanning(markdown);
+  });
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
 
@@ -408,6 +443,7 @@ void app.whenReady().then(() => {
   if (!DEV_URL) protocol.handle("app", serveExport);
   registerBridge();
 
+  void demarrerServeurMcp();
   createWindow();
   demarrerMisesAJour();
 

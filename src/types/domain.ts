@@ -160,6 +160,26 @@ export interface Chat {
   taches?: TacheAgent[];
   /** Branche d'une autre conversation : ce qui s'y était dit, donné à l'agent avec son premier message. */
   amorce?: string;
+  /** Un fil : une conversation à part d'un agent, consacrée à une seule tâche (un onglet de son chat). */
+  fil?: Fil;
+}
+
+/**
+ * Un fil = une tâche. Il tourne à côté du chat principal de l'agent sans le
+ * bloquer, avec sa propre mémoire de conversation : il ne voit pas le chat d'où
+ * il vient, d'où le brief complet à l'ouverture. Fermé, il est archivé, jamais effacé.
+ */
+export interface Fil {
+  /** L'agent qui fait la tâche. */
+  roleId: RoleId;
+  statut: "ouvert" | "archive";
+  /** « Supprimé » : retiré de la liste des archivés, mais rien n'est effacé. */
+  supprime?: boolean;
+  creeLe: string;
+  /** Qui l'a ouvert : un agent depuis sa conversation, ou absent si c'est toi. */
+  lancePar?: { roleId: RoleId; chatId: string } | null;
+  /** Celui qui l'a lancé attend la prochaine réponse : elle lui sera rapportée. */
+  retourAttendu?: boolean;
 }
 
 /** Une tâche de la liste de l'agent. */

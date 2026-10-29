@@ -10,6 +10,8 @@ import { texteDe, useChat, useChatMessages, useProjects, useRoles, useWorkspace 
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageThread } from "./MessageThread";
+import { OngletsConversations } from "./OngletsConversations";
+import { OngletsFils } from "./OngletsFils";
 import { PanneauLateral, usePanneauLateral } from "./PanneauLateral";
 import type { DemandeApercu } from "@/components/ui/Lien";
 
@@ -117,6 +119,8 @@ export function ChatScreen() {
     <div className="flex h-full min-h-0">
       {/* Panneau agrandi : il prend toute la place, la conversation se cache. */}
       <section aria-label={chat.title} className={maximise ? "hidden" : "relative flex min-w-0 flex-1 flex-col"}>
+        {project && chat.kind === "equipe" && <OngletsConversations key={project.id} project={project} chatId={chat.id} />}
+        {chat.kind === "direct" && <OngletsFils roleId={chat.roleIds[0] ?? "principal"} chatId={chat.id} />}
         <ChatHeader
           chat={chat}
           project={project}

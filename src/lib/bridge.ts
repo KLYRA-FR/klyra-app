@@ -102,10 +102,21 @@ export interface StreamOptions {
   effort?: string | null;
   fichiers?: string[];
   acces?: Acces;
+  /** La conversation de l'app : les outils des fils savent d'où vient l'agent. */
+  chatId?: string;
 }
 
 /** Ce qu'un agent peut faire sans demander (cf. electron/claude.ts). */
 export type Acces = "demander" | "projet" | "tout";
+
+/** Une autre IA ajoutée dans les Réglages, sans sa clé. */
+export interface AutreIa {
+  id: string;
+  nom: string;
+  fournisseur: string;
+  url: string;
+  modele: string;
+}
 
 export interface KlyraBridge {
   agents: {
@@ -184,6 +195,23 @@ export interface KlyraBridge {
     /** Notification du Mac (et pastille du Dock) ; un clic ramène à la conversation. */
     notifier?: (titre: string, texte: string, chatId: string) => Promise<Reponse<void>>;
     onOuvrirChat?: (callback: (chatId: string) => void) => () => void;
+  };
+  /** Les outils des fils, appelés par les agents et exécutés ici. */
+  outils?: {
+    onAppel: (callback: (id: string, nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }) => void) => () => void;
+    repondre: (id: string, ok: boolean, texte: string) => void;
+  };
+  /** Les autres IA (ChatGPT, Gemini…) que les agents peuvent interroger. La clé ne revient jamais. */
+  ia?: {
+    fournisseurs: () => Promise<Reponse<Record<string, { nom: string; url: string; modele: string }>>>;
+    lister: () => Promise<Reponse<AutreIa[]>>;
+    ajouter: (entree: { nom: string; fournisseur: string; url: string; modele: string; cle: string }) => Promise<Reponse<AutreIa[]>>;
+    retirer: (id: string) => Promise<Reponse<AutreIa[]>>;
+    tester: (id: string) => Promise<Reponse<string>>;
+  };
+  /** Le planning en clair, que les agents lisent (~/.klyra/planning/planning.md). */
+  planning?: {
+    ecrire: (markdown: string) => Promise<Reponse<void>>;
   };
   fichiers: {
     /** Ouvre le sélecteur de fichiers du système ; renvoie les chemins choisis. */

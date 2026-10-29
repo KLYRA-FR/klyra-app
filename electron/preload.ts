@@ -87,6 +87,26 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("systeme:ouvrir-chat", listener);
     },
   },
+  outils: {
+    /** Un agent appelle un outil des fils : l'interface l'exécute et répond. */
+    onAppel: (callback: (id: string, nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }) => void) => {
+      const listener = (_e: unknown, id: string, nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }) =>
+        callback(id, nom, args, appelant);
+      ipcRenderer.on("outils:appel", listener);
+      return () => ipcRenderer.removeListener("outils:appel", listener);
+    },
+    repondre: (id: string, ok: boolean, texte: string) => ipcRenderer.send("outils:reponse", id, ok, texte),
+  },
+  ia: {
+    fournisseurs: () => ipcRenderer.invoke("ia:fournisseurs"),
+    lister: () => ipcRenderer.invoke("ia:lister"),
+    ajouter: (entree: unknown) => ipcRenderer.invoke("ia:ajouter", entree),
+    retirer: (id: string) => ipcRenderer.invoke("ia:retirer", id),
+    tester: (id: string) => ipcRenderer.invoke("ia:tester", id),
+  },
+  planning: {
+    ecrire: (markdown: string) => ipcRenderer.invoke("planning:ecrire", markdown),
+  },
   fichiers: {
     choisir: () => ipcRenderer.invoke("fichiers:choisir"),
     montrer: (chemin: string) => ipcRenderer.invoke("fichiers:montrer", chemin),

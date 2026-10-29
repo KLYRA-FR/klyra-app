@@ -21,7 +21,8 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau }: { chat: Chat; pa
   const role = useRole(chat.roleIds[0] ?? "principal");
   const ici = useTravail(chat.id);
   const occupe = useAgentOccupe(role.id);
-  const etat = ici ? "Travaille…" : occupe ? "Travaille dans une conversation d’équipe" : role.title;
+  // Dans un fil : son identifiant, celui qu'on cite (« Rapport hebdo (klyra-fil-…) »).
+  const etat = ici ? "Travaille…" : chat.fil ? `${chat.title} · ${chat.id}` : occupe ? "Travaille dans une conversation d’équipe" : role.title;
   return (
     <header className="@container flex items-center gap-3 border-b border-bordure-subtile px-5 py-3">
       <AgentRond roleId={role.id} taille={32} statut={occupe ? { type: "travaille" } : null} fondPastille="surface" />

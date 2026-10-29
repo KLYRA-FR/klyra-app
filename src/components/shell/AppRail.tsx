@@ -124,9 +124,7 @@ export function AppRail({
       <div className="flex shrink-0 flex-col items-center gap-1 pt-2">
         <UtilisationRail />
         {SEPARATEUR}
-        <Link href="/reglages" title="Réglages" className={entree(pathname === "/reglages")}>
-          <Entree icone="reglages-engrenage" nom="Réglages" active={pathname === "/reglages"} />
-        </Link>
+        {/* Les réglages s'ouvrent d'un clic sur l'avatar. */}
         <span className="pt-1">
           <CarteCompteRail />
         </span>

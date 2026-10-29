@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { LigneAgent, LigneConversation, SectionBarre } from "@/components/shell/LignesBarre";
 import { BoutonIcone } from "@/components/ui/Bouton";
-import { idDirect, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
+import { idDirect, useChat, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
 
 /**
  * Panneau blanc des conversations, à côté du rail (comme celui d'un projet) :
@@ -17,6 +17,8 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const roles = useRoles();
   const projects = useProjects();
   const conversations = useRecentChats();
+  /* Dans un fil, la ligne de son agent reste active. */
+  const agentDuFil = useChat(currentId)?.fil?.roleId;
 
   return (
     <aside
@@ -61,7 +63,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
           }
         >
           {roles.map((role) => (
-            <LigneAgent key={role.id} role={role} active={currentId === idDirect(role.id)} />
+            <LigneAgent key={role.id} role={role} active={currentId === idDirect(role.id) || agentDuFil === role.id} />
           ))}
         </SectionBarre>
 

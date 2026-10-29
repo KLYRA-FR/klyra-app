@@ -7,6 +7,7 @@ import { AgentsProvider, useAgents } from "@/lib/agents";
 import { getBridge, type Acces, type AgentEvent } from "@/lib/bridge";
 import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { libelleEtape } from "@/lib/etapes";
+import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -436,6 +437,17 @@ export function idDirect(roleId: RoleId): string {
   return `${DIRECT}${roleId}`;
 }
 
+/** Les fils d'un agent : `klyra-fil-…`, l'identifiant qu'on cite. */
+export const FIL = "klyra-fil-";
+
+/** Une conversation avec un agent : son chat principal ou un de ses fils. */
+export function estConversationAgent(id: string | null | undefined): boolean {
+  return !!id && (id.startsWith(DIRECT) || id.startsWith(FIL));
+}
+
+/** Titre d'un fil tant qu'il n'a pas de premier message. */
+export const FIL_SANS_TITRE = "Nouveau fil";
+
 /** Titre d'un nouveau chat : le début du premier message. */
 function chatTitle(text: string): string {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -458,6 +470,12 @@ interface WorkspaceApi {
   brancher: (chatId: string, messageId: string) => string | null;
   /** Arrête l'agent qui travaille dans cette conversation. */
   arreter: (chatId: string) => void;
+  /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id. */
+  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null) => string;
+  renommerChat: (chatId: string, titre: string) => void;
+  /** Ferme un fil : il s'arrête et part dans les archivés (« supprimé » : caché des archivés). Rien n'est effacé. */
+  archiverFil: (chatId: string, supprime?: boolean) => void;
+  rouvrirFil: (chatId: string) => void;
   retirerDeLaFile: (chatId: string, id: string) => void;
   marquerLu: (chatId: string) => void;
   /** Crée ou modifie une tâche planifiée. */
@@ -642,6 +660,29 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
 
+  /* Le planning, en clair pour les agents (~/.klyra/planning/planning.md), à chaque changement. */
+  useEffect(() => {
+    const ecrire = bridge?.planning?.ecrire;
+    if (!ecrire || !state.charge) return;
+    const timer = setTimeout(() => {
+      void ecrire(
+        planningPourAgents({
+          evenements: state.evenements,
+          taches: state.taches,
+          categories: state.categories,
+          routines: state.routines,
+          projects: state.projects,
+          roles,
+          chats: state.chats,
+          artefacts: state.artefacts,
+          workflows: state.workflows,
+          personne: state.currentUser.name,
+        }),
+      );
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [bridge, state.charge, state.evenements, state.taches, state.categories, state.routines, state.projects, roles, state.chats, state.artefacts, state.workflows, state.currentUser.name]);
+
   /* Fermeture de l'app : le dernier état part tout de suite, sans attendre le regroupement. */
   useEffect(() => {
     if (!bridge) return;
@@ -707,13 +748,20 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           `Conversation d’équipe « ${chat.title} » du projet ${project.name} (${project.subtitle}). Tu travailles dans le dossier du projet : ${project.folder}. Si tu lances le serveur de dev, lance-le en arrière-plan et écris son adresse (par exemple localhost:3000) dans ta réponse : l’app l’ouvre dans l’aperçu.` +
             (autres.length ? ` Sont aussi dans la conversation : ${autres.join(", ")}.` : ""),
         );
+      } else if (chat.fil) {
+        const par = chat.fil.lancePar ? nom(chat.fil.lancePar.roleId) : currentUser.name;
+        lignes.push(
+          `Tu travailles dans un fil, une tâche à part : « ${chat.title} » (${chat.id}), ouvert par ${par}. Ce fil ne voit pas les autres conversations : tout ce qu’il faut est dans le brief. Quand tu as fini, termine par le résultat, clairement${chat.fil.lancePar ? ` : ta réponse revient à ${par}` : ""}.`,
+        );
       } else {
         lignes.push("Conversation en tête-à-tête, hors projet.");
       }
       if (chat.amorce) lignes.push(`[Conversation reprise jusqu’ici]\n${chat.amorce}`);
     }
     if (depuis.length) lignes.push(`[Depuis ta dernière réponse]\n${depuis.join("\n\n")}`);
-    lignes.push(`${lignes.length ? `[Message de ${currentUser.name}]\n` : ""}${texteDe(messageUtilisateur)}`);
+    // Le retour d'un fil arrive au nom de l'agent qui l'a fait, pas de la personne.
+    const de = messageUtilisateur.author.kind === "role" ? `Retour du fil, de ${nom(messageUtilisateur.author.roleId)}` : `Message de ${currentUser.name}`;
+    lignes.push(`${lignes.length || messageUtilisateur.author.kind === "role" ? `[${de}]\n` : ""}${texteDe(messageUtilisateur)}`);
     const joints = messageUtilisateur.parts.find((p) => p.type === "fichiers");
     if (joints?.type === "fichiers" && joints.chemins.length) {
       lignes.push(`[Fichiers joints, à lire]\n${joints.chemins.map((c) => `- ${c}`).join("\n")}`);
@@ -721,12 +769,20 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     return lignes.join("\n\n");
   }, []);
 
+  /** `lancer`, pour ce qui est déclaré avant lui (retours des fils). */
+  const lancerTot = useRef<(chatId: string, roleId: RoleId, message: Message) => void>(() => {});
   const envoyerRef = useRef<
     (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean) => void
   >(() => {});
 
   /** La suite de la file d'attente, quand l'agent a fini. */
   const suivant = useCallback((chatId: string) => {
+    // Un fil a rapporté pendant que l'agent travaillait : son retour passe en premier.
+    const retour = retours.current.get(chatId)?.shift();
+    if (retour) {
+      timers.current.push(setTimeout(() => lancerTot.current(chatId, retour.roleId, retour.message), 0));
+      return;
+    }
     const prochain = stateRef.current.file[chatId]?.[0];
     if (!prochain) return;
     dispatch({ type: "file/retirer", chatId, id: prochain.id });
@@ -737,6 +793,40 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, []);
 
   /** Suit une réponse d'agent au fil de l'eau, jusqu'à sa fin. */
+  /** Les retours de fils en attente, par conversation de l'agent qui les a lancés. */
+  const retours = useRef(new Map<string, { roleId: RoleId; message: Message }[]>());
+
+  /* Un fil lancé par un agent a répondu : sa réponse revient à cet agent, dans sa conversation. */
+  const rapporterFil = (chatId: string, messageId: string, ok: boolean) => {
+    const { chats, messages, travail } = stateRef.current;
+    const fil = chats.find((c) => c.id === chatId);
+    const lancePar = fil?.fil?.lancePar;
+    if (!fil?.fil?.retourAttendu || !lancePar || !chats.some((c) => c.id === lancePar.chatId)) return;
+    dispatch({ type: "chat/update", id: chatId, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: false } } : c) });
+    const reponse = messages.find((m) => m.id === messageId);
+    const nom = rolesRef.current.find((r) => r.id === fil.fil!.roleId)?.name ?? fil.fil.roleId;
+    const corps = reponse ? texteDe(reponse) : "";
+    const message: Message = {
+      id: crypto.randomUUID(),
+      chatId: lancePar.chatId,
+      author: { kind: "role", roleId: fil.fil.roleId },
+      createdAt: new Date().toISOString(),
+      parts: [
+        {
+          type: "text",
+          text: `**${ok ? "Fil terminé" : "Fil arrêté sur une erreur"} : ${fil.title}** (${fil.id}) · ${nom}\n\n${corps || reponse?.erreur || "Pas de texte dans la réponse."}`,
+        },
+      ],
+    };
+    dispatch({ type: "message/add", message });
+    if (travail[lancePar.chatId]) {
+      // L'agent qui a lancé le fil travaille encore : le retour attend son tour.
+      retours.current.set(lancePar.chatId, [...(retours.current.get(lancePar.chatId) ?? []), { roleId: lancePar.roleId, message }]);
+      return;
+    }
+    timers.current.push(setTimeout(() => lancerTot.current(lancePar.chatId, lancePar.roleId, message), 0));
+  };
+
   /* Une réponse finie là où tu ne regardes pas (autre conversation, autre app) : le Mac te prévient. */
   const prevenir = (chatId: string, roleId: RoleId, messageId: string, ok: boolean) => {
     const notifier = getBridge()?.systeme.notifier;
@@ -861,6 +951,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }
           terminer();
           if (event.erreur !== "Arrêté par toi.") prevenir(chatId, roleId, messageId, event.ok);
+          rapporterFil(chatId, messageId, event.ok);
           break;
       }
     });
@@ -963,6 +1054,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
           acces: stateRef.current.acces,
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
+          chatId,
         })
         .then((r) => {
           if (!r.ok)
@@ -979,6 +1071,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const lancerRef = useRef(lancer);
   useEffect(() => {
     lancerRef.current = lancer;
+    lancerTot.current = lancer;
   });
 
   /** La conversation, créée si c'est la première fois qu'on s'adresse à cet agent en direct. */
@@ -1021,6 +1114,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           message: { id: crypto.randomUUID(), text, to, fichiers },
         });
         return;
+      }
+
+      // Un fil sans titre prend le début de son premier message.
+      if (chat.fil && chat.title === FIL_SANS_TITRE && text.trim()) {
+        dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, title: chatTitle(text) }) });
       }
 
       const message: Message = {
@@ -1159,6 +1257,128 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [bridge],
   );
+
+  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null) => {
+    const maintenant = new Date().toISOString();
+    const chat: Chat = {
+      id: `${FIL}${crypto.randomUUID().slice(0, 8)}`,
+      kind: "direct",
+      projectId: null,
+      title: titre?.trim() ? chatTitle(titre) : FIL_SANS_TITRE,
+      roleIds: [roleId],
+      updatedAt: maintenant,
+      sessions: {},
+      luJusqua: null,
+      fil: { roleId, statut: "ouvert", creeLe: maintenant, lancePar: lancePar ?? null },
+    };
+    dispatch({ type: "chat/add", chat });
+    stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
+    return chat.id;
+  }, []);
+
+  const renommerChat = useCallback((chatId: string, titre: string) => {
+    const propre = titre.replace(/\s+/g, " ").trim().slice(0, 80);
+    if (propre) dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, title: propre }) });
+  }, []);
+
+  const archiverFil = useCallback(
+    (chatId: string, supprime = false) => {
+      // Un fil archivé s'arrête : il ne travaille plus.
+      const travail = stateRef.current.travail[chatId];
+      if (travail && bridge) void bridge.claude.cancel(travail.messageId);
+      dispatch({
+        type: "chat/update",
+        id: chatId,
+        patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, statut: "archive", supprime } } : c),
+      });
+    },
+    [bridge],
+  );
+
+  const rouvrirFil = useCallback((chatId: string) => {
+    dispatch({
+      type: "chat/update",
+      id: chatId,
+      patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, statut: "ouvert", supprime: false } } : c),
+    });
+  }, []);
+
+  /* Les outils des fils, appelés par les agents (serveur MCP de l'app, electron/ia.ts) : une tâche = un fil. */
+  useEffect(() => {
+    const outils = bridge?.outils;
+    if (!outils) return;
+    const executer = (nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }): string => {
+      const { chats, messages, travail } = stateRef.current;
+      const roles = rolesRef.current;
+      const nomDe = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
+      const filDe = (id: unknown) => {
+        const fil = chats.find((c) => c.id === String(id ?? "").trim() && c.fil);
+        if (!fil?.fil) throw new Error(`Aucun fil « ${String(id)} ».`);
+        return fil as Chat & { fil: NonNullable<Chat["fil"]> };
+      };
+      const etat = (c: Chat) => (travail[c.id] ? "en cours" : c.fil?.statut === "archive" ? "fermé" : "fini, en attente");
+      const resume = (c: Chat & { fil: NonNullable<Chat["fil"]> }) => `${c.title} (${c.id}) · ${nomDe(c.fil.roleId)} · ${etat(c)}`;
+
+      switch (nom) {
+        case "ouvrir_fil": {
+          const agent = String(args.agent ?? "").trim();
+          const titre = String(args.titre ?? "").trim();
+          const brief = String(args.brief ?? "").trim();
+          if (!roles.some((r) => r.id === agent)) throw new Error(`Agent inconnu « ${agent} ». Agents : ${roles.map((r) => `${r.id} (${r.name})`).join(", ")}.`);
+          if (!brief) throw new Error("Le brief est vide : le fil ne voit pas ta conversation, il lui faut tout.");
+          const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
+          const id = creerFil(agent, titre || brief, lanceur);
+          if (lanceur) {
+            dispatch({ type: "chat/update", id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: true } } : c) });
+          }
+          timers.current.push(setTimeout(() => envoyerRef.current(id, brief, null, []), 0));
+          return `Fil ouvert : ${titre || "sans titre"} (${id}). ${nomDe(agent)} y travaille, dans un onglet de son chat.${lanceur ? " Sa réponse te reviendra automatiquement dans cette conversation : inutile de la surveiller." : ""}`;
+        }
+        case "lister_fils": {
+          const agent = typeof args.agent === "string" && args.agent ? args.agent : null;
+          const ouverts = chats.filter((c): c is Chat & { fil: NonNullable<Chat["fil"]> } => !!c.fil && c.fil.statut === "ouvert" && (!agent || c.fil.roleId === agent));
+          return ouverts.length ? ouverts.map((c) => `- ${resume(c)}`).join("\n") : "Aucun fil ouvert.";
+        }
+        case "lire_fil": {
+          const fil = filDe(args.id);
+          const derniere = messages.findLast((m) => m.chatId === fil.id && m.author.kind === "role" && m.statut !== "en-cours");
+          const texte = derniere ? texteDe(derniere) || derniere.erreur || "" : "";
+          return `${resume(fil)}\n\n${texte ? `Dernière réponse :\n${texte.slice(-8000)}` : "Pas encore de réponse."}`;
+        }
+        case "ecrire_dans_fil": {
+          const fil = filDe(args.id);
+          const message = String(args.message ?? "").trim();
+          if (!message) throw new Error("Le message est vide.");
+          if (fil.fil.statut === "archive") throw new Error("Ce fil est fermé : demande à la personne de le rouvrir, ou ouvre-en un autre.");
+          if (fil.fil.lancePar?.chatId === appelant.chatId) {
+            dispatch({ type: "chat/update", id: fil.id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: true } } : c) });
+          }
+          envoyerRef.current(fil.id, message, null, []);
+          return travail[fil.id] ? "Ajouté : il le lira après sa réponse en cours." : "Envoyé : il s’y met.";
+        }
+        case "arreter_fil": {
+          const fil = filDe(args.id);
+          if (!travail[fil.id]) return "Il ne travaillait pas.";
+          arreter(fil.id);
+          return "Arrêté. Le fil reste ouvert.";
+        }
+        case "fermer_fil": {
+          const fil = filDe(args.id);
+          archiverFil(fil.id);
+          return `Fil fermé et archivé : ${fil.title} (${fil.id}). Il peut être rouvert.`;
+        }
+        default:
+          throw new Error("Outil inconnu.");
+      }
+    };
+    return outils.onAppel((id, nom, args, appelant) => {
+      try {
+        outils.repondre(id, true, executer(nom, args, appelant));
+      } catch (e) {
+        outils.repondre(id, false, e instanceof Error ? e.message : String(e));
+      }
+    });
+  }, [bridge, creerFil, archiverFil, arreter]);
 
   const nouvelleConversation = useCallback((chatId: string) => {
     if (stateRef.current.travail[chatId]) return;
@@ -1690,6 +1910,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       sendMessage,
       choisirModele,
       nouvelleConversation,
+      creerFil,
+      renommerChat,
+      archiverFil,
+      rouvrirFil,
       startChat,
       reessayer,
       brancher,
@@ -1724,6 +1948,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       sendMessage,
       choisirModele,
       nouvelleConversation,
+      creerFil,
+      renommerChat,
+      archiverFil,
+      rouvrirFil,
       startChat,
       reessayer,
       brancher,

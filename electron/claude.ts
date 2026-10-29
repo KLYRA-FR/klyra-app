@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { configMcp, OUTILS_APP } from "./ia";
+import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -174,6 +176,8 @@ export interface StreamOptions {
    * - « tout » : tout lui est accordé, sans demander.
    */
   acces?: "demander" | "projet" | "tout";
+  /** La conversation de l'app : les outils des fils savent d'où vient l'agent. */
+  chatId?: string;
 }
 
 /** Réponse à une demande d'autorisation. « toujours » : accordé pour le reste de la session. */
@@ -223,6 +227,12 @@ interface Processus {
 
 /** Ouvre une réponse spontanée dans l'interface ; null si elle n'est plus là. */
 export type Spontane = (sessionId: string) => { requestId: string; emit: (event: AgentEvent) => void } | null;
+
+/** Les fils : comment l'agent confie une tâche à un coéquipier (outils du serveur MCP de l'app). */
+const CONSIGNE_FILS = `Dans cette app, une tâche = un fil : une conversation à part d'un agent, ouverte dans un onglet de son chat, qui tourne sans bloquer. Pour confier à un coéquipier (ou à toi-même) un travail qui ne se règle pas tout de suite, utilise l'outil ouvrir_fil avec un brief complet (le fil ne voit pas ta conversation), après avoir regardé avec lister_fils qu'il n'en existe pas déjà un sur le même sujet. Une tâche = un responsable. Quand le coéquipier a fini, sa réponse te revient d'elle-même : ne la surveille pas en boucle. Tu peux lire un fil (lire_fil), y ajouter une précision (ecrire_dans_fil), l'arrêter (arreter_fil), et le fermer (fermer_fil) une fois le travail fait et vérifié. Cite toujours un fil avec son titre et son identifiant : Rapport hebdo (klyra-fil-…). Les fils d'un même agent partagent ses fichiers : évite que deux fils modifient les mêmes fichiers en même temps. Pour une petite recherche rapide, pas besoin de fil.`;
+
+/** Dit à l'agent où lire le planning de la personne (electron/planning.ts). */
+const CONSIGNE_PLANNING = `La personne avec qui tu parles a, dans cette app, son calendrier (avec les rendez-vous de son équipe), ses rappels, ses routines, ses projets, ses conversations, ses artefacts et ses workflows. Tout est dans ${FICHIER_PLANNING}, tenu à jour en continu. Quand elle dit « mes rappels », « mon calendrier », « mon agenda », « mes routines », « mes projets »…, c'est de ceux-là qu'elle parle, les siens, pas des apps du Mac (Rappels, Calendrier) : lis ce fichier en premier, avant toute autre recherche, et réponds à partir de lui. Il est en lecture seule : pour y changer quelque chose, dis-lui quoi faire dans l'app.`;
 
 const processus = new Map<string, Processus>();
 const parRequete = new Map<string, { proc: Processus; tour: Tour }>();
@@ -585,12 +595,18 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       "AskUserQuestion",
       "EnterPlanMode",
     ];
-    if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES);
+    // Les outils de l'app (fils, autres IA ajoutées dans les Réglages), par son serveur MCP local.
+    const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal" });
+    if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? OUTILS_APP() : []));
+    if (mcp) args.push("--mcp-config", mcp);
     if (options.agent) args.push("--agent", options.agent);
     if (options.sessionId) args.push("--resume", options.sessionId);
     if (options.modele) args.push("--model", options.modele);
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
+    // L'agenda, les rappels et les routines de la personne, que l'app tient à jour.
+    args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", mcp ? `${CONSIGNE_PLANNING}\n\n${CONSIGNE_FILS}` : CONSIGNE_PLANNING);
+
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);
   }
 

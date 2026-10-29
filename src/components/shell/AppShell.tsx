@@ -10,7 +10,7 @@ import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
-import { DIRECT, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
+import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
 import { AppRail } from "./AppRail";
 
@@ -38,7 +38,7 @@ const MAIN =
 function useEnConversation(): boolean {
   const pathname = usePathname();
   const id = useSearchParams().get("id");
-  return pathname === "/chats" || pathname === "/equipe" || (pathname === "/chat" && !!id?.startsWith(DIRECT));
+  return pathname === "/chats" || pathname === "/equipe" || (pathname === "/chat" && estConversationAgent(id));
 }
 
 /** Le contenu de la page, qui arrive en douceur à chaque changement d'écran. */

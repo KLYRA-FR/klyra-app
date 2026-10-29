@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { NIVEAUX_ACCES } from "@/lib/acces";
 import { nomAbonnement, useCompteClaude } from "@/lib/compte-claude";
 import { useWorkspace } from "@/lib/workspace";
+import { AutresIa } from "./AutresIa";
 import { Recadrage } from "./Recadrage";
 
 const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -288,6 +289,13 @@ export function ReglagesScreen() {
 
         <Section titre="Claude" sousTitre="Le compte par lequel tes agents travaillent.">
           <CompteClaudeCarte />
+        </Section>
+
+        <Section
+          titre="Autres IA"
+          sousTitre="Ajoute d’autres IA que Claude : tes agents peuvent leur demander un avis, un texte, une comparaison. Elles répondent, elles ne touchent pas à tes fichiers."
+        >
+          <AutresIa />
         </Section>
 
         <Section titre="Utilisation" sousTitre="Ce qu’il reste sur la session de 5 h et sur la semaine. Survole pour le détail, clique pour mettre à jour.">
