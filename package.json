@@ -6,6 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "next dev -p 3100",
+    "dev:convex": "convex dev",
     "postinstall": "node scripts/nom-app-dev.mjs",
     "desktop": "pnpm build:electron && concurrently -k -n web,app -c gray,black \"next dev -p 3100\" \"wait-on http://localhost:3100 && env -u ELECTRON_RUN_AS_NODE KLYRA_DEV_URL=http://localhost:3100 electron .\"",
     "build": "next build",
@@ -26,6 +27,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "convex": "^1.48.0",
     "klyra-ui": "github:CorentinQueuche/klyra-ui#main",
     "next": "16.4.1",
     "react": "19.3.0",

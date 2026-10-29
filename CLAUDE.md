@@ -37,3 +37,17 @@ Front seul, données factices, **aux couleurs et composants du design system KLY
 ## Vérification
 
 `pnpm typecheck && pnpm lint && pnpm build && pnpm test:smoke`, et `pnpm test:agents` (dev server lancé) dès qu’on touche aux agents : il tourne sur un dossier temporaire, jamais sur les vrais agents. Ne pas vérifier par capture d’écran : Pelin fait la vérification visuelle de son côté ; `test:smoke` lit le texte rendu.
+
+<!-- convex-ai-start -->
+
+This project uses [Convex](https://convex.dev) as its backend.
+
+When working on Convex code, **always read
+`convex/_generated/ai/guidelines.md` first** for important guidelines on
+how to correctly use Convex APIs and patterns. The file contains rules that
+override what you may have learned about Convex from training data.
+
+Convex agent skills for common tasks can be installed by running
+`npx convex ai-files install`.
+
+<!-- convex-ai-end -->
