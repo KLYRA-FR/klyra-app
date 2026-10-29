@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { getBridge, type CodeErreurDictee, type ProgressionDictee } from "@/lib/bridge";
 import { poste } from "@/lib/plateforme";
+import { debutEcoute, finEcoute, jouer } from "@/lib/sons/sons";
 import { ouvrirMicro, type Micro } from "./micro";
 import type { Moteur, Rappels } from "./moteur";
 import { MoteurElevenLabs } from "./moteur-elevenlabs";
@@ -102,6 +103,7 @@ export function useDictee({
   }, []);
 
   const montrer = useCallback((m: MessageDictee) => {
+    if (m.ton === "erreur") jouer("erreur");
     setMessage(m);
     setTimeout(() => setMessage((actuel) => (actuel === m ? null : actuel)), m.ton === "erreur" ? 7000 : 5000);
   }, []);
@@ -112,6 +114,8 @@ export function useDictee({
       if (session.current !== s) return;
       session.current = null;
       s.micro?.arreter();
+      // Les sons reprennent ; une erreur a le sien, pas celui de la fin.
+      finEcoute(!m || m.ton !== "erreur");
       s.minuteurs.forEach(clearTimeout);
       s.moteur?.annuler();
       s.dicte = joindre(s.dicte, s.provisoire);
@@ -191,6 +195,7 @@ export function useDictee({
     const s = session.current;
     if (!s || s.micro === null) return;
     s.micro.arreter();
+    finEcoute(true);
     s.minuteurs.forEach(clearTimeout);
     setPhase("finalisation");
     setNiveau(0);
@@ -236,6 +241,8 @@ export function useDictee({
       demarrerLocal(s, rappels);
     }
 
+    // Le son du début, joué avant que le micro écoute ; ensuite, plus aucun son jusqu'à la fin.
+    debutEcoute();
     let micro: Micro;
     try {
       micro = await ouvrirMicro((trame) => {
@@ -247,7 +254,10 @@ export function useDictee({
     } catch (e) {
       return finir(s, { ton: "erreur", texte: messageMicro(e) });
     }
-    if (session.current !== s) return micro.arreter();
+    if (session.current !== s) {
+      finEcoute(false);
+      return micro.arreter();
+    }
     s.micro = micro;
     setPreparation(null);
     setSecondes(0);
@@ -265,6 +275,7 @@ export function useDictee({
       const s = session.current;
       session.current = null;
       s?.micro?.arreter();
+      if (s?.micro) finEcoute(true);
       s?.minuteurs.forEach(clearTimeout);
       s?.moteur?.annuler();
     },

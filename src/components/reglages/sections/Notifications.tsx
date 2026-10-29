@@ -5,6 +5,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { getBridge, type PreferencesNotifications } from "@/lib/bridge";
 import { estMac } from "@/lib/raccourcis";
 import { useReglages } from "@/lib/reglages";
+import { SonsReglages } from "../SonsReglages";
 import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau } from "../ui";
 
 const EVENEMENTS: { cle: keyof PreferencesNotifications; libelle: string; description: string }[] = [
@@ -47,7 +48,7 @@ export function Notifications() {
         >
           <Interrupteur libelle="Pastille sur l’icône" actif={!!n?.pastille} disabled={!n} onChange={(v) => void changerNotification("pastille", v)} />
         </Ligne>
-        <Ligne id="son" libelle="Son" description="Le son de notification du système.">
+        <Ligne id="son" libelle="Son" description="Le son du système avec chaque notification. Quand il sonne, KLYRA ne joue pas le sien en plus.">
           <Interrupteur libelle="Son des notifications" actif={!!n?.son} disabled={!n || !n.actives} onChange={(v) => void changerNotification("son", v)} />
         </Ligne>
         {erreur && <Erreur>{erreur}</Erreur>}
@@ -74,6 +75,8 @@ export function Notifications() {
           )}
         </Ligne>
       </Groupe>
+
+      <SonsReglages />
     </>
   );
 }

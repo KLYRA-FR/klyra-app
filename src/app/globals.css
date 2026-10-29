@@ -583,3 +583,39 @@ body[data-glisse] iframe {
   0%, 30% { background-color: var(--color-fond-teinte-bleue); }
   100%    { background-color: transparent; }
 }
+
+/* ─── Curseur de réglage (volume des sons) ─────────────────────── */
+
+/* Piste grise, remplie de K1 jusqu'à la valeur (--valeur, en %), pouce blanc. */
+.klyra-curseur {
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.klyra-curseur:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.klyra-curseur::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--color-fond-accent) var(--valeur, 0%), var(--color-gris-k2-500) var(--valeur, 0%));
+}
+
+.klyra-curseur::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: var(--color-fond-surface);
+  box-shadow: var(--shadow-ombre-sm), 0 0 0 1px var(--color-bordure-forte);
+  transition: transform 120ms var(--ease-sortie);
+}
+
+.klyra-curseur:active::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
