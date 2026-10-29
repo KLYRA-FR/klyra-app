@@ -1,0 +1,70 @@
+# Pull requests qui touchent à la signature Mac : on signe deux versions de
+# l'app avec un certificat jetable (créé ici, aucun secret), et on vérifie que
+# leur « exigence désignée » est identique. C'est ce que macOS compare pour
+# garder les autorisations (Accessibilité, Enregistrement de l'écran) d'une
+# mise à jour à l'autre. Ne publie rien.
+name: Vérification Mac (signature)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/signer-mac.cjs
+      - scripts/creer-certificat-mac.sh
+      - scripts/importer-certificat-mac.sh
+      - .github/workflows/app.yml
+      - .github/workflows/verification-mac.yml
+      - electron/maj.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verification-mac-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  signature:
+    name: Deux versions signées, même exigence désignée
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build && pnpm build:electron && pnpm whisper
+
+      - name: Certificat jetable
+        run: |
+          sh scripts/creer-certificat-mac.sh --local "$RUNNER_TEMP/cert"
+          echo "MAC_CERT_P12=$(base64 < "$RUNNER_TEMP/cert/klyra-signature.p12" | tr -d '\n')" >> "$GITHUB_ENV"
+          echo "MAC_CERT_PASSWORD=$(cat "$RUNNER_TEMP/cert/mot-de-passe.txt")" >> "$GITHUB_ENV"
+      - name: Import comme dans l'action App
+        run: sh scripts/importer-certificat-mac.sh
+
+      - name: Version 1
+        run: |
+          npm pkg set version="0.0.1"
+          pnpm exec electron-builder --mac dir --publish never --config.directories.output=v1
+          codesign --display --requirements - v1/mac-arm64/KLYRA.app 2>&1 | grep designated | tee "$RUNNER_TEMP/v1.txt"
+      - name: Version 2
+        run: |
+          npm pkg set version="0.0.2"
+          pnpm exec electron-builder --mac dir --publish never --config.directories.output=v2
+          codesign --display --requirements - v2/mac-arm64/KLYRA.app 2>&1 | grep designated | tee "$RUNNER_TEMP/v2.txt"
+
+      - name: Même exigence désignée, liée au certificat
+        run: |
+          diff "$RUNNER_TEMP/v1.txt" "$RUNNER_TEMP/v2.txt"
+          grep -q 'certificate' "$RUNNER_TEMP/v1.txt"
+          ! grep -q 'cdhash' "$RUNNER_TEMP/v1.txt"
+      - name: La version 2 satisfait l'exigence de la version 1 (contrôle de la mise à jour)
+        run: codesign --verify --deep -R="$(sed 's/^designated => //' "$RUNNER_TEMP/v1.txt")" v2/mac-arm64/KLYRA.app
+      - name: L'app signée démarre
+        run: |
+          KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
+            perl -e 'alarm 120; exec @ARGV' v2/mac-arm64/KLYRA.app/Contents/MacOS/KLYRA
