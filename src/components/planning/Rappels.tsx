@@ -6,6 +6,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { aujourdhui, echeance, enRetard, libellePeriode } from "@/lib/dates";
+import { jouer } from "@/lib/sons/sons";
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte, type Tache } from "@/types/domain";
 
@@ -89,6 +90,8 @@ export function CaseTache({
       aria-label={faite ? `Rouvrir ${libelle}` : `Terminer ${libelle}`}
       onClick={(e) => {
         e.stopPropagation();
+        // Un rappel fait : une validation qui s'entend. Le rouvrir reste silencieux.
+        if (!faite) jouer("validation");
         onChange();
       }}
       style={couleur ? (faite ? { background: couleur, borderColor: couleur } : { borderColor: couleur }) : undefined}

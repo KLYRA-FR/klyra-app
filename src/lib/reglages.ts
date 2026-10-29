@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getBridge, unwrap, type PreferencesNotifications, type Reglages } from "@/lib/bridge";
+import { getBridge, unwrap, type PreferencesNotifications, type PreferencesSons, type Reglages } from "@/lib/bridge";
 
 /**
  * Les réglages de l'app gardés par le process principal (electron/reglages.ts).
@@ -12,6 +12,7 @@ import { getBridge, unwrap, type PreferencesNotifications, type Reglages } from 
 export const REGLAGES_PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
   computerUse: { actif: false },
+  sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
 };
 
 const CLE_NAVIGATEUR = "klyra:reglages";
@@ -23,7 +24,14 @@ function completer(brut: Partial<Reglages> | null | undefined): Reglages {
   return {
     notifications: { ...REGLAGES_PAR_DEFAUT.notifications, ...brut?.notifications },
     computerUse: { actif: brut?.computerUse?.actif === true },
+    sons: { ...REGLAGES_PAR_DEFAUT.sons, ...brut?.sons },
   };
+}
+
+/** Suit les réglages enregistrés (le module de sons, hors React). Renvoie de quoi arrêter. */
+export function surReglages(f: (r: Reglages) => void): () => void {
+  abonnes.add(f);
+  return () => abonnes.delete(f);
 }
 
 /** Les réglages actuels, lus une fois puis gardés en mémoire. */
@@ -82,5 +90,15 @@ export function useReglages() {
     }
   }, []);
 
-  return { reglages, erreur, changerNotification, changerComputerUse, systeme: !!getBridge()?.reglages };
+  const changerSons = useCallback(async (patch: Partial<PreferencesSons>) => {
+    const actuels = await reglagesActuels();
+    setErreur(null);
+    try {
+      await enregistrer({ ...actuels, sons: { ...actuels.sons, ...patch } });
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  return { reglages, erreur, changerNotification, changerComputerUse, changerSons, systeme: !!getBridge()?.reglages };
 }

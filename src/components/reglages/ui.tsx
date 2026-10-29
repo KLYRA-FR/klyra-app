@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { jouer } from "@/lib/sons/sons";
 
 /** L'ancre d'un réglage : la recherche y mène et l'éclaire un instant. */
 export const ancreReglage = (id: string) => `reglage-${id}`;
@@ -56,17 +57,23 @@ export function Ligne({
   );
 }
 
-/** Interrupteur oui / non (rôle `switch`), au bleu K1 quand il est actif. */
+/**
+ * Interrupteur oui / non (rôle `switch`), au bleu K1 quand il est actif, avec
+ * le son « activé » ou « désactivé » du thème. `sansSon` : l'appelant joue
+ * le sien.
+ */
 export function Interrupteur({
   actif,
   onChange,
   libelle,
   disabled,
+  sansSon,
 }: {
   actif: boolean;
   onChange: (actif: boolean) => void;
   libelle: string;
   disabled?: boolean;
+  sansSon?: boolean;
 }) {
   return (
     <button
@@ -75,7 +82,10 @@ export function Interrupteur({
       aria-checked={actif}
       aria-label={libelle}
       disabled={disabled}
-      onClick={() => onChange(!actif)}
+      onClick={() => {
+        if (!sansSon) jouer(actif ? "desactive" : "active");
+        onChange(!actif);
+      }}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-pill border-0 p-0 transition-colors duration-[220ms] ease-sortie",
         "disabled:cursor-not-allowed disabled:opacity-50",

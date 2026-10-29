@@ -217,6 +217,8 @@ export interface KlyraBridge {
     utilisateur: () => Promise<Reponse<{ nom: string; identifiant: string }>>;
     /** Demande l'accès au micro (une fois, par macOS). */
     micro?: () => Promise<Reponse<boolean>>;
+    /** Les sons de l'interface sont-ils coupés dans les réglages du système ? */
+    sonsCoupes?: () => Promise<Reponse<boolean>>;
     /** Notification du Mac (et pastille du Dock) ; un clic ramène à la conversation. Filtrée par les Réglages. */
     notifier?: (titre: string, texte: string, chatId: string, evenement?: "agentFini" | "agentErreur" | "workflow") => Promise<Reponse<void>>;
     onOuvrirChat?: (callback: (chatId: string) => void) => () => void;
@@ -330,9 +332,17 @@ export interface PreferencesNotifications {
   majPrete: boolean;
 }
 
+export interface PreferencesSons {
+  finDeTache: boolean;
+  theme: "silence" | "chaleureux" | "mecanique" | "petillant" | "clavier";
+  /** De 0 à 1. */
+  volume: number;
+}
+
 export interface Reglages {
   notifications: PreferencesNotifications;
   computerUse: { actif: boolean };
+  sons: PreferencesSons;
 }
 
 export type EtatAutorisation = "accordee" | "refusee" | "a-demander" | "sans-objet" | "inconnue";

@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { useDictee } from "@/lib/dictee/useDictee";
+import { jouer } from "@/lib/sons/sons";
 import { BoutonDictee } from "./BoutonDictee";
 import { MiroirDictee } from "./MiroirDictee";
 import { PreparationDictee } from "./PreparationDictee";
@@ -76,9 +77,16 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
   const canSend = (value.trim().length > 0 || aDesPieces) && !enDictee;
   const peutArreter = occupe && !!onArreter;
 
+  /** Envoie, avec le son de l'envoi. */
+  const envoyer = () => {
+    if (!canSend) return;
+    jouer("envoi");
+    onSubmit();
+  };
+
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (canSend) onSubmit();
+    envoyer();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -99,7 +107,7 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
     }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      if (canSend) onSubmit();
+      envoyer();
     }
   };
 

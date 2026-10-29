@@ -22,6 +22,7 @@ import {
 import { useAgents } from "@/lib/agents";
 import { BridgeError } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { jouer } from "@/lib/sons/sons";
 import { ROLE_TEINTES, type Role, type RoleTeinte } from "@/types/domain";
 import { AgentVisuel, TEINTES } from "./AgentVisuel";
 
@@ -157,6 +158,7 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
       } else {
         await save(role.id, contenu(), reglage, forcer ? null : initial.modifiedAt);
       }
+      jouer("validation");
       router.push(`/equipe?agent=${creation ? id : role.id}`);
     } catch (e) {
       if (e instanceof BridgeError && e.code === "conflit") setEtat({ kind: "conflit" });

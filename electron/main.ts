@@ -73,6 +73,7 @@ import {
   lireReglages,
   notificationPermise,
   ouvrirDossier,
+  sonsCoupesParLeSysteme,
   type DossierApp,
   type EvenementNotification,
 } from "./reglages";
@@ -338,6 +339,8 @@ function registerBridge() {
   handle("systeme:utilisateur", () => utilisateurSysteme());
   /* Dictée : l'accès au micro (macOS le demande une fois), puis la transcription par Whisper. */
   handle("systeme:micro", () => (process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : true));
+  /* Sons de l'app : se taire si le système a coupé les sons de l'interface. */
+  handle("systeme:sons-coupes", () => sonsCoupesParLeSysteme());
   /* Un agent a fini pendant que tu regardais ailleurs : notification du Mac, pastille sur l'icône. */
   handle("systeme:notifier", (titre: string, texte: string, chatId: string, evenement: EvenementNotification = "agentFini") => {
     if (![titre, texte, chatId].every((v) => typeof v === "string")) throw new Error("Notification invalide.");
