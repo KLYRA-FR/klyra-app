@@ -32,6 +32,7 @@ Remplacer VS Code par **notre propre outil** pour travailler avec l’IA, en plu
 | 29/10/2026 | Décision de Corentin : **pas de Facturation ni d’Appli mobile, pas de mode sombre pour l’instant**. La consommation va dans **Profil** (jetons, messages, séries, activité de l’année, modèles, coéquipiers, coût indicatif), tirée d’un journal tenu à partir de cette version. **Computer Use** : interrupteur et autorisations seulement ; plan dans `docs/COMPUTER-USE-PLAN.md`, à valider avant tout code | Profil d’OpenBot comme référence ; chiffres réels uniquement |
 | 29/10/2026 | Profil : **toute la consommation Claude Code du poste** (terminal, IDE, app), rattrapée dans ses transcriptions locales, avec la vue « Seulement KLYRA » ; limites de l’abonnement (5 h, semaine) ; ce qui ne peut pas être compté écrit en clair (claude.ai, autres ordinateurs). Clé Admin d’Anthropic facultative pour le coût réel d’une organisation Console (API Usage and Cost Analytics, bêta) | Profil vide chez Corentin : le journal ne comptait qu’à partir de la 0.1.11 |
 | 29/10/2026 | **Dictée en direct** : ElevenLabs Scribe v2 Realtime avec la clé des Réglages, sinon Whisper sur l’ordinateur (whisper-server gardé en mémoire, modèle « Rapide » sur PC, « Précis » sur Mac). Chaque moteur dans son module (`electron/dictee-elevenlabs.ts`, `src/lib/dictee/moteur-*.ts`) | Corentin voulait voir le texte s’écrire pendant qu’il parle ; la fin de phrase passe de ~12 s à ~0,3 s (en ligne) ou ~0,7 s (PC sans carte graphique) |
+| 29/10/2026 | **Convex pour les données partagées** (comptes et équipe, rappels assignés, calendrier commun), à la place de Neon + Drizzle. Conversations, fichiers et clés restent sur l’ordinateur. Connexion par lien magique (e-mails PostShiba depuis `notifications.klyra.fr`) ; équipe de départ : Corentin, Pelin, Yanis, admins. Plan dans `docs/CONVEX-PLAN.md`, à valider avant tout code | Décision de Corentin : travailler à plusieurs sur les mêmes rappels et le même agenda |
 
 ## Maquettes (Figma)
 
@@ -85,7 +86,9 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 4. [ ] Fichiers façon Finder
 5. [ ] Mémoire du projet
 6. [ ] Palette ⌘K
-7. [ ] Puis le back : base de données (Neon + Drizzle), comptes, vrais agents (SDK Claude) et terminaux en local
+7. [ ] Puis le back : données partagées sur Convex (`docs/CONVEX-PLAN.md` : comptes, rappels assignés, calendrier commun), vrais agents (SDK Claude) et terminaux en local
+   [x] Convex installé (dépendance, `convex/schema.ts` vide, `pnpm dev:convex`, fichiers ai), sans déploiement
+   [ ] Plan validé par Corentin
 8. [ ] Fichier d’installation .dmg pour l’équipe (compte développeur Apple, 99 $ par an)
 
 ### Points ouverts
