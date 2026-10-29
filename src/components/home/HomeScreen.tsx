@@ -85,8 +85,10 @@ export function HomeScreen() {
   };
 
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: "Principal · il répartit" },
-    ...roles.filter((r) => r.id !== "principal").map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}` })),
+    { value: AUTO, label: "Principal · il répartit", icone: <RoleAvatar roleId="principal" size="xs" /> },
+    ...roles
+      .filter((r) => r.id !== "principal")
+      .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <RoleAvatar roleId={r.id} size="xs" /> })),
   ];
 
   const maintenant = new Date();

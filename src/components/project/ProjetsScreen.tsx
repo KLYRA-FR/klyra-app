@@ -3,11 +3,12 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Input, Select, Textarea } from "klyra-ui";
+import { Input, Textarea } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
@@ -118,7 +119,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
           <Input size="sm" value={previewUrl} placeholder="localhost:3002" onChange={(e) => setPreviewUrl(e.target.value)} className={cn(CHAMP, "klyra-mono")} />
         </Champ>
         <Champ label="Statut">
-          <Select size="sm" value={status} options={STATUTS} onChange={(e) => setStatus(e.target.value as ProjectStatus)} className={CHAMP} />
+          <ListeDeroulante value={status} options={STATUTS} onChange={setStatus} />
         </Champ>
       </div>
 

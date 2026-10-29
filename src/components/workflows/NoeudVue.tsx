@@ -5,6 +5,7 @@ import { MODELES } from "@/components/chat/ChoixModele";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { getBridge } from "@/lib/bridge";
@@ -114,7 +115,7 @@ function Segments<T extends string>({
   );
 }
 
-/** Une liste native, petite, posée dans la carte. */
+/** Une liste déroulante compacte, posée dans la carte. */
 function Liste({
   valeur,
   options,
@@ -129,20 +130,18 @@ function Liste({
   libelle: string;
 }) {
   return (
-    <select
-      aria-label={libelle}
-      value={valeur}
-      disabled={lecture}
-      onChange={(e) => onChange(e.target.value)}
-      onPointerDown={(e) => e.stopPropagation()}
-      className="h-7 cursor-pointer rounded-sm border border-bordure-subtile bg-fond-surface px-2 text-ui-xs text-texte-principal focus:border-bordure-forte focus:outline-none"
-    >
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.nom}
-        </option>
-      ))}
-    </select>
+    /* Un clic sur la liste ne déplace pas la carte. */
+    <span className="inline-flex min-w-0" onPointerDown={(e) => e.stopPropagation()}>
+      <ListeDeroulante
+        variante="compact"
+        libelle={libelle}
+        value={valeur}
+        disabled={lecture}
+        options={options.map((o) => ({ value: o.id, label: o.nom }))}
+        onChange={onChange}
+        className="min-w-0"
+      />
+    </span>
   );
 }
 

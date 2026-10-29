@@ -520,3 +520,20 @@ body {
 body[data-glisse] iframe {
   pointer-events: none;
 }
+
+/* ─── Listes et fenêtres ───────────────────────────────────────── */
+
+/* Barre de défilement fine des listes déroulantes, sans flèches. */
+.klyra-defilement-fin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-gris-k2-500) transparent;
+}
+
+/* Voile derrière une fenêtre (Modale) : il apparaît en fondu. */
+.klyra-voile {
+  animation: klyra-voile 220ms var(--ease-sortie) backwards;
+}
+
+@keyframes klyra-voile {
+  from { opacity: 0; }
+}

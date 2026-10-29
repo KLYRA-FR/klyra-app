@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Input, Select } from "klyra-ui";
+import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { CHAMP, Champ } from "@/components/ui/Champ";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge, type AutreIa } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 
@@ -61,12 +62,10 @@ function Formulaire({ fournisseurs, onAjoutee, onAnnuler }: { fournisseurs: Four
     >
       <div className="grid gap-4 @lg:grid-cols-2">
         <Champ label="IA">
-          <Select
-            size="sm"
+          <ListeDeroulante
             value={fournisseur}
             options={Object.entries(fournisseurs).map(([id, f]) => ({ value: id, label: f.nom }))}
-            onChange={(e) => choisir(e.target.value)}
-            className={CHAMP}
+            onChange={choisir}
           />
         </Champ>
         <Champ label="Nom" aide="Celui que tu diras aux agents : « demande à Gemini ».">

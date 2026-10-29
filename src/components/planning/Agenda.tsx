@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { Input, Select, Textarea } from "klyra-ui";
+import { Input, Textarea } from "klyra-ui";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { CHAMP } from "@/components/ui/Champ";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { cn } from "@/lib/cn";
 import { aujourdhui, cleJour, depuisCle, grilleMois } from "@/lib/dates";
 import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
@@ -250,12 +251,11 @@ function FenetreEvenement({ initial, onFermer }: { initial: Evenement; onFermer:
           />
           Toute la journée
         </label>
-        <Select
-          size="sm"
+        <ListeDeroulante
+          libelle="Projet"
           value={e.projectId ?? ""}
           options={[{ value: "", label: "Aucun projet" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
-          onChange={(x) => setE({ ...e, projectId: x.target.value || null })}
-          className={CHAMP}
+          onChange={(v) => setE({ ...e, projectId: v || null })}
         />
         <Textarea
           size="sm"

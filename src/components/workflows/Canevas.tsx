@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Icon, type IconName } from "@/components/icons/Icon";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
@@ -72,8 +73,10 @@ export interface ProprietesCanevas {
   sorties: EtapeWorkflow[];
 }
 
+/* Un champ ou une liste déroulante a le focus : le clavier est à lui, pas aux raccourcis du canevas. */
 const estChamp = (cible: EventTarget | null) =>
-  cible instanceof HTMLElement && (cible.tagName === "INPUT" || cible.tagName === "TEXTAREA" || cible.tagName === "SELECT" || cible.isContentEditable);
+  cible instanceof HTMLElement &&
+  (cible.tagName === "INPUT" || cible.tagName === "TEXTAREA" || cible.tagName === "SELECT" || cible.role === "combobox" || cible.isContentEditable);
 
 /** La courbe d'un lien, d'une sortie vers une entrée. */
 function courbe(a: Point, b: Point): string {
@@ -798,42 +801,39 @@ export function Canevas(p: ProprietesCanevas) {
                 />
               ))}
             {choisi.type === "forme" && (
-              <select
-                aria-label="Forme"
+              <ListeDeroulante
+                variante="compact"
+                libelle="Forme"
                 value={String(choisi.champs.forme)}
-                onChange={(e) => majNoeud(choisi.id, (n) => ({ ...n, champs: { ...n.champs, forme: e.target.value } }))}
-                className="h-7 rounded-sm border border-bordure-subtile bg-fond-surface px-1.5 text-ui-xs"
-              >
-                {FORMES.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.nom}
-                  </option>
-                ))}
-              </select>
+                options={FORMES.map((f) => ({ value: f.id, label: f.nom }))}
+                onChange={(forme) => majNoeud(choisi.id, (n) => ({ ...n, champs: { ...n.champs, forme } }))}
+              />
             )}
             {choisi.type === "texte" && (
               <>
-                <select
-                  aria-label="Taille du texte"
+                <ListeDeroulante
+                  variante="compact"
+                  libelle="Taille du texte"
                   value={String(choisi.champs.corps || "corps")}
-                  onChange={(e) => majNoeud(choisi.id, (n) => ({ ...n, champs: { ...n.champs, corps: e.target.value } }))}
-                  className="h-7 rounded-sm border border-bordure-subtile bg-fond-surface px-1.5 text-ui-xs"
-                >
-                  <option value="corps">Corps</option>
-                  <option value="intertitre">Intertitre</option>
-                  <option value="titre">Titre</option>
-                </select>
-                <select
-                  aria-label="Alignement"
+                  options={[
+                    { value: "corps", label: "Corps" },
+                    { value: "intertitre", label: "Intertitre" },
+                    { value: "titre", label: "Titre" },
+                  ]}
+                  onChange={(corps) => majNoeud(choisi.id, (n) => ({ ...n, champs: { ...n.champs, corps } }))}
+                />
+                <ListeDeroulante
+                  variante="compact"
+                  libelle="Alignement"
                   value={String(choisi.champs.alignement || "gauche")}
-                  onChange={(e) => majNoeud(choisi.id, (n) => ({ ...n, champs: { ...n.champs, alignement: e.target.value } }))}
-                  className="h-7 rounded-sm border border-bordure-subtile bg-fond-surface px-1.5 text-ui-xs"
-                >
-                  <option value="gauche">Gauche</option>
-                  <option value="centre">Centre</option>
-                  <option value="droite">Droite</option>
-                  <option value="justifie">Justifié</option>
-                </select>
+                  options={[
+                    { value: "gauche", label: "Gauche" },
+                    { value: "centre", label: "Centre" },
+                    { value: "droite", label: "Droite" },
+                    { value: "justifie", label: "Justifié" },
+                  ]}
+                  onChange={(alignement) => majNoeud(choisi.id, (n) => ({ ...n, champs: { ...n.champs, alignement } }))}
+                />
                 <BoutonOutil icone="type-01" libelle="Gras" actif={!!choisi.champs.gras} onClick={() => majNoeud(choisi.id, (n) => ({ ...n, champs: { ...n.champs, gras: !n.champs.gras } }))} />
               </>
             )}
