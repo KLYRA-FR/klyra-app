@@ -294,6 +294,74 @@ function FenetreEvenement({ initial, onFermer }: { initial: Evenement; onFermer:
 
 /* ─── Jour et semaine : la grille des heures ───────────────────── */
 
+/** Largeur de la marge des heures, en px. */
+const MARGE = 56;
+
+/** Le créneau d'une demi-heure à une hauteur de la grille, en minutes depuis minuit. */
+const creneauA = (y: number) => Math.max(0, Math.min(23 * 60 + 30, Math.floor((y / HEURE) * 2) * 30));
+
+/**
+ * Le survol de la grille : le créneau sous la souris prend un fond léger et
+ * affiche son heure, et l'heure correspondante passe en valeur dans la marge.
+ * Écrit directement dans le DOM, sans état : la grille ne se re-rend pas
+ * quand la souris bouge. Rien sur un événement ou un rappel (le clic l'ouvre).
+ */
+function useSurvolCreneau(nbJours: number) {
+  const grille = useRef<HTMLDivElement>(null);
+  const pointeur = useRef<{ x: number; y: number } | null>(null);
+  const actif = useRef<{ jour: number; min: number } | null>(null);
+
+  /* Un créneau par colonne (`data-creneau`) : il passe sur le grisé des heures
+     creuses, sous les événements. Les heures de la marge : `data-libelle`. */
+  const trouver = (attribut: string, valeur: number) =>
+    grille.current?.querySelector<HTMLElement>(`[${attribut}="${valeur}"]`) ?? null;
+
+  const afficher = (creneau: { jour: number; min: number } | null) => {
+    const avant = actif.current;
+    if (avant?.jour === creneau?.jour && avant?.min === creneau?.min) return;
+    actif.current = creneau;
+    if (avant) {
+      trouver("data-libelle", Math.floor(avant.min / 60))?.removeAttribute("data-survol");
+      if (avant.jour !== creneau?.jour) trouver("data-creneau", avant.jour)?.removeAttribute("data-actif");
+    }
+    const el = creneau && trouver("data-creneau", creneau.jour);
+    if (!creneau || !el) return;
+    el.style.transform = `translateY(${(creneau.min / 60) * HEURE}px)`;
+    const texte = el.querySelector("[data-heure]");
+    if (texte) texte.textContent = versHeure(creneau.min);
+    el.setAttribute("data-actif", "");
+    trouver("data-libelle", Math.floor(creneau.min / 60))?.setAttribute("data-survol", "");
+  };
+
+  const suivre = (cible: Element | null) => {
+    const g = grille.current;
+    const p = pointeur.current;
+    if (!g || !p) return afficher(null);
+    const r = g.getBoundingClientRect();
+    const x = p.x - r.left;
+    const y = p.y - r.top;
+    const jour = Math.floor((x - MARGE) / ((r.width - MARGE) / nbJours));
+    if (x < MARGE || jour >= nbJours || y < 0 || cible?.closest("button, [data-bloc]")) return afficher(null);
+    afficher({ jour, min: creneauA(y) });
+  };
+
+  const bouger = (ev: ReactMouseEvent<HTMLDivElement>) => {
+    pointeur.current = { x: ev.clientX, y: ev.clientY };
+    suivre(ev.target as Element);
+  };
+  const quitter = () => {
+    pointeur.current = null;
+    afficher(null);
+  };
+  /* La grille défile sous la souris immobile : le créneau change aussi. */
+  const defiler = () => {
+    const p = pointeur.current;
+    if (p) suivre(document.elementFromPoint(p.x, p.y));
+  };
+
+  return { grille, bouger, quitter, defiler };
+}
+
 function GrilleHeures({
   jours,
   onCreer,
@@ -325,14 +393,14 @@ function GrilleHeures({
     if (zone.current) zone.current.scrollTop = DEBUT_JOURNEE * HEURE;
   }, []);
 
-  const colonnes = `56px repeat(${jours.length}, minmax(0, 1fr))`;
+  const colonnes = `${MARGE}px repeat(${jours.length}, minmax(0, 1fr))`;
+  const { grille, bouger, quitter, defiler } = useSurvolCreneau(jours.length);
   const tacheCochee = (t: Tache) =>
     enregistrerTache({ ...t, faite: !t.faite, faiteLe: t.faite ? null : new Date().toISOString() });
 
   const cliquer = (cle: string, ev: ReactMouseEvent<HTMLDivElement>) => {
     const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
-    const min = Math.max(0, Math.min(23 * 60 + 30, Math.floor((y / HEURE) * 2) * 30));
-    onCreer(cle, versHeure(min));
+    onCreer(cle, versHeure(creneauA(y)));
   };
 
   return (
@@ -396,8 +464,19 @@ function GrilleHeures({
       </div>
 
       {/* Les heures */}
-      <div ref={zone} className="relative overflow-y-auto" style={{ height: (FIN_JOURNEE - DEBUT_JOURNEE) * HEURE }}>
-        <div className="grid" style={{ gridTemplateColumns: colonnes, height: 24 * HEURE }}>
+      <div
+        ref={zone}
+        onScroll={defiler}
+        className="relative overflow-y-auto"
+        style={{ height: (FIN_JOURNEE - DEBUT_JOURNEE) * HEURE }}
+      >
+        <div
+          ref={grille}
+          onMouseMove={bouger}
+          onMouseLeave={quitter}
+          className="grid"
+          style={{ gridTemplateColumns: colonnes, height: 24 * HEURE }}
+        >
           <div className="relative">
             {/* L'heure qu'il est, dans la marge, comme dans Calendrier. */}
             {jours.some((d) => cleJour(d) === auj) && (
@@ -412,21 +491,22 @@ function GrilleHeures({
             {Array.from({ length: 24 }, (_, h) => (
               <span
                 key={h}
-                className="klyra-mono absolute right-2 -translate-y-1/2 text-ui-3xs text-texte-tertiaire"
+                data-libelle={h}
+                className="klyra-mono absolute right-2 -translate-y-1/2 text-ui-3xs text-texte-tertiaire data-survol:font-semibold data-survol:text-texte-principal"
                 style={{ top: h * HEURE }}
               >
                 {h === 0 ? "" : `${String(h).padStart(2, "0")}:00`}
               </span>
             ))}
           </div>
-          {jours.map((d) => {
+          {jours.map((d, i) => {
             const cle = cleJour(d);
             const places = placer(evenements.get(cle) ?? []);
             return (
               <div
                 key={cle}
                 onClick={(ev) => cliquer(cle, ev)}
-                className="relative cursor-cell border-l border-bordure-subtile"
+                className="relative cursor-pointer border-l border-bordure-subtile"
                 style={{
                   backgroundImage: `repeating-linear-gradient(to bottom, var(--color-bordure-subtile) 0 1px, transparent 1px ${HEURE}px)`,
                 }}
@@ -438,6 +518,18 @@ function GrilleHeures({
                   className="pointer-events-none absolute inset-x-0 bottom-0 bg-fond-page/70"
                   style={{ top: FIN_JOURNEE * HEURE }}
                 />
+                {/* Le créneau sous la souris, montré par useSurvolCreneau. */}
+                <span
+                  data-creneau={i}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 top-0 opacity-0 transition-opacity duration-[120ms] ease-sortie data-actif:opacity-100"
+                  style={{ height: HEURE / 2 }}
+                >
+                  <span className="absolute inset-x-[2px] inset-y-px flex items-center gap-1 rounded-sm bg-fond-survol pl-2 text-texte-secondaire">
+                    <Icon name="plus-01" size={12} className="shrink-0 text-icone-secondaire" />
+                    <span data-heure className="klyra-mono text-ui-2xs leading-4 font-semibold" />
+                  </span>
+                </span>
                 {places.map(({ e, debut, fin, colonne, colonnes: n }) => {
                   /* Comme dans Calendrier : un bloc teinté, un trait à gauche ; passé, il se grise en hachures. */
                   const passe = cle < auj || (cle === auj && fin <= minute);
@@ -494,6 +586,7 @@ function GrilleHeures({
                   .map((t) => (
                     <span
                       key={t.id}
+                      data-bloc
                       onClick={(ev) => ev.stopPropagation()}
                       className="absolute right-1 left-1 flex h-5 items-center gap-1 rounded-2xs bg-fond-surface px-1 text-ui-3xs shadow-ombre-xs"
                       style={{ top: (enMinutes(t.heure!) / 60) * HEURE }}

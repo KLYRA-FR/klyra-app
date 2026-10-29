@@ -69,6 +69,7 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 - [x] Barre latérale
 - [x] Écran de conversation (fil multi-rôles, envoi de message, @mention, réponses simulées, aperçu)
 - [x] Passage au design system KLYRA : tokens, icônes officielles, logo, Bouton / BoutonIcone / BoutonPrincipal, Onglets, PixelCheck
+- [x] Planning, vues Jour et Semaine : survol de la demi-heure sous la souris (« + 10:30 », heure en valeur dans la marge), un clic crée l’événement à cette heure. Survol écrit dans le DOM (`useSurvolCreneau`), sans re-rendu de la grille.
 
 ### À faire, dans l’ordre
 1. [x] Accueil de l’IA (inspiration Figma `544-2769`) : titre d’accueil, composeur commun (`PromptBox`, puces projet et rôle), suggestions par rôle, projets à reprendre. Envoyer ouvre un nouveau chat.
