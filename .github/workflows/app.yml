@@ -1,7 +1,8 @@
 # À chaque push sur main : fabrique l'app pour Mac et pour Windows, vérifie
 # qu'elle démarre et que la dictée (Whisper) se lance, puis la publie dans le
-# dépôt public pelin-klyra/klyra-app-versions (l'app seule, jamais le code).
+# dépôt public KLYRA-FR/klyra-app-versions (l'app seule, jamais le code).
 # Les apps installées y trouvent la nouvelle version (electron/maj.ts).
+# Les pull requests passent par verification.yml, qui ne publie rien.
 name: App
 
 on:
@@ -91,6 +92,19 @@ jobs:
     needs: [mac, windows]
     runs-on: ubuntu-latest
     steps:
+      - name: Le jeton de publication est configuré
+        env:
+          GH_TOKEN: ${{ secrets.VERSIONS_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=Secret VERSIONS_TOKEN manquant::Ajoute un jeton fine-grained (Contents : lecture et écriture sur KLYRA-FR/klyra-app-versions) dans le secret VERSIONS_TOKEN de ce dépôt, puis relance la publication."
+            exit 1
+          fi
+          # Une version ne peut pas être créée dans un dépôt vide : il lui faut au moins un commit.
+          if ! gh api "repos/KLYRA-FR/klyra-app-versions/commits?per_page=1" --silent; then
+            echo "::error title=Dépôt des versions inaccessible::KLYRA-FR/klyra-app-versions n'existe pas, est vide (créé sans README) ou VERSIONS_TOKEN n'y a pas accès."
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
@@ -101,7 +115,7 @@ jobs:
           GH_TOKEN: ${{ secrets.VERSIONS_TOKEN }}
         run: |
           gh release create "v$VERSION" \
-            --repo pelin-klyra/klyra-app-versions \
+            --repo KLYRA-FR/klyra-app-versions \
             --title "KLYRA $VERSION" \
             --notes "Nouvelle version de l’app de bureau KLYRA, pour Mac et Windows." \
             app/*

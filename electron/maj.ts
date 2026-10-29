@@ -7,7 +7,7 @@ import path from "node:path";
 
 /**
  * Mises à jour : à chaque push sur main, une action GitHub publie l'app (Mac et
- * Windows) dans le dépôt public pelin-klyra/klyra-app-versions (l'app seule, pas
+ * Windows) dans le dépôt public KLYRA-FR/klyra-app-versions (l'app seule, pas
  * le code). L'app regarde la dernière version au démarrage puis toutes les heures,
  * la télécharge, vérifie son empreinte, et l'installe quand on la quitte (ou tout
  * de suite, d'un clic sur la notification).
@@ -17,7 +17,7 @@ import path from "node:path";
  * signature et son identifiant. Sous Windows, c'est l'installateur qui s'en charge.
  */
 
-const DERNIERE = "https://api.github.com/repos/pelin-klyra/klyra-app-versions/releases/latest";
+const DERNIERE = "https://api.github.com/repos/KLYRA-FR/klyra-app-versions/releases/latest";
 const IDENTIFIANT = "design.klyra.app";
 const INTERVALLE_MS = 60 * 60 * 1000;
 const DOSSIER = path.join(os.homedir(), ".klyra", "maj");
