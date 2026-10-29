@@ -1,0 +1,44 @@
+# À chaque pull request vers main : installe, construit et vérifie que l'app
+# s'affiche, sur Ubuntu. Ne publie rien et n'utilise aucun secret.
+# Le test complet sur Mac et Windows (app installable, Whisper) tourne à la
+# publication, après la fusion (app.yml).
+name: Vérification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verification-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    name: Build, types, lint et smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm build:electron
+      # Après le build : les types des routes sont générés par next build.
+      - run: pnpm typecheck
+
+      # Ubuntu 24.04 bloque le bac à sable de Chromium (espaces de noms
+      # utilisateur) : on le rouvre pour ce test, sans toucher à l'app.
+      - name: Autoriser le bac à sable d'Electron
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: L'app démarre et affiche l'interface
+        run: |
+          KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
+            timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron .

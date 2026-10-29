@@ -27,6 +27,10 @@ pnpm typecheck && pnpm lint && pnpm build
 pnpm test:smoke     # ouvre la version finale sans fenêtre et vérifie qu’elle s’affiche
 ```
 
+## Contribuer et publier
+
+Une branche par sujet, une pull request, la vérification verte, puis la fusion : voir [docs/CONTRIBUER.md](docs/CONTRIBUER.md). **Chaque fusion sur `main` publie une version pour tous les utilisateurs**, dans [KLYRA-FR/klyra-app-versions](https://github.com/KLYRA-FR/klyra-app-versions/releases/latest) : c’est là qu’on télécharge l’app, et là que les apps installées trouvent leurs mises à jour.
+
 ## Où sont les choses
 
 | Dossier | Contenu |
