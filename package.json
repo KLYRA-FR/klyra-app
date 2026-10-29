@@ -22,12 +22,17 @@
     "test:ordinateur": "electron scripts/test-ordinateur.cjs",
     "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm entrees && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
     "whisper": "node scripts/preparer-whisper.mjs",
-    "entrees": "node scripts/preparer-entrees.mjs"
+    "entrees": "node scripts/preparer-entrees.mjs",
+    "test:convex": "vitest run"
   },
   "dependencies": {
+    "@auth/core": "^0.41.3",
+    "@convex-dev/auth": "0.0.96",
+    "@postshiba/convex": "0.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.48.0",
+    "convex-helpers": "^0.1.131",
     "klyra-ui": "github:CorentinQueuche/klyra-ui#main",
     "next": "16.4.1",
     "react": "19.3.0",
@@ -35,23 +40,35 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "concurrently": "^10.0.5",
+    "convex-test": "^0.0.66",
     "electron": "^44.9.1",
     "electron-builder": "^26.18.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.1",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vite": "8.3.5",
+    "vitest": "^4.1.12",
     "wait-on": "^9.5.1"
   },
   "packageManager": "pnpm@11.0.4",
   "build": {
     "appId": "design.klyra.app",
     "productName": "KLYRA",
+    "protocols": [
+      {
+        "name": "KLYRA",
+        "schemes": [
+          "klyra"
+        ]
+      }
+    ],
     "files": [
       "dist-electron/**/*",
       "out/**/*",

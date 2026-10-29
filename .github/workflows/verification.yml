@@ -33,6 +33,9 @@ jobs:
       - run: pnpm build:electron
       # Après le build : les types des routes sont générés par next build.
       - run: pnpm typecheck
+      # Les fonctions Convex (comptes, équipe) sur un backend en mémoire : aucun déploiement touché.
+      - name: Convex, connexion et droits
+        run: pnpm test:convex
 
       # Ubuntu 24.04 bloque le bac à sable de Chromium (espaces de noms
       # utilisateur) : on le rouvre pour ce test, sans toucher à l'app.

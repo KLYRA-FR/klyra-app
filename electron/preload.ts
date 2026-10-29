@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+/** L'adresse du déploiement Convex, passée par le process principal (cf. electron/compte.ts). */
+const adresseConvex = process.argv.find((a) => a.startsWith("--klyra-convex="))?.slice("--klyra-convex=".length) ?? null;
+
 /**
  * Pont entre l'interface et le système : uniquement ces fonctions, rien
  * d'autre (contextIsolation + sandbox). Les types côté interface sont dans
@@ -177,6 +180,19 @@ contextBridge.exposeInMainWorld("klyra", {
   },
   consommation: {
     lire: () => ipcRenderer.invoke("consommation:lire"),
+  },
+  compte: {
+    adresse: adresseConvex,
+    lireJeton: (cle: string) => ipcRenderer.invoke("compte:jeton:lire", cle),
+    ecrireJeton: (cle: string, valeur: string) => ipcRenderer.invoke("compte:jeton:ecrire", cle, valeur),
+    retirerJeton: (cle: string) => ipcRenderer.invoke("compte:jeton:retirer", cle),
+    prendreCode: () => ipcRenderer.invoke("compte:code"),
+    /** Un lien klyra://connexion est arrivé : son code attend dans `prendreCode`. */
+    onLien: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("compte:lien", listener);
+      return () => ipcRenderer.removeListener("compte:lien", listener);
+    },
   },
   anthropicAdmin: {
     etat: () => ipcRenderer.invoke("anthropic-admin:etat"),

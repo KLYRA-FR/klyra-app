@@ -310,6 +310,18 @@ export interface KlyraBridge {
     retirer: () => Promise<Reponse<void>>;
     rapport: () => Promise<Reponse<RapportAdmin | null>>;
   };
+  /** Le compte d'équipe (cf. electron/compte.ts). Absent avant la relance de l'app. */
+  compte?: {
+    /** L'adresse du déploiement Convex de l'app. */
+    adresse: string | null;
+    /** Les jetons de session de Convex Auth, chiffrés par le trousseau du système. */
+    lireJeton: (cle: string) => Promise<Reponse<string | null>>;
+    ecrireJeton: (cle: string, valeur: string) => Promise<Reponse<void>>;
+    retirerJeton: (cle: string) => Promise<Reponse<void>>;
+    /** Le code du dernier lien klyra://connexion ouvert, une seule fois. */
+    prendreCode: () => Promise<Reponse<string | null>>;
+    onLien: (callback: () => void) => () => void;
+  };
   /** Les mises à jour de l'app (cf. electron/maj.ts). */
   maj?: {
     etat: () => Promise<Reponse<EtatMaj>>;
