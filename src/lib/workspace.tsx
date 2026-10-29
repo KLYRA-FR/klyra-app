@@ -9,6 +9,7 @@ import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
+import { reglagesActuels } from "@/lib/reglages";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
@@ -836,7 +837,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const nom = rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent";
     const message = stateRef.current.messages.find((m) => m.id === messageId);
     const extrait = message ? texteDe(message).replace(/[*`#>_]/g, "").replace(/\s+/g, " ").trim() : "";
-    void notifier(ok ? `${nom} a fini` : `${nom} s’est arrêté sur une erreur`, extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? "")), chatId);
+    void notifier(
+      ok ? `${nom} a fini` : `${nom} s’est arrêté sur une erreur`,
+      extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? "")),
+      chatId,
+      ok ? "agentFini" : "agentErreur",
+    );
   };
 
   const suivreReponse = useCallback(
@@ -1742,7 +1748,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }),
         llm: appelLibre,
         notifier: (titre, texte) => {
-          if (typeof Notification !== "undefined") new Notification(titre, { body: texte, silent: false });
+          if (typeof Notification === "undefined") return;
+          // Les Réglages peuvent couper les notifications des workflows, ou leur son.
+          void reglagesActuels().then(({ notifications: n }) => {
+            if (n.actives && n.workflow) new Notification(titre, { body: texte, silent: !n.son });
+          });
         },
         conversation: (titre, texte) => {
           const id = `wf-sortie-${wf.id}`;

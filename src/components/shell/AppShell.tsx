@@ -9,6 +9,7 @@ import { useIsClient } from "@/hooks/useIsClient";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
+import { useRaccourciReglages } from "@/lib/raccourcis";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
 import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
@@ -58,6 +59,8 @@ function ShellLayout({ children }: { children: ReactNode }) {
 
   /* Un clic sur la notification « Hugo a fini » : sa conversation. */
   useEffect(() => getBridge()?.systeme.onOuvrirChat?.((chatId) => router.push(`/chat?id=${encodeURIComponent(chatId)}`)), [router]);
+  /* ⌘ , : les Réglages, de partout. */
+  useRaccourciReglages();
 
   /* Un fichier cliqué dans le panneau du projet ou l'aperçu : la visionneuse. */
   const [fichier, setFichier] = useState<DemandeFichier | null>(null);

@@ -1,0 +1,141 @@
+"use client";
+
+import { useCallback, useRef, useState } from "react";
+import { Avatar, Input } from "klyra-ui";
+import { Bouton } from "@/components/ui/Bouton";
+import { CHAMP, Champ } from "@/components/ui/Champ";
+import { useWorkspace } from "@/lib/workspace";
+import { Recadrage } from "../Recadrage";
+import { Groupe, Ligne } from "../ui";
+
+/** Ta photo : elle remplace tes initiales en bas du menu. Choisie, puis recadrée dans un rond. */
+function Photo() {
+  const { state, enregistrerProfil } = useWorkspace();
+  const choix = useRef<HTMLInputElement>(null);
+  const [aRecadrer, setARecadrer] = useState<string | null>(null);
+  const { photo, initial } = state.currentUser;
+  const fermer = useCallback(() => {
+    setARecadrer((url) => {
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      return null;
+    });
+  }, []);
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      {/* Un clic sur la photo : la recadrer (ou en choisir une, s'il n'y en a pas). */}
+      <button
+        type="button"
+        title={photo ? "Recadrer ta photo" : "Ajouter une photo"}
+        aria-label={photo ? "Recadrer ta photo" : "Ajouter une photo"}
+        onClick={() => (photo ? setARecadrer(photo) : choix.current?.click())}
+        className="cursor-pointer rounded-full border-0 bg-transparent p-0 transition-opacity duration-[120ms] hover:opacity-80"
+      >
+        <Avatar shape="circle" size="lg" src={photo ?? undefined} initials={initial} alt="" gradient={false} />
+      </button>
+      <input
+        ref={choix}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const fichier = e.target.files?.[0];
+          e.target.value = "";
+          if (fichier) setARecadrer(URL.createObjectURL(fichier));
+        }}
+      />
+      <Bouton type="button" variant="blanc" taille="compact" onClick={() => choix.current?.click()}>
+        {photo ? "Changer la photo" : "Ajouter une photo"}
+      </Bouton>
+      {photo && (
+        <>
+          <Bouton type="button" variant="blanc" taille="compact" onClick={() => setARecadrer(photo)}>
+            Recadrer
+          </Bouton>
+          <Bouton type="button" variant="discret" taille="compact" onClick={() => enregistrerProfil({ ...state.currentUser, photo: null })}>
+            Retirer
+          </Bouton>
+        </>
+      )}
+      {aRecadrer && (
+        <Recadrage
+          src={aRecadrer}
+          onAnnuler={fermer}
+          onValider={(p) => {
+            enregistrerProfil({ ...state.currentUser, photo: p });
+            fermer();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Prénom et rôle : ce que les agents lisent au début de chaque échange. */
+function Identite() {
+  const { state, enregistrerProfil } = useWorkspace();
+  const [name, setName] = useState(state.currentUser.name);
+  const [title, setTitle] = useState(state.currentUser.title);
+  const [enregistre, setEnregistre] = useState(false);
+  const change = name.trim() !== state.currentUser.name || title.trim() !== state.currentUser.title;
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        enregistrerProfil({ ...state.currentUser, name: name.trim(), title: title.trim(), initial: name.trim().charAt(0).toUpperCase() });
+        setEnregistre(true);
+      }}
+      className="@container flex w-full flex-col gap-4"
+    >
+      <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
+        <Champ label="Prénom" erreur={!name.trim() ? "Ton prénom ne peut pas être vide." : undefined}>
+          <Input
+            size="sm"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setEnregistre(false);
+            }}
+            className={CHAMP}
+          />
+        </Champ>
+        <Champ label="Rôle" aide="Par exemple « Design · KLYRA ».">
+          <Input
+            size="sm"
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setEnregistre(false);
+            }}
+            className={CHAMP}
+          />
+        </Champ>
+      </div>
+      <div className="flex items-center gap-3">
+        <Bouton type="submit" variant="sombre" taille="compact" disabled={!change || !name.trim()}>
+          Enregistrer
+        </Bouton>
+        {enregistre && !change && (
+          <span role="status" className="text-ui-xs text-texte-tertiaire">
+            Enregistré.
+          </span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+export function Profil() {
+  const { state } = useWorkspace();
+  return (
+    <Groupe>
+      <Ligne id="photo" libelle="Photo" description="Elle remplace tes initiales en bas du menu.">
+        <Photo />
+      </Ligne>
+      <Ligne id="nom" libelle="Prénom et rôle" description="Chaque personne de l’équipe a le sien, sur son poste." pile>
+        {/* Le profil peut arriver après coup (nom de la session) : le formulaire repart de lui. */}
+        <Identite key={`${state.currentUser.name}|${state.currentUser.title}`} />
+      </Ligne>
+    </Groupe>
+  );
+}

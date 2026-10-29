@@ -79,7 +79,8 @@ contextBridge.exposeInMainWorld("klyra", {
     utilisateur: () => ipcRenderer.invoke("systeme:utilisateur"),
     micro: () => ipcRenderer.invoke("systeme:micro"),
     transcrire: (audio: Uint8Array) => ipcRenderer.invoke("systeme:transcrire", audio),
-    notifier: (titre: string, texte: string, chatId: string) => ipcRenderer.invoke("systeme:notifier", titre, texte, chatId),
+    notifier: (titre: string, texte: string, chatId: string, evenement?: string) =>
+      ipcRenderer.invoke("systeme:notifier", titre, texte, chatId, evenement),
     /** Un clic sur une notification : la conversation à ouvrir. */
     onOuvrirChat: (callback: (chatId: string) => void) => {
       const listener = (_e: unknown, chatId: string) => callback(chatId);
@@ -139,5 +140,19 @@ contextBridge.exposeInMainWorld("klyra", {
     },
     read: () => ipcRenderer.invoke("conversations:read"),
     write: (data: unknown) => ipcRenderer.invoke("conversations:write", data),
+  },
+  reglages: {
+    lire: () => ipcRenderer.invoke("reglages:lire"),
+    ecrire: (reglages: unknown) => ipcRenderer.invoke("reglages:ecrire", reglages),
+    lancement: () => ipcRenderer.invoke("reglages:lancement"),
+    changerLancement: (actif: boolean) => ipcRenderer.invoke("reglages:lancement:changer", actif),
+    infos: () => ipcRenderer.invoke("reglages:infos"),
+    ouvrirDossier: (nom: string) => ipcRenderer.invoke("reglages:ouvrir-dossier", nom),
+    essaiNotification: () => ipcRenderer.invoke("reglages:essai-notification"),
+  },
+  maj: {
+    etat: () => ipcRenderer.invoke("maj:etat"),
+    verifier: () => ipcRenderer.invoke("maj:verifier"),
+    installer: () => ipcRenderer.invoke("maj:installer"),
   },
 });
