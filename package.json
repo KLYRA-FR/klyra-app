@@ -17,8 +17,11 @@
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
-    "app": "pnpm build && pnpm build:electron && pnpm whisper && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
-    "whisper": "node scripts/preparer-whisper.mjs"
+    "test:coordonnees": "node scripts/test-coordonnees.cjs",
+    "test:ordinateur": "electron scripts/test-ordinateur.cjs",
+    "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm entrees && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
+    "whisper": "node scripts/preparer-whisper.mjs",
+    "entrees": "node scripts/preparer-entrees.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -93,6 +96,13 @@
           "filter": [
             "whisper-cli"
           ]
+        },
+        {
+          "from": "vendor/entrees/darwin",
+          "to": "entrees",
+          "filter": [
+            "klyra-entrees"
+          ]
         }
       ]
     },
@@ -116,6 +126,13 @@
           "filter": [
             "*.exe",
             "*.dll"
+          ]
+        },
+        {
+          "from": "vendor/entrees/win32",
+          "to": "entrees",
+          "filter": [
+            "klyra-entrees.exe"
           ]
         }
       ]
