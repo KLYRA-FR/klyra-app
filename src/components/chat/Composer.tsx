@@ -262,8 +262,10 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: "Principal" },
-    ...roles.filter((r) => r.id !== "principal").map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}` })),
+    { value: AUTO, label: "Principal", icone: <AgentRond roleId="principal" taille={20} /> },
+    ...roles
+      .filter((r) => r.id !== "principal")
+      .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <AgentRond roleId={r.id} taille={20} /> })),
   ];
 
   return (

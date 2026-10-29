@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Input, Select } from "klyra-ui";
+import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { idDirect, useProjects, useWorkspace } from "@/lib/workspace";
@@ -130,12 +131,10 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
             <Input size="sm" value={description} onChange={(e) => setDescription(e.target.value)} className={CHAMP} />
           </Champ>
           <Champ label="Projet">
-            <Select
-              size="sm"
+            <ListeDeroulante
               value={projectId}
               options={[{ value: "", label: "Aucun" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={CHAMP}
+              onChange={setProjectId}
             />
           </Champ>
           <div className="flex gap-2">
@@ -217,7 +216,7 @@ function AjoutArtefact({ onFermer }: { onFermer: () => void }) {
         <Input size="sm" value={titre} onChange={(e) => setTitre(e.target.value)} className={CHAMP} />
       </Champ>
       <Champ label="Projet">
-        <Select size="sm" value={projectId} options={[{ value: "", label: "Aucun" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} onChange={(e) => setProjectId(e.target.value)} className={CHAMP} />
+        <ListeDeroulante value={projectId} options={[{ value: "", label: "Aucun" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} onChange={setProjectId} />
       </Champ>
       <div className="flex gap-2">
         <Bouton type="submit" variant="sombre" taille="md">
@@ -324,7 +323,7 @@ export function ArtefactsScreen() {
             </div>
             {projects.length > 0 && (
               <div className="w-[200px]">
-                <Select size="sm" value={filtreProjet} options={[{ value: "", label: "Tous les projets" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} onChange={(e) => setFiltreProjet(e.target.value)} className={CHAMP} />
+                <ListeDeroulante libelle="Filtrer par projet" value={filtreProjet} options={[{ value: "", label: "Tous les projets" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} onChange={setFiltreProjet} />
               </div>
             )}
             <span className="ml-auto text-ui-xs text-texte-tertiaire">{visibles.length} artefact{visibles.length > 1 ? "s" : ""}</span>

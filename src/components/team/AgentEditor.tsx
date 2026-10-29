@@ -2,12 +2,14 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Input, Select } from "klyra-ui";
+import { Input } from "klyra-ui";
 import { AGENT_TEMPLATES } from "@/data/agent-templates.generated";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
+import { useConfirmation } from "@/components/ui/Modale";
 import {
   addToRoster,
   getField,
@@ -57,6 +59,7 @@ type Etat = { kind: "edition" } | { kind: "enregistrement" } | { kind: "conflit"
 export function AgentEditor({ role, onReprendre }: { role: Role | null; onReprendre: () => void }) {
   const router = useRouter();
   const { roles, save, create, reload } = useAgents();
+  const [demander, fenetreConfirmation] = useConfirmation();
   const creation = role === null;
   // La version ouverte est figée : si le fichier change sur le disque pendant
   // l'édition, l'enregistrement le détecte au lieu d'écraser la modif.
@@ -160,8 +163,17 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
     }
   };
 
-  const annuler = () => {
-    if (modifie && !window.confirm("Abandonner les modifications ?")) return;
+  const annuler = async () => {
+    if (
+      modifie &&
+      !(await demander({
+        titre: "Abandonner les modifications ?",
+        texte: "Ce que tu as changé dans cette fiche ne sera pas enregistré.",
+        confirmer: "Abandonner",
+        annuler: "Continuer à modifier",
+      }))
+    )
+      return;
     router.push(creation ? "/equipe" : `/equipe?agent=${role.id}`);
   };
 
@@ -172,6 +184,7 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
 
   return (
     <form onSubmit={onSubmit} className="flex h-full flex-col">
+      {fenetreConfirmation}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="@container mx-auto flex max-w-[960px] flex-col gap-6 px-8 pt-8 pb-10">
           <h1 className="m-0 text-h2 leading-[1] tracking-[-0.05em] text-texte-principal">
@@ -260,10 +273,10 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
               </Champ>
               <div className="grid grid-cols-2 gap-4">
                 <Champ label="Modèle">
-                  <Select size="sm" options={MODELES} value={model} onChange={(e) => setModel(e.target.value)} className={CHAMP} />
+                  <ListeDeroulante options={MODELES} value={model} onChange={setModel} />
                 </Champ>
                 <Champ label="Mémoire">
-                  <Select size="sm" options={MEMOIRES} value={memory} onChange={(e) => setMemory(e.target.value)} className={CHAMP} />
+                  <ListeDeroulante options={MEMOIRES} value={memory} onChange={setMemory} />
                 </Champ>
               </div>
               <fieldset className="m-0 flex flex-col gap-2 border-0 p-0 @xl:col-span-2">

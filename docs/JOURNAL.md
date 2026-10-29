@@ -27,6 +27,7 @@ Remplacer VS Code par **notre propre outil** pour travailler avec l’IA, en plu
 | 14/10/2026 | **Les rôles = les 11 sous-agents Claude Code** (Hugo, Iris, Jules, Agathe, Thomas, Mathilde, Sacha, Olivier, Val, Diego, Lou) + le Principal qui orchestre | L’app pilote les vrais agents du studio |
 | 14/10/2026 | **Fin du noir et blanc** : l’app prend les couleurs, icônes et composants du design system KLYRA | Elle doit ressembler à un vrai produit, pas à une maquette |
 | 29/10/2026 | **Code dans `KLYRA-FR/klyra-app`, versions dans `KLYRA-FR/klyra-app-versions`** ; une PR par sujet, vérifiée avant fusion (`docs/CONTRIBUER.md`) | Corentin gère le dépôt des versions ; une fusion sur main publie pour tous |
+| 29/10/2026 | **Plus de listes ni de fenêtres du système** : `ListeDeroulante` remplace tous les `<select>`, `Modale` / `useConfirmation` remplacent `confirm` | Demande de Corentin : la liste native (fond blanc, surlignage bleu Windows) sortait de la DA |
 
 ## Maquettes (Figma)
 

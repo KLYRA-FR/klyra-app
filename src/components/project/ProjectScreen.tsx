@@ -65,8 +65,10 @@ export function ProjectScreen() {
     router.push(`/chat?id=${startChat(project.id, text.trim(), recipient)}`);
   };
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: "Principal" },
-    ...roles.filter((r) => r.id !== "principal").map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}` })),
+    { value: AUTO, label: "Principal", icone: <RoleAvatar roleId="principal" size="xs" /> },
+    ...roles
+      .filter((r) => r.id !== "principal")
+      .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <RoleAvatar roleId={r.id} size="xs" /> })),
   ];
 
   return (

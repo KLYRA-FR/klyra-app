@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Input, Select, Textarea } from "klyra-ui";
+import { Input, Textarea } from "klyra-ui";
+import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { cn } from "@/lib/cn";
 import { libelleFrequence, NOMS_JOURS, prochainPassage } from "@/lib/planning";
 import { useProjects, useRoles } from "@/lib/workspace";
@@ -101,12 +103,10 @@ export function EditeurRoutine({
           />
         </Champ>
         <Champ label="Agent">
-          <Select
-            size="sm"
+          <ListeDeroulante
             value={r.roleId}
-            options={roles.map((role) => ({ value: role.id, label: `${role.name} · ${role.tag}` }))}
-            onChange={(e) => setR({ ...r, roleId: e.target.value })}
-            className={CHAMP}
+            options={roles.map((role) => ({ value: role.id, label: `${role.name} · ${role.tag}`, icone: <AgentRond roleId={role.id} taille={20} /> }))}
+            onChange={(roleId) => setR({ ...r, roleId })}
           />
         </Champ>
         <Champ
@@ -171,12 +171,10 @@ export function EditeurRoutine({
         <div className="flex flex-wrap items-end gap-4">
           {f.type === "mois" && (
             <Champ label="Jour du mois" className="w-[140px]">
-              <Select
-                size="sm"
+              <ListeDeroulante
                 value={String(jour)}
                 options={Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: i === 0 ? "1er" : String(i + 1) }))}
-                onChange={(e) => changerJour(Number(e.target.value))}
-                className={CHAMP}
+                onChange={(v) => changerJour(Number(v))}
               />
             </Champ>
           )}
@@ -186,15 +184,13 @@ export function EditeurRoutine({
             </Champ>
           )}
           <Champ label="Où ça part" className="min-w-[240px] flex-1">
-            <Select
-              size="sm"
+            <ListeDeroulante
               value={r.projectId ?? ""}
               options={[
                 { value: "", label: "Conversation directe avec l’agent" },
                 ...projects.map((p) => ({ value: p.id, label: `Projet ${p.name}` })),
               ]}
-              onChange={(e) => setR({ ...r, projectId: e.target.value || null })}
-              className={CHAMP}
+              onChange={(v) => setR({ ...r, projectId: v || null })}
             />
           </Champ>
         </div>
