@@ -10,6 +10,7 @@ import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { reglagesActuels } from "@/lib/reglages";
+import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
@@ -455,6 +456,19 @@ function chatTitle(text: string): string {
   return clean.length > 42 ? `${clean.slice(0, 40).trimEnd()}…` : clean;
 }
 
+/**
+ * Une notification du système qui prévient à coup sûr (rappel à son heure,
+ * rendez-vous, accord attendu). Le son : celui du système si le réglage
+ * « Son » est actif, sinon celui de KLYRA ; jamais les deux.
+ */
+function notifierRappel(titre: string, corps: string) {
+  void reglagesActuels().then(({ notifications: n }) => {
+    const systeme = typeof Notification !== "undefined";
+    if (systeme) new Notification(titre, { body: corps, silent: !n.son });
+    if (!systeme || !n.son) jouer("notification");
+  });
+}
+
 const VERSION_STOCKAGE = 1;
 
 interface WorkspaceApi {
@@ -828,12 +842,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     timers.current.push(setTimeout(() => lancerTot.current(lancePar.chatId, lancePar.roleId, message), 0));
   };
 
-  /* Une réponse finie là où tu ne regardes pas (autre conversation, autre app) : le Mac te prévient. */
-  const prevenir = (chatId: string, roleId: RoleId, messageId: string, ok: boolean) => {
+  /* Une réponse finie là où tu ne regardes pas (autre conversation, autre app) : le Mac te prévient.
+     Renvoie vrai si une notification est demandée. */
+  const prevenir = (chatId: string, roleId: RoleId, messageId: string, ok: boolean): boolean => {
     const notifier = getBridge()?.systeme.notifier;
-    if (!notifier) return;
+    if (!notifier) return false;
     const ouverte = location.pathname === "/chat" && new URLSearchParams(location.search).get("id") === chatId;
-    if (ouverte && document.hasFocus()) return;
+    if (ouverte && document.hasFocus()) return false;
     const nom = rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent";
     const message = stateRef.current.messages.find((m) => m.id === messageId);
     const extrait = message ? texteDe(message).replace(/[*`#>_]/g, "").replace(/\s+/g, " ").trim() : "";
@@ -843,6 +858,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       chatId,
       ok ? "agentFini" : "agentErreur",
     );
+    return true;
   };
 
   const suivreReponse = useCallback(
@@ -956,7 +972,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             });
           }
           terminer();
-          if (event.erreur !== "Arrêté par toi.") prevenir(chatId, roleId, messageId, event.ok);
+          if (event.erreur !== "Arrêté par toi.") {
+            const notifiee = prevenir(chatId, roleId, messageId, event.ok);
+            // Le son de l'app, sauf si la notification du système sonne déjà.
+            if (!(notifiee && notificationSonore(event.ok ? "agentFini" : "agentErreur"))) jouer(event.ok ? "fin-de-tache" : "erreur");
+          }
           rapporterFil(chatId, messageId, event.ok);
           break;
       }
@@ -1583,7 +1603,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         if (t.faite || t.notifiee || !t.date || !t.heure) continue;
         if (new Date(`${t.date}T${t.heure}`).getTime() > maintenant) continue;
         const categorie = stateRef.current.categories.find((c) => c.id === t.liste)?.nom ?? "Rappel";
-        new Notification(t.titre, { body: t.notes || categorie, silent: false });
+        notifierRappel(t.titre, t.notes || categorie);
         dispatch({ type: "tache/enregistrer", tache: { ...t, notifiee: true } });
       }
       /* Les rendez-vous d'équipe : une notification par occurrence, retenue le temps de la session. */
@@ -1592,13 +1612,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         const debut = new Date(`${e.date}T${e.debut}`).getTime();
         if (notifiesEquipe.current.has(e.id) || debut - 10 * 60_000 > maintenant || debut < maintenant) continue;
         notifiesEquipe.current.add(e.id);
-        new Notification(e.titre, { body: `À ${e.debut} · ${e.notes}`, silent: false });
+        notifierRappel(e.titre, `À ${e.debut} · ${e.notes}`);
       }
       for (const e of stateRef.current.evenements) {
         if (e.notifie || !e.debut) continue;
         const debut = new Date(`${e.date}T${e.debut}`).getTime();
         if (debut - 10 * 60_000 > maintenant || debut < maintenant - 60 * 60_000) continue;
-        new Notification(e.titre, { body: `À ${e.debut}${e.notes ? ` · ${e.notes}` : ""}`, silent: false });
+        notifierRappel(e.titre, `À ${e.debut}${e.notes ? ` · ${e.notes}` : ""}`);
         dispatch({ type: "evenement/enregistrer", evenement: { ...e, notifie: true } });
       }
     };
@@ -1611,6 +1631,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => {
       if (!bridge) return;
       const accepte = decision !== "non";
+      // L'accord donné à un agent : une validation qui s'entend.
+      if (accepte) jouer("validation");
       dispatch({
         type: "message/update",
         id: messageId,
@@ -1748,10 +1770,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }),
         llm: appelLibre,
         notifier: (titre, texte) => {
-          if (typeof Notification === "undefined") return;
-          // Les Réglages peuvent couper les notifications des workflows, ou leur son.
+          // Les Réglages peuvent couper les notifications des workflows, ou leur son : alors celui de KLYRA.
           void reglagesActuels().then(({ notifications: n }) => {
-            if (n.actives && n.workflow) new Notification(titre, { body: texte, silent: !n.son });
+            if (!n.actives || !n.workflow) return;
+            const systeme = typeof Notification !== "undefined";
+            if (systeme) new Notification(titre, { body: texte, silent: !n.son });
+            if (!systeme || !n.son) jouer("notification");
           });
         },
         conversation: (titre, texte) => {
@@ -1780,8 +1804,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           new Promise<boolean>((resoudre) => {
             approbations.current.set(etapeId, resoudre);
             signal.addEventListener("abort", () => resoudre(false));
-            if (typeof Notification !== "undefined")
-              new Notification(`${wf.titre} attend ton accord`, { body: "Ouvre le workflow pour approuver ou refuser.", silent: false });
+            notifierRappel(`${wf.titre} attend ton accord`, "Ouvre le workflow pour approuver ou refuser.");
           }),
       };
     },

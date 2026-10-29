@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld("klyra", {
   systeme: {
     utilisateur: () => ipcRenderer.invoke("systeme:utilisateur"),
     micro: () => ipcRenderer.invoke("systeme:micro"),
+    sonsCoupes: () => ipcRenderer.invoke("systeme:sons-coupes"),
     notifier: (titre: string, texte: string, chatId: string, evenement?: string) =>
       ipcRenderer.invoke("systeme:notifier", titre, texte, chatId, evenement),
     /** Un clic sur une notification : la conversation à ouvrir. */

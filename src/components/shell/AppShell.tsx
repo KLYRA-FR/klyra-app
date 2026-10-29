@@ -16,6 +16,7 @@ import { PLATEFORME } from "@/lib/plateforme";
 import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
 import { AppRail } from "./AppRail";
+import { SonsApp } from "./SonsApp";
 
 /** Vrai dans la fenêtre Electron sur Mac : la barre de titre est intégrée à l'app
  *  (sous Windows, elle reste celle du système). */
@@ -157,6 +158,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <CompteClaudeProvider>
         <CompteProvider>
           <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
+            <SonsApp />
             <Suspense>
               <ShellLayout>{children}</ShellLayout>
             </Suspense>
