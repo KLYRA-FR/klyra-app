@@ -52,7 +52,7 @@ jobs:
           KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
             perl -e 'alarm 120; exec @ARGV' dist-app/mac-arm64/KLYRA.app/Contents/MacOS/KLYRA
       - name: Whisper embarqué se lance
-        run: dist-app/mac-arm64/KLYRA.app/Contents/Resources/whisper/whisper-cli --help 2>&1 | grep -qi usage
+        run: dist-app/mac-arm64/KLYRA.app/Contents/Resources/whisper/whisper-server --help 2>&1 | grep -qi usage
       - name: klyra-entrees embarqué répond (Computer Use)
         run: echo '{"id":1,"action":"ping"}' | dist-app/mac-arm64/KLYRA.app/Contents/Resources/entrees/klyra-entrees | grep -q '"ok":true'
 
@@ -93,8 +93,8 @@ jobs:
       - name: Whisper embarqué se lance
         shell: pwsh
         run: |
-          $sortie = & "dist-app\win-unpacked\resources\whisper\whisper-cli.exe" --help 2>&1 | Out-String
-          if ($sortie -notmatch "usage") { throw "whisper-cli ne démarre pas : $sortie" }
+          $sortie = & "dist-app\win-unpacked\resources\whisper\whisper-server.exe" --help 2>&1 | Out-String
+          if ($sortie -notmatch "usage") { throw "whisper-server ne démarre pas : $sortie" }
       - name: klyra-entrees embarqué répond (Computer Use)
         shell: pwsh
         run: |

@@ -94,7 +94,7 @@
           "from": "vendor/whisper/darwin",
           "to": "whisper",
           "filter": [
-            "whisper-cli"
+            "whisper-server"
           ]
         },
         {

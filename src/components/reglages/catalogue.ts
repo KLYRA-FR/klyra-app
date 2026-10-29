@@ -104,7 +104,9 @@ export const SECTIONS: SectionReglages[] = [
     icone: "microphone-01",
     description: "La dictée : tu parles, le texte s’écrit dans le message.",
     entrees: [
-      { id: "moteur", titre: "Moteur de dictée", mots: "whisper local transcription elevenlabs" },
+      { id: "moteur", titre: "Moteur de dictée", mots: "whisper local transcription elevenlabs scribe en ligne" },
+      { id: "cle-elevenlabs", titre: "Clé ElevenLabs", mots: "api scribe trousseau dictee rapide en direct" },
+      { id: "modele-local", titre: "Modèle de la dictée locale", mots: "whisper rapide precis small turbo telecharger hors ligne" },
       { id: "langue-dictee", titre: "Langue de la dictée", mots: "francais transcription" },
       { id: "micro", titre: "Micro", mots: "microphone autorisation acces" },
       { id: "test-micro", titre: "Tester le micro", mots: "niveau son essai" },

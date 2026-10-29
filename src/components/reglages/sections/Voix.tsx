@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
-import { getBridge } from "@/lib/bridge";
+import { CHAMP } from "@/components/ui/Champ";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
+import { getBridge, type EtatDictee, type ModeleDictee } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
-import { Erreur, Groupe, Ligne, Valeur } from "../ui";
+import type { PontDictee } from "@/lib/dictee/moteur";
+import { poste } from "@/lib/plateforme";
+import { Erreur, Groupe, Ligne, SeulementBureau, Valeur } from "../ui";
 
 /** Les micros branchés ; leur nom n'apparaît qu'une fois l'accès au micro donné. */
 function useMicros(relecture: number) {
@@ -101,19 +106,169 @@ function TestMicro({ onAutorise }: { onAutorise: () => void }) {
   );
 }
 
+const MO = 1_000_000;
+
+/** Le résultat du dernier essai de la clé. */
+type Essai = { etat: "en-cours" } | { etat: "ok" } | { etat: "erreur"; message: string };
+
+/** La clé ElevenLabs : essayée auprès d'ElevenLabs, puis chiffrée sur ce poste. Elle ne revient jamais. */
+function CleElevenLabs({ pont, etat, onEtat }: { pont: PontDictee; etat: EtatDictee; onEtat: (e: EtatDictee) => void }) {
+  const [cle, setCle] = useState("");
+  const [essai, setEssai] = useState<Essai | null>(null);
+
+  const enregistrer = async () => {
+    setEssai({ etat: "en-cours" });
+    const r = await pont.enregistrerCle(cle);
+    if (!r.ok) return setEssai({ etat: "erreur", message: r.message });
+    setCle("");
+    setEssai(null);
+    onEtat(r.data);
+  };
+  const tester = async () => {
+    setEssai({ etat: "en-cours" });
+    const r = await pont.testerCle();
+    setEssai(r.ok ? { etat: "ok" } : { etat: "erreur", message: r.message });
+  };
+  const retirer = async () => {
+    const r = await pont.retirerCle();
+    if (r.ok) onEtat(r.data);
+    setEssai(null);
+  };
+
+  return (
+    <>
+      {etat.cleElevenLabs ? (
+        <Ligne id="cle-elevenlabs" libelle="Clé ElevenLabs" description="Gardée dans le trousseau du système, elle ne revient jamais vers l’écran.">
+          {essai?.etat === "ok" && <span className="text-ui-xs text-texte-secondaire">Clé valide</span>}
+          <Bouton variant="blanc" taille="compact" disabled={essai?.etat === "en-cours"} onClick={() => void tester()}>
+            {essai?.etat === "en-cours" ? "Test…" : "Tester"}
+          </Bouton>
+          <Bouton variant="discret" taille="compact" onClick={() => void retirer()}>
+            Retirer la clé
+          </Bouton>
+        </Ligne>
+      ) : (
+        <Ligne
+          id="cle-elevenlabs"
+          libelle="Clé ElevenLabs"
+          description="La dictée la plus rapide : le texte s’écrit pendant que tu parles. Clé à créer dans ton compte elevenlabs.io (Developers > API Keys) ; elle est essayée avant d’être gardée."
+          pile
+        >
+          <form
+            className="flex w-full flex-wrap items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void enregistrer();
+            }}
+          >
+            <Input
+              size="sm"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={cle}
+              onChange={(e) => setCle(e.target.value)}
+              className={cn(CHAMP, "klyra-mono min-w-0 flex-1")}
+              aria-label="Clé ElevenLabs"
+            />
+            <Bouton type="submit" variant="sombre" taille="compact" disabled={!cle.trim() || essai?.etat === "en-cours"}>
+              {essai?.etat === "en-cours" ? "Vérification…" : "Enregistrer"}
+            </Bouton>
+          </form>
+        </Ligne>
+      )}
+      {essai?.etat === "erreur" && <Erreur>{essai.message}</Erreur>}
+    </>
+  );
+}
+
+/** Le modèle de Whisper sur l'ordinateur : sans clé, sans connexion, ou en secours. */
+function ModeleLocal({ pont, etat, onEtat }: { pont: PontDictee; etat: EtatDictee; onEtat: (e: EtatDictee) => void }) {
+  const [pourcent, setPourcent] = useState<number | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(
+    () => pont.onProgression((p) => p.etape === "telechargement" && setPourcent(Math.floor((p.recu / Math.max(1, p.total)) * 100))),
+    [pont],
+  );
+
+  const choisi = etat.modeles.find((m) => m.id === etat.modele);
+  const choisir = async (modele: ModeleDictee) => {
+    const r = await pont.choisirModele(modele);
+    if (r.ok) onEtat(r.data);
+  };
+  const telecharger = async () => {
+    setErreur(null);
+    setPourcent(0);
+    const r = await pont.telecharger();
+    setPourcent(null);
+    if (r.ok) onEtat(r.data);
+    else setErreur(r.message);
+  };
+  const statut = choisi?.present
+    ? "Téléchargé."
+    : pourcent !== null
+      ? `Téléchargement · ${pourcent} %`
+      : "Se télécharge à la première dictée, une seule fois.";
+
+  return (
+    <>
+      <Ligne
+        id="modele-local"
+        libelle={`Modèle sur ${poste.ce}`}
+        description={`Rapide : pour un ordinateur sans carte graphique. Précis : plus juste, il lui faut une puce graphique. ${statut}`}
+      >
+        {!choisi?.present && pourcent === null && (
+          <Bouton variant="blanc" taille="compact" onClick={() => void telecharger()}>
+            Télécharger
+          </Bouton>
+        )}
+        <ListeDeroulante
+          variante="compact"
+          libelle="Modèle de la dictée locale"
+          value={etat.modele}
+          options={etat.modeles.map((m) => ({ value: m.id, label: `${m.nom} · ${Math.round(m.taille / MO)} Mo` }))}
+          onChange={(m) => void choisir(m)}
+          className="min-w-[150px]"
+        />
+      </Ligne>
+      {erreur && <Erreur>{erreur}</Erreur>}
+    </>
+  );
+}
+
 /**
- * Les réglages de la dictée elle-même. Place réservée à la dictée en direct de
- * Hugo (moteur ElevenLabs ou local, clé, langue, choix du micro, modèle local,
- * via `window.klyra.dictee`) : ses champs remplacent ces deux lignes, qui
- * décrivent la dictée d'aujourd'hui. Garder les ancres `moteur` et
- * `langue-dictee` (catalogue.ts) ; le choix du micro reprend l'id `micro`.
+ * La dictée en direct (`window.klyra.dictee`, electron/dictee.ts) : ElevenLabs
+ * avec une clé, le plus rapide ; sinon Whisper sur l'ordinateur, qui sert
+ * aussi de secours sans connexion.
  */
 function ReglagesVoix() {
+  const pont = getBridge()?.dictee;
+  const [etat, setEtat] = useState<EtatDictee | null>(null);
+
+  useEffect(() => {
+    void pont?.etat().then((r) => r.ok && setEtat(r.data));
+  }, [pont]);
+
   return (
     <Groupe titre="Dictée">
-      <Ligne id="moteur" libelle="Moteur de dictée" description="Whisper, sur cet ordinateur : ta voix ne sort pas du poste.">
-        <Valeur>Whisper · local</Valeur>
+      <Ligne
+        id="moteur"
+        libelle="Moteur de dictée"
+        description={
+          etat?.cleElevenLabs
+            ? `ElevenLabs Scribe : le texte s’écrit pendant que tu parles. Sans connexion, la dictée passe sur ${poste.ce}.`
+            : `Whisper, sur ${poste.ce} : ta voix ne sort pas du poste. Une clé ElevenLabs rend la dictée plus rapide.`
+        }
+      >
+        {pont ? <Valeur>{etat?.cleElevenLabs ? "ElevenLabs · en ligne" : "Whisper · local"}</Valeur> : <SeulementBureau />}
       </Ligne>
+      {pont && etat && (
+        <>
+          <CleElevenLabs pont={pont} etat={etat} onEtat={setEtat} />
+          <ModeleLocal pont={pont} etat={etat} onEtat={setEtat} />
+        </>
+      )}
       <Ligne id="langue-dictee" libelle="Langue" description="La dictée transcrit en français.">
         <Valeur>Français</Valeur>
       </Ligne>
