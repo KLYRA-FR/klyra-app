@@ -42,9 +42,12 @@ import { transcrire } from "./dictee";
 import { ecrirePlanning } from "./planning";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, verifierMaintenant } from "./maj";
+import { lireConsommation } from "./consommation";
 import {
+  autorisationsComputerUse,
   changerLancement,
   ecrireReglages,
+  ouvrirAutorisation,
   infosApp,
   lancementAuDemarrage,
   lireReglages,
@@ -450,6 +453,13 @@ function registerBridge() {
     if (!Notification.isSupported()) throw new Error("Ce système n’affiche pas les notifications de l’app.");
     new Notification({ title: "KLYRA", body: "Les notifications arrivent bien.", silent: !lireReglages().notifications.son }).show();
   });
+  handle("reglages:computer-use:autorisations", () => autorisationsComputerUse());
+  handle("reglages:computer-use:ouvrir", (type: "accessibilite" | "ecran") => {
+    if (type !== "accessibilite" && type !== "ecran") throw new Error("Autorisation inconnue.");
+    return ouvrirAutorisation(type);
+  });
+  /* La consommation (jetons, coûts) de l'année, pour le Profil. */
+  handle("consommation:lire", () => lireConsommation());
   handle("maj:etat", () => etatMaj());
   handle("maj:verifier", () => verifierMaintenant());
   handle("maj:installer", () => installerMaintenant());

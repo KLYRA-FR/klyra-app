@@ -9,6 +9,7 @@ import { AutresIa } from "./AutresIa";
 import { chercher, estSection, SECTIONS, type IdSection, type Resultat } from "./catalogue";
 import { Agents } from "./sections/Agents";
 import { Claude } from "./sections/Claude";
+import { ComputerUse } from "./sections/ComputerUse";
 import { General } from "./sections/General";
 import { MisesAJour } from "./sections/MisesAJour";
 import { Notifications } from "./sections/Notifications";
@@ -31,6 +32,7 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
   ),
   notifications: () => <Notifications />,
   voix: () => <Voix />,
+  "computer-use": () => <ComputerUse />,
   "mises-a-jour": () => <MisesAJour />,
 };
 
@@ -129,6 +131,8 @@ export function ReglagesScreen() {
 
   useEffect(() => {
     if (!cible) return;
+    /* Une section peut ouvrir ce qui cache le réglage (le formulaire du Profil). */
+    window.dispatchEvent(new CustomEvent("klyra:reglage", { detail: cible }));
     const t = window.setTimeout(() => {
       allerAuReglage(cible);
       setCible(null);

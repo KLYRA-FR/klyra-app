@@ -247,6 +247,12 @@ export interface KlyraBridge {
     infos: () => Promise<Reponse<InfosApp>>;
     ouvrirDossier: (nom: DossierApp) => Promise<Reponse<void>>;
     essaiNotification: () => Promise<Reponse<void>>;
+    autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;
+    ouvrirAutorisation: (type: "accessibilite" | "ecran") => Promise<Reponse<void>>;
+  };
+  /** La consommation de l'année (cf. electron/consommation.ts). */
+  consommation?: {
+    lire: () => Promise<Reponse<{ entrees: EntreeConsommation[]; depuis: number | null }>>;
   };
   /** Les mises à jour de l'app (cf. electron/maj.ts). */
   maj?: {
@@ -268,6 +274,25 @@ export interface PreferencesNotifications {
 
 export interface Reglages {
   notifications: PreferencesNotifications;
+  computerUse: { actif: boolean };
+}
+
+export type EtatAutorisation = "accordee" | "refusee" | "a-demander" | "sans-objet" | "inconnue";
+
+export interface AutorisationsComputerUse {
+  plateforme: string;
+  accessibilite: EtatAutorisation;
+  ecran: EtatAutorisation;
+}
+
+/** Un appel à une IA : ses jetons et son coût (cf. electron/consommation.ts). */
+export interface EntreeConsommation {
+  at: number;
+  fournisseur: string;
+  modele: string;
+  agent: string;
+  jetons: { entree: number; sortie: number; cacheLu: number; cacheEcrit: number };
+  coutUsd: number | null;
 }
 
 export interface Lancement {

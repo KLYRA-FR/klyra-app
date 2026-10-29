@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
@@ -96,7 +97,9 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
         return;
       }
       try {
-        const json = JSON.parse(stdout) as { result?: string; is_error?: boolean; total_cost_usd?: number };
+        const json = JSON.parse(stdout) as { result?: string; is_error?: boolean; total_cost_usd?: number; modelUsage?: unknown };
+        // Un seul tour dans ce processus : son total est ce qu'il a consommé.
+        enregistrerTourClaude(json.modelUsage, {}, agent);
         if (json.is_error || code !== 0) {
           resolve({ ok: false, text: "", error: json.result || stderr.trim() || `Claude Code a échoué (code ${code}).` });
           return;
@@ -223,6 +226,10 @@ interface Processus {
   veille: ReturnType<typeof setTimeout> | null;
   /** Agents et commandes lancés en arrière-plan, pas encore revenus : tant qu'il y en a, pas de veille. */
   fond: number;
+  /** L'agent de ce Claude Code (null : le Principal), pour la consommation. */
+  agent: string | null;
+  /** Jetons et coût cumulés par modèle depuis le lancement (cf. consommation.ts). */
+  cumul: ReturnType<typeof enregistrerTourClaude>;
 }
 
 /** Ouvre une réponse spontanée dans l'interface ; null si elle n'est plus là. */
@@ -478,6 +485,8 @@ function lireLigne(proc: Processus, ligne: string) {
     return;
   }
   if (msg.type === "result") {
+    /* Ce que ce tour a consommé, même un tour vide (tâche de fond) : il a coûté aussi. */
+    proc.cumul = enregistrerTourClaude(msg.modelUsage, proc.cumul, proc.agent);
     if (!courant) return;
     /* Une tâche de fond qui se termine ouvre un tour vide : son résultat peut arriver avant
        la réponse à ton message. Seul compte le résultat d'un tour où l'agent a vraiment répondu. */
@@ -500,7 +509,19 @@ function lireLigne(proc: Processus, ligne: string) {
 
 function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
   const child = spawn(bin, args, { cwd, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true });
-  const proc: Processus = { child, signature, modele: options.modele ?? null, acces, tours: [], sessionId: options.sessionId, spontane, veille: null, fond: 0 };
+  const proc: Processus = {
+    child,
+    signature,
+    modele: options.modele ?? null,
+    acces,
+    tours: [],
+    sessionId: options.sessionId,
+    spontane,
+    veille: null,
+    fond: 0,
+    agent: options.agent,
+    cumul: {},
+  };
   if (options.sessionId) processus.set(options.sessionId, proc);
 
   let tampon = "";

@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar, Input } from "klyra-ui";
+import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { useWorkspace } from "@/lib/workspace";
 import { Recadrage } from "../Recadrage";
 import { Groupe, Ligne } from "../ui";
+import { Consommation } from "./Consommation";
 
 /** Ta photo : elle remplace tes initiales en bas du menu. Choisie, puis recadrée dans un rond. */
 function Photo() {
@@ -125,17 +127,50 @@ function Identite() {
   );
 }
 
+/**
+ * Le Profil : qui tu es (photo, prénom, rôle, à modifier d'un clic), puis ta
+ * consommation sur cet ordinateur, comme le Profil d'OpenBot.
+ */
 export function Profil() {
   const { state } = useWorkspace();
+  const { photo, initial, name, title } = state.currentUser;
+  /* Ouvert d'office si la recherche mène à la photo ou au prénom. */
+  const [edition, setEdition] = useState(false);
+  useEffect(() => {
+    const ouvrir = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      if (id === "photo" || id === "nom") setEdition(true);
+    };
+    window.addEventListener("klyra:reglage", ouvrir);
+    return () => window.removeEventListener("klyra:reglage", ouvrir);
+  }, []);
+
   return (
-    <Groupe>
-      <Ligne id="photo" libelle="Photo" description="Elle remplace tes initiales en bas du menu.">
-        <Photo />
-      </Ligne>
-      <Ligne id="nom" libelle="Prénom et rôle" description="Chaque personne de l’équipe a le sien, sur son poste." pile>
-        {/* Le profil peut arriver après coup (nom de la session) : le formulaire repart de lui. */}
-        <Identite key={`${state.currentUser.name}|${state.currentUser.title}`} />
-      </Ligne>
-    </Groupe>
+    <>
+      <div className="flex flex-wrap items-center gap-4">
+        <Avatar shape="circle" size="lg" src={photo ?? undefined} initials={initial} alt="" gradient={false} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-ui font-semibold text-texte-principal">{name || "Sans nom"}</span>
+          {title && <span className="truncate text-ui-xs text-texte-tertiaire">{title}</span>}
+        </div>
+        <Bouton variant="blanc" taille="compact" iconeGauche={<Icon name="pencil-01" size={16} />} aria-expanded={edition} onClick={() => setEdition((v) => !v)}>
+          {edition ? "Fermer" : "Modifier le profil"}
+        </Bouton>
+      </div>
+
+      {edition && (
+        <Groupe>
+          <Ligne id="photo" libelle="Photo" description="Elle remplace tes initiales en bas du menu.">
+            <Photo />
+          </Ligne>
+          <Ligne id="nom" libelle="Prénom et rôle" description="Chaque personne de l’équipe a le sien, sur son poste. Les agents le lisent au début de chaque échange." pile>
+            {/* Le profil peut arriver après coup (nom de la session) : le formulaire repart de lui. */}
+            <Identite key={`${state.currentUser.name}|${state.currentUser.title}`} />
+          </Ligne>
+        </Groupe>
+      )}
+
+      <Consommation />
+    </>
   );
 }

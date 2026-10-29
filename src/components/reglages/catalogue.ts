@@ -6,7 +6,7 @@ import type { IconName } from "@/components/icons/Icon";
  * est l'ancre d'une `Ligne` de la section (cf. ui.tsx).
  */
 
-export type IdSection = "general" | "profil" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "mises-a-jour";
+export type IdSection = "general" | "profil" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
 
 export interface EntreeReglage {
   id: string;
@@ -41,10 +41,16 @@ export const SECTIONS: SectionReglages[] = [
     id: "profil",
     titre: "Profil",
     icone: "user-profile-01",
-    description: "Ton profil sur ce poste : il s’affiche en bas du menu, et les agents savent à qui ils parlent.",
+    description: "Qui tu es sur ce poste, et ce que tu as consommé avec tes agents.",
     entrees: [
-      { id: "photo", titre: "Photo", mots: "avatar image recadrer" },
-      { id: "nom", titre: "Prénom et rôle", mots: "nom titre identite" },
+      { id: "photo", titre: "Photo", mots: "avatar image recadrer modifier le profil" },
+      { id: "nom", titre: "Prénom et rôle", mots: "nom titre identite modifier le profil" },
+      { id: "chiffres", titre: "Jetons, messages et séries", mots: "consommation tokens record jour serie statistiques" },
+      { id: "activite", titre: "Activité sur cet ordinateur", mots: "jours actifs calendrier chaleur annee" },
+      { id: "apercu", titre: "Aperçu : fournisseur, modèle, coût estimé", mots: "facturation depense dollars prix cout consommation" },
+      { id: "coequipiers", titre: "Coéquipiers les plus actifs", mots: "agents jetons classement" },
+      { id: "modeles-utilisation", titre: "Utilisation des modèles", mots: "opus sonnet haiku gpt part pourcentage" },
+      { id: "compte-profil", titre: "Compte", mots: "claude abonnement email" },
     ],
   },
   {
@@ -98,6 +104,17 @@ export const SECTIONS: SectionReglages[] = [
       { id: "langue-dictee", titre: "Langue de la dictée", mots: "francais transcription" },
       { id: "micro", titre: "Micro", mots: "microphone autorisation acces" },
       { id: "test-micro", titre: "Tester le micro", mots: "niveau son essai" },
+    ],
+  },
+  {
+    id: "computer-use",
+    titre: "Computer Use",
+    icone: "cursor-01",
+    description: "Laisser tes agents piloter l’ordinateur : captures, clics et clavier, avec ton accord.",
+    entrees: [
+      { id: "computer-use-actif", titre: "Laisser les agents piloter l’ordinateur", mots: "activer desactiver interrupteur ecran souris clavier" },
+      { id: "autorisation-accessibilite", titre: "Autorisation Accessibilité", mots: "macos permission systeme clic clavier" },
+      { id: "autorisation-ecran", titre: "Autorisation Enregistrement de l’écran", mots: "macos permission capture" },
     ],
   },
   {

@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile, rename, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
+import { enregistrerAppelIa } from "./consommation";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -103,7 +104,7 @@ export async function retirerIa(id: string): Promise<Ia[]> {
 }
 
 /** Pose une question à une IA ; rend sa réponse en texte. */
-async function demander(ia: IaStockee, consigne: string, systeme?: string): Promise<string> {
+async function demander(ia: IaStockee, consigne: string, systeme?: string, agent: string | null = null): Promise<string> {
   const cle = safeStorage.decryptString(Buffer.from(ia.cle, "base64"));
   const reponse = await net.fetch(`${ia.url}/chat/completions`, {
     method: "POST",
@@ -116,11 +117,14 @@ async function demander(ia: IaStockee, consigne: string, systeme?: string): Prom
   const corps = (await reponse.json().catch(() => null)) as {
     choices?: { message?: { content?: unknown } }[];
     error?: { message?: string } | string;
+    usage?: unknown;
   } | null;
   if (!reponse.ok) {
     const erreur = typeof corps?.error === "string" ? corps.error : corps?.error?.message;
     throw new Error(`${ia.nom} a refusé la demande (${reponse.status})${erreur ? ` : ${erreur}` : ""}.`);
   }
+  // Les jetons renvoyés par l'API, pour la consommation du Profil (pas de prix : chaque fournisseur a le sien).
+  enregistrerAppelIa(FOURNISSEURS[ia.fournisseur]?.nom ?? ia.nom, ia.modele, agent, corps?.usage);
   const contenu = corps?.choices?.[0]?.message?.content;
   const texte = typeof contenu === "string" ? contenu : Array.isArray(contenu) ? contenu.map((c: { text?: string }) => c.text ?? "").join("") : "";
   if (!texte.trim()) throw new Error(`${ia.nom} n’a rien répondu.`);
@@ -281,7 +285,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
       const consigne = String(args.consigne ?? "");
       if (!consigne.trim()) return texte("La consigne est vide.", true);
       try {
-        return texte(`Réponse de ${ia.nom} (${ia.modele}) :\n\n${await demander(ia, consigne)}`);
+        return texte(`Réponse de ${ia.nom} (${ia.modele}) :\n\n${await demander(ia, consigne, undefined, appelant.roleId)}`);
       } catch (e) {
         return texte(e instanceof Error ? e.message : String(e), true);
       }
