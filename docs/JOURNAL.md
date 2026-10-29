@@ -88,7 +88,8 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 6. [ ] Palette ⌘K
 7. [ ] Puis le back : données partagées sur Convex (`docs/CONVEX-PLAN.md` : comptes, rappels assignés, calendrier commun), vrais agents (SDK Claude) et terminaux en local
    [x] Convex installé (dépendance, `convex/schema.ts` vide, `pnpm dev:convex`, fichiers ai), sans déploiement
-   [ ] Plan validé par Corentin
+   [x] Plan validé par Corentin (29/10) : Irlande, PostShiba gardé, chacun ne voit que ce qui le concerne (admins compris), e-mail d'assignation si l'app est fermée, v1 hors ligne en lecture
+   [ ] PR 2 Comptes : attend le projet Convex et les clés (déploiement, dev, PostShiba Send only)
 8. [ ] Fichier d’installation .dmg pour l’équipe (compte développeur Apple, 99 $ par an)
 
 ### Points ouverts
