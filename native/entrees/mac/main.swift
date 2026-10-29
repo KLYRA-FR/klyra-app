@@ -118,11 +118,15 @@ func executer(_ c: [String: Any]) throws -> [String: Any] {
     return [:]
 
   case "defiler":
-    souris(.mouseMoved, try point(c), .left)
+    let p = try point(c)
+    souris(.mouseMoved, p, .left)
+    // Le temps que macOS place le curseur : l'événement de défilement va à la fenêtre qui est dessous.
+    usleep(50_000)
     let dy = Int32(try nombre(c["dy"]))
     let dx = Int32((c["dx"] as? NSNumber)?.intValue ?? 0)
     // En lignes ; positif vers le bas et la droite pour l'app, l'inverse pour macOS.
     let e = CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 2, wheel1: -dy, wheel2: -dx, wheel3: 0)!
+    e.location = p
     e.post(tap: .cghidEventTap)
     return [:]
 
