@@ -26,6 +26,7 @@ Remplacer VS Code par **notre propre outil** pour travailler avec l’IA, en plu
 | 07/10/2026 | L’IA renomme et étiquette les fichiers à l’import (on peut annuler) | Les fichiers sont souvent nommés 1, 2, 3… |
 | 14/10/2026 | **Les rôles = les 11 sous-agents Claude Code** (Hugo, Iris, Jules, Agathe, Thomas, Mathilde, Sacha, Olivier, Val, Diego, Lou) + le Principal qui orchestre | L’app pilote les vrais agents du studio |
 | 14/10/2026 | **Fin du noir et blanc** : l’app prend les couleurs, icônes et composants du design system KLYRA | Elle doit ressembler à un vrai produit, pas à une maquette |
+| 29/10/2026 | **Code dans `KLYRA-FR/klyra-app`, versions dans `KLYRA-FR/klyra-app-versions`** ; une PR par sujet, vérifiée avant fusion (`docs/CONTRIBUER.md`) | Corentin gère le dépôt des versions ; une fusion sur main publie pour tous |
 
 ## Maquettes (Figma)
 
@@ -91,8 +92,8 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 ## Reprendre sur un autre Mac
 
 ```bash
-gh auth login                       # avec le compte pelin-klyra
-gh repo clone pelin-klyra/klyra-app
+gh auth login                       # avec un compte membre de KLYRA-FR
+gh repo clone KLYRA-FR/klyra-app
 cd klyra-app
 pnpm install
 pnpm desktop
@@ -106,3 +107,4 @@ Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app
 - **08/10/2026** — Choix app de bureau (Electron). Création du dépôt, fondations, barre latérale et écran de conversation. Police unique Google Sans Flex.
 - **14/10/2026** — Sortie du noir et blanc : tokens, icônes, logo et composants du design system KLYRA ; lucide-react retiré. Nouveau cadre d’après l’inspiration Figma `543-2765` : barre du haut (logo, recherche, actions), menu sur le fond de page (élément actif sombre, Projets, Réglages, carte utilisateur), contenu dans un panneau blanc arrondi. « Chats récents » retiré du menu.
 - **21/10/2026** — Conversation à la façon d’OpenBot : les agents répondent pour de vrai (Claude Code en `stream-json`, session reprise par agent et par conversation), étapes repliables, passations (« Confié à Iris »), « Hugo réfléchit… 12 s », Stop, file d’attente, liste @. Barre latérale en messagerie : Équipe (une ligne par agent : rond pastel, rôle, dernier message, statut), Projets, Conversations d’équipe. Conversations directes `dm-<agent>`, conversations gardées dans `userData/conversations.json`.
+- **29/10/2026** — Dépôt passé dans l’organisation KLYRA-FR. Les versions sont publiées dans `KLYRA-FR/klyra-app-versions` (action App et `electron/maj.ts`) ; les apps installées avant ce changement interrogent encore `pelin-klyra/klyra-app-versions` et doivent être réinstallées une fois depuis le nouveau dépôt. Vérification à chaque PR (`verification.yml`, Ubuntu) ; la publication échoue avec un message clair si `VERSIONS_TOKEN` manque.
