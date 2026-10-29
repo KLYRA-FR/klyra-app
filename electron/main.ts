@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, shell, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -38,7 +38,25 @@ import {
   type Utilisation,
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
-import { transcrire } from "./dictee";
+import {
+  arreterDictee,
+  choisirModele,
+  enregistrerCle,
+  envoyerAudio,
+  ErreurDictee,
+  etatDictee,
+  fermerSession,
+  MODELES,
+  nettoyerServeurOrphelin,
+  ouvrirSession,
+  prechauffer,
+  preparerLocal,
+  retirerCle,
+  telechargerModele,
+  testerCle,
+  transcrireSegment,
+  type ModeleLocal,
+} from "./dictee";
 import { ecrirePlanning } from "./planning";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
@@ -242,15 +260,17 @@ function createWindow() {
 type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
 
 /** Chaque appel renvoie un résultat explicite : l'interface affiche l'erreur exacte. */
+async function repondre<T>(fn: () => Promise<T> | T): Promise<Reponse<T>> {
+  try {
+    return { ok: true, data: await fn() };
+  } catch (error) {
+    if (error instanceof AgentError || error instanceof ErreurDictee) return { ok: false, code: error.code, message: error.message };
+    return { ok: false, code: "erreur", message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Promise<T> | T) {
-  ipcMain.handle(channel, async (_event, ...args: unknown[]): Promise<Reponse<T>> => {
-    try {
-      return { ok: true, data: await fn(...(args as A)) };
-    } catch (error) {
-      if (error instanceof AgentError) return { ok: false, code: error.code, message: error.message };
-      return { ok: false, code: "erreur", message: error instanceof Error ? error.message : String(error) };
-    }
-  });
+  ipcMain.handle(channel, (_event, ...args: unknown[]) => repondre(() => fn(...(args as A))));
 }
 
 function registerBridge() {
@@ -341,10 +361,36 @@ function registerBridge() {
     });
     notif.show();
   });
-  handle("systeme:transcrire", (audio: Uint8Array) => {
-    if (!(audio instanceof Uint8Array) || audio.byteLength > 50 * 1024 * 1024) throw new Error("Enregistrement invalide.");
-    return transcrire(audio);
+  /* Dictée en direct (electron/dictee.ts) : ElevenLabs avec une clé, sinon Whisper sur l'ordinateur. */
+  handle("dictee:etat", () => etatDictee());
+  handle("dictee:modele", (modele: ModeleLocal) => {
+    if (typeof modele !== "string" || !(modele in MODELES)) throw new Error("Modèle inconnu.");
+    return choisirModele(modele);
   });
+  handle("dictee:cle", (cle: string) => {
+    if (typeof cle !== "string" || cle.length > 200) throw new Error("Clé invalide.");
+    return enregistrerCle(cle);
+  });
+  handle("dictee:cle-retirer", () => retirerCle());
+  handle("dictee:cle-tester", () => testerCle());
+  handle("dictee:prechauffer", () => prechauffer());
+  ipcMain.handle("dictee:preparer", (event) =>
+    repondre(() => preparerLocal((p) => !event.sender.isDestroyed() && event.sender.send("dictee:progression", p))),
+  );
+  ipcMain.handle("dictee:telecharger", (event) =>
+    repondre(() => telechargerModele((p) => !event.sender.isDestroyed() && event.sender.send("dictee:progression", p))),
+  );
+  handle("dictee:transcrire", (wav: Uint8Array, precedent: string) => {
+    if (!(wav instanceof Uint8Array) || wav.byteLength > 5 * 1024 * 1024) throw new Error("Segment invalide.");
+    return transcrireSegment(wav, typeof precedent === "string" ? precedent : "");
+  });
+  ipcMain.handle("dictee:ouvrir", (event) =>
+    repondre(() => ouvrirSession((id, e) => !event.sender.isDestroyed() && event.sender.send("dictee:evenement", id, e))),
+  );
+  ipcMain.on("dictee:audio", (_e, id: string, pcm: Uint8Array, valider: boolean) => {
+    if (typeof id === "string" && pcm instanceof Uint8Array && pcm.byteLength <= 64 * 1024) envoyerAudio(id, pcm, valider === true);
+  });
+  handle("dictee:fermer", (id: string) => fermerSession(String(id)));
   handle("projets:lire-fichier", (dossier: string, relatif: string) => lireFichier(dossier, relatif));
   handle("projets:ouvrir-fichier", async (dossier: string, relatif: string) => {
     const erreur = await shell.openPath(cheminDansProjet(dossier, relatif));
@@ -492,9 +538,13 @@ void app.whenReady().then(() => {
   if (process.platform === "darwin") app.dock?.setIcon(ICONE);
   app.setAboutPanelOptions({ applicationName: "KLYRA", iconPath: ICONE });
   if (!DEV_URL) protocol.handle("app", serveExport);
+  /* Tests sous Linux, sans trousseau : une clé en mémoire, pour essayer les clés API
+     (dictée, autres IA). Sans effet sur Mac et Windows, qui ont toujours leur trousseau. */
+  if (process.env.KLYRA_TEST_TROUSSEAU === "1") safeStorage.setUsePlainTextEncryption(true);
   registerBridge();
 
   void demarrerServeurMcp();
+  void nettoyerServeurOrphelin();
   createWindow();
   demarrerMisesAJour();
   /* L'historique de consommation se rattrape en arrière-plan, sans retarder l'ouverture. */
@@ -517,6 +567,10 @@ app.on("before-quit", (event) => {
     void Promise.race([ecrituresTerminees(), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
   }, 300);
 });
+
+/* Le Whisper gardé en mémoire pour la dictée s'arrête avec l'app. */
+app.on("will-quit", () => arreterDictee());
+process.on("exit", () => arreterDictee());
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

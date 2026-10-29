@@ -532,6 +532,13 @@ body {
   50%      { opacity: 0.55; }
 }
 
+/* Pendant la dictée, le champ garde son texte et son curseur, mais c'est
+   MiroirDictee qui l'écrit par-dessus (le provisoire en gris). */
+.klyra-dictee-champ {
+  color: transparent;
+  caret-color: var(--color-texte-principal);
+}
+
 /* Un message qui arrive dans le fil. */
 .klyra-arrivee {
   animation: klyra-entree 300ms var(--ease-sortie) backwards;

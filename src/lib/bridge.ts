@@ -118,6 +118,33 @@ export interface AutreIa {
   modele: string;
 }
 
+/** Les modèles de la dictée locale (Whisper) : `precis` (turbo) ou `rapide` (small). */
+export type ModeleDictee = "precis" | "rapide";
+
+/** Ce que l'interface sait de la dictée (electron/dictee.ts). */
+export interface EtatDictee {
+  moteur: "elevenlabs" | "local";
+  cleElevenLabs: boolean;
+  modele: ModeleDictee;
+  modeles: { id: ModeleDictee; nom: string; taille: number; present: boolean }[];
+  /** Le modèle choisi est en mémoire : la dictée démarre tout de suite. */
+  pret: boolean;
+}
+
+export type ProgressionDictee =
+  | { etape: "telechargement"; recu: number; total: number }
+  | { etape: "chargement" }
+  | { etape: "prete" };
+
+/** Une erreur de la dictée, que l'interface sait expliquer. */
+export type CodeErreurDictee = "cle" | "quota" | "reseau" | "service" | "local";
+
+export type EvenementDictee =
+  | { type: "partiel"; texte: string }
+  | { type: "definitif"; texte: string }
+  | { type: "erreur"; code: CodeErreurDictee; message: string }
+  | { type: "fin" };
+
 export interface KlyraBridge {
   agents: {
     list: () => Promise<Reponse<AgentsListing>>;
@@ -190,8 +217,6 @@ export interface KlyraBridge {
     utilisateur: () => Promise<Reponse<{ nom: string; identifiant: string }>>;
     /** Demande l'accès au micro (une fois, par macOS). */
     micro?: () => Promise<Reponse<boolean>>;
-    /** Transcrit un enregistrement (WebM) en texte, sur le Mac (Whisper). */
-    transcrire?: (audio: Uint8Array) => Promise<Reponse<string>>;
     /** Notification du Mac (et pastille du Dock) ; un clic ramène à la conversation. Filtrée par les Réglages. */
     notifier?: (titre: string, texte: string, chatId: string, evenement?: "agentFini" | "agentErreur" | "workflow") => Promise<Reponse<void>>;
     onOuvrirChat?: (callback: (chatId: string) => void) => () => void;
@@ -212,6 +237,30 @@ export interface KlyraBridge {
   /** Le planning en clair, que les agents lisent (~/.klyra/planning/planning.md). */
   planning?: {
     ecrire: (markdown: string) => Promise<Reponse<void>>;
+  };
+  /** La dictée en direct (electron/dictee.ts). La clé ElevenLabs ne revient jamais. Absent avant la relance de l'app. */
+  dictee?: {
+    etat: () => Promise<Reponse<EtatDictee>>;
+    choisirModele: (modele: ModeleDictee) => Promise<Reponse<EtatDictee>>;
+    /** Vérifie la clé auprès d'ElevenLabs, puis la chiffre sur ce poste. */
+    enregistrerCle: (cle: string) => Promise<Reponse<EtatDictee>>;
+    retirerCle: () => Promise<Reponse<EtatDictee>>;
+    testerCle: () => Promise<Reponse<void>>;
+    /** Charge en avance le modèle local déjà téléchargé. */
+    prechauffer: () => Promise<Reponse<void>>;
+    /** Télécharge le modèle local s'il manque, puis le charge (progression par onProgression). */
+    preparer: () => Promise<Reponse<void>>;
+    /** Télécharge le modèle local choisi, sans le charger (secours hors ligne). */
+    telecharger: () => Promise<Reponse<EtatDictee>>;
+    onProgression: (callback: (p: ProgressionDictee) => void) => () => void;
+    /** Le texte d'un segment (WAV 16 kHz mono), par le Whisper local. */
+    transcrire: (wav: Uint8Array, precedent: string) => Promise<Reponse<string>>;
+    /** Ouvre une session ElevenLabs ; rend son identifiant. */
+    ouvrir: () => Promise<Reponse<string>>;
+    onEvenement: (callback: (id: string, e: EvenementDictee) => void) => () => void;
+    /** Un morceau d'audio (PCM 16 bits, 16 kHz) ; `valider` clôt le segment. */
+    envoyer: (id: string, pcm: Uint8Array, valider: boolean) => void;
+    fermer: (id: string) => Promise<Reponse<void>>;
   };
   fichiers: {
     /** Ouvre le sélecteur de fichiers du système ; renvoie les chemins choisis. */

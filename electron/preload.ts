@@ -78,7 +78,6 @@ contextBridge.exposeInMainWorld("klyra", {
   systeme: {
     utilisateur: () => ipcRenderer.invoke("systeme:utilisateur"),
     micro: () => ipcRenderer.invoke("systeme:micro"),
-    transcrire: (audio: Uint8Array) => ipcRenderer.invoke("systeme:transcrire", audio),
     notifier: (titre: string, texte: string, chatId: string, evenement?: string) =>
       ipcRenderer.invoke("systeme:notifier", titre, texte, chatId, evenement),
     /** Un clic sur une notification : la conversation à ouvrir. */
@@ -107,6 +106,30 @@ contextBridge.exposeInMainWorld("klyra", {
   },
   planning: {
     ecrire: (markdown: string) => ipcRenderer.invoke("planning:ecrire", markdown),
+  },
+  dictee: {
+    etat: () => ipcRenderer.invoke("dictee:etat"),
+    choisirModele: (modele: string) => ipcRenderer.invoke("dictee:modele", modele),
+    enregistrerCle: (cle: string) => ipcRenderer.invoke("dictee:cle", cle),
+    retirerCle: () => ipcRenderer.invoke("dictee:cle-retirer"),
+    testerCle: () => ipcRenderer.invoke("dictee:cle-tester"),
+    prechauffer: () => ipcRenderer.invoke("dictee:prechauffer"),
+    preparer: () => ipcRenderer.invoke("dictee:preparer"),
+    telecharger: () => ipcRenderer.invoke("dictee:telecharger"),
+    onProgression: (callback: (p: unknown) => void) => {
+      const listener = (_e: unknown, p: unknown) => callback(p);
+      ipcRenderer.on("dictee:progression", listener);
+      return () => ipcRenderer.removeListener("dictee:progression", listener);
+    },
+    transcrire: (wav: Uint8Array, precedent: string) => ipcRenderer.invoke("dictee:transcrire", wav, precedent),
+    ouvrir: () => ipcRenderer.invoke("dictee:ouvrir"),
+    onEvenement: (callback: (id: string, e: unknown) => void) => {
+      const listener = (_e: unknown, id: string, e: unknown) => callback(id, e);
+      ipcRenderer.on("dictee:evenement", listener);
+      return () => ipcRenderer.removeListener("dictee:evenement", listener);
+    },
+    envoyer: (id: string, pcm: Uint8Array, valider: boolean) => ipcRenderer.send("dictee:audio", id, pcm, valider),
+    fermer: (id: string) => ipcRenderer.invoke("dictee:fermer", id),
   },
   fichiers: {
     choisir: () => ipcRenderer.invoke("fichiers:choisir"),

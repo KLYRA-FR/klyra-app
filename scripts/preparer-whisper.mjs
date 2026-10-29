@@ -1,4 +1,4 @@
-// Prépare Whisper (whisper.cpp) à embarquer dans l'app, pour la dictée : rien à
+// Prépare Whisper (whisper-server, de whisper.cpp) à embarquer dans l'app, pour la dictée : rien à
 // installer chez la personne. Rangé dans vendor/whisper/<système>/ (hors git),
 // que electron-builder copie dans l'app (extraResources).
 // - Windows : le binaire officiel de la version, téléchargé.
@@ -12,7 +12,7 @@ import path from "node:path";
 const VERSION = "v1.9.2";
 const racine = path.resolve(import.meta.dirname, "..");
 const cible = path.join(racine, "vendor", "whisper", process.platform);
-const temoin = path.join(cible, `.${VERSION}`);
+const temoin = path.join(cible, `.${VERSION}-serveur`);
 
 if (existsSync(temoin)) process.exit(0);
 rmSync(cible, { recursive: true, force: true });
@@ -30,7 +30,7 @@ try {
     lancer(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"), ["-xf", zip]);
     const release = path.join(travail, "Release");
     for (const nom of readdirSync(release)) {
-      if (nom === "whisper-cli.exe" || nom.endsWith(".dll")) copyFileSync(path.join(release, nom), path.join(cible, nom));
+      if (nom === "whisper-server.exe" || nom.endsWith(".dll")) copyFileSync(path.join(release, nom), path.join(cible, nom));
     }
   } else if (process.platform === "darwin") {
     try {
@@ -42,8 +42,8 @@ try {
     lancer("git", ["clone", "--depth", "1", "--branch", VERSION, "https://github.com/ggml-org/whisper.cpp.git", "src"]);
     const src = path.join(travail, "src");
     lancer("cmake", ["-B", "build", "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=OFF", "-DGGML_METAL_EMBED_LIBRARY=ON", "-DWHISPER_BUILD_TESTS=OFF", "-DWHISPER_SDL2=OFF"], src);
-    lancer("cmake", ["--build", "build", "--config", "Release", "--target", "whisper-cli", "-j"], src);
-    copyFileSync(path.join(src, "build", "bin", "whisper-cli"), path.join(cible, "whisper-cli"));
+    lancer("cmake", ["--build", "build", "--config", "Release", "--target", "whisper-server", "-j"], src);
+    copyFileSync(path.join(src, "build", "bin", "whisper-server"), path.join(cible, "whisper-server"));
   } else {
     process.exit(0);
   }
