@@ -138,9 +138,15 @@ app.whenReady().then(async () => {
   } catch (e) {
     verifier(false, `exception : ${e && e.stack ? e.stack : e}`);
   } finally {
-    fs.rmSync(TMP, { recursive: true, force: true });
-    fs.rmSync(DONNEES, { recursive: true, force: true });
     console.log(echecs.length ? `\n${echecs.length} échec(s).` : "\nTout est bon.");
+    // Ménage au mieux : sous Windows, Electron tient encore son cache réseau (EPERM) ; ça ne doit pas bloquer la sortie.
+    for (const dossier of [DONNEES, TMP]) {
+      try {
+        fs.rmSync(dossier, { recursive: true, force: true, maxRetries: 3 });
+      } catch (e) {
+        console.log(`(ménage incomplet : ${dossier} — ${e.code ?? e.message})`);
+      }
+    }
     app.exit(echecs.length ? 1 : 0);
   }
 });
