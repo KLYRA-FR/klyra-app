@@ -101,6 +101,26 @@ function TestMicro({ onAutorise }: { onAutorise: () => void }) {
   );
 }
 
+/**
+ * Les réglages de la dictée elle-même. Place réservée à la dictée en direct de
+ * Hugo (moteur ElevenLabs ou local, clé, langue, choix du micro, modèle local,
+ * via `window.klyra.dictee`) : ses champs remplacent ces deux lignes, qui
+ * décrivent la dictée d'aujourd'hui. Garder les ancres `moteur` et
+ * `langue-dictee` (catalogue.ts) ; le choix du micro reprend l'id `micro`.
+ */
+function ReglagesVoix() {
+  return (
+    <Groupe titre="Dictée">
+      <Ligne id="moteur" libelle="Moteur de dictée" description="Whisper, sur cet ordinateur : ta voix ne sort pas du poste.">
+        <Valeur>Whisper · local</Valeur>
+      </Ligne>
+      <Ligne id="langue-dictee" libelle="Langue" description="La dictée transcrit en français.">
+        <Valeur>Français</Valeur>
+      </Ligne>
+    </Groupe>
+  );
+}
+
 export function Voix() {
   /* Une fois le micro autorisé, la liste se relit : les noms des micros apparaissent. */
   const [autorise, setAutorise] = useState(0);
@@ -110,18 +130,7 @@ export function Voix() {
 
   return (
     <>
-      <Groupe titre="Dictée">
-        <Ligne
-          id="moteur"
-          libelle="Moteur de dictée"
-          description="Whisper, sur cet ordinateur : ta voix ne sort pas du poste. Le modèle (550 Mo) se télécharge à la première dictée, dans ~/.klyra/whisper."
-        >
-          <Valeur>Whisper · local</Valeur>
-        </Ligne>
-        <Ligne id="langue-dictee" libelle="Langue" description="La dictée transcrit en français.">
-          <Valeur>Français</Valeur>
-        </Ligne>
-      </Groupe>
+      <ReglagesVoix />
 
       <Groupe titre="Micro">
         <Ligne
