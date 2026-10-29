@@ -149,6 +149,11 @@ contextBridge.exposeInMainWorld("klyra", {
     infos: () => ipcRenderer.invoke("reglages:infos"),
     ouvrirDossier: (nom: string) => ipcRenderer.invoke("reglages:ouvrir-dossier", nom),
     essaiNotification: () => ipcRenderer.invoke("reglages:essai-notification"),
+    autorisationsComputerUse: () => ipcRenderer.invoke("reglages:computer-use:autorisations"),
+    ouvrirAutorisation: (type: string) => ipcRenderer.invoke("reglages:computer-use:ouvrir", type),
+  },
+  consommation: {
+    lire: () => ipcRenderer.invoke("consommation:lire"),
   },
   maj: {
     etat: () => ipcRenderer.invoke("maj:etat"),

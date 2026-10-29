@@ -1,4 +1,4 @@
-import { app, shell } from "electron";
+import { app, shell, systemPreferences } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -27,12 +27,15 @@ export interface PreferencesNotifications {
 
 export interface Reglages {
   notifications: PreferencesNotifications;
+  /** Les agents peuvent-ils piloter l'ordinateur ? Coupé par défaut ; rien ne pilote sans lui. */
+  computerUse: { actif: boolean };
 }
 
 export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "majPrete";
 
 const PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
+  computerUse: { actif: false },
 };
 
 const fichier = () => path.join(app.getPath("userData"), "reglages.json");
@@ -41,12 +44,13 @@ let courants: Reglages | null = null;
 
 /** Garde seulement les clés connues, en booléens ; le reste reprend la valeur par défaut. */
 function valider(brut: unknown): Reglages {
-  const n = (brut as { notifications?: Record<string, unknown> } | null)?.notifications ?? {};
+  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown } } | null;
+  const n = b?.notifications ?? {};
   const notifications = { ...PAR_DEFAUT.notifications };
   for (const cle of Object.keys(notifications) as (keyof PreferencesNotifications)[]) {
     if (typeof n[cle] === "boolean") notifications[cle] = n[cle] as boolean;
   }
-  return { notifications };
+  return { notifications, computerUse: { actif: b?.computerUse?.actif === true } };
 }
 
 export function lireReglages(): Reglages {
@@ -88,6 +92,36 @@ export function changerLancement(actif: boolean): { possible: boolean; actif: bo
   if (!LANCEMENT_POSSIBLE || !app.isPackaged) throw new Error("Le lancement au démarrage se règle dans l’app installée.");
   app.setLoginItemSettings({ openAtLogin: actif });
   return lancementAuDemarrage();
+}
+
+/* ─── Computer Use : les autorisations du système ────────────────── */
+
+export type EtatAutorisation = "accordee" | "refusee" | "a-demander" | "sans-objet" | "inconnue";
+
+/**
+ * Ce que le système autorise à l'app pour piloter l'ordinateur. Sur Mac :
+ * Accessibilité (clics, clavier) et Enregistrement de l'écran (captures).
+ * Windows ne demande pas d'autorisation pour ça : « sans-objet ».
+ */
+export function autorisationsComputerUse(): { plateforme: string; accessibilite: EtatAutorisation; ecran: EtatAutorisation } {
+  if (process.platform === "darwin") {
+    const ecran = systemPreferences.getMediaAccessStatus("screen");
+    return {
+      plateforme: "darwin",
+      accessibilite: systemPreferences.isTrustedAccessibilityClient(false) ? "accordee" : "refusee",
+      ecran: ecran === "granted" ? "accordee" : ecran === "not-determined" ? "a-demander" : ecran === "unknown" ? "inconnue" : "refusee",
+    };
+  }
+  if (process.platform === "win32") return { plateforme: "win32", accessibilite: "sans-objet", ecran: "sans-objet" };
+  return { plateforme: process.platform, accessibilite: "inconnue", ecran: "inconnue" };
+}
+
+/** Ouvre la bonne page des réglages du système (Mac) ; pour l'Accessibilité, macOS propose aussi d'ajouter l'app. */
+export async function ouvrirAutorisation(type: "accessibilite" | "ecran"): Promise<void> {
+  if (process.platform !== "darwin") throw new Error("Ce système ne demande pas cette autorisation.");
+  if (type === "accessibilite") systemPreferences.isTrustedAccessibilityClient(true);
+  const panneau = type === "accessibilite" ? "Privacy_Accessibility" : "Privacy_ScreenCapture";
+  await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${panneau}`);
 }
 
 /* ─── Informations et dossiers ───────────────────────────────────── */

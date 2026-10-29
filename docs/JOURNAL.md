@@ -29,6 +29,7 @@ Remplacer VS Code par **notre propre outil** pour travailler avec l’IA, en plu
 | 29/10/2026 | **Code dans `KLYRA-FR/klyra-app`, versions dans `KLYRA-FR/klyra-app-versions`** ; une PR par sujet, vérifiée avant fusion (`docs/CONTRIBUER.md`) | Corentin gère le dépôt des versions ; une fusion sur main publie pour tous |
 | 29/10/2026 | **Plus de listes ni de fenêtres du système** : `ListeDeroulante` remplace tous les `<select>`, `Modale` / `useConfirmation` remplacent `confirm` | Demande de Corentin : la liste native (fond blanc, surlignage bleu Windows) sortait de la DA |
 | 29/10/2026 | **Réglages par section**, barre latérale et recherche : Général, Profil, Claude, Agents, Autres IA, Notifications, Voix, Mises à jour. Aucun réglage factice : ni thème (pas de mode sombre), ni langue (français seul). Computer Use, Facturation et Appli mobile attendent la décision de Corentin | Demande de Corentin, sur le modèle des Réglages d’OpenBot |
+| 29/10/2026 | Décision de Corentin : **pas de Facturation ni d’Appli mobile, pas de mode sombre pour l’instant**. La consommation va dans **Profil** (jetons, messages, séries, activité de l’année, modèles, coéquipiers, coût indicatif), tirée d’un journal tenu à partir de cette version. **Computer Use** : interrupteur et autorisations seulement ; plan dans `docs/COMPUTER-USE-PLAN.md`, à valider avant tout code | Profil d’OpenBot comme référence ; chiffres réels uniquement |
 
 ## Maquettes (Figma)
 

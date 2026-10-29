@@ -11,6 +11,7 @@ import { getBridge, unwrap, type PreferencesNotifications, type Reglages } from 
 
 export const REGLAGES_PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
+  computerUse: { actif: false },
 };
 
 const CLE_NAVIGATEUR = "klyra:reglages";
@@ -19,7 +20,10 @@ let cache: Reglages | null = null;
 const abonnes = new Set<(r: Reglages) => void>();
 
 function completer(brut: Partial<Reglages> | null | undefined): Reglages {
-  return { notifications: { ...REGLAGES_PAR_DEFAUT.notifications, ...brut?.notifications } };
+  return {
+    notifications: { ...REGLAGES_PAR_DEFAUT.notifications, ...brut?.notifications },
+    computerUse: { actif: brut?.computerUse?.actif === true },
+  };
 }
 
 /** Les réglages actuels, lus une fois puis gardés en mémoire. */
@@ -68,5 +72,15 @@ export function useReglages() {
     }
   }, []);
 
-  return { reglages, erreur, changerNotification, systeme: !!getBridge()?.reglages };
+  const changerComputerUse = useCallback(async (actif: boolean) => {
+    const actuels = await reglagesActuels();
+    setErreur(null);
+    try {
+      await enregistrer({ ...actuels, computerUse: { actif } });
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  return { reglages, erreur, changerNotification, changerComputerUse, systeme: !!getBridge()?.reglages };
 }
