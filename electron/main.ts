@@ -71,7 +71,7 @@ const ICONE = path.join(__dirname, "..", "resources", "icon.png");
 
 /* Ouverte depuis le Dock ou le Finder, l'app n'a pas le PATH du terminal : les agents ne
    trouveraient ni pnpm, ni git, ni node. On reprend celui du shell de la personne. */
-if (app.isPackaged) {
+if (app.isPackaged && process.platform === "darwin") {
   try {
     const sortie = execFileSync(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "\n%s" "$PATH"'], { encoding: "utf8", timeout: 5000 });
     const chemin = sortie.trim().split("\n").at(-1);
@@ -83,6 +83,8 @@ if (app.isPackaged) {
 
 /* Le nom de l'app dans le Dock, le menu et « À propos ». */
 app.setName("KLYRA");
+/* Sous Windows, les notifications s'affichent au nom de l'app installée. */
+if (process.platform === "win32") app.setAppUserModelId("design.klyra.app");
 /* Les données de la personne (conversations, projets, réglages) restent
    toujours dans le même dossier, quel que soit le nom affiché de l'app. */
 if (!process.env.KLYRA_USER_DATA) app.setPath("userData", path.join(app.getPath("appData"), "klyra-app"));
@@ -148,9 +150,11 @@ function createWindow() {
     show: !SMOKE_TEST,
     title: "KLYRA",
     icon: ICONE,
-    titleBarStyle: "hiddenInset",
-    // Boutons de la fenêtre dans la bande de titre de 28 px, au-dessus du logo.
-    trafficLightPosition: { x: 14, y: 8 },
+    // Mac : boutons de la fenêtre dans la bande de titre de 28 px, au-dessus du logo.
+    // Windows : la barre de titre du système, sans barre de menus.
+    ...(process.platform === "darwin"
+      ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 8 } }
+      : { autoHideMenuBar: true }),
     // fond-page, le fond de l'app sous le panneau blanc.
     backgroundColor: "#F9F9F9",
     webPreferences: {
@@ -164,6 +168,7 @@ function createWindow() {
   fenetrePrincipale = win;
   win.on("closed", () => fenetrePrincipale === win && (fenetrePrincipale = null));
   win.on("focus", () => {
+    win.flashFrame(false);
     enAttente = 0;
     app.setBadgeCount(0);
   });
@@ -298,7 +303,11 @@ function registerBridge() {
   /* Un agent a fini pendant que tu regardais ailleurs : notification du Mac, pastille sur l'icône. */
   handle("systeme:notifier", (titre: string, texte: string, chatId: string) => {
     if (![titre, texte, chatId].every((v) => typeof v === "string")) throw new Error("Notification invalide.");
-    if (!fenetrePrincipale?.isFocused()) app.setBadgeCount((enAttente += 1));
+    if (!fenetrePrincipale?.isFocused()) {
+      // Pastille sur l'icône du Dock ; sous Windows, l'icône clignote dans la barre des tâches.
+      if (process.platform === "win32") fenetrePrincipale?.flashFrame(true);
+      else app.setBadgeCount((enAttente += 1));
+    }
     if (!Notification.isSupported()) return;
     const notif = new Notification({ title: titre.slice(0, 120), body: texte.slice(0, 240) });
     notif.on("click", () => {

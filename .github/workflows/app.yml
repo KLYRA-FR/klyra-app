@@ -1,6 +1,7 @@
-# À chaque push sur main : fabrique KLYRA.app et la publie dans le dépôt public
-# pelin-klyra/klyra-app-versions (l'app seule, jamais le code). Les apps installées
-# y trouvent la nouvelle version et se mettent à jour (electron/maj.ts).
+# À chaque push sur main : fabrique l'app pour Mac et pour Windows, vérifie
+# qu'elle démarre et que la dictée (Whisper) se lance, puis la publie dans le
+# dépôt public pelin-klyra/klyra-app-versions (l'app seule, jamais le code).
+# Les apps installées y trouvent la nouvelle version (electron/maj.ts).
 name: App
 
 on:
@@ -12,38 +13,95 @@ concurrency:
   group: app
   cancel-in-progress: true
 
+env:
+  # Un numéro par publication : 0.1.<n° de l'exécution>, toujours croissant.
+  VERSION: 0.1.${{ github.run_number }}
+
 jobs:
-  publier:
+  mac:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
-      # Un numéro par publication : 0.1.<n° de l'exécution>, toujours croissant.
-      - name: Numéro de version
-        run: npm pkg set version="0.1.${{ github.run_number }}"
-
+      - run: npm pkg set version="$VERSION"
       # next build vérifie aussi les types (ceux des routes sont générés pendant le build).
-      - run: pnpm app
+      - run: pnpm build && pnpm build:electron && pnpm whisper
+      - run: pnpm exec electron-builder --mac --publish never --config.directories.output=dist-app
 
+      - name: L'app démarre et affiche l'interface
+        run: |
+          KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
+            perl -e 'alarm 120; exec @ARGV' dist-app/mac-arm64/KLYRA.app/Contents/MacOS/KLYRA
+      - name: Whisper embarqué se lance
+        run: dist-app/mac-arm64/KLYRA.app/Contents/Resources/whisper/whisper-cli --help 2>&1 | grep -qi usage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            dist-app/*.dmg
+            dist-app/*.zip
+            dist-app/latest-mac.yml
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npm pkg set version="$env:VERSION"
+      - run: pnpm build
+      - run: pnpm build:electron
+      - run: pnpm whisper
+      - run: pnpm exec electron-builder --win --publish never --config.directories.output=dist-app
+
+      - name: L'app démarre et affiche l'interface
+        shell: pwsh
+        run: |
+          $env:KLYRA_SMOKE_TEST = "1"
+          $env:KLYRA_USER_DATA = "$env:RUNNER_TEMP\klyra"
+          $p = Start-Process "dist-app\win-unpacked\KLYRA.exe" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "L'app ne s'est pas arrêtée." }
+          if ($p.ExitCode -ne 0) { throw "L'app n'affiche rien (code $($p.ExitCode))." }
+      - name: Whisper embarqué se lance
+        shell: pwsh
+        run: |
+          $sortie = & "dist-app\win-unpacked\resources\whisper\whisper-cli.exe" --help 2>&1 | Out-String
+          if ($sortie -notmatch "usage") { throw "whisper-cli ne démarre pas : $sortie" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist-app/*.exe
+            dist-app/latest.yml
+
+  publier:
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: app
       # Les notes restent neutres : le dépôt des versions est public, le code et ses commits non.
       - name: Publier
         env:
           GH_TOKEN: ${{ secrets.VERSIONS_TOKEN }}
         run: |
-          VERSION="0.1.${{ github.run_number }}"
           gh release create "v$VERSION" \
             --repo pelin-klyra/klyra-app-versions \
             --title "KLYRA $VERSION" \
-            --notes "Nouvelle version de l’app de bureau KLYRA." \
-            "$HOME/.klyra/build/KLYRA-$VERSION-arm64.dmg" \
-            "$HOME/.klyra/build/KLYRA-$VERSION-arm64-mac.zip"
+            --notes "Nouvelle version de l’app de bureau KLYRA, pour Mac et Windows." \
+            app/*

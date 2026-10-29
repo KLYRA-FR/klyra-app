@@ -35,7 +35,7 @@ export function listerArtefacts(): Promise<ArtefactClaude[]> {
     const child = spawn(
       bin,
       ["-p", "--model", "haiku", "--output-format", "json", "--no-session-persistence", "--allowedTools", "Artifact", "--disallowedTools", "Bash", "Write", "Edit", "Read"],
-      { cwd: ATELIER, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } },
+      { cwd: ATELIER, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true },
     );
     let sortie = "";
     child.stdout.on("data", (d: Buffer) => (sortie += d.toString()));

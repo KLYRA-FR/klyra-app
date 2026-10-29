@@ -5,6 +5,7 @@ import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { versWav16k } from "@/lib/wav";
 
 type Etat = "repos" | "ecoute" | "transcription";
 
@@ -13,7 +14,7 @@ const DUREE_MAX_MS = 5 * 60 * 1000;
 
 /**
  * Le micro de la zone de saisie : un clic pour parler, un clic pour arrêter.
- * L'audio est transcrit sur le Mac (Whisper) et le texte s'ajoute au message.
+ * L'audio est transcrit sur l'ordinateur (Whisper) et le texte s'ajoute au message.
  * Rien ne s'enregistre tant qu'on n'a pas cliqué.
  */
 export function BoutonDictee({ onTexte }: { onTexte: (texte: string) => void }) {
@@ -64,7 +65,13 @@ export function BoutonDictee({ onTexte }: { onTexte: (texte: string) => void }) 
     rec.onstop = async () => {
       libererMicro();
       setEtat("transcription");
-      const audio = new Uint8Array(await new Blob(morceaux.current, { type: "audio/webm" }).arrayBuffer());
+      let audio: Uint8Array;
+      try {
+        audio = await versWav16k(new Blob(morceaux.current, { type: "audio/webm" }));
+      } catch {
+        setEtat("repos");
+        return onErreur("Enregistrement illisible, réessaie.");
+      }
       const r = await bridge.systeme.transcrire!(audio);
       setEtat("repos");
       if (!r.ok) return onErreur(r.message);

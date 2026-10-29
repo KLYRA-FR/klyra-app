@@ -16,7 +16,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
-    "app": "pnpm build && pnpm build:electron && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\""
+    "app": "pnpm build && pnpm build:electron && pnpm whisper && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
+    "whisper": "node scripts/preparer-whisper.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -82,10 +83,46 @@
       "hardenedRuntime": false,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "KLYRA utilise le micro pour la dictée, transcrite sur ce Mac."
-      }
+      },
+      "extraResources": [
+        {
+          "from": "vendor/whisper/darwin",
+          "to": "whisper",
+          "filter": [
+            "whisper-cli"
+          ]
+        }
+      ]
     },
     "dmg": {
       "title": "KLYRA"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "extraResources": [
+        {
+          "from": "vendor/whisper/win32",
+          "to": "whisper",
+          "filter": [
+            "*.exe",
+            "*.dll"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "KLYRA-${version}-win-x64-setup.exe",
+      "shortcutName": "KLYRA"
     }
   }
 }

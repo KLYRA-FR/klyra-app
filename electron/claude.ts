@@ -16,6 +16,9 @@ const HOME = os.homedir();
 const OUTILS_INTERDITS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"];
 const DELAI_MAX_MS = 10 * 60 * 1000;
 
+/** Sous Windows, le binaire natif de Claude Code (un .cmd de npm ne se lance pas sans shell). */
+const EXE_CLAUDE = process.platform === "win32" ? "claude.exe" : "claude";
+
 /** Le binaire de l'extension VS Code ou Cursor la plus récente. */
 function fromEditorExtensions(): string[] {
   const found: string[] = [];
@@ -25,22 +28,22 @@ function fromEditorExtensions(): string[] {
     const versions = readdirSync(dir)
       .filter((d) => d.startsWith("anthropic.claude-code-"))
       .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    for (const v of versions) found.push(path.join(dir, v, "resources", "native-binary", "claude"));
+    for (const v of versions) found.push(path.join(dir, v, "resources", "native-binary", EXE_CLAUDE));
   }
   return found;
 }
 
 /** Une app lancée depuis le Finder n'hérite pas du PATH du terminal : on cherche aussi aux endroits habituels. */
 export function findClaude(): string | null {
-  const fromPath = (process.env.PATH ?? "").split(path.delimiter).map((d) => path.join(d, "claude"));
+  const fromPath = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean).map((d) => path.join(d, EXE_CLAUDE));
   const candidates = [
     process.env.KLYRA_CLAUDE_PATH,
     ...fromPath,
     "/opt/homebrew/bin/claude",
     "/usr/local/bin/claude",
-    path.join(HOME, ".local/bin/claude"),
-    path.join(HOME, ".claude/local/claude"),
-    path.join(HOME, ".npm-global/bin/claude"),
+    path.join(HOME, ".local", "bin", EXE_CLAUDE),
+    path.join(HOME, ".claude", "local", EXE_CLAUDE),
+    path.join(HOME, ".npm-global", "bin", "claude"),
     ...fromEditorExtensions(),
   ];
   return candidates.find((c): c is string => !!c && existsSync(c)) ?? null;
@@ -69,6 +72,7 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
     const child = spawn(bin, ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS], {
       cwd: HOME,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
+      windowsHide: true,
     });
     running.set(requestId, child);
     let stdout = "";
@@ -485,7 +489,7 @@ function lireLigne(proc: Processus, ligne: string) {
 }
 
 function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
-  const child = spawn(bin, args, { cwd, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } });
+  const child = spawn(bin, args, { cwd, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true });
   const proc: Processus = { child, signature, modele: options.modele ?? null, acces, tours: [], sessionId: options.sessionId, spontane, veille: null, fond: 0 };
   if (options.sessionId) processus.set(options.sessionId, proc);
 
@@ -662,7 +666,7 @@ export function actualiserUtilisation(): Promise<Utilisation | null> {
     const child = spawn(
       bin,
       ["-p", "--model", "haiku", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--disallowedTools", ...OUTILS_INTERDITS, "WebFetch", "WebSearch", "Read", "Glob", "Grep"],
-      { cwd: ATELIER, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } },
+      { cwd: ATELIER, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true },
     );
     let tampon = "";
     child.stdout.on("data", (d: Buffer) => {
@@ -712,7 +716,7 @@ export interface CompteClaude {
 /** Lance une commande de Claude Code et rend sa sortie. */
 function commandeClaude(bin: string, args: string[], delai: number): Promise<{ code: number | null; sortie: string }> {
   return new Promise((resolve) => {
-    const child = spawn(bin, args, { cwd: HOME, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } });
+    const child = spawn(bin, args, { cwd: HOME, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true });
     let sortie = "";
     child.stdout.on("data", (d: Buffer) => (sortie += d.toString()));
     child.stderr.on("data", (d: Buffer) => (sortie += d.toString()));

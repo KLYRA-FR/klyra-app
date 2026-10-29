@@ -23,6 +23,9 @@
 # electron (process principal compilé)
 /dist-electron/
 
+# Whisper embarqué (pnpm whisper)
+/vendor/
+
 # misc
 .DS_Store
 *.pem

@@ -41,7 +41,7 @@ function absolu(dossier: string): string {
 
 function git(cwd: string, args: string[], delai = 120_000): Promise<{ code: number; sortie: string }> {
   return new Promise((resolve) => {
-    execFile("git", args, { cwd, timeout: delai, maxBuffer: 10 * 1024 * 1024 }, (erreur, stdout, stderr) => {
+    execFile("git", args, { cwd, timeout: delai, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (erreur, stdout, stderr) => {
       const code = erreur ? (typeof erreur.code === "number" ? erreur.code : 1) : 0;
       resolve({ code, sortie: `${stdout}${stderr}`.trim() });
     });

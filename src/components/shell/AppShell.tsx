@@ -14,9 +14,10 @@ import { DIRECT, useChat, useProject, WorkspaceProvider } from "@/lib/workspace"
 import type { Project } from "@/types/domain";
 import { AppRail } from "./AppRail";
 
-/** Vrai dans la fenêtre Electron : la barre de titre est intégrée à l'app. */
+/** Vrai dans la fenêtre Electron sur Mac : la barre de titre est intégrée à l'app
+ *  (sous Windows, elle reste celle du système). */
 function isDesktopShell(): boolean {
-  return navigator.userAgent.includes("Electron");
+  return navigator.userAgent.includes("Electron") && navigator.userAgent.includes("Macintosh");
 }
 
 /** Projet ouvert : celui du chat (`/chat?id=`) ou de la page projet (`/projet?id=`). */
