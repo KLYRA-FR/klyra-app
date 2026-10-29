@@ -27,7 +27,8 @@ import { AgentVisuel, TEINTES } from "./AgentVisuel";
 
 const NOM_VALIDE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-const MODELES = [
+/** Les modèles qu'une fiche peut demander (champ `model`), repris par les Réglages. */
+export const MODELES = [
   { value: "opus", label: "Opus" },
   { value: "sonnet", label: "Sonnet" },
   { value: "haiku", label: "Haiku" },

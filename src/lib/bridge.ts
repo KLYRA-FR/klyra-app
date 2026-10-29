@@ -192,8 +192,8 @@ export interface KlyraBridge {
     micro?: () => Promise<Reponse<boolean>>;
     /** Transcrit un enregistrement (WebM) en texte, sur le Mac (Whisper). */
     transcrire?: (audio: Uint8Array) => Promise<Reponse<string>>;
-    /** Notification du Mac (et pastille du Dock) ; un clic ramène à la conversation. */
-    notifier?: (titre: string, texte: string, chatId: string) => Promise<Reponse<void>>;
+    /** Notification du Mac (et pastille du Dock) ; un clic ramène à la conversation. Filtrée par les Réglages. */
+    notifier?: (titre: string, texte: string, chatId: string, evenement?: "agentFini" | "agentErreur" | "workflow") => Promise<Reponse<void>>;
     onOuvrirChat?: (callback: (chatId: string) => void) => () => void;
   };
   /** Les outils des fils, appelés par les agents et exécutés ici. */
@@ -238,6 +238,61 @@ export interface KlyraBridge {
     read: () => Promise<Reponse<unknown>>;
     write: (data: unknown) => Promise<Reponse<void>>;
   };
+  /** Les Réglages de l'app (cf. electron/reglages.ts). Absent avant la relance de l'app. */
+  reglages?: {
+    lire: () => Promise<Reponse<Reglages>>;
+    ecrire: (reglages: Reglages) => Promise<Reponse<Reglages>>;
+    lancement: () => Promise<Reponse<Lancement>>;
+    changerLancement: (actif: boolean) => Promise<Reponse<Lancement>>;
+    infos: () => Promise<Reponse<InfosApp>>;
+    ouvrirDossier: (nom: DossierApp) => Promise<Reponse<void>>;
+    essaiNotification: () => Promise<Reponse<void>>;
+  };
+  /** Les mises à jour de l'app (cf. electron/maj.ts). */
+  maj?: {
+    etat: () => Promise<Reponse<EtatMaj>>;
+    verifier: () => Promise<Reponse<EtatMaj>>;
+    installer: () => Promise<Reponse<void>>;
+  };
+}
+
+export interface PreferencesNotifications {
+  actives: boolean;
+  pastille: boolean;
+  son: boolean;
+  agentFini: boolean;
+  agentErreur: boolean;
+  workflow: boolean;
+  majPrete: boolean;
+}
+
+export interface Reglages {
+  notifications: PreferencesNotifications;
+}
+
+export interface Lancement {
+  /** Faux hors de l'app installée sur Mac ou Windows. */
+  possible: boolean;
+  actif: boolean;
+}
+
+export type DossierApp = "donnees" | "klyra" | "agents";
+
+export interface InfosApp {
+  version: string;
+  installee: boolean;
+  plateforme: string;
+  electron: string;
+  dossiers: Record<DossierApp, string>;
+}
+
+export interface EtatMaj {
+  version: string;
+  statut: "dev" | "inconnu" | "verification" | "a-jour" | "prete" | "erreur";
+  nouvelle: string | null;
+  verifieeLe: number | null;
+  erreur: string | null;
+  depot: string;
 }
 
 declare global {

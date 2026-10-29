@@ -1,312 +1,270 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
-import { Avatar, Input } from "klyra-ui";
-import { CarteUtilisation } from "@/components/chat/CarteUtilisation";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
-import { Bouton } from "@/components/ui/Bouton";
-import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
-import { CHAMP, Champ } from "@/components/ui/Champ";
 import { cn } from "@/lib/cn";
-import { NIVEAUX_ACCES } from "@/lib/acces";
-import { nomAbonnement, useCompteClaude } from "@/lib/compte-claude";
-import { useWorkspace } from "@/lib/workspace";
+import { avecCommande, estMac } from "@/lib/raccourcis";
 import { AutresIa } from "./AutresIa";
-import { Recadrage } from "./Recadrage";
+import { chercher, estSection, SECTIONS, type IdSection, type Resultat } from "./catalogue";
+import { Agents } from "./sections/Agents";
+import { Claude } from "./sections/Claude";
+import { General } from "./sections/General";
+import { MisesAJour } from "./sections/MisesAJour";
+import { Notifications } from "./sections/Notifications";
+import { Profil } from "./sections/Profil";
+import { Voix } from "./sections/Voix";
+import { ancreReglage } from "./ui";
 
-const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
+/** La dernière section ouverte : les Réglages y reviennent. */
+const CLE_SECTION = "klyra:reglages:section";
 
-function Section({ titre, sousTitre, children }: { titre: string; sousTitre?: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3 rounded-3xl border border-bordure-subtile bg-fond-page p-3">
-      <div className="flex flex-col gap-0.5 px-2 pt-1">
-        <h2 className="m-0 text-ui font-semibold text-texte-principal">{titre}</h2>
-        {sousTitre && <p className="m-0 text-ui-xs text-texte-tertiaire">{sousTitre}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Ligne({ libelle, children }: { libelle: string; children: ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-2.5 text-ui-s">
-      <span className="shrink-0 text-texte-secondaire">{libelle}</span>
-      <span className="min-w-0 text-right text-texte-principal [overflow-wrap:anywhere]">{children}</span>
+const CONTENU: Record<IdSection, () => ReactNode> = {
+  general: () => <General />,
+  profil: () => <Profil />,
+  claude: () => <Claude />,
+  agents: () => <Agents />,
+  "autres-ia": () => (
+    <div id={ancreReglage("autres-ia")} className="klyra-reglage scroll-mt-6 rounded-lg">
+      <AutresIa />
     </div>
-  );
-}
+  ),
+  notifications: () => <Notifications />,
+  voix: () => <Voix />,
+  "mises-a-jour": () => <MisesAJour />,
+};
 
-/** Le compte Claude du poste : l'état, le compte, l'abonnement, et la connexion. */
-function CompteClaudeCarte() {
-  const { disponible, compte, action, erreur, verifier, connecter, deconnecter } = useCompteClaude();
-
-  if (!disponible) {
-    return (
-      <div className="klyra-carte-flottante rounded-lg p-4 text-ui-s text-texte-secondaire">
-        La connexion à Claude se lit dans l’app de bureau.
-      </div>
-    );
+function sectionMemorisee(): IdSection {
+  try {
+    const s = localStorage.getItem(CLE_SECTION);
+    return estSection(s) ? s : "general";
+  } catch {
+    return "general";
   }
-
-  const connecte = !!compte?.connecte;
-  const etat = !compte
-    ? "Vérification…"
-    : !compte.installe
-      ? "Claude Code est introuvable sur ce poste"
-      : connecte
-        ? "Connecté"
-        : "Pas connecté";
-
-  return (
-    <div className="klyra-carte-flottante flex flex-col gap-4 rounded-lg p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <span
-          aria-hidden="true"
-          className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-full",
-            connecte ? "klyra-orbe" : "bg-fond-surface-grise text-icone-secondaire",
-          )}
-        >
-          <Icon name={connecte ? "check-01" : "users-profiles-01"} size={20} />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className={cn("text-ui font-semibold", compte && !connecte ? "text-texte-erreur" : "text-texte-principal")}>
-            Claude · {etat}
-          </span>
-          <span className="truncate text-ui-xs text-texte-tertiaire">
-            {connecte
-              ? `${compte?.email ?? ""}${compte?.abonnement ? ` · abonnement ${nomAbonnement(compte.abonnement)}` : ""}`
-              : "Tes agents passent par ton compte Claude : connecte-le pour qu’ils puissent répondre."}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {connecte ? (
-            <Bouton variant="blanc" taille="md" disabled={!!action} onClick={() => void deconnecter()}>
-              {action === "deconnexion" ? "Déconnexion…" : "Se déconnecter"}
-            </Bouton>
-          ) : (
-            compte?.installe && (
-              <BoutonPrincipal disabled={!!action} onClick={() => void connecter()}>
-                {action === "connexion" ? "En attente du navigateur…" : "Se connecter à Claude"}
-              </BoutonPrincipal>
-            )
-          )}
-          <Bouton
-            variant="discret"
-            taille="md"
-            disabled={!!action}
-            iconeGauche={<Icon name="refresh-01" size={20} />}
-            onClick={() => void verifier()}
-          >
-            Vérifier
-          </Bouton>
-        </div>
-      </div>
-
-      {action === "connexion" && (
-        <p className="m-0 rounded-md bg-fond-page p-3 text-ui-s leading-[1.45] text-texte-principal">
-          Une page Anthropic s’est ouverte dans ton navigateur. Connecte-toi, valide, puis reviens ici : l’app se met à jour toute seule.
-        </p>
-      )}
-      {erreur && (
-        <p role="alert" className="m-0 text-ui-s text-texte-erreur">
-          {erreur}
-        </p>
-      )}
-
-      {compte?.installe && (
-        <div className="flex flex-col divide-y divide-bordure-subtile rounded-md border border-bordure-subtile px-3">
-          {connecte && (
-            <>
-              <Ligne libelle="Compte">{compte.email ?? "—"}</Ligne>
-              <Ligne libelle="Organisation">{compte.organisation ?? "—"}</Ligne>
-              <Ligne libelle="Abonnement">{nomAbonnement(compte.abonnement) ?? "—"}</Ligne>
-              <Ligne libelle="Facturation">
-                {compte.methode === "claude.ai" ? "Comprise dans l’abonnement claude.ai" : compte.methode === "console" ? "À l’usage (Console Anthropic)" : (compte.methode ?? "—")}
-              </Ligne>
-            </>
-          )}
-          <Ligne libelle="Claude Code">{compte.version ? `Version ${compte.version}` : "—"}</Ligne>
-          <Ligne libelle="Emplacement">
-            <span className="klyra-mono text-ui-xs">{compte.chemin?.replace(/^\/Users\/[^/]+/, "~")}</span>
-          </Ligne>
-          <Ligne libelle="Vérifié">à {heure.format(compte.verifieLe)}</Ligne>
-        </div>
-      )}
-    </div>
-  );
 }
 
-/** Ta photo : elle remplace tes initiales en bas du menu. Choisie, puis recadrée dans un rond. */
-function Photo() {
-  const { state, enregistrerProfil } = useWorkspace();
-  const choix = useRef<HTMLInputElement>(null);
-  const [aRecadrer, setARecadrer] = useState<string | null>(null);
-  const { photo, initial } = state.currentUser;
-  const fermer = useCallback(() => {
-    setARecadrer((url) => {
-      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
-      return null;
-    });
-  }, []);
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      {/* Un clic sur la photo : la recadrer (ou en choisir une, s'il n'y en a pas). */}
-      <button
-        type="button"
-        title={photo ? "Recadrer ta photo" : "Ajouter une photo"}
-        aria-label={photo ? "Recadrer ta photo" : "Ajouter une photo"}
-        onClick={() => (photo ? setARecadrer(photo) : choix.current?.click())}
-        className="cursor-pointer rounded-full border-0 bg-transparent p-0 transition-opacity duration-[120ms] hover:opacity-80"
-      >
-        <Avatar shape="circle" size="lg" src={photo ?? undefined} initials={initial} alt="" gradient={false} />
-      </button>
-      <input
-        ref={choix}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const fichier = e.target.files?.[0];
-          e.target.value = "";
-          if (fichier) setARecadrer(URL.createObjectURL(fichier));
-        }}
-      />
-      <Bouton type="button" variant="blanc" taille="compact" onClick={() => choix.current?.click()}>
-        {photo ? "Changer la photo" : "Ajouter une photo"}
-      </Bouton>
-      {photo && (
-        <>
-          <Bouton type="button" variant="blanc" taille="compact" onClick={() => setARecadrer(photo)}>
-            Recadrer
-          </Bouton>
-          <Bouton type="button" variant="discret" taille="compact" onClick={() => enregistrerProfil({ ...state.currentUser, photo: null })}>
-            Retirer
-          </Bouton>
-        </>
-      )}
-      {aRecadrer && (
-        <Recadrage
-          src={aRecadrer}
-          onAnnuler={fermer}
-          onValider={(p) => {
-            enregistrerProfil({ ...state.currentUser, photo: p });
-            fermer();
-          }}
-        />
-      )}
-    </div>
-  );
+/** Mène au réglage cherché : il défile à l'écran, s'éclaire un instant et prend le focus. */
+function allerAuReglage(id: string) {
+  const el = document.getElementById(ancreReglage(id));
+  if (!el) return;
+  el.scrollIntoView({ block: "start", behavior: "smooth" });
+  el.removeAttribute("data-eclaire");
+  void el.offsetWidth; // relance l'animation si on y revient
+  el.setAttribute("data-eclaire", "");
+  window.setTimeout(() => el.removeAttribute("data-eclaire"), 1800);
+  const controle = el.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [role="switch"]');
+  controle?.focus({ preventScroll: true });
 }
 
-/** Ton profil sur ce poste : il s'affiche en bas du menu et les agents savent à qui ils parlent. */
-function Profil() {
-  const { state, enregistrerProfil } = useWorkspace();
-  const [name, setName] = useState(state.currentUser.name);
-  const [title, setTitle] = useState(state.currentUser.title);
-  const change = name.trim() !== state.currentUser.name || title.trim() !== state.currentUser.title;
+/** Une ligne de la barre latérale : une section, ou un résultat de recherche. */
+function Entree({
+  actif,
+  icone,
+  children,
+  sous,
+  onClick,
+  onKeyDown,
+  courant,
+}: {
+  actif?: boolean;
+  icone: Parameters<typeof Icon>[0]["name"];
+  children: ReactNode;
+  sous?: string;
+  onClick: () => void;
+  onKeyDown: (e: KeyboardEvent<HTMLButtonElement>) => void;
+  courant?: boolean;
+}) {
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!name.trim()) return;
-        enregistrerProfil({ ...state.currentUser, name: name.trim(), title: title.trim(), initial: name.trim().charAt(0).toUpperCase() });
-      }}
-      className="klyra-carte-flottante @container flex flex-col gap-4 rounded-lg p-4"
+    <button
+      type="button"
+      data-entree-reglages
+      aria-current={courant ? "page" : undefined}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      className={cn(
+        "flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 px-2.5 py-1.5 text-left text-ui-s transition-colors duration-[120ms] ease-sortie",
+        actif ? "bg-fond-survol font-semibold text-texte-principal" : "bg-transparent text-texte-secondaire hover:bg-fond-survol hover:text-texte-principal",
+      )}
     >
-      <Photo />
-      <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
-        <Champ label="Prénom">
-          <Input size="sm" value={name} onChange={(e) => setName(e.target.value)} className={CHAMP} />
-        </Champ>
-        <Champ label="Rôle" aide="Par exemple « Design · KLYRA ».">
-          <Input size="sm" value={title} onChange={(e) => setTitle(e.target.value)} className={CHAMP} />
-        </Champ>
-      </div>
-      <Bouton type="submit" variant="sombre" taille="compact" disabled={!change || !name.trim()} className="self-start">
-        Enregistrer
-      </Bouton>
-    </form>
+      <Icon name={icone} size={18} className={actif ? "text-icone-defaut" : "text-icone-secondaire"} />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{children}</span>
+        {sous && <span className="truncate text-ui-2xs font-normal text-texte-tertiaire">{sous}</span>}
+      </span>
+    </button>
   );
 }
 
-function ChoixAcces() {
-  const { state, choisirAcces } = useWorkspace();
-  return (
-    <div role="radiogroup" aria-label="Accès des agents" className="flex flex-col gap-2">
-      {NIVEAUX_ACCES.map((n) => {
-        const choisi = state.acces === n.id;
-        return (
-          <button
-            key={n.id}
-            type="button"
-            role="radio"
-            aria-checked={choisi}
-            onClick={() => choisirAcces(n.id)}
-            className={cn(
-              "klyra-carte-flottante flex cursor-pointer items-start gap-3 rounded-lg border p-4 text-left",
-              choisi ? "border-bleu-k1-500" : "border-transparent",
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                choisi ? "border-bleu-k1-500 bg-bleu-k1-500 text-texte-inverse" : "border-bordure-forte",
-              )}
-            >
-              {choisi && <Icon name="check-01" size={12} />}
-            </span>
-            <span className="flex flex-col gap-1">
-              <span className="text-ui-s font-semibold text-texte-principal">{n.nom}</span>
-              <span className="text-ui-xs leading-[1.45] text-texte-secondaire">{n.detail}</span>
-            </span>
-          </button>
-        );
-      })}
-      <p className="m-0 px-1 text-ui-2xs text-texte-tertiaire">
-        S’applique aux prochaines réponses. Les fichiers restent limités au dossier du projet (ou à ~/.klyra/atelier hors projet).
-      </p>
-    </div>
-  );
-}
-
-/** Réglages de l'app : le compte Claude, son utilisation, l'accès des agents. */
+/**
+ * Réglages de l'app : une barre latérale (recherche, puis une entrée par
+ * section) et la section ouverte. `/reglages?section=voix` ouvre une section ;
+ * sans paramètre, la dernière ouverte. ⌘ , les ouvre de partout, ⌘ F cherche.
+ */
 export function ReglagesScreen() {
-  const { state } = useWorkspace();
+  const router = useRouter();
+  const params = useSearchParams();
+  const demandee = params.get("section");
+  const section: IdSection = estSection(demandee) ? demandee : sectionMemorisee();
+  const courante = SECTIONS.find((s) => s.id === section)!;
+
+  const [requete, setRequete] = useState("");
+  const resultats = useMemo(() => chercher(requete), [requete]);
+  const champ = useRef<HTMLInputElement>(null);
+  const nav = useRef<HTMLElement>(null);
+  const contenu = useRef<HTMLDivElement>(null);
+  /* Le réglage où mener une fois la section affichée. */
+  const [cible, setCible] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CLE_SECTION, section);
+    } catch {
+      /* pas de stockage : la section n'est pas mémorisée */
+    }
+  }, [section]);
+
+  useEffect(() => {
+    contenu.current?.scrollTo({ top: 0 });
+  }, [section]);
+
+  useEffect(() => {
+    if (!cible) return;
+    const t = window.setTimeout(() => {
+      allerAuReglage(cible);
+      setCible(null);
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [cible, section]);
+
+  /* ⌘ F : la recherche des réglages. */
+  useEffect(() => {
+    const surTouche = (e: globalThis.KeyboardEvent) => {
+      if (e.key.toLowerCase() === "f" && avecCommande(e)) {
+        e.preventDefault();
+        champ.current?.focus();
+        champ.current?.select();
+      }
+    };
+    window.addEventListener("keydown", surTouche);
+    return () => window.removeEventListener("keydown", surTouche);
+  }, []);
+
+  const ouvrir = (id: IdSection, reglage: string | null = null) => {
+    if (id !== section) router.replace(`/reglages?section=${id}`, { scroll: false });
+    setCible(reglage);
+  };
+
+  const choisir = (r: Resultat) => {
+    ouvrir(r.section.id, r.entree?.id ?? null);
+    setRequete("");
+  };
+
+  /* ↑ ↓ entre les lignes de la barre (sections ou résultats), Début et Fin ; en haut, retour au champ. */
+  const deplacer = (e: KeyboardEvent<HTMLButtonElement>, ouvrirSection?: IdSection[]) => {
+    const lignes = Array.from(nav.current?.querySelectorAll<HTMLButtonElement>("[data-entree-reglages]") ?? []);
+    const i = lignes.indexOf(e.currentTarget);
+    let j = -1;
+    if (e.key === "ArrowDown") j = Math.min(lignes.length - 1, i + 1);
+    else if (e.key === "ArrowUp") j = i - 1;
+    else if (e.key === "Home") j = 0;
+    else if (e.key === "End") j = lignes.length - 1;
+    else if (e.key === "Escape" && requete) {
+      setRequete("");
+      champ.current?.focus();
+      return;
+    } else return;
+    e.preventDefault();
+    if (j < 0) return champ.current?.focus();
+    lignes[j].focus();
+    // Dans la liste des sections, la flèche ouvre la section, comme dans les réglages du système.
+    if (ouvrirSection?.[j]) ouvrir(ouvrirSection[j]);
+  };
+
+  const surToucheChamp = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      nav.current?.querySelector<HTMLButtonElement>("[data-entree-reglages]")?.focus();
+    } else if (e.key === "Enter" && resultats[0]) {
+      e.preventDefault();
+      choisir(resultats[0]);
+    } else if (e.key === "Escape" && requete) {
+      e.preventDefault();
+      e.stopPropagation();
+      setRequete("");
+    }
+  };
+
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="@container mx-auto flex max-w-[880px] flex-col gap-5 px-5 pt-5 pb-6">
-        <h1 className="m-0 text-h3 leading-[1] tracking-[-0.04em] text-texte-principal">
-          <span className="font-semibold">Réglages</span> <span className="font-normal">de l’app</span>
-        </h1>
+    <div className="flex h-full min-h-0">
+      <aside className="flex w-[248px] shrink-0 flex-col gap-3 border-r border-bordure-subtile px-3 pt-5 pb-4">
+        <h1 className="m-0 px-2.5 text-ui font-semibold text-texte-principal">Réglages</h1>
+        <label className="relative flex items-center">
+          <Icon name="search-01" size={16} className="pointer-events-none absolute left-2.5 text-icone-secondaire" />
+          <span className="sr-only">Rechercher dans les réglages</span>
+          <input
+            ref={champ}
+            type="search"
+            value={requete}
+            placeholder="Rechercher dans les réglages…"
+            aria-controls="reglages-navigation"
+            aria-keyshortcuts={estMac() ? "Meta+F" : "Control+F"}
+            onChange={(e) => setRequete(e.target.value)}
+            onKeyDown={surToucheChamp}
+            className="h-9 w-full rounded-md border border-bordure-champ bg-fond-surface pr-2.5 pl-8 text-ui-s text-texte-principal outline-none transition-colors duration-[120ms] placeholder:text-texte-placeholder hover:border-bordure-champ-survol focus:border-focus [&::-webkit-search-cancel-button]:hidden"
+          />
+        </label>
 
-        <Section titre="Toi" sousTitre="Ton profil sur ce poste. Chaque personne de l’équipe a le sien.">
-          {/* Le profil peut arriver après coup (nom de la session Mac) : le formulaire repart de lui. */}
-          <Profil key={`${state.currentUser.name}|${state.currentUser.title}`} />
-        </Section>
+        <nav id="reglages-navigation" ref={nav} aria-label={requete ? "Résultats de la recherche" : "Sections des réglages"} className="klyra-defilement-fin -mx-1 flex min-h-0 flex-col gap-0.5 overflow-y-auto px-1">
+          {requete ? (
+            resultats.length ? (
+              resultats.map((r, i) => (
+                <Entree
+                  key={`${r.section.id}-${r.entree?.id ?? ""}`}
+                  /* Le premier résultat : celui qu'Entrée ouvre depuis le champ. */
+                  actif={i === 0}
+                  icone={r.section.icone}
+                  sous={r.entree ? r.section.titre : undefined}
+                  onClick={() => choisir(r)}
+                  onKeyDown={(e) => deplacer(e)}
+                >
+                  {r.entree?.titre ?? r.section.titre}
+                </Entree>
+              ))
+            ) : (
+              <p role="status" className="m-0 px-2.5 py-2 text-ui-xs text-texte-tertiaire">
+                Aucun réglage ne correspond à « {requete} ».
+              </p>
+            )
+          ) : (
+            SECTIONS.map((s) => (
+              <Entree
+                key={s.id}
+                icone={s.icone}
+                actif={s.id === section}
+                courant={s.id === section}
+                onClick={() => ouvrir(s.id)}
+                onKeyDown={(e) =>
+                  deplacer(
+                    e,
+                    SECTIONS.map((x) => x.id),
+                  )
+                }
+              >
+                {s.titre}
+              </Entree>
+            ))
+          )}
+        </nav>
+      </aside>
 
-        <Section titre="Claude" sousTitre="Le compte par lequel tes agents travaillent.">
-          <CompteClaudeCarte />
-        </Section>
-
-        <Section
-          titre="Autres IA"
-          sousTitre="Ajoute d’autres IA que Claude : tes agents peuvent leur demander un avis, un texte, une comparaison. Elles répondent, elles ne touchent pas à tes fichiers."
-        >
-          <AutresIa />
-        </Section>
-
-        <Section titre="Utilisation" sousTitre="Ce qu’il reste sur la session de 5 h et sur la semaine. Survole pour le détail, clique pour mettre à jour.">
-          <div className="klyra-carte-flottante rounded-lg p-2">
-            <CarteUtilisation />
-          </div>
-        </Section>
-
-        <Section titre="Accès des agents" sousTitre="Ce qu’un agent peut faire sans te demander. Le reste, il te le demande dans la conversation.">
-          <ChoixAcces />
-        </Section>
+      <div ref={contenu} className="min-w-0 flex-1 overflow-y-auto">
+        <div key={section} className="klyra-arrivee @container mx-auto flex max-w-[760px] flex-col gap-6 px-8 pt-8 pb-12">
+          <header className="flex flex-col gap-1.5">
+            <h2 className="m-0 text-h3 leading-[1] font-semibold tracking-[-0.04em] text-texte-principal">{courante.titre}</h2>
+            <p className="m-0 text-ui-s text-texte-tertiaire">{courante.description}</p>
+          </header>
+          {CONTENU[section]()}
+        </div>
       </div>
     </div>
   );

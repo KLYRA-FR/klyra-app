@@ -41,7 +41,18 @@ import { ecrituresTerminees, readConversations, writeConversations } from "./con
 import { transcrire } from "./dictee";
 import { ecrirePlanning } from "./planning";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
-import { demarrerMisesAJour } from "./maj";
+import { demarrerMisesAJour, etatMaj, installerMaintenant, verifierMaintenant } from "./maj";
+import {
+  changerLancement,
+  ecrireReglages,
+  infosApp,
+  lancementAuDemarrage,
+  lireReglages,
+  notificationPermise,
+  ouvrirDossier,
+  type DossierApp,
+  type EvenementNotification,
+} from "./reglages";
 import { arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
@@ -303,15 +314,18 @@ function registerBridge() {
   /* Dictée : l'accès au micro (macOS le demande une fois), puis la transcription par Whisper. */
   handle("systeme:micro", () => (process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : true));
   /* Un agent a fini pendant que tu regardais ailleurs : notification du Mac, pastille sur l'icône. */
-  handle("systeme:notifier", (titre: string, texte: string, chatId: string) => {
+  handle("systeme:notifier", (titre: string, texte: string, chatId: string, evenement: EvenementNotification = "agentFini") => {
     if (![titre, texte, chatId].every((v) => typeof v === "string")) throw new Error("Notification invalide.");
-    if (!fenetrePrincipale?.isFocused()) {
+    if (!["agentFini", "agentErreur", "workflow"].includes(evenement)) throw new Error("Événement invalide.");
+    // Les Réglages : pastille, son, et chaque type de notification se coupent à part.
+    const { notifications } = lireReglages();
+    if (!fenetrePrincipale?.isFocused() && notifications.pastille) {
       // Pastille sur l'icône du Dock ; sous Windows, l'icône clignote dans la barre des tâches.
       if (process.platform === "win32") fenetrePrincipale?.flashFrame(true);
       else app.setBadgeCount((enAttente += 1));
     }
-    if (!Notification.isSupported()) return;
-    const notif = new Notification({ title: titre.slice(0, 120), body: texte.slice(0, 240) });
+    if (!Notification.isSupported() || !notificationPermise(evenement)) return;
+    const notif = new Notification({ title: titre.slice(0, 120), body: texte.slice(0, 240), silent: !notifications.son });
     notif.on("click", () => {
       const win = fenetrePrincipale;
       if (!win) return;
@@ -423,6 +437,22 @@ function registerBridge() {
   handle("claude:connexion", () => connecterClaude());
   handle("claude:deconnexion", () => deconnecterClaude());
   handle("claude:utilisation:actualiser", () => actualiserUtilisation());
+
+  /* Réglages de l'app : notifications, lancement au démarrage, dossiers, mises à jour. */
+  handle("reglages:lire", () => lireReglages());
+  handle("reglages:ecrire", (reglages: unknown) => ecrireReglages(reglages));
+  handle("reglages:lancement", () => lancementAuDemarrage());
+  handle("reglages:lancement:changer", (actif: boolean) => changerLancement(actif));
+  handle("reglages:infos", () => infosApp());
+  handle("reglages:ouvrir-dossier", (nom: DossierApp) => ouvrirDossier(nom));
+  /* Un essai depuis les Réglages : la notification telle qu'elle s'afficherait. */
+  handle("reglages:essai-notification", () => {
+    if (!Notification.isSupported()) throw new Error("Ce système n’affiche pas les notifications de l’app.");
+    new Notification({ title: "KLYRA", body: "Les notifications arrivent bien.", silent: !lireReglages().notifications.son }).show();
+  });
+  handle("maj:etat", () => etatMaj());
+  handle("maj:verifier", () => verifierMaintenant());
+  handle("maj:installer", () => installerMaintenant());
 }
 
 /* Une seule KLYRA à la fois (version de développement comprise) : deux fenêtres écriraient

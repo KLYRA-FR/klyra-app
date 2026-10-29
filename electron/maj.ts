@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { lireReglages, notificationPermise } from "./reglages";
 
 /**
  * Mises à jour : à chaque push sur main, une action GitHub publie l'app (Mac et
@@ -29,6 +30,32 @@ const FICHE = WINDOWS ? "latest.yml" : "latest-mac.yml";
 /** La nouvelle version, téléchargée et vérifiée : l'app (Mac) ou l'installateur (Windows). */
 let prete: { version: string; chemin: string } | null = null;
 let enCours = false;
+
+/** Ce que les Réglages affichent : où en est la recherche de mise à jour. */
+export interface EtatMaj {
+  version: string;
+  /** « dev » : pas de mise à jour hors de l'app installée. */
+  statut: "dev" | "inconnu" | "verification" | "a-jour" | "prete" | "erreur";
+  /** La version prête à installer. */
+  nouvelle: string | null;
+  verifieeLe: number | null;
+  erreur: string | null;
+  depot: string;
+}
+
+let derniere: Pick<EtatMaj, "statut" | "verifieeLe" | "erreur"> = { statut: "inconnu", verifieeLe: null, erreur: null };
+
+export function etatMaj(): EtatMaj {
+  const statut = !app.isPackaged ? "dev" : prete ? "prete" : enCours ? "verification" : derniere.statut;
+  return {
+    version: app.getVersion(),
+    statut,
+    nouvelle: prete?.version ?? null,
+    verifieeLe: derniere.verifieeLe,
+    erreur: statut === "erreur" ? derniere.erreur : null,
+    depot: "https://github.com/KLYRA-FR/klyra-app-versions/releases",
+  };
+}
 
 /** « 0.1.42 » > « 0.1.9 » : comparaison nombre par nombre. */
 function plusRecente(a: string, b: string): boolean {
@@ -59,9 +86,12 @@ function appInstallee(): string {
 async function verifier() {
   if (enCours || prete) return;
   enCours = true;
+  /* Par défaut, une vérification qui s'arrête en route n'a rien trouvé à installer. */
+  derniere = { statut: "a-jour", verifieeLe: Date.now(), erreur: null };
+  const echec = (erreur: string) => (derniere = { statut: "erreur", verifieeLe: Date.now(), erreur });
   try {
     const reponse = await net.fetch(DERNIERE, { headers: { Accept: "application/vnd.github+json" } });
-    if (!reponse.ok) return;
+    if (!reponse.ok) return echec(`GitHub a répondu ${reponse.status}.`);
     const version = (await reponse.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string }[] };
     const numero = version.tag_name?.replace(/^v/, "");
     const fichier = version.assets?.find((a) => a.name.endsWith(FICHIER));
@@ -71,7 +101,9 @@ async function verifier() {
     // L'empreinte publiée avec la version : un fichier abîmé ou remplacé est refusé.
     const empreinte = (await telecharger(fiche.browser_download_url))?.toString("utf8").match(/^sha512: (\S+)$/m)?.[1];
     const contenu = await telecharger(fichier.browser_download_url);
-    if (!empreinte || !contenu || createHash("sha512").update(contenu).digest("base64") !== empreinte) return;
+    if (!empreinte || !contenu || createHash("sha512").update(contenu).digest("base64") !== empreinte) {
+      return echec(`La version ${numero} n’a pas passé le contrôle d’intégrité : elle n’est pas installée.`);
+    }
 
     await rm(DOSSIER, { recursive: true, force: true });
     await mkdir(DOSSIER, { recursive: true });
@@ -83,28 +115,37 @@ async function verifier() {
     } else {
       await lancer("/usr/bin/ditto", ["-x", "-k", archive, DOSSIER]);
       const nom = (await readdir(DOSSIER)).find((n) => n.endsWith(".app"));
-      if (!nom) return;
+      if (!nom) return echec(`L’archive de la version ${numero} ne contient pas l’app.`);
       const nouvelle = path.join(DOSSIER, nom);
       // Une app intacte (signature valide) et la nôtre (même identifiant), sinon rien.
       await lancer("/usr/bin/codesign", ["--verify", "--deep", nouvelle]);
       const id = (await lancer("/usr/bin/defaults", ["read", path.join(nouvelle, "Contents", "Info"), "CFBundleIdentifier"])).trim();
-      if (id !== IDENTIFIANT) return;
+      if (id !== IDENTIFIANT) return echec(`La version ${numero} ne porte pas l’identifiant de KLYRA : elle n’est pas installée.`);
       prete = { version: numero, chemin: nouvelle };
     }
 
-    if (Notification.isSupported()) {
+    if (Notification.isSupported() && notificationPermise("majPrete")) {
       const notif = new Notification({
         title: `KLYRA ${numero} est prête`,
         body: "Elle s’installera quand tu quitteras l’app. Clique pour l’installer maintenant.",
+        silent: !lireReglages().notifications.son,
       });
       notif.on("click", () => installerMaintenant());
       notif.show();
     }
-  } catch {
+  } catch (erreur) {
     /* hors ligne, GitHub indisponible… on réessaiera à la prochaine vérification */
+    echec(erreur instanceof Error ? erreur.message : "Vérification impossible (hors ligne ?).");
   } finally {
     enCours = false;
   }
+}
+
+/** « Rechercher maintenant », depuis les Réglages : attend la fin de la recherche. */
+export async function verifierMaintenant(): Promise<EtatMaj> {
+  if (!app.isPackaged) return etatMaj();
+  await verifier();
+  return etatMaj();
 }
 
 /** Installe la nouvelle version une fois l'app fermée ; la rouvre si demandé. */
@@ -130,7 +171,9 @@ function remplacer(rouvrir: boolean) {
   prete = null;
 }
 
-function installerMaintenant() {
+/** Installe la version prête et relance l'app (notification ou Réglages). */
+export function installerMaintenant() {
+  if (!prete) throw new Error("Aucune version n’est prête à installer.");
   remplacer(true);
   app.quit();
 }

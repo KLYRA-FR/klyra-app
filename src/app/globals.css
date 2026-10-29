@@ -537,3 +537,13 @@ body[data-glisse] iframe {
 @keyframes klyra-voile {
   from { opacity: 0; }
 }
+
+/* Un réglage trouvé par la recherche : il s'éclaire en bleu pâle, puis s'éteint. */
+.klyra-reglage[data-eclaire] {
+  animation: klyra-eclaire 1800ms var(--ease-sortie);
+}
+
+@keyframes klyra-eclaire {
+  0%, 30% { background-color: var(--color-fond-teinte-bleue); }
+  100%    { background-color: transparent; }
+}
