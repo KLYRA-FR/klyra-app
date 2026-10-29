@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Process principal Electron compilé :
     "dist-electron/**",
+    // Généré par Convex :
+    "convex/_generated/**",
   ]),
 ]);
 

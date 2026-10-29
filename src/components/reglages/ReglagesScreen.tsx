@@ -10,6 +10,7 @@ import { chercher, estSection, SECTIONS, type IdSection, type Resultat } from ".
 import { Agents } from "./sections/Agents";
 import { Claude } from "./sections/Claude";
 import { ComputerUse } from "./sections/ComputerUse";
+import { Equipe } from "./sections/Equipe";
 import { General } from "./sections/General";
 import { MisesAJour } from "./sections/MisesAJour";
 import { Notifications } from "./sections/Notifications";
@@ -23,6 +24,7 @@ const CLE_SECTION = "klyra:reglages:section";
 const CONTENU: Record<IdSection, () => ReactNode> = {
   general: () => <General />,
   profil: () => <Profil />,
+  equipe: () => <Equipe />,
   claude: () => <Claude />,
   agents: () => <Agents />,
   "autres-ia": () => (

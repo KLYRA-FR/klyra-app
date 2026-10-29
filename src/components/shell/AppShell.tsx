@@ -10,6 +10,7 @@ import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
 import { useRaccourciReglages } from "@/lib/raccourcis";
+import { CompteProvider } from "@/lib/compte";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
 import { PLATEFORME } from "@/lib/plateforme";
 import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
@@ -155,12 +156,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <WorkspaceProvider>
       <CompteClaudeProvider>
-        <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
-          <SonsApp />
-          <Suspense>
-            <ShellLayout>{children}</ShellLayout>
-          </Suspense>
-        </div>
+        <CompteProvider>
+          <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
+            <SonsApp />
+            <Suspense>
+              <ShellLayout>{children}</ShellLayout>
+            </Suspense>
+          </div>
+        </CompteProvider>
       </CompteClaudeProvider>
     </WorkspaceProvider>
   );

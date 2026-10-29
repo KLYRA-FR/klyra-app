@@ -33,11 +33,12 @@ Front seul, données factices, **aux couleurs et composants du design system KLY
 - **Une seule police : Google Sans Flex.** NEVER d’autre famille, même mono : `--font-mono` pointe sur Google Sans Flex, `.klyra-mono` ne sert qu’à aligner les chiffres.
 - **Tailles de texte de l’interface** : tokens `text-ui` (14), `text-ui-s` (13), `text-ui-xs` (12), `text-ui-2xs` (11), `text-ui-3xs` (10). Texte en sentence case, y compris les petits titres de la barre latérale.
 - **Mac et Windows** : NEVER « Mac », « Finder » ni « ⌘ » en dur dans un texte de l’interface. Passer par `src/lib/plateforme.ts` (`poste.ce` → « ce Mac » ou « ce PC », `poste.dansExplorateur`, `raccourciDuSysteme("⇧⌘Z")` → « Ctrl+Maj+Z » sous Windows) ; pour les touches, `estMac()` et `avecCommande()` de `src/lib/raccourcis.ts`, qui lisent le même système.
+- **Compte d'équipe (Convex)** : seules les données partagées (comptes, équipe, puis rappels et calendrier) vont dans `convex/`, d'après `docs/CONVEX-PLAN.md`. Toute fonction publique commence par `exigerMembre` ou `exigerAdmin` (`convex/model/acces.ts`) et retrouve la personne par sa session, jamais par un argument. L'interface passe par `src/lib/compte.tsx` (`useCompte`, `useEquipe`) ; les jetons de session sont chiffrés par `electron/compte.ts`. Nouveau code d'erreur → le traduire dans `MESSAGES`. Tests : `pnpm test:convex` (backend en mémoire). Déploiement de dev : `pnpm dev:convex` ; la production n'est déployée que par l'action App.
 - **Electron** : lancer avec `env -u ELECTRON_RUN_AS_NODE` (déjà dans les scripts). Si cette variable est présente, Electron démarre comme Node et `require("electron")` ne renvoie rien.
 
 ## Vérification
 
-`pnpm typecheck && pnpm lint && pnpm build && pnpm test:smoke`, et `pnpm test:agents` (dev server lancé) dès qu’on touche aux agents : il tourne sur un dossier temporaire, jamais sur les vrais agents. Ne pas vérifier par capture d’écran : Pelin fait la vérification visuelle de son côté ; `test:smoke` lit le texte rendu.
+`pnpm typecheck && pnpm lint && pnpm build && pnpm test:smoke`, `pnpm test:convex` dès qu'on touche à `convex/`, et `pnpm test:agents` (dev server lancé) dès qu’on touche aux agents : il tourne sur un dossier temporaire, jamais sur les vrais agents. Ne pas vérifier par capture d’écran : Pelin fait la vérification visuelle de son côté ; `test:smoke` lit le texte rendu.
 
 <!-- convex-ai-start -->
 

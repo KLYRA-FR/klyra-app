@@ -1,6 +1,6 @@
 # Données partagées de l'équipe sur Convex : plan
 
-29/10/2026, pour Corentin. **Validé le 29/10** (décisions à la fin). La PR qui l'apporte installe seulement Convex (`convex`, `convex/schema.ts` vide, script `dev:convex`, fichiers ai). La PR 2 attend le projet Convex et les clés.
+29/10/2026, pour Corentin. **Validé le 29/10** (décisions à la fin). PR 1 (installation) fusionnée ; PR 2 (comptes et équipe) faite, voir « Ce qui a été fait dans la PR 2 » à la fin.
 
 ## En bref
 
@@ -170,6 +170,16 @@ Corentin a répondu aux questions du plan (réponses transmises par Cicco) :
 4. **Calendrier** : les créneaux occupés des autres ne sont pas visibles. On ne voit que les événements auxquels on participe.
 5. **PostShiba** : gardé. Corentin accepte que les données des e-mails passent hors d'Europe.
 6. **Hors ligne** : une v1 en lecture seule, avec la file d'attente de Convex tant que l'app est ouverte. C'était la proposition du plan ; Corentin n'a pas répondu sur ce point, on la garde.
+
+## Ce qui a été fait dans la PR 2
+
+- **Connexion facultative** : l'app marche sans compte. La connexion et la gestion de l'équipe sont dans Réglages › Équipe ; aucun écran ne bloque l'app tant qu'aucune donnée partagée n'existe.
+- **Refus avant tout envoi** : une adresse ni invitée ni membre est refusée dans `createOrUpdateUser` (`convex/model/connexion.ts`) : aucun compte créé, aucun e-mail. L'écran affiche le même message que pour un envoi. L'API répond quand même autrement (une erreur au lieu de `started`) : quelqu'un qui appelle Convex directement peut savoir si une adresse est invitée. Risque jugé faible pour trois adresses connues ; à revoir si l'équipe grandit.
+- **Adresse** : l'app l'envoie en minuscules et sans espaces ; le serveur refuse toute autre forme, pour qu'une adresse ne donne jamais deux comptes.
+- **Liens** : la page relais n'accepte qu'un code de 16 à 128 caractères alphanumériques ; le lien `klyra://` n'est reçu que par l'app installée (`app.setAsDefaultProtocolClient`, `protocols` d'electron-builder). Si l'app ne s'ouvre pas, on colle le lien dans Réglages › Équipe.
+- **Jetons** : `compte.json` dans le dossier de l'app, chiffré par le trousseau du système ; sans trousseau, ils restent en mémoire et il faut se reconnecter au lancement suivant.
+- **Variables d'environnement** : déclarées dans `convex/convex.config.ts`. PostShiba n'envoie que si `POSTSHIBA_API_KEY`, `POSTSHIBA_TEAM_ID` et `POSTSHIBA_CLUSTER_ID` sont posées ; sinon l'envoi échoue avec un message clair. `KLYRA_COURRIEL_SIMULE=1`, sur le développement seulement, garde les e-mails dans la table `courrielsSimules`.
+- **PostShiba** : avec une clé Send only, `GET /users/me` donne l'identifiant d'équipe (`team_id`), pas celui du cluster, qui se lit sur la page API keys. Attention : `POST /emails` ne tient pas compte de `sandbox: true` et envoie vraiment (constaté le 29/10).
 
 ## Sources
 

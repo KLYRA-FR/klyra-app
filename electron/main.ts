@@ -88,6 +88,7 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
+import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, PROTOCOLE, prendreCode, recevoirLien, retirerJeton, sourcesConvex } from "./compte";
 
 /**
  * Process principal Electron.
@@ -133,7 +134,8 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  // Le compte d'équipe : le déploiement Convex de l'app, et lui seul.
+  `connect-src 'self' ${sourcesConvex().join(" ")}`,
   // L'aperçu d'un projet : son serveur de dev, sur ce Mac.
   "frame-src http://localhost:* http://127.0.0.1:*",
 ].join("; ");
@@ -196,6 +198,8 @@ function createWindow() {
     backgroundColor: "#F9F9F9",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      // Lue par le preload dès le premier rendu : le compte d'équipe n'attend pas un aller-retour.
+      additionalArguments: [`--klyra-convex=${adresseConvex()}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -473,6 +477,11 @@ function registerBridge() {
     if (typeof markdown !== "string" || markdown.length > 2 * 1024 * 1024) throw new Error("Planning invalide.");
     return ecrirePlanning(markdown);
   });
+  /* Le compte d'équipe (electron/compte.ts) : les jetons ne quittent le process que vers l'interface. */
+  handle("compte:jeton:lire", (cle: string) => lireJeton(cle));
+  handle("compte:jeton:ecrire", (cle: string, valeur: string) => ecrireJeton(cle, valeur));
+  handle("compte:jeton:retirer", (cle: string) => retirerJeton(cle));
+  handle("compte:code", () => prendreCode());
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
 
@@ -528,13 +537,32 @@ function registerBridge() {
 /* Une seule KLYRA à la fois (version de développement comprise) : deux fenêtres écriraient
    le même fichier de conversations. La seconde ramène la première au premier plan. */
 if (!SMOKE_TEST && !app.requestSingleInstanceLock()) app.exit(0);
-app.on("second-instance", () => {
+function premierPlan() {
   const win = fenetrePrincipale;
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+}
+
+/* Un lien de connexion (klyra://connexion?code=…) : l'interface vient prendre le code. */
+function ouvrirLienConnexion(lien: unknown) {
+  if (!recevoirLien(lien)) return;
+  premierPlan();
+  fenetrePrincipale?.webContents.send("compte:lien");
+}
+/* Mac : le système passe le lien à l'app, ouverte ou non. */
+app.on("open-url", (event, lien) => {
+  event.preventDefault();
+  ouvrirLienConnexion(lien);
 });
+/* Windows : le lien arrive dans les arguments, d'une seconde instance ou au lancement. */
+const lienDans = (argv: string[]) => argv.find((a) => a.startsWith(`${PROTOCOLE}://`));
+app.on("second-instance", (_event, argv) => {
+  premierPlan();
+  ouvrirLienConnexion(lienDans(argv));
+});
+recevoirLien(lienDans(process.argv));
 
 void app.whenReady().then(() => {
   // Sans version installée, macOS prend l'icône d'Electron : on la remplace dans le Dock.
@@ -545,6 +573,7 @@ void app.whenReady().then(() => {
      (dictée, autres IA). Sans effet sur Mac et Windows, qui ont toujours leur trousseau. */
   if (process.env.KLYRA_TEST_TROUSSEAU === "1") safeStorage.setUsePlainTextEncryption(true);
   registerBridge();
+  if (!SMOKE_TEST) enregistrerProtocole();
 
   void demarrerServeurMcp();
   void nettoyerServeurOrphelin();

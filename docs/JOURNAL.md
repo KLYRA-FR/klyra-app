@@ -90,7 +90,8 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 7. [ ] Puis le back : données partagées sur Convex (`docs/CONVEX-PLAN.md` : comptes, rappels assignés, calendrier commun), vrais agents (SDK Claude) et terminaux en local
    [x] Convex installé (dépendance, `convex/schema.ts` vide, `pnpm dev:convex`, fichiers ai), sans déploiement
    [x] Plan validé par Corentin (29/10) : Irlande, PostShiba gardé, chacun ne voit que ce qui le concerne (admins compris), e-mail d'assignation si l'app est fermée, v1 hors ligne en lecture
-   [ ] PR 2 Comptes : attend le projet Convex et les clés (déploiement, dev, PostShiba Send only)
+   [x] PR 2 Comptes : Convex Auth (lien magique PostShiba), invitations, rôles, Réglages › Équipe, liens `klyra://`, jetons dans le trousseau, déploiement Convex dans l'action App, `pnpm test:convex`
+   [ ] PR 3 Rappels assignés, puis calendrier commun, puis hors ligne (cf. plan)
 8. [ ] Fichier d’installation .dmg pour l’équipe (compte développeur Apple, 99 $ par an)
 
 ### Points ouverts
@@ -100,6 +101,8 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 - Accès des agents : fichiers du dossier du projet en lecture et écriture (`acceptEdits`), et seulement les commandes de `COMMANDES_AUTORISEES` (electron/claude.ts). Pelin voulait l’accès complet ; `--dangerously-skip-permissions` a été refusé par le contrôle des permissions de Claude Code. Élargir la liste au besoin.
 - Dossiers des projets d’exemple : seuls klyra.fr et l’app interne existent sur le disque ; Bizwhoo et Diagnostic répondent « dossier introuvable » tant que leur vrai chemin n’est pas renseigné.
 - **Chemins Windows** : plusieurs écrans coupent les chemins sur « / » seulement, donc sous Windows ils affichent le chemin entier au lieu du nom du fichier (`etapes.ts`, `RailMessages`, `PanneauLateral`, `PastilleExtension`, `FileTree`, `Visionneuse`, `NoeudVue`, `Composer`, `MessageParts`). Seul le nom proposé à l’ajout d’un projet est corrigé.
+- **Compte d'équipe facultatif** : l'app marche sans compte ; la connexion est dans Réglages › Équipe. Le profil local (`currentUser`, photo comprise) n'est pas encore remplacé par celui du compte : à faire avec les rappels assignés (PR 3).
+- **Liens `klyra://` en développement** : seule l'app installée les reçoit (`enregistrerProtocole`). Avec `pnpm desktop`, coller le lien dans Réglages › Équipe.
 - **Barre de titre sous Windows** : celle du système (choix de Pelin). Un `titleBarOverlay` aux couleurs de l’app (fond `fond-page`, boutons du système dessinés par Electron) donnerait le même cadre que sur Mac : à décider.
 
 ## Reprendre sur un autre Mac
@@ -123,3 +126,4 @@ Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app
 - **29/10/2026** — Dépôt passé dans l’organisation KLYRA-FR. Les versions sont publiées dans `KLYRA-FR/klyra-app-versions` (action App et `electron/maj.ts`) ; les apps installées avant ce changement interrogent encore `pelin-klyra/klyra-app-versions` et doivent être réinstallées une fois depuis le nouveau dépôt. Vérification à chaque PR (`verification.yml`, Ubuntu) ; la publication échoue avec un message clair si `VERSIONS_TOKEN` manque.
   Windows : les textes suivent le système (`src/lib/plateforme.ts` : « ce Mac » ou « ce PC », Finder ou Explorateur, ⌘ ou Ctrl dans les raccourcis du canevas) ; barres de défilement fines et sans flèches hors Mac (`data-plateforme` sur la racine).
   Sons de l’app : un seul AudioContext, sons rendus une fois puis rejoués ; `jouer("envoi")`, `jouer("fin-de-tache")`… Silence si le système demande moins d’animations ou a coupé les sons de l’interface, pendant l’écoute de la dictée (sauf début et fin), et quand la notification du système sonne déjà.
+  Convex (PR 2) : comptes d'équipe en ligne sur Convex (Irlande). Déploiements `calculating-cuttlefish-710` (production, app installée) et `coordinated-ox-134` (développement, `pnpm desktop`). Connexion par lien magique de 15 min envoyé par PostShiba (`connexion@notifications.klyra.fr`) ; page relais `…convex.site/connexion` qui ouvre `klyra://connexion?code=…`. Sur invitation seulement ; Corentin, Pelin et Yanis admins. Les fonctions Convex sont déployées par l'action App avant chaque publication.

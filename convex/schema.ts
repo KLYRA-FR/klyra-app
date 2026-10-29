@@ -1,8 +1,47 @@
-import { defineSchema } from "convex/server";
+import { authTables } from "@convex-dev/auth/server";
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+import { vRole, vStatutInvitation } from "./model/valeurs";
 
 /**
- * Données partagées de l'équipe (comptes, rappels, calendrier), hébergées par Convex.
- * Vide tant que `docs/CONVEX-PLAN.md` n'est pas validé : les tables arrivent une PR à la fois.
+ * Données partagées de l'équipe, hébergées par Convex (cf. `docs/CONVEX-PLAN.md`).
  * Les conversations, les fichiers et les clés restent sur l'ordinateur.
  */
-export default defineSchema({});
+export default defineSchema({
+  ...authTables,
+
+  /** Les adresses qui peuvent se connecter avant d'être membres. Adresse en minuscules. */
+  invitations: defineTable({
+    email: v.string(),
+    nom: v.string(),
+    role: vRole,
+    /** null : l'équipe de départ, créée par `equipe:initialiser`. */
+    inviteePar: v.union(v.id("membres"), v.null()),
+    statut: vStatutInvitation,
+  })
+    .index("by_email_and_statut", ["email", "statut"])
+    .index("by_statut", ["statut"]),
+
+  /** Une personne de l'équipe : son rôle et son profil. Une seule ligne par compte. */
+  membres: defineTable({
+    userId: v.id("users"),
+    email: v.string(),
+    nom: v.string(),
+    intitule: v.string(),
+    /** Une des teintes de `ROLE_TEINTES`. */
+    couleur: v.string(),
+    role: vRole,
+    /** false : retiré de l'équipe, ne peut plus se connecter. */
+    actif: v.boolean(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_email", ["email"])
+    .index("by_actif_and_role", ["actif", "role"]),
+
+  /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
+  courrielsSimules: defineTable({
+    a: v.string(),
+    sujet: v.string(),
+    texte: v.string(),
+  }).index("by_a", ["a"]),
+});

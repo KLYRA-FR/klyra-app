@@ -6,7 +6,7 @@ import type { IconName } from "@/components/icons/Icon";
  * est l'ancre d'une `Ligne` de la section (cf. ui.tsx).
  */
 
-export type IdSection = "general" | "profil" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
+export type IdSection = "general" | "profil" | "equipe" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
 
 export interface EntreeReglage {
   id: string;
@@ -54,6 +54,19 @@ export const SECTIONS: SectionReglages[] = [
       { id: "coequipiers", titre: "Coéquipiers les plus actifs", mots: "agents jetons classement" },
       { id: "modeles-utilisation", titre: "Utilisation des modèles", mots: "opus sonnet haiku gpt part pourcentage" },
       { id: "compte-profil", titre: "Compte", mots: "claude abonnement email" },
+    ],
+  },
+  {
+    id: "equipe",
+    titre: "Équipe",
+    icone: "users-profiles-plus",
+    description: "Ton compte d’équipe, en ligne : les membres, leurs rôles et les invitations.",
+    entrees: [
+      { id: "compte-equipe", titre: "Compte d’équipe", mots: "connexion deconnexion lien magique e-mail adresse session" },
+      { id: "profil-equipe", titre: "Ton profil d’équipe", mots: "nom intitule couleur" },
+      { id: "membres", titre: "Membres", mots: "equipe role admin retirer personnes" },
+      { id: "inviter", titre: "Inviter quelqu’un", mots: "invitation ajouter adresse admin membre" },
+      { id: "invitations", titre: "Invitations en attente", mots: "annuler invitation" },
     ],
   },
   {

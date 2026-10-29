@@ -108,8 +108,32 @@ jobs:
             dist-app/*.exe
             dist-app/latest.yml
 
+  # Les fonctions Convex de production (cf. docs/CONVEX-PLAN.md) : déployées avant la publication
+  # de l'app, et compatibles avec la version précédente, qui les appelle encore pendant une heure.
+  convex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:convex
+      - name: Déployer les fonctions Convex
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo "::error title=Secret CONVEX_DEPLOY_KEY manquant::Ajoute la clé de déploiement de production de Convex dans le secret CONVEX_DEPLOY_KEY de ce dépôt, puis relance la publication."
+            exit 1
+          fi
+          pnpm exec convex deploy --typecheck enable --message "App $VERSION"
+
   publier:
-    needs: [mac, windows]
+    needs: [mac, windows, convex]
     runs-on: ubuntu-latest
     steps:
       - name: Le jeton de publication est configuré
