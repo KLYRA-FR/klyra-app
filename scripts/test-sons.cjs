@@ -54,8 +54,10 @@ const RENDU = `
   return { sons, titres: THEMES.map((t) => t.id) };
 })()`;
 
+let fenetre = null;
+
 async function tester() {
-  const fenetre = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false } });
+  fenetre = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false } });
   await fenetre.loadURL("data:text/html,<meta charset=utf-8><title>sons</title>");
   // Le « 0 » final : executeJavaScript renvoie la dernière valeur, qui doit pouvoir être copiée.
   await fenetre.webContents.executeJavaScript(`${script("src/lib/sons/synthese.ts")}\n${script("src/lib/sons/themes.ts")}\nwindow.JEUX = JEUX; window.rendre = rendre; window.THEMES = THEMES; 0;`);
@@ -77,14 +79,26 @@ async function tester() {
   verifier(typeof coupes === "boolean", `sons de l'interface coupés par le système (${process.platform}) : ${coupes}`);
 }
 
+// Un test bloqué échoue vite, au lieu d'attendre la limite du job.
+setTimeout(() => {
+  console.log("ÉCHEC  le test n'a pas fini en 90 s.");
+  app.exit(1);
+}, 90_000).unref();
+
 app.whenReady().then(async () => {
   try {
     await tester();
   } catch (erreur) {
     verifier(false, `exception : ${erreur instanceof Error ? erreur.stack : erreur}`);
   } finally {
-    fs.rmSync(TMP, { recursive: true, force: true });
+    fenetre?.destroy();
     console.log(echecs.length ? `\n${echecs.length} échec(s).` : "\nTous les sons passent.");
+    // Sous Windows, Electron tient encore des fichiers du dossier de session : le ménage peut échouer.
+    try {
+      fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 3 });
+    } catch (e) {
+      console.log(`(ménage incomplet : ${e.code ?? e.message})`);
+    }
     app.exit(echecs.length ? 1 : 0);
   }
 });
