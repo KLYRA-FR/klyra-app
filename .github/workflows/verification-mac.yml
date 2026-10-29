@@ -26,7 +26,9 @@ concurrency:
 jobs:
   signature:
     name: Deux versions signées, même exigence désignée
-    runs-on: macos-latest
+    # Mac Intel : les runners Apple Silicon de GitHub manquent souvent (job annulé, « not acquired »).
+    # La signature et l'exigence désignée sont les mêmes quelle que soit l'architecture ; l'app de test est en x64.
+    runs-on: macos-15-intel
     timeout-minutes: 40
     env:
       # electron-builder ne signe pas dans une pull request, sauf si on le force. Sans risque ici :
@@ -55,13 +57,13 @@ jobs:
       - name: Version 1
         run: |
           npm pkg set version="0.0.1"
-          pnpm exec electron-builder --mac dir --publish never --config.directories.output=v1
-          codesign --display --requirements - v1/mac-arm64/KLYRA.app 2>&1 | grep designated | tee "$RUNNER_TEMP/v1.txt"
+          pnpm exec electron-builder --mac dir --x64 --publish never --config.directories.output=v1
+          codesign --display --requirements - v1/mac/KLYRA.app 2>&1 | grep designated | tee "$RUNNER_TEMP/v1.txt"
       - name: Version 2
         run: |
           npm pkg set version="0.0.2"
-          pnpm exec electron-builder --mac dir --publish never --config.directories.output=v2
-          codesign --display --requirements - v2/mac-arm64/KLYRA.app 2>&1 | grep designated | tee "$RUNNER_TEMP/v2.txt"
+          pnpm exec electron-builder --mac dir --x64 --publish never --config.directories.output=v2
+          codesign --display --requirements - v2/mac/KLYRA.app 2>&1 | grep designated | tee "$RUNNER_TEMP/v2.txt"
 
       - name: Même exigence désignée, liée au certificat
         run: |
@@ -69,8 +71,8 @@ jobs:
           grep -q 'certificate' "$RUNNER_TEMP/v1.txt"
           ! grep -q 'cdhash' "$RUNNER_TEMP/v1.txt"
       - name: La version 2 satisfait l'exigence de la version 1 (contrôle de la mise à jour)
-        run: codesign --verify --deep -R="$(sed 's/^designated => //' "$RUNNER_TEMP/v1.txt")" v2/mac-arm64/KLYRA.app
+        run: codesign --verify --deep -R="$(sed 's/^designated => //' "$RUNNER_TEMP/v1.txt")" v2/mac/KLYRA.app
       - name: L'app signée démarre
         run: |
           KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
-            perl -e 'alarm 120; exec @ARGV' v2/mac-arm64/KLYRA.app/Contents/MacOS/KLYRA
+            perl -e 'alarm 120; exec @ARGV' v2/mac/KLYRA.app/Contents/MacOS/KLYRA
