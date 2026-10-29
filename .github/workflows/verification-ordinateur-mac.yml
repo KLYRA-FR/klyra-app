@@ -1,0 +1,41 @@
+# Pull requests qui touchent à la couche système de Computer Use : sur un Mac,
+# klyra-entrees est compilé (swiftc) et le test de bout en bout tourne (clic,
+# frappe, raccourci, défilement, capture). Sur un Mac Intel : les runners Apple
+# Silicon de GitHub manquent souvent. Ne publie rien.
+name: Vérification Mac (Computer Use)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - native/entrees/**
+      - electron/ordinateur/**
+      - scripts/preparer-entrees.mjs
+      - scripts/test-ordinateur.cjs
+      - .github/workflows/verification-ordinateur-mac.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verification-ordinateur-mac-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ordinateur:
+    name: Clavier, souris et capture sur Mac
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:electron && pnpm entrees
+      - name: klyra-entrees répond
+        run: echo '{"id":1,"action":"ping"}' | vendor/entrees/darwin/klyra-entrees
+      - name: Computer Use, clavier, souris et capture
+        run: env -u ELECTRON_RUN_AS_NODE perl -e 'alarm 180; exec @ARGV' pnpm exec electron scripts/test-ordinateur.cjs

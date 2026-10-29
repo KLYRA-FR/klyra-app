@@ -32,7 +32,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: npm pkg set version="$VERSION"
       # next build vérifie aussi les types (ceux des routes sont générés pendant le build).
-      - run: pnpm build && pnpm build:electron && pnpm whisper
+      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm entrees
       # Le même certificat à chaque version : macOS garde les autorisations de l'app (cf. scripts/signer-mac.cjs).
       - name: Certificat de signature
         env:
@@ -53,6 +53,8 @@ jobs:
             perl -e 'alarm 120; exec @ARGV' dist-app/mac-arm64/KLYRA.app/Contents/MacOS/KLYRA
       - name: Whisper embarqué se lance
         run: dist-app/mac-arm64/KLYRA.app/Contents/Resources/whisper/whisper-cli --help 2>&1 | grep -qi usage
+      - name: klyra-entrees embarqué répond (Computer Use)
+        run: echo '{"id":1,"action":"ping"}' | dist-app/mac-arm64/KLYRA.app/Contents/Resources/entrees/klyra-entrees | grep -q '"ok":true'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -77,6 +79,7 @@ jobs:
       - run: pnpm build
       - run: pnpm build:electron
       - run: pnpm whisper
+      - run: pnpm entrees
       - run: pnpm exec electron-builder --win --publish never --config.directories.output=dist-app
 
       - name: L'app démarre et affiche l'interface
@@ -92,6 +95,11 @@ jobs:
         run: |
           $sortie = & "dist-app\win-unpacked\resources\whisper\whisper-cli.exe" --help 2>&1 | Out-String
           if ($sortie -notmatch "usage") { throw "whisper-cli ne démarre pas : $sortie" }
+      - name: klyra-entrees embarqué répond (Computer Use)
+        shell: pwsh
+        run: |
+          $sortie = '{"id":1,"action":"ping"}' | & "dist-app\win-unpacked\resources\entrees\klyra-entrees.exe" | Out-String
+          if ($sortie -notmatch '"ok":true') { throw "klyra-entrees ne répond pas : $sortie" }
 
       - uses: actions/upload-artifact@v4
         with:
