@@ -1,6 +1,7 @@
 allowBuilds:
   electron: true
   electron-winstaller: false
+  esbuild: true
   sharp: false
   unrs-resolver: false
 # Failles corrigées dans des dépendances indirectes (outillage, téléchargement d'Electron).
