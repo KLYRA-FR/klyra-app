@@ -5,18 +5,19 @@ import { useRouter } from "next/navigation";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { useAgents } from "@/lib/agents";
-import { getBridge, type EntreeConsommation } from "@/lib/bridge";
+import { Icon } from "@/components/icons/Icon";
+import { getBridge, type EntreeConsommation, type EtatHistorique, type FenetreUtilisation, type Utilisation } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { nomAbonnement, useCompteClaude } from "@/lib/compte-claude";
 import { calculer, cleJour, compact, dateAnnee, dateCourte, NOMS_JOURS, type Serie } from "@/lib/consommation";
 import { useWorkspace } from "@/lib/workspace";
 import { ancreReglage, Groupe, Ligne } from "../ui";
 
-/** Le journal de consommation de l'année (vide dans un navigateur). */
+type Journal = { entrees: EntreeConsommation[]; depuis: number | null; historique?: EtatHistorique | null };
+
+/** Le journal de consommation de l'année, avec l'historique rattrapé (vide dans un navigateur). */
 function useJournal() {
-  const [journal, setJournal] = useState<{ entrees: EntreeConsommation[]; depuis: number | null } | null>(() =>
-    getBridge()?.consommation ? null : { entrees: [], depuis: null },
-  );
+  const [journal, setJournal] = useState<Journal | null>(() => (getBridge()?.consommation ? null : { entrees: [], depuis: null }));
   useEffect(() => {
     void getBridge()
       ?.consommation?.lire()
@@ -44,7 +45,12 @@ function texteSerie(s: Serie, actuelle: boolean): string {
 const NIVEAUX = ["bg-fond-surface-grise", "bg-bleu-k1-100", "bg-bleu-k1-300", "bg-bleu-k1-400", "bg-bleu-k1-500"];
 
 /** Un an, jour par jour : une colonne par semaine (du lundi au dimanche), plus c'est bleu, plus il y a eu de messages. */
-function Chaleur({ parJour }: { parJour: Map<string, number> }) {
+function Chaleur({ parJour, messages }: { parJour: Map<string, number>; messages: Map<string, number> }) {
+  const infobulle = (cle: string, date: Date, n: number) => {
+    const m = messages.get(cle) ?? 0;
+    if (m) return `${m} message${m > 1 ? "s" : ""} le ${dateAnnee(date)}`;
+    return n ? `Actif le ${dateAnnee(date)} (réponses comptées)` : `Aucune activité le ${dateAnnee(date)}`;
+  };
   const { semaines, mois, max } = useMemo(() => {
     const aujourdhui = new Date();
     aujourdhui.setHours(0, 0, 0, 0);
@@ -88,7 +94,7 @@ function Chaleur({ parJour }: { parJour: Map<string, number> }) {
             {s.map((j) => (
               <span
                 key={j.cle}
-                title={j.futur ? undefined : `${j.n} message${j.n > 1 ? "s" : ""} le ${dateAnnee(j.date)}`}
+                title={j.futur ? undefined : infobulle(j.cle, j.date, j.n)}
                 className={cn("aspect-square w-full max-w-[12px] rounded-[2px]", j.futur ? "bg-transparent" : NIVEAUX[niveau(j.n)])}
               />
             ))}
@@ -135,6 +141,44 @@ function Info({ libelle, valeur, aide }: { libelle: string; valeur: ReactNode; a
   );
 }
 
+const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
+const jourHeure = new Intl.DateTimeFormat("fr-FR", { weekday: "long", hour: "2-digit", minute: "2-digit" });
+
+/** Les limites de l'abonnement Claude que l'app lit déjà (session de 5 h, semaine), en %, avec la remise à zéro. */
+function Limites() {
+  const [u, setU] = useState<Utilisation | null>(null);
+  useEffect(() => {
+    const claude = getBridge()?.claude;
+    if (!claude) return;
+    void claude.utilisation().then((r) => r.ok && r.data && setU(r.data));
+    return claude.onUtilisation((x) => setU(x));
+  }, []);
+  const fenetre = (nom: string, f: FenetreUtilisation | null) => <Barre libelle={nom} part={f?.utilise ?? 0} detail={`${Math.round((f?.utilise ?? 0) * 100)} % utilisés`} />;
+  return (
+    <Groupe
+      titre="Limites de l’abonnement"
+      description={u ? `Lues par Claude Code, mises à jour à ${heure.format(u.misAJour)}. Elles comptent tout l’usage du compte, claude.ai compris.` : "Lues par Claude Code dans l’app de bureau, à la première réponse d’un agent."}
+    >
+      <div id={ancreReglage("limites")} className="klyra-reglage -mx-4 scroll-mt-6 divide-y divide-bordure-subtile px-4">
+        {u && (u.session || u.semaine) ? (
+          <>
+            <div>
+              {fenetre("Session de 5 h", u.session)}
+              {u.session?.reinitialiseA && <p className="m-0 pb-2.5 text-ui-2xs text-texte-tertiaire">Remise à zéro à {heure.format(u.session.reinitialiseA)}</p>}
+            </div>
+            <div>
+              {fenetre("Semaine", u.semaine)}
+              {u.semaine?.reinitialiseA && <p className="m-0 pb-2.5 text-ui-2xs text-texte-tertiaire">Remise à zéro {jourHeure.format(u.semaine.reinitialiseA)}</p>}
+            </div>
+          </>
+        ) : (
+          <Vide>Pas encore lues sur ce poste : elles arrivent avec la prochaine réponse d’un agent.</Vide>
+        )}
+      </div>
+    </Groupe>
+  );
+}
+
 /** Ce qu'on affiche tant qu'une donnée n'existe pas encore : jamais de chiffre inventé. */
 function Vide({ children }: { children: ReactNode }) {
   return <p className="m-0 py-3 text-ui-xs leading-[1.45] text-texte-tertiaire">{children}</p>;
@@ -152,24 +196,68 @@ export function Consommation() {
   const { roles } = useAgents();
   const { compte } = useCompteClaude();
   const journal = useJournal();
-  const stats = useMemo(() => calculer(state.messages, journal?.entrees ?? []), [state.messages, journal]);
+  /* Tout Claude Code sur cet ordinateur (terminal, IDE, app), ou seulement ce qui passe par KLYRA. */
+  const [vue, setVue] = useState<"tout" | "klyra">("tout");
+  const entrees = useMemo(() => (journal?.entrees ?? []).filter((e) => vue === "tout" || e.klyra !== false), [journal, vue]);
+  const stats = useMemo(() => calculer(state.messages, entrees), [state.messages, entrees]);
 
-  const nomAgent = (id: string) => roles.find((r) => r.id === id)?.name ?? (id === "principal" ? "Principal" : id);
-  const depuis = journal?.depuis ? `Comptés depuis le ${dateAnnee(new Date(journal.depuis))}` : "Comptés à partir de cette version";
+  const nomAgent = (id: string) =>
+    id === "hors-klyra" ? "Terminal et autres outils" : (roles.find((r) => r.id === id)?.name ?? (id === "principal" ? "Principal" : id));
+  const h = journal?.historique;
+  const debut = h?.depuis ?? journal?.depuis ?? null;
+  const depuis = !journal ? "Rattrapage de l’historique…" : debut ? `Comptés depuis le ${dateAnnee(new Date(debut))}` : "Comptés à partir de cette version";
+  /* D'où viennent les chiffres, et ce qui manque : une ligne discrète sous les chiffres clés. */
+  const origine = [
+    !journal
+      ? "Lecture des transcriptions de Claude Code de cet ordinateur…"
+      : h?.depuis
+        ? `Historique rattrapé depuis le ${new Date(h.depuis).toLocaleDateString("fr-FR")}, à partir des transcriptions locales de Claude Code (${h.sessionsTotal} session${h.sessionsTotal > 1 ? "s" : ""} sur un an, dont ${h.sessionsTrouvees} de l’app).`
+        : null,
+    h?.raison ?? null,
+    journal && state.messages.length === 0 ? "Aucune conversation n’est enregistrée par l’app sur ce poste : le nombre de messages vient de là." : null,
+  ].filter(Boolean);
   const totalFournisseurs = stats.fournisseurs.reduce((s, f) => s + f.jetons, 0);
   const totalModeles = stats.modeles.reduce((s, m) => s + m.jetons, 0);
   const abonnement = compte?.methode === "claude.ai";
 
   return (
     <>
+      <div id={ancreReglage("vue-consommation")} className="klyra-reglage flex scroll-mt-6 flex-wrap items-center justify-between gap-3 rounded-lg">
+        <div role="radiogroup" aria-label="Consommation à afficher" className="flex flex-wrap gap-0.5 rounded-sm bg-fond-surface-grise p-0.5">
+          {(
+            [
+              ["tout", "Tout Claude Code sur cet ordinateur"],
+              ["klyra", "Seulement KLYRA"],
+            ] as const
+          ).map(([id, nom]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={vue === id}
+              onClick={() => setVue(id)}
+              className={cn(
+                "h-8 cursor-pointer rounded-2xs border-0 px-3 text-ui-xs font-medium transition-colors duration-[220ms] ease-sortie",
+                vue === id ? "bg-fond-surface text-texte-principal shadow-ombre-xs" : "bg-transparent text-texte-secondaire hover:text-texte-principal",
+              )}
+            >
+              {nom}
+            </button>
+          ))}
+        </div>
+        <span className="text-ui-2xs text-texte-tertiaire">
+          {vue === "tout" ? "Terminal, IDE et app, sur ce poste." : "Seulement ce qui passe par l’app."}
+        </span>
+      </div>
+
       <div id={ancreReglage("chiffres")} className="klyra-reglage grid scroll-mt-6 grid-cols-2 gap-2.5 rounded-lg @lg:grid-cols-3 @2xl:grid-cols-5">
-        <Chiffre libelle="Jetons" valeur={stats.jetons === null ? "—" : compact(stats.jetons)} detail={stats.jetons === null ? depuis : "Sur un an"} />
+        <Chiffre libelle="Jetons" valeur={stats.jetons === null ? "—" : compact(stats.jetons)} detail={stats.jetons === null ? depuis : "Sur un an, cache compris"} />
         <Chiffre
           libelle="Jour record"
           valeur={stats.jourRecord ? compact(stats.jourRecord.jetons) : "—"}
           detail={stats.jourRecord ? dateAnnee(stats.jourRecord.jour) : "Pas encore de jetons comptés"}
         />
-        <Chiffre libelle="Messages" valeur={compact(stats.messages)} detail="Sur un an" />
+        <Chiffre libelle="Messages" valeur={compact(stats.messages)} detail={vue === "tout" ? "Dans l’app, sur un an" : "Sur un an"} />
         <Chiffre
           libelle="Série actuelle"
           valeur={`${stats.serieActuelle.jours} jour${stats.serieActuelle.jours > 1 ? "s" : ""}`}
@@ -181,10 +269,15 @@ export function Consommation() {
           detail={texteSerie(stats.plusLongueSerie, false)}
         />
       </div>
+      {origine.length > 0 && (
+        <p role="status" className="-mt-3 m-0 px-1 text-ui-2xs leading-[1.45] text-texte-tertiaire">
+          {origine.join(" ")}
+        </p>
+      )}
 
       <Groupe titre="Activité sur cet ordinateur" description={`${stats.joursActifs} jour${stats.joursActifs > 1 ? "s" : ""} actif${stats.joursActifs > 1 ? "s" : ""} sur un an`}>
         <div id={ancreReglage("activite")} className="klyra-reglage -mx-4 scroll-mt-6 px-4 py-4">
-          <Chaleur parJour={stats.messagesParJour} />
+          <Chaleur parJour={stats.activiteParJour} messages={stats.messagesParJour} />
         </div>
       </Groupe>
 
@@ -202,10 +295,10 @@ export function Consommation() {
               valeur={stats.coutUsd === null ? "—" : `${stats.coutUsd.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $US`}
               aide={
                 stats.coutUsd === null
-                  ? "Le coût de chaque réponse de Claude Code, à partir de cette version."
+                  ? "Aucun coût dans les données de Claude Code de cette période."
                   : abonnement
-                    ? "Indicatif : avec l’abonnement claude.ai, c’est un équivalent, pas une facture."
-                    : "Renvoyé par Claude Code, réponse par réponse."
+                    ? "Estimé par Claude Code. Indicatif : avec l’abonnement claude.ai, c’est un équivalent, pas une facture."
+                    : "Estimé par Claude Code (prix catalogue), pas une facture."
               }
             />
           </div>
@@ -219,7 +312,13 @@ export function Consommation() {
                   .slice(0, 5)
                   .map((a) => (
                     <li key={a.id} className="flex items-center gap-3 py-2.5">
-                      <AgentRond roleId={a.id} taille={24} fondPastille="surface" />
+                      {a.id === "hors-klyra" ? (
+                        <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-xs bg-fond-surface-grise text-icone-secondaire">
+                          <Icon name="code-01" size={14} />
+                        </span>
+                      ) : (
+                        <AgentRond roleId={a.id} taille={24} fondPastille="surface" />
+                      )}
                       <span className="min-w-0 flex-1 truncate text-ui-s text-texte-principal">{nomAgent(a.id)}</span>
                       <span className="klyra-mono text-ui-s font-medium text-texte-principal">
                         {a.valeur} <span className="font-normal text-texte-tertiaire">{a.unite}</span>
@@ -242,6 +341,25 @@ export function Consommation() {
           ) : (
             <Vide>{depuis} : chaque réponse de Claude Code et des autres IA viendra remplir cette liste.</Vide>
           )}
+        </div>
+      </Groupe>
+
+      <Limites />
+
+      <Groupe titre="Ce qui ne peut pas être compté">
+        <div id={ancreReglage("non-compte")} className="klyra-reglage -mx-4 flex scroll-mt-6 flex-col gap-1.5 px-4 py-3.5 text-ui-xs leading-[1.5] text-texte-secondaire">
+          <p className="m-0">
+            <span className="font-medium text-texte-principal">Les conversations sur claude.ai</span> (web, mobile, appli de bureau Claude) : Anthropic ne donne pas
+            d’accès à leur détail. Elles comptent pourtant dans les limites de l’abonnement ci-dessus.
+          </p>
+          <p className="m-0">
+            <span className="font-medium text-texte-principal">Les autres ordinateurs</span> : chaque poste ne lit que ses propres transcriptions, rien n’est
+            synchronisé.
+          </p>
+          <p className="m-0">
+            <span className="font-medium text-texte-principal">Le coût</span> : estimé par Claude Code, et seulement indicatif avec un abonnement claude.ai. Pour le
+            coût réel d’une organisation Console, ajoute une clé Admin dans Réglages → Claude.
+          </p>
         </div>
       </Groupe>
 

@@ -155,6 +155,12 @@ contextBridge.exposeInMainWorld("klyra", {
   consommation: {
     lire: () => ipcRenderer.invoke("consommation:lire"),
   },
+  anthropicAdmin: {
+    etat: () => ipcRenderer.invoke("anthropic-admin:etat"),
+    definir: (cle: string) => ipcRenderer.invoke("anthropic-admin:definir", cle),
+    retirer: () => ipcRenderer.invoke("anthropic-admin:retirer"),
+    rapport: () => ipcRenderer.invoke("anthropic-admin:rapport"),
+  },
   maj: {
     etat: () => ipcRenderer.invoke("maj:etat"),
     verifier: () => ipcRenderer.invoke("maj:verifier"),

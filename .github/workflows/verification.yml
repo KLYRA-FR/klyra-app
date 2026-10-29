@@ -42,3 +42,26 @@ jobs:
         run: |
           KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
             timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron .
+      - name: Journal de consommation et rattrapage de l'historique
+        run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
+
+  # Le même test sous Windows : dossier de l'app dans %APPDATA%, chemins en \, fins de ligne CRLF.
+  windows:
+    name: Consommation sous Windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:electron
+      - name: Journal de consommation et rattrapage de l'historique
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          pnpm exec electron scripts/test-consommation.cjs
+          if ($LASTEXITCODE -ne 0) { throw "Le test de consommation a échoué sous Windows." }

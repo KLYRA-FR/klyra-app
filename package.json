@@ -16,6 +16,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
+    "test:consommation": "electron scripts/test-consommation.cjs",
     "app": "pnpm build && pnpm build:electron && pnpm whisper && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
     "whisper": "node scripts/preparer-whisper.mjs"
   },

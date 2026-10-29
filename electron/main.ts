@@ -42,7 +42,9 @@ import { transcrire } from "./dictee";
 import { ecrirePlanning } from "./planning";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
-import { lireConsommation } from "./consommation";
+import { lireConsommation, lireJournal } from "./consommation";
+import { rattraperHistorique } from "./historique";
+import { definirCleAdmin, etatAdmin, rapportAdmin, retirerCleAdmin } from "./anthropic-admin";
 import {
   autorisationsComputerUse,
   changerLancement,
@@ -460,6 +462,11 @@ function registerBridge() {
   });
   /* La consommation (jetons, coûts) de l'année, pour le Profil. */
   handle("consommation:lire", () => lireConsommation());
+  /* Facultatif : l'usage et le coût réels d'une organisation Console (clé Admin d'Anthropic). */
+  handle("anthropic-admin:etat", () => etatAdmin());
+  handle("anthropic-admin:definir", (cle: string) => definirCleAdmin(cle));
+  handle("anthropic-admin:retirer", () => retirerCleAdmin());
+  handle("anthropic-admin:rapport", () => rapportAdmin());
   handle("maj:etat", () => etatMaj());
   /* Le rail et les Réglages suivent la mise à jour en direct (téléchargement, version prête). */
   surEtatMaj((etat) => {
@@ -490,6 +497,8 @@ void app.whenReady().then(() => {
   void demarrerServeurMcp();
   createWindow();
   demarrerMisesAJour();
+  /* L'historique de consommation se rattrape en arrière-plan, sans retarder l'ouverture. */
+  setTimeout(() => void lireJournal().then((j) => rattraperHistorique(j.depuis ?? Date.now())).catch(() => {}), 20_000);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

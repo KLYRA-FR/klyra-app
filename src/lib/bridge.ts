@@ -252,7 +252,14 @@ export interface KlyraBridge {
   };
   /** La consommation de l'année (cf. electron/consommation.ts). */
   consommation?: {
-    lire: () => Promise<Reponse<{ entrees: EntreeConsommation[]; depuis: number | null }>>;
+    lire: () => Promise<Reponse<{ entrees: EntreeConsommation[]; depuis: number | null; historique?: EtatHistorique | null }>>;
+  };
+  /** Facultatif : usage et coût réels d'une organisation Console (cf. electron/anthropic-admin.ts). La clé ne revient jamais. */
+  anthropicAdmin?: {
+    etat: () => Promise<Reponse<{ configuree: boolean }>>;
+    definir: (cle: string) => Promise<Reponse<RapportAdmin>>;
+    retirer: () => Promise<Reponse<void>>;
+    rapport: () => Promise<Reponse<RapportAdmin | null>>;
   };
   /** Les mises à jour de l'app (cf. electron/maj.ts). */
   maj?: {
@@ -287,6 +294,31 @@ export interface AutorisationsComputerUse {
   ecran: EtatAutorisation;
 }
 
+/** Usage et coût d'une organisation Console sur 30 jours (cf. electron/anthropic-admin.ts). */
+export interface RapportAdmin {
+  debut: string;
+  fin: string;
+  coutUsd: number;
+  coutCatalogueUsd: number;
+  jetons: number;
+  requetes: number;
+  parModele: { modele: string; jetons: number }[];
+  donneesAu: string | null;
+  lu: number;
+}
+
+/** Le rattrapage des transcriptions de Claude Code d'avant le journal (cf. electron/historique.ts). */
+export interface EtatHistorique {
+  depuis: number | null;
+  jusqua: number;
+  sessionsApp: number;
+  sessionsTrouvees: number;
+  /** Toutes les sessions Claude Code de l'année sur ce poste (terminal, IDE, app). */
+  sessionsTotal: number;
+  raison: string | null;
+  rattrapeLe: number;
+}
+
 /** Un appel à une IA : ses jetons et son coût (cf. electron/consommation.ts). */
 export interface EntreeConsommation {
   at: number;
@@ -295,6 +327,8 @@ export interface EntreeConsommation {
   agent: string;
   jetons: { entree: number; sortie: number; cacheLu: number; cacheEcrit: number };
   coutUsd: number | null;
+  /** Passé par l'app ; faux pour le terminal ou l'IDE. */
+  klyra?: boolean;
 }
 
 export interface Lancement {
