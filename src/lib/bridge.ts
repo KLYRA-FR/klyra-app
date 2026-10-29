@@ -177,6 +177,13 @@ export interface KlyraBridge {
   systeme: {
     /** Le nom de la session Mac, pour le profil par défaut. */
     utilisateur: () => Promise<Reponse<{ nom: string; identifiant: string }>>;
+    /** Demande l'accès au micro (une fois, par macOS). */
+    micro?: () => Promise<Reponse<boolean>>;
+    /** Transcrit un enregistrement (WebM) en texte, sur le Mac (Whisper). */
+    transcrire?: (audio: Uint8Array) => Promise<Reponse<string>>;
+    /** Notification du Mac (et pastille du Dock) ; un clic ramène à la conversation. */
+    notifier?: (titre: string, texte: string, chatId: string) => Promise<Reponse<void>>;
+    onOuvrirChat?: (callback: (chatId: string) => void) => () => void;
   };
   fichiers: {
     /** Ouvre le sélecteur de fichiers du système ; renvoie les chemins choisis. */

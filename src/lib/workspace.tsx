@@ -737,6 +737,18 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, []);
 
   /** Suit une réponse d'agent au fil de l'eau, jusqu'à sa fin. */
+  /* Une réponse finie là où tu ne regardes pas (autre conversation, autre app) : le Mac te prévient. */
+  const prevenir = (chatId: string, roleId: RoleId, messageId: string, ok: boolean) => {
+    const notifier = getBridge()?.systeme.notifier;
+    if (!notifier) return;
+    const ouverte = location.pathname === "/chat" && new URLSearchParams(location.search).get("id") === chatId;
+    if (ouverte && document.hasFocus()) return;
+    const nom = rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent";
+    const message = stateRef.current.messages.find((m) => m.id === messageId);
+    const extrait = message ? texteDe(message).replace(/[*`#>_]/g, "").replace(/\s+/g, " ").trim() : "";
+    void notifier(ok ? `${nom} a fini` : `${nom} s’est arrêté sur une erreur`, extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? "")), chatId);
+  };
+
   const suivreReponse = useCallback(
     (chatId: string, roleId: RoleId, messageId: string) => {
       const maj = (patch: (m: Message) => Message) => dispatch({ type: "message/update", id: messageId, patch });
@@ -848,6 +860,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             });
           }
           terminer();
+          if (event.erreur !== "Arrêté par toi.") prevenir(chatId, roleId, messageId, event.ok);
           break;
       }
     });

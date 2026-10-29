@@ -1,10 +1,11 @@
 "use client";
 
-import { forwardRef, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Textarea } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { BoutonDictee } from "./BoutonDictee";
 
 interface PromptBoxProps {
   value: string;
@@ -56,6 +57,11 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
   ref,
 ) {
   const canSend = value.trim().length > 0 || aDesPieces;
+  /* Le texte à jour quand la dictée revient : on a pu écrire pendant la transcription. */
+  const valeur = useRef(value);
+  useEffect(() => {
+    valeur.current = value;
+  });
   const peutArreter = occupe && !!onArreter;
 
   const submit = (event?: FormEvent) => {
@@ -118,12 +124,7 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
           onClick={onJoindre}
         />
         {puces}
-        <BoutonIcone
-          taille="compact"
-          icone={<Icon name="microphone-01" size={20} />}
-          libelle="Dicter"
-          className="ml-auto text-icone-secondaire hover:text-icone-defaut"
-        />
+        <BoutonDictee onTexte={(texte) => onChange(valeur.current.trim() ? `${valeur.current.trimEnd()} ${texte}` : texte)} />
         {/* Pendant que l'agent travaille : le Stop reste là, même si tu as commencé à écrire. */}
         {peutArreter && (
           <BoutonIcone

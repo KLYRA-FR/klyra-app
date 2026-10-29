@@ -15,7 +15,8 @@
     "test:smoke": "pnpm build && pnpm build:electron && env -u ELECTRON_RUN_AS_NODE KLYRA_SMOKE_TEST=1 electron .",
     "lint": "eslint",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
-    "test:agents": "pnpm build:electron && node scripts/test-agents.mjs"
+    "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
+    "app": "pnpm build && pnpm build:electron && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\""
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -33,11 +34,52 @@
     "@types/react-dom": "^19",
     "concurrently": "^10.0.5",
     "electron": "^44.9.1",
+    "electron-builder": "^26.18.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "wait-on": "^9.5.1"
   },
-  "packageManager": "pnpm@11.0.4"
+  "packageManager": "pnpm@11.0.4",
+  "build": {
+    "appId": "design.klyra.app",
+    "productName": "KLYRA",
+    "files": [
+      "dist-electron/**/*",
+      "out/**/*",
+      "resources/**/*",
+      "package.json",
+      "!**/node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "resources/**/*"
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "KLYRA utilise le micro pour la dictée, transcrite sur ce Mac."
+      }
+    },
+    "dmg": {
+      "title": "KLYRA"
+    }
+  }
 }

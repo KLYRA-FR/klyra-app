@@ -77,6 +77,15 @@ contextBridge.exposeInMainWorld("klyra", {
   },
   systeme: {
     utilisateur: () => ipcRenderer.invoke("systeme:utilisateur"),
+    micro: () => ipcRenderer.invoke("systeme:micro"),
+    transcrire: (audio: Uint8Array) => ipcRenderer.invoke("systeme:transcrire", audio),
+    notifier: (titre: string, texte: string, chatId: string) => ipcRenderer.invoke("systeme:notifier", titre, texte, chatId),
+    /** Un clic sur une notification : la conversation à ouvrir. */
+    onOuvrirChat: (callback: (chatId: string) => void) => {
+      const listener = (_e: unknown, chatId: string) => callback(chatId);
+      ipcRenderer.on("systeme:ouvrir-chat", listener);
+      return () => ipcRenderer.removeListener("systeme:ouvrir-chat", listener);
+    },
   },
   fichiers: {
     choisir: () => ipcRenderer.invoke("fichiers:choisir"),

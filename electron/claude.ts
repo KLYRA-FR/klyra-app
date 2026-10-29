@@ -213,6 +213,8 @@ interface Processus {
   /** Une réponse spontanée s'ouvre dans l'interface par ce rappel. */
   spontane: Spontane;
   veille: ReturnType<typeof setTimeout> | null;
+  /** Agents et commandes lancés en arrière-plan, pas encore revenus : tant qu'il y en a, pas de veille. */
+  fond: number;
 }
 
 /** Ouvre une réponse spontanée dans l'interface ; null si elle n'est plus là. */
@@ -343,7 +345,7 @@ function finirTour(proc: Processus, tour: Tour, event: Extract<AgentEvent, { typ
   running.delete(tour.requestId);
   demandes.delete(tour.requestId);
   tour.emit(event);
-  if (!proc.tours.length && vivant(proc)) {
+  if (!proc.tours.length && !proc.fond && vivant(proc)) {
     proc.veille = setTimeout(() => proc.child.stdin?.end(), VEILLE_MS);
   }
 }
@@ -352,6 +354,8 @@ function finirTour(proc: Processus, tour: Tour, event: Extract<AgentEvent, { typ
 function tourOuSpontane(proc: Processus): Tour | null {
   if (proc.tours[0]) return proc.tours[0];
   if (!proc.sessionId) return null;
+  // Une tâche de fond revient : c'est elle qui fait reparler l'agent.
+  proc.fond = Math.max(0, proc.fond - 1);
   const ouvert = proc.spontane(proc.sessionId);
   if (!ouvert) return null;
   const tour = nouveauTour(ouvert.requestId, ouvert.emit, proc.acces);
@@ -411,6 +415,7 @@ function lireLigne(proc: Processus, ligne: string) {
     if (!tour) return;
     if (parent === null) tour.activite = true;
     for (const bloc of outils) {
+      if (bloc.input?.run_in_background === true) proc.fond += 1;
       tour.emit({ type: "etape", id: bloc.id!, outil: bloc.name!, entree: bloc.input ?? {}, parent });
       if (parent === null) tour.etapesDepuisTexte = true;
     }
@@ -481,7 +486,7 @@ function lireLigne(proc: Processus, ligne: string) {
 
 function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
   const child = spawn(bin, args, { cwd, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } });
-  const proc: Processus = { child, signature, modele: options.modele ?? null, acces, tours: [], sessionId: options.sessionId, spontane, veille: null };
+  const proc: Processus = { child, signature, modele: options.modele ?? null, acces, tours: [], sessionId: options.sessionId, spontane, veille: null, fond: 0 };
   if (options.sessionId) processus.set(options.sessionId, proc);
 
   let tampon = "";

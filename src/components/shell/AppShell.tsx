@@ -1,11 +1,12 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanneauConversations } from "@/components/chat/PanneauConversations";
 import { ProjectPanel } from "@/components/project/ProjectPanel";
 import { Visionneuse, type DemandeFichier } from "@/components/project/Visionneuse";
 import { useIsClient } from "@/hooks/useIsClient";
+import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
@@ -52,6 +53,10 @@ function Page({ children }: { children: ReactNode }) {
 function ShellLayout({ children }: { children: ReactNode }) {
   const project = useOpenProject();
   const enConversation = useEnConversation();
+  const router = useRouter();
+
+  /* Un clic sur la notification « Hugo a fini » : sa conversation. */
+  useEffect(() => getBridge()?.systeme.onOuvrirChat?.((chatId) => router.push(`/chat?id=${encodeURIComponent(chatId)}`)), [router]);
 
   /* Un fichier cliqué dans le panneau du projet ou l'aperçu : la visionneuse. */
   const [fichier, setFichier] = useState<DemandeFichier | null>(null);

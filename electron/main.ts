@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, shell, systemPreferences } from "electron";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -37,6 +38,7 @@ import {
   type Utilisation,
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
+import { transcrire } from "./dictee";
 import { arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
@@ -65,6 +67,18 @@ const SMOKE_TEST = process.env.KLYRA_SMOKE_TEST === "1";
 const OUT_DIR = path.join(__dirname, "..", "out");
 /** Icône de l'app : le logo-icône KLYRA (signe blanc sur K1), cf. resources/icon.png. */
 const ICONE = path.join(__dirname, "..", "resources", "icon.png");
+
+/* Ouverte depuis le Dock ou le Finder, l'app n'a pas le PATH du terminal : les agents ne
+   trouveraient ni pnpm, ni git, ni node. On reprend celui du shell de la personne. */
+if (app.isPackaged) {
+  try {
+    const sortie = execFileSync(process.env.SHELL || "/bin/zsh", ["-ilc", 'printf "\n%s" "$PATH"'], { encoding: "utf8", timeout: 5000 });
+    const chemin = sortie.trim().split("\n").at(-1);
+    if (chemin) process.env.PATH = chemin;
+  } catch {
+    /* on garde le PATH du système */
+  }
+}
 
 /* Le nom de l'app dans le Dock, le menu et « À propos ». */
 app.setName("KLYRA");
@@ -119,6 +133,11 @@ async function runSmokeTest(win: BrowserWindow) {
 /** Un serveur de dev sur ce Mac. */
 const ADRESSE_LOCALE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/;
 
+/** La fenêtre de l'app, celle qu'une notification ramène au premier plan. */
+let fenetrePrincipale: BrowserWindow | null = null;
+/** Réponses arrivées pendant que tu étais ailleurs : la pastille du Dock. */
+let enAttente = 0;
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -139,6 +158,13 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+
+  fenetrePrincipale = win;
+  win.on("closed", () => fenetrePrincipale === win && (fenetrePrincipale = null));
+  win.on("focus", () => {
+    enAttente = 0;
+    app.setBadgeCount(0);
   });
 
   // Les liens externes s'ouvrent dans le navigateur, pas dans l'app.
@@ -266,6 +292,28 @@ function registerBridge() {
     return pagesDuSite(dossier);
   });
   handle("systeme:utilisateur", () => utilisateurSysteme());
+  /* Dictée : l'accès au micro (macOS le demande une fois), puis la transcription par Whisper. */
+  handle("systeme:micro", () => (process.platform === "darwin" ? systemPreferences.askForMediaAccess("microphone") : true));
+  /* Un agent a fini pendant que tu regardais ailleurs : notification du Mac, pastille sur l'icône. */
+  handle("systeme:notifier", (titre: string, texte: string, chatId: string) => {
+    if (![titre, texte, chatId].every((v) => typeof v === "string")) throw new Error("Notification invalide.");
+    if (!fenetrePrincipale?.isFocused()) app.setBadgeCount((enAttente += 1));
+    if (!Notification.isSupported()) return;
+    const notif = new Notification({ title: titre.slice(0, 120), body: texte.slice(0, 240) });
+    notif.on("click", () => {
+      const win = fenetrePrincipale;
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      win.webContents.send("systeme:ouvrir-chat", chatId);
+    });
+    notif.show();
+  });
+  handle("systeme:transcrire", (audio: Uint8Array) => {
+    if (!(audio instanceof Uint8Array) || audio.byteLength > 50 * 1024 * 1024) throw new Error("Enregistrement invalide.");
+    return transcrire(audio);
+  });
   handle("projets:lire-fichier", (dossier: string, relatif: string) => lireFichier(dossier, relatif));
   handle("projets:ouvrir-fichier", async (dossier: string, relatif: string) => {
     const erreur = await shell.openPath(cheminDansProjet(dossier, relatif));
@@ -331,6 +379,17 @@ function registerBridge() {
   handle("claude:deconnexion", () => deconnecterClaude());
   handle("claude:utilisation:actualiser", () => actualiserUtilisation());
 }
+
+/* Une seule KLYRA à la fois (version de développement comprise) : deux fenêtres écriraient
+   le même fichier de conversations. La seconde ramène la première au premier plan. */
+if (!SMOKE_TEST && !app.requestSingleInstanceLock()) app.exit(0);
+app.on("second-instance", () => {
+  const win = fenetrePrincipale;
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
 
 void app.whenReady().then(() => {
   // Sans version installée, macOS prend l'icône d'Electron : on la remplace dans le Dock.
