@@ -134,13 +134,37 @@ function FileAttente({ chatId, roleId }: { chatId: string; roleId: RoleId }) {
 }
 
 /** Composeur sous le fil d'un chat. */
+/** Les messages commencés et pas envoyés, par conversation : ils survivent à un changement d'onglet. */
+const CLE_BROUILLONS = "klyra-brouillons";
+type Brouillon = { text: string; fichiers: string[] };
+
+function lireBrouillons(): Record<string, Brouillon> {
+  try {
+    const v = JSON.parse(localStorage.getItem(CLE_BROUILLONS) ?? "{}") as unknown;
+    return v && typeof v === "object" ? (v as Record<string, Brouillon>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function garderBrouillon(chatId: string, brouillon: Brouillon) {
+  try {
+    const tous = lireBrouillons();
+    if (brouillon.text.trim() || brouillon.fichiers.length) tous[chatId] = brouillon;
+    else delete tous[chatId];
+    localStorage.setItem(CLE_BROUILLONS, JSON.stringify(tous));
+  } catch {
+    /* stockage indisponible : le brouillon ne survit pas */
+  }
+}
+
 export function Composer({ chat, project }: { chat: Chat; project: Project | undefined }) {
   const roles = useRoles();
   const { sendMessage, arreter } = useWorkspace();
   const travail = useTravail(chat.id);
   // `?brouillon=…` : on arrive avec un message déjà prêt (ex. « Modifier avec un agent » depuis un artefact).
   const brouillon = useSearchParams().get("brouillon");
-  const [text, setText] = useState(brouillon ?? "");
+  const [text, setText] = useState(() => brouillon ?? lireBrouillons()[chat.id]?.text ?? "");
   const [to, setTo] = useState<RoleId | typeof AUTO>(AUTO);
   const [curseur, setCurseur] = useState(0);
   const [actif, setActif] = useState(0);
@@ -151,7 +175,11 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const bridge = getBridge();
   const { compte } = useCompteClaude();
   const deconnecte = !!compte && (!compte.installe || !compte.connecte);
-  const [fichiers, setFichiers] = useState<string[]>([]);
+  const [fichiers, setFichiers] = useState<string[]>(() => lireBrouillons()[chat.id]?.fichiers ?? []);
+  /* Ce qui est écrit reste à cette conversation, même quand on passe à un autre onglet. */
+  useEffect(() => {
+    garderBrouillon(chat.id, { text, fichiers });
+  }, [chat.id, text, fichiers]);
   const [depot, setDepot] = useState(false);
   const [alerte, setAlerte] = useState<string | null>(null);
   const zone = useRef<HTMLDivElement>(null);
