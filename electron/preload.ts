@@ -159,5 +159,10 @@ contextBridge.exposeInMainWorld("klyra", {
     etat: () => ipcRenderer.invoke("maj:etat"),
     verifier: () => ipcRenderer.invoke("maj:verifier"),
     installer: () => ipcRenderer.invoke("maj:installer"),
+    onEtat: (callback: (etat: unknown) => void) => {
+      const listener = (_e: unknown, etat: unknown) => callback(etat);
+      ipcRenderer.on("maj:etat", listener);
+      return () => ipcRenderer.removeListener("maj:etat", listener);
+    },
   },
 });

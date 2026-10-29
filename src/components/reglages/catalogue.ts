@@ -124,6 +124,8 @@ export const SECTIONS: SectionReglages[] = [
     description: "L’app se met à jour toute seule. Ici, tu vois où elle en est.",
     entrees: [
       { id: "version-installee", titre: "Version installée", mots: "numero" },
+      { id: "version-disponible", titre: "Dernière version disponible", mots: "nouvelle publiee" },
+      { id: "derniere-verification", titre: "Dernière vérification", mots: "date heure" },
       { id: "rechercher-maj", titre: "Rechercher une mise à jour", mots: "verifier maintenant nouvelle version" },
       { id: "installer-maj", titre: "Installer et relancer", mots: "redemarrer" },
       { id: "depot-versions", titre: "Toutes les versions", mots: "github releases klyra-app-versions telecharger" },

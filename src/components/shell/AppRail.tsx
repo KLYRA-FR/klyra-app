@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { useProjects } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
 import { NAVIGATION } from "./navigation";
+import { PastilleMaj } from "./PastilleMaj";
 
 /** Une entrée du rail : l'icône seule, à sa taille de dessin (24 px, trait plein) ; le nom au survol. */
 const ENTREE =
@@ -122,6 +123,7 @@ export function AppRail({
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-1 pt-2">
+        <PastilleMaj />
         <UtilisationRail />
         {SEPARATEUR}
         {/* Les réglages s'ouvrent d'un clic sur l'avatar. */}
