@@ -41,7 +41,7 @@ import { ecrituresTerminees, readConversations, writeConversations } from "./con
 import { transcrire } from "./dictee";
 import { ecrirePlanning } from "./planning";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
-import { demarrerMisesAJour, etatMaj, installerMaintenant, verifierMaintenant } from "./maj";
+import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
 import { lireConsommation } from "./consommation";
 import {
   autorisationsComputerUse,
@@ -461,6 +461,10 @@ function registerBridge() {
   /* La consommation (jetons, coûts) de l'année, pour le Profil. */
   handle("consommation:lire", () => lireConsommation());
   handle("maj:etat", () => etatMaj());
+  /* Le rail et les Réglages suivent la mise à jour en direct (téléchargement, version prête). */
+  surEtatMaj((etat) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.webContents.isDestroyed()) win.webContents.send("maj:etat", etat);
+  });
   handle("maj:verifier", () => verifierMaintenant());
   handle("maj:installer", () => installerMaintenant());
 }

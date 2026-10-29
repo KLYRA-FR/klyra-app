@@ -259,6 +259,8 @@ export interface KlyraBridge {
     etat: () => Promise<Reponse<EtatMaj>>;
     verifier: () => Promise<Reponse<EtatMaj>>;
     installer: () => Promise<Reponse<void>>;
+    /** Chaque changement d'état (téléchargement, version prête, erreur). Absent avant la relance de l'app. */
+    onEtat?: (callback: (etat: EtatMaj) => void) => () => void;
   };
 }
 
@@ -313,8 +315,12 @@ export interface InfosApp {
 
 export interface EtatMaj {
   version: string;
-  statut: "dev" | "inconnu" | "verification" | "a-jour" | "prete" | "erreur";
+  statut: "dev" | "inconnu" | "verification" | "telechargement" | "a-jour" | "prete" | "erreur";
   nouvelle: string | null;
+  /** La dernière version publiée, vue à la dernière vérification. */
+  disponible: string | null;
+  /** Pendant le téléchargement : octets reçus et total (0 si inconnu). */
+  progression: { recus: number; total: number } | null;
   verifieeLe: number | null;
   erreur: string | null;
   depot: string;
