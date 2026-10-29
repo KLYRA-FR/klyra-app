@@ -80,6 +80,7 @@
       "icon": "resources/icon.icns",
       "category": "public.app-category.productivity",
       "identity": "-",
+      "sign": "scripts/signer-mac.cjs",
       "hardenedRuntime": false,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "KLYRA utilise le micro pour la dictée, transcrite sur ce Mac."

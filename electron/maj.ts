@@ -188,6 +188,16 @@ async function verifier() {
       const nouvelle = path.join(DOSSIER, nom);
       // Une app intacte (signature valide) et la nôtre (même identifiant), sinon rien.
       await lancer("/usr/bin/codesign", ["--verify", "--deep", nouvelle]);
+      // Signée par notre certificat : la nouvelle version doit l'être par le même (exigence désignée de l'app installée).
+      const exigence = (await lancer("/usr/bin/codesign", ["--display", "--requirements", "-", appInstallee()]).catch(() => ""))
+        .split("\n")
+        .find((l) => l.startsWith("designated => "))
+        ?.replace("designated => ", "");
+      if (exigence?.includes("certificate")) {
+        await lancer("/usr/bin/codesign", ["--verify", "--deep", `-R=${exigence}`, nouvelle]).catch(() => {
+          throw new Error(`La version ${numero} n’est pas signée par le certificat de KLYRA : elle n’est pas installée.`);
+        });
+      }
       const id = (await lancer("/usr/bin/defaults", ["read", path.join(nouvelle, "Contents", "Info"), "CFBundleIdentifier"])).trim();
       if (id !== IDENTIFIANT) return echec(`La version ${numero} ne porte pas l’identifiant de KLYRA : elle n’est pas installée.`);
       prete = { version: numero, chemin: nouvelle };

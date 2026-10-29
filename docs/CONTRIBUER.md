@@ -29,3 +29,12 @@ Onglet **Actions** → **App** → **Run workflow** → branche **`main`** → *
 L’action refait le build et les tests Mac et Windows, puis publie un nouveau numéro de version. Choisis toujours `main` : lancée depuis une autre branche, elle publierait cette branche pour tout le monde.
 
 Le dépôt des versions et le secret `VERSIONS_TOKEN` sont gérés par Corentin. Si la publication échoue sur « Le jeton de publication est configuré », c’est à lui de le renouveler.
+
+## Signature Mac
+
+L’app Mac est signée par un **certificat auto-signé, le même à chaque version** (secrets `MAC_CERT_P12` et `MAC_CERT_PASSWORD`, gérés par Corentin). macOS reconnaît alors chaque mise à jour comme la même app et lui garde ses autorisations (Accessibilité, Enregistrement de l’écran, micro). Sans ces secrets, l’action signe ad hoc et l’annonce par un avertissement : les autorisations sautent à chaque version.
+
+- Créer le certificat, **une seule fois** : `sh scripts/creer-certificat-mac.sh` (openssl et `gh` connecté). Garder le `.p12` et son mot de passe dans un gestionnaire de mots de passe : un nouveau certificat fait perdre les autorisations une dernière fois.
+- Une PR qui touche à la signature lance **Vérification Mac (signature)** : deux versions signées par un certificat jetable doivent avoir la même exigence désignée.
+- L’app installée refuse une mise à jour signée par un autre certificat (`electron/maj.ts`).
+- Pas de compte Apple Developer : au premier lancement, ouvrir l’app par clic droit → Ouvrir, comme aujourd’hui.

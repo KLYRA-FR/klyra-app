@@ -33,7 +33,19 @@ jobs:
       - run: npm pkg set version="$VERSION"
       # next build vérifie aussi les types (ceux des routes sont générés pendant le build).
       - run: pnpm build && pnpm build:electron && pnpm whisper
+      # Le même certificat à chaque version : macOS garde les autorisations de l'app (cf. scripts/signer-mac.cjs).
+      - name: Certificat de signature
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: sh scripts/importer-certificat-mac.sh
       - run: pnpm exec electron-builder --mac --publish never --config.directories.output=dist-app
+      - name: La signature est stable d'une version à l'autre
+        if: env.KLYRA_MAC_SIGN_IDENTITY != ''
+        run: |
+          codesign --display --requirements - dist-app/mac-arm64/KLYRA.app 2>&1 | tee "$RUNNER_TEMP/exigence.txt"
+          # Ad hoc, l'exigence porte sur l'empreinte du binaire (cdhash), qui change à chaque version.
+          grep -q 'certificate' "$RUNNER_TEMP/exigence.txt" && ! grep -q 'cdhash' "$RUNNER_TEMP/exigence.txt"
 
       - name: L'app démarre et affiche l'interface
         run: |
