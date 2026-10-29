@@ -28,6 +28,10 @@ jobs:
     name: Deux versions signées, même exigence désignée
     runs-on: macos-latest
     timeout-minutes: 40
+    env:
+      # electron-builder ne signe pas dans une pull request, sauf si on le force. Sans risque ici :
+      # le certificat est jetable, créé dans ce job, et aucun secret du dépôt n'est utilisé.
+      CSC_FOR_PULL_REQUEST: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -38,13 +42,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build && pnpm build:electron && pnpm whisper
 
-      - name: Certificat jetable
+      # Le certificat jetable passe au script d'import par des variables du seul shell de cette étape :
+      # il n'entre pas dans l'environnement des étapes suivantes, que le journal affiche.
+      - name: Certificat jetable, importé comme dans l'action App
         run: |
           sh scripts/creer-certificat-mac.sh --local "$RUNNER_TEMP/cert"
-          echo "MAC_CERT_P12=$(base64 < "$RUNNER_TEMP/cert/klyra-signature.p12" | tr -d '\n')" >> "$GITHUB_ENV"
-          echo "MAC_CERT_PASSWORD=$(cat "$RUNNER_TEMP/cert/mot-de-passe.txt")" >> "$GITHUB_ENV"
-      - name: Import comme dans l'action App
-        run: sh scripts/importer-certificat-mac.sh
+          MAC_CERT_P12="$(base64 < "$RUNNER_TEMP/cert/klyra-signature.p12" | tr -d '\n')" \
+          MAC_CERT_PASSWORD="$(cat "$RUNNER_TEMP/cert/mot-de-passe.txt")" \
+            sh scripts/importer-certificat-mac.sh
+          rm -rf "$RUNNER_TEMP/cert"
 
       - name: Version 1
         run: |
