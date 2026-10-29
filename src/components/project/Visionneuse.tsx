@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge, type ContenuFichier } from "@/lib/bridge";
+import { poste } from "@/lib/plateforme";
 import type { Project } from "@/types/domain";
 
 /** Ce qu'on demande quand on clique un fichier : le projet et son chemin relatif. */
@@ -76,7 +77,7 @@ export function Visionneuse({ project, chemin, onFermer }: { project: Project; c
             <BoutonIcone
               taille="compact"
               icone={<Icon name="folder-open-01" size={16} />}
-              libelle="Montrer dans le Finder"
+              libelle={`Montrer ${poste.dansExplorateur}`}
               onClick={() => void bridge.projets.montrerFichier(project.folder, chemin)}
             />
           </>

@@ -12,6 +12,7 @@ import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { findMention } from "@/lib/mentions";
+import { poste } from "@/lib/plateforme";
 import { useChatPreview, useProject, useRecentChats, useRoles, useWorkspace } from "@/lib/workspace";
 import type { Chat, ProjectStatus, RoleId } from "@/types/domain";
 
@@ -95,7 +96,7 @@ export function ProjectScreen() {
           {retirer && (
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
               <span className="flex-1 text-ui-s text-texte-principal">
-                Retirer {project.name} de l’app ? Son dossier reste sur ton Mac, rien n’est effacé.
+                Retirer {project.name} de l’app ? Son dossier reste sur {poste.ton}, rien n’est effacé.
               </span>
               <Bouton
                 variant="sombre"

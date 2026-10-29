@@ -1,4 +1,5 @@
 import type { IconName } from "@/components/icons/Icon";
+import { poste } from "@/lib/plateforme";
 import type { RoleTeinte } from "@/types/domain";
 import type { Noeud, StatutEtape, StatutExecution, TypeNoeud, Valeur } from "@/types/workflows";
 
@@ -40,7 +41,7 @@ export const FICHES: Record<TypeNoeud, FicheNoeud> = {
   ressource: {
     type: "ressource",
     titre: "Ressource",
-    aide: "Des fichiers de ton Mac, passés aux étapes suivantes.",
+    aide: `Des fichiers de ${poste.ton}, passés aux étapes suivantes.`,
     icone: "file-01",
     groupe: "entrees",
     largeur: 280,

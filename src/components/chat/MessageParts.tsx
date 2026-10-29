@@ -11,6 +11,7 @@ import { Markdown } from "@/components/ui/Markdown";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { getBridge } from "@/lib/bridge";
 import { iconeEtape } from "@/lib/etapes";
+import { poste } from "@/lib/plateforme";
 import { idDirect, useRole } from "@/lib/workspace";
 import { PastilleExtension } from "./PastilleExtension";
 import type {
@@ -53,7 +54,7 @@ export function TextBubble({ text, tone }: { text: string; tone: "user" | "role"
 
 /* ─── Fichiers joints ──────────────────────────────────────────── */
 
-/** Les fichiers joints à un message : une carte par fichier, un clic le montre dans le Finder. */
+/** Les fichiers joints à un message : une carte par fichier, un clic le montre dans le Finder (l'Explorateur). */
 export function FichiersJoints({ chemins }: { chemins: string[] }) {
   const bridge = getBridge();
   return (
@@ -64,7 +65,7 @@ export function FichiersJoints({ chemins }: { chemins: string[] }) {
           <button
             key={chemin}
             type="button"
-            title={`${chemin}\nClic pour le montrer dans le Finder`}
+            title={`${chemin}\nClic pour le montrer ${poste.dansExplorateur}`}
             onClick={() => bridge && void bridge.fichiers.montrer(chemin)}
             className="flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-md border border-bordure-subtile bg-fond-surface p-2 text-left transition-colors duration-[120ms] hover:border-bordure-forte"
           >

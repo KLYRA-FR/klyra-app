@@ -6,6 +6,7 @@ import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
+import { raccourciDuSysteme } from "@/lib/plateforme";
 import { portDe, texteSortie } from "@/lib/workflows/moteur";
 import type { Frequence, RoleTeinte } from "@/types/domain";
 import {
@@ -97,7 +98,7 @@ function BoutonOutil({ icone, libelle, actif, onClick, raccourci }: { icone: Ico
       type="button"
       aria-label={libelle}
       aria-pressed={actif}
-      title={raccourci ? `${libelle} (${raccourci})` : libelle}
+      title={raccourci ? `${libelle} (${raccourciDuSysteme(raccourci)})` : libelle}
       onClick={onClick}
       className={cn(
         "flex size-8 cursor-pointer items-center justify-center rounded-sm border-0 transition-colors duration-[120ms] ease-sortie",
@@ -135,7 +136,7 @@ function ElementMenu({ libelle, icone, onClick, raccourci, desactive }: { libell
     >
       {icone && <Icon name={icone} size={16} className="shrink-0 text-icone-secondaire" />}
       <span className="flex-1">{libelle}</span>
-      {raccourci && <span className="text-ui-2xs text-texte-tertiaire">{raccourci}</span>}
+      {raccourci && <span className="text-ui-2xs text-texte-tertiaire">{raccourciDuSysteme(raccourci)}</span>}
     </button>
   );
 }

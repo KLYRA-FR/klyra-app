@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
 import { useRaccourciReglages } from "@/lib/raccourcis";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
+import { PLATEFORME } from "@/lib/plateforme";
 import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
 import { AppRail } from "./AppRail";
@@ -18,7 +19,7 @@ import { AppRail } from "./AppRail";
 /** Vrai dans la fenêtre Electron sur Mac : la barre de titre est intégrée à l'app
  *  (sous Windows, elle reste celle du système). */
 function isDesktopShell(): boolean {
-  return navigator.userAgent.includes("Electron") && navigator.userAgent.includes("Macintosh");
+  return navigator.userAgent.includes("Electron") && PLATEFORME === "mac";
 }
 
 /** Projet ouvert : celui du chat (`/chat?id=`) ou de la page projet (`/projet?id=`). */
@@ -143,6 +144,11 @@ function ShellLayout({ children }: { children: ReactNode }) {
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const isClient = useIsClient();
+  /* Sur la racine, pour les styles propres au système (barres de défilement),
+     fenêtres ouvertes hors du cadre comprises. */
+  useEffect(() => {
+    document.documentElement.dataset.plateforme = PLATEFORME;
+  }, []);
   if (!isClient) return <div className="h-full bg-fond-page" />;
 
   return (

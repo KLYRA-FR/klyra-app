@@ -2,10 +2,11 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { PLATEFORME } from "@/lib/plateforme";
 
-/** Vrai sur Mac : ⌘ plutôt que Ctrl. */
+/** Vrai sur Mac : ⌘ plutôt que Ctrl (même lecture du système que `plateforme.ts`). */
 export function estMac(): boolean {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  return PLATEFORME === "mac";
 }
 
 /** ⌘ sur Mac, Ctrl ailleurs, sans les autres modificateurs. */

@@ -12,6 +12,7 @@ import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
+import { poste } from "@/lib/plateforme";
 import { useProjects, useWorkspace } from "@/lib/workspace";
 import type { Project, ProjectStatus } from "@/types/domain";
 
@@ -57,12 +58,12 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
     const r = await bridge.projets.choisirDossier();
     if (!r.ok || !r.data) return;
     setFolder(r.data);
-    // Le nom du dossier en guise de nom, s'il n'y en a pas encore.
-    if (!name.trim()) setName(r.data.split("/").filter(Boolean).pop() ?? "");
+    // Le nom du dossier en guise de nom, s'il n'y en a pas encore (chemin Windows compris).
+    if (!name.trim()) setName(r.data.split(/[\\/]/).filter(Boolean).pop() ?? "");
   };
 
   const erreurs = {
-    folder: folder ? undefined : "Choisis le dossier du projet sur ton Mac.",
+    folder: folder ? undefined : `Choisis le dossier du projet sur ${poste.ton}.`,
     name: name.trim() ? undefined : "Donne-lui un nom.",
   };
 
@@ -156,10 +157,10 @@ export function ProjetsScreen() {
           <div className="flex flex-col gap-1.5">
             <h1 className="m-0 text-h3 leading-[1] tracking-[-0.04em] text-texte-principal">
               <span className="font-semibold">{aModifier ? aModifier.name : "Projets"}</span>{" "}
-              <span className="font-normal">{aModifier ? "· modifier" : "sur ce Mac"}</span>
+              <span className="font-normal">{aModifier ? "· modifier" : `sur ${poste.ce}`}</span>
             </h1>
             <p className="m-0 text-ui-s text-texte-secondaire">
-              Chaque projet est un dossier de ton Mac. Les agents y travaillent quand tu leur écris depuis le projet.
+              Chaque projet est un dossier de {poste.ton}. Les agents y travaillent quand tu leur écris depuis le projet.
             </p>
           </div>
           {!formulaire && <BoutonPrincipal href="/projets?nouveau=1">Nouveau projet</BoutonPrincipal>}
