@@ -29,6 +29,7 @@ Front seul, données factices, **aux couleurs et composants du design system KLY
 - **Lou** : « Modifier avec Lou » lance Claude Code en local (`electron/claude.ts`, `claude -p --agent prompty`, sans outil d’écriture). Elle propose, l’utilisateur applique.
 - **Une seule police : Google Sans Flex.** NEVER d’autre famille, même mono : `--font-mono` pointe sur Google Sans Flex, `.klyra-mono` ne sert qu’à aligner les chiffres.
 - **Tailles de texte de l’interface** : tokens `text-ui` (14), `text-ui-s` (13), `text-ui-xs` (12), `text-ui-2xs` (11), `text-ui-3xs` (10). Texte en sentence case, y compris les petits titres de la barre latérale.
+- **Mac et Windows** : NEVER « Mac », « Finder » ni « ⌘ » en dur dans un texte de l’interface. Passer par `src/lib/plateforme.ts` (`poste.ce` → « ce Mac » ou « ce PC », `poste.dansExplorateur`, `raccourciDuSysteme("⇧⌘Z")` → « Ctrl+Maj+Z » sous Windows) ; pour les touches, `estMac()` et `avecCommande()` de `src/lib/raccourcis.ts`, qui lisent le même système.
 - **Electron** : lancer avec `env -u ELECTRON_RUN_AS_NODE` (déjà dans les scripts). Si cette variable est présente, Electron démarre comme Node et `require("electron")` ne renvoie rien.
 
 ## Vérification

@@ -5,6 +5,7 @@ import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { poste } from "@/lib/plateforme";
 import { versWav16k } from "@/lib/wav";
 
 type Etat = "repos" | "ecoute" | "transcription";
@@ -51,7 +52,7 @@ export function BoutonDictee({ onTexte }: { onTexte: (texte: string) => void }) 
     if (!bridge?.systeme.transcrire) return echec("La dictée marche dans l’app de bureau.");
     const acces = await bridge.systeme.micro?.();
     if (acces && (!acces.ok || !acces.data)) {
-      return echec("L’app n’a pas accès au micro : Réglages Système > Confidentialité > Micro.");
+      return echec(`L’app n’a pas accès au micro : ${poste.reglagesMicro}.`);
     }
     let flux: MediaStream;
     try {

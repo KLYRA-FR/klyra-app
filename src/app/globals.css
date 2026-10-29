@@ -243,6 +243,35 @@ body {
   overflow: hidden;
 }
 
+/* Barres de défilement hors Mac. Le Mac garde les siennes, fines et qui
+   s'effacent. Windows (et Linux) affichent des barres larges à flèches : on
+   les ramène à un trait gris fin, sans flèches ni rail, qui fonce au survol.
+   `data-plateforme` est posé sur la racine par AppShell. Un élément qui fixe
+   scrollbar-width ou scrollbar-color garde son propre réglage. */
+:root:is([data-plateforme="windows"], [data-plateforme="autre"]) {
+  & ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  & ::-webkit-scrollbar-track,
+  & ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  & ::-webkit-scrollbar-button {
+    display: none;
+  }
+  /* Trait de 6 px dans une zone de 10 : les teintes de la barre du Mac. */
+  & ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: var(--radius-pill);
+    background: var(--color-gris-k1-100) padding-box;
+  }
+  & ::-webkit-scrollbar-thumb:hover,
+  & ::-webkit-scrollbar-thumb:active {
+    background-color: var(--color-gris-k1-300);
+  }
+}
+
 .klyra-mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;

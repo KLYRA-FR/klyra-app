@@ -10,6 +10,7 @@ import { Markdown } from "@/components/ui/Markdown";
 import { useAgents } from "@/lib/agents";
 import { BridgeError, getBridge, unwrap } from "@/lib/bridge";
 import { consigne, lireProposition } from "@/lib/lou";
+import { poste } from "@/lib/plateforme";
 import type { Role } from "@/types/domain";
 import { Bloc } from "./AgentDetail";
 
@@ -98,7 +99,7 @@ export function LouPanel({ role }: { role: Role }) {
 
   /* Ce qui empêche de demander à Lou, dit clairement. */
   const blocage = !bridge
-    ? "Lou travaille dans l’app de bureau : ouvre KLYRA sur ton Mac pour lui demander une modification."
+    ? `Lou travaille dans l’app de bureau : ouvre KLYRA sur ${poste.ton} pour lui demander une modification.`
     : claudePath === null
       ? "Claude Code est introuvable sur ce poste. Installe-le (extension VS Code, ou « npm install -g @anthropic-ai/claude-code »), puis rouvre cet écran."
       : !louInstallee

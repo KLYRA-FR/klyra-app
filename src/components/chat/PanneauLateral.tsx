@@ -10,6 +10,7 @@ import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
+import { poste } from "@/lib/plateforme";
 import { useChatMessages, useProject, useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, TacheAgent } from "@/types/domain";
 import { ChoixModele } from "./ChoixModele";
@@ -278,7 +279,7 @@ function Fichiers({ chat }: { chat: Chat }) {
               <button
                 type="button"
                 onClick={() => bridge && void bridge.fichiers.montrer(f.chemin)}
-                title={`${f.chemin}\nClic pour le montrer dans le Finder`}
+                title={`${f.chemin}\nClic pour le montrer ${poste.dansExplorateur}`}
                 className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent p-1.5 text-left hover:bg-fond-survol"
               >
                 <PastilleExtension chemin={f.chemin} />

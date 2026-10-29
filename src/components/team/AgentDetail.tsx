@@ -9,6 +9,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { Markdown } from "@/components/ui/Markdown";
 import { useAgents } from "@/lib/agents";
 import { cn } from "@/lib/cn";
+import { poste } from "@/lib/plateforme";
 import type { Role, RoleSection } from "@/types/domain";
 import { LigneRole } from "./AgentCard";
 import { AgentVisuel, couleurAgent } from "./AgentVisuel";
@@ -114,7 +115,7 @@ export function AgentDetail({ role }: { role: Role }) {
                 <button
                   type="button"
                   onClick={() => void reveal(role.id)}
-                  title="Afficher dans le Finder"
+                  title={`Afficher ${poste.dansExplorateur}`}
                   className="klyra-mono cursor-pointer border-0 bg-transparent p-0 text-ui-xs text-texte-tertiaire underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent"
                 >
                   {role.file.path}
