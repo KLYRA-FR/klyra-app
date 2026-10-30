@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar, EmptyState } from "klyra-ui";
 import { PromptBox } from "@/components/chat/PromptBox";
+import { BoutonEpingle } from "@/components/chat/BoutonEpingle";
+import { estEpinglee } from "@/lib/epinglage";
 import { Icon } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Bouton } from "@/components/ui/Bouton";
@@ -27,17 +29,24 @@ const AUTO = "auto";
 function ChatRow({ chat }: { chat: Chat }) {
   const preview = useChatPreview(chat.id);
   return (
+    <div className="group/conv relative">
     <Link
       href={`/chat?id=${chat.id}`}
-      className="group flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 no-underline transition-[background-color,border-color,box-shadow] duration-[220ms] ease-sortie hover:border-bordure-subtile hover:bg-fond-surface hover:shadow-ombre-xs"
+      data-conversation={chat.id}
+      className="group flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 no-underline transition-[background-color,border-color,box-shadow] duration-[220ms] ease-sortie group-hover/conv:border-bordure-subtile group-hover/conv:bg-fond-surface group-hover/conv:shadow-ombre-xs"
     >
       <RoleAvatar roleId={preview.roleId} size="md" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-ui font-medium text-texte-principal">{chat.title}</span>
         <span className="truncate text-ui-s text-texte-tertiaire">{preview.text}</span>
       </div>
-      <span className="klyra-mono shrink-0 text-ui-2xs text-texte-tertiaire">{formatListDate(chat.updatedAt)}</span>
+      <span className="flex min-w-8 shrink-0 items-center justify-end gap-1.5 group-hover/conv:opacity-0 group-has-[:focus-visible]/conv:opacity-0">
+        {estEpinglee(chat) && <span role="img" aria-label="Épinglée" className="flex shrink-0 text-icone-secondaire"><Icon name="pin-01" size={12} /></span>}
+        <span className="klyra-mono text-ui-2xs text-texte-tertiaire">{formatListDate(chat.updatedAt)}</span>
+      </span>
     </Link>
+    <BoutonEpingle chat={chat} className="right-3" />
+    </div>
   );
 }
 
@@ -159,7 +168,7 @@ export function ProjectScreen() {
             Chats du projet
           </h2>
           {chats.length > 0 ? (
-            <div className="flex flex-col rounded-xl border border-bordure-subtile bg-fond-page p-1.5">
+            <div data-liste-conversations className="flex flex-col rounded-xl border border-bordure-subtile bg-fond-page p-1.5">
               {chats.map((chat) => (
                 <ChatRow key={chat.id} chat={chat} />
               ))}

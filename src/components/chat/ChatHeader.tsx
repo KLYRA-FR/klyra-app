@@ -7,6 +7,8 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ChoixModele } from "./ChoixModele";
 import { MenuConversation } from "./MenuConversation";
+import { useBasculerEpingle } from "./BoutonEpingle";
+import { estEpinglee } from "@/lib/epinglage";
 import { useAgentOccupe, useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Project } from "@/types/domain";
 
@@ -116,6 +118,7 @@ function ChampTitre({ titre, onFin }: { titre: string; onFin: (nouveau: string |
 
 export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: ChatHeaderProps) {
   const { renommerChat } = useWorkspace();
+  const basculerEpingle = useBasculerEpingle();
   /* La conversation dont le titre est en cours de renommage. */
   const [edition, setEdition] = useState<string | null>(null);
   const options = useRef<HTMLButtonElement>(null);
@@ -139,7 +142,14 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
             }}
           />
         ) : (
-          <h1 className="m-0 truncate text-ui font-semibold">{chat.title}</h1>
+          <h1 className="m-0 flex min-w-0 items-center gap-1.5 text-ui font-semibold">
+            <span className="truncate">{chat.title}</span>
+            {estEpinglee(chat) && (
+              <span role="img" aria-label="Épinglée" title="Épinglée" className="flex shrink-0 text-icone-secondaire">
+                <Icon name="pin-01" size={14} />
+              </span>
+            )}
+          </h1>
         )}
         <span className="truncate text-ui-xs text-texte-tertiaire">
           {project?.name} · {roleCount} {roleCount > 1 ? "agents" : "agent"} dans la conversation
@@ -162,7 +172,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
           data-son="panneau"
           onClick={onTogglePreview}
         />
-        <MenuConversation project={project} bouton={options} onRenommer={() => setEdition(chat.id)} />
+        <MenuConversation project={project} bouton={options} onRenommer={() => setEdition(chat.id)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} />
       </div>
     </header>
   );

@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 
-const APP = path.resolve(import.meta.dirname, "..");
+const APP = path.resolve(process.env.KLYRA_TEST_APP ?? path.resolve(import.meta.dirname, ".."));
 const ELECTRON = createRequire(import.meta.url)("electron");
 const TMP = mkdtempSync(path.join(os.tmpdir(), "klyra-conversation-"));
 const DONNEES = path.join(TMP, "userdata");
@@ -181,16 +181,18 @@ try {
   await app.touche("Enter", ENTREE);
   e = await etat(app);
   verifier(e.ouvert && e.menu && e.focus === "Renommer", "Entrée ouvre le menu, focus sur sa première ligne");
-  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Ouvrir le projet"]), `menu minimal : ${e.lignes.join(", ")}`);
+  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Ouvrir le projet"]), `menu de conversation : ${e.lignes.join(", ")}`);
   await app.touche("ArrowDown", { vk: 40 });
   const bas = (await etat(app)).focus;
+  await app.touche("ArrowDown", { vk: 40 });
+  const projet = (await etat(app)).focus;
   await app.touche("ArrowDown", { vk: 40 });
   const boucle = (await etat(app)).focus;
   await app.touche("End", { vk: 35 });
   const fin = (await etat(app)).focus;
   await app.touche("Home", { vk: 36 });
   const debut = (await etat(app)).focus;
-  verifier(bas === "Ouvrir le projet" && boucle === "Renommer" && fin === "Ouvrir le projet" && debut === "Renommer", "flèches en boucle, Début et Fin");
+  verifier(bas === "Épingler" && projet === "Ouvrir le projet" && boucle === "Renommer" && fin === "Ouvrir le projet" && debut === "Renommer", "trois lignes, flèches en boucle, Début et Fin");
   await app.touche("Escape", { vk: 27 });
   e = await etat(app);
   verifier(!e.menu && !e.ouvert && e.focus === "Plus d’options", "Échap ferme le menu et rend le focus au bouton");
@@ -281,12 +283,12 @@ try {
   await attendre(1000);
   verifier((await etat(app)).page === "/projet?id=projet-essai", "« Ouvrir le projet » mène à la page du projet");
 
-  /* Projet retiré : seulement « Renommer », sans séparateur ni ligne grisée. */
+  /* Projet retiré : renommage et épingle restent disponibles, sans ligne projet grisée. */
   await app.aller("/chat?id=equipe-sans-projet");
   await app.cliquer(BOUTON);
   e = await etat(app);
   const enfants = await app.ev(`document.querySelector('[role="menu"][aria-label="Options de la conversation"]')?.children.length`);
-  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer"]) && enfants === 1, `sans projet : le menu n’a que « Renommer » (${e.lignes.join(", ")})`);
+  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler"]) && enfants === 2, `sans projet : renommage et épingle (${e.lignes.join(", ")})`);
   await app.touche("Escape", { vk: 27 });
 
   await app.aller("/chat?id=dm-principal");

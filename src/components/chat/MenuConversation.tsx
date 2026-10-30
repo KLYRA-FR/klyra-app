@@ -26,7 +26,7 @@ function Ligne({ icone, children, onClick }: { icone: IconName; children: ReactN
 }
 
 /**
- * Le « … » de l'en-tête d'une conversation d'équipe : la renommer, ouvrir son
+ * Le « … » de l'en-tête d'une conversation d'équipe : la renommer, l'épingler, ouvrir son
  * projet. Au clavier, les flèches parcourent le menu ; Échap ou Tab le
  * ferment et rendent le focus au bouton, un clic ailleurs le ferme.
  */
@@ -34,11 +34,15 @@ export function MenuConversation({
   project,
   bouton,
   onRenommer,
+  epinglee,
+  onEpingler,
 }: {
   project: Project | undefined;
   /** Le « … » lui-même : l'en-tête y rend le focus après un renommage au clavier. */
   bouton: RefObject<HTMLButtonElement | null>;
   onRenommer: () => void;
+  epinglee: boolean;
+  onEpingler: () => void;
 }) {
   const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
@@ -118,6 +122,15 @@ export function MenuConversation({
             }}
           >
             Renommer
+          </Ligne>
+          <Ligne
+            icone={epinglee ? "pin-off-01" : "pin-01"}
+            onClick={() => {
+              fermer(true);
+              onEpingler();
+            }}
+          >
+            {epinglee ? "Retirer l'épingle" : "Épingler"}
           </Ligne>
           {project && (
             <Ligne
