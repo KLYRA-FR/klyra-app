@@ -54,6 +54,7 @@ function Onglet({ chat, actif, onOuvrir, onFermer }: { chat: Chat; actif: boolea
         type="button"
         onClick={onFermer}
         aria-label={`Fermer l’onglet ${chat.title}`}
+        data-son="fermer"
         className={cn(
           "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-2xs border-0 bg-transparent p-0 text-icone-secondaire hover:bg-fond-survol hover:text-texte-principal",
           !actif && "invisible group-hover/onglet:visible",

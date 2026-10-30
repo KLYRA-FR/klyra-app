@@ -475,6 +475,7 @@ export function PanneauLateral({
                   type="button"
                   onClick={() => fermerOnglet(o)}
                   aria-label={`Fermer l’onglet ${ONGLETS[o].nom}`}
+                  data-son="fermer"
                   className="flex size-4 cursor-pointer items-center justify-center rounded-2xs border-0 bg-transparent p-0 text-icone-secondaire"
                 >
                   <Icon name={ONGLETS[o].icone} size={14} className="group-hover/onglet:hidden" />
@@ -535,6 +536,7 @@ export function PanneauLateral({
           taille="mini"
           icone={<Icon name="layout-right" size={16} />}
           libelle="Fermer le panneau"
+          data-son="fermer"
           onClick={onFermer}
           className="text-icone-secondaire"
         />

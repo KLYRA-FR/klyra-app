@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
 import { entrer } from "@/lib/mouvement";
+import { jouer } from "@/lib/sons/sons";
 
 export interface OptionListe<T extends string> {
   value: T;
@@ -123,6 +124,8 @@ export function ListeDeroulante<T extends string>({
   const choisir = (i: number) => {
     const option = options[i];
     if (!option || option.disabled) return;
+    // Au clavier aussi (Entrée, Espace) : l'option choisie a son son, pas la liste qui se ferme.
+    jouer("selection");
     if (option.value !== value) onChange(option.value);
     fermer();
     bouton.current?.focus();

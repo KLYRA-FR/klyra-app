@@ -38,6 +38,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
           taille="mini"
           icone={<Icon name="chevron-left" size={16} />}
           libelle="Replier le panneau"
+          data-son="fermer"
           onClick={onClose}
           className="text-icone-secondaire"
         />

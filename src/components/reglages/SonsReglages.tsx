@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import type { PreferencesSons } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { poste } from "@/lib/plateforme";
 import { useReglages } from "@/lib/reglages";
 import { apercu, essai, useSilenceSysteme } from "@/lib/sons/sons";
 import { THEMES, type ThemeSons } from "@/lib/sons/themes";
@@ -10,7 +11,7 @@ import { ApercuSons } from "./ApercuSons";
 import { Groupe, Interrupteur, Ligne } from "./ui";
 
 /** Le temps de l'aperçu d'un thème : la carte s'anime pendant qu'il sonne. */
-const DUREE_APERCU_MS = 1600;
+const DUREE_APERCU_MS = 2000;
 
 /** Les cartes des thèmes, en boutons radio : un clic choisit le thème et le fait entendre. */
 function ThemesSons({ choisi, onChoisir }: { choisi: ThemeSons | null; onChoisir: (theme: ThemeSons) => void }) {
@@ -145,17 +146,17 @@ export function SonsReglages() {
         id="sons-actions"
         pile
         libelle="Sons des actions"
-        description="De courts sons confirment tes actions, comme l’envoi d’un message. Clique sur un thème pour l’entendre."
+        description="De courts sons accompagnent l’interface : clics, menus et fenêtres, onglets, envoi d’un message. Clique sur un thème pour l’entendre."
       >
         <ThemesSons choisi={sons?.theme ?? null} onChoisir={(theme) => void changerSons({ theme })} />
       </Ligne>
       <Ligne id="volume-sons" libelle="Volume" description="Le volume des sons de KLYRA, dans la limite de celui du système.">
         <VolumeSons sons={sons} disabled={!!sons && sons.theme === "silence" && !sons.finDeTache} onChanger={(volume) => void changerSons({ volume })} />
       </Ligne>
-      {(silence.moinsDeMouvement || silence.sonsCoupes) && (
+      {silence.sonsCoupes && (
         <Ligne
-          libelle={silence.sonsCoupes ? "Le système a coupé les sons de l’interface" : "Le système demande moins d’animations"}
-          description="KLYRA reste silencieux, comme tu l’as demandé au système. Les aperçus se font quand même entendre."
+          libelle={`Les sons de l’interface sont coupés sur ${poste.ce}`}
+          description={`KLYRA se tait donc aussi, sauf les aperçus. Pour les entendre : ${poste.reglagesSons}.`}
         />
       )}
     </Groupe>
