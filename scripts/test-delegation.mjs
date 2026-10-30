@@ -114,8 +114,8 @@ try {
 
   const fil = await demander({ agent: null, prompt: "fil beta", sessionId: sid });
   const raisonFil = fil.requetes.flatMap((q) => q.resultats).map((x) => x.texte).join(" ");
-  const outilsVus = fil.requetes.find((q) => q.principal)?.outils.filter((o) => o.startsWith("mcp__klyra")) ?? [];
-  verifier(refuse(fil) && /Agent inconnu|Mes agents/.test(raisonFil), `ouvrir_fil vers un agent désactivé : refusé par l’app (${raisonFil.slice(0, 160) || `outils de l’app vus : ${outilsVus.join(", ") || "aucun"}`})`);
+  const outilsVus = fil.requetes.find((q) => q.principal)?.outils.filter((o) => o.startsWith("mcp__") || o === "ToolSearch") ?? [];
+  verifier(refuse(fil) && /pas dans Mes agents/.test(raisonFil), `ouvrir_fil vers un agent désactivé : refusé par l’app (${raisonFil.slice(0, 160) || `outils de l’app vus : ${outilsVus.join(", ") || "aucun"}`})`);
 
   /* 2. Accès « demander » : même refus, sans rien demander à la personne. */
   const demande = await demander({ agent: null, prompt: "appelle beta", acces: "demander" });

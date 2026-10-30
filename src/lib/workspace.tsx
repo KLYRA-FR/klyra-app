@@ -395,7 +395,9 @@ function ajouterEtape(
 
 function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[] {
   const statut = ok ? "fait" : "erreur";
-  return parts.map((p) => {
+  // Une proposition d'agent refusée par l'app (identifiant déjà pris…) ne devient pas une carte.
+  const gardees = ok ? parts : parts.filter((p) => !(p.type === "proposition-agent" && p.etapeId === id));
+  return gardees.map((p) => {
     if (p.type === "passation" && p.etapeId === id) return { ...p, statut };
     if (p.type === "etapes")
       return {
@@ -1376,7 +1378,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           const agent = String(args.agent ?? "").trim();
           const titre = String(args.titre ?? "").trim();
           const brief = String(args.brief ?? "").trim();
-          if (!roles.some((r) => r.id === agent)) throw new Error(`Agent inconnu « ${agent} ». Agents : ${roles.map((r) => `${r.id} (${r.name})`).join(", ")}.`);
+          if (!roles.some((r) => r.id === agent)) {
+            throw new Error(`« ${agent} » n’est pas dans Mes agents : il ne peut pas recevoir de fil. Agents disponibles : ${roles.map((r) => `${r.id} (${r.name})`).join(", ")}.`);
+          }
           if (!brief) throw new Error("Le brief est vide : le fil ne voit pas ta conversation, il lui faut tout.");
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
           const id = creerFil(agent, titre || brief, lanceur);

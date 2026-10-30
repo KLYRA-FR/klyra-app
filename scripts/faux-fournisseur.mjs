@@ -14,6 +14,8 @@ const texteDe = (contenu) => (typeof contenu === "string" ? contenu : (contenu ?
 
 export async function demarrerFournisseur(agentsSurveilles) {
   const requetes = [];
+  /** Les recherches d'outils lancées : leur résultat appelle ensuite l'outil trouvé. */
+  const recherches = new Set();
   function reponse(corps) {
     const brut = JSON.stringify(corps);
     const systeme = JSON.stringify(corps.system ?? "");
@@ -33,6 +35,10 @@ export async function demarrerFournisseur(agentsSurveilles) {
       resultats: resultats.map((r) => ({ erreur: !!r.is_error, texte: JSON.stringify(r.content).slice(0, 300) })),
     });
     if (sousAgent) return [{ type: "text", text: `bonjour de ${sousAgent}` }];
+    const outilFil = (corps.tools ?? []).some((t) => t.name === "mcp__klyra__ouvrir_fil");
+    const filDemande = () => [{ type: "tool_use", id: `toolu_${randomUUID().slice(0, 8)}`, name: "mcp__klyra__ouvrir_fil", input: { agent: ordre[2], titre: "Essai", brief: "Brief d’essai." } }];
+    // Les outils de l'app sont chargés à la demande (ToolSearch) : une fois trouvés, on s'en sert.
+    if (resultats.some((r) => recherches.has(r.tool_use_id)) && ordre?.[1] === "fil" && outilFil) return filDemande();
     if (resultats.length) {
       return [{ type: "text", text: `fin ${resultats.map((r) => (r.is_error ? "REFUS" : "OK")).join(",")} ${JSON.stringify(resultats.map((r) => r.content)).slice(0, 400)}` }];
     }
@@ -41,8 +47,10 @@ export async function demarrerFournisseur(agentsSurveilles) {
     if (outilAgent && ordre?.[1] === "appelle") {
       return [{ type: "tool_use", id, name: outilAgent.name, input: { subagent_type: ordre[2], description: "Essai", prompt: "Dis bonjour.", run_in_background: false } }];
     }
-    if (ordre?.[1] === "fil" && (corps.tools ?? []).some((t) => t.name === "mcp__klyra__ouvrir_fil")) {
-      return [{ type: "tool_use", id, name: "mcp__klyra__ouvrir_fil", input: { agent: ordre[2], titre: "Essai", brief: "Brief d’essai." } }];
+    if (ordre?.[1] === "fil" && outilFil) return filDemande();
+    if (ordre?.[1] === "fil" && (corps.tools ?? []).some((t) => t.name === "ToolSearch")) {
+      recherches.add(id);
+      return [{ type: "tool_use", id, name: "ToolSearch", input: { query: "select:mcp__klyra__ouvrir_fil", max_results: 1 } }];
     }
     return [{ type: "text", text: "ok" }];
   }

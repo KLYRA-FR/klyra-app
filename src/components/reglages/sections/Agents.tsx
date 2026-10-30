@@ -10,7 +10,7 @@ import { ModalePersonnaliserAssistant } from "@/components/team/PersonnaliserAss
 import { Bouton } from "@/components/ui/Bouton";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { NIVEAUX_ACCES } from "@/lib/acces";
-import { getField, parseAgentFile, serializeAgentFile, setFields } from "@/lib/agent-file";
+import { getField, parseAgentFile } from "@/lib/agent-file";
 import { useAgents } from "@/lib/agents";
 import { BridgeError, getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
@@ -56,9 +56,9 @@ function ChoixAcces() {
   );
 }
 
-/** Le modèle d'un agent, écrit dans sa fiche (champ `model`), comme depuis l'Équipe. */
+/** Le modèle d'un agent, comme depuis sa fiche : écrit dans le fichier, ou préférence d'un agent reçu (sans le détacher). */
 function ModeleAgent({ role }: { role: Role }) {
-  const { save, canEdit } = useAgents();
+  const { changerModele, canEdit } = useAgents();
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const parsed = role.file ? parseAgentFile(role.file.content) : null;
@@ -70,8 +70,7 @@ function ModeleAgent({ role }: { role: Role }) {
     setErreur(null);
     setEnCours(true);
     try {
-      const contenu = serializeAgentFile({ frontmatter: setFields(parsed.frontmatter, { model }), body: parsed.body });
-      await save(role.id, contenu, { tag: role.tag, teinte: role.teinte }, role.file.modifiedAt);
+      await changerModele(role.id, model);
     } catch (e) {
       setErreur(
         e instanceof BridgeError && e.code === "conflit"

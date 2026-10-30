@@ -21,8 +21,9 @@ import { lienDe } from "@/lib/lien-bibliotheque";
 import { identifiantDe, nomDejaPris, nomPropre } from "@/lib/noms-agents";
 import { oublierProposition, reprendreDansEditeur } from "@/lib/proposition-agent";
 import { jouer } from "@/lib/sons/sons";
-import { ROLE_TEINTES, type Role, type RoleTeinte } from "@/types/domain";
-import { AgentVisuel, TEINTES } from "./AgentVisuel";
+import type { Role, RoleTeinte } from "@/types/domain";
+import { ChoixTeinte } from "@/components/roles/ChoixTeinte";
+import { AgentVisuel } from "./AgentVisuel";
 
 const NOM_VALIDE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -313,28 +314,12 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
               <Champ label="Rôle court" erreur={essai ? erreurs.tag : undefined} aide="Affiché à côté de son nom dans les chats (« Dev », « Ventes »). Réglage de l’app.">
                 <Input size="sm" value={tag} onChange={(e) => setTag(e.target.value)} className={CHAMP} />
               </Champ>
-              <fieldset className="m-0 flex flex-col gap-2 border-0 p-0 @xl:col-span-2">
-                <legend className="mb-2 text-ui-s font-medium text-texte-principal">Couleur de son illustration</legend>
-                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Couleur de son illustration">
-                  {ROLE_TEINTES.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      role="radio"
-                      aria-checked={teinte === t}
-                      aria-label={t}
-                      title={t}
-                      onClick={() => setTeinte(t)}
-                      className={cn(
-                        "flex size-8 cursor-pointer items-center justify-center rounded-xs border bg-fond-surface p-0",
-                        teinte === t ? "border-focus" : "border-bordure-subtile hover:border-bordure-forte",
-                      )}
-                    >
-                      <span className="size-4 rounded-[3px]" style={{ background: TEINTES[t] }} />
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
+              <div className="flex flex-col gap-2 @xl:col-span-2">
+                <span id="couleur-agent" className="mb-2 text-ui-s font-medium text-texte-principal">
+                  Couleur de son illustration
+                </span>
+                <ChoixTeinte valeur={teinte} onChange={setTeinte} libelleId="couleur-agent" />
+              </div>
             </div>
             <div className="overflow-hidden rounded-2xl border border-bordure-subtile bg-fond-page">
               <div className="h-[180px]">
@@ -381,7 +366,7 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
             <summary className="flex cursor-pointer list-none items-center gap-2 text-ui font-semibold text-texte-principal">
               <Icon name="chevron-right" size={16} className="text-icone-secondaire transition-transform duration-[220ms] ease-sortie group-open:rotate-90" />
               Réglages avancés
-              <span className="font-normal text-texte-tertiaire">· identifiant, modèle, mémoire</span>
+              <span className="font-normal text-texte-tertiaire">· identifiant « {id || "…"} », modèle, mémoire</span>
             </summary>
             <div className="mt-4 grid grid-cols-1 gap-4 @xl:grid-cols-3">
               <Champ label="Identifiant" erreur={essai ? erreurs.id : undefined} aide={aideId}>

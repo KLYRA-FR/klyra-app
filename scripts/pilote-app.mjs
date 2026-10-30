@@ -30,14 +30,22 @@ export async function lancerApp({ env, port }) {
   const propre = Object.fromEntries(Object.entries({ ...process.env, ...env }).filter(([k]) => !/^(CLAUDE|ANTHROPIC)/.test(k) || k in env));
   delete propre.ELECTRON_RUN_AS_NODE;
   delete propre.KLYRA_DEV_URL;
-  const processus = spawn(ELECTRON, [".", `--remote-debugging-port=${port}`, ...process.argv.slice(2)], { cwd: APP, env: propre, stdio: "ignore" });
+  let processus;
   let cible;
-  for (let i = 0; i < 60 && !cible; i++) {
-    await attendre(500);
-    cible = await fetch(`http://127.0.0.1:${port}/json`)
-      .then((r) => r.json())
-      .then((t) => t.find((x) => x.type === "page" && x.url.startsWith("app://")))
-      .catch(() => undefined);
+  /* Juste après une fermeture, l'instance précédente peut encore tenir le verrou : on relance une fois. */
+  for (let essai = 0; essai < 2 && !cible; essai++) {
+    processus = spawn(ELECTRON, [".", `--remote-debugging-port=${port}`, ...process.argv.slice(2)], { cwd: APP, env: propre, stdio: "ignore" });
+    for (let i = 0; i < 40 && !cible && processus.exitCode === null; i++) {
+      await attendre(500);
+      cible = await fetch(`http://127.0.0.1:${port}/json`)
+        .then((r) => r.json())
+        .then((t) => t.find((x) => x.type === "page" && x.url.startsWith("app://")))
+        .catch(() => undefined);
+    }
+    if (!cible) {
+      processus.kill();
+      await attendre(2000);
+    }
   }
   if (!cible) throw new Error("la fenêtre de l’app n’apparaît pas");
   const ws = new WebSocket(cible.webSocketDebuggerUrl);
