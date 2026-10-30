@@ -3,6 +3,7 @@
  * sans compte ni dépense. Réponses scriptées d'après le dernier ordre de la personne :
  * - « appelle <agent> » : l'assistant appelle l'outil Agent avec ce type de sous-agent ;
  * - « fil <agent> » : il ouvre un fil (outil `ouvrir_fil` de l'app) pour cet agent ;
+ * - « liste <agent> » : il liste les fils ouverts de cet agent (outil `lister_fils`) ;
  * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> ».
  * Les fiches d'essai portent `SOUS-AGENT-TEST-<nom>` dans leur consigne pour être reconnues.
  * Chaque requête est notée : sous-agent, agents listés au modèle, résultats d'outils.
@@ -24,8 +25,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     const sousAgent = systeme.includes("dans cette app") ? null : (systeme.match(/SOUS-AGENT-TEST-([a-z0-9-]+)/)?.[1] ?? null);
     const dernier = corps.messages?.at(-1);
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste) ([a-z0-9-]+)/m) : null;
     requetes.push({
       sousAgent,
       principal: !!outilAgent && !sousAgent,
@@ -35,10 +36,14 @@ export async function demarrerFournisseur(agentsSurveilles) {
       resultats: resultats.map((r) => ({ erreur: !!r.is_error, texte: JSON.stringify(r.content).slice(0, 300) })),
     });
     if (sousAgent) return [{ type: "text", text: `bonjour de ${sousAgent}` }];
-    const outilFil = (corps.tools ?? []).some((t) => t.name === "mcp__klyra__ouvrir_fil");
-    const filDemande = () => [{ type: "tool_use", id: `toolu_${randomUUID().slice(0, 8)}`, name: "mcp__klyra__ouvrir_fil", input: { agent: ordre[2], titre: "Essai", brief: "Brief d’essai." } }];
+    // Les outils de l'app : « fil » ouvre un fil, « liste » liste ceux de l'agent.
+    const nomOutil = ordre?.[1] === "fil" ? "mcp__klyra__ouvrir_fil" : ordre?.[1] === "liste" ? "mcp__klyra__lister_fils" : null;
+    const outilFil = !!nomOutil && (corps.tools ?? []).some((t) => t.name === nomOutil);
+    const filDemande = () => [
+      { type: "tool_use", id: `toolu_${randomUUID().slice(0, 8)}`, name: nomOutil, input: ordre[1] === "fil" ? { agent: ordre[2], titre: "Essai", brief: "Brief d’essai." } : { agent: ordre[2] } },
+    ];
     // Les outils de l'app sont chargés à la demande (ToolSearch) : une fois trouvés, on s'en sert.
-    if (resultats.some((r) => recherches.has(r.tool_use_id)) && ordre?.[1] === "fil" && outilFil) return filDemande();
+    if (resultats.some((r) => recherches.has(r.tool_use_id)) && nomOutil && outilFil) return filDemande();
     if (resultats.length) {
       return [{ type: "text", text: `fin ${resultats.map((r) => (r.is_error ? "REFUS" : "OK")).join(",")} ${JSON.stringify(resultats.map((r) => r.content)).slice(0, 400)}` }];
     }
@@ -47,10 +52,10 @@ export async function demarrerFournisseur(agentsSurveilles) {
     if (outilAgent && ordre?.[1] === "appelle") {
       return [{ type: "tool_use", id, name: outilAgent.name, input: { subagent_type: ordre[2], description: "Essai", prompt: "Dis bonjour.", run_in_background: false } }];
     }
-    if (ordre?.[1] === "fil" && outilFil) return filDemande();
-    if (ordre?.[1] === "fil" && (corps.tools ?? []).some((t) => t.name === "ToolSearch")) {
+    if (nomOutil && outilFil) return filDemande();
+    if (nomOutil && (corps.tools ?? []).some((t) => t.name === "ToolSearch")) {
       recherches.add(id);
-      return [{ type: "tool_use", id, name: "ToolSearch", input: { query: "select:mcp__klyra__ouvrir_fil", max_results: 1 } }];
+      return [{ type: "tool_use", id, name: "ToolSearch", input: { query: `select:${nomOutil}`, max_results: 1 } }];
     }
     return [{ type: "text", text: "ok" }];
   }

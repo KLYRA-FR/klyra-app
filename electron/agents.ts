@@ -102,8 +102,16 @@ export async function writeAgent(name: string, content: string, expectedModified
     throw new AgentError("conflit", "La fiche a changé sur le disque depuis que tu l’as ouverte.");
   }
   if (current.content === content) return current;
-  await backup(current);
-  await writeAtomic(file, content);
+  // Le fichier temporaire d'abord : si le dossier refuse l'écriture, rien n'est copié dans l'historique.
+  const tmp = `${file}.${process.pid}.tmp`;
+  await fs.writeFile(tmp, content, "utf8");
+  try {
+    await backup(current);
+    await fs.rename(tmp, file);
+  } catch (error) {
+    await fs.rm(tmp, { force: true });
+    throw error;
+  }
   return (await readFile(name)) as AgentFile;
 }
 

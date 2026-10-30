@@ -8,6 +8,11 @@
  * - un appel à un agent désactivé, absent ou non lu est refusé, en accès complet compris ;
  * - un agent actif répond ; `ouvrir_fil` refuse un agent hors de Mes agents ;
  * - une conversation directe avec un agent désactivé est refusée par le process principal ;
+ * - ce que l'app dit à chacun : l'assistant pilote (brief, un responsable, pas de travail en double,
+ *   limites), l'agent confie par les fils et vérifie lui-même, QA seulement sur demande ;
+ * - un fil ouvert se retrouve avec lister_fils (le reprendre plutôt qu'en ouvrir un autre) ;
+ * - le chemin court (`runAgent`, « Modifier avec Lou ») ne peut rien confier et le sait ;
+ * - l'assistant seul (agent désactivé) travaille seul, sans réactiver personne ;
  * - ni les fiches ni les réglages de Claude Code ne changent.
  * Prérequis : `pnpm build && pnpm build:electron`, Claude Code installé (sinon le test est sauté).
  *   node scripts/test-delegation.mjs          (sous Linux sans bac à sable : -- --no-sandbox)
@@ -130,12 +135,48 @@ try {
     "alpha sait avec qui il travaille : l’assistant, sans les agents hors de Mes agents",
   );
 
+  /* 3 bis. Ce que l'app dit à l'assistant et à l'agent, quelle que soit la version de leur fiche. */
+  const consigneSam = vues?.systeme ?? "";
+  verifier(
+    ["Une tâche, un responsable : ne refais pas en parallèle ce que tu as confié.", "Au plus trois travaux confiés en même temps", "Reprends le fil déjà ouvert sur le sujet (lister_fils)", "Vérifie les preuves reçues avant de dire que c'est livré"].every((t) => consigneSam.includes(t)),
+    "l’assistant pilote : brief, un responsable, pas de travail en double, limites, preuves vérifiées",
+  );
+  const regleQa = "une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable";
+  verifier(consigneSam.includes(regleQa) && consigneAlpha.includes(regleQa), "assistant et agent : QA seulement sur demande, l’auteur vérifie lui-même");
+  verifier(consigneAlpha.includes("on confie un travail dans un fil de l'app ou en appelant un agent actif"), "l’agent : on confie par les fils ou un agent actif, pas par les outils d’une fiche ancienne");
+
+  /* 3 ter. Un fil ouvert se retrouve : l'assistant le reprend au lieu d'en ouvrir un autre. */
+  const ouvert = await demander({ agent: null, prompt: "fil alpha", sessionId: sid });
+  const texteOuvert = ouvert.requetes.flatMap((q) => q.resultats).map((x) => x.texte).join(" ");
+  const idFil = texteOuvert.match(/klyra-fil-[\w-]+/)?.[0];
+  verifier(!refuse(ouvert) && !!idFil, `ouvrir_fil vers un agent actif : le fil s’ouvre (${idFil ?? texteOuvert.slice(0, 120)})`);
+  const liste = await demander({ agent: null, prompt: "liste alpha", sessionId: sid });
+  const texteListe = liste.requetes.flatMap((q) => q.resultats).map((x) => x.texte).join(" ");
+  verifier(!!idFil && texteListe.includes(idFil) && (texteListe.match(/klyra-fil-/g) ?? []).length === 1, "lister_fils retrouve ce fil, et lui seul");
+
+  /* 3 quater. Le chemin court : un seul tour, sans délégation, et l'agent le sait. */
+  const debutRun = fournisseur.requetes.length;
+  const run = await app.ev(`window.klyra.claude.run("essai-run", "alpha", "Dis bonjour.")`);
+  const requeteRun = fournisseur.requetes.slice(debutRun).find((q) => q.systeme.includes("SOUS-AGENT-TEST-alpha"));
+  verifier(run?.ok === true && run.data?.ok === true, `runAgent : alpha répond (${run?.data?.error ?? run?.error ?? "ok"})`);
+  verifier(!!requeteRun?.systeme.includes("tu ne peux confier aucun travail ni ouvrir de fil"), "runAgent : l’agent sait qu’il livre seul");
+  verifier(!!requeteRun && !requeteRun.outils.some((o) => o === "Agent" || o === "Task" || o.startsWith("mcp__klyra__")), "runAgent : ni outil Agent ni outil de fil");
+
   /* 4. Écrire directement à un agent désactivé : refusé par le process principal, sans lancer Claude Code. */
   const direct = await demander({ agent: "beta", prompt: "bonjour", chatId: "dm-beta" });
   verifier(
     direct.fin?.ok === false && /pas dans Mes agents/.test(direct.fin?.erreur ?? "") && !direct.evts.some((e) => e.type === "session"),
     `conversation directe avec un agent désactivé : refusée sans lancer Claude Code (${direct.fin?.erreur ?? "pas de fin"})`,
   );
+
+  /* 4 bis. L'assistant seul : alpha désactivé, il travaille seul et ne réactive personne. */
+  await app.ev("window.klyra.agents.activer('alpha', false).then(() => 0)");
+  const seul = await demander({ agent: null, prompt: "appelle alpha" });
+  const consigneSeul = seul.requetes.find((q) => q.principal)?.systeme ?? "";
+  verifier(consigneSeul.includes("Elle n'a encore choisi aucun agent") && !consigneSeul.includes("Une tâche, un responsable"), "assistant seul : il fait le travail lui-même, sans consigne de répartition");
+  verifier(refuse(seul) && !seul.requetes.some((q) => q.sousAgent === "alpha"), "assistant seul : l’appel à l’agent désactivé est refusé");
+  const etat = JSON.parse(readFileSync(path.join(DONNEES, "mes-agents.json"), "utf8"));
+  verifier(etat.agents.alpha.actif === false && etat.agents.beta.actif === false && !etat.agents.gamma, "aucun agent réactivé ni ajouté pour finir la tâche");
 
   /* 5. Rien n'est écrit ailleurs que dans le dossier de l'app. */
   const apres = empreintes();

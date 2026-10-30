@@ -88,8 +88,9 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
   if (!estActif(agent)) return Promise.resolve({ ok: false, text: "", error: pasDansMesAgents(agent) });
 
   return new Promise((resolve) => {
-    // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul.
-    const child = spawn(bin, ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, "Agent"], {
+    // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul, et le sait.
+    const args = ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
+    const child = spawn(bin, args, {
       cwd: HOME,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
       windowsHide: true,
@@ -258,35 +259,53 @@ const CONSIGNE_FILS = `Dans cette app, une tâche = un fil : une conversation à
 /** Dit à l'agent où lire le planning de la personne (electron/planning.ts). */
 const CONSIGNE_PLANNING = `La personne avec qui tu parles a, dans cette app, son calendrier (avec les rendez-vous de son équipe), ses rappels, ses routines, ses projets, ses conversations, ses artefacts et ses workflows. Tout est dans ${FICHIER_PLANNING}, tenu à jour en continu. Quand elle dit « mes rappels », « mon calendrier », « mon agenda », « mes routines », « mes projets »…, c'est de ceux-là qu'elle parle, les siens, pas des apps du Mac (Rappels, Calendrier) : lis ce fichier en premier, avant toute autre recherche, et réponds à partir de lui. Il est en lecture seule : pour y changer quelque chose, dis-lui quoi faire dans l'app.`;
 
-/** Qui est l'assistant, et à qui il peut confier du travail : les agents actifs de Mes agents, et eux seuls. */
+/**
+ * Les règles de l'app qui valent pour l'assistant et pour chaque agent, quelle que soit la version de sa fiche :
+ * une fiche installée avant leur mise à jour (« validation QA obligatoire », équipe fixe, outils d'un autre
+ * système) reçoit les mêmes règles que les modèles actuels, sans être réécrite.
+ */
+const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente ni prix, ni délai, ni autorisation.`;
+
+const listeAgents = (agents: { id: string; nom: string }[]) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
+
+/**
+ * Qui est l'assistant, et comment il pilote : il répond et fait lui-même ce qui est simple ; il confie aux
+ * agents actifs de Mes agents, et à eux seuls, la part qui relève d'eux, suit le travail et rend le résultat vérifié.
+ */
 function consigneAssistant(outilsApp: boolean): string {
   const nom = mesAgents().assistant.nom;
   const actifs = presentationActifs();
+  const qui = `Dans cette app, tu es ${nom ? `${nom}, ` : ""}l'assistant personnel de la personne. Qualifie le résultat attendu et prends le chemin utile le plus court : réponds toi-même aux demandes simples, et fais toi-même, dans tes capacités et tes accès, ce qu'aucun de ses agents ne fera mieux.`;
   const equipe = actifs.length
-    ? `Les agents qu'elle a choisis dans « Mes agents » : ${actifs.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ")}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre.`
-    : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, sans le confier à un agent de l'équipe.`;
+    ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre et n'ajoute personne pour finir une tâche. Quand une partie relève clairement de l'un d'eux, confie-la-lui avec un brief qui se suffit (objectif, contexte et chemins, contraintes, ce qui est permis ou non, critère de fin), avec l'équipe la plus petite possible, et reste responsable du suivi, de la cohérence et de ce que tu rends. Une tâche, un responsable : ne refais pas en parallèle ce que tu as confié.${outilsApp ? " Reprends le fil déjà ouvert sur le sujet (lister_fils) plutôt que d'en ouvrir un autre." : ""} Le retour arrive de lui-même : ne le surveille pas en boucle. Au plus trois travaux confiés en même temps, seulement s'ils sont indépendants ; au plus deux reprises avec un défaut précis, puis dis le blocage. Vérifie les preuves reçues avant de dire que c'est livré, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
+    : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
   const proposer = outilsApp
     ? ` Quand elle exprime un besoin qui revient et qu'aucun de ses agents ne couvre, tu peux lui proposer une fiche d'agent avec l'outil proposer_agent : elle l'ouvre, l'ajuste et l'enregistre elle-même. Rien n'est créé avant.`
     : "";
-  return `Dans cette app, tu es ${nom ? `${nom}, ` : ""}l'assistant personnel de la personne : tu réponds toi-même. ${equipe}${proposer}`;
+  return `${qui} ${equipe} ${REGLES_COMMUNES}${proposer}`;
 }
 
 /**
  * Pour un agent lancé par l'app : avec qui il travaille vraiment (sa fiche peut citer des collègues
- * absents d'ici, elle n'est jamais réécrite pour autant), et les dossiers encore à configurer.
+ * absents d'ici, elle n'est jamais réécrite pour autant), comment on confie ici, les règles communes,
+ * et les dossiers encore à configurer.
  */
-function consigneAgent(id: string): string {
+function consigneAgent(id: string, outilsApp: boolean): string {
   const nom = mesAgents().assistant.nom ?? "l'assistant";
   const autres = presentationActifs().filter((a) => a.id !== id);
   const equipe = autres.length
-    ? `Dans cette app, les agents que la personne a choisis sont : ${autres.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ")}, et son assistant ${nom} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais sans, ou dis-le.`
-    : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${nom} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais sans, ou dis-le.`;
+    ? `Dans cette app, les agents que la personne a choisis sont : ${listeAgents(autres)}, et son assistant ${nom} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais ta part et dis ce qui reste, sans demander de l'ajouter.`
+    : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${nom} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais ta part et dis ce qui reste, sans demander de l'ajouter.`;
+  const confier = `Si ta fiche cite des outils d'équipe absents de ta session ou une liste fixe de collègues, ils ne valent pas ici : on confie un travail ${outilsApp ? "dans un fil de l'app ou " : ""}en appelant un agent actif.`;
   const manquants = dossiersAConfigurer(id);
   const dossiers = manquants.length
     ? ` Certains dossiers de ta fiche ne sont pas encore configurés sur cet ordinateur (${manquants.join(", ")}, écrits {{chemin:…}}) : si tu en as besoin, dis-le à la personne au lieu de deviner un chemin.`
     : "";
-  return `${equipe}${dossiers}`;
+  return `${equipe} ${confier} ${REGLES_COMMUNES}${dossiers}`;
 }
+
+/** Le chemin court (`runAgent`) : un seul tour, sans délégation possible. */
+const CONSIGNE_SEUL = `Dans cette session, tu ne peux confier aucun travail ni ouvrir de fil, et personne ne te répondra en cours de route : fais ta part seul, rends-la en entier, et dis ce qui reste ou ce que tu n'as pas pu vérifier. ${REGLES_COMMUNES}`;
 
 /** Les dépendances encore écrites `{{chemin:cle}}` dans la fiche d'un agent reçu. */
 function dossiersAConfigurer(id: string): string[] {
@@ -704,7 +723,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
     // L'agenda, les rappels et les routines de la personne, que l'app tient à jour.
-    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent)];
+    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignes.join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);

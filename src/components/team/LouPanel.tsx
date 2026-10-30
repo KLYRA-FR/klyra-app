@@ -103,7 +103,7 @@ export function LouPanel({ role }: { role: Role }) {
     : claudePath === null
       ? "Claude Code est introuvable sur ce poste. Installe-le (extension VS Code, ou « npm install -g @anthropic-ai/claude-code »), puis rouvre cet écran."
       : !louInstallee
-        ? "Lou n’est pas installée sur ce poste. Installe l’équipe depuis la page Équipe."
+        ? "Lou n’est pas dans tes agents. Ajoute-la depuis Équipe › Bibliothèque KLYRA (Modèles KLYRA), puis reviens ici."
         : null;
 
   return (

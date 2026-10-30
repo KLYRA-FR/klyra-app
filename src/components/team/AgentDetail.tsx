@@ -83,7 +83,11 @@ const BANDEAU = "flex flex-wrap items-center gap-3 rounded-md border px-4 py-3";
 function texteOrigine(lien: Lien, nom: string): string | null {
   switch (lien.type) {
     case "modele":
-      return lien.aJour ? "Modèle KLYRA" : "Modèle KLYRA · ta version diffère du modèle";
+      return lien.aJour
+        ? "Modèle KLYRA"
+        : lien.miseAJour !== null
+          ? `Modèle KLYRA · version ${lien.miseAJour} disponible`
+          : "Modèle KLYRA · ta version diffère du modèle";
     case "recu":
       if (lien.retiree) return `Copie privée de « ${nom} » (${lien.auteur}), plus partagé`;
       return `De ${lien.auteur} · v${lien.version}${lien.modifie ? ` · modifié sur ${poste.ce}` : ""}`;
@@ -228,6 +232,10 @@ function FicheAgent({ role }: { role: Role }) {
     if (lien.type === "publie") {
       lignes.push({ id: "publier", icone: "upload-01", titre: "Publier une mise à jour", onChoisir: () => setPartage("mettre-a-jour") });
       lignes.push({ id: "retirer", icone: "x-01", titre: "Retirer de la bibliothèque", onChoisir: () => void agir(() => retirerDeBibliotheque(local)) });
+    }
+    /* Sa version gardée face au modèle : la comparaison reste à portée, sans bandeau. */
+    if (lien.type === "modele" && lien.ecartee) {
+      lignes.push({ id: "comparer", icone: "refresh-01", titre: "Comparer au modèle KLYRA", onChoisir: () => router.push(`/equipe?agent=${role.id}&mode=maj`) });
     }
     lignes.push({ id: "desactiver", icone: "stop-01", titre: "Désactiver", separee: lignes.length > 0, onChoisir: () => void desactiver() });
   } else if (statut === "desactive") {
@@ -379,7 +387,18 @@ function FicheAgent({ role }: { role: Role }) {
             </Bouton>
           </div>
         )}
-        {statut === "actif" && ((lien.type === "modele" && !lien.aJour) || (lien.type === "copie" && lien.versionPlusRecente !== null)) && (
+        {statut === "actif" && lien.type === "modele" && lien.miseAJour !== null && (
+          <div role="status" className={cn(BANDEAU, "border-bordure-accent-survol bg-fond-teinte-bleue")}>
+            <p className="m-0 min-w-[240px] flex-1 text-ui-s text-texte-principal">
+              Le modèle KLYRA de {role.name} a une nouvelle version (version {lien.miseAJour}). Rien ne change tant que tu ne choisis pas.
+            </p>
+            <Bouton variant="sombre" taille="compact" onClick={() => router.push(`/equipe?agent=${role.id}&mode=maj`)}>
+              Voir les changements
+            </Bouton>
+          </div>
+        )}
+        {statut === "actif" &&
+          ((lien.type === "modele" && !lien.aJour && lien.miseAJour === null && !lien.ecartee) || (lien.type === "copie" && lien.versionPlusRecente !== null)) && (
           <div role="status" className={cn(BANDEAU, "border-bordure-subtile bg-fond-page")}>
             <p className="m-0 min-w-[240px] flex-1 text-ui-s text-texte-secondaire">
               {lien.type === "modele" ? "Ta version diffère du modèle KLYRA." : `${lien.auteur} a publié la version ${lien.versionPlusRecente}.`}

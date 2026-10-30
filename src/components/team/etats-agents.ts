@@ -10,10 +10,10 @@ import type { Etiquette } from "./AgentCard";
 export function etiquettesDe(agent: AgentLocal, lien: Lien): Etiquette[] {
   const etiquettes: Etiquette[] = [];
   if (agent.manquantes.length) etiquettes.push({ texte: "À configurer", ton: "a-configurer" });
-  if (lien.type === "recu" && lien.proposition) etiquettes.push({ texte: "Mise à jour", ton: "accent" });
+  if ((lien.type === "recu" && lien.proposition) || (lien.type === "modele" && lien.miseAJour !== null)) etiquettes.push({ texte: "Mise à jour", ton: "accent" });
   const origine =
     lien.type === "modele"
-      ? lien.aJour
+      ? lien.aJour || lien.miseAJour !== null
         ? "Modèle KLYRA"
         : null
       : lien.type === "recu"

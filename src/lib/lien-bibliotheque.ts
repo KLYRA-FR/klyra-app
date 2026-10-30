@@ -1,7 +1,7 @@
 import { getField, parseAgentFile } from "@/lib/agent-file";
 import type { AgentLocal } from "@/lib/agents";
 import type { EtatBibliotheque, EtatDefinition } from "@/lib/bibliotheque";
-import { AGENT_TEMPLATES } from "@/data/agent-templates.generated";
+import { comparerAuModele } from "@/lib/maj-modele";
 
 /**
  * Ce qu'un agent de cet ordinateur doit montrer de son lien avec la bibliothèque (spec §4, §4.1).
@@ -12,8 +12,12 @@ import { AGENT_TEMPLATES } from "@/data/agent-templates.generated";
 export type Lien =
   /** À soi, jamais partagé (ou partagé sous un autre compte : rien n'en est dit). */
   | { type: "aucun" }
-  /** Modèle KLYRA embarqué ; `aJour` : sa consigne est celle du modèle de cette version de l'app. */
-  | { type: "modele"; aJour: boolean }
+  /**
+   * Modèle KLYRA embarqué. `aJour` : sa consigne est celle du modèle de cette version de l'app ;
+   * `miseAJour` : la version plus récente du modèle à proposer (la fiche vient d'une version antérieure),
+   * sauf si la personne l'a écartée (`ecartee` : elle garde sa version face au modèle actuel).
+   */
+  | { type: "modele"; aJour: boolean; miseAJour: number | null; ecartee: boolean }
   /** Reçu de la bibliothèque, mais pas sous la session en cours : utilisable, sans nom, version ni proposition. */
   | { type: "suspendu"; raison: "deconnecte" | "autre-compte" | "retire" | "chargement" }
   | {
@@ -45,13 +49,6 @@ export function consigne(contenu: string): string {
   return `${(getField(frontmatter, "description") ?? "").trim()}\n\n${body.trim()}`;
 }
 
-const MODELES = new Map(AGENT_TEMPLATES.map((t) => [t.name, consigne(t.content)]));
-
-/** Le modèle KLYRA embarqué de ce nom (contenu complet), s'il existe. */
-export function modeleEmbarque(nom: string): string | null {
-  return AGENT_TEMPLATES.find((t) => t.name === nom)?.content ?? null;
-}
-
 function raisonSuspendu(session: Session): "deconnecte" | "autre-compte" | "retire" | "chargement" {
   if (session.etat === "retire") return "retire";
   if (session.etat === "chargement") return "chargement";
@@ -63,8 +60,10 @@ export function lienDe(agent: AgentLocal, session: Session): Lien {
   if (!o) return { type: "aucun" };
   switch (o.type) {
     case "modele": {
-      const reference = MODELES.get(o.modele);
-      return { type: "modele", aJour: reference !== undefined && reference === consigne(agent.role.file?.content ?? "") };
+      const c = comparerAuModele(o.modele, agent.role.file?.content ?? "");
+      const aJour = c !== null && c.identiqueA === c.version;
+      const ecartee = c !== null && !aJour && o.ignoree === c.version;
+      return { type: "modele", aJour, miseAJour: c && !aJour && !ecartee && c.base < c.version ? c.version : null, ecartee };
     }
     case "local": {
       if (!o.publie || o.publie.compte !== session.moiId) return { type: "aucun" };
