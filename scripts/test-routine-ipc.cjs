@@ -14,11 +14,11 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "klyra-routine-ipc-"));
 let index = 0;
 let passed = 0;
 
-async function fixture(initial) {
-  const dir = path.join(root, String(++index));
-  fs.mkdirSync(dir);
+async function fixture(initial, dossierExistant) {
+  const dir = dossierExistant ?? path.join(root, String(++index));
+  fs.mkdirSync(dir, { recursive: true });
   const fiches = path.join(dir, "agents");
-  fs.mkdirSync(fiches);
+  fs.mkdirSync(fiches, { recursive: true });
   fs.writeFileSync(path.join(fiches, "dev.md"), "Agent fictif");
   if (initial !== undefined) fs.writeFileSync(path.join(dir, "conversations.json"), typeof initial === "string" ? initial : JSON.stringify(initial));
   const active = new Set(["dev"]);
@@ -197,6 +197,31 @@ async function main() {
     assert.deepEqual(routine.relais, legacy.routines[0].relais);
     assert.equal((await f.call("executer", routine.id)).ok, false);
   });
+  const rappel = { id: "rappel-temoin", titre: "Rappel fictif", notes: "Notes intactes", liste: "perso", date: "2026-11-02", heure: "09:00", fin: "2026-11-03", priorite: 2, signalee: true, faite: false, faiteLe: null, projectId: "projet-fictif", creeLe: "2026-10-30T10:00:00Z", notifiee: true };
+  const avantRappels = { ...legacy, taches: [{ ...rappel, id: "avant" }, rappel, { ...rappel, id: "apres" }], chats: [{ id: "temoin" }], messages: [] };
+  for (const annuler of [false, true]) {
+    await test(`sauvegarde ancienne des routines : rappel ${annuler ? "restauré intact" : "supprimé absent"} après redémarrage`, avantRappels, async (f) => {
+      const conversations = require(conversationsPath);
+      const sansRappel = { ...avantRappels, taches: avantRappels.taches.filter((t) => t.id !== rappel.id) };
+      // Deux écritures déjà demandées, comme une livraison de routine puis un clic.
+      const ecritures = [conversations.writeConversations(avantRappels), conversations.writeConversations(sansRappel)];
+      if (annuler) ecritures.push(conversations.writeConversations(avantRappels));
+      await Promise.all(ecritures);
+      const attendu = annuler ? avantRappels : sansRappel;
+      assert.deepEqual(await conversations.readConversations(), attendu);
+      f.close();
+      const reprise = await fixture(undefined, f.dir);
+      try {
+        await reprise.call("pret");
+        assert.deepEqual(await require(conversationsPath).readConversations(), attendu);
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, "routines/conversations-avant-migration.json"), "utf8")), avantRappels);
+        assert.equal(reprise.data().routines.length, 1);
+        assert.equal(reprise.data().routines[0].active, false);
+        assert.equal(reprise.data().runs.length, 0);
+        assert.equal(reprise.events.filter(([canal]) => canal === "routines:livrer").length, 0);
+      } finally { reprise.close(); }
+    });
+  }
   await test("fichier legacy illisible : erreur fermée, aucune réécriture", "{illisible", async (f) => {
     const state = (await f.call("etat")).data;
     assert.equal(state.actif, false);

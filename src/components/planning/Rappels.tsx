@@ -187,7 +187,7 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
   const maj = (patch: Partial<Tache>) => enregistrerTache({ ...tache, ...patch });
 
   return (
-    <li ref={ligne} className="group/rappel flex items-start gap-2.5 border-b border-bordure-subtile py-2 last:border-b-0">
+    <li ref={ligne} data-rappel={tache.id} className="group/rappel flex items-start gap-2.5 border-b border-bordure-subtile py-2 last:border-b-0">
       {/* Le rond (20 px) et la première ligne du texte (20 px) partagent le même centre. */}
       <CaseTache
         faite={tache.faite}
@@ -242,7 +242,21 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
           </button>
           <button
             type="button"
-            onClick={() => supprimerTache(tache.id)}
+            data-supprimer-rappel
+            onClick={(e) => {
+              if (e.detail > 1) return;
+              const colonne = ligne.current?.closest("section");
+              const lignes = Array.from(colonne?.querySelectorAll<HTMLElement>("[data-rappel]") ?? []);
+              const index = lignes.indexOf(ligne.current!);
+              const suivante = lignes[index + 1] ?? lignes[index - 1];
+              const cible = suivante?.querySelector<HTMLElement>("[data-supprimer-rappel]") ??
+                colonne?.querySelector<HTMLElement>('textarea[placeholder="Nouveau rappel"]');
+              const focusDedans = ligne.current?.contains(document.activeElement);
+              supprimerTache(tache.id);
+              if (focusDedans) requestAnimationFrame(() => {
+                if (cible?.isConnected) cible.focus({ preventScroll: true });
+              });
+            }}
             aria-label={`Supprimer ${tache.titre}`}
             className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-icone-secondaire opacity-0 transition-opacity duration-[120ms] group-hover/rappel:opacity-100 hover:bg-fond-survol focus-visible:opacity-100"
           >
@@ -268,6 +282,8 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
 /** Tri : datés d'abord (par échéance), puis les autres dans l'ordre d'écriture. */
 function trier(taches: Tache[]) {
   return [...taches].sort((a, b) => {
+    // "~" peut précéder les chiffres avec localeCompare : les sans date vont explicitement après.
+    if (Boolean(a.date) !== Boolean(b.date)) return a.date ? -1 : 1;
     const da = a.date ? `${a.date}T${a.heure ?? "23:59"}` : "~";
     const db = b.date ? `${b.date}T${b.heure ?? "23:59"}` : "~";
     return da.localeCompare(db) || b.priorite - a.priorite || a.creeLe.localeCompare(b.creeLe);

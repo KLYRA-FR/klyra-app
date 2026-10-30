@@ -552,6 +552,12 @@ body[data-glisse] iframe {
   outline: none;
 }
 
+/* Le rappel restauré par Annuler, sans déplacement de sa ligne. */
+[data-rappel][data-eclaire] {
+  border-radius: var(--radius-sm);
+  animation: klyra-eclaire 1800ms var(--ease-sortie), klyra-halo 1800ms var(--ease-sortie);
+}
+
 @keyframes klyra-halo {
   0%, 30% { box-shadow: 0 0 0 8px var(--color-fond-teinte-bleue); }
   100%    { box-shadow: 0 0 0 8px transparent; }
@@ -559,7 +565,8 @@ body[data-glisse] iframe {
 
 /* Mouvement réduit : le fond reste éclairé, puis disparaît sans transition (l'attribut part après 1,8 s). */
 @media (prefers-reduced-motion: reduce) {
-  [data-message][data-eclaire] {
+  [data-message][data-eclaire],
+  [data-rappel][data-eclaire] {
     animation: none;
     background-color: var(--color-fond-teinte-bleue);
     box-shadow: 0 0 0 8px var(--color-fond-teinte-bleue);

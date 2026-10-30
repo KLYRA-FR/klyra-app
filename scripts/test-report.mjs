@@ -420,6 +420,7 @@ const OUTILS = `
   const colonne = (nom) => [...document.querySelectorAll(RAPPELS + " section[aria-label]")].find((s) => s.getAttribute("aria-label") === nom) ?? null;
   /* Le tri de la colonne : datés par échéance, puis l'urgence, puis l'ordre d'écriture ; les cochés à la fin. */
   const trier = (ts) => [...ts].sort((a, b) => {
+    if (Boolean(a.date) !== Boolean(b.date)) return a.date ? -1 : 1;
     const da = a.date ? a.date + "T" + (a.heure ?? "23:59") : "~";
     const db = b.date ? b.date + "T" + (b.heure ?? "23:59") : "~";
     return da.localeCompare(db) || b.priorite - a.priorite || a.creeLe.localeCompare(b.creeLe);
