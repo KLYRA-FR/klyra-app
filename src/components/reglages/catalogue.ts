@@ -6,7 +6,7 @@ import type { IconName } from "@/components/icons/Icon";
  * est l'ancre d'une `Ligne` de la section (cf. ui.tsx).
  */
 
-export type IdSection = "general" | "profil" | "equipe" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
+export type IdSection = "general" | "profil" | "equipe" | "claude" | "agents" | "autres-ia" | "composio" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
 
 export interface EntreeReglage {
   id: string;
@@ -98,6 +98,18 @@ export const SECTIONS: SectionReglages[] = [
     icone: "layers-01",
     description: "D’autres IA que Claude, que tes agents peuvent consulter. Leurs clés restent dans le trousseau du système.",
     entrees: [{ id: "autres-ia", titre: "IA ajoutées et clés", mots: "chatgpt openai gemini mistral cle api trousseau" }],
+  },
+  {
+    id: "composio",
+    titre: "Composio",
+    icone: "layers-01",
+    description: "Les services et les comptes que tes agents utilisent via Composio, sur cet ordinateur.",
+    entrees: [
+      { id: "projet-composio", titre: "Projet Composio", mots: "cle api configuration coffre importer" },
+      { id: "services-composio", titre: "Services et comptes connectés", mots: "connecteurs connexion reconnexion deconnexion gmail calendrier compte" },
+      { id: "ajouter-service", titre: "Connecter un service", mots: "ajouter authentification oauth" },
+      { id: "agents-composio", titre: "Compte utilisé par les agents", mots: "selection autorisation acces" },
+    ],
   },
   {
     id: "notifications",

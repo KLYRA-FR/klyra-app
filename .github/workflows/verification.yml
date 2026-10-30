@@ -16,6 +16,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  composio-mac:
+    name: Composio, coffre et MCP sous Mac
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:electron && pnpm test:composio
+      - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif
+      - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime
+
   verifier:
     name: Build, types, lint et smoke test
     runs-on: ubuntu-latest
@@ -33,6 +49,13 @@ jobs:
       - run: pnpm build:electron
       # Après le build : les types des routes sont générés par next build.
       - run: pnpm typecheck
+      - name: Composio, API et sélection de comptes simulées
+        run: pnpm test:composio
+      - name: Composio, IPC natif et serveur MCP réels, sans fournisseur externe
+        run: |
+          timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif --no-sandbox
+          timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime --no-sandbox
+          timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:interface --no-sandbox
       - name: Noms et extensions des fichiers Windows et Unix
         run: pnpm test:fichiers
       # Les fonctions Convex (comptes, équipe) sur un backend en mémoire : aucun déploiement touché.
@@ -77,6 +100,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:electron
+      - name: Composio, contrats, sélection et coffre natif Windows
+        shell: pwsh
+        run: |
+          pnpm test:composio
+          if ($LASTEXITCODE -ne 0) { throw "Les contrats Composio ont échoué." }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          pnpm test:composio:natif
+          if ($LASTEXITCODE -ne 0) { throw "Le test natif Composio a échoué." }
+          pnpm test:composio:runtime
+          if ($LASTEXITCODE -ne 0) { throw "Le test MCP Composio a échoué." }
       - name: Noms et extensions des fichiers Windows et Unix
         run: pnpm test:fichiers
       - name: Modèles KLYRA, versions et mise à jour (fins de ligne CRLF)

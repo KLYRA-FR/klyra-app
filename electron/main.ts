@@ -71,6 +71,7 @@ import {
 } from "./dictee";
 import { ecrirePlanning } from "./planning";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
+import { espaceComposio, importerCleComposio, verifierFenetreComposio } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
 import { lireConsommation, lireJournal } from "./consommation";
 import { rattraperHistorique } from "./historique";
@@ -292,6 +293,18 @@ function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Pro
 }
 
 function registerBridge() {
+  // Pont limité : ni URL arbitraire, ni clé, ni user_id fournis par le renderer.
+  const composio = (channel: string, fn: (...args: unknown[]) => unknown) => ipcMain.handle(channel, (event, ...args: unknown[]) => repondre(async () => {
+    verifierFenetreComposio(event, fenetrePrincipale, DEV_URL);
+    return fn(...args);
+  }));
+  composio("composio:etat", () => espaceComposio.etat());
+  composio("composio:importer", (contexte) => importerCleComposio(fenetrePrincipale!, contexte));
+  composio("composio:retirer", (contexte) => espaceComposio.retirerConfiguration(contexte));
+  composio("composio:selectionner", (contexte, service, compte) => espaceComposio.selectionner(contexte, service, compte));
+  composio("composio:connecter", (contexte, service, configuration) => espaceComposio.connecter(contexte, service, configuration));
+  composio("composio:deconnecter", (contexte, compte) => espaceComposio.deconnecter(contexte, compte));
+  composio("composio:console", () => shell.openExternal("https://dashboard.composio.dev"));
   handle("agents:list", async () => {
     const listing = await listAgents();
     watchAgents();

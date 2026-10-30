@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
+import { espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -19,6 +20,9 @@ const HOME = os.homedir();
 /** Outils retirés à l'agent : il lit et cherche, il n'écrit rien. */
 const OUTILS_INTERDITS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"];
 const DELAI_MAX_MS = 10 * 60 * 1000;
+
+/** Les clés Composio restent dans main, même si le terminal parent en a exporté une. */
+const environnementClaude = () => Object.fromEntries(Object.entries({ ...process.env, ELECTRON_RUN_AS_NODE: undefined }).filter(([nom]) => !/^(COMPOSIO|KLYRA_COMPOSIO)_/.test(nom)));
 
 /** Sous Windows, le binaire natif de Claude Code (un .cmd de npm ne se lance pas sans shell). */
 const EXE_CLAUDE = process.platform === "win32" ? "claude.exe" : "claude";
@@ -73,7 +77,7 @@ const running = new Map<string, ChildProcess>();
  * Les fiches elles-mêmes ne sont jamais touchées : d'autres outils les lisent.
  */
 const refusAgents = (cwd: string) => agentsARefuser(cwd).map((nom) => `Agent(${nom})`);
-const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent"] } });
+const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent", "mcp__klyra__composio_executer"] } });
 
 const pasDansMesAgents = (agent: string) => `« ${agent} » n’est pas dans Mes agents : ajoute-le ou réactive-le dans Équipe pour lui écrire.`;
 
@@ -92,7 +96,7 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
     const args = ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
     const child = spawn(bin, args, {
       cwd: HOME,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
+      env: environnementClaude(),
       windowsHide: true,
     });
     running.set(requestId, child);
@@ -599,7 +603,7 @@ function lireLigne(proc: Processus, ligne: string) {
 }
 
 function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
-  const child = spawn(bin, args, { cwd, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true });
+  const child = spawn(bin, args, { cwd, env: environnementClaude(), windowsHide: true });
   const proc: Processus = {
     child,
     signature,
@@ -670,7 +674,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation()]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature()]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
@@ -714,7 +718,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       REGLE_AGENTS,
     ];
     // Les outils de l'app (fils, autres IA ajoutées dans les Réglages), par son serveur MCP local.
-    const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal" });
+    const capaciteComposio = espaceComposio.creerCapacite();
+    const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal" }, capaciteComposio);
     if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? OUTILS_APP() : []));
     if (mcp) args.push("--mcp-config", mcp);
     if (options.agent) args.push("--agent", options.agent);
@@ -723,7 +728,9 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
     // L'agenda, les rappels et les routines de la personne, que l'app tient à jour.
-    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
+    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS,
+      "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Réglages › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
+    ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignes.join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);
@@ -801,7 +808,7 @@ export function actualiserUtilisation(): Promise<Utilisation | null> {
     const child = spawn(
       bin,
       ["-p", "--model", "haiku", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--disallowedTools", ...OUTILS_INTERDITS, "WebFetch", "WebSearch", "Read", "Glob", "Grep"],
-      { cwd: ATELIER, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true },
+      { cwd: ATELIER, env: environnementClaude(), windowsHide: true },
     );
     let tampon = "";
     child.stdout.on("data", (d: Buffer) => {
@@ -851,7 +858,7 @@ export interface CompteClaude {
 /** Lance une commande de Claude Code et rend sa sortie. */
 function commandeClaude(bin: string, args: string[], delai: number): Promise<{ code: number | null; sortie: string }> {
   return new Promise((resolve) => {
-    const child = spawn(bin, args, { cwd: HOME, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true });
+    const child = spawn(bin, args, { cwd: HOME, env: environnementClaude(), windowsHide: true });
     let sortie = "";
     child.stdout.on("data", (d: Buffer) => (sortie += d.toString()));
     child.stderr.on("data", (d: Buffer) => (sortie += d.toString()));

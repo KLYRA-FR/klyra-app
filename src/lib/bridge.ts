@@ -4,6 +4,8 @@
  */
 
 import type { FileNode } from "@/types/domain";
+import type { EtatComposio } from "../../electron/composio-types";
+export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
 
 export type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
 
@@ -356,6 +358,16 @@ export interface KlyraBridge {
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;
     ouvrirAutorisation: (type: "accessibilite" | "ecran") => Promise<Reponse<void>>;
+  };
+  /** Configuration Composio locale : la clé et les liens de consentement restent dans main. */
+  composio?: {
+    etat: () => Promise<Reponse<EtatComposio>>;
+    importer: (contexte: string) => Promise<Reponse<boolean>>;
+    retirer: (contexte: string) => Promise<Reponse<void>>;
+    selectionner: (contexte: string, service: string, compte: string | null) => Promise<Reponse<void>>;
+    connecter: (contexte: string, service: string, configuration: string) => Promise<Reponse<{ compteId: string; service: string; expireLe: string | null }>>;
+    deconnecter: (contexte: string, compte: string) => Promise<Reponse<void>>;
+    console: () => Promise<Reponse<void>>;
   };
   /** La consommation de l'année (cf. electron/consommation.ts). */
   consommation?: {
