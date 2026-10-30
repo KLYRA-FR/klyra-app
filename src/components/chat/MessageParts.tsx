@@ -75,9 +75,7 @@ export function FichiersJoints({ chemins }: { chemins: string[] }) {
           >
             <PastilleExtension chemin={chemin} />
             <span className="flex min-w-0 flex-col">
-              <span data-cherchable className="truncate text-ui-xs font-medium text-texte-principal">
-                {nom}
-              </span>
+              <span className="truncate text-ui-xs font-medium text-texte-principal">{nom}</span>
               <span className="truncate text-ui-3xs text-texte-tertiaire">{capture ? "Capture collée" : chemin.replace(/^\/Users\/[^/]+/, "~")}</span>
             </span>
           </button>

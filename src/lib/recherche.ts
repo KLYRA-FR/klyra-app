@@ -1,4 +1,3 @@
-import { nomFichier } from "@/lib/fichiers";
 import type { Chat, Message } from "@/types/domain";
 
 /**
@@ -10,10 +9,11 @@ import type { Chat, Message } from "@/types/domain";
  *
  * La règle :
  * - on cherche dans le texte des messages (le tien et celui des agents), Markdown
- *   aplati, dans les adresses de leurs liens, dans les noms des fichiers joints, et
- *   dans les titres des conversations (le nom de l'agent pour une conversation directe) ;
- * - pas dans les étapes, autorisations, passations, tâches, journaux, options ni
- *   actions, ni dans une réponse en cours d'écriture, ni dans un fil supprimé ;
+ *   aplati, dans les adresses de leurs liens, et dans les titres des conversations
+ *   (le nom de l'agent pour une conversation directe) ;
+ * - pas dans les pièces jointes (ni leur nom, ni leur contenu), les étapes,
+ *   autorisations, passations, tâches, journaux, options ni actions, ni dans une
+ *   réponse en cours d'écriture, ni dans un fil supprimé ;
  * - accents, majuscules, ligatures (œ, æ), apostrophes et guillemets typographiques,
  *   espaces insécables et retours à la ligne ne comptent pas ;
  * - tous les mots d'au moins 2 caractères doivent être dans le message, dans
@@ -193,9 +193,9 @@ function dansPortee(chat: Chat, portee: Portee, chatCourant: string | null): boo
   return true;
 }
 
-type Genre = "texte" | "adresse" | "fichier";
+type Genre = "texte" | "adresse";
 
-/** Un endroit du message où l'on cherche : son texte, une adresse de lien, un nom de fichier joint. */
+/** Un endroit du message où l'on cherche : son texte, ou l'adresse d'un de ses liens. */
 interface Champ {
   genre: Genre;
   source: string;
@@ -214,12 +214,7 @@ function champsDu(message: Message): Champ[] {
       .flatMap((p) => (p.type === "text" ? [p.text] : []))
       .join("\n\n");
     const { texte, adresses } = aplatir(markdown);
-    const fichiers = message.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins.map(nomFichier) : []));
-    champs = [
-      ...(texte ? [champ("texte", texte)] : []),
-      ...adresses.map((a) => champ("adresse", a)),
-      ...[...new Set(fichiers)].map((f) => champ("fichier", f)),
-    ];
+    champs = [...(texte ? [champ("texte", texte)] : []), ...adresses.map((a) => champ("adresse", a))];
     cache.set(message, champs);
   }
   return champs;
@@ -257,7 +252,7 @@ function decouper(source: string, plages: [number, number][], debut: number, fin
   return morceaux;
 }
 
-/** Le champ découpé, surlignages compris (titre, adresse, nom de fichier : en entier). */
+/** Le champ découpé, surlignages compris (titre, adresse : en entier). */
 export function surligner(source: string, requete: Requete): Morceau[] {
   const normal = normaliser(source);
   const plages = occurrences(normal.texte, requete.termes).map((p) => versOrigine(source, normal, p));
@@ -292,7 +287,7 @@ function extraitDe(source: string, plages: [number, number][]): Morceau[] {
   return morceaux;
 }
 
-/** L'extrait d'un message trouvé : dans son texte d'abord, sinon l'adresse du lien, sinon le fichier joint. */
+/** L'extrait d'un message trouvé : dans son texte d'abord, sinon l'adresse du lien. */
 function extraitDu(champs: Champ[], requete: Requete): { genre: Genre; extrait: Morceau[] } {
   for (const c of champs) {
     const plages = occurrences(c.normal.texte, requete.termes);
@@ -308,7 +303,7 @@ function extraitDu(champs: Champ[], requete: Requete): { genre: Genre; extrait: 
 export interface ResultatMessage {
   message: Message;
   conversation: ConversationCherchable;
-  /** Où l'on a trouvé : `fichier` s'affiche « Fichier joint : … ». */
+  /** Où l'on a trouvé : dans le texte, ou seulement dans l'adresse d'un lien (l'extrait montre alors l'adresse). */
   genre: Genre;
   extrait: Morceau[];
 }

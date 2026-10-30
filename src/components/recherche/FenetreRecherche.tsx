@@ -78,7 +78,7 @@ type Ligne =
 type Actif = { cle: string | null; index: number };
 const PREMIERE: Actif = { cle: null, index: 0 };
 
-/** Les lignes de la liste : les titres trouvés, puis les messages, avec le préfixe de la barre latérale (« Toi : », « Hugo : »). */
+/** Les lignes de la liste : les titres trouvés, puis les messages, avec le préfixe de la barre latérale (« Toi : », « Hugo : »). Les pièces jointes ne sont pas cherchées. */
 function lignesDe(resultat: Recherche | null, roles: Role[]): Ligne[] {
   if (!resultat) return [];
   return [
@@ -87,13 +87,11 @@ function lignesDe(resultat: Recherche | null, roles: Role[]): Ligne[] {
       const { message, conversation } = m;
       const auteur = message.author;
       const prefixe =
-        m.genre === "fichier"
-          ? "Fichier joint : "
-          : auteur.kind === "user"
-            ? "Toi : "
-            : conversation.chat.kind === "equipe"
-              ? `${roles.find((r) => r.id === auteur.roleId)?.name ?? auteur.roleId} : `
-              : "";
+        auteur.kind === "user"
+          ? "Toi : "
+          : conversation.chat.kind === "equipe"
+            ? `${roles.find((r) => r.id === auteur.roleId)?.name ?? auteur.roleId} : `
+            : "";
       return { cle: `m:${message.id}`, genre: "message", conversation, messageId: message.id, date: message.createdAt, prefixe, extrait: m.extrait };
     }),
   ];

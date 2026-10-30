@@ -5,7 +5,7 @@ export const SURLIGNAGE = "klyra-recherche";
 
 /**
  * Les mots de la requête dans un message rendu, en `Range` sur ses textes
- * (`[data-cherchable]` : bulles et noms de fichiers joints), sans toucher au DOM
+ * (`[data-cherchable]` : les bulles de texte), sans toucher au DOM
  * du Markdown. La normalisation se fait caractère par caractère, comme la
  * recherche, pour que les positions restent justes. Un lien dont seule
  * l'adresse correspond est surligné en entier.

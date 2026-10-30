@@ -132,17 +132,17 @@ describe("chercher", () => {
     ]);
   });
 
-  test("le nom d'un fichier joint, sans son dossier", () => {
+  test("pas les pièces jointes : ni leur nom, ni leur dossier", () => {
     const m = message("equipe", "Voici le document", undefined, {
       parts: [
         { type: "text", text: "Voici le document" },
         { type: "fichiers", chemins: ["/Users/corentin/Clients/devis-v2.pdf", "C:\\Users\\pelin\\notes.txt"] },
       ],
     });
-    expect(chercher(tout, [m], "devis-v2")!.messages.map((x) => [x.genre, lu(x.extrait)])).toEqual([["fichier", "[devis-v2].pdf"]]);
-    expect(total("notes.txt", [m])).toBe(1);
+    expect(total("document", [m])).toBe(1);
+    expect(total("devis-v2", [m])).toBe(0);
+    expect(total("notes.txt", [m])).toBe(0);
     expect(total("corentin", [m])).toBe(0);
-    expect(total("document devis", [m])).toBe(1);
   });
 
   test("pas les étapes, autorisations, passations, erreurs, ni une réponse en cours d'écriture", () => {
