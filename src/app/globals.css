@@ -621,6 +621,7 @@ body[data-glisse] iframe {
 @media (prefers-reduced-motion: reduce) {
   [data-echeance][data-eclaire] {
     animation: none;
+    transition-property: none;
     background-color: var(--color-fond-teinte-bleue);
   }
 }

@@ -30,7 +30,7 @@ const BOUTON =
   "flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-icone-secondaire opacity-0 transition-opacity duration-[120ms] group-hover/rappel:opacity-100 hover:bg-fond-survol focus-visible:opacity-100 aria-expanded:opacity-100";
 
 const MENU =
-  "fixed z-50 flex w-max min-w-[240px] flex-col gap-0.5 rounded-lg border border-bordure-subtile bg-fond-surface p-1.5 shadow-ombre-flottante";
+  "fixed z-50 flex w-max min-w-[240px] flex-col gap-0.5 rounded-lg border border-bordure-subtile bg-fond-surface p-1.5 shadow-ombre-flottante transition-none";
 
 const LIGNE =
   "flex h-8 cursor-pointer items-center rounded-sm border-0 bg-transparent px-2 text-left text-ui-s whitespace-nowrap text-texte-principal hover:bg-fond-survol focus-visible:bg-fond-survol focus-visible:-outline-offset-2";
@@ -118,7 +118,8 @@ export function MenuReporter({ tache, className, onReporte }: { tache: Tache; cl
   useLayoutEffect(() => {
     if (!place) return;
     entrer(menu.current, { y: versLeHaut ? 4 : -4, echelle: 0.98, duree: 180 });
-    /* Attendre que le portail soit visible, même sans animation d'entrée. */
+    /* La mesure initiale utilise l'opacité, pas visibility:hidden qui peut
+       encore empêcher le focus lorsque le mouvement réduit coupe l'entrée. */
     const frame = requestAnimationFrame(() => menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
   }, [place, versLeHaut]);
@@ -216,7 +217,7 @@ export function MenuReporter({ tache, className, onReporte }: { tache: Tache; cl
               left: position?.gauche ?? 0,
               top: position?.haut,
               bottom: position?.bas,
-              visibility: position ? undefined : "hidden",
+              opacity: position ? undefined : 0,
             }}
           >
             {reportsProposes(maintenant).map((choix) => {
