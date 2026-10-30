@@ -154,19 +154,34 @@ const SUFFIXE = Math.random().toString(36).slice(2, 8);
 const A = { email: `essai-a-${SUFFIXE}@example.test`, nom: "Alice Essai" };
 const B = { email: `essai-b-${SUFFIXE}@example.test`, nom: "Bruno Essai" };
 
+const courrielsRecus = (email) => admin.query(makeFunctionReference("courriels:nombreCourrielsSimules"), { a: email });
+
 async function seConnecter(a, qui) {
   await a.aller("/reglages?section=equipe");
+  // Une demande précédente encore affichée : on repart du formulaire.
+  if (await a.quand("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Changer d’adresse')", 3000)) await a.cliquer("Changer d’adresse");
   await a.quand(`document.querySelector('input[aria-label="Adresse e-mail"]')`);
+  const avant = await courrielsRecus(qui.email);
   await a.saisir('input[aria-label="Adresse e-mail"]', qui.email);
   await attendre(200);
   await a.cliquer("Recevoir un lien");
   await a.quand(`document.querySelector('input[aria-label="Lien de connexion"]')`);
-  let code = null;
-  for (let i = 0; i < 30 && !code; i++) {
-    const courriel = await admin.query(makeFunctionReference("courriels:dernierCourrielSimule"), { a: qui.email });
-    code = courriel?.texte.match(/\?code=([A-Za-z0-9]+)/)?.[1] ?? null;
-    if (!code) await attendre(500);
+  // Même adresse redemandée dans la minute : pas de nouveau lien (délai du serveur). On attend la fin annoncée, puis « Renvoyer ».
+  let nouveau = false;
+  for (let i = 0; i < 10 && !nouveau; i++) {
+    nouveau = (await courrielsRecus(qui.email)) > avant;
+    if (!nouveau) await attendre(500);
   }
+  if (!nouveau) {
+    await a.quand("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Renvoyer' && !b.disabled)", 70000);
+    await a.cliquer("Renvoyer");
+    for (let i = 0; i < 20 && !nouveau; i++) {
+      nouveau = (await courrielsRecus(qui.email)) > avant;
+      if (!nouveau) await attendre(500);
+    }
+  }
+  const courriel = nouveau ? await admin.query(makeFunctionReference("courriels:dernierCourrielSimule"), { a: qui.email }) : null;
+  const code = courriel?.texte.match(/\?code=([A-Za-z0-9]+)/)?.[1] ?? null;
   if (!code) throw new Error(`aucun lien simulé pour ${qui.email}`);
   await a.saisir('input[aria-label="Lien de connexion"]', `klyra://connexion?code=${code}`);
   await attendre(200);

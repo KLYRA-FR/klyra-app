@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Input } from "klyra-ui";
 import { TEINTES } from "@/components/team/AgentVisuel";
 import { Bouton } from "@/components/ui/Bouton";
@@ -9,7 +9,7 @@ import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useConfirmation } from "@/components/ui/Modale";
 import { cn } from "@/lib/cn";
-import { messageErreur, useCompte, useEquipe, useMonIdentite, type Membre, type Role } from "@/lib/compte";
+import { formaterAttente, messageErreur, useCompte, useEquipe, useMonIdentite, type Membre, type Role } from "@/lib/compte";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
 import { AccordProfils } from "../AccordProfils";
 import { Erreur, Groupe, Ligne, SeulementBureau, Valeur } from "../ui";
@@ -25,11 +25,33 @@ function Pastille({ couleur }: { couleur: string }) {
   return <span aria-hidden="true" className="size-3 shrink-0 rounded-full" style={{ background: TEINTES[teinte] }} />;
 }
 
+/** L'heure de cet ordinateur, mise à jour chaque seconde jusqu'à `jusqua` (un compte à rebours). */
+function useMaintenant(jusqua: number | null): number {
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+  useEffect(() => {
+    if (jusqua === null) return;
+    const tic = () => setMaintenant(Date.now());
+    const premier = setTimeout(tic, 0);
+    const minuteur = setInterval(() => {
+      tic();
+      if (Date.now() >= jusqua) clearInterval(minuteur);
+    }, 1000);
+    return () => {
+      clearTimeout(premier);
+      clearInterval(minuteur);
+    };
+  }, [jusqua]);
+  return maintenant;
+}
+
 /** Pas encore connecté : l'adresse, puis le lien reçu par e-mail. */
 function Connexion() {
-  const { adresseEnAttente, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse } = useCompte();
+  const { adresseEnAttente, prochaineDemande, demandeRefusee, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse } = useCompte();
   const [email, setEmail] = useState("");
   const [lien, setLien] = useState("");
+  const maintenant = useMaintenant(prochaineDemande);
+  /* Le serveur garde le délai ; ce compte à rebours ne fait que l'annoncer. */
+  const attente = prochaineDemande === null ? 0 : Math.max(0, prochaineDemande - maintenant);
 
   const demander = (e: FormEvent) => {
     e.preventDefault();
@@ -41,11 +63,19 @@ function Connexion() {
       <Groupe titre="Connexion">
         <Ligne
           id="compte-equipe"
-          libelle={`Si ${adresseEnAttente} est invitée, un lien vient de partir`}
-          description="Ouvre-le sur cet ordinateur : il ouvre KLYRA et te connecte. Il vaut 15 minutes et ne sert qu’une fois."
+          libelle={
+            demandeRefusee
+              ? `Si ${adresseEnAttente} est invitée, un lien lui a été envoyé il y a peu`
+              : `Si ${adresseEnAttente} est invitée, un lien vient de partir`
+          }
+          description={`Ouvre-le sur cet ordinateur : il ouvre KLYRA et te connecte. Il vaut 15 minutes et ne sert qu’une fois. ${
+            attente > 0
+              ? `Tu pourras en demander un autre dans ${formaterAttente(attente)} (un par minute, cinq par heure au plus).`
+              : "Tu peux en demander un autre."
+          }`}
         >
-          <Bouton variant="discret" taille="compact" disabled={occupe} onClick={() => void demanderLien(adresseEnAttente)}>
-            Renvoyer
+          <Bouton variant="discret" taille="compact" disabled={occupe || attente > 0} onClick={() => void demanderLien(adresseEnAttente)}>
+            {attente > 0 ? `Renvoyer dans ${formaterAttente(attente)}` : "Renvoyer"}
           </Bouton>
           <Bouton variant="discret" taille="compact" disabled={occupe} onClick={oublierAdresse}>
             Changer d’adresse
