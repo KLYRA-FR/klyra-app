@@ -16,7 +16,10 @@ function useRaccourcis() {
   return [
     {
       ecran: "Partout",
-      touches: [{ keys: [mod, ","], action: "Ouvrir les Réglages" }],
+      touches: [
+        { keys: [mod, ","], action: "Ouvrir les Réglages" },
+        { keys: [mod, "K"], action: "Rechercher dans les conversations" },
+      ],
     },
     {
       ecran: "Réglages",

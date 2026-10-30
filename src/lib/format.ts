@@ -19,6 +19,18 @@ export function formatTime(iso: string): string {
   return time.format(new Date(iso));
 }
 
+/** Jour et heure d'un message : « 7 oct. à 14:32 ». */
+export function formatJourHeure(iso: string): string {
+  return `${dayMonth.format(new Date(iso))} à ${formatTime(iso)}`;
+}
+
+const complete = new Intl.DateTimeFormat("fr-FR", { dateStyle: "full", timeStyle: "short" });
+
+/** Date complète, au survol d'une date courte : « jeudi 30 octobre 2026 à 14:32 ». */
+export function formatDateComplete(iso: string): string {
+  return complete.format(new Date(iso));
+}
+
 /** Date courte des listes : « 09:52 », « Hier », « Lun. », « 7 oct. ». */
 export function formatListDate(iso: string, now: Date = new Date()): string {
   const days = daysBetween(iso, now);

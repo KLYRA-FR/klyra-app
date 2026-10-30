@@ -7,6 +7,8 @@ import type { ReactNode } from "react";
 import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
+import { raccourciDuSysteme } from "@/lib/plateforme";
+import { ouvrirRecherche, useRechercheOuverte } from "@/lib/recherche-session";
 import { useProjects } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
 import { NAVIGATION } from "./navigation";
@@ -56,6 +58,7 @@ export function AppRail({
   const projects = useProjects();
   const currentId = useSearchParams().get("id");
   const pathname = usePathname();
+  const rechercheOuverte = useRechercheOuverte();
 
   return (
     <nav
@@ -69,6 +72,18 @@ export function AppRail({
 
       {/* Le milieu défile si la fenêtre est basse : le bas du rail reste visible. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto [scrollbar-width:none]">
+        {/* Rechercher dans les conversations : la fenêtre s'ouvre par-dessus l'écran. */}
+        <button
+          type="button"
+          onClick={() => ouvrirRecherche()}
+          aria-label="Rechercher"
+          aria-haspopup="dialog"
+          aria-expanded={rechercheOuverte}
+          title={`Rechercher (${raccourciDuSysteme("⌘K")})`}
+          className={entree(rechercheOuverte)}
+        >
+          <Icon name="search-01" size={24} />
+        </button>
         {NAVIGATION.map((item) => {
           const active = pathname === item.href || (item.href === "/chats" && (pathname === "/equipe" || (pathname === "/chat" && panneau === "conversations")));
           return (

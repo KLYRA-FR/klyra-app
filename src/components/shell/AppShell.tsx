@@ -9,7 +9,8 @@ import { useIsClient } from "@/hooks/useIsClient";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
-import { useRaccourciReglages } from "@/lib/raccourcis";
+import { FenetreRecherche } from "@/components/recherche/FenetreRecherche";
+import { useRaccourciRecherche, useRaccourciReglages } from "@/lib/raccourcis";
 import { CompteProvider } from "@/lib/compte";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
 import { PLATEFORME } from "@/lib/plateforme";
@@ -64,6 +65,8 @@ function ShellLayout({ children }: { children: ReactNode }) {
   useEffect(() => getBridge()?.systeme.onOuvrirChat?.((chatId) => router.push(`/chat?id=${encodeURIComponent(chatId)}`)), [router]);
   /* ⌘ , : les Réglages, de partout. */
   useRaccourciReglages();
+  /* ⌘K : la recherche dans les conversations, de partout. */
+  useRaccourciRecherche();
 
   /* Un fichier cliqué dans le panneau du projet ou l'aperçu : la visionneuse. */
   const [fichier, setFichier] = useState<DemandeFichier | null>(null);
@@ -161,6 +164,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SonsApp />
             <Suspense>
               <ShellLayout>{children}</ShellLayout>
+              {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
+              <FenetreRecherche />
             </Suspense>
           </div>
         </CompteProvider>
