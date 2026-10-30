@@ -390,6 +390,8 @@ function registerBridge() {
   });
   handle("projets:dossier-existe", (dossier: string) => dossierExiste(dossier));
   handle("projets:choisir-dossier", async () => {
+    // Tests seulement (jamais dans l'app installée) : le dossier « choisi » sans fenêtre du système.
+    if (process.env.KLYRA_TEST_DOSSIER && !app.isPackaged) return process.env.KLYRA_TEST_DOSSIER;
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     const options = { properties: ["openDirectory" as const], title: "Choisir le dossier du projet" };
     const choix = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
