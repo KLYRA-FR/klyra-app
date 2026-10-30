@@ -271,7 +271,40 @@ async function verifier(nom, action) {
     await assert.rejects(execute(f, cap), changement);
     assert.equal(f.compteur("executerOutil"), 0);
   });
-  await verifier("déconnexion réussie : compte relu puis retrait ciblé et choix vidé", async () => {
+  await verifier("déconnexion hors ligne : choix persisté et capacités invalidées avant la première requête", async () => {
+    const f = environnement();
+    const cap = await pret(f);
+    const contexte = (await f.espace.etat()).contexte;
+    f.hooks.lireCompte = async () => {
+      assert.deepEqual(f.configuration().selections, {});
+      await assert.rejects(execute(f, cap), changement);
+      throw new Error("Réseau indisponible dès la lecture du compte");
+    };
+    await assert.rejects(f.espace.deconnecter(contexte, "ca_a"), /n’est plus choisi.*pas été confirmée/);
+    assert.equal(f.compteur("deconnecter"), 0);
+    assert.equal(f.compteur("executerOutil"), 0);
+    assert.equal(f.comptes.has("ca_a"), true);
+  });
+  await verifier("déconnexion : aucune suppression distante sans appartenance confirmée", async () => {
+    const f = environnement();
+    await pret(f);
+    f.comptes.get("ca_a").userId = "autre_profil";
+    await assert.rejects(f.espace.deconnecter((await f.espace.etat()).contexte, "ca_a"), /pas été confirmée/);
+    assert.deepEqual(f.configuration().selections, {});
+    assert.equal(f.compteur("deconnecter"), 0);
+  });
+  await verifier("déconnexion : échec du stockage local interdit toute requête fournisseur", async () => {
+    const f = environnement();
+    await pret(f);
+    const contexte = (await f.espace.etat()).contexte;
+    const lectures = f.compteur("lireCompte");
+    f.hooks.ecrire = async () => { throw new Error("Coffre indisponible"); };
+    await assert.rejects(f.espace.deconnecter(contexte, "ca_a"), /Coffre indisponible/);
+    assert.equal(f.configuration().selections.gmail, "ca_a");
+    assert.equal(f.compteur("lireCompte"), lectures);
+    assert.equal(f.compteur("deconnecter"), 0);
+  });
+  await verifier("déconnexion réussie : choix vidé avant lecture et retrait distant ciblé", async () => {
     const f = environnement();
     const cap = await pret(f);
     f.ajoutCompte("ca_b");

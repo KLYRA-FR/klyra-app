@@ -28,6 +28,7 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
   const [succes, setSucces] = useState("");
   const [nouveaux, setNouveaux] = useState<string[]>([]);
   const [anciens, setAnciens] = useState<string[]>([]);
+  const [retrait, setRetrait] = useState<{ compte: VueCompteComposio; service: string } | null>(null);
   const identite = etat?.profil.type === "equipe" ? `Pour ${etat.profil.nom} (compte d’équipe), sur cet ordinateur` : etat ? "Pour le profil de cet ordinateur" : "";
   const titreEtat = chargement ? "Actualisation…" : !etat ? (erreur ? "Accès indisponible" : "Pas configuré") : !etat.coffreDisponible ? "Coffre non sûr" : etat.erreur ? (etat.erreur.code === "reseau" ? "Hors ligne" : etat.erreur.code === "acces" ? "Clé refusée" : "Erreur") : etat.configure ? "Prêt" : "Pas configuré";
 
@@ -42,7 +43,9 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
   };
   const choisir = (service: string, compte: VueCompteComposio | null) => faire("selectionner", (p, c) => p.selectionner(c, service, compte?.id ?? null), compte ? `Tes agents utilisent maintenant ${nomCompteComposio(compte)} pour ${service}.` : `Tes agents n’utilisent plus aucun compte pour ${service}.`);
   const deconnecter = async (compte: VueCompteComposio, service: string) => {
-    if (!(await demander({ titre: `Déconnecter ${nomCompteComposio(compte)} de ${service} ?`, texte: `Cette connexion est supprimée chez Composio. Tout outil qui l’utilise perd son accès. Les autorisations chez ${service} peuvent rester en place. ${etat?.selections[compte.service] === compte.id ? "Tes agents n’auront plus de compte choisi pour ce service." : ""}`, confirmer: "Déconnecter" }))) return;
+    if (!(await demander({ titre: `Déconnecter ${nomCompteComposio(compte)} de ${service} ?`, texte: `La connexion est supprimée chez Composio : ni tes agents ni aucun autre outil qui l’utilise ne pourront plus s’en servir. Les autorisations chez ${service} peuvent rester en place. ${etat?.selections[compte.service] === compte.id ? "Tes agents n’auront plus de compte choisi pour ce service." : ""}`, confirmer: "Déconnecter" }))) return;
+    setRetrait({ compte, service });
+    setSucces("");
     await faire(`deconnecter:${compte.id}`, (p, c) => p.deconnecter(c, compte.id), "Connexion retirée chez Composio.");
   };
 
@@ -79,6 +82,15 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
       {erreur && <Erreur>{erreur}</Erreur>}
     </Groupe>
     {(message || succes) && <p role="status" className="m-0 text-ui-xs text-texte-secondaire">{message || succes}</p>}
+    {etat?.configure && etat.erreur && retrait && api.echec?.nom === `deconnecter:${retrait.compte.id}` && <Groupe titre="Déconnexion à vérifier">
+      <Ligne pile libelle={nomCompteComposio(retrait.compte)} description="L’état chez Composio n’a pas pu être relu. La suppression n’est pas confirmée.">
+        <div className="flex w-full flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2"><Pastille texte="État non vérifié" ton="attente" /><Bouton disabled={occupe} onClick={() => void deconnecter(retrait.compte, retrait.service)}>Déconnecter…</Bouton></div>
+          <Erreur>{api.echec.texte}</Erreur>
+          {etat.selections[retrait.compte.service] !== retrait.compte.id && <p role="status" className="m-0 text-ui-xs text-texte-secondaire">Tes agents n’utilisent déjà plus ce compte.</p>}
+        </div>
+      </Ligne>
+    </Groupe>}
     {etat?.configure && !etat.erreur && <Groupe titre="Services connectés" description="Pour chaque service, tes agents n’utilisent que le compte choisi.">
       <div id={ancreReglage("services-composio")} className="klyra-reglage scroll-mt-6">
         {services.map((service) => <Service key={service.slug} service={service} api={api} anciens={anciens} nouveaux={nouveaux} choisir={choisir} deconnecter={deconnecter} reconnecter={(ancien) => setConnexion({ service: service.slug, ancien })} />)}
@@ -116,7 +128,9 @@ function Service({ service, api, anciens, nouveaux, choisir, deconnecter, reconn
   reconnecter: (compte: VueCompteComposio) => void;
 }) {
   const etat = api.etat!;
-  const choix = etat.selections[service.slug];
+  // Pendant le retrait, la liste montre Aucun ; la relecture confirme ensuite
+  // l’état réel, y compris si le coffre ou l’identité a empêché l’écriture.
+  const choix = api.action === `deconnecter:${etat.selections[service.slug]}` ? undefined : etat.selections[service.slug];
   const comptes = etat.comptes.filter((c) => c.service === service.slug).sort((a, b) => Number(b.id === choix) - Number(a.id === choix) || nomCompteComposio(a).localeCompare(nomCompteComposio(b)));
   const choisi = comptes.find((c) => c.id === choix);
   const occupe = !!api.action || api.chargement;
@@ -150,6 +164,7 @@ function Service({ service, api, anciens, nouveaux, choisir, deconnecter, reconn
         </div>
       </div>
       {api.action === `deconnecter:${compte.id}` && <span role="status" className="text-ui-xs text-texte-secondaire">Déconnexion…</span>}
+      {api.echec?.nom === `deconnecter:${compte.id}` && <Erreur>{api.echec.texte}{etat.selections[service.slug] !== compte.id && " Tes agents n’utilisent déjà plus ce compte."}</Erreur>}
       {anciens.includes(compte.id) && <div className="flex flex-wrap items-center gap-2 text-ui-xs text-texte-secondaire">L’ancien compte reste chez Composio.<Bouton variant="discret" disabled={occupe} onClick={() => void deconnecter(compte, service.nom)}>Déconnecter l’ancien compte…</Bouton></div>}
     </div>)}
     {attentesAbsentes.map((a) => <p key={a.compteId} role="status" className="text-ui-xs text-texte-secondaire">Connexion en attente de confirmation par Composio. Actualise après la validation dans le navigateur.</p>)}

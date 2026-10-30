@@ -16,6 +16,7 @@ export function useComposio() {
   const [chargement, setChargement] = useState(false);
   const [action, setAction] = useState<string | null>(null);
   const [annonce, setAnnonce] = useState<{ scope: string; texte: string } | null>(null);
+  const [echec, setEchec] = useState<{ scope: string; nom: string; texte: string } | null>(null);
   const lecture = useRef(0);
   const scopeActif = useRef(scope);
   const verrou = useRef(false);
@@ -63,18 +64,25 @@ export function useComposio() {
     verrou.current = true;
     setAction(nom);
     setAnnonce(null);
+    setEchec(null);
     try {
       const r = await operation(pont, etat.contexte);
       if (scopeActif.current !== scope) return null;
       await actualiser();
+      if (scopeActif.current !== scope) return null;
       if (!r.ok) {
         setVue((v) => v?.scope === scope ? { ...v, erreur: r.message } : v);
+        setEchec({ scope, nom, texte: r.message });
         return null;
       }
       setAnnonce({ scope, texte: annonce });
       return r.data;
     } catch {
-      setVue((v) => v?.scope === scope ? { ...v, erreur: "L’action Composio n’a pas été confirmée. Actualise avant de réessayer." } : v);
+      await actualiser();
+      if (scopeActif.current !== scope) return null;
+      const texte = "L’action Composio n’a pas été confirmée. Actualise avant de réessayer.";
+      setVue((v) => v?.scope === scope ? { ...v, erreur: texte } : v);
+      setEchec({ scope, nom, texte });
       return null;
     } finally {
       verrou.current = false;
@@ -82,7 +90,7 @@ export function useComposio() {
     }
   }, [pont, etat, actualiser, scope]);
 
-  return { bureau: !!pont, scope, etat, erreur, chargement: chargement || (!!pont && vue?.scope !== scope), action, message: annonce?.scope === scope ? annonce.texte : "", actualiser, faire,
+  return { bureau: !!pont, scope, etat, erreur, echec: echec?.scope === scope ? echec : null, chargement: chargement || (!!pont && vue?.scope !== scope), action, message: annonce?.scope === scope ? annonce.texte : "", actualiser, faire,
     console: async () => { await pont?.console(); },
   };
 }

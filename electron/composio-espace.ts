@@ -204,11 +204,13 @@ export class EspaceComposio {
       const config = this.configuration(c);
       const id = identifiant(compteId);
       const api = this.d.api(config.cle);
-      const compte = await api.lireCompte(id);
-      this.appartient(compte, config);
       const selections = Object.fromEntries(Object.entries(config.selections).filter(([, choisi]) => choisi !== id));
+      // Le retrait local ne dépend pas du réseau. La suppression distante exige
+      // toujours de relire l’appartenance du compte avant le DELETE.
       await this.garder(c, { ...config, selections, enAttente: config.enAttente.filter((a) => a.compteId !== id) });
       try {
+        const compte = await api.lireCompte(id);
+        this.appartient(compte, config);
         if (c.identite.revision !== this.d.revisionIdentite()) throw invalide();
         await api.deconnecter(id);
       } catch {
