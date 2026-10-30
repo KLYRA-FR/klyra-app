@@ -1,8 +1,8 @@
 "use client";
 
-import { useConvex, useConvexConnectionState } from "convex/react";
+import { useConvex } from "convex/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { FunctionReference } from "convex/server";
+import { getFunctionName, makeFunctionReference, type FunctionReference } from "convex/server";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { Dependance } from "../../convex/model/definitions";
@@ -91,31 +91,59 @@ const nonDisponible = (etat: EtatBibliotheque): BibliothequeApi => ({
 
 const BibliothequeContext = createContext<BibliothequeApi>(nonDisponible("indisponible"));
 
+/*
+ * Les enfants ne changent jamais de place dans l'arbre (sinon toute l'app serait remontée à chaque
+ * connexion) : la partie liée à la session est un composant sans rendu, à côté, qui publie sa valeur.
+ * Une valeur ne sert que pour la session qui l'a produite : sous un autre compte, rien ne s'affiche.
+ */
 export function BibliothequeProvider({ children }: { children: ReactNode }) {
   const compte = useCompte();
-  if (compte.etat === "connecte" && compte.moi) {
-    /* Une session = un fournisseur neuf : rien de la précédente ne survit, même un instant. */
-    return (
-      <BibliothequeConnectee key={compte.moi._id} moiId={compte.moi._id}>
-        {children}
-      </BibliothequeConnectee>
-    );
-  }
+  const [publiee, setPubliee] = useState<BibliothequeApi | null>(null);
+  const moiId = compte.etat === "connecte" ? (compte.moi?._id ?? null) : null;
   const etat: EtatBibliotheque =
-    compte.etat === "indisponible" ? "indisponible" : compte.etat === "retire" ? "retire" : compte.etat === "chargement" ? "chargement" : "deconnecte";
-  return <BibliothequeContext.Provider value={nonDisponible(etat)}>{children}</BibliothequeContext.Provider>;
+    compte.etat === "indisponible" ? "indisponible" : compte.etat === "retire" ? "retire" : compte.etat === "connecte" || compte.etat === "chargement" ? "chargement" : "deconnecte";
+  const valeur = useMemo(() => (moiId && publiee?.moiId === moiId ? publiee : nonDisponible(etat)), [moiId, publiee, etat]);
+  return (
+    <BibliothequeContext.Provider value={valeur}>
+      {/* Une session = une instance neuve : rien de la précédente ne survit. */}
+      {moiId && <BibliothequeConnectee key={moiId} moiId={moiId as Id<"membres">} surValeur={setPubliee} />}
+      {children}
+    </BibliothequeContext.Provider>
+  );
+}
+
+/**
+ * Le socket avec le serveur est-il ouvert ? Un booléen, mis à jour seulement quand il change :
+ * `useConvexConnectionState` rend un nouvel objet à chaque événement de connexion, et ses rendus
+ * en continu empêchaient les navigations de l'app d'aboutir une fois connecté.
+ */
+function useSocketOuvert(): boolean {
+  const convex = useConvex();
+  const [ouvert, setOuvert] = useState(() => convex.connectionState().isWebSocketConnected);
+  useEffect(() => {
+    const lire = () => setOuvert(convex.connectionState().isWebSocketConnected);
+    const arret = convex.subscribeToConnectionState(lire);
+    lire();
+    return arret;
+  }, [convex]);
+  return ouvert;
 }
 
 type Abonnement<T> = { valeur: T | undefined; erreur: unknown };
 
-/** Une requête suivie en direct, sans faire tomber l'écran sur une erreur du serveur. */
+/**
+ * Une requête suivie en direct, sans faire tomber l'écran sur une erreur du serveur. Repérée par son
+ * nom, jamais par l'objet `api.x.y` : c'est un nouvel objet à chaque rendu, et l'abonnement serait
+ * refait sans fin (l'app ne naviguait plus une fois connectée).
+ */
 function useAbonnement<Q extends FunctionReference<"query">>(requete: Q, args: Q["_args"] | null, tour: number): Abonnement<Q["_returnType"]> {
   const convex = useConvex();
   const [r, setR] = useState<Abonnement<Q["_returnType"]>>({ valeur: undefined, erreur: null });
+  const nom = getFunctionName(requete);
   const cle = args === null ? null : JSON.stringify(args);
   useEffect(() => {
     if (cle === null) return;
-    const suivi = convex.watchQuery(requete, JSON.parse(cle) as Q["_args"]);
+    const suivi = convex.watchQuery(makeFunctionReference<"query">(nom) as Q, JSON.parse(cle) as Q["_args"]);
     const lire = () => {
       try {
         setR({ valeur: suivi.localQueryResult(), erreur: null });
@@ -125,20 +153,22 @@ function useAbonnement<Q extends FunctionReference<"query">>(requete: Q, args: Q
     };
     lire();
     return suivi.onUpdate(lire);
-  }, [convex, requete, cle, tour]);
+  }, [convex, nom, cle, tour]);
   return cle === null ? { valeur: undefined, erreur: null } : r;
 }
 
-function BibliothequeConnectee({ moiId, children }: { moiId: Id<"membres">; children: ReactNode }) {
+function BibliothequeConnectee({ moiId, surValeur }: { moiId: Id<"membres">; surValeur: (api: BibliothequeApi) => void }) {
   const convex = useConvex();
-  const connexion = useConvexConnectionState();
+  const connecte = useSocketOuvert();
   const { mes } = useAgents();
   const [tour, setTour] = useState(0);
-  const [patience, setPatience] = useState(false);
+  /* Hors ligne seulement après 2,5 s sans connexion : la reconnexion qui suit une connexion au compte
+     ne doit pas griser le partage un instant. */
+  const [horsLigne, setHorsLigne] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setPatience(true), 4000);
+    const t = setTimeout(() => setHorsLigne(!connecte), connecte ? 0 : 2500);
     return () => clearTimeout(t);
-  }, []);
+  }, [connecte]);
 
   const liste = useAbonnement(api.bibliotheque.lister, {}, tour);
 
@@ -154,7 +184,6 @@ function BibliothequeConnectee({ moiId, children }: { moiId: Id<"membres">; chil
   }, [mes, moiId]);
   const suivis = useAbonnement(api.bibliotheque.etats, ids.length ? { ids } : null, tour);
 
-  const horsLigne = !connexion.isWebSocketConnected && (connexion.hasEverConnected || patience);
   const valeur = liste.valeur && liste.valeur.pour === moiId ? liste.valeur.definitions : undefined;
   const etat: EtatBibliotheque = liste.erreur ? "erreur" : horsLigne ? "hors-ligne" : valeur ? "pret" : "chargement";
 
@@ -208,7 +237,8 @@ function BibliothequeConnectee({ moiId, children }: { moiId: Id<"membres">; chil
     }),
     [etat, moiId, valeur, etats, liste.erreur, reessayer, convex],
   );
-  return <BibliothequeContext.Provider value={api_}>{children}</BibliothequeContext.Provider>;
+  useEffect(() => surValeur(api_), [api_, surValeur]);
+  return null;
 }
 
 export function useBibliotheque(): BibliothequeApi {

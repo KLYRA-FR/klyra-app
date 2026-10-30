@@ -166,6 +166,8 @@ async function menuFiche(a, id, ligne) {
   await a.quand(`document.querySelector('main button[aria-label="Plus d’options"]')`);
   await a.ev(`document.querySelector('main button[aria-label="Plus d’options"]').click(); 0`);
   await a.quand("document.querySelector('[role=menu]')");
+  // Une ligne peut attendre la session ou le réseau (grisée avec sa raison) : on lui laisse le temps.
+  await a.quand(`[...document.querySelectorAll('[role=menuitem]')].some((x) => x.innerText.trim() === ${JSON.stringify(ligne)} && x.getAttribute('aria-disabled') !== 'true')`, 10000);
   return a.cliquer(ligne, "document.querySelector('[role=menu]')");
 }
 const dialogue = (a) => a.ev("document.querySelector('[role=dialog], [role=alertdialog]')?.innerText ?? ''");
