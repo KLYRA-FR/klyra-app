@@ -76,6 +76,8 @@ jobs:
         run: timeout 180 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:conversation
       - name: Mise à jour des modèles KLYRA déjà installés, vrais gestes
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:maj-modeles
+      - name: Agents actifs, bibliothèque locale et assistant renommé (profils fictifs)
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:agents
       - name: Journal de consommation et rattrapage de l'historique
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
       - name: Sons de l'app, rendus dans Chromium
@@ -84,6 +86,8 @@ jobs:
         run: node scripts/test-coordonnees.cjs
       - name: Routines, échéances et moteur (dossiers temporaires, sans agent)
         run: pnpm test:routines
+      - name: Transport du parcours routines (preload et moteur réels, hôte et agent fictifs)
+        run: node scripts/routines-browser-fixture.cjs --self-test
       - name: Computer Use, interrupteur et capture
         run: timeout 120 xvfb-run -a -s "-screen 0 1600x1000x24" env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-ordinateur.cjs
 

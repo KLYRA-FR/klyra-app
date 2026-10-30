@@ -19,6 +19,8 @@ on:
       - electron/maj.ts
       - src/lib/sons/**
       - scripts/test-sons.cjs
+      - electron/routines/**
+      - scripts/test-routine*.cjs
 
 permissions:
   contents: read
