@@ -5,7 +5,7 @@
  *   pnpm test:agents
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -19,6 +19,15 @@ const verifier = (ok, message) => {
   if (!ok) echecs.push(message);
 };
 const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* Trois conversations fictives : les cartes doivent compter les données du
+   profil Electron, avec zéro pour les autres agents. Aucun message à envoyer. */
+const conversations = ["dev", "dev", "qa"].map((roleId, i) => ({
+  id: `compteur-${i}`, kind: "equipe", projectId: null, title: `Conversation fictive ${i}`,
+  roleIds: [roleId], updatedAt: "2026-10-30T10:00:00.000Z", sessions: {}, luJusqua: null,
+}));
+mkdirSync(path.join(TMP, "userdata"), { recursive: true });
+writeFileSync(path.join(TMP, "userdata/conversations.json"), JSON.stringify({ version: 1, chats: conversations, messages: [], routines: [], taches: [], evenements: [] }));
 
 const env = {
   ...process.env,
@@ -61,9 +70,18 @@ try {
   await cliquer("Installer l’équipe KLYRA");
   await attendre(2500);
   verifier(existsSync(AGENTS) && readdirSync(AGENTS).length === 11, "installation : 11 fiches écrites");
-  verifier((await titre()) === "L’équipe, 11 agents", "installation : la page liste les 11 agents");
+  verifier((await titre()) === "L’équipe" && (await ev("document.querySelectorAll('main a[href^=\"/equipe?agent=\"] h2').length")) === 11, "installation : la page liste les 11 agents");
   const modele = readFileSync(path.join(APP, "agents-equipe/dev.md"), "utf8");
   verifier(readFileSync(path.join(AGENTS, "dev.md"), "utf8") === modele, "installation : fiche identique au modèle");
+
+  const cartes = await ev(`Array.from(document.querySelectorAll('main a[href^="/equipe?agent="]')).filter(a => a.querySelector('h2')).map(a => ({ id: new URL(a.href).searchParams.get('agent'), texte: a.innerText.replace(/\\s+/g, ' ').trim(), barre: !!a.querySelector('.klyra-barre-progres') }))`);
+  verifier(cartes.length === 11 && cartes.every(c => c.texte.includes(c.id === "dev" ? "2 conversations" : c.id === "qa" ? "1 conversation" : "Aucune conversation")), "cartes : 0/1/2 conversations issues du profil Electron");
+  verifier(cartes.every(c => !c.barre && !/\bsur \d/.test(c.texte) && c.texte.includes("Voir la fiche")), "cartes : ni total ni barre, Voir la fiche conservé");
+  await ev(`document.querySelector('main a[href="/equipe?agent=dev"]').click()`);
+  await attendre(2500);
+  verifier((await ev("new URL(location.href).searchParams.get('agent')")) === "dev" && (await titre())?.startsWith("Hugo"), "cliquer la carte ouvre la fiche de Hugo");
+  const intactes = await ev("window.klyra.conversations.read()");
+  verifier(JSON.stringify(intactes.data.chats) === JSON.stringify(conversations) && intactes.data.messages.length === 0, "navigation : conversations conservées et aucun message envoyé");
 
   await aller("/equipe?agent=dev&mode=modifier");
   await ev(`(() => { const i = [...document.querySelectorAll('main input')].find((i) => i.value === 'Hugo'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Hugo B.'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
