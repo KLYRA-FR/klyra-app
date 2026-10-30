@@ -19,7 +19,8 @@ export interface AgentFile {
 export type OrigineAgent =
   /** `publie` : partagé dans la bibliothèque par la personne, qui en est l'autrice. */
   | { type: "local"; publie?: { definitionId: string; version: number; compte: string } }
-  | { type: "modele"; modele: string }
+  /** `ignoree` : la version du modèle face à laquelle la personne a gardé sa fiche (plus proposée). */
+  | { type: "modele"; modele: string; ignoree?: number }
   | {
       type: "bibliotheque";
       definitionId: string;

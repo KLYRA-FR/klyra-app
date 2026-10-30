@@ -24,7 +24,8 @@ import path from "node:path";
 export type Origine =
   /** Créé ici ou trouvé sur l'ordinateur. `publie` : la personne l'a partagé dans la bibliothèque (elle en est l'autrice). */
   | { type: "local"; publie?: { definitionId: string; version: number; compte: string } }
-  | { type: "modele"; modele: string }
+  /** `ignoree` : la version du modèle face à laquelle la personne a gardé sa fiche (plus proposée). */
+  | { type: "modele"; modele: string; ignoree?: number }
   | {
       type: "bibliotheque";
       definitionId: string;
@@ -81,8 +82,11 @@ export function origineValide(brut: unknown): Origine {
       if (!Number.isInteger(p.version) || (p.version as number) < 1) throw new Error("Origine d’agent invalide.");
       return { type: "local", publie: { definitionId: texte(p.definitionId), version: p.version as number, compte: texte(p.compte) } };
     }
-    case "modele":
-      return { type: "modele", modele: texte(o.modele, 64) };
+    case "modele": {
+      if (o.ignoree === undefined || o.ignoree === null) return { type: "modele", modele: texte(o.modele, 64) };
+      if (!Number.isInteger(o.ignoree) || (o.ignoree as number) < 1) throw new Error("Origine d’agent invalide.");
+      return { type: "modele", modele: texte(o.modele, 64), ignoree: o.ignoree as number };
+    }
     case "copie":
       return { type: "copie", definitionId: texte(o.definitionId), version: version(), auteur: texte(o.auteur, 120), compte: texte(o.compte) };
     case "bibliotheque": {

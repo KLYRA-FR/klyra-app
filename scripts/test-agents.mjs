@@ -45,7 +45,7 @@ let app;
 try {
   /* ─── 1. Nouveau profil ─────────────────────────────────────────── */
   const n = profil("nouveau");
-  for (const f of readdirSync(MODELES)) cpSync(path.join(MODELES, f), path.join(n.agents, f));
+  for (const f of readdirSync(MODELES).filter((f) => f.endsWith(".md"))) cpSync(path.join(MODELES, f), path.join(n.agents, f));
   writeFileSync(path.join(n.agents, "seo.md"), "---\nname: seo\ndisplayName: Sasha\ndescription: \"SEO — mots-clés. Appelle Sasha pour le SEO.\"\n---\n\n# Sasha — SEO\n\nFiche d’un autre outil.\n");
   const avant = empreintesDe(n.agents);
 
@@ -186,7 +186,7 @@ try {
 
   /* ─── 2. Installation existante ──────────────────────────────────── */
   const r = profil("reprise");
-  for (const f of readdirSync(MODELES)) cpSync(path.join(MODELES, f), path.join(r.agents, f));
+  for (const f of readdirSync(MODELES).filter((f) => f.endsWith(".md"))) cpSync(path.join(MODELES, f), path.join(r.agents, f));
   writeFileSync(path.join(r.agents, "dev.md"), `${readFileSync(path.join(MODELES, "dev.md"), "utf8")}\n## Ajout local\n\nUne règle à moi.\n`);
   writeFileSync(path.join(r.agents, "perso.md"), "---\nname: perso\ndisplayName: Perso\ndescription: \"Perso — essai. Appelle Perso pour l’essai.\"\n---\n\n# Perso — Essai\n\nÀ moi.\n");
   const reglages = { dev: { tag: "Code", teinte: "violet" } };

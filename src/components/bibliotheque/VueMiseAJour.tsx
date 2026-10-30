@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { avecIdentifiant } from "../../../convex/model/definitions";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { DiffView } from "@/components/ui/DiffView";
@@ -13,7 +12,9 @@ import { annoncer } from "@/lib/annonces";
 import { useBibliotheque, type DefinitionComplete } from "@/lib/bibliotheque";
 import { avecLibelles, clesDe, dateCourte, libelleDe, lisible, nomModele, raison } from "@/lib/bibliotheque-ui";
 import { BridgeError } from "@/lib/bridge";
-import { consigne, lienDe, modeleEmbarque } from "@/lib/lien-bibliotheque";
+import { cn } from "@/lib/cn";
+import { consigne, lienDe } from "@/lib/lien-bibliotheque";
+import { comparerAuModele, fusionnerAvecModele, remplacerParModele, versionsDuModele, type Changement, type Choix, type Conflit } from "@/lib/maj-modele";
 import { poste } from "@/lib/plateforme";
 import { jouer } from "@/lib/sons/sons";
 import { useSession } from "./commun";
@@ -62,7 +63,7 @@ function MesChangements({ avant, apres }: { avant: string; apres: string }) {
  */
 export function VueMiseAJour({ agent }: { agent: AgentLocal }) {
   const router = useRouter();
-  const { appliquer, changerOrigine, save, definitionRecue, meta, canEdit } = useAgents();
+  const { appliquer, changerOrigine, definitionRecue, canEdit } = useAgents();
   const biblio = useBibliotheque();
   const session = useSession();
   const [demander, fenetre] = useConfirmation();
@@ -157,64 +158,8 @@ export function VueMiseAJour({ agent }: { agent: AgentLocal }) {
       : "Cette version ne demande pas de modèle : il prendra celui par défaut.";
   };
 
-  /* ─── Modèle KLYRA (§6) : on ne sait pas si l'écart est une personnalisation ou une ancienne version. */
-  if (modele) {
-    const reference = modeleEmbarque(modele.modele);
-    if (!reference) return simple("Ce modèle KLYRA n’existe plus dans cette version de l’app.");
-    if (lien.type === "modele" && lien.aJour) return simple(`${nom} est identique au modèle KLYRA de cette version de l’app.`);
-    const texte = modele.modele === id ? reference : avecIdentifiant(reference, id);
-    const autreModele = ligneModele(modeleDe(reference));
-    return (
-      <Ecran
-        titre={
-          <>
-            <span className="font-semibold">Modèle KLYRA</span> <span className="font-normal">de {nom}</span>
-          </>
-        }
-        sousTitre={`Ta version diffère du modèle KLYRA de cette version de l’app. Ce peut être une personnalisation ou une ancienne version : compare, puis choisis.`}
-        barre={
-          <>
-            <Bouton variant="blanc" taille="md" disabled={occupe} onClick={retour}>
-              Garder ma version
-            </Bouton>
-            <Bouton
-              variant="blanc"
-              taille="md"
-              disabled={occupe || !canEdit}
-              onClick={() => void agir(() => changerOrigine(id, { type: "local" }), () => annoncer(`${nom} est maintenant ta copie privée.`))}
-            >
-              Copier en privé
-            </Bouton>
-            <span className="flex flex-col items-end gap-0.5">
-              <Bouton
-                variant="sombre"
-                taille="md"
-                disabled={occupe || !canEdit || !fichier}
-                onClick={() =>
-                  void agir(
-                    () => save(id, texte, { tag: agent.role.tag, teinte: agent.role.teinte, nom: meta[id]?.nom }, fichier?.modifiedAt ?? null),
-                    () => {
-                      annoncer(`${nom} remplacé par le modèle KLYRA.`);
-                      jouer("validation");
-                    },
-                  )
-                }
-              >
-                Remplacer
-              </Bouton>
-              <span className="text-ui-xs text-texte-tertiaire">Ta version va dans l’historique.</span>
-            </span>
-          </>
-        }
-      >
-        {message && <Erreur>{message}</Erreur>}
-        <DiffView before={consigne(actuel)} after={consigne(texte)} />
-        <p className="m-0 text-ui-s text-texte-tertiaire">
-          Tu gardes ton nom pour lui ({nom}), ta couleur, ton rôle court et ses conversations.{autreModele ? ` ${autreModele}` : ""}
-        </p>
-      </Ecran>
-    );
-  }
+  /* ─── Modèle KLYRA (§6) : nouvelle version du modèle, ou personnalisation. */
+  if (modele) return <MiseAJourModele agent={agent} modeleKlyra={modele.modele} ignoree={modele.ignoree} />;
 
   /* ─── Agent reçu ou copie privée : il faut la session qui l'a ajouté. */
   if (origine?.type === "bibliotheque" && !recu) {
@@ -393,6 +338,230 @@ export function VueMiseAJour({ agent }: { agent: AgentLocal }) {
       <p className="m-0 text-ui-s text-texte-tertiaire">
         Tu gardes ton nom pour lui ({nom}), ta couleur, ton rôle court{autreModele ? "" : ", ton modèle"}, ses dépendances configurées et ses
         conversations.{autreModele ? ` ${autreModele}` : ""}
+      </p>
+    </Ecran>
+  );
+}
+
+const listeChangements = (liste: Changement[]) =>
+  liste.map((c) => (c.etat === "ajoutee" ? `${c.titre} (nouvelle)` : c.etat === "retiree" ? `${c.titre} (retirée)` : c.titre)).join(", ");
+
+/** Une partie modifiée des deux côtés : la sienne ou celle du modèle (la sienne par défaut). */
+function ChoixConflit({ conflit, choix, onChoisir }: { conflit: Conflit; choix: Choix; onChoisir: (choix: Choix) => void }) {
+  const options: [Choix, string][] = [
+    ["mienne", conflit.mienne === null ? "La laisser retirée" : "Garder la mienne"],
+    ["modele", conflit.modele === null ? "La retirer, comme le modèle" : "Prendre celle du modèle"],
+  ];
+  return (
+    <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0" data-conflit={conflit.cle}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-ui font-medium text-texte-principal">{conflit.titre}</span>
+        <div role="radiogroup" aria-label={`Version de « ${conflit.titre} » à garder`} className="flex flex-wrap gap-0.5 rounded-sm bg-fond-surface-grise p-0.5">
+          {options.map(([valeur, libelle]) => (
+            <button
+              key={valeur}
+              type="button"
+              role="radio"
+              aria-checked={choix === valeur}
+              onClick={() => onChoisir(valeur)}
+              className={cn(
+                "h-8 cursor-pointer rounded-2xs border-0 px-3 text-ui-xs font-medium transition-colors duration-[220ms] ease-sortie",
+                choix === valeur ? "bg-fond-surface text-texte-principal shadow-ombre-xs" : "bg-transparent text-texte-secondaire hover:text-texte-principal",
+              )}
+            >
+              {libelle}
+            </button>
+          ))}
+        </div>
+      </div>
+      <details className="group">
+        <summary className="cursor-pointer list-none text-ui-xs text-texte-tertiaire">Voir les deux versions</summary>
+        <DiffView before={conflit.mienne ?? ""} after={conflit.modele ?? ""} className="mt-2" />
+      </details>
+    </li>
+  );
+}
+
+/**
+ * Un agent venu d'un modèle KLYRA face au modèle de cette version de l'app (§6) :
+ * - fiche d'une version antérieure, jamais modifiée : « Mettre à jour » ou « Plus tard » ;
+ * - fiche modifiée depuis une version antérieure : la mise à jour reprend ce qui n'a pas été touché,
+ *   garde ses modifications, et chaque partie modifiée des deux côtés se choisit ;
+ * - fiche modifiée depuis le modèle actuel : ce sont ses modifications, à garder ou à remplacer.
+ * L'en-tête de la fiche (prénom, modèle d'IA, mémoire, outils) et les réglages ne bougent jamais ;
+ * la version remplacée va dans l'historique, et une fiche changée entre-temps n'est pas écrite.
+ */
+function MiseAJourModele({ agent, modeleKlyra, ignoree }: { agent: AgentLocal; modeleKlyra: string; ignoree?: number }) {
+  const router = useRouter();
+  const { save, changerOrigine, canEdit } = useAgents();
+  const [choix, setChoix] = useState<Record<string, Choix>>({});
+  const [occupe, setOccupe] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const id = agent.role.id;
+  const nom = agent.role.name;
+  const fichier = agent.role.file;
+  const actuel = fichier?.content ?? "";
+  const retour = () => router.push(`/equipe?agent=${encodeURIComponent(id)}`);
+  const comparaison = comparerAuModele(modeleKlyra, actuel);
+  const fusion = comparaison ? fusionnerAvecModele(modeleKlyra, id, actuel, choix) : null;
+  const remplacement = comparaison ? remplacerParModele(modeleKlyra, id, actuel) : null;
+
+  const agir = async (action: () => Promise<void>, apres: () => void) => {
+    setOccupe(true);
+    setMessage(null);
+    try {
+      await action();
+      apres();
+      retour();
+    } catch (e) {
+      setOccupe(false);
+      setMessage(
+        e instanceof BridgeError && e.code === "conflit"
+          ? `La fiche de ${nom} vient de changer sur ${poste.ce} : rien n’a été écrit. La comparaison ci-dessous est à jour : relis-la avant de choisir.`
+          : `Rien n’a changé : ${raison(e)}.`,
+      );
+    }
+  };
+  /* Les réglages (nom, couleur, rôle court) ne passent pas : ils restent tels quels. */
+  const ecrire = (contenu: string, annonce: string) =>
+    void agir(
+      async () => {
+        await save(id, contenu, {}, fichier?.modifiedAt ?? null);
+        if (ignoree !== undefined) await changerOrigine(id, { type: "modele", modele: modeleKlyra });
+      },
+      () => {
+        annoncer(annonce);
+        jouer("validation");
+      },
+    );
+
+  const barreRetour = (
+    <Bouton variant="blanc" taille="md" onClick={retour}>
+      Retour à la fiche
+    </Bouton>
+  );
+  if (!comparaison || !fusion || !remplacement) {
+    return (
+      <Ecran titre={<span className="font-semibold">{nom}</span>} barre={barreRetour}>
+        <p className="m-0 text-ui text-texte-secondaire">Ce modèle KLYRA n’existe plus dans cette version de l’app.</p>
+      </Ecran>
+    );
+  }
+  if (comparaison.identiqueA === comparaison.version) {
+    return (
+      <Ecran titre={<span className="font-semibold">{nom}</span>} barre={barreRetour}>
+        <p className="m-0 text-ui text-texte-secondaire">{nom} est identique au modèle KLYRA de cette version de l’app.</p>
+      </Ecran>
+    );
+  }
+
+  const { version, base } = comparaison;
+  const nouvelle = base < version;
+  const intacte = comparaison.identiqueA !== null;
+  const apres = nouvelle ? fusion.contenu : remplacement;
+  const contenuBase = versionsDuModele(modeleKlyra).find((v) => v.version === base)?.content ?? "";
+  const modeleIa = getField(parseAgentFile(actuel).frontmatter, "model");
+  const ecritureImpossible = occupe || !canEdit || !fichier;
+
+  const garder = () =>
+    void agir(
+      () => changerOrigine(id, { type: "modele", modele: modeleKlyra, ignoree: version }),
+      () => annoncer(`Tu gardes ta version de ${nom}.`),
+    );
+  const copier = () => void agir(() => changerOrigine(id, { type: "local" }), () => annoncer(`${nom} est maintenant ta copie privée.`));
+  const mettreAJour = () => ecrire(fusion.contenu, `${nom} mis à jour (modèle KLYRA, version ${version}).`);
+
+  return (
+    <Ecran
+      titre={
+        nouvelle ? (
+          <>
+            <span className="font-semibold">Version {version} du modèle KLYRA</span> <span className="font-normal">de {nom}</span>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">Modèle KLYRA</span> <span className="font-normal">de {nom}</span>
+          </>
+        )
+      }
+      sousTitre={
+        !nouvelle
+          ? "Ta fiche diffère du modèle KLYRA de cette version de l’app : ce sont tes modifications. Compare, puis choisis."
+          : intacte
+            ? `Ta fiche est la version ${base} du modèle, sans modification. Rien ne change tant que tu ne choisis pas.`
+            : `Ta fiche a été modifiée depuis la version ${base} du modèle. La mise à jour reprend ce que tu n’as pas touché et garde tes modifications.`
+      }
+      barre={
+        nouvelle && intacte ? (
+          <>
+            <Bouton variant="blanc" taille="md" disabled={occupe} onClick={retour}>
+              Plus tard
+            </Bouton>
+            <BoutonPrincipal disabled={ecritureImpossible} onClick={mettreAJour}>
+              Mettre à jour
+            </BoutonPrincipal>
+          </>
+        ) : (
+          <>
+            <Bouton variant="blanc" taille="md" disabled={occupe || !canEdit} onClick={garder}>
+              Garder ma version
+            </Bouton>
+            <Bouton variant="blanc" taille="md" disabled={occupe || !canEdit} onClick={copier}>
+              Copier en privé
+            </Bouton>
+            <span className="flex flex-col items-end gap-0.5">
+              <Bouton
+                variant={nouvelle ? "blanc" : "sombre"}
+                taille="md"
+                disabled={ecritureImpossible}
+                onClick={() => ecrire(remplacement, `${nom} remplacé par le modèle KLYRA.`)}
+              >
+                Remplacer par le modèle
+              </Bouton>
+              <span className="text-ui-xs text-texte-tertiaire">Tes modifications vont dans l’historique.</span>
+            </span>
+            {nouvelle && (
+              <BoutonPrincipal disabled={ecritureImpossible} onClick={mettreAJour}>
+                Mettre à jour
+              </BoutonPrincipal>
+            )}
+          </>
+        )
+      }
+    >
+      {message && <Erreur>{message}</Erreur>}
+      {nouvelle && !intacte && (
+        <div className="flex flex-col gap-3 rounded-xl border border-bordure-subtile bg-fond-page p-4 text-ui text-texte-principal">
+          {fusion.reprises.length > 0 && (
+            <p className="m-0">
+              <span className="font-medium">Repris du modèle</span>, là où tu n’avais rien changé : {listeChangements(fusion.reprises)}.
+            </p>
+          )}
+          {fusion.gardees.length > 0 && (
+            <p className="m-0">
+              <span className="font-medium">Tes modifications gardées</span> : {listeChangements(fusion.gardees)}.
+            </p>
+          )}
+          {fusion.conflits.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="m-0">
+                <span className="font-medium">Modifiées des deux côtés</span> : choisis pour chacune. Par défaut, ta version est gardée.
+              </p>
+              <ul className="m-0 flex list-none flex-col divide-y divide-bordure-subtile p-0">
+                {fusion.conflits.map((c) => (
+                  <ChoixConflit key={c.cle} conflit={c} choix={choix[c.cle] ?? "mienne"} onChoisir={(v) => setChoix((x) => ({ ...x, [c.cle]: v }))} />
+                ))}
+              </ul>
+            </div>
+          )}
+          <MesChangements avant={consigne(contenuBase)} apres={consigne(actuel)} />
+        </div>
+      )}
+      <DiffView before={consigne(actuel)} after={consigne(apres)} />
+      <p className="m-0 text-ui-s text-texte-tertiaire">
+        Tu gardes son nom ({nom}), sa couleur, son rôle court{modeleIa ? `, son modèle (${nomModele(modeleIa)})` : ""}, le reste de son en-tête et ses
+        conversations. Ta version actuelle va dans l’historique.
       </p>
     </Ecran>
   );

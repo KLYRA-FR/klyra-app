@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "node scripts/test-agents.mjs",
     "test:delegation": "node scripts/test-delegation.mjs",
+    "test:maj-modeles": "node scripts/test-maj-modeles.mjs",
     "test:bibliotheque": "node scripts/test-bibliotheque.mjs",
     "test:conversation": "node scripts/test-conversation.mjs",
     "test:coller": "node scripts/test-collage.mjs",
@@ -37,7 +38,8 @@
     "test:identite": "vitest run src/lib/identite.test.ts",
     "test:collage": "vitest run src/lib/collage.test.ts",
     "test:recherche": "vitest run src/lib/recherche.test.ts",
-    "test:report": "vitest run src/lib/report.test.ts"
+    "test:report": "vitest run src/lib/report.test.ts",
+    "test:modeles": "vitest run src/lib/maj-modele.test.ts src/lib/modeles-klyra.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

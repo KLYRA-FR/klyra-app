@@ -16,11 +16,14 @@ export const PRINCIPAL: Role = {
   title: "Ton assistant",
   initial: "A",
   teinte: "bleu-k1",
-  description: "Ton interlocuteur par défaut : il répond, travaille dans tes projets et confie une partie du travail à tes agents quand tu en as.",
-  whenToCall: "Ton interlocuteur par défaut : il répond, travaille dans tes projets et confie une partie du travail à tes agents quand tu en as.",
-  skills: ["Répondre et faire", "Créer un agent", "Répartir entre tes agents"],
+  description:
+    "Ton interlocuteur par défaut : il répond, travaille dans tes projets, confie à tes agents la partie qui relève d’eux quand tu en as, suit leur travail et te rend le résultat vérifié.",
+  whenToCall:
+    "Ton interlocuteur par défaut : il répond, travaille dans tes projets, confie à tes agents la partie qui relève d’eux quand tu en as, suit leur travail et te rend le résultat vérifié.",
+  skills: ["Répondre et faire", "Confier et suivre", "Créer un agent"],
   heading: "Assistant — Ton assistant",
-  pitch: "Je réponds à tes demandes et je travaille avec toi. Quand un besoin revient, je t’aide à créer l’agent qui s’en chargera.",
+  pitch:
+    "Je réponds à tes demandes et je travaille avec toi. Quand un de tes agents est mieux placé, je lui confie sa partie avec un brief complet, je vérifie ce qu’il rend et je te le restitue. Quand un besoin revient, je t’aide à créer l’agent qui s’en chargera.",
   sections: [],
   model: "",
   memory: "",

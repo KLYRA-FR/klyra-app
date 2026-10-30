@@ -144,8 +144,11 @@ interface AgentsApi {
   appliquer: (id: string, partage: string, origine: OrigineAgent, forcer?: boolean) => Promise<void>;
   changerOrigine: (id: string, origine: OrigineAgent) => Promise<void>;
   definitionRecue: (id: string) => Promise<string | null>;
-  /** Enregistre la fiche et les réglages de l'app ; lève une BridgeError « conflit » si le fichier a changé. */
-  save: (id: string, content: string, reglage: { tag: string; teinte: RoleTeinte; nom?: string }, expectedModifiedAt: number | null) => Promise<void>;
+  /**
+   * Enregistre la fiche et les réglages de l'app donnés (les autres restent tels quels) ; lève une
+   * BridgeError « conflit » si le fichier a changé.
+   */
+  save: (id: string, content: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string }, expectedModifiedAt: number | null) => Promise<void>;
   /** Préférences personnelles seules (nom affiché, rôle court, couleur) : la fiche ne change pas. */
   saveReglage: (id: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string }) => Promise<void>;
   /**

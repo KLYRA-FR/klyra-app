@@ -150,17 +150,6 @@ export function findColleagues(text: string): { name: string; id: string }[] {
   return [...text.matchAll(/([A-ZÀ-Ý][\p{L}-]+)\s*\(([a-z0-9-]+)\)/gu)].map((m) => ({ name: m[1], id: m[2] }));
 }
 
-/**
- * Ajoute un agent à la liste du bloc « Parler en équipe » d'une autre fiche
- * (« Les agents du roster : …, Lou (prompts). »). Renvoie le texte inchangé
- * si la liste est introuvable ou contient déjà l'agent.
- */
-export function addToRoster(content: string, label: string): string {
-  const match = content.match(/Les agents du roster : ([^\n]*?)\. /);
-  if (!match || match[1].includes(label)) return content;
-  return content.replace(match[0], `Les agents du roster : ${match[1]}, ${label}. `);
-}
-
 /** Squelette d'une nouvelle fiche, avec le bloc commun de l'équipe. */
 export function newAgentBody(displayName: string, role: string, commonBlock: string): string {
   return `# ${displayName || "Prénom"} — ${role || "Rôle"}
@@ -174,11 +163,11 @@ Présente-toi en deux phrases, à la première personne : ce que tu fais, ce que
 
 ## Ce que je ne fais pas
 
-- Une tâche qui revient à un collègue → Hugo (dev).
+- Une tâche qui revient à un collègue → le collègue actif qui s’en charge.
 
 ## Critères de sortie
 
-- Ce qui doit être vrai pour que ton travail soit fini.
+- Ce qui doit être vrai pour que ton travail soit fini, et ce que tu as vérifié toi-même.
 
 ${commonBlock}`;
 }

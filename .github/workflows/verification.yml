@@ -38,6 +38,8 @@ jobs:
       # Les fonctions Convex (comptes, équipe) sur un backend en mémoire : aucun déploiement touché.
       - name: Convex, connexion et droits
         run: pnpm test:convex
+      - name: Modèles KLYRA, versions et mise à jour des fiches installées
+        run: pnpm test:modeles
 
       # Ubuntu 24.04 bloque le bac à sable de Chromium (espaces de noms
       # utilisateur) : on le rouvre pour ce test, sans toucher à l'app.
@@ -49,6 +51,8 @@ jobs:
             timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron .
       - name: Conversation d'équipe, menu « Plus d’options » et renommage
         run: timeout 180 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:conversation
+      - name: Mise à jour des modèles KLYRA déjà installés, vrais gestes
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:maj-modeles
       - name: Journal de consommation et rattrapage de l'historique
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
       - name: Sons de l'app, rendus dans Chromium
@@ -75,6 +79,8 @@ jobs:
       - run: pnpm build:electron
       - name: Noms et extensions des fichiers Windows et Unix
         run: pnpm test:fichiers
+      - name: Modèles KLYRA, versions et mise à jour (fins de ligne CRLF)
+        run: pnpm test:modeles
       - name: Journal de consommation et rattrapage de l'historique
         shell: pwsh
         run: |
