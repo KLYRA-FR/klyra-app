@@ -17,6 +17,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
+    "test:conversation": "node scripts/test-conversation.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
     "test:coordonnees": "node scripts/test-coordonnees.cjs",
     "test:ordinateur": "electron scripts/test-ordinateur.cjs",

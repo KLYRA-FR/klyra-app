@@ -1,11 +1,13 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ChoixModele } from "./ChoixModele";
-import { useAgentOccupe, useRole, useTravail } from "@/lib/workspace";
+import { MenuConversation } from "./MenuConversation";
+import { useAgentOccupe, useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Project } from "@/types/domain";
 
 interface ChatHeaderProps {
@@ -76,7 +78,48 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau }: { chat: Chat; pa
   );
 }
 
+/**
+ * Le titre en cours de renommage. Entrée ou clic ailleurs : il est gardé ;
+ * Échap : il reste tel quel. Une seule fin, même si le champ perd ensuite le focus.
+ */
+function ChampTitre({ titre, onFin }: { titre: string; onFin: (nouveau: string | null, auClavier: boolean) => void }) {
+  const fini = useRef(false);
+  const finir = (nouveau: string | null, auClavier: boolean) => {
+    if (fini.current) return;
+    fini.current = true;
+    onFin(nouveau, auClavier);
+  };
+  return (
+    <input
+      autoFocus
+      defaultValue={titre}
+      maxLength={80}
+      aria-label="Nom de la conversation"
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={(e) => finir(e.currentTarget.value, false)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          // Sans cela, l'Entrée irait aussi au « … » qui reprend le focus, et rouvrirait le menu.
+          e.preventDefault();
+          finir(e.currentTarget.value, true);
+        }
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          finir(null, true);
+        }
+      }}
+      // La typo et la place du titre (le contour ne prend pas de place) : l'en-tête ne bouge pas.
+      className="w-full min-w-0 rounded-2xs bg-transparent p-0 text-ui font-semibold text-texte-principal outline outline-1 outline-offset-2 outline-bordure-champ"
+    />
+  );
+}
+
 export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: ChatHeaderProps) {
+  const { renommerChat } = useWorkspace();
+  /* La conversation dont le titre est en cours de renommage. */
+  const [edition, setEdition] = useState<string | null>(null);
+  const options = useRef<HTMLButtonElement>(null);
+
   if (chat.kind === "direct") {
     return <EnTeteDirect chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} />;
   }
@@ -85,7 +128,19 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
   return (
     <header className="@container flex items-center gap-3 border-b border-bordure-subtile px-5 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <h1 className="m-0 truncate text-ui font-semibold">{chat.title}</h1>
+        {edition === chat.id ? (
+          <ChampTitre
+            titre={chat.title}
+            onFin={(nouveau, auClavier) => {
+              if (nouveau !== null) renommerChat(chat.id, nouveau);
+              setEdition(null);
+              // Au clavier, le focus revient au « … » ; un clic ailleurs le laisse où il est allé.
+              if (auClavier) options.current?.focus();
+            }}
+          />
+        ) : (
+          <h1 className="m-0 truncate text-ui font-semibold">{chat.title}</h1>
+        )}
         <span className="truncate text-ui-xs text-texte-tertiaire">
           {project?.name} · {roleCount} {roleCount > 1 ? "agents" : "agent"} dans la conversation
         </span>
@@ -107,7 +162,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
           data-son="panneau"
           onClick={onTogglePreview}
         />
-        <BoutonIcone taille="compact" icone={<Icon name="dot-horizontal" size={16} />} libelle="Plus d’options" />
+        <MenuConversation project={project} bouton={options} onRenommer={() => setEdition(chat.id)} />
       </div>
     </header>
   );
