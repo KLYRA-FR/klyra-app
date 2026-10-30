@@ -15,6 +15,7 @@ import { lireProposition } from "@/lib/proposition-agent";
 import { reglagesActuels } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
+import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -99,6 +100,8 @@ interface WorkspaceState extends MockWorkspace {
   /** Ce que les agents peuvent faire sans demander (réglage de ce poste). */
   acces: Acces;
   taches: Tache[];
+  /** Annulation temporaire, jamais écrite sur le disque. */
+  rappelsSupprimes: RappelSupprime[];
   evenements: Evenement[];
   /** Les catégories de rappels, dans l'ordre des colonnes. */
   categories: Categorie[];
@@ -109,6 +112,7 @@ interface WorkspaceState extends MockWorkspace {
   profilCompte: ProfilCompte | null;
 }
 
+/** Liste explicite : les états transitoires (dont Annuler) ne quittent jamais la mémoire. */
 function conversationsAEnregistrer(etat: WorkspaceState) {
   return {
     version: VERSION_STOCKAGE, chats: etat.chats, messages: etat.messages,
@@ -137,6 +141,9 @@ type WorkspaceAction =
     }
   | { type: "tache/enregistrer"; tache: Tache }
   | { type: "tache/supprimer"; id: string }
+  | { type: "tache/restaurer" }
+  | { type: "tache/oublierSuppressions" }
+  | { type: "tache/notifiee"; id: string }
   | { type: "evenement/enregistrer"; evenement: Evenement }
   | { type: "evenement/supprimer"; id: string }
   | { type: "categories/changer"; categories: Categorie[] }
@@ -222,7 +229,13 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       };
     }
     case "tache/supprimer":
-      return { ...state, taches: state.taches.filter((t) => t.id !== action.id) };
+      return supprimerRappel(state, action.id);
+    case "tache/restaurer":
+      return restaurerRappels(state);
+    case "tache/oublierSuppressions":
+      return { ...state, rappelsSupprimes: [] };
+    case "tache/notifiee":
+      return marquerRappelNotifie(state, action.id);
     case "evenement/enregistrer": {
       const existe = state.evenements.some((e) => e.id === action.evenement.id);
       return {
@@ -492,8 +505,9 @@ function chatTitle(text: string): string {
  * rendez-vous, accord attendu). Le son : celui du système si le réglage
  * « Son » est actif, sinon celui de KLYRA ; jamais les deux.
  */
-function notifierRappel(titre: string, corps: string) {
+function notifierRappel(titre: string, corps: string, encoreValide?: () => boolean) {
   void reglagesActuels().then(({ notifications: n }) => {
+    if (encoreValide && !encoreValide()) return;
     const systeme = typeof Notification !== "undefined";
     if (systeme) new Notification(titre, { body: corps, silent: !n.son });
     if (!systeme || !n.son) jouer("notification");
@@ -547,6 +561,8 @@ interface WorkspaceApi {
   choisirAcces: (acces: Acces) => void;
   enregistrerTache: (tache: Tache) => void;
   supprimerTache: (id: string) => void;
+  restaurerTaches: () => RappelSupprime[];
+  oublierSuppressions: () => void;
   enregistrerEvenement: (evenement: Evenement) => void;
   supprimerEvenement: (id: string) => void;
   changerCategories: (categories: Categorie[]) => void;
@@ -591,6 +607,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           artefacts: [],
           acces: "projet",
           taches: [],
+          rappelsSupprimes: [],
           evenements: [],
           categories: CATEGORIES_DE_DEPART,
           workflows: [],
@@ -606,6 +623,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           artefacts: ARTEFACTS_DE_DEPART,
           acces: "projet",
           taches: [],
+          rappelsSupprimes: [],
           evenements: [],
           categories: CATEGORIES_DE_DEPART,
           workflows: [],
@@ -619,6 +637,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /* Les fonctions ci-dessous lisent toujours l'état le plus récent. */
   const stateRef = useRef(state);
+  const ecritureRegroupee = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rolesRef = useRef(roles);
   useEffect(() => {
     stateRef.current = state;
@@ -704,6 +723,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const timer = setTimeout(() => {
       void bridge.conversations.write(conversationsAEnregistrer(stateRef.current));
     }, 400);
+    ecritureRegroupee.current = timer;
     return () => clearTimeout(timer);
   }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
 
@@ -1587,8 +1607,26 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const modifierProfil = useCallback((patch: Partial<User>) => dispatch({ type: "profil/modifier", patch }), []);
   const appliquerProfilCompte = useCallback((profil: ProfilCompte | null) => dispatch({ type: "compte/profil", profil }), []);
   const choisirAcces = useCallback((acces: Acces) => dispatch({ type: "acces/choisir", acces }), []);
-  const enregistrerTache = useCallback((tache: Tache) => dispatch({ type: "tache/enregistrer", tache }), []);
-  const supprimerTache = useCallback((id: string) => dispatch({ type: "tache/supprimer", id }), []);
+  /* Les actions de rappels sont visibles immédiatement par les notifications,
+     le prochain clic (ou blur) et la fermeture, avant le prochain rendu React. */
+  const agirRappel = useCallback((action: Extract<WorkspaceAction, { type: "tache/enregistrer" | "tache/supprimer" | "tache/restaurer" | "tache/oublierSuppressions" | "tache/notifiee" }>) => {
+    stateRef.current = reducer(stateRef.current, action);
+    dispatch(action);
+  }, []);
+  const enregistrerTache = useCallback((tache: Tache) => agirRappel({ type: "tache/enregistrer", tache }), [agirRappel]);
+  const supprimerTache = useCallback((id: string) => agirRappel({ type: "tache/supprimer", id }), [agirRappel]);
+  const oublierSuppressions = useCallback(() => agirRappel({ type: "tache/oublierSuppressions" }), [agirRappel]);
+  const restaurerTaches = useCallback(() => {
+    const avant = stateRef.current;
+    const rendus = avant.rappelsSupprimes.filter(({ tache }) => !avant.taches.some((t) => t.id === tache.id));
+    if (!avant.rappelsSupprimes.length) return [];
+    agirRappel({ type: "tache/restaurer" });
+    if (bridge && stateRef.current.charge) {
+      if (ecritureRegroupee.current !== null) clearTimeout(ecritureRegroupee.current);
+      void bridge.conversations.write(conversationsAEnregistrer(stateRef.current));
+    }
+    return rendus;
+  }, [agirRappel, bridge]);
   const enregistrerEvenement = useCallback((evenement: Evenement) => dispatch({ type: "evenement/enregistrer", evenement }), []);
   const supprimerEvenement = useCallback((id: string) => dispatch({ type: "evenement/supprimer", id }), []);
   const changerCategories = useCallback(
@@ -1606,8 +1644,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         if (t.faite || t.notifiee || !t.date || !t.heure) continue;
         if (new Date(`${t.date}T${t.heure}`).getTime() > maintenant) continue;
         const categorie = stateRef.current.categories.find((c) => c.id === t.liste)?.nom ?? "Rappel";
-        notifierRappel(t.titre, t.notes || categorie);
-        dispatch({ type: "tache/enregistrer", tache: { ...t, notifiee: true } });
+        notifierRappel(t.titre, t.notes || categorie, () => {
+          // Les réglages sont lus de façon asynchrone : la personne a pu supprimer,
+          // cocher ou reporter le rappel entre-temps. Jamais de recréation.
+          const actuel = stateRef.current.taches.find((r) => r.id === t.id);
+          if (!actuel || actuel.faite || actuel.notifiee || !actuel.date || !actuel.heure ||
+              new Date(actuel.date + "T" + actuel.heure).getTime() > Date.now()) return false;
+          agirRappel({ type: "tache/notifiee", id: t.id });
+          return true;
+        });
       }
       /* Les rendez-vous d'équipe : une notification par occurrence, retenue le temps de la session. */
       const demain = new Date(maintenant + 86_400_000);
@@ -1628,7 +1673,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     verifier();
     const id = setInterval(verifier, 30_000);
     return () => clearInterval(id);
-  }, [state.charge]);
+  }, [state.charge, agirRappel]);
 
   const repondreAutorisation = useCallback(
     (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => {
@@ -1973,6 +2018,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       repondreAutorisation,
       enregistrerTache,
       supprimerTache,
+      restaurerTaches,
+      oublierSuppressions,
       enregistrerEvenement,
       supprimerEvenement,
       changerCategories,
@@ -2014,6 +2061,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       repondreAutorisation,
       enregistrerTache,
       supprimerTache,
+      restaurerTaches,
+      oublierSuppressions,
       enregistrerEvenement,
       supprimerEvenement,
       changerCategories,

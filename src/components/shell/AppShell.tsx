@@ -10,6 +10,7 @@ import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
 import { FenetreRecherche } from "@/components/recherche/FenetreRecherche";
+import { MessageSuppression } from "@/components/planning/MessageSuppression";
 import { RegionAnnonces } from "@/components/team/RegionAnnonces";
 import { useRaccourciRecherche, useRaccourciReglages } from "@/lib/raccourcis";
 import { BibliothequeProvider } from "@/lib/bibliotheque";
@@ -170,6 +171,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <ShellLayout>{children}</ShellLayout>
                 {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
                 <FenetreRecherche />
+                <MessageSuppression />
               </Suspense>
             </div>
           </BibliothequeProvider>
