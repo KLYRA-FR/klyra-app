@@ -167,6 +167,14 @@ try {
   let e = await etat(app);
   verifier(e.bouton && e.haspopup === "menu" && !e.ouvert && !e.menu, "le « … » de l’en-tête est un bouton de menu, fermé au départ");
   verifier(e.titre === TITRE && e.brouillon === BROUILLON && e.messages, "titre, messages et brouillon de la conversation affichés");
+  // En-tête et fil : l'avatar de l'agent est le visuel de sa fiche (formes), jamais une initiale.
+  const avatars = await app.ev(
+    `[...document.querySelectorAll('main header [data-avatar-agent], main section [data-avatar-agent]')].map((a) => ({ id: a.dataset.avatarAgent, formes: !!a.querySelector('svg'), texte: a.innerText.trim() }))`,
+  );
+  verifier(
+    avatars.length >= 2 && avatars.every((a) => a.id === "principal" && a.formes && !a.texte),
+    `avatars de l’assistant (en-tête, fil) : le visuel de sa fiche, sans initiale (${avatars.length})`,
+  );
 
   /* Clavier : Entrée ouvre, les flèches parcourent en boucle, Début / Fin, Échap rend le focus. */
   await app.ev(`document.querySelector(${JSON.stringify(BOUTON)}).focus()`);

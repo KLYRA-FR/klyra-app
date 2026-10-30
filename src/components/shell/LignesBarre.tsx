@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
-import { AgentRond, type StatutAgent } from "@/components/roles/AgentRond";
-import { AGENT_PASTELS } from "@/data/agent-palettes";
+import { AgentRond, VisuelAgent, type StatutAgent } from "@/components/roles/AgentRond";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import {
@@ -106,7 +105,7 @@ export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
       aria-current={active ? "page" : undefined}
       className={cn(LIGNE, active ? LIGNE_ACTIVE : LIGNE_REPOS)}
     >
-      <AgentRond roleId={role.id} taille={36} statut={statut} fondPastille="surface" visuel />
+      <AgentRond roleId={role.id} taille={36} statut={statut} fondPastille="surface" />
       <Corps
         titre={role.name}
         etiquette={role.tag}
@@ -128,24 +127,16 @@ export function Grappe({ chat, roles, petite = false }: { chat: Chat; roles: Rol
       aria-hidden="true"
       className={cn("grid shrink-0 grid-cols-2 gap-[2px] rounded-sm bg-fond-surface-grise p-[2px]", petite ? "size-6" : "size-9")}
     >
-      {visibles.map((r) => {
-        const { haut, encre } = AGENT_PASTELS[r.teinte];
-        /* En petit, les initiales ne tiennent que dans un carré seul : sinon, les couleurs suffisent. */
-        const initiale = !petite || visibles.length === 1;
-        return (
-          <span
-            key={r.id}
-            className={cn(
-              "flex items-center justify-center text-ui-3xs leading-none font-semibold",
-              petite ? "rounded-[3px]" : "rounded-[5px]",
-              visibles.length === 1 && cn("col-span-2 row-span-2", !petite && "text-ui-xs"),
-            )}
-            style={{ background: haut, color: encre }}
-          >
-            {initiale && r.initial}
-          </span>
-        );
-      })}
+      {/* Chacun avec le visuel de sa fiche, comme son avatar. */}
+      {visibles.map((r) => (
+        <VisuelAgent
+          key={r.id}
+          agentId={r.id}
+          teinte={r.teinte}
+          rayon={petite ? 3 : 5}
+          className={cn(visibles.length === 1 && "col-span-2 row-span-2")}
+        />
+      ))}
       {reste > 0 && (
         <span
           className={cn(

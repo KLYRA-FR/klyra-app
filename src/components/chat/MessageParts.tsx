@@ -251,8 +251,9 @@ export function CartePropositionAgent({
 }) {
   const router = useRouter();
   const { proposition } = part;
-  // La couleur que l'app donnerait à cet agent (celle d'un modèle KLYRA, sinon tirée de son identifiant).
-  const teinte = roleFromContent(proposition.id || identifiantDe(proposition.nom) || "agent", "", {}, null).teinte;
+  // L'id qu'il recevrait (comme l'éditeur), et la couleur que l'app lui donnerait (celle d'un modèle KLYRA, sinon tirée de son id).
+  const id = proposition.id || identifiantDe(proposition.nom) || "agent";
+  const teinte = roleFromContent(id, "", {}, null).teinte;
   const ouvrir = () => {
     confierAEditeur(proposition);
     router.push(`/equipe?nouveau=1&proposition=${encodeURIComponent(part.etapeId)}`);
@@ -263,7 +264,7 @@ export function CartePropositionAgent({
       <div className="flex min-w-0 items-center gap-2.5">
         {/* Le nom suit : l'avatar n'est pas lu deux fois. */}
         <span aria-hidden="true" className="flex">
-          <RondApercu nom={proposition.nom} teinte={teinte} taille={32} />
+          <RondApercu agentId={id} nom={proposition.nom} teinte={teinte} taille={32} />
         </span>
         <span className={cn("min-w-0 truncate text-ui-s", remplacee ? "text-texte-tertiaire" : "text-texte-principal")}>
           <strong className="font-semibold">{proposition.nom}</strong>
