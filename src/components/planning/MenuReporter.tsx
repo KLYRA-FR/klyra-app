@@ -4,8 +4,9 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
-import { cibleReport, libelleEcheance, libelleJourCourt, libellePeriode, reporter, reportsProposes, type ReportRapide } from "@/lib/dates";
+import { libelleEcheance, libelleJourCourt, libellePeriode } from "@/lib/dates";
 import { entrer } from "@/lib/mouvement";
+import { echeanceReportee, reporterParId, reportsProposes, type Report } from "@/lib/report";
 import { useWorkspace } from "@/lib/workspace";
 import type { Tache } from "@/types/domain";
 
@@ -14,15 +15,15 @@ import type { Tache } from "@/types/domain";
  * au survol de la ligne, et son menu « Dans 1 h », « Demain matin », « Lundi »,
  * chacun avec sa cible écrite. Le menu est rendu dans un portail, placé comme
  * `ListeDeroulante` : le défilement des colonnes du Planning ne le rogne pas.
- * Le report écrit le même rappel (`reporter` de `lib/dates.ts`), relu par son id
- * juste avant : supprimé ou coché entre-temps, rien n'est écrit (sinon
+ * Le report écrit le même rappel (`lib/report.ts`), relu par son id juste
+ * avant : supprimé ou coché entre-temps, rien n'est écrit (sinon
  * `enregistrerTache` le recréerait).
  */
 
 /** Le temps où la nouvelle date reste éclairée (animation `klyra-eclaire`). */
 export const ECLAIRAGE_MS = 1800;
 
-const NOMS: Record<ReportRapide, string> = { heure: "Dans 1 h", demain: "Demain matin", lundi: "Lundi" };
+const NOMS: Record<Report, string> = { "une-heure": "Dans 1 h", "demain-matin": "Demain matin", lundi: "Lundi" };
 
 /** Les classes des boutons voisins de la ligne d'un rappel, visibles au survol ou au focus. */
 const BOUTON =
@@ -39,9 +40,9 @@ const ECART = 6;
 const MARGE = 8;
 
 /** La cible écrite à droite : « Aujourd'hui, 15:45 » pour Dans 1 h, le jour en clair pour les autres. */
-function cibleEcrite(choix: ReportRapide, maintenant: Date): string {
-  const { date, heure } = cibleReport(choix, maintenant);
-  return choix === "heure" ? libelleEcheance(date, heure) : libelleJourCourt(date, heure);
+function cibleEcrite(choix: Report, maintenant: Date): string {
+  const { date, heure } = echeanceReportee(choix, maintenant);
+  return choix === "une-heure" ? libelleEcheance(date, heure) : libelleJourCourt(date, heure);
 }
 
 /** Éclaire la date d'un rappel partout où elle est affichée (`data-echeance`), comme un réglage trouvé. */
@@ -136,19 +137,18 @@ export function MenuReporter({ tache, className, onReporte }: { tache: Tache; cl
     };
   }, [ouvert, fermer, placer]);
 
-  const choisir = (choix: ReportRapide) => {
+  const choisir = (choix: Report) => {
     fermer(false);
     /* Le rappel tel qu'il est maintenant : supprimé ou coché pendant que le menu était ouvert, on n'écrit rien. */
-    const actuel = state.taches.find((t) => t.id === tache.id);
-    if (!actuel || actuel.faite) return;
-    const reporte = reporter(actuel, choix, new Date());
-    if (reporte) enregistrerTache(reporte);
-    const apres = reporte ?? actuel;
+    const reporte = reporterParId(state.taches, tache.id, choix, new Date());
+    if (!reporte) return;
+    const planifie = !state.taches.find((t) => t.id === tache.id)?.date;
+    enregistrerTache(reporte);
     onReporte?.({
-      id: actuel.id,
-      annonce: `Rappel ${actuel.date ? "reporté" : "planifié"} : ${libellePeriode(apres.date!, apres.heure, apres.fin)}.`,
+      id: reporte.id,
+      annonce: `Rappel ${planifie ? "planifié" : "reporté"} : ${libellePeriode(reporte.date!, reporte.heure, reporte.fin)}.`,
     });
-    eclairerEcheance(actuel.id);
+    eclairerEcheance(reporte.id);
     /* Le focus revient au bouton de la même ligne, même si le tri l'a déplacée. */
     requestAnimationFrame(() => bouton.current?.isConnected && bouton.current.focus({ preventScroll: true }));
   };
