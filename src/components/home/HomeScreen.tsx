@@ -1,23 +1,34 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MAX_FICHIERS, Pieces } from "@/components/chat/Composer";
 import { PromptBox } from "@/components/chat/PromptBox";
-import { Icon } from "@/components/icons/Icon";
+import { Icon, type IconName } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
+import { Bouton } from "@/components/ui/Bouton";
 import { MaJournee } from "./MaJournee";
+import { NommerAssistant } from "./NommerAssistant";
 import { Stickers } from "./Stickers";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
+import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { aujourdhui } from "@/lib/dates";
+import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
 import { deuxiemeBloc, premierBloc } from "@/lib/mouvement";
 import { findMention } from "@/lib/mentions";
 import { idDirect, useProjects, useRole, useRoles, useWorkspace } from "@/lib/workspace";
 import type { RoleId } from "@/types/domain";
 
 const AUTO = "auto";
+
+/** L'assistant seul : de quoi commencer. Chacune remplit le composeur, sans rien envoyer. */
+const SUGGESTIONS_ASSISTANT: { libelle: string; texte: string; icone: IconName }[] = [
+  { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine", icone: "calendar-01" },
+  { libelle: "Résume ce document", texte: "Résume ce document", icone: "file-01" },
+  { libelle: "Crée-moi un agent pour…", texte: DEBUT_DEMANDE_AGENT, icone: "users-profiles-plus" },
+];
 
 /** La seconde moitié du bonjour : un mot pour se lancer. */
 const ENCOURAGEMENTS = [
@@ -52,12 +63,35 @@ export function HomeScreen() {
   const { state, moi, startChat, sendMessage } = useWorkspace();
   const roles = useRoles();
   const assistant = useRole("principal");
+  const { assistantANommer, status } = useAgents();
   /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
   const seul = roles.length <= 1;
   const projects = useProjects();
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
+  /* Le nom vient d'être choisi (premier lancement) : l'Accueil revient, prêt à écrire à l'assistant. */
+  const nommage = useRef(false);
+  useEffect(() => {
+    if (assistantANommer) nommage.current = true;
+    else if (nommage.current) {
+      nommage.current = false;
+      promptRef.current?.focus();
+    }
+  }, [assistantANommer]);
+
   const [text, setText] = useState("");
+  /* Une suggestion remplit le composeur, à la suite de ce qui est déjà écrit, curseur à la fin : on relit et on envoie. */
+  const preRemplir = (debut: string) => {
+    const avant = text.trimEnd();
+    const suite = avant ? `${avant}\n${debut}` : debut;
+    setText(suite);
+    requestAnimationFrame(() => {
+      const el = promptRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(suite.length, suite.length);
+    });
+  };
   /* Fichiers joints avec le trombone (app de bureau). */
   const [fichiers, setFichiers] = useState<string[]>([]);
   const joindre = async () => {
@@ -108,6 +142,9 @@ export function HomeScreen() {
 
   const date = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 
+  /* Nouveau profil : d'abord le nom de l'assistant, à la place de l'Accueil. */
+  if (assistantANommer) return <NommerAssistant />;
+
   return (
     <div className="flex h-full flex-col">
       <div className="@container min-h-0 flex-1 overflow-y-auto">
@@ -139,6 +176,22 @@ export function HomeScreen() {
       <div className="shrink-0 px-5 pt-3 pb-4">
         {/* La même largeur que les blocs au-dessus. */}
         <div className="mx-auto w-full max-w-[960px]">
+          {seul && status !== "chargement" && (
+            <ul aria-label="Suggestions" className="m-0 mb-2.5 flex list-none flex-wrap gap-2 p-0">
+              {SUGGESTIONS_ASSISTANT.map((s) => (
+                <li key={s.libelle}>
+                  <Bouton
+                    variant="blanc"
+                    taille="compact"
+                    iconeGauche={<Icon name={s.icone} size={16} className="text-icone-secondaire" />}
+                    onClick={() => preRemplir(s.texte)}
+                  >
+                    {s.libelle}
+                  </Bouton>
+                </li>
+              ))}
+            </ul>
+          )}
           <PromptBox
             ref={promptRef}
             taille="grand"
