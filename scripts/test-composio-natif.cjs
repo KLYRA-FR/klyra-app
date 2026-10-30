@@ -9,6 +9,7 @@ const path = require("node:path");
 const temporaire = fs.mkdtempSync(path.join(os.tmpdir(), "klyra-composio-natif-"));
 app.setPath("userData", temporaire);
 let nombre = 0;
+const limite = setTimeout(() => { console.error(`Échec : délai natif dépassé après ${nombre} contrôles.`); app.exit(1); }, 90_000);
 const ok = (texte) => { nombre++; console.log(`OK ${texte}`); };
 app.whenReady().then(async () => {
   const cle = "sentinelle-factice-composio-coffre-20261030";
@@ -95,7 +96,15 @@ app.whenReady().then(async () => {
   assert.ok(appels.every((a) => a.chemin === "/api/query" || a.methode === "GET"));
   ok("configuration et vérification d’identité sans outil métier ni liaison de compte");
   console.log(`${nombre} contrôles natifs réussis (${sur ? "coffre natif disponible" : "refus de coffre non sûr"}).`);
-}).then(() => { fs.rmSync(temporaire, { recursive: true, force: true }); app.exit(0); }, () => {
+}).then(() => {
+  clearTimeout(limite);
+  // Windows verrouille des fichiers du profil tant qu'Electron est vivant.
+  // Un nettoyage impossible ne doit pas empêcher l'arrêt du harnais.
+  try { fs.rmSync(temporaire, { recursive: true, force: true }); }
+  catch { console.log("Profil de test temporaire encore verrouillé ; nettoyage différé au système."); }
+  app.exit(0);
+}, () => {
+  clearTimeout(limite);
   // Les valeurs de l'assertion ne sont pas journalisées (même nos secrets sont factices).
   console.error("Échec du test natif Composio ; profil de test conservé pour diagnostic local."); app.exit(1);
 });

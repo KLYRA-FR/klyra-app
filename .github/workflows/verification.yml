@@ -101,6 +101,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:electron
       - name: Composio, contrats, sélection et coffre natif Windows
+        timeout-minutes: 5
         shell: pwsh
         run: |
           pnpm test:composio

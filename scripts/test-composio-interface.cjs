@@ -43,7 +43,8 @@ const limiter = setTimeout(() => { console.error("ÉCHEC délai interface (150 s
 function terminer(code) {
   clearTimeout(limiter);
   win?.destroy(); server?.close();
-  fs.rmSync(TMP, { recursive: true, force: true });
+  try { fs.rmSync(TMP, { recursive: true, force: true }); }
+  catch { console.log("Profil de test temporaire encore verrouillé ; nettoyage différé au système."); }
   app.exit(code);
 }
 
@@ -83,6 +84,7 @@ ipcMain.handle("fixture:composio", async (_event, nom, contexte, ...args) => {
 });
 
 const ev = (code) => win.webContents.executeJavaScript(code, true);
+const rendu = () => ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
 async function attendre(expression, nom = expression, max = 10_000) {
   for (let i = 0; i < max / 50; i++) {
     if (await ev(`(() => { try { return !!(${expression}); } catch { return false; } })()`)) return;
@@ -94,22 +96,29 @@ async function cliquer(texte, selecteur = "button", prefixe = false) {
   const expression = `[...document.querySelectorAll(${JSON.stringify(selecteur)})].find((b) => ${prefixe ? `b.innerText.trim().startsWith(${JSON.stringify(texte)})` : `b.innerText.trim() === ${JSON.stringify(texte)}`} && !b.disabled)`;
   await attendre(expression, `bouton ${texte}`);
   await ev(`(() => { const b = ${expression}; b.scrollIntoView({block:'center'}); b.focus(); b.click(); })()`);
-  await pause(70);
+  await rendu();
 }
 async function cible(selecteur) {
-  await attendre(`document.querySelector(${JSON.stringify(selecteur)})`, selecteur);
+  await attendre(`document.querySelector(${JSON.stringify(selecteur)}) && !document.querySelector(${JSON.stringify(selecteur)}).disabled`, selecteur);
   await ev(`(() => { const b = document.querySelector(${JSON.stringify(selecteur)}); b.scrollIntoView({block:'center'}); b.focus(); b.click(); })()`);
-  await pause(70);
+  await rendu();
 }
-async function touche(key) { win.webContents.sendInputEvent({ type: "keyDown", keyCode: key }); win.webContents.sendInputEvent({ type: "keyUp", keyCode: key }); await pause(80); }
+async function touche(key) {
+  await rendu();
+  const attendu = { Space: " ", Down: "ArrowDown", Up: "ArrowUp" }[key] ?? key;
+  // Observe une vraie touche Electron ; aucune création de KeyboardEvent côté page.
+  await ev("window.__klyraTestTouche = null; document.addEventListener('keydown', (e) => { window.__klyraTestTouche = e.key; }, {once:true, capture:true})");
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: key });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: key });
+  await attendre(`window.__klyraTestTouche === ${JSON.stringify(attendu)}`, `réception clavier ${key}`);
+  await rendu();
+}
 async function actualiser() { await cliquer("Actualiser"); await attendre("![...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Actualisation…')"); }
 const texte = () => ev("document.body.innerText");
-const rendu = () => ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
 async function capture(nom) {
   if (!PREUVES) return;
   fs.mkdirSync(PREUVES, { recursive: true });
   await ev(`(() => { let b = document.getElementById('preuve-fixture'); if (!b) { b = document.createElement('div'); b.id='preuve-fixture'; document.body.append(b); } b.textContent = ${JSON.stringify(`Données simulées · test Composio · ${nom}`)}; b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#111;color:#fff;padding:4px 8px;font:11px sans-serif;text-align:center;pointer-events:none'; })()`);
-  await pause(150);
   await rendu();
   const image = await win.webContents.capturePage();
   fs.writeFileSync(path.join(PREUVES, `ui-${nom}-simulation.png`), image.toPNG());
@@ -167,8 +176,17 @@ app.whenReady().then(async () => {
     await actualiser();
     verifier(await ev("document.querySelectorAll('[data-compte-composio]').length === 3"), "multi-comptes : trois états réels de la fixture affichés");
     await capture("02-comptes-1100x700");
+    await rendu();
+    await attendre("document.querySelector('[role=combobox]') && !document.querySelector('[role=combobox]').disabled", "choix des agents disponible");
     await ev("document.querySelector('[role=combobox]').focus()");
-    await touche("Space"); await touche("Home"); await touche("Down"); await touche("Enter");
+    await attendre("document.activeElement === document.querySelector('[role=combobox]')", "focus du choix des agents");
+    await touche("Space");
+    await attendre("document.querySelector('[role=combobox]')?.getAttribute('aria-expanded') === 'true'", "liste ouverte au clavier");
+    await touche("Home");
+    await attendre("document.getElementById(document.querySelector('[role=combobox]')?.getAttribute('aria-activedescendant'))?.innerText.includes('a@example.test')", "première option active au clavier");
+    await touche("Down");
+    await attendre("document.getElementById(document.querySelector('[role=combobox]')?.getAttribute('aria-activedescendant'))?.innerText.includes('b@example.test')", "seconde option active au clavier");
+    await touche("Enter");
     await attendre("document.querySelector('[role=combobox]')?.innerText.includes('b@example.test')");
     verifier(fixture.selections.gmail === "B", "sélection A vers B au clavier transmise au pont");
     await cible('[role="combobox"]');
@@ -282,7 +300,7 @@ app.whenReady().then(async () => {
     terminer(0);
   } catch (error) {
     console.error(`ÉCHEC ${error.message}`);
-    if (win && !win.isDestroyed()) { console.error(await ev("document.activeElement?.outerHTML")); console.error((await texte()).slice(0, 4500)); await capture("echec"); }
+    if (win && !win.isDestroyed()) { console.error(await ev("document.activeElement?.outerHTML.slice(0, 2000)")); console.error((await texte()).slice(0, 4500)); await capture("echec"); }
     terminer(1);
   }
 });

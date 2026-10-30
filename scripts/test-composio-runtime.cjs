@@ -65,7 +65,8 @@ function terminer(code) {
   fournisseur?.fermer();
   childProcess.spawn = originalSpawn;
   // Tous les fichiers créés sont dans ce seul répertoire jetable.
-  fs.rmSync(TMP, { recursive: true, force: true });
+  try { fs.rmSync(TMP, { recursive: true, force: true }); }
+  catch { console.log("Profil de test temporaire encore verrouillé ; nettoyage différé au système."); }
   app.exit(code);
 }
 
