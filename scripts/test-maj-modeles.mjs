@@ -133,9 +133,18 @@ try {
   await app.aller("/equipe?agent=designer&mode=maj");
   await dans(app, "Version 2 du modèle KLYRA");
   const exterieure = `${fiches.designer}\n## Note externe\n\nAjoutée par un autre outil.\n`;
+  /*
+   * L'app relit le dossier 200 ms après le dernier changement (electron/agents.ts, watchAgents) : un
+   * fichier sans rapport touché toutes les 50 ms retient cette relecture, et le clic part avec la
+   * fiche d'avant, comme quand la personne clique pendant qu'un autre outil écrit.
+   */
+  const bruit = path.join(AGENTS, ".bruit");
+  const retenue = setInterval(() => writeFileSync(bruit, String(Date.now())), 50);
   writeFileSync(fiche("designer"), exterieure);
   await app.cliquer("Mettre à jour");
   verifier(await dans(app, "vient de changer", 5000), "fiche changée entre-temps : « rien n’a été écrit » s’affiche");
+  clearInterval(retenue);
+  rmSync(bruit, { force: true });
   verifier(lire("designer") === exterieure && historique("designer").length === 0, "la modification extérieure est intacte, rien n’a été remplacé");
   verifier(await dans(app, "Ta fiche a été modifiée depuis la version 1 du modèle."), "la comparaison se refait avec la fiche du disque");
   verifier((await app.texte()).includes("Tes modifications gardées : Note externe (nouvelle)."), "la note extérieure sera gardée");
