@@ -20,6 +20,7 @@
     "test:conversation": "node scripts/test-conversation.mjs",
     "test:coller": "node scripts/test-collage.mjs",
     "test:chercher": "node scripts/test-recherche.mjs",
+    "test:reporter": "node scripts/test-report.mjs",
     "test:profil": "node scripts/test-profil.mjs",
     "test:liens": "node scripts/test-liens.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
@@ -33,7 +34,8 @@
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:identite": "vitest run src/lib/identite.test.ts",
     "test:collage": "vitest run src/lib/collage.test.ts",
-    "test:recherche": "vitest run src/lib/recherche.test.ts"
+    "test:recherche": "vitest run src/lib/recherche.test.ts",
+    "test:report": "vitest run src/lib/report.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

@@ -39,6 +39,12 @@ export function libelleEcheance(cle: string, heure: string | null): string {
   return heure ? `${jour}, ${heure}` : jour;
 }
 
+/** Le jour écrit en clair, même demain : « Sam. 31 oct., 09:00 ». */
+export function libelleJourCourt(cle: string, heure: string | null): string {
+  const jour = capitaliser(jourCourt.format(depuisCle(cle)));
+  return heure ? `${jour}, ${heure}` : jour;
+}
+
 /** « Lun. 27 oct. → Jeu. 30 oct. » pour un rappel sur plusieurs jours, sinon l'échéance. */
 export function libellePeriode(cle: string, heure: string | null, fin: string | null | undefined): string {
   if (!fin || fin <= cle) return libelleEcheance(cle, heure);

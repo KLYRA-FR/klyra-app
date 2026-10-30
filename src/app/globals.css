@@ -611,6 +611,21 @@ body[data-glisse] iframe {
   }
 }
 
+/* La nouvelle date d'un rappel reporté (bouton Reporter) : elle s'éclaire comme un réglage trouvé. */
+[data-echeance][data-eclaire] {
+  animation: klyra-eclaire 1800ms var(--ease-sortie);
+  color: var(--color-texte-principal);
+}
+
+/* Mouvement réduit : le fond reste éclairé tant que l'attribut est là (1,8 s), sans transition. */
+@media (prefers-reduced-motion: reduce) {
+  [data-echeance][data-eclaire] {
+    animation: none;
+    transition-property: none;
+    background-color: var(--color-fond-teinte-bleue);
+  }
+}
+
 /* Les mots trouvés par la recherche, dans le message rendu (CSS Custom Highlight API). */
 ::highlight(klyra-recherche) {
   background-color: var(--color-fond-teinte-bleue);

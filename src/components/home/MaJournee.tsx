@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/icons/Icon";
+import { ECLAIRAGE_MS, MenuReporter, type Reporte } from "@/components/planning/MenuReporter";
 import { CaseTache, nouvelleTache, PastilleCategorie } from "@/components/planning/Rappels";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { cn } from "@/lib/cn";
@@ -43,15 +44,64 @@ function basculer(t: Tache): Tache {
 }
 
 /**
+ * Un rappel reporté qui quitte la liste (à demain, planifié) y reste à sa place
+ * le temps de l'éclairage, avec sa nouvelle date, puis part. S'il avait le
+ * focus, celui-ci va au bouton Reporter de la ligne qui prend sa place, sinon
+ * au champ « Nouveau rappel » de la carte.
+ */
+function useRetenues(carte: RefObject<HTMLElement | null>) {
+  const [retenues, setRetenues] = useState<{ id: string; rang: number }[]>([]);
+  const minuteurs = useRef(new Map<string, number>());
+  useEffect(() => {
+    const actifs = minuteurs.current;
+    return () => { actifs.forEach((id) => window.clearTimeout(id)); };
+  }, []);
+  const retenir = useCallback(
+    (id: string, rang: number) => {
+      if (rang < 0) return;
+      window.clearTimeout(minuteurs.current.get(id));
+      setRetenues((r) => [...r.filter((x) => x.id !== id), { id, rang }]);
+      minuteurs.current.set(id, window.setTimeout(() => {
+        minuteurs.current.delete(id);
+        const focus = !!carte.current?.querySelector(`[data-ligne-rappel="${CSS.escape(id)}"]`)?.contains(document.activeElement);
+        setRetenues((r) => r.filter((x) => x.id !== id));
+        if (!focus) return;
+        requestAnimationFrame(() => {
+          const el = carte.current;
+          if (!el || el.querySelector(`[data-ligne-rappel="${CSS.escape(id)}"]`)) return;
+          const lignes = [...el.querySelectorAll<HTMLElement>("[data-ligne-rappel]")];
+          const suivante = lignes[Math.min(rang, lignes.length - 1)]?.querySelector<HTMLElement>("[data-reporter]");
+          (suivante ?? el.querySelector<HTMLElement>("[data-nouveau-rappel]"))?.focus({ preventScroll: true });
+        });
+      }, ECLAIRAGE_MS));
+    },
+    [carte],
+  );
+  /* Les retenues absentes de la liste y sont remises à leur place, lues dans l'état (nouvelle date). */
+  const avecRetenues = <T,>(liste: T[], idDe: (x: T) => string, depuis: (id: string) => T | null): { element: T; retenue: boolean }[] => {
+    const out = liste.map((element) => ({ element, retenue: false }));
+    for (const { id, rang } of [...retenues].sort((a, b) => a.rang - b.rang)) {
+      if (liste.some((x) => idDe(x) === id)) continue;
+      const element = depuis(id);
+      if (element) out.splice(Math.min(rang, out.length), 0, { element, retenue: true });
+    }
+    return out;
+  };
+  return { retenir, avecRetenues };
+}
+
+/**
  * Au programme : ce qui a une heure aujourd'hui (rendez-vous, passages des
  * agents, rappels à heure fixe), dans l'ordre, avec le repère « maintenant ».
  * Un rappel n'apparaît qu'ici ou dans « À faire », jamais dans les deux.
  */
-function AuProgramme() {
+function AuProgramme({ annoncer }: { annoncer: (texte: string) => void }) {
   const { state, enregistrerTache } = useWorkspace();
   const maintenant = useMaintenant();
   const cle = aujourdhui();
   const categorieDe = (liste: string) => state.categories.find((c) => c.id === liste) ?? state.categories[0];
+  const carte = useRef<HTMLElement>(null);
+  const { retenir, avecRetenues } = useRetenues(carte);
 
   const elements = useMemo(() => {
     const debut = depuisCle(cle);
@@ -80,21 +130,30 @@ function AuProgramme() {
   }, [state.evenements, state.routines, state.taches, cle]);
 
   const passe = (heure: string | null, fin: string | null) => !!heure && (fin ?? heure) < maintenant;
+  const visibles = avecRetenues(
+    elements.slice(0, 6),
+    (el) => el.id,
+    (id) => {
+      const t = state.taches.find((x) => x.id === id);
+      return t ? { id, heure: t.heure, fin: null, titre: t.titre, roleId: null, tache: t } : null;
+    },
+  );
 
   return (
-    <section aria-label="Au programme" className="klyra-carte-flottante flex min-h-[184px] flex-col gap-3 rounded-lg p-4">
+    <section ref={carte} aria-label="Au programme" className="klyra-carte-flottante flex min-h-[184px] flex-col gap-3 rounded-lg p-4">
       <EnTete titre="Au programme" sousTitre="Planning" href="/planning" />
-      {elements.length === 0 ? (
+      {visibles.length === 0 ? (
         <p className="m-0 text-ui-s text-texte-tertiaire">Aucun rendez-vous aujourd’hui.</p>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
-          {elements.slice(0, 6).map((el, i) => {
-            const avant = elements[i - 1];
+          {visibles.map(({ element: el, retenue }, i) => {
+            const avant = visibles[i - 1]?.element;
             /* Le repère « maintenant » se place entre ce qui est passé et ce qui vient. */
-            const repere = el.heure && el.heure >= maintenant && (!avant || !avant.heure || avant.heure < maintenant);
+            const repere = !retenue && el.heure && el.heure >= maintenant && (!avant || !avant.heure || avant.heure < maintenant);
             const categorie = el.tache ? categorieDe(el.tache.liste) : undefined;
+            const tache = el.tache;
             return (
-              <li key={el.id} className="flex flex-col gap-1">
+              <li key={el.id} data-ligne-rappel={tache?.id} className="group/rappel flex flex-col gap-1">
                 {repere && (
                   <span aria-label={`Il est ${maintenant}`} className="flex items-center gap-2 text-ui-3xs font-medium text-texte-accent">
                     <span className="size-1.5 rounded-full bg-bleu-k1-500" />
@@ -102,25 +161,35 @@ function AuProgramme() {
                     <span className="h-px flex-1 bg-bleu-k1-500/40" />
                   </span>
                 )}
+                {/* Pour un rappel, toute la ligne porte sa date (data-echeance) : elle s'éclaire après un report. */}
                 <span
+                  data-echeance={tache?.id}
                   className={cn(
                     "flex items-center gap-2.5 rounded-sm px-2 py-1.5",
-                    el.roleId || el.tache ? "bg-transparent" : "bg-fond-teinte-bleue",
-                    (passe(el.heure, el.fin) || el.tache?.faite) && "opacity-55",
+                    el.roleId || tache ? "bg-transparent" : "bg-fond-teinte-bleue",
+                    ((!retenue && passe(el.heure, el.fin)) || tache?.faite) && "opacity-55",
                   )}
                 >
                   <span className="klyra-mono w-10 shrink-0 text-ui-xs font-medium text-texte-accent">{el.heure ?? "Jour"}</span>
                   {el.roleId && <AgentRond roleId={el.roleId} taille={18} />}
-                  {el.tache && (
-                    <CaseTache
-                      faite={el.tache.faite}
-                      libelle={el.tache.titre}
-                      teinte={categorie?.teinte}
-                      onChange={() => enregistrerTache(basculer(el.tache!))}
+                  {tache && (
+                    <CaseTache faite={tache.faite} libelle={tache.titre} teinte={categorie?.teinte} onChange={() => enregistrerTache(basculer(tache))} />
+                  )}
+                  <span className={cn("truncate text-ui-s text-texte-principal", tache?.faite && "line-through")}>{el.titre}</span>
+                  {retenue && tache?.date && (
+                    <span className="shrink-0 text-ui-xs font-medium text-texte-accent">{libellePeriode(tache.date, tache.heure, tache.fin)}</span>
+                  )}
+                  {el.fin && <span className="klyra-mono ml-auto shrink-0 text-ui-3xs text-texte-tertiaire">→ {el.fin}</span>}
+                  {tache && !tache.faite && (
+                    <MenuReporter
+                      tache={tache}
+                      className="ml-auto"
+                      onReporte={({ id, annonce }: Reporte) => {
+                        annoncer(annonce);
+                        retenir(id, i);
+                      }}
                     />
                   )}
-                  <span className={cn("truncate text-ui-s text-texte-principal", el.tache?.faite && "line-through")}>{el.titre}</span>
-                  {el.fin && <span className="klyra-mono ml-auto shrink-0 text-ui-3xs text-texte-tertiaire">→ {el.fin}</span>}
                 </span>
               </li>
             );
@@ -136,9 +205,11 @@ function AuProgramme() {
  * À faire : les rappels sans heure du jour et ceux en retard, à cocher. Rien
  * pour aujourd'hui : les rappels sans date prennent la place.
  */
-function AFaire() {
+function AFaire({ annoncer }: { annoncer: (texte: string) => void }) {
   const { state, enregistrerTache } = useWorkspace();
   const [titre, setTitre] = useState("");
+  const carte = useRef<HTMLElement>(null);
+  const { retenir, avecRetenues } = useRetenues(carte);
   const cle = aujourdhui();
   const categorieDe = (liste: string) => state.categories.find((c) => c.id === liste) ?? state.categories[0];
 
@@ -162,30 +233,54 @@ function AFaire() {
     setTitre("");
   };
 
+  const visibles = avecRetenues(
+    [...rappels, ...faitsAujourdhui].slice(0, 6),
+    (t) => t.id,
+    (id) => state.taches.find((t) => t.id === id) ?? null,
+  );
+
   return (
-    <section aria-label="À faire" className="klyra-carte-flottante flex min-h-[184px] flex-col gap-2 rounded-lg p-4">
+    <section ref={carte} aria-label="À faire" className="klyra-carte-flottante flex min-h-[184px] flex-col gap-2 rounded-lg p-4">
       <EnTete
         titre={sansDate && rappels.length ? "À faire, sans date" : "À faire"}
         sousTitre={rappels.length ? `${rappels.length} rappel${rappels.length > 1 ? "s" : ""}` : "Tout est fait"}
         href="/planning"
       />
       <ul className="m-0 flex list-none flex-col p-0">
-        {[...rappels, ...faitsAujourdhui].slice(0, 6).map((t) => {
+        {visibles.map(({ element: t, retenue }, i) => {
           const categorie = categorieDe(t.liste);
           const retard = !t.faite && enRetard(echeance(t), t.fin ? null : t.heure);
           return (
-            <li key={t.id} className="flex items-start gap-2.5 py-1.5">
+            <li key={t.id} data-ligne-rappel={t.id} className="group/rappel flex items-start gap-2.5 py-1.5">
               <CaseTache faite={t.faite} libelle={t.titre} teinte={categorie?.teinte} onChange={() => enregistrerTache(basculer(t))} />
               {t.priorite > 0 && <span className="shrink-0 text-ui-s leading-5 font-semibold text-texte-accent">{"!".repeat(t.priorite)}</span>}
               <span className={cn("min-w-0 flex-1 text-ui-s leading-5 [overflow-wrap:anywhere]", t.faite ? "text-texte-tertiaire line-through" : "text-texte-principal")}>{t.titre}</span>
-              {retard && <span className="shrink-0 text-ui-xs font-medium text-texte-erreur">{libellePeriode(t.date!, t.heure, t.fin)}</span>}
+              {/* La date d'un rappel en retard, ou la nouvelle date d'un rappel reporté qui va quitter la liste. */}
+              {(retard || retenue) && t.date && (
+                <span
+                  data-echeance={t.id}
+                  className={cn("-mx-1 shrink-0 self-start rounded-2xs px-1 text-ui-xs font-medium", retenue ? "text-texte-accent" : "text-texte-erreur")}
+                >
+                  {libellePeriode(t.date, t.heure, t.fin)}
+                </span>
+              )}
               {categorie && <PastilleCategorie categorie={categorie} taille={18} />}
+              {!t.faite && (
+                <MenuReporter
+                  tache={t}
+                  onReporte={({ id, annonce }: Reporte) => {
+                    annoncer(annonce);
+                    retenir(id, i);
+                  }}
+                />
+              )}
             </li>
           );
         })}
         <li className="flex items-center gap-2.5 py-1.5">
           <span aria-hidden="true" className="size-5 shrink-0 rounded-full border-[1.5px] border-dashed border-bordure-forte" />
           <input
+            data-nouveau-rappel
             value={titre}
             placeholder={sansDate ? "Nouveau rappel" : "Nouveau rappel pour aujourd’hui"}
             onChange={(e) => setTitre(e.target.value)}
@@ -200,10 +295,15 @@ function AFaire() {
 
 /** La journée d'un coup d'œil : ce qui a une heure, et ce qui est à faire. */
 export function MaJournee() {
+  /* Un report annoncé au lecteur d'écran : « Rappel reporté : Demain, 09:00. ». */
+  const [annonce, setAnnonce] = useState("");
   return (
     <div className="grid grid-cols-1 gap-3 @3xl:grid-cols-2">
-      <AuProgramme />
-      <AFaire />
+      <AuProgramme annoncer={setAnnonce} />
+      <AFaire annoncer={setAnnonce} />
+      <p aria-live="polite" className="sr-only">
+        {annonce}
+      </p>
     </div>
   );
 }
