@@ -222,6 +222,13 @@ try {
   c = await cartes(app);
   verifier(c.filter((x) => x.texte.includes("Modèle KLYRA")).length === 10, `10 modèles KLYRA à jour reconnus (${c.filter((x) => x.texte.includes("Modèle KLYRA")).length})`);
   verifier(c.find((x) => x.id === "dev")?.texte.includes("Code") && !c.find((x) => x.id === "dev")?.texte.includes("Modèle KLYRA"), "la fiche modifiée : sans étiquette, son rôle court personnel gardé");
+  // Les compteurs de Noé (#25) : conversations de ce poste, sans total ni barre.
+  const attendu = (id) => (["dev", "designer", "principal"].includes(id) ? "1 conversation" : "Aucune conversation");
+  verifier(c.every((x) => x.texte.includes(attendu(x.id))), "cartes : « 1 conversation » ou « Aucune conversation », d’après le profil");
+  verifier(
+    (await app.ev("document.querySelectorAll('main .klyra-barre-progres').length")) === 0 && c.every((x) => !/\bsur \d/.test(x.texte) && x.texte.includes("Voir la fiche")),
+    "cartes : ni total ni barre, « Voir la fiche » gardé",
+  );
   await app.aller("/equipe?agent=dev");
   verifier(await app.quand("document.querySelector('main')?.innerText.includes('Ta version diffère du modèle KLYRA.')"), "sa fiche propose de comparer avec le modèle");
   await app.aller("/equipe");

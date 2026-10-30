@@ -191,13 +191,12 @@ export function MesAgentsVue() {
 
       {/* L'assistant d'abord, puis les agents actifs, puis la place du prochain. */}
       <Apparition className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-4" seuil={0.05}>
-        <AgentCard key={assistant.id} role={assistant} chatCount={conversationsDe(assistant.id)} totalChats={chats.length} ordre={0} />
+        <AgentCard key={assistant.id} role={assistant} chatCount={conversationsDe(assistant.id)} ordre={0} />
         {actifs.map((agent, i) => (
           <AgentCard
             key={agent.role.id}
             role={agent.role}
             chatCount={conversationsDe(agent.role.id)}
-            totalChats={chats.length}
             ordre={i + 1}
             etiquettes={etiquettesDe(agent, lienDe(agent, session))}
           />

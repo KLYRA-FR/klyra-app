@@ -20,7 +20,7 @@ function competencesEntieres(skills: string[], longueur = LONGUEUR_COMPETENCES):
 /**
  * Carte d'un agent, forme « carte blanche » (maquette « Workspace card »,
  * à la hauteur de son contenu) : le dégradé pastel autour de deux blocs
- * blancs, qui il est, puis sa part des chats de l'équipe.
+ * blancs, qui il est, puis son nombre de conversations.
  * Toute la carte ouvre sa fiche.
  */
 /** Le mot du rôle long qui correspond au rôle court : « Designer » pour
@@ -86,19 +86,16 @@ const PAS_CASCADE = 60;
 export function AgentCard({
   role,
   chatCount,
-  totalChats,
   ordre = 0,
   etiquettes = [],
 }: {
   role: Role;
   chatCount: number;
-  totalChats: number;
   /** Rang dans la grille : règle le moment de son entrée. */
   ordre?: number;
   etiquettes?: Etiquette[];
 }) {
   const delai = DEBUT_CASCADE + ordre * PAS_CASCADE;
-  const part = totalChats > 0 ? Math.round((chatCount / totalChats) * 100) : 0;
   const BLOC = "relative z-10 flex shrink-0 flex-col rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm";
 
   return (
@@ -130,22 +127,15 @@ export function AgentCard({
         <p className="m-0 line-clamp-2 min-h-[2lh] text-ui-xs leading-[1.35] text-texte-tertiaire">{competencesEntieres(role.skills, 80)}</p>
       </div>
 
-      {/* Sa part des chats de l'équipe, dans un bloc à part : plus lisible. */}
+      {/* Ses conversations sur ce poste, et l'accès à sa fiche. */}
       <div className={cn(BLOC, "gap-1.5")}>
         <span className="flex items-baseline justify-between gap-2 text-ui-xs">
           <span className="text-texte-principal">
-            <span className="font-semibold">{chatCount}</span> {chatCount > 1 ? "chats" : "chat"}
-            <span className="text-texte-tertiaire"> sur {totalChats}</span>
+            {chatCount === 0 ? "Aucune conversation" : (
+              <><span className="font-semibold">{chatCount}</span> {chatCount === 1 ? "conversation" : "conversations"}</>
+            )}
           </span>
           <span className="text-texte-tertiaire transition-colors duration-[120ms] group-hover:text-texte-accent">Voir la fiche</span>
-        </span>
-        <span className="block h-1 overflow-hidden rounded-pill bg-fond-surface-grise">
-          {/* En noir : la carte porte déjà la couleur de l'agent, la barre n'en rajoute pas. */}
-          {/* Se remplit une fois la carte arrivée. */}
-          <span
-            className="klyra-barre-progres block h-full rounded-pill bg-fond-inverse-fort"
-            style={{ width: `${Math.max(part, 4)}%`, "--delai": `${delai + 300}ms` } as CSSProperties}
-          />
         </span>
       </div>
     </Link>
