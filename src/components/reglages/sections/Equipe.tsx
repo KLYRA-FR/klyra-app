@@ -9,8 +9,9 @@ import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useConfirmation } from "@/components/ui/Modale";
 import { cn } from "@/lib/cn";
-import { messageErreur, useCompte, useEquipe, type Membre, type Role } from "@/lib/compte";
+import { messageErreur, useCompte, useEquipe, useMonIdentite, type Membre, type Role } from "@/lib/compte";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
+import { AccordProfils } from "../AccordProfils";
 import { Erreur, Groupe, Ligne, SeulementBureau, Valeur } from "../ui";
 
 const ROLES: { value: Role; label: string }[] = [
@@ -102,7 +103,8 @@ function Connexion() {
 }
 
 function MonProfil({ moi }: { moi: Membre }) {
-  const { modifierMonProfil } = useEquipe(false);
+  /* Le même nom et le même rôle que Réglages › Profil : enregistrés sur le compte, puis sur cet ordinateur. */
+  const { enregistrer: enregistrerIdentite } = useMonIdentite();
   const [nom, setNom] = useState(moi.nom);
   const [intitule, setIntitule] = useState(moi.intitule);
   const [couleur, setCouleur] = useState(moi.couleur);
@@ -115,16 +117,19 @@ function MonProfil({ moi }: { moi: Membre }) {
     setErreur(null);
     setEnCours(true);
     try {
-      await modifierMonProfil({ nom, intitule, couleur });
+      await enregistrerIdentite(nom, intitule, couleur);
     } catch (x) {
-      setErreur(messageErreur(x));
+      setErreur(x instanceof Error ? x.message : String(x));
     } finally {
       setEnCours(false);
     }
   };
 
   return (
-    <Groupe titre="Ton profil d’équipe" description="Ce que l’équipe voit de toi. Ta couleur marquera tes rappels et tes événements.">
+    <Groupe
+      titre="Ton profil d’équipe"
+      description="Ce que l’équipe voit de toi, et les agents aussi : le même nom et le même rôle que dans Profil. Ta couleur marquera tes rappels et tes événements."
+    >
       <form id="reglage-profil-equipe" className="klyra-reglage -mx-4 flex scroll-mt-6 flex-col gap-4 px-4 py-4" onSubmit={(e) => void enregistrer(e)}>
         <div className="grid gap-4 sm:grid-cols-2">
           <Champ label="Nom">
@@ -338,6 +343,7 @@ export function Equipe() {
           </Bouton>
         </Ligne>
       </Groupe>
+      <AccordProfils />
       <MonProfil key={`${moi.nom}|${moi.intitule}|${moi.couleur}`} moi={moi} />
       <Membres moi={moi} />
       {moi.role === "admin" && <Invitations />}

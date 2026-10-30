@@ -33,7 +33,7 @@
 
 **Gestion de l'équipe** : une section « Équipe » dans les Réglages. Tout le monde voit la liste (nom, couleur, rôle). Seuls les admins invitent, changent un rôle ou retirent quelqu'un. Retirer une personne passe `actif` à faux et ferme ses sessions. Le dernier admin ne peut pas être retiré.
 
-**À changer dans l'app** : la CSP de `electron/main.ts` n'autorise aujourd'hui que `'self'` en `connect-src`. Il faut y ajouter l'adresse du déploiement, en `https://` et en `wss://`. Le profil local (`currentUser`) devient le profil du compte.
+**À changer dans l'app** : la CSP de `electron/main.ts` n'autorise aujourd'hui que `'self'` en `connect-src`. Il faut y ajouter l'adresse du déploiement, en `https://` et en `wss://`. Le profil local (`currentUser`) devient le profil du compte : fait le 30/10, règles dans `src/lib/identite.ts` (connecté, nom, rôle et couleur du compte ; photo et réglages de l'ordinateur ; aucun écart réglé sans choix explicite).
 
 ## 2. Rappels assignés
 

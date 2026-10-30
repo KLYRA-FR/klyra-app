@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
     "test:conversation": "node scripts/test-conversation.mjs",
+    "test:profil": "node scripts/test-profil.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
     "test:coordonnees": "node scripts/test-coordonnees.cjs",
     "test:ordinateur": "electron scripts/test-ordinateur.cjs",
@@ -26,7 +27,8 @@
     "whisper": "node scripts/preparer-whisper.mjs",
     "entrees": "node scripts/preparer-entrees.mjs",
     "test:convex": "vitest run convex",
-    "test:fichiers": "vitest run src/lib/fichiers.test.tsx"
+    "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
+    "test:identite": "vitest run src/lib/identite.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

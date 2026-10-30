@@ -8,7 +8,7 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 20
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
-    include: ["convex/**/*.test.ts", "src/lib/fichiers.test.tsx"],
+    include: ["convex/**/*.test.ts", "src/lib/fichiers.test.tsx", "src/lib/identite.test.ts"],
     environment: "edge-runtime",
     server: { deps: { inline: ["convex-test"] } },
     env: {

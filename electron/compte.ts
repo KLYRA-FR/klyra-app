@@ -20,13 +20,15 @@ const DEPLOIEMENTS = {
 export function adresseConvex(): string {
   const forcee = process.env.KLYRA_CONVEX_URL;
   if (forcee && /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.convex\.cloud$/.test(forcee)) return forcee;
+  // Tests (`pnpm test:profil`) : un backend Convex local et jetable, jamais dans l'app installée.
+  if (forcee && !app.isPackaged && /^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(forcee)) return forcee;
   return app.isPackaged ? DEPLOIEMENTS.production : DEPLOIEMENTS.developpement;
 }
 
 /** `connect-src` : le client Convex passe par https et par un WebSocket. */
 export function sourcesConvex(): string[] {
   const adresse = adresseConvex();
-  return [adresse, adresse.replace(/^https:/, "wss:")];
+  return [adresse, adresse.replace(/^http(s?):/, "ws$1:")];
 }
 
 /* ─── Jetons de session ───────────────────────────────────────── */

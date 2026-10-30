@@ -49,7 +49,7 @@ function useResumeDuJour(): string {
 /** Accueil de l'IA : on écrit au Principal, ou on part d'une suggestion. */
 export function HomeScreen() {
   const router = useRouter();
-  const { state, startChat, sendMessage } = useWorkspace();
+  const { state, moi, startChat, sendMessage } = useWorkspace();
   const roles = useRoles();
   const projects = useProjects();
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -113,7 +113,7 @@ export function HomeScreen() {
               {/* Titre KLYRA : une partie en semi-gras, l'autre en regular, même couleur. */}
               <h1 className="m-0 text-h2 leading-[0.95] tracking-[-0.05em] text-balance text-texte-principal">
                 <span className="font-semibold">
-                  {salut} {state.currentUser.name},
+                  {salut} {moi.name},
                 </span>{" "}
                 <span className="font-normal">{encouragement}</span>
               </h1>
