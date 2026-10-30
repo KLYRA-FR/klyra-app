@@ -264,9 +264,9 @@ function nomDansFiche(fichier: string, defaut: string): string {
   }
 }
 
-/** Les fiches d'un dossier d'agents, sous-dossiers compris (Claude Code les lit aussi). */
+/** Les fiches d'un dossier d'agents, sous-dossiers compris (Claude Code les lit à toute profondeur ; au-delà de 8, le contrôle à l'appel suffit). */
 function fichesDe(dossier: string, profondeur = 0): { id: string; nom: string }[] {
-  if (profondeur > 3 || !existsSync(dossier)) return [];
+  if (profondeur > 8 || !existsSync(dossier)) return [];
   const trouvees: { id: string; nom: string }[] = [];
   for (const f of readdirSync(dossier)) {
     const chemin = path.join(dossier, f);
