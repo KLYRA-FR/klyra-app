@@ -89,6 +89,7 @@ import {
   vignetteArtefact,
 } from "./artefacts";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, PROTOCOLE, prendreCode, recevoirLien, retirerJeton, sourcesConvex } from "./compte";
+import { enregistrerCollage } from "./collages";
 
 /**
  * Process principal Electron.
@@ -442,6 +443,7 @@ function registerBridge() {
     shell.showItemInFolder(chemin);
   });
   handle("fichiers:ecrire", (chemin: string, texte: string) => ecrireFichierTexte(chemin, texte));
+  handle("fichiers:coller", (octets: unknown, type: unknown) => enregistrerCollage(octets, type));
   handle("webhooks:adresse", (secret: string) => adresseWebhook(secret));
   demarrerWebhooks();
   /* Les outils des fils (ouvrir, lire, écrire, arrêter, fermer) : l'interface les exécute, elle tient les conversations. */

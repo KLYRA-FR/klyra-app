@@ -141,6 +141,8 @@ contextBridge.exposeInMainWorld("klyra", {
     ecrire: (chemin: string, texte: string) => ipcRenderer.invoke("fichiers:ecrire", chemin, texte),
     /** Chemin sur le disque d'un fichier glissé dans la fenêtre. */
     cheminDe: (file: File) => webUtils.getPathForFile(file),
+    /** Une image collée (Ctrl/Cmd+V), écrite dans le dossier de l'app ; renvoie son chemin. */
+    enregistrerCollage: (octets: Uint8Array, type: string) => ipcRenderer.invoke("fichiers:coller", octets, type),
   },
   webhooks: {
     adresse: (secret: string) => ipcRenderer.invoke("webhooks:adresse", secret),

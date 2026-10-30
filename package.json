@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
     "test:conversation": "node scripts/test-conversation.mjs",
+    "test:coller": "node scripts/test-collage.mjs",
     "test:profil": "node scripts/test-profil.mjs",
     "test:liens": "node scripts/test-liens.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
@@ -29,7 +30,8 @@
     "entrees": "node scripts/preparer-entrees.mjs",
     "test:convex": "vitest run convex",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
-    "test:identite": "vitest run src/lib/identite.test.ts"
+    "test:identite": "vitest run src/lib/identite.test.ts",
+    "test:collage": "vitest run src/lib/collage.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

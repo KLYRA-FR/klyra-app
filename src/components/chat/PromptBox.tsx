@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useRef, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { forwardRef, useCallback, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Textarea } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
@@ -31,6 +31,8 @@ interface PromptBoxProps {
   pieces?: ReactNode;
   /** Le trombone : joindre des fichiers. */
   onJoindre?: () => void;
+  /** Un collage dans le champ (Ctrl/Cmd+V) : le parent y prend une image ; sinon, le texte se colle normalement. */
+  onColler?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   /** Il y a des pièces jointes : on peut envoyer sans texte. */
   aDesPieces?: boolean;
   className?: string;
@@ -57,6 +59,7 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
     onCurseur,
     pieces,
     onJoindre,
+    onColler,
     aDesPieces = false,
     className,
   },
@@ -137,6 +140,7 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
           }}
           onSelect={(e) => onCurseur?.(e.currentTarget.selectionStart)}
           onKeyDown={onKeyDown}
+          onPaste={enDictee ? undefined : onColler}
           placeholder={dictee.phase === "ecoute" ? "Parle, le texte s’écrit ici…" : placeholder}
           aria-label="Message"
           className={cn(

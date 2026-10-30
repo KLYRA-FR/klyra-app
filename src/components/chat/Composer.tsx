@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
@@ -8,6 +8,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { analyserCollage, estCaptureCollee } from "@/lib/collage";
 import { nomFichier } from "@/lib/fichiers";
 import { useCompteClaude } from "@/lib/compte-claude";
 import { findMention } from "@/lib/mentions";
@@ -29,7 +30,7 @@ export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer:
         return (
           <div
             key={chemin}
-            title={chemin}
+            title={estCaptureCollee(chemin) ? `${nom} · capture collée` : chemin}
             className="group/piece relative flex h-[52px] w-[220px] items-center gap-2.5 rounded-md border border-bordure-subtile bg-fond-surface py-2 pr-3 pl-2"
           >
             <PastilleExtension chemin={chemin} />
@@ -185,15 +186,50 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const [alerte, setAlerte] = useState<string | null>(null);
   const zone = useRef<HTMLDivElement>(null);
 
+  /* Les pièces jointes à jour même entre deux rendus : deux ajouts rapprochés (collages) ne s'écrasent pas. */
+  const fichiersRef = useRef(fichiers);
+  useEffect(() => {
+    fichiersRef.current = fichiers;
+  }, [fichiers]);
   const ajouter = (chemins: string[]) => {
-    const tous = [...new Set([...fichiers, ...chemins.filter(Boolean)])];
+    const tous = [...new Set([...fichiersRef.current, ...chemins.filter(Boolean)])];
     setAlerte(tous.length > MAX_FICHIERS ? `${MAX_FICHIERS} fichiers au plus par message.` : null);
-    setFichiers(tous.slice(0, MAX_FICHIERS));
+    fichiersRef.current = tous.slice(0, MAX_FICHIERS);
+    setFichiers(fichiersRef.current);
   };
   const ajouterRef = useRef(ajouter);
   useEffect(() => {
     ajouterRef.current = ajouter;
   });
+
+  /* Ctrl/Cmd+V dans le champ : une capture devient une pièce jointe ; du texte se colle normalement. */
+  const coller = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const colles = [...event.clipboardData.files];
+    const collage = analyserCollage(
+      event.clipboardData.getData("text/plain"),
+      colles.map((f) => ({ type: f.type, taille: f.size, chemin: bridge?.fichiers.cheminDe(f) ?? "" })),
+    );
+    if (collage.action === "texte") return;
+    event.preventDefault();
+    const enregistrer = bridge?.fichiers.enregistrerCollage;
+    if (!enregistrer) {
+      setAlerte("Joindre des fichiers marche dans l’app de bureau.");
+      return;
+    }
+    if (collage.chemins.length) ajouter(collage.chemins);
+    if (collage.alerte) setAlerte(collage.alerte);
+    if (collage.image === null) return;
+    if (fichiersRef.current.length >= MAX_FICHIERS) {
+      setAlerte(`${MAX_FICHIERS} fichiers au plus par message.`);
+      return;
+    }
+    const image = colles[collage.image];
+    void image
+      .arrayBuffer()
+      .then((contenu) => enregistrer(new Uint8Array(contenu), image.type))
+      .then((r) => (r.ok ? ajouterRef.current([r.data]) : setAlerte(r.message)))
+      .catch(() => setAlerte("L’image collée n’a pas pu être lue."));
+  };
 
   /* Glisser des fichiers sur toute la conversation (la section qui contient le composeur). */
   useEffect(() => {
@@ -325,6 +361,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           occupe={!!travail}
           onArreter={() => arreter(chat.id)}
           onJoindre={() => void joindre()}
+          onColler={coller}
           aDesPieces={fichiers.length > 0}
           pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
           placeholder={direct ? `Écris à ${agent.name}…` : "Écris à l’équipe, ou @mentionne un agent…"}
