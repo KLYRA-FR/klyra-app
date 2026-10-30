@@ -1,3 +1,4 @@
+import { AgentVisuel } from "@/components/team/AgentVisuel";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { useRole } from "@/lib/workspace";
@@ -13,6 +14,8 @@ interface AgentRondProps {
   statut?: StatutAgent;
   /** Couleur du liseré de la pastille : celle du fond sur lequel le rond est posé. */
   fondPastille?: "page" | "surface";
+  /** Le visuel de sa fiche (fond pastel et formes) à la place de l'initiale : liste des agents. */
+  visuel?: boolean;
   className?: string;
 }
 
@@ -41,14 +44,21 @@ function Carre({ libelle, initiale, teinte, taille }: { libelle: string; initial
  * Avatar d'un agent, le même partout (fil, barre latérale) : un
  * carré arrondi à son pastel uni, son initiale dans sa couleur foncée.
  * L'assistant suit la même règle, avec le nom et la couleur choisis.
+ * Avec `visuel`, le carré reprend en petit l'illustration de sa fiche.
  */
-export function AgentRond({ roleId, taille = 32, statut = null, fondPastille = "page", className }: AgentRondProps) {
+export function AgentRond({ roleId, taille = 32, statut = null, fondPastille = "page", visuel = false, className }: AgentRondProps) {
   const role = useRole(roleId);
   const liseré = fondPastille === "page" ? "border-fond-page" : "border-fond-surface";
 
   return (
     <span className={cn("relative inline-flex shrink-0", className)} style={{ width: taille, height: taille }}>
-      <Carre libelle={role.name} initiale={role.initial} teinte={role.teinte} taille={taille} />
+      {visuel ? (
+        <span role="img" aria-label={role.name} className="size-full overflow-hidden" style={{ borderRadius: Math.round(taille * 0.25) }}>
+          <AgentVisuel agentId={role.id} teinte={role.teinte} />
+        </span>
+      ) : (
+        <Carre libelle={role.name} initiale={role.initial} teinte={role.teinte} taille={taille} />
+      )}
 
       {statut?.type === "travaille" && (
         <span

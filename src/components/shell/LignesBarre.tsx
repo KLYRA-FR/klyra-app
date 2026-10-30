@@ -106,7 +106,7 @@ export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
       aria-current={active ? "page" : undefined}
       className={cn(LIGNE, active ? LIGNE_ACTIVE : LIGNE_REPOS)}
     >
-      <AgentRond roleId={role.id} taille={36} statut={statut} fondPastille="surface" />
+      <AgentRond roleId={role.id} taille={36} statut={statut} fondPastille="surface" visuel />
       <Corps
         titre={role.name}
         etiquette={role.tag}
