@@ -10,6 +10,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { Markdown } from "@/components/ui/Markdown";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { getBridge } from "@/lib/bridge";
+import { estCaptureCollee } from "@/lib/collage";
 import { iconeEtape } from "@/lib/etapes";
 import { nomFichier } from "@/lib/fichiers";
 import { poste } from "@/lib/plateforme";
@@ -62,18 +63,19 @@ export function FichiersJoints({ chemins }: { chemins: string[] }) {
     <div className="flex w-[min(100%,256px)] flex-col gap-1.5">
       {chemins.map((chemin) => {
         const nom = nomFichier(chemin);
+        const capture = estCaptureCollee(chemin);
         return (
           <button
             key={chemin}
             type="button"
-            title={`${chemin}\nClic pour le montrer ${poste.dansExplorateur}`}
+            title={capture ? `${nom}\nClic pour la montrer ${poste.dansExplorateur}` : `${chemin}\nClic pour le montrer ${poste.dansExplorateur}`}
             onClick={() => bridge && void bridge.fichiers.montrer(chemin)}
             className="flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-md border border-bordure-subtile bg-fond-surface p-2 text-left transition-colors duration-[120ms] hover:border-bordure-forte"
           >
             <PastilleExtension chemin={chemin} />
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-ui-xs font-medium text-texte-principal">{nom}</span>
-              <span className="truncate text-ui-3xs text-texte-tertiaire">{chemin.replace(/^\/Users\/[^/]+/, "~")}</span>
+              <span className="truncate text-ui-3xs text-texte-tertiaire">{capture ? "Capture collée" : chemin.replace(/^\/Users\/[^/]+/, "~")}</span>
             </span>
           </button>
         );
