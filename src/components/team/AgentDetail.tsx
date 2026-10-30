@@ -2,7 +2,6 @@
 
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { CIRCUITS } from "@/data/agents";
 import { BlocAConfigurer } from "@/components/bibliotheque/BlocAConfigurer";
 import { ModalePartager } from "@/components/bibliotheque/ModalePartager";
 import { useRetirerDeBibliotheque } from "@/components/bibliotheque/useRetirerDeBibliotheque";
@@ -22,7 +21,6 @@ import { useWorkspace } from "@/lib/workspace";
 import type { Role, RoleSection } from "@/types/domain";
 import { LigneRole } from "./AgentCard";
 import { AgentVisuel, couleurAgent } from "./AgentVisuel";
-import { CircuitRow } from "./CircuitRow";
 import { dateCourte } from "./etats-agents";
 import { QuandAppeler, SectionFiche } from "./FicheSections";
 import { MenuLignes, type LigneMenu } from "./MenuLignes";
@@ -158,8 +156,6 @@ function FicheAgent({ role }: { role: Role }) {
   const local = tous.find((a) => a.role.id === role.id) ?? null;
   const statut = local?.statut ?? "actif";
   const lien: Lien = local ? lienDe(local, { etat: bibliotheque.etat, moiId: bibliotheque.moiId, etats: bibliotheque.etats }) : { type: "aucun" };
-  const actifs = new Set(roles.map((r) => r.id));
-  const circuits = CIRCUITS.filter((c) => c.steps.some((s) => s.roleId === role.id) && c.steps.every((s) => s.roleId === null || actifs.has(s.roleId)));
   const sections = [...role.sections].sort((a, b) => rang(a) - rang(b));
   const editable = canEdit && role.file !== null;
   const pourquoiPas = "Ouvre l’app de bureau pour modifier les fiches.";
@@ -405,18 +401,6 @@ function FicheAgent({ role }: { role: Role }) {
               <SectionFiche key={section.title} section={section} teinte={role.teinte} />
             ))}
         </div>
-
-        {circuits.length > 0 && (
-          /* Même bloc que « Qui passe la main à qui » sur la page Équipe. */
-          <section className="flex flex-col gap-3 rounded-3xl border border-bordure-subtile bg-fond-page p-3">
-            <h3 className="m-0 px-2 pt-2 text-ui font-semibold text-texte-principal">Ses circuits</h3>
-            <div className="flex flex-col gap-2">
-              {circuits.map((circuit) => (
-                <CircuitRow key={circuit.id} circuit={circuit} highlight={role.id} />
-              ))}
-            </div>
-          </section>
-        )}
 
         {sections
           .filter((section) => rang(section) === 3)

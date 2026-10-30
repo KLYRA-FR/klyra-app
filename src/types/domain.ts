@@ -87,13 +87,6 @@ export interface Role {
   file: RoleFile | null;
 }
 
-/** Circuit de passation entre agents (« Construire un écran »). */
-export interface TeamCircuit {
-  id: string;
-  title: string;
-  steps: { roleId: RoleId | null; label: string }[];
-}
-
 /* ─── Utilisateur ──────────────────────────────────────────────── */
 
 export interface User {

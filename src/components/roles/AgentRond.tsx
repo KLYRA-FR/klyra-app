@@ -38,7 +38,7 @@ function Carre({ libelle, initiale, teinte, taille }: { libelle: string; initial
 }
 
 /**
- * Avatar d'un agent, le même partout (circuits, fil, barre latérale) : un
+ * Avatar d'un agent, le même partout (fil, barre latérale) : un
  * carré arrondi à son pastel uni, son initiale dans sa couleur foncée.
  * L'assistant suit la même règle, avec le nom et la couleur choisis.
  */

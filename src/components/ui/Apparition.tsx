@@ -22,9 +22,8 @@ interface ApparitionProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 /**
- * Lance les animations d'entrée de son contenu (classes `klyra-entree`,
- * `klyra-barre-progres`, `klyra-trace` de globals.css) quand il arrive à
- * l'écran, une seule fois. Ses enfants le savent via `useVisible()`.
+ * Lance les animations d'entrée de son contenu (classes `klyra-entree` et
+ * `klyra-barre-progres` de globals.css) quand il arrive à l'écran, une seule fois. Ses enfants le savent via `useVisible()`.
  */
 export function Apparition({ children, seuil = 0.15, className, ...rest }: ApparitionProps) {
   const ref = useRef<HTMLDivElement>(null);
