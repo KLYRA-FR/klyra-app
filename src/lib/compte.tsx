@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getBridge, type KlyraBridge } from "@/lib/bridge";
+import { ecartProfils, identiteValable, initialeDe } from "@/lib/identite";
+import { useWorkspace } from "@/lib/workspace";
 
 /**
  * Le compte d'équipe, en ligne sur Convex (cf. `docs/CONVEX-PLAN.md`) : connexion par
@@ -48,6 +50,8 @@ interface CompteApi {
   ouvrirLienColle: (lien: string) => Promise<void>;
   oublierAdresse: () => void;
   seDeconnecter: () => Promise<void>;
+  /** Ton profil d'équipe, sur le serveur (la session dit qui tu es). Sans couleur : on garde la tienne. */
+  modifierMonProfil: (profil: { nom: string; intitule: string; couleur?: string }) => Promise<void>;
 }
 
 const INDISPONIBLE: CompteApi = {
@@ -60,6 +64,9 @@ const INDISPONIBLE: CompteApi = {
   ouvrirLienColle: async () => {},
   oublierAdresse: () => {},
   seDeconnecter: async () => {},
+  modifierMonProfil: async () => {
+    throw new Error("non_connecte");
+  },
 };
 
 const CompteContext = createContext<CompteApi>(INDISPONIBLE);
@@ -93,7 +100,7 @@ const MESSAGES: Record<string, string> = {
   non_connecte: "Ta session a pris fin : reconnecte-toi.",
   reserve_aux_admins: "Réservé aux admins de l’équipe.",
   adresse_invalide: "Cette adresse e-mail n’est pas valable.",
-  nom_invalide: "Le nom doit faire entre 1 et 80 caractères.",
+  nom_invalide: "Le nom doit faire entre 1 et 80 caractères, le rôle 80 au plus.",
   couleur_invalide: "Cette couleur n’est pas dans la palette.",
   deja_membre: "Cette personne fait déjà partie de l’équipe.",
   deja_invitee: "Cette adresse est déjà invitée.",
@@ -250,15 +257,71 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
 
   const etat: Etat = isLoading || (isAuthenticated && moi === undefined) ? "chargement" : !isAuthenticated ? "deconnecte" : moi ? "connecte" : "retire";
 
+  const envoyerProfil = useMutation(api.equipe.modifierMonProfil);
+  const couleurActuelle = moi?.couleur;
+  const modifierMonProfil = useCallback(
+    async ({ nom, intitule, couleur }: { nom: string; intitule: string; couleur?: string }) => {
+      if (!couleurActuelle) throw new Error("non_connecte");
+      await envoyerProfil({ nom, intitule, couleur: couleur ?? couleurActuelle });
+    },
+    [envoyerProfil, couleurActuelle],
+  );
+
+  /* Le profil du compte, pour toute l'app, seulement tant que la session est celle d'un membre actif.
+     Déconnecté, retiré, en cours de vérification ou hors ligne : plus rien du compte n'est affiché. */
+  const { appliquerProfilCompte } = useWorkspace();
+  const connecte = etat === "connecte" && moi ? moi : null;
+  const [nomCompte, intituleCompte, couleurCompte] = [connecte?.nom ?? null, connecte?.intitule ?? null, connecte?.couleur ?? null];
+  useEffect(() => {
+    appliquerProfilCompte(nomCompte !== null && intituleCompte !== null && couleurCompte !== null ? { nom: nomCompte, intitule: intituleCompte, couleur: couleurCompte } : null);
+  }, [appliquerProfilCompte, nomCompte, intituleCompte, couleurCompte]);
+  useEffect(() => () => appliquerProfilCompte(null), [appliquerProfilCompte]);
+
   const valeur = useMemo<CompteApi>(
-    () => ({ etat, moi: moi ?? null, adresseEnAttente, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter }),
-    [etat, moi, adresseEnAttente, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter],
+    () => ({ etat, moi: moi ?? null, adresseEnAttente, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil }),
+    [etat, moi, adresseEnAttente, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil],
   );
   return <CompteContext.Provider value={valeur}>{children}</CompteContext.Provider>;
 }
 
 export function useCompte(): CompteApi {
   return useContext(CompteContext);
+}
+
+/**
+ * Ton identité et sa modification, selon les règles de `src/lib/identite.ts` :
+ * connecté, le compte d'abord (le serveur valide), puis cet ordinateur ; sinon,
+ * cet ordinateur seulement. La photo et les préférences ne bougent jamais ici.
+ */
+export function useMonIdentite() {
+  const { state, moi, modifierProfil } = useWorkspace();
+  const compte = useCompte();
+  const connecte = moi.source === "compte" && compte.etat === "connecte";
+  const ecart = useMemo(() => ecartProfils(state.currentUser, state.profilCompte), [state.currentUser, state.profilCompte]);
+
+  const garderIci = useCallback(
+    (nom: string, intitule: string) => modifierProfil({ name: nom, title: intitule, initial: initialeDe(nom) }),
+    [modifierProfil],
+  );
+
+  /** Nom et rôle (et couleur, depuis Réglages › Équipe). Lève une erreur lisible si c'est refusé. */
+  const enregistrer = useCallback(
+    async (nom: string, intitule: string, couleur?: string) => {
+      const propre = identiteValable(nom, intitule);
+      if (!propre) throw new Error(MESSAGES.nom_invalide);
+      if (connecte) {
+        try {
+          await compte.modifierMonProfil({ ...propre, couleur });
+        } catch (e) {
+          throw new Error(messageErreur(e));
+        }
+      }
+      garderIci(propre.nom, propre.intitule);
+    },
+    [connecte, compte, garderIci],
+  );
+
+  return { moi, connecte, ecart, enregistrer, garderIci };
 }
 
 /**
@@ -272,7 +335,6 @@ export function useEquipe(admin: boolean) {
   const annulerInvitation = useMutation(api.equipe.annulerInvitation);
   const changerRole = useMutation(api.equipe.changerRole);
   const retirer = useMutation(api.equipe.retirer);
-  const modifierMonProfil = useMutation(api.equipe.modifierMonProfil);
   return {
     membres: membres as Membre[] | undefined,
     invitations: invitations as Invitation[] | undefined,
@@ -280,6 +342,5 @@ export function useEquipe(admin: boolean) {
     annulerInvitation,
     changerRole,
     retirer,
-    modifierMonProfil,
   };
 }

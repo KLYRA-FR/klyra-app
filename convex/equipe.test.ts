@@ -66,6 +66,47 @@ describe("équipe : membre", () => {
   });
 });
 
+describe("équipe : profil et identité", () => {
+  test("deux comptes : chacun ne lit et ne modifie que son propre profil, désigné par la session", async () => {
+    const t = nouvelEssai();
+    const { admin, membre } = await equipe(t);
+    expect(await admin.query(api.equipe.moi, {})).toMatchObject({ email: "corentin@klyra.design", nom: "Corentin" });
+    expect(await membre.query(api.equipe.moi, {})).toMatchObject({ email: "yanis@klyra.design", nom: "Yanis", intitule: "" });
+
+    // Le profil d'équipe d'une première connexion est incomplet (rôle vide) : la personne le complète elle-même.
+    await membre.mutation(api.equipe.modifierMonProfil, { nom: "Yanis", intitule: "Dev", couleur: "vert" });
+    const liste = await admin.query(api.equipe.membres, {});
+    expect(liste.find((m) => m.email === "yanis@klyra.design")).toMatchObject({ nom: "Yanis", intitule: "Dev", couleur: "vert" });
+    expect(liste.find((m) => m.email === "corentin@klyra.design")).toMatchObject({ nom: "Corentin", intitule: "" });
+    expect(await admin.query(api.equipe.moi, {})).toMatchObject({ nom: "Corentin", intitule: "" });
+  });
+
+  test("déconnexion : la session et ses jetons de rafraîchissement sont effacés, l'autre compte n'est pas touché", async () => {
+    const t = nouvelEssai();
+    const { admin, membre } = await equipe(t);
+    const sessionsAvant = await t.run((ctx) => ctx.db.query("authSessions").take(10));
+    expect(sessionsAvant).toHaveLength(2);
+
+    await membre.action(api.auth.signOut, {});
+    const sessions = await t.run((ctx) => ctx.db.query("authSessions").take(10));
+    const jetons = await t.run((ctx) => ctx.db.query("authRefreshTokens").take(10));
+    expect(sessions).toHaveLength(1);
+    expect(jetons.every((j) => j.sessionId === sessions[0]._id)).toBe(true);
+    expect(await admin.query(api.equipe.moi, {})).toMatchObject({ email: "corentin@klyra.design" });
+  });
+
+  test("un membre retiré n'a plus de profil d'équipe et ne peut plus le modifier", async () => {
+    const t = nouvelEssai();
+    const { admin, membre } = await equipe(t);
+    const yanis = (await admin.query(api.equipe.membres, {})).find((m) => m.email === "yanis@klyra.design")!;
+    await admin.mutation(api.equipe.retirer, { membreId: yanis._id });
+    expect(await membre.query(api.equipe.moi, {})).toBeNull();
+    await expect(membre.mutation(api.equipe.modifierMonProfil, { nom: "Yanis", intitule: "", couleur: "vert" })).rejects.toThrow(
+      /non_connecte/,
+    );
+  });
+});
+
 describe("équipe : admin", () => {
   test("invite, refuse les doublons et les adresses invalides, normalise l'adresse", async () => {
     const t = nouvelEssai();

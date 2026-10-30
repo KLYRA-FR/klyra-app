@@ -5,17 +5,19 @@ import { Avatar, Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { CHAMP, Champ } from "@/components/ui/Champ";
+import { useMonIdentite } from "@/lib/compte";
 import { useWorkspace } from "@/lib/workspace";
+import { AccordProfils } from "../AccordProfils";
 import { Recadrage } from "../Recadrage";
-import { Groupe, Ligne } from "../ui";
+import { Erreur, Groupe, Ligne } from "../ui";
 import { Consommation } from "./Consommation";
 
-/** Ta photo : elle remplace tes initiales en bas du menu. Choisie, puis recadrée dans un rond. */
+/** Ta photo : elle remplace tes initiales en bas du menu. Choisie, puis recadrée dans un rond. Elle reste sur cet ordinateur. */
 function Photo() {
-  const { state, enregistrerProfil } = useWorkspace();
+  const { moi, modifierProfil } = useWorkspace();
   const choix = useRef<HTMLInputElement>(null);
   const [aRecadrer, setARecadrer] = useState<string | null>(null);
-  const { photo, initial } = state.currentUser;
+  const { photo, initial } = moi;
   const fermer = useCallback(() => {
     setARecadrer((url) => {
       if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
@@ -53,7 +55,7 @@ function Photo() {
           <Bouton type="button" variant="blanc" taille="compact" onClick={() => setARecadrer(photo)}>
             Recadrer
           </Bouton>
-          <Bouton type="button" variant="discret" taille="compact" onClick={() => enregistrerProfil({ ...state.currentUser, photo: null })}>
+          <Bouton type="button" variant="discret" taille="compact" onClick={() => modifierProfil({ photo: null })}>
             Retirer
           </Bouton>
         </>
@@ -63,7 +65,7 @@ function Photo() {
           src={aRecadrer}
           onAnnuler={fermer}
           onValider={(p) => {
-            enregistrerProfil({ ...state.currentUser, photo: p });
+            modifierProfil({ photo: p });
             fermer();
           }}
         />
@@ -72,20 +74,29 @@ function Photo() {
   );
 }
 
-/** Prénom et rôle : ce que les agents lisent au début de chaque échange. */
+/**
+ * Prénom et rôle : ce que les agents lisent au début de chaque échange.
+ * Connecté, c'est aussi ton profil d'équipe (cf. `useMonIdentite`).
+ */
 function Identite() {
-  const { state, enregistrerProfil } = useWorkspace();
-  const [name, setName] = useState(state.currentUser.name);
-  const [title, setTitle] = useState(state.currentUser.title);
+  const { moi, enregistrer } = useMonIdentite();
+  const [name, setName] = useState(moi.name);
+  const [title, setTitle] = useState(moi.title);
   const [enregistre, setEnregistre] = useState(false);
-  const change = name.trim() !== state.currentUser.name || title.trim() !== state.currentUser.title;
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const change = name.trim() !== moi.name || title.trim() !== moi.title;
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         if (!name.trim()) return;
-        enregistrerProfil({ ...state.currentUser, name: name.trim(), title: title.trim(), initial: name.trim().charAt(0).toUpperCase() });
-        setEnregistre(true);
+        setErreur(null);
+        setEnCours(true);
+        enregistrer(name, title)
+          .then(() => setEnregistre(true))
+          .catch((x: unknown) => setErreur(x instanceof Error ? x.message : String(x)))
+          .finally(() => setEnCours(false));
       }}
       className="@container flex w-full flex-col gap-4"
     >
@@ -94,6 +105,7 @@ function Identite() {
           <Input
             size="sm"
             value={name}
+            maxLength={80}
             onChange={(e) => {
               setName(e.target.value);
               setEnregistre(false);
@@ -105,6 +117,7 @@ function Identite() {
           <Input
             size="sm"
             value={title}
+            maxLength={80}
             onChange={(e) => {
               setTitle(e.target.value);
               setEnregistre(false);
@@ -114,15 +127,16 @@ function Identite() {
         </Champ>
       </div>
       <div className="flex items-center gap-3">
-        <Bouton type="submit" variant="sombre" taille="compact" disabled={!change || !name.trim()}>
-          Enregistrer
+        <Bouton type="submit" variant="sombre" taille="compact" disabled={!change || !name.trim() || enCours}>
+          {enCours ? "Enregistrement…" : "Enregistrer"}
         </Bouton>
-        {enregistre && !change && (
+        {enregistre && !change && !enCours && (
           <span role="status" className="text-ui-xs text-texte-tertiaire">
             Enregistré.
           </span>
         )}
       </div>
+      {erreur && <Erreur>{erreur}</Erreur>}
     </form>
   );
 }
@@ -132,8 +146,8 @@ function Identite() {
  * consommation sur cet ordinateur, comme le Profil d'OpenBot.
  */
 export function Profil() {
-  const { state } = useWorkspace();
-  const { photo, initial, name, title } = state.currentUser;
+  const { moi, connecte } = useMonIdentite();
+  const { photo, initial, name, title } = moi;
   /* Ouvert d'office si la recherche mène à la photo ou au prénom. */
   const [edition, setEdition] = useState(false);
   useEffect(() => {
@@ -158,14 +172,25 @@ export function Profil() {
         </Bouton>
       </div>
 
+      <AccordProfils />
+
       {edition && (
         <Groupe>
-          <Ligne id="photo" libelle="Photo" description="Elle remplace tes initiales en bas du menu.">
+          <Ligne id="photo" libelle="Photo" description="Elle remplace tes initiales en bas du menu. Elle reste sur cet ordinateur.">
             <Photo />
           </Ligne>
-          <Ligne id="nom" libelle="Prénom et rôle" description="Chaque personne de l’équipe a le sien, sur son poste. Les agents le lisent au début de chaque échange." pile>
-            {/* Le profil peut arriver après coup (nom de la session) : le formulaire repart de lui. */}
-            <Identite key={`${state.currentUser.name}|${state.currentUser.title}`} />
+          <Ligne
+            id="nom"
+            libelle="Prénom et rôle"
+            description={
+              connecte
+                ? "Ceux de ton compte d’équipe : l’équipe et les agents voient les mêmes. Ils sont aussi gardés sur cet ordinateur, pour quand tu n’es pas connecté."
+                : "Chaque personne de l’équipe a le sien, sur son poste. Les agents le lisent au début de chaque échange."
+            }
+            pile
+          >
+            {/* Le profil peut arriver après coup (nom de la session, compte connecté) : le formulaire repart de lui. */}
+            <Identite key={`${moi.source}|${name}|${title}`} />
           </Ligne>
         </Groupe>
       )}

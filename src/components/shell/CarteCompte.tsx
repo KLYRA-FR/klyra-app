@@ -34,11 +34,11 @@ function Point({ ok, className }: { ok: boolean | null; className?: string }) {
 
 /** Dans le rail : ton avatar, avec le point d'état de Claude. */
 export function CarteCompteRail() {
-  const { state } = useWorkspace();
+  const { moi } = useWorkspace();
   const { texte, ok } = useEtatClaude();
   return (
-    <Link href="/reglages" aria-label={`${state.currentUser.name} · ${texte}`} title={texte} className="relative flex rounded-full">
-      <Avatar shape="circle" size="md" src={state.currentUser.photo ?? undefined} initials={state.currentUser.initial} alt="" gradient={false} />
+    <Link href="/reglages" aria-label={`${moi.name} · ${texte}`} title={texte} className="relative flex rounded-full">
+      <Avatar shape="circle" size="md" src={moi.photo ?? undefined} initials={moi.initial} alt="" gradient={false} />
       <Point ok={ok} className="absolute -right-0.5 -bottom-0.5 size-2.5 border-2 border-fond-inverse-fort" />
     </Link>
   );
