@@ -7,6 +7,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ChoixModele } from "./ChoixModele";
 import { MenuConversation } from "./MenuConversation";
+import type { ActionExport } from "./useExporterConversation";
 import { useBasculerEpingle } from "./BoutonEpingle";
 import { estEpinglee } from "@/lib/epinglage";
 import { useAgentOccupe, useRole, useTravail, useWorkspace } from "@/lib/workspace";
@@ -17,10 +18,12 @@ interface ChatHeaderProps {
   project: Project | undefined;
   previewOpen: boolean;
   onTogglePreview: () => void;
+  actionExport?: ActionExport;
 }
 
 /** En-tête d'une conversation directe : l'agent, ce qu'il fait, sa fiche. */
-function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau }: { chat: Chat; panneauOuvert: boolean; onTogglePanneau: () => void }) {
+function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { chat: Chat; panneauOuvert: boolean; onTogglePanneau: () => void; actionExport?: ActionExport }) {
+  const options = useRef<HTMLButtonElement>(null);
   const router = useRouter();
   const role = useRole(chat.roleIds[0] ?? "principal");
   const ici = useTravail(chat.id);
@@ -76,6 +79,7 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau }: { chat: Chat; pa
           <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-bleu-k1-500" />
         )}
       </span>
+      {actionExport && <MenuConversation bouton={options} actionExport={actionExport} />}
     </header>
   );
 }
@@ -116,7 +120,7 @@ function ChampTitre({ titre, onFin }: { titre: string; onFin: (nouveau: string |
   );
 }
 
-export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: ChatHeaderProps) {
+export function ChatHeader({ chat, project, previewOpen, onTogglePreview, actionExport }: ChatHeaderProps) {
   const { renommerChat } = useWorkspace();
   const basculerEpingle = useBasculerEpingle();
   /* La conversation dont le titre est en cours de renommage. */
@@ -124,7 +128,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
   const options = useRef<HTMLButtonElement>(null);
 
   if (chat.kind === "direct") {
-    return <EnTeteDirect chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} />;
+    return <EnTeteDirect chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} actionExport={actionExport} />;
   }
 
   const roleCount = chat.roleIds.length;
@@ -172,7 +176,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
           data-son="panneau"
           onClick={onTogglePreview}
         />
-        <MenuConversation project={project} bouton={options} onRenommer={() => setEdition(chat.id)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} />
+        <MenuConversation project={project} bouton={options} onRenommer={() => setEdition(chat.id)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} actionExport={actionExport} />
       </div>
     </header>
   );

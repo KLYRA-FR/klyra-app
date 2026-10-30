@@ -50,6 +50,7 @@ import {
   type Utilisation,
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
+import { echecExport, exporterConversation, verifierFenetreExport } from "./export-conversation";
 import { arreterRoutines, brancherRoutines, commencerRoutine, demarrerRoutines } from "./routines";
 import {
   arreterDictee,
@@ -573,6 +574,12 @@ function registerBridge() {
   handle("compte:code", () => prendreCode());
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
+  ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {
+    try {
+      verifierFenetreExport(event, fenetrePrincipale, DEV_URL);
+      return { ok: true, data: await exporterConversation(fenetrePrincipale, demande) };
+    } catch (erreur) { return echecExport(erreur); }
+  });
   /* Routines : le moteur et son minuteur vivent ici (electron/routines/), l'interface poste les exécutions. */
   brancherRoutines();
 

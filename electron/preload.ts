@@ -187,6 +187,7 @@ contextBridge.exposeInMainWorld("klyra", {
     },
     read: () => ipcRenderer.invoke("conversations:read"),
     write: (data: unknown) => ipcRenderer.invoke("conversations:write", data),
+    exporter: (demande: { contenu: string; nomPropose: string }) => ipcRenderer.invoke("conversations:exporter", demande),
   },
   /* Routines : le moteur est dans le process principal (electron/routines/). */
   routines: {
