@@ -85,6 +85,12 @@ describe("le Markdown aplati", () => {
     });
   });
 
+  test("le code reste tel quel, en ligne comme en bloc", () => {
+    expect(aplatir("Le motif `.*` attrape tout, `a | b` aussi.\n\n```ts\nconst x = a * b; // **pas gras**\n```").texte).toBe(
+      "Le motif .* attrape tout, a | b aussi.\n\n\nconst x = a * b; // **pas gras**",
+    );
+  });
+
   test("un lien automatique garde son adresse dans le texte, un identifiant garde ses tirets bas", () => {
     expect(aplatir("Voir <https://klyra.fr/prix> et nom_de_fichier.ts")).toEqual({
       texte: "Voir https://klyra.fr/prix et nom_de_fichier.ts",

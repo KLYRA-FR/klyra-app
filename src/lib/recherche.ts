@@ -146,12 +146,25 @@ const LIEN_AUTO = /<((?:https?:\/\/|mailto:)[^>\s]+)>/g;
 /**
  * Le texte d'un message tel qu'on le lit : le libellé des liens sans leur
  * syntaxe, sans les marques de mise en forme. Les adresses des liens sont
- * gardées à part : on les cherche aussi.
+ * gardées à part : on les cherche aussi. Le code (blocs et `code`) est gardé
+ * tel quel : un `.*` écrit en code reste `.*`.
  */
 export function aplatir(markdown: string): { texte: string; adresses: string[] } {
   const adresses: string[] = [];
-  const texte = markdown
-    .replace(/^ {0,3}(?:```|~~~).*$/gm, "")
+  const codes: string[] = [];
+  const aPart = (code: string) => `\u0000${codes.push(code) - 1}\u0000`;
+  let dansBloc = false;
+  const sansCode = markdown
+    .split("\n")
+    .map((ligne) => {
+      if (/^ {0,3}(?:```|~~~)/.test(ligne)) {
+        dansBloc = !dansBloc;
+        return "";
+      }
+      return dansBloc ? aPart(ligne) : ligne.replace(/(`+)([^`]+?)\1/g, (_, _marque: string, code: string) => aPart(code));
+    })
+    .join("\n");
+  const texte = sansCode
     .replace(LIEN, (_, libelle: string, adresse: string) => {
       adresses.push(adresse);
       return libelle;
@@ -164,6 +177,7 @@ export function aplatir(markdown: string): { texte: string; adresses: string[] }
     .replace(/\*\*|__|~~|`+/g, "")
     .replace(/(^|[\s(])[*_](?=\S)|(?<=\S)[*_](?=[\s).,;:!?]|$)/gm, "$1")
     .replace(/\|/g, " ")
+    .replace(/\u0000(\d+)\u0000/g, (_, i: string) => codes[Number(i)])
     .trim();
   return { texte, adresses: [...new Set(adresses)] };
 }

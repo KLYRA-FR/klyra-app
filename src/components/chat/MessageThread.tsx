@@ -235,6 +235,7 @@ function useArriveeRecherche(
   const roles = useRoles();
   const messages = useChatMessages(chatId);
   const { zoneRef, enBasRef, ancreRef, annonceRef } = refs;
+  const eteindre = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     if (!cible) return;
@@ -271,19 +272,26 @@ function useArriveeRecherche(
     bloc.removeAttribute("data-eclaire");
     void bloc.offsetWidth; // relance l'animation si on y revient
     bloc.setAttribute("data-eclaire", "");
-    const eteindre = setTimeout(() => bloc.removeAttribute("data-eclaire"), ECLAIRAGE_MS);
+    /* Pas annulé quand le paramètre est retiré de l'adresse : seulement par un nouveau saut ou en quittant le fil. */
+    clearTimeout(eteindre.current);
+    eteindre.current = setTimeout(() => bloc.removeAttribute("data-eclaire"), ECLAIRAGE_MS);
     bloc.tabIndex = -1;
     bloc.focus({ preventScroll: true });
     const { author } = message;
     const auteur = author.kind === "user" ? "toi" : (roles.find((r) => r.id === author.roleId)?.name ?? "l’agent");
     if (annonceRef.current) annonceRef.current.textContent = `Message de ${auteur}, ${formatJourHeure(message.createdAt)}`;
     retirer();
-    return () => clearTimeout(eteindre);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois par message visé, pas à chaque nouvelle réponse
   }, [cible, chatId]);
 
   /* Le surlignage s'efface quand on quitte la conversation. */
-  useEffect(() => () => void CSS.highlights?.delete(SURLIGNAGE), []);
+  useEffect(
+    () => () => {
+      clearTimeout(eteindre.current);
+      CSS.highlights?.delete(SURLIGNAGE);
+    },
+    [],
+  );
 }
 
 /** Fil de la conversation, collé en bas comme dans une messagerie. */

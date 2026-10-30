@@ -19,6 +19,7 @@
     "test:agents": "pnpm build:electron && node scripts/test-agents.mjs",
     "test:conversation": "node scripts/test-conversation.mjs",
     "test:coller": "node scripts/test-collage.mjs",
+    "test:chercher": "node scripts/test-recherche.mjs",
     "test:profil": "node scripts/test-profil.mjs",
     "test:liens": "node scripts/test-liens.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
