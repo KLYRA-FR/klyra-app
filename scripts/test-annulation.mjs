@@ -36,7 +36,11 @@ function verifier(ok, message) {
 }
 const donnees = () => JSON.parse(readFileSync(FICHIER, "utf8"));
 const taches = () => donnees().taches;
-const horsTaches = ({ taches: _taches, ...reste }) => reste;
+const horsTaches = (donnees) => {
+  const reste = { ...donnees };
+  delete reste.taches;
+  return reste;
+};
 
 const CATEGORIES = [
   { id: "clients", nom: "Clients", teinte: "bleu-k2", icone: "users-profiles-01" },
@@ -166,7 +170,11 @@ async function lancer() {
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const n = ++id;
     const timer = setTimeout(() => { attenteCdp.delete(n); reject(new Error(`CDP sans réponse : ${method}`)); }, 15000);
-    attenteCdp.set(n, m => { clearTimeout(timer); m.error ? reject(new Error(`${method}: ${q(m.error)}`)) : resolve(m.result); });
+    attenteCdp.set(n, m => {
+      clearTimeout(timer);
+      if (m.error) reject(new Error(`${method}: ${q(m.error)}`));
+      else resolve(m.result);
+    });
     ws.send(q({ id: n, method, params }));
   });
   const ev = async (source) => {
@@ -419,6 +427,9 @@ try {
     verifier(await present(MESSAGE) && !(await present(ligne(R.a.id))), "après saisie, Ctrl+Z garde la suppression");
     verifier((await lire(`document.querySelector(${q(nouveau)}).value`)) === "", "Ctrl+Z annule la saisie normale du champ");
     verifier(await app.tabVers(ANNULER), "Tab rejoint le message après saisie");
+    verifier(await lire("getComputedStyle(document.activeElement).outlineColor === 'rgb(255, 255, 255)'"), "focus Annuler blanc sur le fond sombre");
+    await app.touche("Tab");
+    verifier(await focusSur(FERMER) && await lire("getComputedStyle(document.activeElement).outlineColor === 'rgb(255, 255, 255)'"), "focus Fermer blanc sur le fond sombre");
     await app.touche("Escape");
     verifier(!(await present(MESSAGE)) && await focusSur('[data-test-avant-tab]'), "Échap ferme et restaure le focus précédent à l'entrée du message");
 
