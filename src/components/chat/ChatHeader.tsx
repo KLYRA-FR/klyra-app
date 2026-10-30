@@ -108,7 +108,8 @@ function ChampTitre({ titre, onFin }: { titre: string; onFin: (nouveau: string |
           finir(null, true);
         }
       }}
-      className="h-6 w-full max-w-[420px] min-w-0 rounded-2xs border border-bordure-champ bg-fond-surface px-1.5 text-ui font-semibold text-texte-principal outline-none"
+      // La typo et la place du titre (le contour ne prend pas de place) : l'en-tête ne bouge pas.
+      className="w-full min-w-0 rounded-2xs bg-transparent p-0 text-ui font-semibold text-texte-principal outline outline-1 outline-offset-2 outline-bordure-champ"
     />
   );
 }

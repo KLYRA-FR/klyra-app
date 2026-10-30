@@ -40,6 +40,8 @@ const depart = {
   chats: [
     { id: ID, kind: "equipe", projectId: "projet-essai", title: TITRE, roleIds: ["principal"], updatedAt: il_y_a(5), sessions: { principal: "session-equipe" }, luJusqua: "m2" },
     { id: "dm-principal", kind: "direct", projectId: null, title: "Principal", roleIds: ["principal"], updatedAt: il_y_a(30), sessions: { principal: "session-directe" }, luJusqua: "m3" },
+    // Son projet a été retiré de l'app : la conversation reste.
+    { id: "equipe-sans-projet", kind: "equipe", projectId: "projet-retire", title: "Ancienne conversation", roleIds: ["principal"], updatedAt: il_y_a(90), sessions: {}, luJusqua: null },
   ],
   messages: [
     { id: "m1", chatId: ID, author: { kind: "user" }, createdAt: il_y_a(6), parts: [{ type: "text", text: "Bonjour l’équipe, on refait l’accueil." }] },
@@ -145,6 +147,14 @@ const etat = (a) =>
       page: location.pathname + location.search,
     };
   })()`);
+/** La place et la typo du titre (ou du champ qui le remplace), et la hauteur de l'en-tête. */
+const mesure = (a) =>
+  a.ev(`(() => {
+    const t = document.querySelector('main header input[aria-label="Nom de la conversation"]') ?? document.querySelector("main header h1");
+    const r = t.getBoundingClientRect();
+    const s = getComputedStyle(t);
+    return { x: r.x, y: r.y, l: r.width, h: r.height, police: s.fontSize + " " + s.fontWeight + " " + s.fontFamily, entete: document.querySelector("main header").getBoundingClientRect().height };
+  })()`);
 const ENTREE = { code: "Enter", vk: 13, texte: "\r" };
 
 let app;
@@ -195,10 +205,14 @@ try {
 
   /* Renommer au clavier : Échap n'enregistre rien, Entrée enregistre et rend le focus. */
   await app.ev(`document.querySelector(${JSON.stringify(BOUTON)}).focus()`);
+  const avant = await mesure(app);
   await app.touche("Enter", ENTREE);
   await app.touche("Enter", ENTREE);
   e = await etat(app);
   verifier(!e.menu && e.champ?.focus === "Nom de la conversation" && e.champ.valeur === TITRE && e.champ.selection === TITRE.length, "« Renommer » : champ en place, titre sélectionné");
+  const pendant = await mesure(app);
+  const immobile = ["x", "y", "l", "h", "entete"].every((k) => Math.abs(pendant[k] - avant[k]) < 0.5) && pendant.police === avant.police;
+  verifier(immobile, `le champ garde la place et la typo du titre, l’en-tête ne bouge pas${immobile ? "" : ` (${JSON.stringify(avant)} → ${JSON.stringify(pendant)})`}`);
   await app.ecrire("Titre abandonné");
   await app.touche("Escape", { vk: 27 });
   e = await etat(app);
@@ -258,6 +272,14 @@ try {
   await app.cliquer('[role="menu"] [role="menuitem"]:last-child');
   await attendre(1000);
   verifier((await etat(app)).page === "/projet?id=projet-essai", "« Ouvrir le projet » mène à la page du projet");
+
+  /* Projet retiré : seulement « Renommer », sans séparateur ni ligne grisée. */
+  await app.aller("/chat?id=equipe-sans-projet");
+  await app.cliquer(BOUTON);
+  e = await etat(app);
+  const enfants = await app.ev(`document.querySelector('[role="menu"][aria-label="Options de la conversation"]')?.children.length`);
+  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer"]) && enfants === 1, `sans projet : le menu n’a que « Renommer » (${e.lignes.join(", ")})`);
+  await app.touche("Escape", { vk: 27 });
 
   await app.aller("/chat?id=dm-principal");
   verifier(!(await etat(app)).bouton, "la conversation directe garde son en-tête, sans ce menu");
