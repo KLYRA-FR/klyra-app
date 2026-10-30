@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CIRCUITS } from "@/data/agents";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { Apparition } from "@/components/ui/Apparition";
@@ -19,7 +18,6 @@ import { ModalePersonnaliserAssistant } from "./PersonnaliserAssistant";
 import { AgentCard } from "./AgentCard";
 import { CarteNouvelAgent } from "./CarteNouvelAgent";
 import { ChiffresEquipe } from "./ChiffresEquipe";
-import { CircuitsAnimes } from "./CircuitsAnimes";
 import { dateCourte, etiquettesDe } from "./etats-agents";
 
 const CLE_NOTE = "klyra:agents:note-reprise";
@@ -179,8 +177,6 @@ export function MesAgentsVue() {
     [tous],
   );
   const recus = actifs.filter((a) => a.entree?.origine.type === "bibliotheque");
-  const ids = new Set(agents.map((r) => r.id));
-  const circuits = CIRCUITS.filter((c) => c.steps.every((s) => s.roleId === null || ids.has(s.roleId)));
   const conversationsDe = (id: string) => chats.filter((c) => c.roleIds.includes(id)).length;
 
   return (
@@ -206,7 +202,9 @@ export function MesAgentsVue() {
 
       <HorsDeMesAgents agents={hors} />
 
-      {agents.length === 0 ? (
+      {/* Pas de vue « qui passe la main à qui » : l'assistant et chaque agent peuvent confier
+          le travail à tout agent actif, sans circuit fixé (décision de Corentin, 30/10). */}
+      {agents.length === 0 && (
         <section className="flex flex-col gap-3 rounded-3xl border border-bordure-subtile bg-fond-page p-5">
           <p className="m-0 text-ui text-texte-secondaire">
             <span className="font-semibold text-texte-principal">Pour l’instant, {assistant.name} travaille seul.</span> Quand un besoin revient
@@ -221,19 +219,6 @@ export function MesAgentsVue() {
             </Bouton>
           </div>
         </section>
-      ) : (
-        circuits.length > 0 && (
-          /* Même fond que le bandeau des chiffres ; chaque circuit dans sa carte blanche. */
-          <Apparition role="region" aria-labelledby="circuits-titre" className="flex flex-col gap-3 rounded-3xl border border-bordure-subtile bg-fond-page p-3">
-            <div className="flex flex-col gap-1 px-2 pt-2">
-              <h2 id="circuits-titre" className="m-0 text-h4 leading-[1] font-semibold tracking-[-0.04em] text-texte-principal">
-                Qui passe la main à qui
-              </h2>
-              <p className="m-0 text-ui text-texte-secondaire">Les circuits de tes agents, de la demande à la livraison.</p>
-            </div>
-            <CircuitsAnimes circuits={circuits} />
-          </Apparition>
-        )
       )}
     </div>
   );

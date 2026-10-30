@@ -26,8 +26,8 @@ const TAILLES = [6, 4.5, 3];
 const BLEUS = ["var(--color-bleu-k1-500)", "var(--color-bleu-k1-400)", "var(--color-bleu-k1-300)"];
 
 /**
- * La place du prochain agent, à la suite des cartes de l'équipe : le gris du
- * bloc des circuits (fond-page), et un « + » en pixels, dans les bleus de
+ * La place du prochain agent, à la suite des cartes de l'équipe : le gris des
+ * blocs de la page (fond-page), et un « + » en pixels, dans les bleus de
  * son chevron : une onde brève part du centre, et ses branches s'écartent au
  * survol. Elle ouvre le menu de création ; hors de l'app de bureau, seule la
  * bibliothèque y reste ouverte.
@@ -70,7 +70,7 @@ export function CarteNouvelAgent({ actif, delai = 0 }: { actif: boolean; /** Mom
   );
 
   const classes = cn(
-    // Même gris que le bloc « Qui passe la main à qui » et ses étapes (fond-page).
+    // Même gris que « Hors de Mes agents » et le bandeau des chiffres (fond-page).
     "klyra-entree flex h-[192px] w-full cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border border-bordure-subtile bg-fond-page no-underline",
     "transition-[background-color,transform] duration-[220ms] ease-sortie hover:-translate-y-0.5 hover:bg-fond-survol",
   );

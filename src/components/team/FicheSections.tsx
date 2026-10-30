@@ -150,7 +150,7 @@ function Criteres({ elements }: { elements: Element[] }) {
   );
 }
 
-/** Capsule d'un collègue, comme dans les circuits : son rond de couleur et son prénom. */
+/** Capsule d'un collègue : son rond de couleur et son prénom. */
 function CapsuleCollegue({ role }: { role: Role }) {
   const { haut, encre } = AGENT_PASTELS[role.teinte];
   return (

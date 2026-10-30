@@ -229,8 +229,14 @@ try {
     (await app.ev("document.querySelectorAll('main .klyra-barre-progres').length")) === 0 && c.every((x) => !/\bsur \d/.test(x.texte) && x.texte.includes("Voir la fiche")),
     "cartes : ni total ni barre, « Voir la fiche » gardé",
   );
+  // Plus de circuits codés en dur (décision de Corentin, 30/10), même avec les 11 modèles KLYRA actifs.
+  verifier(
+    !texte.includes("Qui passe la main à qui") && (await app.ev("document.querySelectorAll('main .klyra-pointilles').length")) === 0,
+    "Mes agents : pas de bloc « Qui passe la main à qui »",
+  );
   await app.aller("/equipe?agent=dev");
   verifier(await app.quand("document.querySelector('main')?.innerText.includes('Ta version diffère du modèle KLYRA.')"), "sa fiche propose de comparer avec le modèle");
+  verifier(!(await app.texte()).includes("Ses circuits"), "sa fiche : pas de bloc « Ses circuits »");
   await app.aller("/equipe");
   await app.ev(`document.querySelector('button[aria-label="Fermer la note"]')?.click(); 0`);
   await app.fermer();

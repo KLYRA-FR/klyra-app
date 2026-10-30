@@ -404,8 +404,8 @@ body {
 
 /* ─── Entrées des pages (Apparition.tsx) ────────────────────────────
    Fondu avec une montée de 8 px, en cascade (--delai), dès que le bloc
-   `[data-visible]` entre à l'écran. Les barres se remplissent, les traits se
-   tracent de gauche à droite. Rien ne bouge si l'on demande moins d'animations. */
+   `[data-visible]` entre à l'écran. Les barres se remplissent de gauche à
+   droite. Rien ne bouge si l'on demande moins d'animations. */
 [data-visible="false"] .klyra-entree {
   opacity: 0;
 }
@@ -422,23 +422,16 @@ body {
   to   { opacity: 1; translate: 0 0; }
 }
 
-.klyra-barre-progres,
-.klyra-trace {
+.klyra-barre-progres {
   transform-origin: left center;
 }
 
-[data-visible="false"] .klyra-barre-progres,
-[data-visible="false"] .klyra-trace {
+[data-visible="false"] .klyra-barre-progres {
   scale: 0 1;
 }
 
 [data-visible="true"] .klyra-barre-progres {
   animation: klyra-trace 700ms var(--ease-sortie) backwards;
-  animation-delay: var(--delai, 0ms);
-}
-
-[data-visible="true"] .klyra-trace {
-  animation: klyra-trace 300ms var(--ease-sortie) backwards;
   animation-delay: var(--delai, 0ms);
 }
 
@@ -449,49 +442,11 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   [data-visible] .klyra-entree,
-  [data-visible] .klyra-barre-progres,
-  [data-visible] .klyra-trace {
+  [data-visible] .klyra-barre-progres {
     animation: none;
     opacity: 1;
     scale: 1 1;
   }
-}
-
-/* Pointillés des circuits : points de 2 px au pas de 4, gris. Une lueur
-   (CircuitsAnimes) glisse dessus d'un bout à l'autre de la rangée : la rangée
-   porte sa position (--lueur-x), chaque pointillé connaît son début (--debut),
-   et une fenêtre de 80 px y fait ressortir des points plus foncés. */
-.klyra-pointilles {
-  position: relative;
-  height: 2px;
-  background-image: radial-gradient(circle, var(--color-gris-k1-100) 1px, transparent 1.2px);
-  background-size: 4px 2px;
-  background-repeat: repeat-x;
-  background-position: 0 center;
-}
-
-.klyra-pointilles::after {
-  content: "";
-  position: absolute;
-  inset: -3px 0;
-  background-image: radial-gradient(circle, var(--color-texte-principal) 1.1px, transparent 1.4px);
-  background-size: 4px 8px;
-  background-repeat: repeat-x;
-  background-position: 0 center;
-  filter: drop-shadow(0 0 2px rgba(48, 48, 48, 0.35));
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 50%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0%, black 50%, transparent 100%);
-  -webkit-mask-size: 80px 100%;
-  mask-size: 80px 100%;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: calc(var(--lueur-x, -9999px) - var(--debut, 0px) - 40px) 0;
-  mask-position: calc(var(--lueur-x, -9999px) - var(--debut, 0px) - 40px) 0;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .klyra-pointilles::after { display: none; }
 }
 
 /* Contour de focus par défaut, dans la couche de base : les classes de
