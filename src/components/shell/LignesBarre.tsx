@@ -118,32 +118,43 @@ export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
   );
 }
 
-/** Les visages d'une conversation d'équipe, quatre au plus, dans un carré. */
-function Grappe({ chat, roles }: { chat: Chat; roles: Role[] }) {
+/** Les visages d'une conversation d'équipe, quatre au plus, dans un carré (36 px, ou 24 px en `petite`). */
+export function Grappe({ chat, roles, petite = false }: { chat: Chat; roles: Role[]; petite?: boolean }) {
   const membres = chat.roleIds.map((id) => roles.find((r) => r.id === id)).filter((r): r is Role => !!r);
   const visibles = membres.length > 4 ? membres.slice(0, 3) : membres.slice(0, 4);
   const reste = membres.length - visibles.length;
   return (
-    <span aria-hidden="true" className="grid size-9 shrink-0 grid-cols-2 gap-[2px] rounded-sm bg-fond-surface-grise p-[2px]">
+    <span
+      aria-hidden="true"
+      className={cn("grid shrink-0 grid-cols-2 gap-[2px] rounded-sm bg-fond-surface-grise p-[2px]", petite ? "size-6" : "size-9")}
+    >
       {visibles.map((r) => {
         const { haut, encre } = AGENT_PASTELS[r.teinte];
+        /* En petit, les initiales ne tiennent que dans un carré seul : sinon, les couleurs suffisent. */
+        const initiale = !petite || visibles.length === 1;
         return (
           <span
             key={r.id}
             className={cn(
-              "flex items-center justify-center rounded-[5px] text-ui-3xs leading-none font-semibold",
+              "flex items-center justify-center text-ui-3xs leading-none font-semibold",
+              petite ? "rounded-[3px]" : "rounded-[5px]",
               r.id === "principal" && "bg-bleu-k1-500 text-texte-inverse",
-              visibles.length === 1 && "col-span-2 row-span-2 text-ui-xs",
+              visibles.length === 1 && cn("col-span-2 row-span-2", !petite && "text-ui-xs"),
             )}
             style={r.id === "principal" ? undefined : { background: haut, color: encre }}
           >
-            {r.id === "principal" ? "K" : r.initial}
+            {initiale && (r.id === "principal" ? "K" : r.initial)}
           </span>
         );
       })}
       {reste > 0 && (
-        <span className="flex items-center justify-center rounded-[5px] bg-fond-surface text-ui-3xs leading-none font-semibold text-texte-secondaire">
-          +{reste}
+        <span
+          className={cn(
+            "flex items-center justify-center bg-fond-surface text-ui-3xs leading-none font-semibold text-texte-secondaire",
+            petite ? "rounded-[3px]" : "rounded-[5px]",
+          )}
+        >
+          {!petite && `+${reste}`}
         </span>
       )}
     </span>

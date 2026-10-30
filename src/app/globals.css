@@ -584,6 +584,39 @@ body[data-glisse] iframe {
   100%    { background-color: transparent; }
 }
 
+/* Un message ouvert depuis la recherche : il s'éclaire comme un réglage trouvé, avec un halo
+   qui déborde du texte sans décaler la mise en page. L'éclairage tient lieu de contour de focus. */
+[data-message][data-eclaire] {
+  border-radius: var(--radius-lg);
+  animation:
+    klyra-eclaire 1800ms var(--ease-sortie),
+    klyra-halo 1800ms var(--ease-sortie);
+}
+
+[data-message]:focus {
+  outline: none;
+}
+
+@keyframes klyra-halo {
+  0%, 30% { box-shadow: 0 0 0 8px var(--color-fond-teinte-bleue); }
+  100%    { box-shadow: 0 0 0 8px transparent; }
+}
+
+/* Mouvement réduit : le fond reste éclairé, puis disparaît sans transition (l'attribut part après 1,8 s). */
+@media (prefers-reduced-motion: reduce) {
+  [data-message][data-eclaire] {
+    animation: none;
+    background-color: var(--color-fond-teinte-bleue);
+    box-shadow: 0 0 0 8px var(--color-fond-teinte-bleue);
+  }
+}
+
+/* Les mots trouvés par la recherche, dans le message rendu (CSS Custom Highlight API). */
+::highlight(klyra-recherche) {
+  background-color: var(--color-fond-teinte-bleue);
+  color: var(--color-texte-principal);
+}
+
 /* ─── Curseur de réglage (volume des sons) ─────────────────────── */
 
 /* Piste grise, remplie de K1 jusqu'à la valeur (--valeur, en %), pouce blanc. */

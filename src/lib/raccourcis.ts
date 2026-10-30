@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PLATEFORME } from "@/lib/plateforme";
+import { ouvrirRecherche } from "@/lib/recherche-session";
 
 /** Vrai sur Mac : ⌘ plutôt que Ctrl (même lecture du système que `plateforme.ts`). */
 export function estMac(): boolean {
@@ -26,4 +27,19 @@ export function useRaccourciReglages() {
     window.addEventListener("keydown", surTouche);
     return () => window.removeEventListener("keydown", surTouche);
   }, [router]);
+}
+
+/** ⌘K (Ctrl+K sous Windows) ouvre ou ferme la recherche dans les conversations, de partout, même depuis le composeur. */
+export function useRaccourciRecherche() {
+  useEffect(() => {
+    const surTouche = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "k" || !avecCommande(e) || e.shiftKey) return;
+      /* Une autre fenêtre est ouverte : pas d'empilement. */
+      if (document.querySelector('[aria-modal="true"]:not([data-recherche])')) return;
+      e.preventDefault();
+      ouvrirRecherche(true);
+    };
+    window.addEventListener("keydown", surTouche);
+    return () => window.removeEventListener("keydown", surTouche);
+  }, []);
 }

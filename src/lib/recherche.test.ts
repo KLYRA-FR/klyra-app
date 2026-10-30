@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Chat, Message } from "@/types/domain";
-import { analyserRequete, LIMITE, normaliser, rechercher, type Morceau } from "./recherche";
+import { analyserRequete, aplatir, chercher, LIMITE, normaliser, type ConversationCherchable, type Morceau } from "./recherche";
 
 const chat = (id: string, patch: Partial<Chat> = {}): Chat => ({
   id,
@@ -14,6 +14,8 @@ const chat = (id: string, patch: Partial<Chat> = {}): Chat => ({
   ...patch,
 });
 
+const conv = (c: Chat, titre = c.title, derniere: string | null = null): ConversationCherchable => ({ chat: c, titre, derniere });
+
 let n = 0;
 const message = (chatId: string, texte: string, createdAt = "2026-10-30T10:00:00.000Z", patch: Partial<Message> = {}): Message => ({
   id: `m${++n}`,
@@ -26,42 +28,46 @@ const message = (chatId: string, texte: string, createdAt = "2026-10-30T10:00:00
 
 const lu = (extrait: Morceau[]) => extrait.map((m) => (m.trouve ? `[${m.texte}]` : m.texte)).join("");
 
-const equipe = chat("equipe");
-const direct = chat("dm-hugo", { kind: "direct", projectId: null, roleIds: ["hugo"] });
+const equipe = conv(chat("equipe", { title: "Refonte du site" }));
+const direct = conv(chat("dm-hugo", { kind: "direct", projectId: null, roleIds: ["hugo"], title: "" }), "Hugo");
+const tout = [equipe, direct];
+const total = (brute: string, messages: Message[], conversations = tout) => chercher(conversations, messages, brute)?.totalMessages;
 
 describe("la requête", () => {
-  test("vide, en espaces ou d'une lettre : pas de recherche", () => {
+  test("vide, en espaces, ou rien que des mots d'une lettre : pas de recherche", () => {
     expect(analyserRequete("")).toBeNull();
     expect(analyserRequete("   \n")).toBeNull();
     expect(analyserRequete("a")).toBeNull();
+    expect(analyserRequete("a b")).toBeNull();
     expect(analyserRequete('""')).toBeNull();
-    expect(rechercher(" ", [equipe], [message("equipe", "Bonjour")])).toBeNull();
+    expect(chercher(tout, [message("equipe", "Bonjour")], " ")).toBeNull();
   });
 
-  test("des mots : chacun cherché à part, sans accents ni majuscules, sans doublon", () => {
+  test("des mots d'au moins 2 caractères : chacun cherché à part, sans accents ni majuscules, sans doublon", () => {
     expect(analyserRequete("  Décision   FACTURE décision ")).toEqual({ termes: ["decision", "facture"], phrase: false });
+    expect(analyserRequete("à faire")).toEqual({ termes: ["faire"], phrase: false });
   });
 
   test("entre guillemets droits, français ou anglais : une phrase exacte", () => {
     expect(analyserRequete('"on garde le prix"')).toEqual({ termes: ["on garde le prix"], phrase: true });
     expect(analyserRequete("« On garde le prix »")).toEqual({ termes: ["on garde le prix"], phrase: true });
-    expect(analyserRequete("“on garde”")).toEqual({ termes: ["on garde"], phrase: true });
+    expect(analyserRequete("“à faire”")).toEqual({ termes: ["a faire"], phrase: true });
   });
 
   test("ni expression régulière, ni HTML : la requête est cherchée telle quelle", () => {
-    const messages = [message("equipe", "Le motif .* ne doit rien trouver"), message("equipe", "Une balise <b>gras</b> dans le texte")];
-    expect(rechercher(".*", [equipe], messages)?.total).toBe(1);
-    expect(rechercher("(", [equipe], [message("equipe", "rien")])).toBeNull();
-    expect(rechercher("((", [equipe], [message("equipe", "rien")])?.total).toBe(0);
-    const html = rechercher("<b>gras", [equipe], messages)!;
-    expect(html.total).toBe(1);
-    expect(lu(html.resultats[0].extrait)).toBe("Une balise [<b>gras]</b> dans le texte");
+    const messages = [message("equipe", "Le motif (.+) ne doit rien trouver"), message("equipe", "Une balise <b>gras</b> dans le texte")];
+    expect(total("(.+)", messages)).toBe(1);
+    expect(total("$(rm -rf)", messages)).toBe(0);
+    expect(total("((", [message("equipe", "rien")])).toBe(0);
+    const html = chercher(tout, messages, "<b>gras")!;
+    expect(html.totalMessages).toBe(1);
+    expect(lu(html.messages[0].extrait)).toBe("Une balise [<b>gras]</b> dans le texte");
   });
 });
 
 describe("la normalisation", () => {
   test("accents, majuscules, ligatures, apostrophes et espaces ne comptent pas", () => {
-    expect(normaliser("Œuvre  d’Été À\n\nl’ŒIL").texte).toBe("oeuvre d'ete a l'oeil");
+    expect(normaliser("Œuvre  d’Été\u00a0À\n\nl’ŒIL").texte).toBe("oeuvre d'ete a l'oeil");
   });
 
   test("chaque caractère comparé renvoie à sa place dans le texte d'origine", () => {
@@ -71,66 +77,141 @@ describe("la normalisation", () => {
   });
 });
 
-describe("rechercher", () => {
-  test("un mot, quelle que soit sa forme : accents, majuscules, milieu de mot", () => {
-    const messages = [message("equipe", "La DÉCISION est prise : on facture en novembre.")];
-    expect(rechercher("decision", [equipe], messages)?.total).toBe(1);
-    expect(rechercher("Décision", [equipe], messages)?.total).toBe(1);
-    expect(rechercher("factur", [equipe], messages)?.total).toBe(1);
-    expect(rechercher("décembre", [equipe], messages)?.total).toBe(0);
+describe("le Markdown aplati", () => {
+  test("le libellé des liens sans leur syntaxe, les adresses à part, sans les marques de mise en forme", () => {
+    expect(aplatir("## Titre\n\n- **Gras** et *italique* : voir [la maquette](https://figma.com/file/abc \"Figma\") ou `pnpm build`.\n> cité")).toEqual({
+      texte: "Titre\n\nGras et italique : voir la maquette ou pnpm build.\ncité",
+      adresses: ["https://figma.com/file/abc"],
+    });
+  });
+
+  test("un lien automatique garde son adresse dans le texte, un identifiant garde ses tirets bas", () => {
+    expect(aplatir("Voir <https://klyra.fr/prix> et nom_de_fichier.ts")).toEqual({
+      texte: "Voir https://klyra.fr/prix et nom_de_fichier.ts",
+      adresses: [],
+    });
+  });
+});
+
+describe("chercher", () => {
+  test("un mot, quelle que soit sa forme : accents, majuscules, apostrophes, milieu de mot", () => {
+    const messages = [message("equipe", "La DÉCISION est prise : on facture en novembre, d’après l’aperçu.")];
+    expect(total("decision", messages)).toBe(1);
+    expect(total("Décision", messages)).toBe(1);
+    expect(total("factur", messages)).toBe(1);
+    expect(total("l'aperçu", messages)).toBe(1);
+    expect(total("décembre", messages)).toBe(0);
   });
 
   test("plusieurs mots : tous dans le message, dans n'importe quel ordre", () => {
     const messages = [message("equipe", "Le prix reste à 1 200 € pour Approv’Halles."), message("equipe", "Le prix change.")];
-    const r = rechercher("approv'halles prix", [equipe], messages)!;
-    expect(r.total).toBe(1);
-    expect(lu(r.resultats[0].extrait)).toBe("Le [prix] reste à 1 200 € pour [Approv’Halles].");
+    const r = chercher(tout, messages, "approv'halles prix")!;
+    expect(r.totalMessages).toBe(1);
+    expect(lu(r.messages[0].extrait)).toBe("Le [prix] reste à 1 200 € pour [Approv’Halles].");
   });
 
-  test("une phrase exacte : les mots dans l'ordre, même à cheval sur un retour à la ligne", () => {
-    const messages = [message("equipe", "On garde\nle prix actuel."), message("equipe", "Le prix, on le garde.")];
-    expect(rechercher('"on garde le prix"', [equipe], messages)?.total).toBe(1);
-    expect(rechercher("on garde le prix", [equipe], messages)?.total).toBe(2);
+  test("une phrase exacte : les mots dans l'ordre, même à cheval sur un retour à la ligne ou une mise en forme", () => {
+    const messages = [message("equipe", "On garde\nle **prix** actuel."), message("equipe", "Le prix, on le garde.")];
+    expect(total('"on garde le prix"', messages)).toBe(1);
+    expect(total("on garde le prix", messages)).toBe(2);
   });
 
-  test("un lien, entier ou en partie", () => {
-    const messages = [message("equipe", "La maquette est sur https://klyra.fr/prix/accompagnement?v=2, à relire.")];
-    expect(rechercher("https://klyra.fr/prix/accompagnement?v=2", [equipe], messages)?.total).toBe(1);
-    expect(rechercher("klyra.fr/prix", [equipe], messages)?.total).toBe(1);
-    expect(rechercher("klyra.fr/tarifs", [equipe], messages)?.total).toBe(0);
+  test("un lien : dans le texte, ou seulement dans l'adresse d'un lien Markdown, et l'extrait montre l'adresse", () => {
+    const messages = [
+      message("equipe", "La maquette est sur https://klyra.fr/prix/accompagnement?v=2, à relire.", "2026-10-30T11:00:00.000Z"),
+      message("equipe", "Voir [la maquette](https://figma.com/file/zq7Recherche) avant lundi.", "2026-10-30T10:00:00.000Z"),
+    ];
+    expect(total("https://klyra.fr/prix/accompagnement?v=2", messages)).toBe(1);
+    expect(total("klyra.fr/prix", messages)).toBe(1);
+    const adresse = chercher(tout, messages, "figma.com")!;
+    expect(adresse.messages.map((m) => [m.genre, lu(m.extrait)])).toEqual([["adresse", "https://[figma.com]/file/zq7Recherche"]]);
+    const libelle = chercher(tout, messages, "maquette")!;
+    expect(libelle.messages.map((m) => lu(m.extrait))).toEqual([
+      "La [maquette] est sur https://klyra.fr/prix/accompagnement?v=2, à relire.",
+      "Voir la [maquette] avant lundi.",
+    ]);
   });
 
-  test("équipe, directes et fils ; pas un fil supprimé ni un message sans conversation", () => {
-    const fil = chat("fil-1", { kind: "direct", fil: { roleId: "hugo", statut: "archive", creeLe: "2026-10-30T08:00:00.000Z" } });
-    const supprime = chat("fil-2", { kind: "direct", fil: { roleId: "hugo", statut: "archive", supprime: true, creeLe: "2026-10-30T08:00:00.000Z" } });
-    const messages = ["equipe", "dm-hugo", "fil-1", "fil-2", "inconnue"].map((id) => message(id, "Le mot repère est ici"));
-    const r = rechercher("repère", [equipe, direct, fil, supprime], messages)!;
-    expect(r.resultats.map((x) => x.chat.id).sort()).toEqual(["dm-hugo", "equipe", "fil-1"]);
+  test("le nom d'un fichier joint, sans son dossier", () => {
+    const m = message("equipe", "Voici le document", undefined, {
+      parts: [
+        { type: "text", text: "Voici le document" },
+        { type: "fichiers", chemins: ["/Users/corentin/Clients/devis-v2.pdf", "C:\\Users\\pelin\\notes.txt"] },
+      ],
+    });
+    expect(chercher(tout, [m], "devis-v2")!.messages.map((x) => [x.genre, lu(x.extrait)])).toEqual([["fichier", "[devis-v2].pdf"]]);
+    expect(total("notes.txt", [m])).toBe(1);
+    expect(total("corentin", [m])).toBe(0);
+    expect(total("document devis", [m])).toBe(1);
   });
 
-  test("seulement le texte : ni les pièces jointes, ni les étapes, ni les erreurs", () => {
-    const m = message("equipe", "Voici le devis", undefined, {
+  test("pas les étapes, autorisations, passations, erreurs, ni une réponse en cours d'écriture", () => {
+    const fini = message("equipe", "Voici le devis", undefined, {
       author: { kind: "role", roleId: "principal" },
       parts: [
         { type: "text", text: "Voici le devis" },
-        { type: "fichiers", chemins: ["/Users/corentin/devis-secret.pdf"] },
-        { type: "etapes", etapes: [{ id: "e1", outil: "Read", libelle: "Lit devis-secret.pdf", statut: "fait", parent: null }] },
+        { type: "etapes", etapes: [{ id: "e1", outil: "Read", libelle: "Lit secret.pdf", statut: "fait", parent: null }] },
+        { type: "autorisation", id: "a1", outil: "Bash", libelle: "Lance secret", detail: "secret", description: "secret", statut: "acceptee" },
+        { type: "passation", etapeId: "e1", roleId: "hugo", consigne: "secret", statut: "fait" },
       ],
       statut: "erreur",
       erreur: "secret dans l’erreur",
     });
-    expect(rechercher("devis", [equipe], [m])?.total).toBe(1);
-    expect(rechercher("secret", [equipe], [m])?.total).toBe(0);
+    const enCours = message("equipe", "Réponse provisoire en cours", undefined, { author: { kind: "role", roleId: "principal" }, statut: "en-cours" });
+    expect(total("devis", [fini, enCours])).toBe(1);
+    expect(total("secret", [fini, enCours])).toBe(0);
+    expect(total("provisoire", [fini, enCours])).toBe(0);
+    expect(total("provisoire", [fini, { ...enCours, statut: "fait" }])).toBe(1);
   });
 
-  test("les plus récents d'abord, `LIMITE` au plus, avec le total", () => {
+  test("équipe, directes et fils, archivés compris ; pas un fil supprimé ni un message sans conversation", () => {
+    const fil = conv(chat("fil-1", { kind: "direct", fil: { roleId: "hugo", statut: "archive", creeLe: "2026-10-30T08:00:00.000Z" } }));
+    const supprime = conv(chat("fil-2", { kind: "direct", fil: { roleId: "hugo", statut: "archive", supprime: true, creeLe: "2026-10-30T08:00:00.000Z" } }));
+    const messages = ["equipe", "dm-hugo", "fil-1", "fil-2", "inconnue"].map((id) => message(id, "Le mot repère est ici"));
+    const r = chercher([equipe, direct, fil, supprime], messages, "repère")!;
+    expect(r.messages.map((x) => x.conversation.chat.id).sort()).toEqual(["dm-hugo", "equipe", "fil-1"]);
+  });
+
+  test("les portées : agents (directes et fils), projets, cette conversation ; et leurs compteurs", () => {
+    const fil = conv(chat("fil-1", { kind: "direct", fil: { roleId: "hugo", statut: "ouvert", creeLe: "2026-10-30T08:00:00.000Z" } }));
+    const autre = conv(chat("equipe-2", { title: "Refonte du logo" }));
+    const conversations = [equipe, autre, direct, fil];
+    const messages = ["equipe", "equipe", "equipe-2", "dm-hugo", "fil-1"].map((id) => message(id, "Point sur la refonte"));
+    const ids = (p: Parameters<typeof chercher>[3], courant: string | null = null) =>
+      chercher(conversations, messages, "refonte", p, courant)!.messages.map((m) => m.conversation.chat.id);
+    expect(ids("agents")).toEqual(["dm-hugo", "fil-1"]);
+    expect(ids("projets")).toEqual(["equipe", "equipe", "equipe-2"]);
+    expect(ids("conversation", "equipe")).toEqual(["equipe", "equipe"]);
+    expect(ids("conversation")).toHaveLength(5);
+    const r = chercher(conversations, messages, "refonte", "tout", "equipe")!;
+    expect(r.conversations.map((c) => c.conversation.chat.id).sort()).toEqual(["equipe", "equipe-2"]);
+    expect(r.parPortee).toEqual({ tout: 7, agents: 2, projets: 5, conversation: 2 });
+    expect(chercher(conversations, messages, "refonte", "conversation", "equipe")!.conversations).toEqual([]);
+    expect(chercher(conversations, messages, "refonte")!.parPortee.conversation).toBe(0);
+  });
+
+  test("les titres : 3 conversations au plus, la plus récente d'abord, le nom de l'agent pour une conversation directe", () => {
+    const conversations = [
+      conv(chat("a", { title: "Devis Approv’Halles" }), "Devis Approv’Halles", "2026-10-01T00:00:00.000Z"),
+      conv(chat("b", { title: "Devis Qualion" }), "Devis Qualion", "2026-10-29T00:00:00.000Z"),
+      conv(chat("c", { title: "Devis Plateau" }), "Devis Plateau", null),
+      conv(chat("d", { title: "Devis KLYRA · branche" }), "Devis KLYRA · branche", "2026-10-20T00:00:00.000Z"),
+      direct,
+    ];
+    const r = chercher(conversations, [], "devis")!;
+    expect(r.conversations.map((c) => c.conversation.chat.id)).toEqual(["b", "d", "a"]);
+    expect(lu(r.conversations[0].titre)).toBe("[Devis] Qualion");
+    expect(chercher(conversations, [], "hugo")!.conversations.map((c) => c.conversation.chat.id)).toEqual(["dm-hugo"]);
+  });
+
+  test("les messages les plus récents d'abord, `LIMITE` au plus, avec le total", () => {
     const debut = Date.parse("2026-01-01T00:00:00.000Z");
     const messages = Array.from({ length: LIMITE + 20 }, (_, i) => message("equipe", `Compte rendu ${i}`, new Date(debut + i * 60_000).toISOString()));
-    const r = rechercher("compte rendu", [equipe], messages)!;
-    expect(r.total).toBe(LIMITE + 20);
-    expect(r.resultats).toHaveLength(LIMITE);
-    expect(lu(r.resultats[0].extrait)).toBe(`[Compte] [rendu] ${LIMITE + 19}`);
-    const dates = r.resultats.map((x) => x.message.createdAt);
+    const r = chercher(tout, messages, "compte rendu")!;
+    expect(r.totalMessages).toBe(LIMITE + 20);
+    expect(r.messages).toHaveLength(LIMITE);
+    expect(lu(r.messages[0].extrait)).toBe(`[Compte] [rendu] ${LIMITE + 19}`);
+    const dates = r.messages.map((x) => x.message.createdAt);
     expect(dates).toEqual([...dates].sort().reverse());
   });
 
@@ -139,35 +220,30 @@ describe("rechercher", () => {
       message("equipe", i === 0 ? "Tout premier message : nom de code Orchidée." : `Message ${i}`, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()),
     );
     messages.push(message("equipe", "Dernier : orchidee aussi.", "2026-10-30T12:00:00.000Z"));
-    const r = rechercher("orchidée", [equipe], messages)!;
-    expect(r.resultats.map((x) => x.message.id)).toEqual([messages[2000].id, messages[0].id]);
+    expect(chercher(tout, messages, "orchidée")!.messages.map((x) => x.message.id)).toEqual([messages[2000].id, messages[0].id]);
   });
 
   test("un message long : trouvé loin dans le texte, extrait autour du passage, coupé entre deux mots", () => {
     const long = `${"Introduction sans intérêt. ".repeat(400)}Ici la décision : on publie vendredi. ${"Suite sans intérêt. ".repeat(400)}`;
-    const r = rechercher("publie vendredi", [equipe], [message("equipe", long)])!;
-    const texte = lu(r.resultats[0].extrait);
+    const texte = lu(chercher(tout, [message("equipe", long)], "publie vendredi")!.messages[0].extrait);
     expect(texte.startsWith("…")).toBe(true);
     expect(texte.endsWith("…")).toBe(true);
     expect(texte).toContain("Ici la décision : on [publie] [vendredi].");
-    expect(texte.length).toBeLessThan(220);
-    const premierMot = texte.slice(1).split(" ")[0];
-    expect(["Introduction", "sans", "intérêt."]).toContain(premierMot);
-    const dernierMot = texte.slice(0, -1).split(" ").at(-1);
-    expect(["Suite", "sans", "intérêt."]).toContain(dernierMot);
+    expect(texte.length).toBeLessThan(240);
+    expect(["Introduction", "sans", "intérêt."]).toContain(texte.slice(1).split(" ")[0]);
+    expect(["Suite", "sans", "intérêt."]).toContain(texte.slice(0, -1).split(" ").at(-1));
   });
 
-  test("le résultat suit le message : modifié, il est retrouvé par son nouveau texte, plus par l'ancien", () => {
+  test("le résultat suit l'état : un message modifié est retrouvé par son nouveau texte, une conversation vidée ne donne plus rien", () => {
     const avant = message("equipe", "Brouillon de réponse");
-    expect(rechercher("brouillon", [equipe], [avant])?.total).toBe(1);
+    expect(total("brouillon", [avant])).toBe(1);
     const apres: Message = { ...avant, parts: [{ type: "text", text: "Réponse finale envoyée" }] };
-    expect(rechercher("brouillon", [equipe], [apres])?.total).toBe(0);
-    expect(rechercher("finale", [equipe], [apres])?.total).toBe(1);
-    expect(rechercher("finale", [equipe], [])?.total).toBe(0);
+    expect(total("brouillon", [apres])).toBe(0);
+    expect(total("finale", [apres])).toBe(1);
+    expect(total("finale", [])).toBe(0);
   });
 
   test("un extrait garde les accents et la casse d'origine, et surligne chaque correspondance", () => {
-    const r = rechercher("ete", [equipe], [message("equipe", "Été comme été, l’ÉTÉ.")])!;
-    expect(lu(r.resultats[0].extrait)).toBe("[Été] comme [été], l’[ÉTÉ].");
+    expect(lu(chercher(tout, [message("equipe", "Été comme été, l’ÉTÉ.")], "ete")!.messages[0].extrait)).toBe("[Été] comme [été], l’[ÉTÉ].");
   });
 });

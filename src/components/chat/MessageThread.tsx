@@ -1,12 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type RefObject } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
+import { plagesDans, SURLIGNAGE } from "@/components/recherche/surligner";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
-import { formatDaySeparator, formatTime, isSameDay } from "@/lib/format";
-import { texteDe, useChat, useChatMessages, useRole, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
+import { formatDaySeparator, formatJourHeure, formatTime, isSameDay } from "@/lib/format";
+import { requeteRetenue } from "@/lib/recherche-session";
+import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse } from "./ActionsReponse";
 import { MessagePartView } from "./MessageParts";
@@ -206,6 +209,83 @@ function Accueil({ chat }: { chat: Chat }) {
   );
 }
 
+/** Le temps où un message ouvert depuis la recherche reste éclairé (animation `klyra-eclaire`). */
+const ECLAIRAGE_MS = 1800;
+
+/**
+ * Arriver sur un message ouvert depuis la recherche (`&message=<id>`) : après le
+ * collage en bas du montage, la première occurrence est centrée (sinon le lien
+ * dont l'adresse correspond, sinon le haut du message), le message s'éclaire,
+ * les mots trouvés sont surlignés, il prend le focus et un lecteur d'écran
+ * l'annonce. Le collage en bas est coupé jusqu'au prochain geste dans le fil,
+ * puis le paramètre est retiré de l'adresse. Un id disparu : la conversation
+ * s'ouvre en bas, comme d'habitude.
+ */
+function useArriveeRecherche(
+  chatId: string,
+  refs: {
+    zoneRef: RefObject<HTMLDivElement | null>;
+    enBasRef: RefObject<boolean>;
+    ancreRef: RefObject<boolean>;
+    annonceRef: RefObject<HTMLParagraphElement | null>;
+  },
+) {
+  const cible = useSearchParams().get("message");
+  const router = useRouter();
+  const roles = useRoles();
+  const messages = useChatMessages(chatId);
+  const { zoneRef, enBasRef, ancreRef, annonceRef } = refs;
+
+  useEffect(() => {
+    if (!cible) return;
+    const el = zoneRef.current;
+    const bloc = el?.querySelector<HTMLElement>(`[data-message="${CSS.escape(cible)}"]`);
+    const message = messages.find((m) => m.id === cible);
+    const retirer = () => router.replace(`/chat?id=${encodeURIComponent(chatId)}`, { scroll: false });
+    if (!el || !bloc || !message) {
+      retirer();
+      return;
+    }
+
+    const requete = requeteRetenue();
+    const { textes, liens, lien } = requete ? plagesDans(bloc, requete) : { textes: [], liens: [], lien: null };
+    if (typeof Highlight !== "undefined" && CSS.highlights) {
+      if (textes.length || liens.length) CSS.highlights.set(SURLIGNAGE, new Highlight(...textes, ...liens));
+      else CSS.highlights.delete(SURLIGNAGE);
+    }
+
+    const haut = el.getBoundingClientRect().top - el.scrollTop;
+    const viser = textes[0] ?? (lien ? lien : null);
+    let position: number;
+    if (viser) {
+      const r = viser.getBoundingClientRect();
+      position = r.top - haut + r.height / 2 - el.clientHeight / 2;
+    } else {
+      position = bloc.getBoundingClientRect().top - haut - 16;
+    }
+    const doux = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    ancreRef.current = true;
+    enBasRef.current = false;
+    el.scrollTo({ top: Math.max(0, position), behavior: doux ? "smooth" : "instant" });
+
+    bloc.removeAttribute("data-eclaire");
+    void bloc.offsetWidth; // relance l'animation si on y revient
+    bloc.setAttribute("data-eclaire", "");
+    const eteindre = setTimeout(() => bloc.removeAttribute("data-eclaire"), ECLAIRAGE_MS);
+    bloc.tabIndex = -1;
+    bloc.focus({ preventScroll: true });
+    const { author } = message;
+    const auteur = author.kind === "user" ? "toi" : (roles.find((r) => r.id === author.roleId)?.name ?? "l’agent");
+    if (annonceRef.current) annonceRef.current.textContent = `Message de ${auteur}, ${formatJourHeure(message.createdAt)}`;
+    retirer();
+    return () => clearTimeout(eteindre);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois par message visé, pas à chaque nouvelle réponse
+  }, [cible, chatId]);
+
+  /* Le surlignage s'efface quand on quitte la conversation. */
+  useEffect(() => () => void CSS.highlights?.delete(SURLIGNAGE), []);
+}
+
 /** Fil de la conversation, collé en bas comme dans une messagerie. */
 export function MessageThread({ chatId }: { chatId: string }) {
   const chat = useChat(chatId);
@@ -214,6 +294,8 @@ export function MessageThread({ chatId }: { chatId: string }) {
   const { sendMessage, marquerLu } = useWorkspace();
   const zone = useRef<HTMLDivElement>(null);
   const enBas = useRef(true);
+  /* Arrivé sur un message par la recherche : on y reste, même si un agent écrit, jusqu'au prochain geste dans le fil. */
+  const ancre = useRef(false);
 
   /* On reste collé en bas tant que l'on n'est pas remonté lire plus haut. */
   const dernier = messages[messages.length - 1];
@@ -222,6 +304,12 @@ export function MessageThread({ chatId }: { chatId: string }) {
     const el = zone.current;
     if (el && enBas.current) el.scrollTop = el.scrollHeight;
   }, [messages.length, taille, travail]);
+
+  const annonce = useRef<HTMLParagraphElement>(null);
+  useArriveeRecherche(chatId, { zoneRef: zone, enBasRef: enBas, ancreRef: ancre, annonceRef: annonce });
+  const lacher = () => {
+    ancre.current = false;
+  };
 
   useEffect(() => {
     marquerLu(chatId);
@@ -236,8 +324,11 @@ export function MessageThread({ chatId }: { chatId: string }) {
         ref={zone}
         onScroll={(e) => {
           const el = e.currentTarget;
-          enBas.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          enBas.current = !ancre.current && el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
+        onWheel={lacher}
+        onPointerDown={lacher}
+        onKeyDown={lacher}
         className="flex-1 overflow-y-auto [scrollbar-width:none]"
       >
         <div className="mx-auto flex min-h-full max-w-[880px] flex-col justify-end px-7 pt-6 pb-4">
@@ -274,6 +365,7 @@ export function MessageThread({ chatId }: { chatId: string }) {
         </div>
       </div>
       <RailMessages zone={zone} messages={messages} />
+      <p ref={annonce} aria-live="polite" className="sr-only" />
     </div>
   );
 }

@@ -42,13 +42,14 @@ const PART_CARD = "rounded-md border border-bordure-subtile bg-fond-surface shad
 export function TextBubble({ text, tone }: { text: string; tone: "user" | "role" }) {
   if (tone === "user") {
     return (
-      <div className="w-fit max-w-[560px] bg-fond-inverse rounded-xl px-3.5 py-2 text-ui leading-[1.55] whitespace-pre-wrap text-texte-inverse [overflow-wrap:anywhere]">
+      <div data-cherchable className="w-fit max-w-[560px] bg-fond-inverse rounded-xl px-3.5 py-2 text-ui leading-[1.55] whitespace-pre-wrap text-texte-inverse [overflow-wrap:anywhere]">
         {text}
       </div>
     );
   }
+  /* `data-cherchable` : la recherche surligne les mots trouvés dans ce texte (cf. `surlignerMessage`). */
   return (
-    <div className="w-fit max-w-[680px] min-w-0 rounded-xl bg-fond-survol px-3.5 py-2.5 [overflow-wrap:anywhere]">
+    <div data-cherchable className="w-fit max-w-[680px] min-w-0 rounded-xl bg-fond-survol px-3.5 py-2.5 [overflow-wrap:anywhere]">
       <Markdown source={text} className="gap-2 text-ui leading-[1.6] text-texte-principal" />
     </div>
   );
@@ -74,7 +75,9 @@ export function FichiersJoints({ chemins }: { chemins: string[] }) {
           >
             <PastilleExtension chemin={chemin} />
             <span className="flex min-w-0 flex-col">
-              <span className="truncate text-ui-xs font-medium text-texte-principal">{nom}</span>
+              <span data-cherchable className="truncate text-ui-xs font-medium text-texte-principal">
+                {nom}
+              </span>
               <span className="truncate text-ui-3xs text-texte-tertiaire">{capture ? "Capture collée" : chemin.replace(/^\/Users\/[^/]+/, "~")}</span>
             </span>
           </button>
