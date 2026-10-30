@@ -47,6 +47,8 @@ jobs:
         run: |
           KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
             timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron .
+      - name: Conversation d'équipe, menu « Plus d’options » et renommage
+        run: timeout 180 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:conversation
       - name: Journal de consommation et rattrapage de l'historique
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
       - name: Sons de l'app, rendus dans Chromium
