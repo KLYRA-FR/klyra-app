@@ -375,7 +375,7 @@ function Editeur({ wf }: { wf: Workflow }) {
   );
 }
 
-/* La barre du haut est posée par un portail : l'écran lui réserve sa place (#barre-workflow). */
+/* Deux emplacements gardent le lancement après le switch de vues. */
 function BarreEditeur(props: {
   wf: Workflow;
   graphe: Graphe;
@@ -385,18 +385,20 @@ function BarreEditeur(props: {
   onLancer: () => void;
   enCours: boolean;
 }) {
-  const [cible, setCible] = useState<HTMLElement | null>(null);
+  const [cibles, setCibles] = useState<{ outils: HTMLElement; lancement: HTMLElement } | null>(null);
   useEffect(() => {
-    const el = document.getElementById("barre-workflow");
-    const id = setTimeout(() => setCible(el), 0);
+    const outils = document.getElementById("barre-workflow");
+    const lancement = document.getElementById("lancer-workflow");
+    const id = setTimeout(() => setCibles(outils && lancement ? { outils, lancement } : null), 0);
     return () => clearTimeout(id);
   }, []);
-  if (!cible) return null;
-  return <BarrePortail cible={cible} {...props} />;
+  if (!cibles) return null;
+  return <BarrePortail cible={cibles.outils} cibleLancement={cibles.lancement} {...props} />;
 }
 
 function BarrePortail({
   cible,
+  cibleLancement,
   wf,
   historique,
   onHistorique,
@@ -405,6 +407,7 @@ function BarrePortail({
   enCours,
 }: {
   cible: HTMLElement;
+  cibleLancement: HTMLElement;
   wf: Workflow;
   graphe: Graphe;
   historique: boolean;
@@ -460,12 +463,14 @@ function BarrePortail({
       <Bouton variant={historique ? "gris" : "blanc"} taille="compact" iconeGauche={<Icon name="list" size={16} />} onClick={onHistorique}>
         Exécutions
       </Bouton>
-      <BoutonPrincipal onClick={onLancer} disabled={enCours}>
-        {enCours ? "En cours…" : "Lancer le workflow"}
-      </BoutonPrincipal>
     </div>
   );
-  return createPortal(contenu, cible);
+  return <>
+    {createPortal(contenu, cible)}
+    {createPortal(<BoutonPrincipal onClick={onLancer} disabled={enCours}>
+      {enCours ? "En cours…" : "Lancer le workflow"}
+    </BoutonPrincipal>, cibleLancement)}
+  </>;
 }
 
 /* ─── L'écran ──────────────────────────────────────────────────── */
@@ -612,6 +617,7 @@ export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
         </div>
         <div id="barre-workflow" className="flex items-center" />
         {entete}
+        <div id="lancer-workflow" className="flex items-center" />
       </header>
       {confirmer && (
         <div className="flex items-center gap-2 border-b border-bordure-subtile bg-fond-surface-grise px-4 py-2">
