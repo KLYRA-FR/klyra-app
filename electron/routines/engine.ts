@@ -26,10 +26,14 @@ import {
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
-/** Au-delà, `setTimeout` part tout de suite (2^31 - 1 ms ≈ 24,8 jours). */
-const MAX_TIMER = 2 ** 31 - 1;
-/** Une échéance tombée il y a moins que ça part normalement (minuteur en retard, ouverture à l'heure pile). */
-export const GRACE_MS = 2 * MINUTE;
+const HOUR = 60 * MINUTE;
+/**
+ * Le minuteur se réveille au plus tard toutes les minutes : sur macOS et Linux, un `setTimeout`
+ * ne compte pas le temps de veille, et l'horloge peut être corrigée. Un réveil sans échéance ne fait rien.
+ */
+export const MAX_TIMER_MS = MINUTE;
+/** Une échéance tombée il y a moins que ça part normalement (minuteur en retard, App Nap, ouverture à l'heure pile). */
+export const GRACE_MS = 5 * MINUTE;
 /** Au-delà, l'historique dit « plus de 999 ». */
 const MISSED_CAP = 999;
 const NAME_MAX = 80;
@@ -78,10 +82,9 @@ export class RoutineEngine {
   private readonly log: (message: string, error?: unknown) => void;
   private timer: unknown = null;
   private started = false;
-  private suspended = false;
   private hostReady = false;
-  /** Routines dont le déclencheur n'a pas pu avancer (écriture impossible) : ignorées par le minuteur jusqu'au prochain lancement. */
-  private readonly broken = new Set<string>();
+  /** Routines dont l'échéance n'a pas pu être traitée (écriture impossible) : nouvel essai à `at`, délai doublé jusqu'à 1 h. */
+  private readonly retry = new Map<string, { at: number; delay: number }>();
 
   constructor(options: EngineOptions) {
     this.store = options.store;
@@ -102,17 +105,15 @@ export class RoutineEngine {
     if (this.started) return;
     this.started = true;
     const now = this.now();
-    // Le Claude Code d'une exécution en cours s'arrête avec l'app : elle ne reprendra pas.
-    this.store.transaction((data) => {
-      for (const run of data.runs) {
-        if (run.status !== "running") continue;
-        Object.assign(run, finish(now, "interrupted", "L’app s’est fermée pendant l’exécution."));
-      }
-    });
-    this.catchUpAll(now, "app-closed");
-    this.dispatch();
-    this.arm();
-    this.onChange();
+    try {
+      // Le Claude Code d'une exécution en cours s'arrête avec l'app : elle ne reprendra pas.
+      this.interruptRunning("L’app s’est fermée pendant l’exécution.");
+      this.catchUpAll(now, "app-closed");
+      this.dispatch();
+    } finally {
+      this.arm();
+      this.onChange();
+    }
   }
 
   stop(): void {
@@ -120,20 +121,28 @@ export class RoutineEngine {
     this.disarm();
   }
 
-  /** Mise en veille : plus de minuteur. Au réveil, le manqué est regroupé. */
-  suspend(): void {
-    this.suspended = true;
-    this.disarm();
+  /**
+   * Mise en veille : rien à faire, le minuteur ne part pas pendant la veille et le
+   * réveil passe par `resume` ou par le minuteur d'une minute. Gardé pour la lisibilité.
+   */
+  suspend(): void {}
+
+  /** Réveil (avec ou sans mise en veille signalée) : le manqué est regroupé tout de suite. */
+  resume(): void {
+    this.tick();
   }
 
-  resume(): void {
-    if (!this.suspended) return;
-    this.suspended = false;
-    if (!this.started) return;
-    this.catchUpAll(this.now(), "sleep");
+  /** La fenêtre est partie (fermée, rechargée) : ses réponses en cours ne reviendront pas. */
+  interruptRunning(reason: string): RoutineRun[] {
+    const now = this.now();
+    const running = this.store.runs.filter((r) => r.status === "running").map((r) => structuredClone(r));
+    if (!running.length) return [];
+    this.store.transaction((data) => {
+      for (const run of data.runs) if (run.status === "running") Object.assign(run, finish(now, "interrupted", reason));
+    });
     this.dispatch();
-    this.arm();
     this.onChange();
+    return running;
   }
 
   /** L'interface est chargée : elle reçoit les exécutions confiées et celles en attente. */
@@ -243,6 +252,7 @@ export class RoutineEngine {
     this.store.transaction((data) => {
       data.routines = data.routines.map((r) => (r.id === id ? next : r));
     });
+    this.retry.delete(id);
     this.arm();
     this.onChange();
     return structuredClone(next);
@@ -256,13 +266,17 @@ export class RoutineEngine {
       throw new RoutineError("en-cours", "Interrompez d’abord l’exécution en cours.");
     }
     for (const run of runs) if (run.dispatchedAt) this.host.cancel(run);
-    this.store.transaction((data) => {
-      data.routines = data.routines.filter((r) => r.id !== id);
-      data.runs = data.runs.filter((r) => r.routineId !== id);
-    });
-    this.dispatch();
-    this.arm();
-    this.onChange();
+    try {
+      this.store.transaction((data) => {
+        data.routines = data.routines.filter((r) => r.id !== id);
+        data.runs = data.runs.filter((r) => r.routineId !== id);
+      });
+      this.retry.delete(id);
+      this.dispatch();
+    } finally {
+      this.arm();
+      this.onChange();
+    }
   }
 
   /**
@@ -384,11 +398,14 @@ export class RoutineEngine {
   /** Un seul minuteur, vers l'échéance la plus proche ; réarmé à chaque changement. */
   private arm(): void {
     this.disarm();
-    if (!this.started || this.suspended) return;
+    if (!this.started) return;
     let prochaine = Infinity;
-    for (const r of this.store.routines) if (r.active && r.nextRunAt && !this.broken.has(r.id)) prochaine = Math.min(prochaine, Date.parse(r.nextRunAt));
+    for (const r of this.store.routines) {
+      if (!r.active || !r.nextRunAt) continue;
+      prochaine = Math.min(prochaine, this.retry.get(r.id)?.at ?? Date.parse(r.nextRunAt));
+    }
     if (!Number.isFinite(prochaine)) return;
-    const delai = Math.min(MAX_TIMER, Math.max(0, prochaine - this.now().getTime()));
+    const delai = Math.min(MAX_TIMER_MS, Math.max(0, prochaine - this.now().getTime()));
     this.timer = this.setTimer(() => this.tick(), delai);
   }
 
@@ -399,23 +416,28 @@ export class RoutineEngine {
 
   /** Échéances dues : celles à l'heure partent, celles trop en retard (veille non signalée) sont regroupées. */
   tick(): void {
-    this.timer = null;
-    if (!this.started || this.suspended) return;
-    this.catchUpAll(this.now(), "sleep");
-    this.dispatch();
-    this.arm();
-    this.onChange();
+    this.disarm();
+    if (!this.started) return;
+    try {
+      this.catchUpAll(this.now(), "sleep");
+      this.dispatch();
+    } finally {
+      this.arm();
+      this.onChange();
+    }
   }
 
   private catchUpAll(now: Date, reason: MissedReason): void {
     for (const routine of [...this.store.routines]) {
-      if (!routine.active || !routine.nextRunAt || this.broken.has(routine.id) || Date.parse(routine.nextRunAt) > now.getTime()) continue;
+      if (!routine.active || !routine.nextRunAt || Date.parse(routine.nextRunAt) > now.getTime()) continue;
+      if ((this.retry.get(routine.id)?.at ?? 0) > now.getTime()) continue;
       // Une routine en erreur n'arrête pas les autres.
       try {
         this.catchUp(routine.id, now, reason);
+        this.retry.delete(routine.id);
       } catch (error) {
         this.log(`Routine ${routine.id} : échéance non traitée.`, error);
-        this.skipAhead(routine.id, now);
+        this.skipAhead(routine.id, now, error);
       }
     }
   }
@@ -471,19 +493,30 @@ export class RoutineEngine {
     });
   }
 
-  /** Dernier recours après une erreur : le déclencheur avance quand même, sinon le minuteur repartirait sans fin. */
-  private skipAhead(id: string, now: Date): void {
+  /**
+   * Après une erreur : l'échéance est notée en échec et le déclencheur avance. Si même cela
+   * échoue (écriture impossible), nouvel essai plus tard (1 min, puis le double, 1 h au plus).
+   */
+  private skipAhead(id: string, now: Date, cause: unknown): void {
     try {
       this.store.transaction((data) => {
         const routine = data.routines.find((r) => r.id === id);
-        if (!routine) return;
+        if (!routine?.nextRunAt) return;
+        const scheduledFor = routine.nextRunAt;
+        if (!data.runs.some((r) => r.routineId === id && r.kind === "scheduled" && !r.missed && r.scheduledFor === scheduledFor)) {
+          const run = this.newRun(routine, "scheduled", scheduledFor, now);
+          Object.assign(run, finish(now, "failed", `Échéance non traitée : ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, ERROR_MAX)));
+          data.runs.push(run);
+        }
         routine.nextRunAt = routine.schedule.kind === "once" ? null : nextOccurrence(routine.schedule, routine.timezone, now);
         if (!routine.nextRunAt) routine.active = false;
         routine.updatedAt = now.toISOString();
       });
+      this.retry.delete(id);
     } catch (error) {
-      this.log(`Routine ${id} : déclencheur bloqué, minuteur suspendu pour elle.`, error);
-      this.broken.add(id);
+      const delay = Math.min(HOUR, (this.retry.get(id)?.delay ?? MINUTE / 2) * 2);
+      this.retry.set(id, { at: now.getTime() + delay, delay });
+      this.log(`Routine ${id} : échéance toujours bloquée, nouvel essai dans ${Math.round(delay / MINUTE)} min.`, error);
     }
   }
 
@@ -540,10 +573,15 @@ export class RoutineEngine {
       if (!confiee) return;
       occupes.add(run.agentId);
       const at = this.now().toISOString();
-      this.store.transaction((data) => {
-        const cible = data.runs.find((r) => r.id === run.id);
-        if (cible) Object.assign(cible, { dispatchedAt: at, updatedAt: at });
-      });
+      try {
+        this.store.transaction((data) => {
+          const cible = data.runs.find((r) => r.id === run.id);
+          if (cible) Object.assign(cible, { dispatchedAt: at, updatedAt: at });
+        });
+      } catch (error) {
+        // Confiée quand même : l'interface ne la poste qu'une fois (même id) si elle revient.
+        this.log(`Exécution ${run.id} : confiée, mais non notée sur le disque.`, error);
+      }
     }
   }
 

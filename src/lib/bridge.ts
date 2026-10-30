@@ -350,7 +350,8 @@ export interface KlyraBridge {
   };
   /** Le moteur des routines (electron/routines/). Absent avant la relance de l'app. */
   routines?: {
-    etat: () => Promise<Reponse<{ actif: boolean; erreur: string | null }>>;
+    /** `demande` : KLYRA_ROUTINES est défini (absent d'un process principal plus ancien) ; `actif` : le moteur tourne. */
+    etat: () => Promise<Reponse<{ demande?: boolean; actif: boolean; erreur: string | null }>>;
     lister: (agentId?: string) => Promise<Reponse<RoutineMoteur[]>>;
     creer: (input: RoutineInput) => Promise<Reponse<RoutineMoteur>>;
     modifier: (id: string, patch: RoutinePatch) => Promise<Reponse<RoutineMoteur>>;

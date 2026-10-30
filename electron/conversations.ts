@@ -27,7 +27,8 @@ let enCours: Promise<void> = Promise.resolve();
 
 export function writeConversations(data: unknown): Promise<void> {
   const contenu = JSON.stringify(data);
-  enCours = enCours.then(async () => {
+  // Une écriture ratée ne doit pas bloquer les suivantes (sinon plus rien n'est enregistré de la session).
+  enCours = enCours.catch(() => {}).then(async () => {
     const cible = fichier();
     await mkdir(path.dirname(cible), { recursive: true });
     const temporaire = `${cible}.tmp`;

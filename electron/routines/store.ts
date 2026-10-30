@@ -1,4 +1,5 @@
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { Routine, RoutineRun } from "./types";
 
@@ -13,6 +14,8 @@ import type { Routine, RoutineRun } from "./types";
 const VERSION = 1;
 /** Exécutions gardées par routine (les plus récentes). */
 export const RUNS_PER_ROUTINE = 100;
+/** Le process qui tient le verrou le rafraîchit (`refresh`) ; sans nouvelle depuis ce délai, il est repris. */
+export const LOCK_STALE_MS = 2 * 60_000;
 
 export interface RoutinesData {
   version: number;
@@ -59,10 +62,11 @@ export class RoutineStore {
   }
 
   /**
-   * Un seul process exécute les routines d'un dossier. Le verrou d'un process
-   * disparu (arrêt brutal) est repris ; celui d'un process vivant est refusé.
+   * Un seul process exécute les routines d'un dossier (en plus de l'instance unique d'Electron,
+   * que les tests contournent). Le verrou d'un process disparu, d'avant le démarrage de la machine
+   * ou pas rafraîchi depuis 2 min est repris : un numéro de process réutilisé ne bloque pas.
    */
-  acquire(pid = process.pid): void {
+  acquire(pid = process.pid, now = Date.now()): void {
     for (let essai = 0; essai < 2; essai++) {
       try {
         const fd = openSync(this.lock, "wx");
@@ -72,14 +76,38 @@ export class RoutineStore {
         return;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        const autre = Number(readFileSync(this.lock, "utf8").trim());
-        if (Number.isSafeInteger(autre) && autre > 0 && autre !== pid && vivant(autre)) {
-          throw new RoutineStoreError("Une autre KLYRA exécute déjà ces routines.");
-        }
+        if (this.lockHeld(pid, now)) throw new RoutineStoreError("Une autre KLYRA exécute déjà ces routines.");
         rmSync(this.lock, { force: true });
       }
     }
     throw new RoutineStoreError("Impossible de verrouiller les routines.");
+  }
+
+  private lockHeld(pid: number, now: number): boolean {
+    let autre: number;
+    let modifie: number;
+    try {
+      autre = Number(readFileSync(this.lock, "utf8").trim());
+      modifie = statSync(this.lock).mtimeMs;
+    } catch {
+      return false;
+    }
+    const demarrage = now - os.uptime() * 1000;
+    return (
+      Number.isSafeInteger(autre) && autre > 0 && autre !== pid && vivant(autre) &&
+      modifie >= demarrage && now - modifie < LOCK_STALE_MS
+    );
+  }
+
+  /** Le process vit toujours : à appeler plus souvent que LOCK_STALE_MS. */
+  refresh(): void {
+    if (!this.locked) return;
+    const maintenant = new Date();
+    try {
+      utimesSync(this.lock, maintenant, maintenant);
+    } catch {
+      // Verrou retiré à la main : il sera repris au prochain lancement.
+    }
   }
 
   release(): void {

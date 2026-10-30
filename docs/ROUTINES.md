@@ -9,8 +9,8 @@ Référence : relevé d’OpenBot par Tempo (`Shared/klyra-app/routines-2026-10-
 | Fichier | Rôle |
 |---|---|
 | `electron/routines/schedule.ts` | Échéances : 9 plannings d’OpenBot (`once`, `hourly`, `daily`, `weekdays`, `weekly`, `monthly`, `interval`, `advanced`, `custom` cron 5 champs) + `manual` (propre à KLYRA). Heures lues dans le fuseau IANA de la routine, échéances en UTC. Cadence minimum 3 min (cron vérifié sur 200 occurrences). |
-| `electron/routines/store.ts` | `userData/routines/routines.json`, écrit d’un bloc (fichier temporaire, fsync, renommage). Une échéance planifiée = une exécution au plus. 100 exécutions gardées par routine. Fichier illisible : rien n’est exécuté, il n’est jamais écrasé. Verrou `routines.lock` contre un second process. |
-| `electron/routines/engine.ts` | Le planificateur : un seul `setTimeout` (plafonné à 24,8 jours) vers la prochaine échéance, rattrapage, file par agent, comptes rendus. Sans Electron (testé en Node). |
+| `electron/routines/store.ts` | `userData/routines/routines.json`, écrit d’un bloc (fichier temporaire, fsync, renommage). Une échéance planifiée = une exécution au plus. 100 exécutions gardées par routine. Fichier illisible : rien n’est exécuté, il n’est jamais écrasé. Verrou `routines.lock` contre un second process, rafraîchi toutes les 30 s ; repris s'il a plus de 2 min ou date d'avant le démarrage de la machine. |
+| `electron/routines/engine.ts` | Le planificateur : un seul `setTimeout` vers la prochaine échéance, réveillé au plus tard chaque minute (le minuteur ne compte pas la veille sur macOS et Linux), rattrapage, file par agent, comptes rendus. Une écriture ratée n'arrête jamais le minuteur : nouvel essai (1 min, puis le double, 1 h au plus). Sans Electron (testé en Node). |
 | `electron/routines/index.ts` | IPC `routines:*`, veille/réveil (`powerMonitor`), l’hôte = la fenêtre qui a appelé `routines:pret`. |
 | `electron/routines/migration.ts` | Reprise, une fois, des routines de l’ancien minuteur (`conversations.json`) ; identifiants gardés. |
 | `src/lib/routines-livraison.ts` | Côté interface : poste l’exécution dans la conversation de l’agent par `envoyer` (file d’attente comprise), suit la réponse (`routineRun` sur les deux messages), renvoie `queued / running / succeeded / failed`. |
@@ -23,8 +23,10 @@ Référence : relevé d’OpenBot par Tempo (`Shared/klyra-app/routines-2026-10-
 - **Pause** : plus d’exécution future, prochaines vides ; l’exécution en cours continue (l’interrompre est une action à part). **Reprise** : prochaine échéance recalculée depuis maintenant, sans rattrapage.
 - **Une fois** : date future obligatoire ; après l’exécution, la routine passe en pause et garde sa date ; la réactiver demande une nouvelle date.
 - **File** : une exécution de routine à la fois par agent ; au plus une exécution en attente par routine (une échéance de plus est résumée « l’exécution précédente attendait encore »). Dans la conversation, la file habituelle s’applique aussi (l’agent répond d’abord à ce qu’il fait).
-- **App fermée, veille** : aucune exécution app fermée (pas d’autre hôte). Au retour, `skip` (défaut) enregistre une seule ligne « N non exécutées » ; `run-once` exécute la plus récente en retard et résume les autres. Une échéance dépassée de moins de 2 min part normalement. Compte plafonné à 999.
+- **App fermée, veille** : aucune exécution app fermée (pas d’autre hôte). Au retour, `skip` (défaut) enregistre une seule ligne « N non exécutées » ; `run-once` exécute la plus récente en retard et résume les autres. Une échéance dépassée de moins de 5 min part normalement (ouverture à l'heure pile, App Nap). Le réveil est rattrapé même sans événement de veille du système. Compte plafonné à 999.
 - **Arrêt brutal** : une exécution `running` devient `interrupted` au lancement suivant (Claude Code s’arrête avec l’app) ; une exécution confiée mais pas encore postée est renvoyée avec le même identifiant, et l’interface ne la poste jamais deux fois.
+- **Fenêtre fermée ou rechargée pendant une exécution** : sa réponse ne reviendrait plus ; Claude Code est arrêté et l'exécution passe `interrupted`, l'agent est libéré. « Retirer » une consigne de routine de la file de la conversation l'annule dans le moteur.
+- **Moteur demandé mais arrêté** (fichier illisible, verrou tenu) : l'ancien minuteur reste muet ; rien ne part, l'erreur est donnée par `routines:etat`. Verrou tenu : nouvel essai toutes les minutes.
 - **Erreurs lisibles** : réponse en erreur → `failed` avec le message ; agent introuvable → `failed`, rien n’est envoyé ; une routine dont le planning ne se calcule plus est mise de côté sans bloquer les autres.
 
 ## Écarts avec OpenBot (assumés ou à décider)
@@ -36,6 +38,7 @@ Référence : relevé d’OpenBot par Tempo (`Shared/klyra-app/routines-2026-10-
 - **Heure doublée à l’automne** pour un planning à heure fixe : deux passages (comportement inféré d’OpenBot, non vérifié). L’heure sautée au printemps : pas de passage ce jour-là. `once` : première minute valide / premier passage.
 - **Changement de fuseau de l’utilisateur** : la routine garde son fuseau ; pas de proposition « Déplacer / Garder ».
 - **Mise à jour de l’app** : pas de « hold » ; une mise à jour redémarre l’app, la règle de l’app fermée s’applique.
+- **Rechargement dans les 400 ms** qui suivent la pose de la consigne (écriture différée des conversations) : la consigne peut ne pas être sur le disque et être postée une seconde fois. Fenêtre très courte, non corrigée.
 - **`needs-attention`** (agent qui attend une autorisation) : non distingué de `running`.
 - **Liens, webhooks, scripts, destinations externes, calendrier** : hors socle.
 
@@ -45,6 +48,6 @@ Référence : relevé d’OpenBot par Tempo (`Shared/klyra-app/routines-2026-10-
 pnpm build:electron && pnpm test:routines
 ```
 
-`test:routines` = 14 cas d’échéances + 26 du moteur (les 13 scénarios du relevé, veille, plafond, verrou, fichier illisible, reprise). Dossiers temporaires, horloge simulée, aucun agent lancé. En CI sous Linux, Windows et Mac.
+`test:routines` = 14 cas d’échéances + 28 du moteur (les 13 scénarios du relevé, veille, plafond, verrou, fichier illisible, reprise). Dossiers temporaires, horloge simulée, aucun agent lancé. En CI sous Linux, Windows et Mac.
 
 Bout en bout, sans vrai agent : un faux `claude` qui répond en `stream-json` (`KLYRA_CLAUDE_PATH`), `HOME` et `KLYRA_USER_DATA` temporaires, `KLYRA_ROUTINES=moteur` et `KLYRA_SMOKE_TEST=1`, une routine due dans `routines/routines.json`.

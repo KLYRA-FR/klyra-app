@@ -558,10 +558,23 @@ const WorkspaceContext = createContext<WorkspaceApi | null>(null);
 
 function WorkspaceStore({ children }: { children: ReactNode }) {
   const bridge = getBridge();
-  /* Qui lance les routines : le moteur du process principal (vrai), l'ancien minuteur ci-dessous (faux), pas encore su (null). */
-  const [moteurRoutines, setMoteurRoutines] = useState<boolean | null>(() => (bridge?.routines ? null : false));
+  /* Qui lance les routines. `demande` : le moteur du process principal en a la charge (KLYRA_ROUTINES),
+     même s'il n'a pas pu démarrer, et l'ancien minuteur ci-dessous se tait ; `actif` : il tourne.
+     null : pas encore su, personne ne lance rien. */
+  const [moteurRoutines, setMoteurRoutines] = useState<{ demande: boolean; actif: boolean } | null>(() =>
+    bridge?.routines ? null : { demande: false, actif: false },
+  );
   useEffect(() => {
-    void bridge?.routines?.etat().then((r) => setMoteurRoutines(r.ok && r.data.actif));
+    const routines = bridge?.routines;
+    if (!routines) return;
+    const lire = () =>
+      void routines.etat().then((r) =>
+        // Un pont sans `demande` (process principal plus ancien) n'a pas de moteur.
+        setMoteurRoutines(r.ok ? { demande: r.data.demande ?? r.data.actif, actif: r.data.actif } : { demande: true, actif: false }),
+      );
+    lire();
+    // Le moteur peut démarrer plus tard (verrou repris) : il le signale par `routines:change`.
+    return routines.onChange(lire);
   }, [bridge]);
   const { roles, status: statutAgents } = useAgents();
   const [state, dispatch] = useReducer(reducer, undefined, (): WorkspaceState => {
@@ -1459,8 +1472,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, []);
 
   const retirerDeLaFile = useCallback(
-    (chatId: string, id: string) => dispatch({ type: "file/retirer", chatId, id }),
-    [],
+    (chatId: string, id: string) => {
+      // Une exécution de routine retirée de la file : le moteur l'annule, sinon l'agent resterait réservé.
+      const routineRun = stateRef.current.file[chatId]?.find((m) => m.id === id)?.routineRun;
+      if (routineRun) void bridge?.routines?.interrompre(routineRun);
+      dispatch({ type: "file/retirer", chatId, id });
+    },
+    [bridge],
   );
 
   const marquerLu = useCallback((chatId: string) => {
@@ -1590,7 +1608,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
      passée pendant que l'app était fermée est rattrapée une seule fois. */
   useEffect(() => {
     // Le moteur du process principal a la main : l'ancien minuteur ne doit rien lancer en double.
-    if (!state.charge || moteurRoutines !== false) return;
+    if (!state.charge || !moteurRoutines || moteurRoutines.demande) return;
     const verifier = () => {
       const maintenant = Date.now();
       for (const r of stateRef.current.routines) {
@@ -1606,9 +1624,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /* Le moteur du process principal (electron/routines/) : ses exécutions partent ici par le chemin
      habituel des messages, et leur état lui revient. Inactif tant que KLYRA_ROUTINES ne l'active pas. */
   useLivraisonRoutines({
-    bridge: moteurRoutines ? bridge : null,
-    // Les fiches des agents lues : un agent pas encore chargé n'est pas un agent introuvable.
-    pret: state.charge && statutAgents !== "chargement",
+    bridge: moteurRoutines?.actif ? bridge : null,
+    // Les fiches des agents lues sur le disque : un agent pas encore chargé (ou une lecture
+    // en erreur) n'est pas un agent introuvable. Les exécutions attendent.
+    pret: state.charge && statutAgents === "disque",
     messages: state.messages,
     file: state.file,
     poster: (run, routine) => {

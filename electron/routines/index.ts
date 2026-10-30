@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, powerMonitor, type WebContents } from "electron";
 import path from "node:path";
+import { cancelAgent } from "../claude";
 import { readConversations } from "../conversations";
 import { RoutineEngine, RoutineError } from "./engine";
 import { convertirRoutine, type AncienneRoutine } from "./migration";
-import { RoutineStore, RoutineStoreError } from "./store";
+import { LOCK_STALE_MS, RoutineStore, RoutineStoreError } from "./store";
 import type { RoutineInput, RoutinePatch, RunReport } from "./types";
 
 /**
@@ -22,6 +23,8 @@ let store: RoutineStore | null = null;
 let erreur: string | null = null;
 let hote: WebContents | null = null;
 let oublierHote: (() => void) | null = null;
+let battement: ReturnType<typeof setInterval> | null = null;
+let nouvelEssai: ReturnType<typeof setTimeout> | null = null;
 
 type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
 
@@ -50,6 +53,10 @@ function suivreHote(contenu: WebContents) {
   const perdu = () => {
     oublierHote?.();
     engine?.setHostReady(false);
+    // Les réponses en cours ne reviendront plus à l'interface : on les arrête plutôt que de laisser
+    // l'agent travailler pendant que l'exécution suivante démarre.
+    const arretees = engine?.interruptRunning("La fenêtre de l’app a été fermée ou rechargée pendant l’exécution.") ?? [];
+    for (const run of arretees) if (run.delivery?.messageId) cancelAgent(run.delivery.messageId);
   };
   const evenements = ["destroyed", "render-process-gone", "did-navigate"] as const;
   for (const nom of evenements) contenu.on(nom as "destroyed", perdu);
@@ -64,10 +71,19 @@ function suivreHote(contenu: WebContents) {
 /** Au lancement de l'app, après `app.whenReady`. */
 export async function demarrerRoutines(): Promise<void> {
   if (!moteurRoutinesActif() || engine) return;
+  nouvelEssai = null;
   const dossier = path.join(app.getPath("userData"), "routines");
   try {
     store = new RoutineStore(dossier);
-    store.acquire();
+    try {
+      store.acquire();
+    } catch (error) {
+      // Un verrou encore frais : il sera périmé dans 2 min au plus si son process n'est plus là.
+      store = null;
+      nouvelEssai = setTimeout(() => void demarrerRoutines(), LOCK_STALE_MS / 2);
+      throw error;
+    }
+    battement = setInterval(() => store?.refresh(), LOCK_STALE_MS / 4);
     const premiere = !store.exists();
     store.load();
     engine = new RoutineEngine({
@@ -87,13 +103,17 @@ export async function demarrerRoutines(): Promise<void> {
     });
     if (premiere) await importerAnciennes(engine);
     engine.start();
+    erreur = null;
     powerMonitor.on("suspend", () => engine?.suspend());
     powerMonitor.on("resume", () => engine?.resume());
+    diffuser("routines:change");
   } catch (error) {
     erreur = error instanceof RoutineStoreError || error instanceof Error ? error.message : String(error);
     console.error("[routines]", erreur);
     engine?.stop();
     engine = null;
+    if (battement) clearInterval(battement);
+    battement = null;
     store?.release();
   }
 }
@@ -116,6 +136,8 @@ async function importerAnciennes(cible: RoutineEngine) {
 
 export function arreterRoutines(): void {
   engine?.stop();
+  if (battement) clearInterval(battement);
+  if (nouvelEssai) clearTimeout(nouvelEssai);
   store?.release();
 }
 
@@ -123,7 +145,8 @@ export function brancherRoutines(): void {
   const handle = <A extends unknown[], T>(canal: string, fn: (...args: A) => T) =>
     ipcMain.handle(canal, (_event, ...args: unknown[]) => repondre(() => fn(...(args as A))));
 
-  handle("routines:etat", () => ({ actif: !!engine, erreur }));
+  /* `demande` : la variable est là, l'ancien minuteur de l'interface doit se taire même si le moteur n'a pas démarré. */
+  handle("routines:etat", () => ({ demande: moteurRoutinesActif(), actif: !!engine, erreur }));
   handle("routines:lister", (agentId?: string) => moteur().list(typeof agentId === "string" ? agentId : undefined));
   handle("routines:creer", (input: RoutineInput) => moteur().create(input));
   handle("routines:modifier", (id: string, patch: RoutinePatch) => moteur().update(id, patch));
