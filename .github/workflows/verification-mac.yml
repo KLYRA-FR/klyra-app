@@ -47,6 +47,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build && pnpm build:electron && pnpm whisper
+      - name: Routines sous macOS (fichier, verrou, fuseaux)
+        run: pnpm test:routines
       - name: Sons de l'app et réglage des sons du système (Mac)
         run: perl -e 'alarm 120; exec @ARGV' env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-sons.cjs
 

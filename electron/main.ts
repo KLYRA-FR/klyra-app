@@ -50,6 +50,7 @@ import {
   type Utilisation,
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
+import { arreterRoutines, brancherRoutines, demarrerRoutines } from "./routines";
 import {
   arreterDictee,
   choisirModele,
@@ -563,6 +564,8 @@ function registerBridge() {
   handle("compte:code", () => prendreCode());
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
+  /* Routines : le moteur et son minuteur vivent ici (electron/routines/), l'interface poste les exécutions. */
+  brancherRoutines();
 
   /* Utilisation de Claude : la dernière connue, gardée sur le disque et
      envoyée à l'interface dès qu'une réponse d'agent la met à jour. */
@@ -656,6 +659,7 @@ void app.whenReady().then(async () => {
   if (process.env.KLYRA_TEST_TROUSSEAU === "1") safeStorage.setUsePlainTextEncryption(true);
   registerBridge();
   if (!SMOKE_TEST) enregistrerProtocole();
+  void demarrerRoutines();
 
   void demarrerServeurMcp();
   void nettoyerServeurOrphelin();
@@ -683,7 +687,10 @@ app.on("before-quit", (event) => {
 });
 
 /* Le Whisper gardé en mémoire pour la dictée s'arrête avec l'app. */
-app.on("will-quit", () => arreterDictee());
+app.on("will-quit", () => {
+  arreterDictee();
+  arreterRoutines();
+});
 process.on("exit", () => arreterDictee());
 
 app.on("window-all-closed", () => {

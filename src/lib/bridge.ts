@@ -6,6 +6,7 @@
 import type { FileNode } from "@/types/domain";
 import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
+import type { Routine as RoutineMoteur, RoutineInput, RoutinePatch, RoutineRun, RunReport } from "@/types/routines";
 
 export type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
 
@@ -346,6 +347,26 @@ export interface KlyraBridge {
     avantFermeture: (callback: () => void) => () => void;
     read: () => Promise<Reponse<unknown>>;
     write: (data: unknown) => Promise<Reponse<void>>;
+  };
+  /** Le moteur des routines (electron/routines/). Absent avant la relance de l'app. */
+  routines?: {
+    etat: () => Promise<Reponse<{ actif: boolean; erreur: string | null }>>;
+    lister: (agentId?: string) => Promise<Reponse<RoutineMoteur[]>>;
+    creer: (input: RoutineInput) => Promise<Reponse<RoutineMoteur>>;
+    modifier: (id: string, patch: RoutinePatch) => Promise<Reponse<RoutineMoteur>>;
+    supprimer: (id: string) => Promise<Reponse<void>>;
+    /** « Exécuter maintenant » : la programmation ne bouge pas. */
+    executer: (id: string) => Promise<Reponse<RoutineRun>>;
+    interrompre: (runId: string) => Promise<Reponse<RoutineRun>>;
+    historique: (id: string, limit?: number) => Promise<Reponse<RoutineRun[]>>;
+    /** Les échéances des 7 prochains jours (vide en pause). */
+    prochaines: (id: string) => Promise<Reponse<string[]>>;
+    /** L'interface est chargée : le moteur lui confie les exécutions à poster. */
+    pret: () => Promise<Reponse<null>>;
+    signaler: (runId: string, rapport: RunReport) => Promise<Reponse<void>>;
+    onLivrer: (callback: (run: RoutineRun, routine: RoutineMoteur | null) => void) => () => void;
+    onAnnuler: (callback: (run: RoutineRun) => void) => () => void;
+    onChange: (callback: () => void) => () => void;
   };
   /** Les Réglages de l'app (cf. electron/reglages.ts). Absent avant la relance de l'app. */
   reglages?: {

@@ -1,0 +1,197 @@
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
+import path from "node:path";
+import type { Routine, RoutineRun } from "./types";
+
+/**
+ * Les routines et leurs exécutions, dans `routines.json` du dossier de l'app.
+ * Seul le process principal y écrit. Chaque modification est une transaction :
+ * l'état est copié, modifié, contrôlé, puis écrit en entier (fichier temporaire,
+ * fsync, renommage). Une exécution créée et l'avance du déclencheur partent donc
+ * ensemble sur le disque, ou pas du tout.
+ */
+
+const VERSION = 1;
+/** Exécutions gardées par routine (les plus récentes). */
+export const RUNS_PER_ROUTINE = 100;
+
+export interface RoutinesData {
+  version: number;
+  routines: Routine[];
+  runs: RoutineRun[];
+}
+
+export class RoutineStoreError extends Error {}
+
+function vide(): RoutinesData {
+  return { version: VERSION, routines: [], runs: [] };
+}
+
+function controler(data: RoutinesData) {
+  const ids = new Set<string>();
+  for (const r of data.routines) {
+    if (ids.has(r.id)) throw new RoutineStoreError(`Routine en double : ${r.id}.`);
+    ids.add(r.id);
+  }
+  // Anti-doublon : une échéance ne produit qu'une exécution planifiée (UNIQUE(routine, échéance)).
+  const echeances = new Set<string>();
+  const runIds = new Set<string>();
+  for (const run of data.runs) {
+    if (runIds.has(run.id)) throw new RoutineStoreError(`Exécution en double : ${run.id}.`);
+    runIds.add(run.id);
+    if (!ids.has(run.routineId)) throw new RoutineStoreError("Exécution sans routine.");
+    if (run.kind !== "scheduled" || run.missed) continue;
+    const cle = `${run.routineId}|${run.scheduledFor}`;
+    if (echeances.has(cle)) throw new RoutineStoreError("Cette échéance a déjà une exécution.");
+    echeances.add(cle);
+  }
+}
+
+export class RoutineStore {
+  private data: RoutinesData = vide();
+  private readonly file: string;
+  private readonly lock: string;
+  private locked = false;
+
+  constructor(dir: string) {
+    this.file = path.join(dir, "routines.json");
+    this.lock = path.join(dir, "routines.lock");
+    mkdirSync(dir, { recursive: true });
+  }
+
+  /**
+   * Un seul process exécute les routines d'un dossier. Le verrou d'un process
+   * disparu (arrêt brutal) est repris ; celui d'un process vivant est refusé.
+   */
+  acquire(pid = process.pid): void {
+    for (let essai = 0; essai < 2; essai++) {
+      try {
+        const fd = openSync(this.lock, "wx");
+        writeSync(fd, String(pid));
+        closeSync(fd);
+        this.locked = true;
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        const autre = Number(readFileSync(this.lock, "utf8").trim());
+        if (Number.isSafeInteger(autre) && autre > 0 && autre !== pid && vivant(autre)) {
+          throw new RoutineStoreError("Une autre KLYRA exécute déjà ces routines.");
+        }
+        rmSync(this.lock, { force: true });
+      }
+    }
+    throw new RoutineStoreError("Impossible de verrouiller les routines.");
+  }
+
+  release(): void {
+    if (this.locked) rmSync(this.lock, { force: true });
+    this.locked = false;
+  }
+
+  /** Lit le fichier. Illisible : on refuse de démarrer plutôt que de l'écraser. */
+  load(): void {
+    let brut: string;
+    try {
+      brut = readFileSync(this.file, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        this.data = vide();
+        return;
+      }
+      throw error;
+    }
+    let data: RoutinesData;
+    try {
+      data = JSON.parse(brut) as RoutinesData;
+    } catch {
+      throw new RoutineStoreError("Le fichier des routines est illisible : il est conservé tel quel, rien n’est exécuté.");
+    }
+    if (!data || data.version !== VERSION || !Array.isArray(data.routines) || !Array.isArray(data.runs)) {
+      throw new RoutineStoreError("Le fichier des routines a un format inconnu : il est conservé tel quel, rien n’est exécuté.");
+    }
+    controler(data);
+    this.data = data;
+  }
+
+  exists(): boolean {
+    try {
+      readFileSync(this.file);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  get routines(): readonly Routine[] {
+    return this.data.routines;
+  }
+
+  get runs(): readonly RoutineRun[] {
+    return this.data.runs;
+  }
+
+  routine(id: string): Routine | undefined {
+    return this.data.routines.find((r) => r.id === id);
+  }
+
+  run(id: string): RoutineRun | undefined {
+    return this.data.runs.find((r) => r.id === id);
+  }
+
+  /** Exécutions d'une routine, les plus récentes d'abord. */
+  history(routineId: string, limit = 50): RoutineRun[] {
+    // À la même milliseconde, l'ordre d'écriture départage : la dernière créée d'abord.
+    return this.data.runs
+      .map((run, ordre) => ({ run, ordre }))
+      .filter(({ run }) => run.routineId === routineId)
+      .sort((a, b) => b.run.createdAt.localeCompare(a.run.createdAt) || b.ordre - a.ordre)
+      .slice(0, Math.max(0, Math.min(limit, RUNS_PER_ROUTINE)))
+      .map(({ run }) => structuredClone(run));
+  }
+
+  /** Applique `change` à une copie ; n'écrit et ne remplace l'état que si tout est valide. */
+  transaction<T>(change: (data: RoutinesData) => T): T {
+    const copie = structuredClone(this.data);
+    const resultat = change(copie);
+    copie.runs = elaguer(copie.runs);
+    controler(copie);
+    this.write(copie);
+    this.data = copie;
+    return resultat;
+  }
+
+  private write(data: RoutinesData) {
+    const temporaire = `${this.file}.tmp`;
+    const fd = openSync(temporaire, "w");
+    try {
+      writeSync(fd, JSON.stringify(data));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temporaire, this.file);
+  }
+}
+
+/** Garde les dernières exécutions de chaque routine, jamais une exécution encore active. */
+function elaguer(runs: RoutineRun[]): RoutineRun[] {
+  const parRoutine = new Map<string, RoutineRun[]>();
+  for (const run of runs) parRoutine.set(run.routineId, [...(parRoutine.get(run.routineId) ?? []), run]);
+  const garder = new Set<RoutineRun>();
+  const ordre = new Map(runs.map((run, index) => [run, index]));
+  for (const liste of parRoutine.values()) {
+    const tries = [...liste].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || ordre.get(b)! - ordre.get(a)!);
+    tries.forEach((run, index) => {
+      if (index < RUNS_PER_ROUTINE || run.status === "queued" || run.status === "running") garder.add(run);
+    });
+  }
+  return runs.filter((run) => garder.has(run));
+}
+
+function vivant(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}

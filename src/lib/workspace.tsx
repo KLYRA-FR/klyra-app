@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
 import { createMockWorkspace, type MockWorkspace } from "@/data/mock";
 import { AgentsProvider, useAgents } from "@/lib/agents";
@@ -12,6 +12,7 @@ import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lireProposition } from "@/lib/proposition-agent";
 import { reglagesActuels } from "@/lib/reglages";
+import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -23,6 +24,7 @@ import type {
   MessagePart,
   Project,
   Role,
+  RelaisRoutine,
   RoleId,
   Routine,
   Tache,
@@ -81,6 +83,8 @@ export interface EnAttente {
   text: string;
   to: RoleId | null;
   fichiers: string[];
+  /** Une exécution de routine qui attend son tour (cf. `useLivraisonRoutines`). */
+  routineRun?: string;
 }
 
 interface WorkspaceState extends MockWorkspace {
@@ -554,7 +558,12 @@ const WorkspaceContext = createContext<WorkspaceApi | null>(null);
 
 function WorkspaceStore({ children }: { children: ReactNode }) {
   const bridge = getBridge();
-  const { roles } = useAgents();
+  /* Qui lance les routines : le moteur du process principal (vrai), l'ancien minuteur ci-dessous (faux), pas encore su (null). */
+  const [moteurRoutines, setMoteurRoutines] = useState<boolean | null>(() => (bridge?.routines ? null : false));
+  useEffect(() => {
+    void bridge?.routines?.etat().then((r) => setMoteurRoutines(r.ok && r.data.actif));
+  }, [bridge]);
+  const { roles, status: statutAgents } = useAgents();
   const [state, dispatch] = useReducer(reducer, undefined, (): WorkspaceState => {
     const mock = createMockWorkspace();
     // App de bureau : de vraies conversations, lues sur le disque juste après.
@@ -814,7 +823,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /** `lancer`, pour ce qui est déclaré avant lui (retours des fils). */
   const lancerTot = useRef<(chatId: string, roleId: RoleId, message: Message) => void>(() => {});
   const envoyerRef = useRef<
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean) => void
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean, routineRun?: string) => void
   >(() => {});
 
   /** La suite de la file d'attente, quand l'agent a fini. */
@@ -830,7 +839,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     dispatch({ type: "file/retirer", chatId, id: prochain.id });
     // L'état « travail » est libéré au rendu suivant : le message part juste après.
     timers.current.push(
-      setTimeout(() => envoyerRef.current(chatId, prochain.text, prochain.to, prochain.fichiers, true), 0),
+      setTimeout(() => envoyerRef.current(chatId, prochain.text, prochain.to, prochain.fichiers, true, prochain.routineRun), 0),
     );
   }, []);
 
@@ -1044,6 +1053,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
         parts: [],
         statut: "en-cours",
+        ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
       };
       dispatch({ type: "message/add", message: reponse });
       dispatch({
@@ -1155,7 +1165,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /** `horsFile` : le message sort de la file, l'agent vient de finir (l'état n'est peut-être pas encore à jour). */
   const envoyer = useCallback(
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false) => {
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false, routineRun?: string) => {
       const chat = assurerChat(chatId);
       if (!chat) return;
 
@@ -1164,7 +1174,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         dispatch({
           type: "file/ajouter",
           chatId,
-          message: { id: crypto.randomUUID(), text, to, fichiers },
+          message: { id: crypto.randomUUID(), text, to, fichiers, ...(routineRun ? { routineRun } : {}) },
         });
         return;
       }
@@ -1185,6 +1195,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
               { type: "fichiers", chemins: fichiers },
             ]
           : [{ type: "text", text }],
+        ...(routineRun ? { routineRun } : {}),
       };
       dispatch({ type: "message/add", message });
       const parDefaut = chat.roleIds.includes("principal") ? "principal" : chat.roleIds[0];
@@ -1467,11 +1478,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /** Lance une routine : sa consigne part à son agent. Une routine en chaîne, ou
    *  rangée dans un projet, a sa conversation d'équipe, avec tous les agents de la chaîne. */
-  const executerRoutine = useCallback((routine: Routine, rattrapee: boolean) => {
-    const relais = routine.relais ?? [];
-    let chatId = idDirect(routine.roleId);
-    if (routine.projectId || relais.length > 0) {
-      chatId = `routine-${routine.id}`;
+  const chatDeRoutine = useCallback(
+    (routine: { id: string; nom: string; roleId: RoleId; projectId: string | null; relais?: RelaisRoutine[] }) => {
+      const relais = routine.relais ?? [];
+      if (!routine.projectId && relais.length === 0) return idDirect(routine.roleId);
+      const chatId = `routine-${routine.id}`;
       const roleIds = [...new Set<RoleId>(["principal", routine.roleId, ...relais.flatMap((l) => [l.de, l.vers])])];
       const existant = stateRef.current.chats.find((c) => c.id === chatId);
       if (!existant) {
@@ -1493,7 +1504,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         dispatch({ type: "chat/update", id: chatId, patch });
         stateRef.current = { ...stateRef.current, chats: stateRef.current.chats.map((c) => (c.id === chatId ? patch(c) : c)) };
       }
-    }
+      return chatId;
+    },
+    [],
+  );
+
+  const executerRoutine = useCallback((routine: Routine, rattrapee: boolean) => {
+    const relais = routine.relais ?? [];
+    const chatId = chatDeRoutine(routine);
     const maintenant = new Date();
     const suite: Routine = {
       ...routine,
@@ -1516,7 +1534,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       routines: stateRef.current.routines.map((r) => (r.id === suite.id ? suite : r)),
     };
     envoyerRef.current(chatId, `Routine « ${routine.nom} »\n\n${routine.consigne}`, routine.roleId, []);
-  }, []);
+  }, [chatDeRoutine]);
 
   /* La chaîne avance : quand un agent a fini sa réponse, elle part à ceux à qui
      il passe la main. Chaque agent ne travaille qu'une fois par passage (pas de boucle). */
@@ -1571,7 +1589,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /* Toutes les 30 s, les tâches dont l'heure est passée partent. Une heure
      passée pendant que l'app était fermée est rattrapée une seule fois. */
   useEffect(() => {
-    if (!state.charge) return;
+    // Le moteur du process principal a la main : l'ancien minuteur ne doit rien lancer en double.
+    if (!state.charge || moteurRoutines !== false) return;
     const verifier = () => {
       const maintenant = Date.now();
       for (const r of stateRef.current.routines) {
@@ -1582,7 +1601,32 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     verifier();
     const id = setInterval(verifier, 30_000);
     return () => clearInterval(id);
-  }, [state.charge, executerRoutine]);
+  }, [state.charge, moteurRoutines, executerRoutine]);
+
+  /* Le moteur du process principal (electron/routines/) : ses exécutions partent ici par le chemin
+     habituel des messages, et leur état lui revient. Inactif tant que KLYRA_ROUTINES ne l'active pas. */
+  useLivraisonRoutines({
+    bridge: moteurRoutines ? bridge : null,
+    // Les fiches des agents lues : un agent pas encore chargé n'est pas un agent introuvable.
+    pret: state.charge && statutAgents !== "chargement",
+    messages: state.messages,
+    file: state.file,
+    poster: (run, routine) => {
+      if (!rolesRef.current.some((r) => r.id === run.agentId)) return null;
+      const chatId = chatDeRoutine({
+        id: run.routineId,
+        nom: run.routineName,
+        roleId: run.agentId,
+        projectId: run.projectId,
+        relais: routine?.relais,
+      });
+      envoyerRef.current(chatId, `Routine « ${run.routineName} »\n\n${run.instruction}`, run.agentId, [], false, run.id);
+      return chatId;
+    },
+    lire: () => stateRef.current,
+    retirerDeFile: (chatId, id) => dispatch({ type: "file/retirer", chatId, id }),
+    texte: texteDe,
+  });
 
   const enregistrerRoutine = useCallback((routine: Routine) => {
     dispatch({ type: "routine/enregistrer", routine });
