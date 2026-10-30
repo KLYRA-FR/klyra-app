@@ -36,6 +36,8 @@ let libererLecture;
 let pending = null;
 let sequence = 0;
 let total = 0;
+let echecDeconnexion = null;
+let libererDeconnexion;
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 function changer(patch) { fixture = { ...fixture, ...patch, contexte: `fixture-${++revision}` }; }
 function verifier(ok, nom) { assert.ok(ok, nom); total++; verifications.push(nom); console.log(`OK ${nom}`); }
@@ -77,7 +79,13 @@ ipcMain.handle("fixture:composio", async (_event, nom, contexte, ...args) => {
     return { ok: true, data: clone(pending) };
   } else if (nom === "deconnecter") {
     const [id] = args;
-    changer({ comptes: fixture.comptes.filter((c) => c.id !== id), selections: Object.fromEntries(Object.entries(fixture.selections).filter(([, choisi]) => choisi !== id)), enAttente: fixture.enAttente.filter((a) => a.compteId !== id) });
+    changer({ selections: Object.fromEntries(Object.entries(fixture.selections).filter(([, choisi]) => choisi !== id)), enAttente: fixture.enAttente.filter((a) => a.compteId !== id) });
+    if (echecDeconnexion) {
+      await new Promise((r) => { libererDeconnexion = r; });
+      if (echecDeconnexion === "horsligne") changer({ comptes: [], erreur: { code: "reseau", message: "Composio reste hors ligne (simulation)." }, verifieLe: null });
+      return { ok: false, code: "erreur", message: "Ce compte n’est plus choisi par les agents, mais sa déconnexion chez Composio n’a pas été confirmée. Actualise puis réessaie." };
+    }
+    changer({ comptes: fixture.comptes.filter((c) => c.id !== id) });
   } else if (nom === "retirer") changer({ configure: false, comptes: [], selections: {}, services: [], enAttente: [] });
   else throw new Error(`Action test inconnue : ${nom}`);
   return { ok: true, data: undefined };
@@ -270,14 +278,34 @@ app.whenReady().then(async () => {
     await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true);
     await attendre("document.querySelector('[role=alertdialog]')");
     verifier(!journal.some((j) => j.nom === "deconnecter"), "déconnexion : aucune mutation avant confirmation");
+    verifier((await texte()).includes("ni tes agents ni aucun autre outil qui l’utilise"), "confirmation : effet sur tous les consommateurs de la connexion annoncé");
     await capture("06-deconnexion-confirmation");
     verifier(await ev("document.activeElement?.closest('[role=alertdialog]') !== null"), "confirmation : focus dans la fenêtre avant Échap");
     await touche("Escape");
     await attendre("!document.querySelector('[role=alertdialog]')");
     verifier(fixture.comptes.some((c) => c.id === reconnecte), "Échap annule la déconnexion");
+    echecDeconnexion = "distante";
+    await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true); await cliquer("Déconnecter", '[role="alertdialog"] button');
+    await attendre("document.querySelector('[role=combobox]')?.innerText.trim() === 'Aucun' && document.body.innerText.includes('Déconnexion…')");
+    verifier(!fixture.selections.gmail && fixture.comptes.some((c) => c.id === reconnecte), "déconnexion en cours : Aucun avant la réponse, ligne conservée");
+    libererDeconnexion();
+    await attendre(`document.querySelector('[data-compte-composio="${reconnecte}"]')?.innerText.includes('Tes agents n’utilisent déjà plus ce compte.')`);
+    verifier(await ev("document.querySelector('[role=combobox]')?.innerText.trim() === 'Aucun'") && !(await texte()).includes("Connexion retirée chez Composio."), "suppression refusée : erreur sous la ligne, Aucun conservé, aucun faux succès");
+    await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true);
+    const comptesAvantPanne = clone(fixture.comptes);
+    echecDeconnexion = "horsligne";
+    await cliquer("Déconnecter", '[role="alertdialog"] button');
+    await attendre("document.body.innerText.includes('Déconnexion…')");
+    libererDeconnexion();
+    await attendre("document.body.innerText.includes('Déconnexion à vérifier')");
+    verifier((await texte()).includes(`${reconnecte}@example.test`) && (await texte()).includes("État non vérifié") && (await texte()).includes("Tes agents n’utilisent déjà plus ce compte."), "panne persistante : compte en échec conservé avec état non vérifié, sans ancien statut connecté");
+    verifier(await ev("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Déconnecter…' && !b.disabled)"), "panne persistante : action de déconnexion disponible pour réessayer");
+    await capture("06b-deconnexion-echec");
+    echecDeconnexion = null;
+    changer({ comptes: comptesAvantPanne, erreur: null, verifieLe: Date.now() }); await actualiser();
     await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true); await cliquer("Déconnecter", '[role="alertdialog"] button');
     await attendre(`!document.querySelector('[data-compte-composio="${reconnecte}"]')`);
-    verifier(!fixture.selections.gmail && journal.filter((j) => j.nom === "deconnecter").length === 1, "déconnexion confirmée : un appel, compte retiré, choix Aucun");
+    verifier(!fixture.selections.gmail && journal.filter((j) => j.nom === "deconnecter").length === 3, "déconnexion réessayée : un appel par confirmation, compte retiré, choix Aucun");
 
     await ev("document.querySelector('[role=combobox]').scrollIntoView({block:'center'})");
     verifier(await ev("document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('main').scrollWidth <= document.querySelector('main').clientWidth + 1"), "fenêtre 1100 × 700 : pas de débordement horizontal global");
