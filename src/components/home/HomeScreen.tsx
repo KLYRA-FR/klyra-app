@@ -142,7 +142,9 @@ export function HomeScreen() {
 
   const date = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 
-  /* Nouveau profil : d'abord le nom de l'assistant, à la place de l'Accueil. */
+  /* Nouveau profil : d'abord le nom de l'assistant, à la place de l'Accueil (qui
+     attend la lecture des agents, pour ne pas s'afficher un instant avant). */
+  if (status === "chargement") return <div className="h-full" />;
   if (assistantANommer) return <NommerAssistant />;
 
   return (
@@ -176,7 +178,7 @@ export function HomeScreen() {
       <div className="shrink-0 px-5 pt-3 pb-4">
         {/* La même largeur que les blocs au-dessus. */}
         <div className="mx-auto w-full max-w-[960px]">
-          {seul && status !== "chargement" && (
+          {seul && (
             <ul aria-label="Suggestions" className="m-0 mb-2.5 flex list-none flex-wrap gap-2 p-0">
               {SUGGESTIONS_ASSISTANT.map((s) => (
                 <li key={s.libelle}>
