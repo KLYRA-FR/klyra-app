@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
+import { agentAutorise, agentsARefuser, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import os from "node:os";
@@ -62,6 +63,20 @@ export interface ClaudeResult {
 
 const running = new Map<string, ChildProcess>();
 
+/*
+ * Ce que Claude Code charge vraiment : toutes les fiches de `~/.claude/agents` (et de `.claude/agents`
+ * du projet), celles des plugins et des réglages gérés. Seuls les agents actifs de Mes agents restent :
+ * - chaque fiche lue qui n'est pas active est refusée (`Agent(<nom>)`) : le modèle ne la voit plus dans
+ *   la liste des agents, et son appel échoue ;
+ * - tout appel d'agent passe en plus par l'app (règle `ask`), qui n'accepte que les agents actifs et
+ *   ceux de Claude Code (`agentAutorise`) : le filet pour les plugins et les fiches apparues depuis.
+ * Les fiches elles-mêmes ne sont jamais touchées : d'autres outils les lisent.
+ */
+const refusAgents = (cwd: string) => agentsARefuser(cwd).map((nom) => `Agent(${nom})`);
+const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent"] } });
+
+const pasDansMesAgents = (agent: string) => `« ${agent} » n’est pas dans Mes agents : ajoute-le ou réactive-le dans Équipe pour lui écrire.`;
+
 export function runAgent(requestId: string, agent: string, prompt: string): Promise<ClaudeResult> {
   const bin = findClaude();
   if (!bin) {
@@ -70,9 +85,11 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(agent)) {
     return Promise.resolve({ ok: false, text: "", error: "Nom d’agent invalide." });
   }
+  if (!estActif(agent)) return Promise.resolve({ ok: false, text: "", error: pasDansMesAgents(agent) });
 
   return new Promise((resolve) => {
-    const child = spawn(bin, ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS], {
+    // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul.
+    const child = spawn(bin, ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, "Agent"], {
       cwd: HOME,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined },
       windowsHide: true,
@@ -240,6 +257,19 @@ const CONSIGNE_FILS = `Dans cette app, une tâche = un fil : une conversation à
 
 /** Dit à l'agent où lire le planning de la personne (electron/planning.ts). */
 const CONSIGNE_PLANNING = `La personne avec qui tu parles a, dans cette app, son calendrier (avec les rendez-vous de son équipe), ses rappels, ses routines, ses projets, ses conversations, ses artefacts et ses workflows. Tout est dans ${FICHIER_PLANNING}, tenu à jour en continu. Quand elle dit « mes rappels », « mon calendrier », « mon agenda », « mes routines », « mes projets »…, c'est de ceux-là qu'elle parle, les siens, pas des apps du Mac (Rappels, Calendrier) : lis ce fichier en premier, avant toute autre recherche, et réponds à partir de lui. Il est en lecture seule : pour y changer quelque chose, dis-lui quoi faire dans l'app.`;
+
+/** Qui est l'assistant, et à qui il peut confier du travail : les agents actifs de Mes agents, et eux seuls. */
+function consigneAssistant(outilsApp: boolean): string {
+  const nom = mesAgents().assistant.nom;
+  const actifs = presentationActifs();
+  const equipe = actifs.length
+    ? `Les agents qu'elle a choisis dans « Mes agents » : ${actifs.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ")}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre.`
+    : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, sans le confier à un agent de l'équipe.`;
+  const proposer = outilsApp
+    ? ` Quand elle exprime un besoin qui revient et qu'aucun de ses agents ne couvre, tu peux lui proposer une fiche d'agent avec l'outil proposer_agent : elle l'ouvre, l'ajuste et l'enregistre elle-même. Rien n'est créé avant.`
+    : "";
+  return `Dans cette app, tu es ${nom ? `${nom}, ` : ""}l'assistant personnel de la personne : tu réponds toi-même. ${equipe}${proposer}`;
+}
 
 const processus = new Map<string, Processus>();
 const parRequete = new Map<string, { proc: Processus; tour: Tour }>();
@@ -469,6 +499,21 @@ function lireLigne(proc: Processus, ligne: string) {
     const demandeId = msg.request_id as string;
     if (req?.subtype !== "can_use_tool" || typeof demandeId !== "string") return;
     const entree = req.input ?? {};
+    /* Confier à un agent : l'app décide seule, d'après Mes agents, même en accès complet. */
+    if (req.tool_name === "Agent" || req.tool_name === "Task") {
+      if (agentAutorise(entree.subagent_type)) return repondre(proc.child, demandeId, true, entree);
+      const nom = String(entree.subagent_type);
+      return proc.child.stdin?.write(
+        `${JSON.stringify({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: demandeId,
+            response: { behavior: "deny", message: `${pasDansMesAgents(nom)} Ne le rappelle pas ; fais le travail toi-même ou propose à la personne de l’ajouter.` },
+          },
+        })}\n`,
+      );
+    }
     const tour = tourOuSpontane(proc);
     if ((tour?.acces ?? proc.acces) === "tout") return repondre(proc.child, demandeId, true, entree);
     if (!tour) return repondre(proc.child, demandeId, false, entree);
@@ -566,6 +611,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   if (options.sessionId !== null && !/^[0-9a-f-]{36}$/.test(options.sessionId)) return echec("Session invalide.");
   if (options.modele && !/^[a-z0-9][a-z0-9.\-]{0,63}$/.test(options.modele)) return echec("Modèle invalide.");
   if (options.effort && !["low", "medium", "high", "xhigh", "max"].includes(options.effort)) return echec("Effort invalide.");
+  // Fils, routines, workflows ou conversation directe : un agent hors de Mes agents ne répond pas.
+  if (options.agent !== null && !estActif(options.agent)) return echec(pasDansMesAgents(options.agent));
 
   const cwd = dossierDeTravail(options.dossier);
   if (!cwd) return echec(`Le dossier du projet est introuvable : ${options.dossier}`);
@@ -576,7 +623,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     (d) => !d.startsWith(cwd),
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet"]);
+  // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation()]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
@@ -615,6 +663,9 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       "--disallowedTools",
       "AskUserQuestion",
       "EnterPlanMode",
+      ...refusAgents(cwd),
+      "--settings",
+      REGLE_AGENTS,
     ];
     // Les outils de l'app (fils, autres IA ajoutées dans les Réglages), par son serveur MCP local.
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal" });
@@ -626,7 +677,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
     // L'agenda, les rappels et les routines de la personne, que l'app tient à jour.
-    args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", mcp ? `${CONSIGNE_PLANNING}\n\n${CONSIGNE_FILS}` : CONSIGNE_PLANNING);
+    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS] : []), ...(options.agent === null ? [consigneAssistant(!!mcp)] : [])];
+    args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignes.join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);
   }

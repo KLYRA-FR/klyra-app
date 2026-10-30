@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AGENT_TEMPLATES } from "@/data/agent-templates.generated";
 import { CIRCUITS } from "@/data/agents";
 import { Bouton } from "@/components/ui/Bouton";
-import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
-import { roleFromContent, useAgents } from "@/lib/agents";
+import { useAgents } from "@/lib/agents";
 import { useWorkspace } from "@/lib/workspace";
 import { Apparition } from "@/components/ui/Apparition";
 import { AgentCard } from "./AgentCard";
@@ -18,43 +16,8 @@ import { ChiffresEquipe } from "./ChiffresEquipe";
 import { CircuitsAnimes } from "./CircuitsAnimes";
 import { LouPanel } from "./LouPanel";
 
-/** Prénoms des agents de l'équipe KLYRA, pour les nommer avant installation. */
-const PRENOMS = Object.fromEntries(AGENT_TEMPLATES.map((t) => [t.name, roleFromContent(t.name, t.content, {}, null).name]));
-
 function Centre({ children }: { children: React.ReactNode }) {
   return <div className="flex h-full items-center justify-center p-12">{children}</div>;
-}
-
-/** Aucun agent sur ce poste : on installe l'équipe. */
-function Installation({ dir }: { dir: string | null }) {
-  const { install } = useAgents();
-  const [etat, setEtat] = useState<string | null>(null);
-  return (
-    <Centre>
-      <div className="flex max-w-[560px] flex-col items-center gap-5 text-center">
-        <h1 className="m-0 text-h2 leading-[1] tracking-[-0.05em] text-texte-principal">
-          <span className="font-semibold">Aucun agent</span> <span className="font-normal">sur ce poste</span>
-        </h1>
-        <p className="m-0 text-body-s leading-[1.5] text-texte-secondaire">
-          Les agents de l’équipe vivent dans <span className="klyra-mono">{dir ?? "~/.claude/agents"}</span>. Installe les{" "}
-          {AGENT_TEMPLATES.length} fiches de l’équipe KLYRA : Claude Code et l’app les trouveront aussitôt.
-        </p>
-        <p className="m-0 text-ui-s text-texte-tertiaire">{Object.values(PRENOMS).join(" · ")}</p>
-        <BoutonPrincipal
-          disabled={etat === "Installation…"}
-          onClick={() => {
-            setEtat("Installation…");
-            install()
-              .then(() => setEtat(null))
-              .catch((e: unknown) => setEtat(`L’installation a échoué : ${e instanceof Error ? e.message : String(e)}`));
-          }}
-        >
-          Installer l’équipe KLYRA
-        </BoutonPrincipal>
-        {etat && <p className="m-0 text-ui-s text-texte-secondaire">{etat}</p>}
-      </div>
-    </Centre>
-  );
 }
 
 /**
@@ -66,9 +29,8 @@ function Installation({ dir }: { dir: string | null }) {
 export function TeamScreen() {
   const router = useRouter();
   const params = useSearchParams();
-  const { roles, status, error, dir, missing, canEdit, install, reload } = useAgents();
+  const { roles, status, error, canEdit, reload } = useAgents();
   const { chats } = useWorkspace().state;
-  const [installation, setInstallation] = useState<string | null>(null);
   const [cleEditeur, setCleEditeur] = useState(0);
 
   const agentId = params.get("agent");
@@ -127,8 +89,6 @@ export function TeamScreen() {
     return <AgentDetail key={selected.id} role={selected} />;
   }
 
-  if (status === "disque" && agents.length === 0) return <Installation dir={dir} />;
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="@container flex flex-col gap-5 px-5 pt-5 pb-6">
@@ -142,29 +102,6 @@ export function TeamScreen() {
             Fiches d’exemple de l’équipe KLYRA, en lecture seule. Ouvre l’app de bureau pour voir et modifier les agents de ton poste.
           </p>
         )}
-        {missing.length > 0 && (
-          <div role="status" className="flex flex-wrap items-center gap-3 rounded-md border border-bordure-accent-survol bg-fond-teinte-bleue px-4 py-3">
-            <p className="m-0 flex-1 text-ui-s text-texte-principal">
-              {missing.length > 1 ? `${missing.length} agents de l’équipe manquent` : "Un agent de l’équipe manque"} sur ce poste :{" "}
-              {missing.map((n) => PRENOMS[n] ?? n).join(", ")}.
-            </p>
-            <Bouton
-              variant="sombre"
-              taille="compact"
-              disabled={installation === "Installation…"}
-              onClick={() => {
-                setInstallation("Installation…");
-                install(missing)
-                  .then(() => setInstallation(null))
-                  .catch((e: unknown) => setInstallation(e instanceof Error ? e.message : String(e)));
-              }}
-            >
-              {missing.length > 1 ? "Les installer" : "L’installer"}
-            </Bouton>
-            {installation && <p className="m-0 w-full text-ui-xs text-texte-secondaire">{installation}</p>}
-          </div>
-        )}
-
         {/* Les cartes arrivent en cascade, puis la place du prochain agent. */}
         <Apparition className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-4" seuil={0.05}>
           {agents.map((role, i) => (

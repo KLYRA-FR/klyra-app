@@ -1,8 +1,8 @@
 import { app, BrowserWindow } from "electron";
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { dossierAgents, empreinte, NOM_VALIDE } from "./mes-agents";
 
 /**
  * Les fiches des sous-agents Claude Code : `~/.claude/agents/<name>.md`.
@@ -12,15 +12,17 @@ import path from "node:path";
  *   l'écran l'a lu (`expectedModifiedAt`) : on n'écrase jamais une modif faite
  *   ailleurs sans le dire.
  * - Le nom d'un agent est vérifié : impossible d'écrire hors du dossier.
+ * - L'app ne supprime jamais une fiche : d'autres outils lisent ce dossier.
+ *   Qui est dans « Mes agents » est tenu à part (`mes-agents.ts`).
  */
-
-const NOM_VALIDE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export interface AgentFile {
   name: string;
   path: string;
   content: string;
   modifiedAt: number;
+  /** Empreinte du contenu : comparée à celle que l'app a écrite pour voir une modification faite ailleurs. */
+  empreinte: string;
 }
 
 export interface AgentsListing {
@@ -34,18 +36,19 @@ export interface HistoryEntry {
   savedAt: number;
 }
 
-export type AgentsMeta = Record<string, { tag?: string; teinte?: string }>;
+/** Préférences personnelles de chaque agent : rôle court, couleur et nom affiché (sans toucher à la fiche). */
+export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string }>;
 
 export class AgentError extends Error {
   constructor(
-    public code: "nom-invalide" | "conflit" | "existe-deja" | "introuvable",
+    public code: "nom-invalide" | "conflit" | "existe-deja" | "introuvable" | "modifie-localement",
     message: string,
   ) {
     super(message);
   }
 }
 
-export const agentsDir = () => path.join(os.homedir(), ".claude", "agents");
+export const agentsDir = dossierAgents;
 const historyDir = () => path.join(app.getPath("userData"), "historique-agents");
 const metaFile = () => path.join(app.getPath("userData"), "agents-meta.json");
 
@@ -54,11 +57,11 @@ function fileFor(name: string): string {
   return path.join(agentsDir(), `${name}.md`);
 }
 
-async function readFile(name: string): Promise<AgentFile | null> {
+export async function readFile(name: string): Promise<AgentFile | null> {
   const file = fileFor(name);
   try {
     const [content, stat] = await Promise.all([fs.readFile(file, "utf8"), fs.stat(file)]);
-    return { name, path: file, content, modifiedAt: stat.mtimeMs };
+    return { name, path: file, content, modifiedAt: stat.mtimeMs, empreinte: empreinte(content) };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -116,21 +119,6 @@ export async function createAgent(name: string, content: string): Promise<AgentF
     throw error;
   }
   return (await readFile(name)) as AgentFile;
-}
-
-/** Installe les fiches manquantes. N'écrase jamais une fiche existante. */
-export async function installTeam(templates: { name: string; content: string }[]): Promise<string[]> {
-  await fs.mkdir(agentsDir(), { recursive: true });
-  const installed: string[] = [];
-  for (const { name, content } of templates) {
-    try {
-      await fs.writeFile(fileFor(name), content, { encoding: "utf8", flag: "wx" });
-      installed.push(name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-  }
-  return installed;
 }
 
 export async function listHistory(name: string): Promise<HistoryEntry[]> {

@@ -7,9 +7,9 @@ import {
   AgentError,
   agentsDir,
   createAgent,
-  installTeam,
   listAgents,
   listHistory,
+  readFile as lireFiche,
   readMeta,
   readVersion,
   watchAgents,
@@ -17,6 +17,18 @@ import {
   writeMeta,
   type AgentsMeta,
 } from "./agents";
+import {
+  activer,
+  ajouter,
+  changerOrigine,
+  chargerMesAgents,
+  garderDefinitionRecue,
+  lireDefinitionRecue,
+  mesAgents,
+  MODELES_KLYRA,
+  nommerAssistant,
+  origineValide,
+} from "./mes-agents";
 import { readFile, writeFile } from "node:fs/promises";
 import {
   autoriser,
@@ -285,17 +297,67 @@ function registerBridge() {
     watchAgents();
     return listing;
   });
-  handle("agents:write", (name: string, content: string, expected: number | null) => writeAgent(name, content, expected));
+  handle("agents:write", async (name: string, content: string, expected: number | null) => {
+    const file = await writeAgent(name, content, expected);
+    /* Les consignes d'un agent reçu, modifiées ici : il devient une copie privée (l'écran l'a confirmé),
+       et ne reçoit plus les mises à jour de son auteur. */
+    const origine = mesAgents().agents[name]?.origine;
+    if (origine?.type === "bibliotheque" && mesAgents().agents[name].empreinte !== file.empreinte) {
+      await changerOrigine(
+        name,
+        { type: "copie", definitionId: origine.definitionId, version: origine.version, auteur: origine.auteur, compte: origine.compte },
+        file.content,
+      );
+    }
+    return file;
+  });
+  /* Un agent créé dans l'app entre dans Mes agents. */
   handle("agents:create", async (name: string, content: string) => {
     const file = await createAgent(name, content);
+    await ajouter(name, { type: "local" }, file.content);
     watchAgents();
     return file;
   });
-  handle("agents:install", async (templates: { name: string; content: string }[]) => {
-    const installed = await installTeam(templates);
+  /* Ajouter un modèle KLYRA ou une définition de la bibliothèque : une nouvelle fiche, jamais par-dessus une autre. */
+  handle("agents:installer", async (name: string, content: string, origine: unknown, partage: string | null) => {
+    const o = origineValide(origine);
+    const file = await createAgent(name, content);
+    if (o.type === "bibliotheque" && typeof partage === "string") await garderDefinitionRecue(name, partage);
+    const mes = await ajouter(name, o, file.content);
     watchAgents();
-    return installed;
+    return { file, mes };
   });
+  /*
+   * Mise à jour acceptée, ou dossiers configurés : réécrit la fiche d'un agent reçu. Refusé si la fiche
+   * a été modifiée depuis que l'app l'a écrite, sauf si la personne a choisi de la remplacer (`forcer`) :
+   * l'ancienne version va de toute façon dans l'historique.
+   */
+  handle(
+    "agents:appliquer",
+    async (name: string, content: string, origine: unknown, partage: string | null, expected: number | null, forcer: boolean) => {
+      const o = origineValide(origine);
+      const entree = mesAgents().agents[name];
+      if (!entree) throw new AgentError("introuvable", `« ${name} » n’est pas dans Mes agents.`);
+      const actuelle = await lireFiche(name);
+      if (actuelle && entree.empreinte !== null && actuelle.empreinte !== entree.empreinte && !forcer) {
+        throw new AgentError("modifie-localement", "Cette fiche a été modifiée sur cet ordinateur depuis son ajout.");
+      }
+      const file = await writeAgent(name, content, expected);
+      if (o.type === "bibliotheque" && typeof partage === "string") await garderDefinitionRecue(name, partage);
+      const mes = await changerOrigine(name, o, file.content);
+      return { file, mes };
+    },
+  );
+  handle("agents:mes", () => mesAgents());
+  handle("agents:mes:assistant", (nom: string, teinte: string | null) => nommerAssistant(nom, teinte));
+  handle("agents:mes:activer", (name: string, actif: boolean) => activer(name, actif === true));
+  handle("agents:mes:ajouter", async (name: string) => {
+    const file = await lireFiche(name);
+    if (!file) throw new AgentError("introuvable", `La fiche « ${name} » n’existe plus sur le disque.`);
+    return ajouter(name, { type: "local" }, file.content);
+  });
+  handle("agents:mes:origine", (name: string, origine: unknown) => changerOrigine(name, origineValide(origine)));
+  handle("agents:recue", (name: string) => lireDefinitionRecue(name));
   handle("agents:history", (name: string) => listHistory(name));
   handle("agents:version", (name: string, id: string) => readVersion(name, id));
   handle("agents:meta:read", () => readMeta());
@@ -566,7 +628,10 @@ app.on("second-instance", (_event, argv) => {
 });
 recevoirLien(lienDans(process.argv));
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
+  /* Mes agents d'abord : sa première création décide entre reprise et nouveau profil,
+     avant que l'interface écrive ses propres données. */
+  await chargerMesAgents(MODELES_KLYRA).catch((e) => console.error("Mes agents illisible :", e));
   // Sans version installée, macOS prend l'icône d'Electron : on la remplace dans le Dock.
   if (process.platform === "darwin") app.dock?.setIcon(ICONE);
   app.setAboutPanelOptions({ applicationName: "KLYRA", iconPath: ICONE });

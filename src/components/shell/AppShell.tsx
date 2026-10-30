@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { entreePage, glissement } from "@/lib/mouvement";
 import { FenetreRecherche } from "@/components/recherche/FenetreRecherche";
 import { useRaccourciRecherche, useRaccourciReglages } from "@/lib/raccourcis";
+import { BibliothequeProvider } from "@/lib/bibliotheque";
 import { CompteProvider } from "@/lib/compte";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
 import { PLATEFORME } from "@/lib/plateforme";
@@ -160,14 +161,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     <WorkspaceProvider>
       <CompteClaudeProvider>
         <CompteProvider>
-          <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
-            <SonsApp />
-            <Suspense>
-              <ShellLayout>{children}</ShellLayout>
-              {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
-              <FenetreRecherche />
-            </Suspense>
-          </div>
+          <BibliothequeProvider>
+            <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
+              <SonsApp />
+              <Suspense>
+                <ShellLayout>{children}</ShellLayout>
+                {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
+                <FenetreRecherche />
+              </Suspense>
+            </div>
+          </BibliothequeProvider>
         </CompteProvider>
       </CompteClaudeProvider>
     </WorkspaceProvider>

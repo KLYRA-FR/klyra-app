@@ -18,7 +18,17 @@ export type CodeErreur =
   | "deja_invitee"
   | "introuvable"
   | "dernier_admin"
-  | "trop_tot";
+  | "trop_tot"
+  // Bibliothèque KLYRA (cf. `convex/bibliotheque.ts`, `model/definitions.ts`).
+  | "reserve_a_l_auteur"
+  | "deja_publiee"
+  | "conflit_version"
+  | "fiche_invalide"
+  | "trop_long"
+  | "cle_non_partagee"
+  | "secret_detecte"
+  | "chemin_personnel"
+  | "dependance_invalide";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

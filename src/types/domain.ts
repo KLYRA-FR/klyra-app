@@ -252,10 +252,21 @@ export type MessagePart =
     }
   /** L'agent confie une partie du travail à un collègue. */
   | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur" }
+  /** L'assistant propose la fiche d'un nouvel agent : la personne l'ouvre, l'ajuste et l'enregistre (ou non). */
+  | { type: "proposition-agent"; etapeId: string; proposition: PropositionAgent }
   | { type: "tasks"; tasks: Task[] }
   | { type: "options"; options: DeliverableOption[] }
   | { type: "worklog"; durationMin: number; files: ChangedFile[] }
   | { type: "actions"; actions: MessageAction[] };
+
+/** Une fiche d'agent proposée par l'assistant (outil `proposer_agent`), pas encore enregistrée. */
+export interface PropositionAgent {
+  id: string;
+  nom: string;
+  role: string;
+  description: string;
+  consignes: string;
+}
 
 export interface Message {
   id: string;
