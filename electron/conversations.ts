@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -14,6 +14,8 @@ function fichier(): string {
 }
 
 export async function readConversations(): Promise<unknown | null> {
+  // Une écriture ratée laisse le fichier précédent intact : on doit encore pouvoir le lire.
+  await enCours.catch(() => {});
   try {
     return JSON.parse(await readFile(fichier(), "utf8")) as unknown;
   } catch (error) {
@@ -27,11 +29,18 @@ let enCours: Promise<void> = Promise.resolve();
 
 export function writeConversations(data: unknown): Promise<void> {
   const contenu = JSON.stringify(data);
-  enCours = enCours.then(async () => {
+  // Une écriture ratée ne doit pas bloquer les suivantes (sinon plus rien n'est enregistré de la session).
+  enCours = enCours.catch(() => {}).then(async () => {
     const cible = fichier();
     await mkdir(path.dirname(cible), { recursive: true });
     const temporaire = `${cible}.tmp`;
-    await writeFile(temporaire, contenu, "utf8");
+    const file = await open(temporaire, "w");
+    try {
+      await file.writeFile(contenu, "utf8");
+      await file.sync();
+    } finally {
+      await file.close();
+    }
     await rename(temporaire, cible);
   });
   return enCours;

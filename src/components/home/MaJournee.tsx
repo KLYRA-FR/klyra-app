@@ -9,7 +9,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { cn } from "@/lib/cn";
 import { aujourdhui, depuisCle, echeance, enRetard, libellePeriode } from "@/lib/dates";
 import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
-import { passagesEntre } from "@/lib/planning";
+import { usePassagesRoutines } from "@/lib/routines-passages";
 import { useWorkspace } from "@/lib/workspace";
 
 const fmtHeure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -99,35 +99,35 @@ function AuProgramme({ annoncer }: { annoncer: (texte: string) => void }) {
   const { state, enregistrerTache } = useWorkspace();
   const maintenant = useMaintenant();
   const cle = aujourdhui();
+  const debut = useMemo(() => depuisCle(cle), [cle]);
+  const fin = useMemo(() => {
+    const date = new Date(debut);
+    date.setDate(date.getDate() + 1);
+    return date;
+  }, [debut]);
+  const passages = usePassagesRoutines(debut, fin);
   const categorieDe = (liste: string) => state.categories.find((c) => c.id === liste) ?? state.categories[0];
   const carte = useRef<HTMLElement>(null);
   const { retenir, avecRetenues } = useRetenues(carte);
 
   const elements = useMemo(() => {
-    const debut = depuisCle(cle);
-    const fin = new Date(debut);
-    fin.setDate(fin.getDate() + 1);
     return [
       ...[...state.evenements, ...evenementsEquipeEntre(debut, fin)]
         .filter((e) => e.date === cle)
         .map((e) => ({ id: e.id, heure: e.debut, fin: e.fin, titre: e.titre, roleId: null as string | null, tache: null as Tache | null })),
-      ...state.routines
-        .filter((r) => r.active && r.frequence.type !== "heure")
-        .flatMap((r) =>
-          passagesEntre(r.frequence, debut, fin, 4).map((d) => ({
-            id: `${r.id}-${d.toISOString()}`,
-            heure: fmtHeure.format(d) as string | null,
-            fin: null as string | null,
-            titre: r.nom,
-            roleId: r.roleId as string | null,
-            tache: null as Tache | null,
-          })),
-        ),
+      ...passages.map(({ routine, at }) => ({
+        id: `${routine.id}-${at}`,
+        heure: fmtHeure.format(new Date(at)) as string | null,
+        fin: null as string | null,
+        titre: routine.name,
+        roleId: routine.agentId as string | null,
+        tache: null as Tache | null,
+      })),
       ...state.taches
         .filter((t) => t.date === cle && t.heure)
         .map((t) => ({ id: t.id, heure: t.heure, fin: null as string | null, titre: t.titre, roleId: null as string | null, tache: t as Tache | null })),
     ].sort((a, b) => (a.heure ?? "").localeCompare(b.heure ?? ""));
-  }, [state.evenements, state.routines, state.taches, cle]);
+  }, [state.evenements, state.taches, passages, cle, debut, fin]);
 
   const passe = (heure: string | null, fin: string | null) => !!heure && (fin ?? heure) < maintenant;
   const visibles = avecRetenues(

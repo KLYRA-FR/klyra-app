@@ -109,7 +109,7 @@ app.whenReady().then(async () => {
     configModule.espaceComposio = espace;
     const ia = require(path.join(ROOT, "dist-electron/ia.js"));
     await ia.demarrerServeurMcp();
-    const makeMcp = () => JSON.parse(ia.configMcp({ chatId: "test-composio", roleId: "principal" }, espace.creerCapacite())).mcpServers.klyra;
+    const makeMcp = (routineRun) => JSON.parse(ia.configMcp({ chatId: "test-composio", roleId: "principal", routineRun }, espace.creerCapacite())).mcpServers.klyra;
     const call = async (mcp, method, params) => {
       const r = await fetch(mcp.url, { method: "POST", headers: { ...mcp.headers, "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: randomUUID(), method, params }) });
       assert.equal(r.status, 200); return (await r.json()).result;
@@ -155,6 +155,31 @@ app.whenReady().then(async () => {
     assert.ok(!JSON.stringify(makeMcp()).includes(CLE));
     assert.ok(!ia.OUTILS_APP().includes("mcp__klyra__composio_executer"));
     ok("clé fournisseur absente du mcp-config et exécution absente des outils auto-autorisés");
+
+    // Assemblage routines + Composio : vrai serveur MCP, comptes et exécution fictifs.
+    const signaux = [];
+    ia.brancherOutilsRoutines({
+      active: (a) => a.routineRun === "routine-fictive" && a.chatId === "test-composio" && a.roleId === "principal",
+      signaler: (a, state, reason) => signaux.push({ run: a.routineRun, state, reason }),
+    });
+    const mcpRoutine = makeMcp("routine-fictive");
+    assert.equal(mcpRoutine.headers["X-Klyra-Routine"], "routine-fictive");
+    assert.ok(mcpRoutine.headers["X-Klyra-Composio"]);
+    const outils = (await call(mcpRoutine, "tools/list")).tools.map((o) => o.name);
+    assert.ok(outils.includes("composio_executer") && outils.includes("routine_report_failure"));
+    ok("MCP assemblé : contexte routine et capacité Composio conservés ensemble");
+    const signalerEchec = (mcp) => call(mcp, "tools/call", { name: "routine_report_failure", arguments: { reason: "Motif fictif" } });
+    assert.equal((await signalerEchec(makeMcp())).isError, true);
+    assert.equal((await signalerEchec(makeMcp("autre-run"))).isError, true);
+    assert.equal(signaux.length, 0);
+    assert.ok(!(await signalerEchec(mcpRoutine)).isError);
+    assert.deepEqual(signaux, [{ run: "routine-fictive", state: "failed", reason: "Motif fictif" }]);
+    ok("MCP assemblé : signal routine refusé hors run, accepté seulement dans son contexte");
+    await search(mcpRoutine);
+    assert.ok(!(await execute(mcpRoutine)).isError);
+    assert.equal(calls.at(-1).compteId, "ca_B");
+    ok("MCP assemblé : la routine utilise toujours le compte Composio explicitement choisi");
+    ia.brancherOutilsRoutines(null);
 
     if (REAL) {
       fournisseur = await demarrerFauxAnthropic();

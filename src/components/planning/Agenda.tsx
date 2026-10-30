@@ -12,9 +12,10 @@ import { cn } from "@/lib/cn";
 import { aujourdhui, cleJour, depuisCle, grilleMois } from "@/lib/dates";
 import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { joursSpeciauxEntre, type GenreJour, type JourSpecial } from "@/lib/jours-speciaux";
-import { passagesEntre } from "@/lib/planning";
+import { usePassagesRoutines } from "@/lib/routines-passages";
 import { useProjects, useWorkspace } from "@/lib/workspace";
-import type { Evenement, RoleTeinte, Routine, Tache } from "@/types/domain";
+import type { Evenement, RoleTeinte, Tache } from "@/types/domain";
+import type { Routine } from "@/types/routines";
 import { CaseTache } from "./Rappels";
 
 /**
@@ -71,6 +72,7 @@ interface Passage {
 
 function useContenu(debut: Date, fin: Date) {
   const { state } = useWorkspace();
+  const passagesRoutines = usePassagesRoutines(debut, fin);
   return useMemo(() => {
     const evenements = new Map<string, Evenement[]>();
     const taches = new Map<string, Tache[]>();
@@ -84,13 +86,12 @@ function useContenu(debut: Date, fin: Date) {
       const dernier = t.fin && t.fin > t.date ? t.fin : t.date;
       for (let i = 0; i < 366 && cleJour(jour) <= dernier; i++, jour.setDate(jour.getDate() + 1)) pousser(taches, cleJour(jour), t);
     }
-    for (const r of state.routines) {
-      if (!r.active || r.frequence.type === "heure") continue;
-      for (const d of passagesEntre(r.frequence, debut, fin, 62))
-        pousser(passages, cleJour(d), { routine: r, heure: fmtHeure.format(d) });
+    for (const { routine, at } of passagesRoutines) {
+      const date = new Date(at);
+      pousser(passages, cleJour(date), { routine, heure: fmtHeure.format(date) });
     }
     return { evenements, taches, passages, speciaux: joursSpeciauxEntre(debut, fin) };
-  }, [state.evenements, state.taches, state.routines, debut, fin]);
+  }, [state.evenements, state.taches, passagesRoutines, debut, fin]);
 }
 
 /* ─── Les petites formes du calendrier, comme dans Calendrier d'Apple ── */
@@ -610,12 +611,12 @@ function GrilleHeures({
                 {(passages.get(cle) ?? []).map((p) => (
                   <span
                     key={`${p.routine.id}-${p.heure}`}
-                    title={`${p.routine.nom} (routine)`}
+                    title={`${p.routine.name} (routine)`}
                     className="absolute right-1 left-1 flex h-5 items-center gap-1 rounded-2xs border border-dashed border-bordure-forte bg-fond-surface px-1 text-ui-3xs text-texte-secondaire"
                     style={{ top: (enMinutes(p.heure) / 60) * HEURE }}
                   >
-                    <AgentRond roleId={p.routine.roleId} taille={12} />
-                    <span className="truncate">{p.routine.nom}</span>
+                    <AgentRond roleId={p.routine.agentId} taille={12} />
+                    <span className="truncate">{p.routine.name}</span>
                   </span>
                 ))}
                 {/* L'heure qu'il est */}
@@ -681,7 +682,7 @@ function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
           })),
           ...(passages.get(c) ?? []).map((p) => ({
             id: `${p.routine.id}${p.heure}`,
-            texte: p.routine.nom,
+            texte: p.routine.name,
             heure: p.heure,
             type: "r" as Genre,
             couleur: undefined as string | undefined,

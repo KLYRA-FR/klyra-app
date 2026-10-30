@@ -11,7 +11,7 @@ export function PlanningScreen() {
   const vue = useSearchParams().get("vue");
   // Les anciens liens vers les routines (« automatisations ») mènent à leur page.
   useEffect(() => {
-    if (vue === "routines" || vue === "automatisations") router.replace("/routines?vue=calendrier");
+    if (vue === "routines" || vue === "automatisations") router.replace("/routines?vue=routines");
   }, [vue, router]);
 
   return (

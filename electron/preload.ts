@@ -188,6 +188,38 @@ contextBridge.exposeInMainWorld("klyra", {
     read: () => ipcRenderer.invoke("conversations:read"),
     write: (data: unknown) => ipcRenderer.invoke("conversations:write", data),
   },
+  /* Routines : le moteur est dans le process principal (electron/routines/). */
+  routines: {
+    etat: () => ipcRenderer.invoke("routines:etat"),
+    lister: (agentId?: string) => ipcRenderer.invoke("routines:lister", agentId),
+    creer: (input: unknown) => ipcRenderer.invoke("routines:creer", input),
+    modifier: (id: string, patch: unknown) => ipcRenderer.invoke("routines:modifier", id, patch),
+    supprimer: (id: string) => ipcRenderer.invoke("routines:supprimer", id),
+    executer: (id: string) => ipcRenderer.invoke("routines:executer", id),
+    interrompre: (runId: string) => ipcRenderer.invoke("routines:interrompre", runId),
+    historique: (id: string, limit?: number) => ipcRenderer.invoke("routines:historique", id, limit),
+    prochaines: (id: string) => ipcRenderer.invoke("routines:prochaines", id),
+    passages: (debut: string, fin: string) => ipcRenderer.invoke("routines:passages", debut, fin),
+    apercu: (schedule: unknown, timezone: string) => ipcRenderer.invoke("routines:apercu", schedule, timezone),
+    enCours: () => ipcRenderer.invoke("routines:en-cours"),
+    pret: () => ipcRenderer.invoke("routines:pret"),
+    signaler: (runId: string, rapport: unknown) => ipcRenderer.invoke("routines:signaler", runId, rapport),
+    onLivrer: (callback: (run: unknown, routine: unknown) => void) => {
+      const listener = (_e: unknown, run: unknown, routine: unknown) => callback(run, routine);
+      ipcRenderer.on("routines:livrer", listener);
+      return () => ipcRenderer.removeListener("routines:livrer", listener);
+    },
+    onAnnuler: (callback: (run: unknown) => void) => {
+      const listener = (_e: unknown, run: unknown) => callback(run);
+      ipcRenderer.on("routines:annuler", listener);
+      return () => ipcRenderer.removeListener("routines:annuler", listener);
+    },
+    onChange: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("routines:change", listener);
+      return () => ipcRenderer.removeListener("routines:change", listener);
+    },
+  },
   reglages: {
     lire: () => ipcRenderer.invoke("reglages:lire"),
     ecrire: (reglages: unknown) => ipcRenderer.invoke("reglages:ecrire", reglages),

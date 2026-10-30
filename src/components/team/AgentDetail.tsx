@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
 import { lienDe, type Lien } from "@/lib/lien-bibliotheque";
 import { poste } from "@/lib/plateforme";
+import { useRoutines } from "@/lib/routines";
 import { useWorkspace } from "@/lib/workspace";
 import type { Role, RoleSection } from "@/types/domain";
 import { LigneRole } from "./AgentCard";
@@ -150,6 +151,7 @@ function FicheAgent({ role }: { role: Role }) {
   const router = useRouter();
   const { canEdit, reveal, tous, roles, activer, ajouter } = useAgents();
   const { state, arreter } = useWorkspace();
+  const { routines } = useRoutines();
   const compte = useCompte();
   const bibliotheque = useBibliotheque();
   const retirerDeBibliotheque = useRetirerDeBibliotheque();
@@ -187,7 +189,7 @@ function FicheAgent({ role }: { role: Role }) {
 
   const desactiver = async () => {
     const enCours = Object.entries(state.travail).filter(([, t]) => t.roleId === role.id).map(([chatId]) => chatId);
-    const routines = state.routines.filter((r) => r.roleId === role.id).length;
+    const nombreRoutines = routines.filter((r) => r.agentId === role.id).length;
     const oui = await demander({
       titre: `Désactiver ${role.name} ?`,
       texte: (
@@ -198,7 +200,13 @@ function FicheAgent({ role }: { role: Role }) {
             tes autres outils l’utilisent comme avant.
           </p>
           {enCours.length > 0 && <p className="m-0">Il travaille en ce moment : sa réponse en cours sera arrêtée.</p>}
-          {routines > 0 && <p className="m-0">Il fait partie de {routines > 1 ? `${routines} routines : elles s’arrêteront` : "1 routine : elle s’arrêtera"} à son étape.</p>}
+          {nombreRoutines > 0 && (
+            <p className="m-0">
+              {nombreRoutines > 1
+                ? `${nombreRoutines} routines lui sont confiées : elles échoueront tant qu’il est désactivé. Change leur agent ou mets-les en pause dans Automatisations.`
+                : "1 routine lui est confiée : elle échouera tant qu’il est désactivé. Change son agent ou mets-la en pause dans Automatisations."}
+            </p>
+          )}
         </div>
       ),
       confirmer: "Désactiver",
