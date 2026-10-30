@@ -25,6 +25,11 @@ const THEMES = ["chaleureux", "mecanique", "petillant", "clavier"];
 const AUDIBLE_MAX_MICRO = 0.2;
 /** Deux sons d'un même thème qui se ressemblent plus que ça (corrélation) se confondraient. */
 const RESSEMBLANCE_MAX = 0.9;
+/**
+ * Le rendu d'un son, au pire. L'app les rend à l'avance (precharger) : ce seuil n'attrape
+ * qu'une recette démesurée. Les Mac Intel de la CI ont des à-coups de 400 ms sur un son de 40.
+ */
+const RENDU_MAX_MS = 1000;
 
 const echecs = [];
 const verifier = (ok, message) => {
@@ -109,7 +114,7 @@ async function tester() {
   }
   const db = (v) => (20 * Math.log10(v)).toFixed(1);
   for (const s of sons) {
-    const ok = !s.nan && s.canaux === 2 && s.crete > 0.05 && s.crete <= 0.9 && s.duree < 2.5 && s.ms < 250;
+    const ok = !s.nan && s.canaux === 2 && s.crete > 0.05 && s.crete <= 0.9 && s.duree < 2.5 && s.ms < RENDU_MAX_MS;
     verifier(ok, `${s.theme}/${s.evenement} : ${s.duree.toFixed(2)} s, crête ${db(s.crete)} dBFS, rendu en ${s.ms.toFixed(0)} ms`);
   }
   for (const s of sons.filter((s) => MICRO.includes(s.evenement))) {
