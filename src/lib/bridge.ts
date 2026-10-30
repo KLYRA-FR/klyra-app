@@ -12,6 +12,40 @@ export interface AgentFile {
   path: string;
   content: string;
   modifiedAt: number;
+  empreinte: string;
+}
+
+/** D'où vient un agent de Mes agents (cf. `electron/mes-agents.ts`). */
+export type OrigineAgent =
+  /** `publie` : partagé dans la bibliothèque par la personne, qui en est l'autrice. */
+  | { type: "local"; publie?: { definitionId: string; version: number; compte: string } }
+  | { type: "modele"; modele: string }
+  | {
+      type: "bibliotheque";
+      definitionId: string;
+      version: number;
+      auteur: string;
+      compte: string;
+      valeurs: Record<string, string>;
+      ignoree: number | null;
+    }
+  /** Copie privée : plus de mise à jour ; l'auteur ne s'affiche que sous `compte`. */
+  | { type: "copie"; definitionId: string; version: number; auteur: string; compte: string };
+
+export interface EntreeMesAgents {
+  actif: boolean;
+  ajouteLe: number;
+  /** Quand la personne l'a désactivé (absent s'il est actif). */
+  desactiveLe?: number;
+  origine: OrigineAgent;
+  empreinte: string | null;
+}
+
+export interface MesAgents {
+  version: 1;
+  depart: "reprise" | "nouveau";
+  assistant: { nom: string | null; teinte: string | null };
+  agents: Record<string, EntreeMesAgents>;
 }
 
 export interface AgentsListing {
@@ -25,7 +59,8 @@ export interface HistoryEntry {
   savedAt: number;
 }
 
-export type AgentsMeta = Record<string, { tag?: string; teinte?: string }>;
+/** Préférences personnelles de chaque agent : rôle court, couleur et nom affiché (sans toucher à la fiche). */
+export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string; modele?: string }>;
 
 export interface ClaudeResult {
   ok: boolean;
@@ -150,7 +185,25 @@ export interface KlyraBridge {
     list: () => Promise<Reponse<AgentsListing>>;
     write: (name: string, content: string, expectedModifiedAt: number | null) => Promise<Reponse<AgentFile>>;
     create: (name: string, content: string) => Promise<Reponse<AgentFile>>;
-    installTeam: (templates: { name: string; content: string }[]) => Promise<Reponse<string[]>>;
+    /** Nouvelle fiche (modèle ou bibliothèque), jamais par-dessus une autre : erreur « existe-deja ». */
+    installer: (name: string, content: string, origine: OrigineAgent, partage: string | null) => Promise<Reponse<{ file: AgentFile; mes: MesAgents }>>;
+    /** Réécrit un agent reçu ; erreur « modifie-localement » si la fiche a changé depuis, sauf `forcer`. */
+    appliquer: (
+      name: string,
+      content: string,
+      origine: OrigineAgent,
+      partage: string | null,
+      expectedModifiedAt: number | null,
+      forcer: boolean,
+    ) => Promise<Reponse<{ file: AgentFile; mes: MesAgents }>>;
+    mes: () => Promise<Reponse<MesAgents>>;
+    nommerAssistant: (nom: string, teinte: string | null) => Promise<Reponse<MesAgents>>;
+    activer: (name: string, actif: boolean) => Promise<Reponse<MesAgents>>;
+    /** Ajoute à Mes agents une fiche déjà sur l'ordinateur. */
+    ajouter: (name: string) => Promise<Reponse<MesAgents>>;
+    changerOrigine: (name: string, origine: OrigineAgent) => Promise<Reponse<MesAgents>>;
+    /** La définition partagée reçue, à la version choisie (null : pas de la bibliothèque). */
+    definitionRecue: (name: string) => Promise<Reponse<string | null>>;
     history: (name: string) => Promise<Reponse<HistoryEntry[]>>;
     readVersion: (name: string, id: string) => Promise<Reponse<string>>;
     readMeta: () => Promise<Reponse<AgentsMeta>>;

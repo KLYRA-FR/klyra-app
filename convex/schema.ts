@@ -55,6 +55,35 @@ export default defineSchema({
     expire: v.number(),
   }).index("by_email", ["email"]),
 
+  /**
+   * La Bibliothèque KLYRA : les définitions d'agents publiées volontairement par un membre
+   * (cf. `bibliotheque.ts`). Seulement la fiche : jamais la mémoire, l'historique, les
+   * conversations, les clés ni les chemins de l'auteur. Seul l'auteur la met à jour ou la retire ;
+   * chacun l'ajoute chez soi sous forme de copie locale (`~/.claude/agents/`).
+   */
+  definitionsAgents: defineTable({
+    auteurId: v.id("membres"),
+    /** L'identifiant proposé pour la fiche locale (`name`), fixe d'une version à l'autre. */
+    slug: v.string(),
+    nom: v.string(),
+    /** Rôle court affiché sur la carte. */
+    role: v.string(),
+    description: v.string(),
+    capacites: v.array(v.string()),
+    modele: v.union(v.string(), v.null()),
+    /** La fiche partagée, mot pour mot (cf. `model/definitions.ts`). */
+    contenu: v.string(),
+    /** Les dossiers propres à chaque ordinateur, écrits `{{chemin:cle}}` dans la fiche. */
+    dependances: v.array(v.object({ cle: v.string(), libelle: v.string() })),
+    /** 1 à la publication, +1 à chaque mise à jour de l'auteur. */
+    version: v.number(),
+    majLe: v.number(),
+    /** null : visible dans la bibliothèque. Les copies déjà ajoutées restent chez chacun. */
+    retireeLe: v.union(v.number(), v.null()),
+  })
+    .index("by_retireeLe_and_majLe", ["retireeLe", "majLe"])
+    .index("by_auteurId_and_slug", ["auteurId", "slug"]),
+
   /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
   courrielsSimules: defineTable({
     a: v.string(),

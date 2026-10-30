@@ -1,26 +1,27 @@
 import type { Role, RoleTeinte, TeamCircuit } from "@/types/domain";
 
 /**
- * Ce que l'app sait de l'équipe en plus des fiches `~/.claude/agents/*.md`,
+ * Ce que l'app sait des agents en plus des fiches `~/.claude/agents/*.md`,
  * qui restent la seule source pour tout le reste :
- * - le Principal, qui est la session elle-même (pas de fichier) ;
- * - le rôle court et la couleur de chaque agent de l'équipe KLYRA, valeurs de
- *   départ que l'on peut changer dans l'app ;
- * - les circuits de passation entre agents.
+ * - l'assistant, qui est la session elle-même (pas de fichier). Son identifiant
+ *   reste « principal » ; son nom et sa couleur sont choisis par la personne
+ *   (`mes-agents.json`), sans toucher aux conversations ;
+ * - le rôle court et la couleur de départ des modèles KLYRA, que l'on peut changer ;
+ * - les circuits de passation entre les modèles KLYRA.
  */
 
 export const PRINCIPAL: Role = {
   id: "principal",
-  name: "Principal",
-  tag: "Orchestre",
-  title: "Chef d’orchestre",
-  initial: "K",
+  name: "Assistant",
+  tag: "Assistant",
+  title: "Ton assistant",
+  initial: "A",
   teinte: "bleu-k1",
-  description: "Ton interlocuteur par défaut : il comprend la demande, la découpe et la confie aux bons agents.",
-  whenToCall: "Écris-lui quand tu ne sais pas à qui confier une demande : il répartit le travail.",
-  skills: ["Découper une demande", "Répartir", "Faire le point"],
-  heading: "Principal — Chef d’orchestre",
-  pitch: "Je reçois ta demande, je la découpe en tâches et je les confie aux agents. Je te tiens au courant dans le fil.",
+  description: "Ton interlocuteur par défaut : il répond, travaille dans tes projets et confie une partie du travail à tes agents quand tu en as.",
+  whenToCall: "Ton interlocuteur par défaut : il répond, travaille dans tes projets et confie une partie du travail à tes agents quand tu en as.",
+  skills: ["Répondre et faire", "Créer un agent", "Répartir entre tes agents"],
+  heading: "Assistant — Ton assistant",
+  pitch: "Je réponds à tes demandes et je travaille avec toi. Quand un besoin revient, je t’aide à créer l’agent qui s’en chargera.",
   sections: [],
   model: "",
   memory: "",

@@ -59,6 +59,26 @@ export function LigneRole({ tag, title }: { tag: string; title: string }) {
   );
 }
 
+/** Une étiquette d'état ou d'origine, à droite du nom (spec §7) : deux au plus. */
+export interface Etiquette {
+  texte: string;
+  ton: "neutre" | "accent" | "a-configurer";
+}
+
+export function EtiquetteAgent({ etiquette }: { etiquette: Etiquette }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-xs px-2 py-0.5 text-ui-2xs font-medium whitespace-nowrap",
+        etiquette.ton === "accent" ? "bg-fond-teinte-bleue text-texte-principal" : "bg-fond-surface-grise text-texte-principal",
+      )}
+    >
+      {etiquette.ton === "a-configurer" && <span aria-hidden="true" className="size-1.5 rounded-full bg-bordure-forte" />}
+      {etiquette.texte}
+    </span>
+  );
+}
+
 /** Cascade des cartes : la première arrive après le bandeau, puis une toutes les 60 ms. */
 const DEBUT_CASCADE = 240;
 const PAS_CASCADE = 60;
@@ -67,11 +87,13 @@ export function AgentCard({
   role,
   chatCount,
   ordre = 0,
+  etiquettes = [],
 }: {
   role: Role;
   chatCount: number;
   /** Rang dans la grille : règle le moment de son entrée. */
   ordre?: number;
+  etiquettes?: Etiquette[];
 }) {
   const delai = DEBUT_CASCADE + ordre * PAS_CASCADE;
   const BLOC = "relative z-10 flex shrink-0 flex-col rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm";
@@ -88,7 +110,12 @@ export function AgentCard({
       {/* Qui il est : prénom en haut, son rôle, puis ce qu'il couvre en bas. */}
       <div className={cn(BLOC, "gap-2")}>
         <div className="flex flex-col gap-0.5">
-          <h2 className="m-0 truncate text-h4 leading-[28px] font-semibold tracking-[-0.02em] text-texte-principal">{role.name}</h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="m-0 min-w-0 flex-1 truncate text-h4 leading-[28px] font-semibold tracking-[-0.02em] text-texte-principal">{role.name}</h2>
+            {etiquettes.slice(0, 2).map((e) => (
+              <EtiquetteAgent key={e.texte} etiquette={e} />
+            ))}
+          </div>
           <p className="m-0 flex min-w-0 items-center gap-1.5 text-ui-s leading-[1.35] text-texte-principal">
             <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ background: couleurAgent(role.teinte) }} />
             <span className="truncate">

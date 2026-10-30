@@ -14,7 +14,16 @@ contextBridge.exposeInMainWorld("klyra", {
     write: (name: string, content: string, expectedModifiedAt: number | null) =>
       ipcRenderer.invoke("agents:write", name, content, expectedModifiedAt),
     create: (name: string, content: string) => ipcRenderer.invoke("agents:create", name, content),
-    installTeam: (templates: { name: string; content: string }[]) => ipcRenderer.invoke("agents:install", templates),
+    installer: (name: string, content: string, origine: unknown, partage: string | null) =>
+      ipcRenderer.invoke("agents:installer", name, content, origine, partage),
+    appliquer: (name: string, content: string, origine: unknown, partage: string | null, expectedModifiedAt: number | null, forcer: boolean) =>
+      ipcRenderer.invoke("agents:appliquer", name, content, origine, partage, expectedModifiedAt, forcer),
+    mes: () => ipcRenderer.invoke("agents:mes"),
+    nommerAssistant: (nom: string, teinte: string | null) => ipcRenderer.invoke("agents:mes:assistant", nom, teinte),
+    activer: (name: string, actif: boolean) => ipcRenderer.invoke("agents:mes:activer", name, actif),
+    ajouter: (name: string) => ipcRenderer.invoke("agents:mes:ajouter", name),
+    changerOrigine: (name: string, origine: unknown) => ipcRenderer.invoke("agents:mes:origine", name, origine),
+    definitionRecue: (name: string) => ipcRenderer.invoke("agents:recue", name),
     history: (name: string) => ipcRenderer.invoke("agents:history", name),
     readVersion: (name: string, id: string) => ipcRenderer.invoke("agents:version", name, id),
     readMeta: () => ipcRenderer.invoke("agents:meta:read"),

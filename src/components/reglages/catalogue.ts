@@ -64,7 +64,7 @@ export const SECTIONS: SectionReglages[] = [
     entrees: [
       { id: "compte-equipe", titre: "Compte d’équipe", mots: "connexion deconnexion lien magique e-mail adresse session" },
       { id: "profil-equipe", titre: "Ton profil d’équipe", mots: "nom intitule couleur" },
-      { id: "membres", titre: "Membres", mots: "equipe role admin retirer personnes" },
+      { id: "membres", titre: "Membres de l’équipe", mots: "equipe role admin retirer personnes membres" },
       { id: "inviter", titre: "Inviter quelqu’un", mots: "invitation ajouter adresse admin membre" },
       { id: "invitations", titre: "Invitations en attente", mots: "annuler invitation" },
     ],
@@ -87,6 +87,7 @@ export const SECTIONS: SectionReglages[] = [
     description: "Ce que les agents peuvent faire seuls, et le modèle de chacun.",
     entrees: [
       { id: "acces", titre: "Accès des agents", mots: "permissions autorisations autonomie demander tout accepter" },
+      { id: "assistant", titre: "Ton assistant", mots: "assistant principal nom renommer couleur" },
       { id: "modeles", titre: "Modèle de chaque agent", mots: "opus sonnet haiku role equipe fiche" },
       { id: "dossier-agents", titre: "Dossier des fiches", mots: "claude agents md fichiers" },
     ],

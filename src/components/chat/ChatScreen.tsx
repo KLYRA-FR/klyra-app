@@ -4,8 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { EmptyState } from "klyra-ui";
 import { PreviewPanel } from "@/components/preview/PreviewPanel";
+import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
+import { useAgents, type AgentLocal } from "@/lib/agents";
+import { annoncer } from "@/lib/annonces";
+import { demanderEcriture } from "@/lib/brouillons";
 import { formatTime } from "@/lib/format";
+import { jouer } from "@/lib/sons/sons";
 import { texteDe, useChat, useChatMessages, useProjects, useRoles, useWorkspace } from "@/lib/workspace";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
@@ -45,12 +50,63 @@ function useAdresseAnnoncee(chatId: string): { id: string; url: string } | null 
   }, [messages]);
 }
 
+/**
+ * La conversation d'un agent hors de Mes agents se lit sans composeur : à sa
+ * place, ce qui se passe et le geste pour le remettre (désactivé : Réactiver ;
+ * trouvé sur l'ordinateur : l'ajouter). Le composeur revient aussitôt, prêt à écrire.
+ */
+function BarreHorsDeMesAgents({ agent, chatId }: { agent: AgentLocal; chatId: string }) {
+  const { activer, ajouter } = useAgents();
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const { id, name } = agent.role;
+  const desactive = agent.statut === "desactive";
+
+  const agir = async () => {
+    setEnCours(true);
+    setErreur(null);
+    try {
+      if (desactive) await activer(id, true);
+      else await ajouter(id);
+      demanderEcriture(chatId);
+      if (!desactive) jouer("validation");
+      annoncer(desactive ? `${name} réactivé.` : `${name} ajouté à tes agents.`);
+    } catch (e) {
+      const raison = e instanceof Error ? e.message : String(e);
+      setErreur(desactive ? `La réactivation n’a pas abouti : ${raison}` : `L’ajout n’a pas abouti : ${raison}`);
+      setEnCours(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-bordure-subtile bg-fond-page px-4 py-3">
+      <div className="mx-auto flex w-full max-w-[880px] flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="m-0 min-w-0 flex-1 text-ui-s text-texte-secondaire">
+          {desactive ? `${name} n’est plus dans Mes agents. Ses messages restent lisibles.` : `${name} n’est pas dans Mes agents.`}
+        </p>
+        <Bouton variant="sombre" taille="compact" disabled={enCours} onClick={() => void agir()}>
+          {desactive ? "Réactiver" : "Ajouter à mes agents"}
+        </Bouton>
+      </div>
+      {erreur && (
+        <p role="alert" className="mx-auto mt-2 mb-0 w-full max-w-[880px] text-ui-xs text-texte-erreur">
+          {erreur}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Largeur de fenêtre sous laquelle le panneau de l'agent part fermé. */
 const PANNEAU_MIN_FENETRE = 1280;
 
 export function ChatScreen() {
   const chatId = useSearchParams().get("id");
   const chat = useChat(chatId);
+  const { tous } = useAgents();
+  /* Conversation directe (ou fil) d'un agent désactivé ou pas encore dans Mes agents : en lecture. */
+  const horsDeMesAgents =
+    chat?.kind === "direct" ? tous.find((a) => a.role.id === chat.roleIds[0] && a.statut !== "actif") : undefined;
   const project = useProjects().find((p) => p.id === chat?.projectId);
   const [previewOpen, setPreviewOpen] = useState(true);
   const modifiedLabel = useModifiedLabel(chat?.id ?? "");
@@ -130,7 +186,11 @@ export function ChatScreen() {
           }
         />
         <MessageThread key={chat.id} chatId={chat.id} />
-        <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
+        {horsDeMesAgents ? (
+          <BarreHorsDeMesAgents key={`hors-${chat.id}`} agent={horsDeMesAgents} chatId={chat.id} />
+        ) : (
+          <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
+        )}
       </section>
       {/* Conversation directe : pas de projet, donc pas d'aperçu. */}
       {previewOpen && chat.kind === "equipe" && <PreviewPanel key={project?.id} project={project} chat={chat} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} />}

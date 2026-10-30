@@ -1,8 +1,7 @@
-import Image from "next/image";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { useRole } from "@/lib/workspace";
-import type { RoleId } from "@/types/domain";
+import type { RoleId, RoleTeinte } from "@/types/domain";
 
 /** Ce que l'agent fait en ce moment, en pastille sur son rond. */
 export type StatutAgent = { type: "travaille" } | { type: "non-lu"; nombre: number } | null;
@@ -17,45 +16,39 @@ interface AgentRondProps {
   className?: string;
 }
 
+/** Le carré de couleur et l'initiale, commun à tous les avatars d'agent. */
+function Carre({ libelle, initiale, teinte, taille }: { libelle: string; initiale: string; teinte: RoleTeinte; taille: number }) {
+  const { haut, encre } = AGENT_PASTELS[teinte];
+  return (
+    <span
+      role="img"
+      aria-label={libelle}
+      className="flex size-full items-center justify-center font-semibold select-none"
+      style={{
+        background: haut,
+        color: encre,
+        fontSize: Math.round(taille * 0.4),
+        // Un carré, arrondi au quart de son côté : 8 px pour 32, 6 px pour 24.
+        borderRadius: Math.round(taille * 0.25),
+      }}
+    >
+      {initiale}
+    </span>
+  );
+}
+
 /**
  * Avatar d'un agent, le même partout (circuits, fil, barre latérale) : un
- * carré arrondi à son pastel uni, son initiale dans sa couleur foncée. Le Principal porte le
- * signe KLYRA blanc sur K1.
+ * carré arrondi à son pastel uni, son initiale dans sa couleur foncée.
+ * L'assistant suit la même règle, avec le nom et la couleur choisis.
  */
 export function AgentRond({ roleId, taille = 32, statut = null, fondPastille = "page", className }: AgentRondProps) {
   const role = useRole(roleId);
-  const { haut, encre } = AGENT_PASTELS[role.teinte];
-  const principal = roleId === "principal";
   const liseré = fondPastille === "page" ? "border-fond-page" : "border-fond-surface";
 
   return (
     <span className={cn("relative inline-flex shrink-0", className)} style={{ width: taille, height: taille }}>
-      <span
-        role="img"
-        aria-label={role.name}
-        className={cn(
-          "flex size-full items-center justify-center font-semibold select-none",
-          principal && "bg-bleu-k1-500",
-        )}
-        style={{
-          background: principal ? undefined : haut,
-          color: encre,
-          fontSize: Math.round(taille * 0.4),
-          // Un carré, arrondi au quart de son côté : 8 px pour 32, 6 px pour 24.
-          borderRadius: Math.round(taille * 0.25),
-        }}
-      >
-        {principal ? (
-          <Image
-            src="/brand/logo-signe-white.svg"
-            alt=""
-            width={Math.round(taille * 0.5)}
-            height={Math.round(taille * 0.5)}
-          />
-        ) : (
-          role.initial
-        )}
-      </span>
+      <Carre libelle={role.name} initiale={role.initial} teinte={role.teinte} taille={taille} />
 
       {statut?.type === "travaille" && (
         <span
@@ -86,6 +79,28 @@ export function AgentRond({ roleId, taille = 32, statut = null, fondPastille = "
           {statut.nombre > 9 ? "9+" : statut.nombre}
         </span>
       )}
+    </span>
+  );
+}
+
+/** Le rond d'un agent qui n'est pas encore enregistré (aperçu d'un nom et d'une couleur, proposition de l'assistant). */
+export function RondApercu({
+  nom,
+  teinte,
+  taille = 32,
+  libelle,
+  className,
+}: {
+  nom: string;
+  teinte: RoleTeinte;
+  taille?: number;
+  /** Ce que lit un lecteur d'écran ; par défaut, le nom. */
+  libelle?: string;
+  className?: string;
+}) {
+  return (
+    <span className={cn("relative inline-flex shrink-0", className)} style={{ width: taille, height: taille }}>
+      <Carre libelle={libelle ?? nom} initiale={nom.trim().charAt(0).toUpperCase()} teinte={teinte} taille={taille} />
     </span>
   );
 }

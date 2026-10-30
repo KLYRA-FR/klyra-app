@@ -5,6 +5,8 @@ export interface Onglet<T extends string> {
   id: T;
   label: string;
   icone?: ReactNode;
+  /** Un nombre discret après le libellé (« Mes agents 12 »). */
+  nombre?: number;
 }
 
 interface OngletsProps<T extends string> {
@@ -36,7 +38,21 @@ export function Onglets<T extends string>({
   className,
 }: OngletsProps<T>) {
   return (
-    <div role="tablist" aria-label={libelle} className={cn("inline-flex bg-fond-surface-grise p-0.5", arrondi === "serre" ? "rounded-sm" : "rounded-md-moins", className)}>
+    <div
+      role="tablist"
+      aria-label={libelle}
+      className={cn("inline-flex bg-fond-surface-grise p-0.5", arrondi === "serre" ? "rounded-sm" : "rounded-md-moins", className)}
+      /* ← et → passent d'un onglet à l'autre et l'activent ; Tab entre ensuite dans le contenu. */
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+        const liste = e.currentTarget;
+        const rang = onglets.findIndex((o) => o.id === valeur);
+        const suivant = onglets[(rang + (e.key === "ArrowRight" ? 1 : onglets.length - 1)) % onglets.length];
+        e.preventDefault();
+        onChange(suivant.id);
+        requestAnimationFrame(() => liste.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus());
+      }}
+    >
       {onglets.map((onglet) => {
         const actif = onglet.id === valeur;
         return (
@@ -45,6 +61,7 @@ export function Onglets<T extends string>({
             type="button"
             role="tab"
             aria-selected={actif}
+            tabIndex={actif ? 0 : -1}
             onClick={() => onChange(onglet.id)}
             title={onglet.label}
             className={cn(
@@ -58,6 +75,7 @@ export function Onglets<T extends string>({
           >
             {onglet.icone}
             <span className={cn(etiquettes === "large" && onglet.icone && "sr-only @lg:not-sr-only")}>{onglet.label}</span>
+            {onglet.nombre !== undefined && onglet.nombre > 0 && <span className="text-texte-tertiaire">{onglet.nombre}</span>}
           </button>
         );
       })}

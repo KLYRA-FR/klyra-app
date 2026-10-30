@@ -227,7 +227,7 @@ function Membres({ moi }: { moi: Membre }) {
   };
 
   return (
-    <Groupe titre="Membres" description={admin ? "Tu es admin : tu invites, changes les rôles et retires des personnes." : "Seuls les admins gèrent l’équipe."}>
+    <Groupe titre="Membres de l’équipe" description={admin ? "Tu es admin : tu invites, changes les rôles et retires des personnes." : "Seuls les admins gèrent l’équipe."}>
       <div id="reglage-membres" className="klyra-reglage -mx-4 flex scroll-mt-6 flex-col divide-y divide-bordure-subtile">
         {membres === undefined && <Ligne libelle="Chargement de l’équipe…" />}
         {membres?.map((m) => (

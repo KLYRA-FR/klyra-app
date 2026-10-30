@@ -196,6 +196,11 @@ const RDV = { id: "rdv-visite", titre: "Visite du studio", date: AUJ, debut: "16
 
 mkdirSync(DONNEES, { recursive: true });
 mkdirSync(MAISON, { recursive: true });
+/* Un profil déjà ouvert, assistant nommé : l'Accueil montre les rappels, pas l'écran du premier lancement. */
+writeFileSync(
+  path.join(DONNEES, "mes-agents.json"),
+  JSON.stringify({ version: 1, depart: "reprise", assistant: { nom: "Principal", teinte: null }, agents: {} }),
+);
 const CONVERSATIONS = path.join(DONNEES, "conversations.json");
 /** Les données attendent ici pendant le premier chargement de chaque lancement (sans horloge). */
 const EN_ATTENTE = path.join(TMP, "conversations-en-attente.json");

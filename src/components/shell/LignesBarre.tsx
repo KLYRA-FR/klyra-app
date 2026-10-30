@@ -138,12 +138,11 @@ export function Grappe({ chat, roles, petite = false }: { chat: Chat; roles: Rol
             className={cn(
               "flex items-center justify-center text-ui-3xs leading-none font-semibold",
               petite ? "rounded-[3px]" : "rounded-[5px]",
-              r.id === "principal" && "bg-bleu-k1-500 text-texte-inverse",
               visibles.length === 1 && cn("col-span-2 row-span-2", !petite && "text-ui-xs"),
             )}
-            style={r.id === "principal" ? undefined : { background: haut, color: encre }}
+            style={{ background: haut, color: encre }}
           >
-            {initiale && (r.id === "principal" ? "K" : r.initial)}
+            {initiale && r.initial}
           </span>
         );
       })}

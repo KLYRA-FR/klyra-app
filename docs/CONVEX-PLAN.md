@@ -60,12 +60,19 @@
 - **Dans le Planning actuel** : l'`Agenda` affiche les événements du compte à côté des routines des agents, qui restent locales. Le « Weekly KLYRA » codé en dur dans `src/lib/agenda-equipe.ts` devient un événement d'équipe répété chaque semaine. La notification 10 minutes avant reste calculée par l'app ouverte, comme aujourd'hui.
 - **Google Agenda** : plus tard, dans une PR à part.
 
+## 3 bis. Bibliothèque KLYRA (30/10)
+
+- **Table `definitionsAgents`** : auteur, identifiant proposé (`slug`, fixe), nom, rôle court, description, capacités, modèle, fiche partagée (`contenu`), dépendances nommées (`{{chemin:cle}}`), version, date, retrait. Index `by_retireeLe_and_majLe` et `by_auteurId_and_slug`. Fonctions dans `convex/bibliotheque.ts`.
+- **Ce qui part** : seulement la fiche, passée par `preparerPublication` (`convex/model/definitions.ts`) que le serveur refait (`verifierDefinition`) : en-tête réduit, chemins personnels remplacés, secret refusé. Jamais la mémoire, l'historique, les conversations, les clés, les sessions, ni la couleur et le nom personnels.
+- **Qui ajoute quoi** reste sur chaque ordinateur (`mes-agents.json`) : aucun compteur, aucune trace d'ajout sur le serveur.
+
 ## 4. Droits
 
 - Toute fonction publique commence par `exigerMembre(ctx)` : session valide et membre actif, sinon refus.
 - **Rappels** : visibles par la personne qui l'a créé et celle à qui il est assigné. La première peut tout modifier et supprimer. La seconde change le statut et les notes.
 - **Événements** : visibles par l'organisateur et les participants (tous les membres pour un événement d'équipe). Ni les autres événements ni les créneaux occupés ne sont visibles. L'organisateur modifie et supprime.
 - **Équipe** : la liste est visible par tous les membres ; les invitations et les rôles, seulement par les admins.
+- **Bibliothèque** : visible par tous les membres actifs ; seul l'auteur (retrouvé par sa session) publie une mise à jour, avec la version qu'il avait sous les yeux, ou retire sa définition. Pas de modération par un admin dans ce lot.
 - **Admins** : être admin ne donne pas accès aux rappels ni aux événements des autres (décision du 29/10). Un admin gère seulement l'équipe.
 - Chaque PR ajoute des tests `convex-test` qui vérifient aussi les refus : un autre membre, une personne retirée, une personne sans session.
 

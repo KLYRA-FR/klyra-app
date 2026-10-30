@@ -211,6 +211,27 @@ const OUTILS_FILS = [
   },
 ];
 
+/** L'assistant aide à créer un agent : il propose la fiche, la personne l'ajuste et l'enregistre (ou non). */
+const OUTIL_PROPOSER = {
+  name: "proposer_agent",
+  description:
+    "Propose à la personne une fiche d'agent à créer, d'après un besoin qu'elle a exprimé et qu'aucun de ses agents ne couvre. L'app lui montre la proposition : elle l'ouvre dans l'éditeur, l'ajuste et l'enregistre elle-même. Rien n'est créé par cet outil. Une seule proposition par besoin ; demande-lui d'abord ce qui manque si le besoin est flou.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Identifiant proposé : minuscules, chiffres et tirets (ex. juriste)." },
+      nom: { type: "string", description: "Le prénom de l'agent (ex. Nina)." },
+      role: { type: "string", description: "Son rôle court (ex. Juridique)." },
+      description: {
+        type: "string",
+        description: "Une phrase : « Rôle — ce qu'il couvre, séparé par des virgules. Appelle <prénom> dès qu'il faut… »",
+      },
+      consignes: { type: "string", description: "Le corps de la fiche en Markdown : présentation, « ## Comment je travaille », « ## Ce que je ne fais pas », « ## Critères de sortie »." },
+    },
+    required: ["id", "nom", "role", "description", "consignes"],
+  },
+};
+
 function repondre(res: ServerResponse, statut: number, corps?: unknown) {
   res.writeHead(statut, corps === undefined ? {} : { "Content-Type": "application/json" });
   res.end(corps === undefined ? undefined : JSON.stringify(corps));
@@ -265,12 +286,13 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
             },
           ]
         : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
-      if (OUTILS_FILS.some((o) => o.name === nom)) {
+      if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
+      if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name) {
         if (!relaisFils) return texte("L'app n'est pas prête, réessaie dans un instant.", true);
         try {
           return texte(await relaisFils(nom, args, appelant));
@@ -323,4 +345,7 @@ export function configMcp(appelant: Appelant): string | null {
 }
 
 /** Les outils de l'app qu'un agent peut utiliser sans demander, en accès « projet ». */
-export const OUTILS_APP = () => [...(combien ? ["mcp__klyra__demander_ia"] : []), ...OUTILS_FILS.map((o) => `mcp__klyra__${o.name}`)];
+export const OUTILS_APP = () => [
+  ...(combien ? ["mcp__klyra__demander_ia"] : []),
+  ...[...OUTILS_FILS, OUTIL_PROPOSER].map((o) => `mcp__klyra__${o.name}`),
+];

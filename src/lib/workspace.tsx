@@ -10,6 +10,7 @@ import { identiteAffichee, type Identite, type ProfilCompte } from "@/lib/identi
 import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
+import { lireProposition } from "@/lib/proposition-agent";
 import { reglagesActuels } from "@/lib/reglages";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
@@ -383,6 +384,9 @@ function ajouterEtape(
       },
     ];
   }
+  // L'assistant propose un nouvel agent : une carte à ouvrir dans l'éditeur, après ses étapes.
+  const proposition = etape.outil === "mcp__klyra__proposer_agent" ? lireProposition(entree) : null;
+  if (proposition) return [...parts, { type: "proposition-agent", etapeId: etape.id, proposition }];
   // Toutes les étapes de la réponse vivent dans un seul bloc, en tête du message.
   const index = parts.findIndex((p) => p.type === "etapes");
   if (index === -1) return [{ type: "etapes", etapes: [etape] }, ...parts];
@@ -391,7 +395,9 @@ function ajouterEtape(
 
 function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[] {
   const statut = ok ? "fait" : "erreur";
-  return parts.map((p) => {
+  // Une proposition d'agent refusée par l'app (identifiant déjà pris…) ne devient pas une carte.
+  const gardees = ok ? parts : parts.filter((p) => !(p.type === "proposition-agent" && p.etapeId === id));
+  return gardees.map((p) => {
     if (p.type === "passation" && p.etapeId === id) return { ...p, statut };
     if (p.type === "etapes")
       return {
@@ -1372,7 +1378,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           const agent = String(args.agent ?? "").trim();
           const titre = String(args.titre ?? "").trim();
           const brief = String(args.brief ?? "").trim();
-          if (!roles.some((r) => r.id === agent)) throw new Error(`Agent inconnu « ${agent} ». Agents : ${roles.map((r) => `${r.id} (${r.name})`).join(", ")}.`);
+          if (!roles.some((r) => r.id === agent)) {
+            throw new Error(`« ${agent} » n’est pas dans Mes agents : il ne peut pas recevoir de fil. Agents disponibles : ${roles.map((r) => `${r.id} (${r.name})`).join(", ")}.`);
+          }
           if (!brief) throw new Error("Le brief est vide : le fil ne voit pas ta conversation, il lui faut tout.");
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
           const id = creerFil(agent, titre || brief, lanceur);
@@ -1414,6 +1422,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           const fil = filDe(args.id);
           archiverFil(fil.id);
           return `Fil fermé et archivé : ${fil.title} (${fil.id}). Il peut être rouvert.`;
+        }
+        case "proposer_agent": {
+          const proposition = lireProposition(args);
+          if (!proposition) throw new Error("Il manque le prénom ou les consignes de l’agent proposé.");
+          if (roles.some((r) => r.id === proposition.id)) throw new Error(`« ${proposition.id} » est déjà dans Mes agents : propose un autre identifiant, ou un changement de sa fiche.`);
+          return `Proposition affichée à la personne : ${proposition.nom} (${proposition.role || "sans rôle"}). Elle l’ouvre dans l’éditeur, l’ajuste et l’enregistre elle-même ; rien n’est créé tant qu’elle n’a pas enregistré.`;
         }
         default:
           throw new Error("Outil inconnu.");
@@ -2069,12 +2083,13 @@ export function useRoles(): Role[] {
   return useAgents().roles;
 }
 
-/** Un agent par son id. S'il a été supprimé ou n'est pas installé sur ce
- *  poste, un agent de remplacement (les anciens messages restent lisibles). */
+/** Un agent par son id, même désactivé (ses conversations restent lisibles, sous son nom). S'il a été
+ *  supprimé ou n'est pas sur ce poste, un agent de remplacement (les anciens messages restent lisibles). */
 export function useRole(id: RoleId): Role {
-  const roles = useRoles();
+  const { roles, tous } = useAgents();
   return (
-    roles.find((r) => r.id === id) ?? {
+    roles.find((r) => r.id === id) ??
+    tous.find((a) => a.role.id === id)?.role ?? {
       ...PRINCIPAL,
       id,
       name: id,
@@ -2090,14 +2105,16 @@ export function useProjects(): Project[] {
   return useWorkspace().state.projects;
 }
 
-/** Une conversation par son id. Celle d'un agent (`dm-<agent>`) existe dès qu'on l'ouvre, même vide. */
+/** Une conversation par son id. Celle d'un agent (`dm-<agent>`) existe dès qu'on l'ouvre, même vide,
+ *  y compris pour un agent hors de Mes agents (elle s'ouvre alors en lecture). */
 export function useChat(id: string | null): Chat | undefined {
   const { chats } = useWorkspace().state;
-  const roles = useRoles();
+  const { roles, tous } = useAgents();
   return useMemo(() => {
     const chat = chats.find((c) => c.id === id);
     if (chat || !id?.startsWith(DIRECT)) return chat;
-    const role = roles.find((r) => r.id === id.slice(DIRECT.length));
+    const roleId = id.slice(DIRECT.length);
+    const role = roles.find((r) => r.id === roleId) ?? tous.find((a) => a.role.id === roleId)?.role;
     if (!role) return undefined;
     return {
       id,
@@ -2109,7 +2126,7 @@ export function useChat(id: string | null): Chat | undefined {
       sessions: {},
       luJusqua: null,
     };
-  }, [chats, roles, id]);
+  }, [chats, roles, tous, id]);
 }
 
 export function useChatMessages(chatId: string): Message[] {

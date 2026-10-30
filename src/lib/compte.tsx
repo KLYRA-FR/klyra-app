@@ -129,6 +129,16 @@ const MESSAGES: Record<string, string> = {
   introuvable: "Cette personne ou cette invitation n’existe plus.",
   dernier_admin: "Il faut garder au moins un admin dans l’équipe.",
   trop_tot: "Un lien vient déjà d’être demandé pour cette adresse : attends une minute avant d’en redemander un.",
+  // Bibliothèque KLYRA (convex/bibliotheque.ts).
+  reserve_a_l_auteur: "Seul son auteur peut publier une mise à jour ou la retirer. Tu peux en faire une copie privée.",
+  deja_publiee: "Tu as déjà partagé cet agent : publie plutôt une mise à jour.",
+  conflit_version: "Une autre version vient d’être publiée entre-temps (depuis un autre ordinateur ?). Recharge la fiche avant de publier.",
+  fiche_invalide: "La fiche est vide ou son en-tête est illisible.",
+  trop_long: "La fiche est trop longue pour être partagée (60 000 caractères au plus, description 1 200).",
+  cle_non_partagee: "La fiche contient des réglages qui ne se partagent pas : rouvre l’aperçu avant de partager.",
+  secret_detecte: "La fiche contient ce qui ressemble à une clé ou un mot de passe : retire-le avant de partager.",
+  chemin_personnel: "La fiche contient encore un chemin de ton ordinateur : rouvre l’aperçu avant de partager.",
+  dependance_invalide: "Les dossiers à configurer ne correspondent pas à la fiche : rouvre l’aperçu avant de partager.",
 };
 
 /** Le code d'erreur renvoyé par une fonction Convex (`convex/model/valeurs.ts`), ou null. */
