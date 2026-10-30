@@ -87,6 +87,7 @@ export const SECTIONS: SectionReglages[] = [
     description: "Ce que les agents peuvent faire seuls, et le modèle de chacun.",
     entrees: [
       { id: "acces", titre: "Accès des agents", mots: "permissions autorisations autonomie demander tout accepter" },
+      { id: "assistant", titre: "Ton assistant", mots: "assistant principal nom renommer couleur" },
       { id: "modeles", titre: "Modèle de chaque agent", mots: "opus sonnet haiku role equipe fiche" },
       { id: "dossier-agents", titre: "Dossier des fiches", mots: "claude agents md fichiers" },
     ],

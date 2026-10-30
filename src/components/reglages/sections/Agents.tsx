@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { MODELES } from "@/components/team/AgentEditor";
+import { ModalePersonnaliserAssistant } from "@/components/team/PersonnaliserAssistant";
 import { Bouton } from "@/components/ui/Bouton";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { NIVEAUX_ACCES } from "@/lib/acces";
@@ -13,9 +14,9 @@ import { getField, parseAgentFile, serializeAgentFile, setFields } from "@/lib/a
 import { useAgents } from "@/lib/agents";
 import { BridgeError, getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
-import { useWorkspace } from "@/lib/workspace";
+import { useRole, useWorkspace } from "@/lib/workspace";
 import type { Role } from "@/types/domain";
-import { Erreur, Groupe, Ligne, SeulementBureau } from "../ui";
+import { ancreReglage, Erreur, Groupe, Ligne, SeulementBureau } from "../ui";
 
 function ChoixAcces() {
   const { state, choisirAcces } = useWorkspace();
@@ -110,6 +111,28 @@ function ModeleAgent({ role }: { role: Role }) {
   );
 }
 
+/** L'assistant en tête du groupe : son avatar, son nom, et la fenêtre pour les changer. */
+function LigneAssistant() {
+  const assistant = useRole("principal");
+  const { canEdit } = useAgents();
+  const [ouvert, setOuvert] = useState(false);
+  return (
+    <div id={ancreReglage("assistant")} className="klyra-reglage -mx-4 flex scroll-mt-6 items-center gap-3 px-4 py-2.5">
+      <AgentRond roleId="principal" taille={28} fondPastille="surface" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-ui-s font-medium text-texte-principal">
+          {assistant.name} <span className="font-normal text-texte-tertiaire">· Ton assistant</span>
+        </span>
+        <span className="truncate text-ui-xs text-texte-tertiaire">Son nom et sa couleur, partout dans l’app.</span>
+      </span>
+      <Bouton variant="blanc" taille="compact" disabled={!canEdit} onClick={() => setOuvert(true)}>
+        Personnaliser
+      </Bouton>
+      <ModalePersonnaliserAssistant ouvert={ouvert} onFermer={() => setOuvert(false)} />
+    </div>
+  );
+}
+
 export function Agents() {
   const router = useRouter();
   const { roles, status, dir, canEdit } = useAgents();
@@ -128,17 +151,18 @@ export function Agents() {
         titre="Modèle de chaque agent"
         description={
           canEdit
-            ? "Écrit dans la fiche de l’agent, comme depuis l’Équipe. Dans une conversation, tu peux encore choisir un autre modèle pour une réponse."
+            ? "Écrit dans la fiche de l’agent, comme depuis Mes agents. Dans une conversation, tu peux encore choisir un autre modèle pour une réponse."
             : "Les fiches se lisent et s’écrivent dans l’app de bureau."
         }
       >
+        <LigneAssistant />
         <div id="reglage-modeles" className="klyra-reglage -mx-4 scroll-mt-6 px-0">
           {status === "chargement" ? (
             <Ligne libelle="Lecture des fiches…" />
           ) : agents.length === 0 ? (
-            <Ligne libelle="Aucun agent sur ce poste" description="Installe l’équipe depuis l’écran Équipe.">
+            <Ligne libelle="Pas encore d’autre agent" description="Ton assistant travaille seul. Crée un agent ou prends-en un dans la bibliothèque.">
               <Bouton variant="blanc" taille="compact" onClick={() => router.push("/equipe")}>
-                Équipe
+                Mes agents
               </Bouton>
             </Ligne>
           ) : (
