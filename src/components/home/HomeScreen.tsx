@@ -14,7 +14,7 @@ import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { aujourdhui } from "@/lib/dates";
 import { deuxiemeBloc, premierBloc } from "@/lib/mouvement";
 import { findMention } from "@/lib/mentions";
-import { idDirect, useProjects, useRoles, useWorkspace } from "@/lib/workspace";
+import { idDirect, useProjects, useRole, useRoles, useWorkspace } from "@/lib/workspace";
 import type { RoleId } from "@/types/domain";
 
 const AUTO = "auto";
@@ -46,11 +46,14 @@ function useResumeDuJour(): string {
   return `Au programme : ${morceaux.join(" et ")}. Tu vas y arriver.`;
 }
 
-/** Accueil de l'IA : on écrit au Principal, ou on part d'une suggestion. */
+/** Accueil de l'IA : on écrit à l'assistant (ou à un agent), ou on part d'une suggestion. */
 export function HomeScreen() {
   const router = useRouter();
   const { state, moi, startChat, sendMessage } = useWorkspace();
   const roles = useRoles();
+  const assistant = useRole("principal");
+  /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
+  const seul = roles.length <= 1;
   const projects = useProjects();
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
@@ -63,7 +66,7 @@ export function HomeScreen() {
     const r = await bridge.fichiers.choisir();
     if (r.ok) setFichiers((f) => [...new Set([...f, ...r.data])].slice(0, MAX_FICHIERS));
   };
-  // Sans projet : la demande part en conversation directe (au Principal, ou à l'agent choisi).
+  // Sans projet : la demande part en conversation directe (à l'assistant, ou à l'agent choisi).
   const [projectId, setProjectId] = useState("");
   // « Écrire à Hugo » depuis l'équipe arrive ici avec ?a=dev.
   const preselected = useSearchParams().get("a");
@@ -85,7 +88,11 @@ export function HomeScreen() {
   };
 
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: "Principal · il répartit", icone: <RoleAvatar roleId="principal" size="xs" /> },
+    {
+      value: AUTO,
+      label: seul ? assistant.name : `${assistant.name} · il répartit`,
+      icone: <RoleAvatar roleId="principal" size="xs" />,
+    },
     ...roles
       .filter((r) => r.id !== "principal")
       .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <RoleAvatar roleId={r.id} size="xs" /> })),
@@ -143,7 +150,9 @@ export function HomeScreen() {
             pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
             placeholder={
               to === AUTO
-                ? "Décris ce que tu veux faire : le Principal répartit le travail…"
+                ? seul
+                  ? `Écris à ${assistant.name}…`
+                  : `Décris ce que tu veux faire : ${assistant.name} répartit le travail…`
                 : `Écris à ${roles.find((r) => r.id === to)?.name ?? "l’agent"}…`
             }
             puces={

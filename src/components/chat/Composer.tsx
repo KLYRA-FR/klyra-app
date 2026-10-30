@@ -151,6 +151,9 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const champ = useRef<HTMLTextAreaElement>(null);
   const direct = chat.kind === "direct";
   const agent = useRole(chat.roleIds[0] ?? "principal");
+  const assistant = useRole("principal");
+  /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
+  const seul = roles.length <= 1;
   const bridge = getBridge();
   const { compte } = useCompteClaude();
   const deconnecte = !!compte && (!compte.installe || !compte.connecte);
@@ -322,7 +325,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: "Principal", icone: <AgentRond roleId="principal" taille={20} /> },
+    { value: AUTO, label: assistant.name, icone: <AgentRond roleId="principal" taille={20} /> },
     ...roles
       .filter((r) => r.id !== "principal")
       .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <AgentRond roleId={r.id} taille={20} /> })),
@@ -359,7 +362,9 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           onColler={coller}
           aDesPieces={fichiers.length > 0}
           pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
-          placeholder={direct ? `Écris à ${agent.name}…` : "Écris à l’équipe, ou @mentionne un agent…"}
+          placeholder={
+            direct ? `Écris à ${agent.name}…` : seul ? `Écris à ${assistant.name}…` : "Écris à l’équipe, ou @mentionne un agent…"
+          }
           puces={
             direct ? undefined : (
               <>
@@ -401,7 +406,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           ? "Ton message attendra que l’agent ait fini · le carré l’arrête."
           : direct
             ? `${agent.name} travaille dans son propre dossier · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`
-            : "Sans mention, le Principal répartit le travail · Entrée pour envoyer, Maj + Entrée pour aller à la ligne."}
+            : `${seul ? `${assistant.name} te répond` : `Sans mention, ${assistant.name} répartit le travail`} · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`}
       </p>
     </div>
   );
