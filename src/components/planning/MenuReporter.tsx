@@ -45,14 +45,20 @@ function cibleEcrite(choix: Report, maintenant: Date): string {
   return choix === "une-heure" ? libelleEcheance(date, heure) : libelleJourCourt(date, heure);
 }
 
+const eclairages = new WeakMap<HTMLElement, number>();
+
 /** Éclaire la date d'un rappel partout où elle est affichée (`data-echeance`), comme un réglage trouvé. */
 export function eclairerEcheance(id: string) {
   requestAnimationFrame(() => {
     for (const el of document.querySelectorAll<HTMLElement>(`[data-echeance="${CSS.escape(id)}"]`)) {
+      window.clearTimeout(eclairages.get(el));
       el.removeAttribute("data-eclaire");
       void el.offsetWidth; // relance l'animation si on y revient
       el.setAttribute("data-eclaire", "");
-      window.setTimeout(() => el.removeAttribute("data-eclaire"), ECLAIRAGE_MS);
+      eclairages.set(el, window.setTimeout(() => {
+        el.removeAttribute("data-eclaire");
+        eclairages.delete(el);
+      }, ECLAIRAGE_MS));
     }
   });
 }
@@ -112,7 +118,9 @@ export function MenuReporter({ tache, className, onReporte }: { tache: Tache; cl
   useLayoutEffect(() => {
     if (!place) return;
     entrer(menu.current, { y: versLeHaut ? 4 : -4, echelle: 0.98, duree: 180 });
-    menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+    /* Attendre que le portail soit visible, même sans animation d'entrée. */
+    const frame = requestAnimationFrame(() => menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
   }, [place, versLeHaut]);
 
   /* Ouvert : clic ailleurs ou app quittée ferment, défilement et redimensionnement replacent, les cibles suivent l'heure. */

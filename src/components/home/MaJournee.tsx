@@ -51,11 +51,18 @@ function basculer(t: Tache): Tache {
  */
 function useRetenues(carte: RefObject<HTMLElement | null>) {
   const [retenues, setRetenues] = useState<{ id: string; rang: number }[]>([]);
+  const minuteurs = useRef(new Map<string, number>());
+  useEffect(() => {
+    const actifs = minuteurs.current;
+    return () => { actifs.forEach((id) => window.clearTimeout(id)); };
+  }, []);
   const retenir = useCallback(
     (id: string, rang: number) => {
       if (rang < 0) return;
+      window.clearTimeout(minuteurs.current.get(id));
       setRetenues((r) => [...r.filter((x) => x.id !== id), { id, rang }]);
-      window.setTimeout(() => {
+      minuteurs.current.set(id, window.setTimeout(() => {
+        minuteurs.current.delete(id);
         const focus = !!carte.current?.querySelector(`[data-ligne-rappel="${CSS.escape(id)}"]`)?.contains(document.activeElement);
         setRetenues((r) => r.filter((x) => x.id !== id));
         if (!focus) return;
@@ -66,7 +73,7 @@ function useRetenues(carte: RefObject<HTMLElement | null>) {
           const suivante = lignes[Math.min(rang, lignes.length - 1)]?.querySelector<HTMLElement>("[data-reporter]");
           (suivante ?? el.querySelector<HTMLElement>("[data-nouveau-rappel]"))?.focus({ preventScroll: true });
         });
-      }, ECLAIRAGE_MS);
+      }, ECLAIRAGE_MS));
     },
     [carte],
   );
