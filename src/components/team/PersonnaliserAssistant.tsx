@@ -167,7 +167,7 @@ function FenetreAssistant({ onFermer }: { onFermer: () => void }) {
               onEntree={() => void enregistrer()}
             />
           </div>
-          <RondApercu nom={nomPropre(nom) || assistant.name} teinte={teinte} taille={56} libelle="Aperçu de son avatar" className="mt-7" />
+          <RondApercu agentId={assistant.id} nom={nomPropre(nom) || assistant.name} teinte={teinte} taille={56} libelle="Aperçu de son avatar" className="mt-7" />
         </div>
         <div className="flex flex-col gap-2">
           <span id={`${formulaire}-couleur`} className="text-ui-s font-medium text-texte-principal">

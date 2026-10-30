@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { Icon, type IconName } from "@/components/icons/Icon";
+import { VisuelAgent } from "@/components/roles/AgentRond";
 import { Inline, Markdown } from "@/components/ui/Markdown";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { findColleagues } from "@/lib/agent-file";
@@ -150,16 +151,16 @@ function Criteres({ elements }: { elements: Element[] }) {
   );
 }
 
-/** Capsule d'un collègue : son rond de couleur et son prénom. */
+/** Capsule d'un collègue : son avatar et son prénom. */
 function CapsuleCollegue({ role }: { role: Role }) {
-  const { haut, encre } = AGENT_PASTELS[role.teinte];
   return (
     <Link
       href={`/equipe?agent=${role.id}`}
       className="flex h-[42px] shrink-0 items-center gap-2 rounded-md border border-bordure-subtile bg-fond-page pr-4 pl-1 no-underline transition-colors duration-[220ms] ease-sortie hover:border-bordure-forte"
     >
-      <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-sm text-ui-xs font-semibold" style={{ background: haut, color: encre }}>
-        {role.initial}
+      {/* Le prénom suit : l'avatar n'est pas lu deux fois. */}
+      <span className="size-8 shrink-0">
+        <VisuelAgent agentId={role.id} teinte={role.teinte} rayon={8} />
       </span>
       <span className="text-ui-s font-semibold text-texte-principal">{role.name}</span>
     </Link>
