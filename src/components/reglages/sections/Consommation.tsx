@@ -193,7 +193,7 @@ function Vide({ children }: { children: ReactNode }) {
 export function Consommation() {
   const router = useRouter();
   const { state } = useWorkspace();
-  const { roles } = useAgents();
+  const { roles, tous } = useAgents();
   const { compte } = useCompteClaude();
   const journal = useJournal();
   /* Tout Claude Code sur cet ordinateur (terminal, IDE, app), ou seulement ce qui passe par KLYRA. */
@@ -202,7 +202,10 @@ export function Consommation() {
   const stats = useMemo(() => calculer(state.messages, entrees), [state.messages, entrees]);
 
   const nomAgent = (id: string) =>
-    id === "hors-klyra" ? "Terminal et autres outils" : (roles.find((r) => r.id === id)?.name ?? (id === "principal" ? "Principal" : id));
+    id === "hors-klyra"
+      ? "Terminal et autres outils"
+      : // Un agent désactivé ou hors de Mes agents garde son nom dans les chiffres.
+        (roles.find((r) => r.id === id)?.name ?? tous.find((a) => a.role.id === id)?.role.name ?? id);
   const h = journal?.historique;
   const debut = h?.depuis ?? journal?.depuis ?? null;
   const depuis = !journal ? "Rattrapage de l’historique…" : debut ? `Comptés depuis le ${dateAnnee(new Date(debut))}` : "Comptés à partir de cette version";

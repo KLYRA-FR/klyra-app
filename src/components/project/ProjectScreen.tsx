@@ -13,7 +13,7 @@ import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { findMention } from "@/lib/mentions";
 import { poste } from "@/lib/plateforme";
-import { useChatPreview, useProject, useRecentChats, useRoles, useWorkspace } from "@/lib/workspace";
+import { useChatPreview, useProject, useRecentChats, useRole, useRoles, useWorkspace } from "@/lib/workspace";
 import type { Chat, ProjectStatus, RoleId } from "@/types/domain";
 
 const STATUS: Record<ProjectStatus, { label: string; className: string }> = {
@@ -46,6 +46,7 @@ export function ProjectScreen() {
   const router = useRouter();
   const project = useProject(useSearchParams().get("id"));
   const roles = useRoles();
+  const assistant = useRole("principal");
   const { startChat, retirerProjet } = useWorkspace();
   const [retirer, setRetirer] = useState(false);
   const chats = useRecentChats().filter((c) => c.projectId === project?.id);
@@ -66,7 +67,7 @@ export function ProjectScreen() {
     router.push(`/chat?id=${startChat(project.id, text.trim(), recipient)}`);
   };
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: "Principal", icone: <RoleAvatar roleId="principal" size="xs" /> },
+    { value: AUTO, label: assistant.name, icone: <RoleAvatar roleId="principal" size="xs" /> },
     ...roles
       .filter((r) => r.id !== "principal")
       .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <RoleAvatar roleId={r.id} size="xs" /> })),

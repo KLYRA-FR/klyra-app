@@ -2101,14 +2101,16 @@ export function useProjects(): Project[] {
   return useWorkspace().state.projects;
 }
 
-/** Une conversation par son id. Celle d'un agent (`dm-<agent>`) existe dès qu'on l'ouvre, même vide. */
+/** Une conversation par son id. Celle d'un agent (`dm-<agent>`) existe dès qu'on l'ouvre, même vide,
+ *  y compris pour un agent hors de Mes agents (elle s'ouvre alors en lecture). */
 export function useChat(id: string | null): Chat | undefined {
   const { chats } = useWorkspace().state;
-  const roles = useRoles();
+  const { roles, tous } = useAgents();
   return useMemo(() => {
     const chat = chats.find((c) => c.id === id);
     if (chat || !id?.startsWith(DIRECT)) return chat;
-    const role = roles.find((r) => r.id === id.slice(DIRECT.length));
+    const roleId = id.slice(DIRECT.length);
+    const role = roles.find((r) => r.id === roleId) ?? tous.find((a) => a.role.id === roleId)?.role;
     if (!role) return undefined;
     return {
       id,
@@ -2120,7 +2122,7 @@ export function useChat(id: string | null): Chat | undefined {
       sessions: {},
       luJusqua: null,
     };
-  }, [chats, roles, id]);
+  }, [chats, roles, tous, id]);
 }
 
 export function useChatMessages(chatId: string): Message[] {

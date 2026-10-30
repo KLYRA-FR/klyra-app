@@ -2,18 +2,22 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Stack } from "klyra-ui";
 import { cn } from "@/lib/cn";
 import { Icon } from "@/components/icons/Icon";
-import { AgentRond } from "@/components/roles/AgentRond";
+import { AgentRond, RondApercu } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { Markdown } from "@/components/ui/Markdown";
 import { PixelCheck } from "@/components/ui/PixelCheck";
+import { roleFromContent } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { estCaptureCollee } from "@/lib/collage";
 import { iconeEtape } from "@/lib/etapes";
 import { nomFichier } from "@/lib/fichiers";
+import { identifiantDe } from "@/lib/noms-agents";
 import { poste } from "@/lib/plateforme";
+import { confierAEditeur } from "@/lib/proposition-agent";
 import { idDirect, useRole } from "@/lib/workspace";
 import { PastilleExtension } from "./PastilleExtension";
 import type {
@@ -231,6 +235,57 @@ export function PassationView({
   );
 }
 
+/* ─── Proposition d'agent ──────────────────────────────────────── */
+
+/**
+ * La fiche d'agent proposée par l'assistant, sous sa bulle : on l'ouvre dans
+ * l'éditeur pour l'ajuster, rien n'est écrit avant « Créer l'agent ». Une
+ * proposition suivante dans le fil la remplace : elle reste lisible, sans bouton.
+ */
+export function CartePropositionAgent({
+  part,
+  remplacee,
+}: {
+  part: Extract<MessagePart, { type: "proposition-agent" }>;
+  remplacee: boolean;
+}) {
+  const router = useRouter();
+  const { proposition } = part;
+  // La couleur que l'app donnerait à cet agent (celle d'un modèle KLYRA, sinon tirée de son identifiant).
+  const teinte = roleFromContent(proposition.id || identifiantDe(proposition.nom) || "agent", "", {}, null).teinte;
+  const ouvrir = () => {
+    confierAEditeur(proposition);
+    router.push(`/equipe?nouveau=1&proposition=${encodeURIComponent(part.etapeId)}`);
+  };
+  return (
+    <div className={cn("flex w-full max-w-[400px] flex-col gap-3 rounded-xl border border-bordure-subtile bg-fond-surface p-4", remplacee && "text-texte-tertiaire")}>
+      <span className="text-ui-xs text-texte-tertiaire">Proposition d’agent</span>
+      <div className="flex min-w-0 items-center gap-2.5">
+        {/* Le nom suit : l'avatar n'est pas lu deux fois. */}
+        <span aria-hidden="true" className="flex">
+          <RondApercu nom={proposition.nom} teinte={teinte} taille={32} />
+        </span>
+        <span className={cn("min-w-0 truncate text-ui-s", remplacee ? "text-texte-tertiaire" : "text-texte-principal")}>
+          <strong className="font-semibold">{proposition.nom}</strong>
+          {proposition.role && ` · ${proposition.role}`}
+        </span>
+      </div>
+      {proposition.description && (
+        <p className={cn("m-0 line-clamp-2 text-ui-s leading-[1.5]", remplacee ? "text-texte-tertiaire" : "text-texte-secondaire")}>
+          {proposition.description}
+        </p>
+      )}
+      {remplacee ? (
+        <span className="text-ui-xs">Remplacée par la proposition suivante</span>
+      ) : (
+        <Bouton variant="sombre" taille="compact" className="self-start" onClick={ouvrir}>
+          Ouvrir pour ajuster
+        </Bouton>
+      )}
+    </div>
+  );
+}
+
 /* ─── Répartition des tâches ───────────────────────────────────── */
 
 /* « Fait » prend la coche pixel KLYRA ; les autres, une icône du set officiel. */
@@ -386,6 +441,7 @@ export function MessagePartView({
   etapesDe = () => 0,
   nomAgent = "L’agent",
   onAutorisation,
+  remplacee = false,
 }: {
   part: MessagePart;
   tone: "user" | "role";
@@ -397,6 +453,8 @@ export function MessagePartView({
   /** Le prénom de l'agent, pour ses demandes d'autorisation. */
   nomAgent?: string;
   onAutorisation?: (demandeId: string, decision: "oui" | "toujours" | "non") => void;
+  /** Une proposition d'agent suivie d'une autre dans la même conversation. */
+  remplacee?: boolean;
 }) {
   switch (part.type) {
     case "text":
@@ -409,6 +467,8 @@ export function MessagePartView({
       return <EtapesView etapes={part.etapes} enCours={enCours} />;
     case "passation":
       return <PassationView roleId={part.roleId} consigne={part.consigne} statut={part.statut} etapes={etapesDe(part.etapeId)} />;
+    case "proposition-agent":
+      return <CartePropositionAgent part={part} remplacee={remplacee} />;
     case "tasks":
       return <TaskList tasks={part.tasks} />;
     case "options":

@@ -7,6 +7,7 @@ import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { getBridge } from "@/lib/bridge";
+import { garderBrouillon, lireBrouillons, prendreDemandeEcriture, surBrouillon } from "@/lib/brouillons";
 import { cn } from "@/lib/cn";
 import { analyserCollage, estCaptureCollee } from "@/lib/collage";
 import { nomFichier } from "@/lib/fichiers";
@@ -136,30 +137,6 @@ function FileAttente({ chatId, roleId }: { chatId: string; roleId: RoleId }) {
 }
 
 /** Composeur sous le fil d'un chat. */
-/** Les messages commencés et pas envoyés, par conversation : ils survivent à un changement d'onglet. */
-const CLE_BROUILLONS = "klyra-brouillons";
-type Brouillon = { text: string; fichiers: string[] };
-
-function lireBrouillons(): Record<string, Brouillon> {
-  try {
-    const v = JSON.parse(localStorage.getItem(CLE_BROUILLONS) ?? "{}") as unknown;
-    return v && typeof v === "object" ? (v as Record<string, Brouillon>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function garderBrouillon(chatId: string, brouillon: Brouillon) {
-  try {
-    const tous = lireBrouillons();
-    if (brouillon.text.trim() || brouillon.fichiers.length) tous[chatId] = brouillon;
-    else delete tous[chatId];
-    localStorage.setItem(CLE_BROUILLONS, JSON.stringify(tous));
-  } catch {
-    /* stockage indisponible : le brouillon ne survit pas */
-  }
-}
-
 export function Composer({ chat, project }: { chat: Chat; project: Project | undefined }) {
   const roles = useRoles();
   const { sendMessage, arreter } = useWorkspace();
@@ -174,6 +151,9 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const champ = useRef<HTMLTextAreaElement>(null);
   const direct = chat.kind === "direct";
   const agent = useRole(chat.roleIds[0] ?? "principal");
+  const assistant = useRole("principal");
+  /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
+  const seul = roles.length <= 1;
   const bridge = getBridge();
   const { compte } = useCompteClaude();
   const deconnecte = !!compte && (!compte.installe || !compte.connecte);
@@ -182,6 +162,24 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   useEffect(() => {
     garderBrouillon(chat.id, { text, fichiers });
   }, [chat.id, text, fichiers]);
+
+  /* Un début de message ajouté d'ailleurs (« Le décrire à Sam ») : focus, curseur à la fin, rien d'envoyé. */
+  useEffect(() => {
+    const placer = () =>
+      requestAnimationFrame(() => {
+        const el = champ.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+    if (prendreDemandeEcriture(chat.id)) placer();
+    return surBrouillon(chat.id, (suite) => {
+      prendreDemandeEcriture(chat.id);
+      setText(suite);
+      setCurseur(suite.length);
+      placer();
+    });
+  }, [chat.id]);
   const [depot, setDepot] = useState(false);
   const [alerte, setAlerte] = useState<string | null>(null);
   const zone = useRef<HTMLDivElement>(null);
@@ -327,7 +325,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: "Principal", icone: <AgentRond roleId="principal" taille={20} /> },
+    { value: AUTO, label: assistant.name, icone: <AgentRond roleId="principal" taille={20} /> },
     ...roles
       .filter((r) => r.id !== "principal")
       .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <AgentRond roleId={r.id} taille={20} /> })),
@@ -364,7 +362,9 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           onColler={coller}
           aDesPieces={fichiers.length > 0}
           pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
-          placeholder={direct ? `Écris à ${agent.name}…` : "Écris à l’équipe, ou @mentionne un agent…"}
+          placeholder={
+            direct ? `Écris à ${agent.name}…` : seul ? `Écris à ${assistant.name}…` : "Écris à l’équipe, ou @mentionne un agent…"
+          }
           puces={
             direct ? undefined : (
               <>
@@ -406,7 +406,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           ? "Ton message attendra que l’agent ait fini · le carré l’arrête."
           : direct
             ? `${agent.name} travaille dans son propre dossier · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`
-            : "Sans mention, le Principal répartit le travail · Entrée pour envoyer, Maj + Entrée pour aller à la ligne."}
+            : `${seul ? `${assistant.name} te répond` : `Sans mention, ${assistant.name} répartit le travail`} · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`}
       </p>
     </div>
   );
