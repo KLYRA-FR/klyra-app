@@ -10,6 +10,7 @@ import { PixelCheck } from "@/components/ui/PixelCheck";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { nomFichier } from "@/lib/fichiers";
 import { libelleFrequence, NOMS_JOURS } from "@/lib/planning";
 import { texteSortie } from "@/lib/workflows/moteur";
 import { useRoles } from "@/lib/workspace";
@@ -352,7 +353,7 @@ function ChampsRessource({ p }: { p: ProprietesNoeud }) {
         <span key={c} className="flex items-center gap-1.5 rounded-sm bg-fond-page px-2 py-1 text-ui-2xs text-texte-secondaire">
           <Icon name="file-01" size={14} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate" title={c}>
-            {c.split("/").pop()}
+            {nomFichier(c)}
           </span>
           {!lecture && (
             <button

@@ -8,6 +8,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { nomFichier } from "@/lib/fichiers";
 import { useCompteClaude } from "@/lib/compte-claude";
 import { findMention } from "@/lib/mentions";
 import { useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
@@ -24,7 +25,7 @@ export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer:
   return (
     <div className="flex flex-wrap gap-2">
       {fichiers.map((chemin) => {
-        const nom = chemin.split("/").pop() ?? chemin;
+        const nom = nomFichier(chemin);
         return (
           <div
             key={chemin}

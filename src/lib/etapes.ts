@@ -1,5 +1,6 @@
 import type { IconName } from "@/components/icons/Icon";
 import type { Role } from "@/types/domain";
+import { nomFichier } from "@/lib/fichiers";
 
 /**
  * Les étapes du travail d'un agent, en mots simples : ce qu'il fait avec
@@ -9,7 +10,7 @@ import type { Role } from "@/types/domain";
 /** Le nom du fichier, sans tout le chemin. */
 function fichier(chemin: unknown): string {
   if (typeof chemin !== "string" || !chemin) return "un fichier";
-  return chemin.split("/").filter(Boolean).pop() ?? chemin;
+  return nomFichier(chemin);
 }
 
 function court(texte: unknown, max = 60): string {

@@ -24,7 +24,8 @@
     "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm entrees && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
     "whisper": "node scripts/preparer-whisper.mjs",
     "entrees": "node scripts/preparer-entrees.mjs",
-    "test:convex": "vitest run"
+    "test:convex": "vitest run convex",
+    "test:fichiers": "vitest run src/lib/fichiers.test.tsx"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

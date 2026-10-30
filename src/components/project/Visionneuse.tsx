@@ -5,6 +5,7 @@ import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge, type ContenuFichier } from "@/lib/bridge";
 import { poste } from "@/lib/plateforme";
+import { nomFichier } from "@/lib/fichiers";
 import type { Project } from "@/types/domain";
 
 /** Ce qu'on demande quand on clique un fichier : le projet et son chemin relatif. */
@@ -33,7 +34,7 @@ export function Visionneuse({ project, chemin, onFermer }: { project: Project; c
   const [contenu, setContenu] = useState<ContenuFichier | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<string | null>(null);
-  const nom = chemin.split("/").pop() ?? chemin;
+  const nom = nomFichier(chemin);
 
   useEffect(() => {
     if (!bridge) return;

@@ -1,12 +1,14 @@
 import { generateKeyPairSync } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 /* Des clés de session jetables, propres à chaque lancement des tests (cf. scripts/cles-convex-auth.mjs). */
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 
 export default defineConfig({
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
-    include: ["convex/**/*.test.ts"],
+    include: ["convex/**/*.test.ts", "src/lib/fichiers.test.tsx"],
     environment: "edge-runtime",
     server: { deps: { inline: ["convex-test"] } },
     env: {
