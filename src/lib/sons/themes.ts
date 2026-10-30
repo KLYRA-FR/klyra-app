@@ -8,8 +8,18 @@ import type { Recette, Voix } from "./synthese";
 
 export type ThemeSons = "silence" | "chaleureux" | "mecanique" | "petillant" | "clavier";
 
-/** Ce qui sonne. Pas de son sur un clic ordinaire : seulement ce qui confirme ou prévient. */
+/**
+ * Les microinteractions : un bouton, un lien ou une ligne cliqués ; un menu,
+ * une fenêtre ou un panneau qui s'ouvre ou se ferme ; un onglet, un filtre ou
+ * une option choisis. Très courtes et discrètes : elles reviennent sans cesse.
+ * Branchées sur toute l'app par interactions.ts.
+ */
+export const MICROINTERACTIONS = ["clic", "ouvrir", "fermer", "selection"] as const;
+export type Microinteraction = (typeof MICROINTERACTIONS)[number];
+
+/** Ce qui sonne : les microinteractions, et ce qui confirme ou prévient. */
 export type EvenementSonore =
+  | Microinteraction
   | "envoi"
   | "fin-de-tache"
   | "erreur"
@@ -39,6 +49,7 @@ const SOL5 = 783.99;
 const LA5 = 880;
 const SI5 = 987.77;
 const DO6 = 1046.5;
+const RE6 = 1174.66;
 const MI6 = 1318.51;
 const SOL6 = 1567.98;
 const LA6 = 1760;
@@ -151,7 +162,7 @@ function bulle(t: number, f: number, gain = 1, rapport = 1.9, declin = 0.07, pan
 }
 
 /** Goutte : un « plink » clair, presque une note, après un petit impact. */
-function goutte(t: number, f: number, gain = 1, pan = 0): Voix[] {
+function goutte(t: number, f: number, gain = 1, pan = 0, declin = 0.16): Voix[] {
   return [
     {
       type: "ton",
@@ -162,8 +173,8 @@ function goutte(t: number, f: number, gain = 1, pan = 0): Voix[] {
       attaque: 0.001,
       glisse: { rapport: 1.35, duree: 0.012 },
       partiels: [
-        [1, 1, 0.16],
-        [2.1, 0.12, 0.06],
+        [1, 1, declin],
+        [2.1, 0.12, declin * 0.375],
       ],
     },
     { type: "bruit", t, declin: 0.006, gain: gain * 0.15, pan, filtres: [{ type: "highpass", f: 3000 }] },
@@ -171,8 +182,10 @@ function goutte(t: number, f: number, gain = 1, pan = 0): Voix[] {
 }
 
 /** Goutte qui retombe : la hauteur descend. */
-function chute(t: number, f: number, gain = 1): Voix[] {
-  return [{ type: "ton", t, f, gain, attaque: 0.002, glisse: { rapport: 0.62, duree: 0.09 }, partiels: [[1, 1, 0.14], [2, 0.06, 0.05]] }];
+function chute(t: number, f: number, gain = 1, declin = 0.14): Voix[] {
+  return [
+    { type: "ton", t, f, gain, attaque: 0.002, glisse: { rapport: 0.62, duree: declin * 0.65 }, partiels: [[1, 1, declin], [2, 0.06, declin * 0.36]] },
+  ];
 }
 
 /** Touche enfoncée jusqu'au fond : le contact, le capuchon qui claque, le boîtier qui résonne. */
@@ -223,11 +236,38 @@ function clochette(t: number, f = 2350, gain = 1, declin = 1): Voix[] {
   ];
 }
 
+/** Le plus petit tic d'un mécanisme : un éclat sec, sans corps. */
+function tic(t: number, f = 5200, gain = 1): Voix[] {
+  return [
+    { type: "bruit", t, declin: 0.003, gain, attaque: 0.0002, filtres: [{ type: "highpass", f: 3500 }] },
+    { type: "bruit", t, declin: 0.012, gain: gain * 0.7, attaque: 0.0002, filtres: [{ type: "bandpass", f, q: 8 }] },
+  ];
+}
+
+/** Touche plate de clavier d'ordinateur portable : brève, claire, presque sans corps. */
+function touchePlate(t: number, corps = 380, gain = 1): Voix[] {
+  return [
+    { type: "bruit", t, declin: 0.004, gain: gain * 0.7, attaque: 0.0003, filtres: [{ type: "highpass", f: 3800 }] },
+    { type: "bruit", t, declin: 0.012, gain: gain * 0.9, attaque: 0.0003, filtres: [{ type: "lowpass", f: 3200 }, { type: "bandpass", f: 1700, q: 1.4 }] },
+    { type: "ton", t, f: corps, gain: gain * 0.25, partiels: [[1, 1, 0.02]] },
+  ];
+}
+
 /* ─── Les jeux ───────────────────────────────────────────────────── */
 
 type Jeu = Record<EvenementSonore, Recette>;
 
+/*
+ * Dans chaque jeu, les quatre microinteractions viennent d'abord. Le clic est
+ * le plus bref et le plus bas ; ouvrir monte, fermer descend ; la sélection a
+ * une petite note. Toutes sous le niveau des autres sons.
+ */
+
 const CHALEUREUX: Jeu = {
+  clic: { piece: 0.05, niveau: 0.38, voix: bois(0, SOL6, 0.7, 0.02) },
+  ouvrir: { piece: 0.06, niveau: 0.42, voix: [...bois(0, SOL5, 0.6, 0.045, -0.1), ...bois(0.04, RE6, 0.7, 0.05, 0.1)] },
+  fermer: { piece: 0.06, niveau: 0.4, voix: [...bois(0, RE6, 0.6, 0.04, 0.1), ...bois(0.04, SOL5, 0.7, 0.05, -0.1)] },
+  selection: { piece: 0.06, niveau: 0.45, voix: [...bois(0, MI5, 0.3, 0.025), ...verre(0.004, MI6, 0.8, 0.12)] },
   envoi: { piece: 0.18, niveau: 0.8, voix: [...bois(0, MI5, 0.8, 0.12), ...verre(0.04, MI6, 0.6, 0.5)] },
   "fin-de-tache": { piece: 0.22, voix: [...bois(0, DO5, 0.35, 0.14), ...verre(0, DO6, 0.8, 1.1, -0.15), ...verre(0.12, SOL6, 0.7, 1.3, 0.15)] },
   erreur: { piece: 0.15, niveau: 0.9, voix: [...bois(0, SOL4, 1, 0.22), ...bois(0.14, RE4_DIESE, 1, 0.28)] },
@@ -244,6 +284,10 @@ const CHALEUREUX: Jeu = {
 };
 
 const MECANIQUE: Jeu = {
+  clic: { niveau: 0.38, voix: tic(0) },
+  ouvrir: { niveau: 0.42, voix: [...clic(0, 2400, 0.6, -0.1), ...clic(0.04, 3600, 0.8, 0.1)] },
+  fermer: { niveau: 0.4, voix: [...clic(0, 3400, 0.7), ...sourd(0.03, 0.45)] },
+  selection: { piece: 0.05, niveau: 0.45, voix: [...tic(0, 3800, 0.9), anneau(0.002, 4700, 0.25, 0.06)] },
   envoi: { piece: 0.08, niveau: 0.75, voix: [...clic(0, 3400, 0.8), ...loquet(0.038, 2100, 2900, 1)] },
   "fin-de-tache": {
     piece: 0.1,
@@ -264,6 +308,10 @@ const MECANIQUE: Jeu = {
 };
 
 const PETILLANT: Jeu = {
+  clic: { piece: 0.05, niveau: 0.38, voix: bulle(0, 1800, 1, 1.4, 0.022) },
+  ouvrir: { piece: 0.08, niveau: 0.42, voix: [...bulle(0, 650, 0.8, 1.7, 0.04, -0.15), ...bulle(0.04, 1000, 0.9, 1.7, 0.045, 0.15)] },
+  fermer: { piece: 0.08, niveau: 0.4, voix: chute(0, 1150, 1, 0.07) },
+  selection: { piece: 0.08, niveau: 0.45, voix: goutte(0, 1400, 1, 0, 0.07) },
   envoi: { piece: 0.2, niveau: 0.75, voix: bulle(0, 620, 1, 2.1, 0.08) },
   "fin-de-tache": {
     piece: 0.24,
@@ -284,6 +332,10 @@ const PETILLANT: Jeu = {
 };
 
 const CLAVIER: Jeu = {
+  clic: { niveau: 0.38, voix: touchePlate(0) },
+  ouvrir: { piece: 0.04, niveau: 0.42, voix: [...touche(0, 230, 0.55, -0.1), ...touche(0.045, 300, 0.65, 0.1)] },
+  fermer: { piece: 0.04, niveau: 0.4, voix: [...touche(0, 300, 0.55, 0.1), ...touche(0.045, 220, 0.65, -0.1)] },
+  selection: { piece: 0.04, niveau: 0.45, voix: [...touche(0, 270, 0.7), ...relache(0.04, 0.6)] },
   envoi: {
     piece: 0.06,
     niveau: 0.8,

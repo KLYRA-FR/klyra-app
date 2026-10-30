@@ -112,6 +112,7 @@ export function AppRail({
               type="button"
               onClick={onToggleFiles}
               aria-pressed={filesOpen}
+              data-son="panneau"
               aria-label={filesOpen ? `Masquer ${bouton.cible}` : `Afficher ${bouton.cible}`}
               title={bouton.titre}
               className={entree(filesOpen)}

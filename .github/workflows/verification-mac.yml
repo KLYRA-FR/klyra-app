@@ -3,6 +3,8 @@
 # leur « exigence désignée » est identique. C'est ce que macOS compare pour
 # garder les autorisations (Accessibilité, Enregistrement de l'écran) d'une
 # mise à jour à l'autre. Ne publie rien.
+# Aussi pour les sons : rendus dans le Chromium de Mac, et lecture du réglage
+# « effets sonores de l'interface » de macOS (src/lib/sons, electron/reglages.ts).
 name: Vérification Mac (signature)
 
 on:
@@ -15,6 +17,8 @@ on:
       - .github/workflows/app.yml
       - .github/workflows/verification-mac.yml
       - electron/maj.ts
+      - src/lib/sons/**
+      - scripts/test-sons.cjs
 
 permissions:
   contents: read
@@ -43,6 +47,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build && pnpm build:electron && pnpm whisper
+      - name: Sons de l'app et réglage des sons du système (Mac)
+        run: perl -e 'alarm 120; exec @ARGV' env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-sons.cjs
 
       # Le certificat jetable passe au script d'import par des variables du seul shell de cette étape :
       # il n'entre pas dans l'environnement des étapes suivantes, que le journal affiche.

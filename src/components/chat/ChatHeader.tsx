@@ -65,6 +65,7 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau }: { chat: Chat; pa
           icone={<Icon name="layout-right" size={16} />}
           libelle={panneauOuvert ? "Fermer le panneau" : "Ouvrir le panneau (réglages, fichiers, tâches)"}
           aria-pressed={panneauOuvert}
+          data-son="panneau"
           onClick={onTogglePanneau}
         />
         {!panneauOuvert && chat.taches?.some((t) => t.statut === "en-cours") && (
@@ -103,6 +104,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview }: Chat
           icone={<Icon name="layout-right" size={16} />}
           libelle={previewOpen ? "Masquer l’aperçu" : "Afficher l’aperçu"}
           aria-pressed={previewOpen}
+          data-son="panneau"
           onClick={onTogglePreview}
         />
         <BoutonIcone taille="compact" icone={<Icon name="dot-horizontal" size={16} />} libelle="Plus d’options" />

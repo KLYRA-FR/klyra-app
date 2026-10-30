@@ -110,7 +110,7 @@ export const SECTIONS: SectionReglages[] = [
       { id: "evenements", titre: "Par événement", mots: "agent fini erreur workflow mise a jour" },
       { id: "essai-notification", titre: "Essayer", mots: "test" },
       { id: "son-fin-tache", titre: "Émettre un son à la fin d’une tâche", mots: "sons agent fini termine" },
-      { id: "sons-actions", titre: "Sons des actions", mots: "theme desactive silence chaleureux mecanique petillant clavier verre bois clics loquets gouttes bulles touches envoi" },
+      { id: "sons-actions", titre: "Sons des actions", mots: "theme desactive silence chaleureux mecanique petillant clavier verre bois clics loquets gouttes bulles touches envoi interface clic menu fenetre onglet microinteractions" },
       { id: "volume-sons", titre: "Volume des sons", mots: "fort faible niveau" },
     ],
   },

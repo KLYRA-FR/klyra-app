@@ -9,10 +9,12 @@ import { JEUX, type EvenementSonore, type ThemeSons } from "./themes";
 /**
  * Le module de sons de l'app : un seul AudioContext, des sons rendus une fois
  * (cf. synthese.ts) puis rejoués tels quels, et un seul appel pour tout le
- * reste de l'app : `jouer("envoi")`, `jouer("fin-de-tache")`…
+ * reste de l'app : `jouer("envoi")`, `jouer("fin-de-tache")`… Les
+ * microinteractions (clic, ouvrir, fermer, sélection) y passent aussi, depuis
+ * interactions.ts.
  *
  * Il se tait :
- * - quand le système demande moins d'animations ou de sons (Mac, Windows) ;
+ * - quand le système a coupé les sons de l'interface (Mac, Windows) ;
  * - pendant que le micro écoute (dictée), sauf ses sons de début et de fin ;
  * - quand la notification du système sonne déjà pour le même événement
  *   (`notificationSonore`, à vérifier par l'appelant).
@@ -25,10 +27,15 @@ type EvenementNotification = keyof Pick<PreferencesNotifications, "agentFini" | 
 const THEME_FIN_PAR_DEFAUT: Theme = "chaleureux";
 /** Deux fois le même son en moins de temps : le second est de trop. */
 const ECART_MIN_MS = 120;
-/** L'aperçu d'un thème : l'envoi, puis la fin de tâche. */
+/** L'audio qui ne repart pas dans ce délai (sortie perdue) : le son est abandonné plutôt que joué en retard. */
+const REPRISE_MAX_MS = 400;
+/** L'aperçu d'un thème : sa panoplie, des microinteractions à la fin de tâche. */
 const APERCU: { evenement: EvenementSonore; apres: number }[] = [
-  { evenement: "envoi", apres: 0 },
-  { evenement: "fin-de-tache", apres: 0.42 },
+  { evenement: "clic", apres: 0 },
+  { evenement: "ouvrir", apres: 0.16 },
+  { evenement: "selection", apres: 0.34 },
+  { evenement: "envoi", apres: 0.54 },
+  { evenement: "fin-de-tache", apres: 0.9 },
 ];
 
 let contexte: AudioContext | null = null;
@@ -37,23 +44,22 @@ let sons: PreferencesSons | null = null;
 let notifications: PreferencesNotifications | null = null;
 let micro = false;
 const derniers = new Map<EvenementSonore, number>();
+/** L'instant du dernier son demandé (performance.now()), quel qu'il soit. */
+let dernierSon = -Infinity;
 
 /* ─── Ce que le système demande ──────────────────────────────────── */
 
 export interface SilenceSysteme {
-  /** « Réduire les animations » (Mac) ou « Effets d'animation » coupés (Windows). */
-  moinsDeMouvement: boolean;
   /** Effets sonores de l'interface coupés (Mac) ou modèle de sons « Aucun son » (Windows). */
   sonsCoupes: boolean;
 }
 
-let silence: SilenceSysteme = { moinsDeMouvement: false, sonsCoupes: false };
+let silence: SilenceSysteme = { sonsCoupes: false };
 const abonnes = new Set<() => void>();
 
-function changerSilence(patch: Partial<SilenceSysteme>) {
-  const suite = { ...silence, ...patch };
-  if (suite.moinsDeMouvement === silence.moinsDeMouvement && suite.sonsCoupes === silence.sonsCoupes) return;
-  silence = suite;
+function changerSilence(patch: SilenceSysteme) {
+  if (patch.sonsCoupes === silence.sonsCoupes) return;
+  silence = patch;
   abonnes.forEach((f) => f());
 }
 
@@ -69,21 +75,35 @@ export function useSilenceSysteme(): SilenceSysteme {
   );
 }
 
-const systemeSilencieux = () => silence.moinsDeMouvement || silence.sonsCoupes;
-
 /* ─── Audio ──────────────────────────────────────────────────────── */
 
+/** Le contexte audio, recréé s'il a été fermé (sortie du système perdue). */
 function audio(): AudioContext | null {
   if (typeof window === "undefined" || typeof AudioContext === "undefined") return null;
-  contexte ??= new AudioContext({ latencyHint: "interactive" });
+  if (!contexte || contexte.state === "closed") contexte = new AudioContext({ latencyHint: "interactive" });
   return contexte;
+}
+
+/**
+ * Le contexte prêt à jouer. Un contexte neuf, ou suspendu (veille, sortie
+ * changée), repart d'abord : un son lancé avant attendrait et sortirait en
+ * retard, ou jamais.
+ */
+async function pret(ctx: AudioContext): Promise<boolean> {
+  if (ctx.state === "running") return true;
+  await Promise.race([ctx.resume().catch(() => undefined), new Promise((ok) => setTimeout(ok, REPRISE_MAX_MS))]);
+  return (ctx.state as AudioContextState) === "running";
 }
 
 function tampon(theme: Theme, evenement: EvenementSonore): Promise<AudioBuffer | null> {
   const cle = `${theme}/${evenement}`;
   let rendu = tampons.get(cle);
   if (!rendu) {
-    rendu = rendre(JEUX[theme][evenement], audio()?.sampleRate).catch(() => null);
+    // Un rendu raté n'est pas gardé : le son sera rendu de nouveau la prochaine fois.
+    rendu = rendre(JEUX[theme][evenement], audio()?.sampleRate).catch(() => {
+      tampons.delete(cle);
+      return null;
+    });
     tampons.set(cle, rendu);
   }
   return rendu;
@@ -101,9 +121,8 @@ const gainDe = (volume: number) => Math.max(0, Math.min(1, volume)) ** 2;
 async function lire(theme: Theme, evenement: EvenementSonore, volume: number, dans = 0) {
   const ctx = audio();
   if (!ctx) return;
-  if (ctx.state === "suspended") void ctx.resume();
-  const b = await tampon(theme, evenement);
-  if (!b) return;
+  const [b, ok] = await Promise.all([tampon(theme, evenement), pret(ctx)]);
+  if (!b || !ok) return;
   const source = ctx.createBufferSource();
   source.buffer = b;
   const gain = ctx.createGain();
@@ -121,8 +140,9 @@ const themeDe = (evenement: EvenementSonore, p: PreferencesSons): Theme | null =
 
 /** Joue le son d'un événement, d'après les Réglages, s'il n'y a pas de raison de se taire. */
 export function jouer(evenement: EvenementSonore): void {
+  dernierSon = performance.now();
   const p = sons;
-  if (!p || systemeSilencieux()) return;
+  if (!p || silence.sonsCoupes) return;
   if (micro && evenement !== "dictee-debut" && evenement !== "dictee-fin") return;
   const theme = themeDe(evenement, p);
   if (!theme) return;
@@ -130,6 +150,11 @@ export function jouer(evenement: EvenementSonore): void {
   if (maintenant - (derniers.get(evenement) ?? -Infinity) < ECART_MIN_MS) return;
   derniers.set(evenement, maintenant);
   void lire(theme, evenement, p.volume);
+}
+
+/** Un son a-t-il été demandé depuis cet instant (performance.now()) ? Le geste en cours a alors déjà le sien. */
+export function sonDepuis(instant: number): boolean {
+  return dernierSon >= instant;
 }
 
 /**
@@ -144,9 +169,10 @@ export function notificationSonore(evenement: EvenementNotification): boolean {
 
 /**
  * L'aperçu d'un thème, au clic sur sa carte : demandé, il sonne même si le
- * système demande moins de sons.
+ * système a coupé les sons de l'interface.
  */
 export function apercu(theme: ThemeSons, volume = sons?.volume ?? 0.7) {
+  dernierSon = performance.now();
   if (theme === "silence") return;
   precharger(theme);
   for (const { evenement, apres } of APERCU) void lire(theme, evenement, volume, apres);
@@ -154,6 +180,7 @@ export function apercu(theme: ThemeSons, volume = sons?.volume ?? 0.7) {
 
 /** Un son d'essai au volume donné (réglage du volume), dans le thème choisi. */
 export function essai(evenement: EvenementSonore, volume = sons?.volume ?? 0.7) {
+  dernierSon = performance.now();
   const p = sons;
   if (!p) return;
   const theme = p.theme === "silence" ? THEME_FIN_PAR_DEFAUT : p.theme;
@@ -194,11 +221,6 @@ export function demarrerSons(): () => void {
   void reglagesActuels().then(appliquer);
   const arreterReglages = surReglages(appliquer);
 
-  const requete = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const surMouvement = () => changerSilence({ moinsDeMouvement: requete.matches });
-  surMouvement();
-  requete.addEventListener("change", surMouvement);
-
   // Le réglage des sons du système ne prévient pas quand il change : relu au retour dans l'app.
   const lireSysteme = () =>
     void getBridge()
@@ -207,10 +229,18 @@ export function demarrerSons(): () => void {
   lireSysteme();
   window.addEventListener("focus", lireSysteme);
 
+  // Un contexte suspendu (veille, règle de lecture automatique) repart au premier geste, avant le son qu'il déclenche.
+  const reveiller = () => {
+    if (contexte?.state === "suspended") void contexte.resume();
+  };
+  window.addEventListener("pointerdown", reveiller, true);
+  window.addEventListener("keydown", reveiller, true);
+
   return () => {
     demarre = false;
     arreterReglages();
-    requete.removeEventListener("change", surMouvement);
     window.removeEventListener("focus", lireSysteme);
+    window.removeEventListener("pointerdown", reveiller, true);
+    window.removeEventListener("keydown", reveiller, true);
   };
 }

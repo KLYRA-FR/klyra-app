@@ -27,6 +27,8 @@ interface MotsDuPoste {
   dansExplorateur: string;
   /** Où rendre le micro à l'app. */
   reglagesMicro: string;
+  /** Où remettre les sons de l'interface, que le système a coupés. */
+  reglagesSons: string;
 }
 
 const MOTS: Record<Plateforme, MotsDuPoste> = {
@@ -36,6 +38,7 @@ const MOTS: Record<Plateforme, MotsDuPoste> = {
     explorateur: "Finder",
     dansExplorateur: "dans le Finder",
     reglagesMicro: "Réglages Système > Confidentialité > Micro",
+    reglagesSons: "Réglages Système > Son : réactive les effets sonores de l’interface",
   },
   windows: {
     ce: "ce PC",
@@ -43,6 +46,7 @@ const MOTS: Record<Plateforme, MotsDuPoste> = {
     explorateur: "Explorateur",
     dansExplorateur: "dans l’Explorateur",
     reglagesMicro: "Paramètres > Confidentialité et sécurité > Microphone",
+    reglagesSons: "Panneau de configuration > Son > Sons : choisis un modèle autre que « Aucun son »",
   },
   autre: {
     ce: "cet ordinateur",
@@ -50,6 +54,7 @@ const MOTS: Record<Plateforme, MotsDuPoste> = {
     explorateur: "gestionnaire de fichiers",
     dansExplorateur: "dans le gestionnaire de fichiers",
     reglagesMicro: "les réglages du système",
+    reglagesSons: "les réglages de son du système",
   },
 };
 

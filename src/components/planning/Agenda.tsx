@@ -203,6 +203,9 @@ function FenetreEvenement({ initial, onFermer }: { initial: Evenement; onFermer:
       onMouseDown={onFermer}
     >
       <form
+        role="dialog"
+        aria-modal="true"
+        aria-label="Événement"
         onSubmit={enregistrer}
         onMouseDown={(x) => x.stopPropagation()}
         className="flex w-[380px] max-w-full flex-col gap-3 rounded-xl border border-bordure-subtile bg-fond-surface p-4 shadow-ombre-flottante"
