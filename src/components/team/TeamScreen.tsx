@@ -172,7 +172,6 @@ export function TeamScreen() {
               key={role.id}
               role={role}
               chatCount={chats.filter((c) => c.roleIds.includes(role.id)).length}
-              totalChats={chats.length}
               ordre={i}
             />
           ))}
