@@ -17,7 +17,7 @@
  */
 import { execFileSync, execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ConvexHttpClient } from "convex/browser";
@@ -47,21 +47,23 @@ function empreintesDe(dossier) {
     if (!existsSync(d)) return;
     for (const f of readdirSync(d)) {
       const p = path.join(d, f);
-      if (statSync(p).isDirectory()) parcourir(p);
-      else vues[path.relative(dossier, p)] = empreinte(p);
+      const st = lstatSync(p);
+      if (st.isDirectory()) parcourir(p);
+      else if (st.isFile()) vues[path.relative(dossier, p)] = empreinte(p);
     }
   };
   parcourir(dossier);
   return vues;
 }
-/** Le texte de tous les fichiers d'un dossier (pour chercher ce qui ne doit pas y être). */
+/** Le texte de tous les fichiers d'un dossier (pour chercher ce qui ne doit pas y être). Liens et sockets ignorés. */
 function texteDe(dossier) {
   let tout = "";
   const parcourir = (d) => {
     for (const f of readdirSync(d)) {
       const p = path.join(d, f);
-      if (statSync(p).isDirectory()) parcourir(p);
-      else if (statSync(p).size < 5_000_000) tout += readFileSync(p, "latin1");
+      const st = lstatSync(p);
+      if (st.isDirectory()) parcourir(p);
+      else if (st.isFile() && st.size < 5_000_000) tout += readFileSync(p, "latin1");
     }
   };
   parcourir(dossier);
@@ -171,10 +173,14 @@ async function menuFiche(a, id, ligne) {
   return a.cliquer(ligne, "document.querySelector('[role=menu]')");
 }
 const dialogue = (a) => a.ev("document.querySelector('[role=dialog], [role=alertdialog]')?.innerText ?? ''");
+/** Partager ou publier depuis le « … » de la fiche : faux si la ligne, la fenêtre ou le bouton manque. */
 async function publier(a, id, ligne, bouton) {
-  await menuFiche(a, id, ligne);
-  await a.quand("document.querySelector('[role=dialog]')");
-  await a.quand(`[...document.querySelectorAll('[role=dialog] button')].some((b) => b.innerText.trim() === ${JSON.stringify(bouton)} && !b.disabled)`);
+  if (!(await menuFiche(a, id, ligne))) return false;
+  if (!(await a.quand("document.querySelector('[role=dialog]')"))) return false;
+  if (!(await a.quand(`[...document.querySelectorAll('[role=dialog] button')].some((b) => b.innerText.trim() === ${JSON.stringify(bouton)} && !b.disabled)`))) {
+    console.log(`   (fenêtre : ${(await dialogue(a)).replace(/\s+/g, " ").slice(0, 300)})`);
+    return false;
+  }
   await a.cliquer(bouton, "document.querySelector('[role=dialog]')");
   return a.quand("!document.querySelector('[role=dialog]')", 20000);
 }
@@ -286,8 +292,13 @@ try {
   await b.aller("/equipe?agent=juriste");
   await b.quand("[...document.querySelectorAll('main button')].some((x) => x.innerText.trim() === 'Choisir un dossier')");
   await b.cliquer("Choisir un dossier");
-  await b.quand(`!document.querySelector('main')?.innerText.includes('Choisir un dossier')`);
-  verifier(readFileSync(ficheBruno, "utf8").includes(B.dossierChoisi) && !readFileSync(ficheBruno, "utf8").includes("{{chemin:"), "dossier choisi : écrit dans sa fiche locale");
+  let ecrit = false;
+  for (let i = 0; i < 40 && !ecrit; i++) {
+    const contenu = readFileSync(ficheBruno, "utf8");
+    ecrit = contenu.includes(B.dossierChoisi) && !contenu.includes("{{chemin:");
+    if (!ecrit) await attendre(250);
+  }
+  verifier(ecrit, "dossier choisi : écrit dans sa fiche locale");
   c = await carte(b, "juriste");
   verifier(!!c && !c.texte.includes("À configurer") && c.texte.includes("De Alice Test"), `l’étiquette « À configurer » disparaît (${c?.texte})`);
   const avantNom = empreinte(ficheBruno);

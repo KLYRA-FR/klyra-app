@@ -2,9 +2,9 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
-import { agentAutorise, agentsARefuser, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
+import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -269,6 +269,33 @@ function consigneAssistant(outilsApp: boolean): string {
     ? ` Quand elle exprime un besoin qui revient et qu'aucun de ses agents ne couvre, tu peux lui proposer une fiche d'agent avec l'outil proposer_agent : elle l'ouvre, l'ajuste et l'enregistre elle-même. Rien n'est créé avant.`
     : "";
   return `Dans cette app, tu es ${nom ? `${nom}, ` : ""}l'assistant personnel de la personne : tu réponds toi-même. ${equipe}${proposer}`;
+}
+
+/**
+ * Pour un agent lancé par l'app : avec qui il travaille vraiment (sa fiche peut citer des collègues
+ * absents d'ici, elle n'est jamais réécrite pour autant), et les dossiers encore à configurer.
+ */
+function consigneAgent(id: string): string {
+  const nom = mesAgents().assistant.nom ?? "l'assistant";
+  const autres = presentationActifs().filter((a) => a.id !== id);
+  const equipe = autres.length
+    ? `Dans cette app, les agents que la personne a choisis sont : ${autres.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ")}, et son assistant ${nom} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais sans, ou dis-le.`
+    : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${nom} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais sans, ou dis-le.`;
+  const manquants = dossiersAConfigurer(id);
+  const dossiers = manquants.length
+    ? ` Certains dossiers de ta fiche ne sont pas encore configurés sur cet ordinateur (${manquants.join(", ")}, écrits {{chemin:…}}) : si tu en as besoin, dis-le à la personne au lieu de deviner un chemin.`
+    : "";
+  return `${equipe}${dossiers}`;
+}
+
+/** Les dépendances encore écrites `{{chemin:cle}}` dans la fiche d'un agent reçu. */
+function dossiersAConfigurer(id: string): string[] {
+  try {
+    const contenu = readFileSync(path.join(agentsDir(), `${id}.md`), "utf8");
+    return [...new Set([...contenu.matchAll(/\{\{chemin:([a-z0-9][a-z0-9-]{0,39})\}\}/g)].map((m) => m[1]))];
+  } catch {
+    return [];
+  }
 }
 
 const processus = new Map<string, Processus>();
@@ -677,7 +704,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
     // L'agenda, les rappels et les routines de la personne, que l'app tient à jour.
-    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS] : []), ...(options.agent === null ? [consigneAssistant(!!mcp)] : [])];
+    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent)];
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignes.join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);

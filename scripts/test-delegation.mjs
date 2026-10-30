@@ -124,6 +124,11 @@ try {
   /* 3. Un agent actif, à son tour, ne délègue qu'aux agents actifs. */
   const parAlpha = await demander({ agent: "alpha", prompt: "appelle beta", chatId: "dm-alpha" });
   verifier(refuse(parAlpha) && !parAlpha.requetes.some((q) => q.sousAgent === "beta"), "depuis alpha : beta refusé aussi");
+  const consigneAlpha = parAlpha.requetes.find((q) => q.principal)?.systeme ?? "";
+  verifier(
+    consigneAlpha.includes("son assistant Sam (principal)") && !/Bea|beta/.test(consigneAlpha.split("SOUS-AGENT-TEST-alpha").pop() ?? ""),
+    "alpha sait avec qui il travaille : l’assistant, sans les agents hors de Mes agents",
+  );
 
   /* 4. Écrire directement à un agent désactivé : refusé par le process principal, sans lancer Claude Code. */
   const direct = await demander({ agent: "beta", prompt: "bonjour", chatId: "dm-beta" });
