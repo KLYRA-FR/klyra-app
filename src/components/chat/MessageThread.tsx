@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type RefObject } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { plagesDans, SURLIGNAGE } from "@/components/recherche/surligner";
@@ -132,6 +132,7 @@ function RoleMessage({
   suite,
   derniere,
   travail,
+  propositionCourante,
   onAction,
 }: {
   chat: Chat;
@@ -140,6 +141,8 @@ function RoleMessage({
   roleId: RoleId;
   suite: boolean;
   travail: Travail | null;
+  /** La dernière proposition d'agent de la conversation : les précédentes sont remplacées. */
+  propositionCourante: string | null;
   onAction: (label: string, roleId: RoleId) => void;
 }) {
   const role = useRole(roleId);
@@ -171,6 +174,7 @@ function RoleMessage({
             enCours={enCours}
             etapesDe={etapesDe}
             nomAgent={role.name}
+            remplacee={part.type === "proposition-agent" && part.etapeId !== propositionCourante}
             onAutorisation={(demandeId, decision) => repondreAutorisation(message.id, demandeId, decision)}
             onAction={(label) => onAction(label, roleId)}
           />
@@ -323,6 +327,15 @@ export function MessageThread({ chatId }: { chatId: string }) {
     marquerLu(chatId);
   }, [chatId, messages.length, dernier?.statut, marquerLu]);
 
+  /* Une nouvelle proposition d'agent remplace les précédentes de la conversation. */
+  const propositionCourante = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const part = messages[i].parts.findLast((p) => p.type === "proposition-agent");
+      if (part?.type === "proposition-agent") return part.etapeId;
+    }
+    return null;
+  }, [messages]);
+
   if (!chat) return null;
   const derniereReponse = messages.findLast((m) => m.author.kind === "role")?.id;
 
@@ -363,6 +376,7 @@ export function MessageThread({ chatId }: { chatId: string }) {
                       roleId={message.author.roleId}
                       suite={suite}
                       travail={travail?.messageId === message.id ? travail : null}
+                      propositionCourante={propositionCourante}
                       onAction={(label, roleId) => sendMessage(chatId, label, roleId)}
                     />
                   )}

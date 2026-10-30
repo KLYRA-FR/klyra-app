@@ -49,6 +49,8 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
     }
     case "mcp__klyra__demander_ia":
       return `Demande à ${court(entree.ia, 20) || "une autre IA"} : ${court(entree.consigne, 50)}`;
+    case "mcp__klyra__proposer_agent":
+      return `Propose un agent : ${court(entree.nom, 40) || "sans nom"}`;
     default:
       return outil.startsWith("mcp__") ? `Utilise ${outil.split("__").slice(1).join(" · ")}` : `Utilise ${outil}`;
   }
@@ -75,6 +77,8 @@ export function iconeEtape(outil: string): IconName {
     case "Agent":
     case "Task":
       return "users-profiles-01";
+    case "mcp__klyra__proposer_agent":
+      return "users-profiles-plus";
     default:
       return "settings";
   }
