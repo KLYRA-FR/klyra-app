@@ -1,6 +1,8 @@
+import { nomFichier } from "@/lib/fichiers";
+
 /** Pastille d'extension : « TSX », « PDF », « MD ». */
 export function PastilleExtension({ chemin }: { chemin: string }) {
-  const nom = chemin.split("/").pop() ?? chemin;
+  const nom = nomFichier(chemin);
   const ext = nom.includes(".") ? (nom.split(".").pop() ?? "").slice(0, 4).toUpperCase() : "—";
   return (
     <span

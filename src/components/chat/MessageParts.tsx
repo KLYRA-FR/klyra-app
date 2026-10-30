@@ -11,6 +11,7 @@ import { Markdown } from "@/components/ui/Markdown";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { getBridge } from "@/lib/bridge";
 import { iconeEtape } from "@/lib/etapes";
+import { nomFichier } from "@/lib/fichiers";
 import { poste } from "@/lib/plateforme";
 import { idDirect, useRole } from "@/lib/workspace";
 import { PastilleExtension } from "./PastilleExtension";
@@ -60,7 +61,7 @@ export function FichiersJoints({ chemins }: { chemins: string[] }) {
   return (
     <div className="flex w-[min(100%,256px)] flex-col gap-1.5">
       {chemins.map((chemin) => {
-        const nom = chemin.split("/").pop() ?? chemin;
+        const nom = nomFichier(chemin);
         return (
           <button
             key={chemin}

@@ -9,6 +9,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { nomFichier } from "@/lib/fichiers";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
 import { useChatMessages, useProject, useRole, useTravail, useWorkspace } from "@/lib/workspace";
@@ -272,8 +273,8 @@ function Fichiers({ chat }: { chat: Chat }) {
       </div>
       <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
         {visibles.map((f) => {
-          const nom = f.chemin.split("/").pop() ?? f.chemin;
-          const dossier = f.chemin.slice(0, f.chemin.length - nom.length).replace(/\/$/, "");
+          const nom = nomFichier(f.chemin);
+          const dossier = f.chemin.slice(0, f.chemin.length - nom.length).replace(/[\\/]$/, "");
           return (
             <li key={f.chemin}>
               <button

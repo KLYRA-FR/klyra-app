@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { cn } from "@/lib/cn";
+import { nomFichier } from "@/lib/fichiers";
 import { formatTime } from "@/lib/format";
 import type { Message } from "@/types/domain";
 
@@ -41,7 +42,7 @@ function genreDe(message: Message): { genre: Genre; detail: string } | null {
   if (commit) return { genre: "commit", detail: commit.libelle };
   const fichiers = new Set(etapes.filter((e) => /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(e.outil)).map((e) => e.chemin ?? e.libelle));
   if (fichiers.size) {
-    const noms = [...fichiers].map((f) => f.split("/").at(-1));
+    const noms = [...fichiers].map(nomFichier);
     return { genre: "fichiers", detail: noms.length > 3 ? `${noms.slice(0, 3).join(", ")} et ${noms.length - 3} autres` : noms.join(", ") };
   }
   return null;
