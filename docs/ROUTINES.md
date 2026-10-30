@@ -59,6 +59,8 @@ Pas de webhooks/scripts externes, chaînage multi-agents, destinations de public
 
 ## Vérifications
 
+L’intégration avec Composio conserve ses capacités et son compte choisi dans le même contexte MCP que le run. La signature du processus dépend des deux. `test-routine-claude.cjs` vérifie ce renouvellement sans clé fournisseur, et `test-composio-runtime.cjs` vérifie sur le vrai serveur MCP les deux familles d’outils, le refus des signaux hors run et le maintien du compte choisi.
+
 ```bash
 pnpm build:electron
 pnpm test:routines

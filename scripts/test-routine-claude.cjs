@@ -53,6 +53,7 @@ function fixture() {
   const processus = [];
   const minuteurs = new Map();
   let sequence = 0;
+  let compteComposio = "compte-fictif-a";
   const modules = {
     "node:child_process": {
       spawn: (bin, args, options) => {
@@ -76,9 +77,13 @@ function fixture() {
     },
     "./consommation": { enregistrerTourClaude: () => ({}) },
     "./ia": {
-      configMcp: (contexte) => JSON.stringify({ contexte }),
+      configMcp: (contexte, composio) => JSON.stringify({ contexte, composio }),
       OUTILS_APP: () => [],
     },
+    "./composio": { espaceComposio: {
+      signature: () => compteComposio,
+      creerCapacite: () => `capacite-${compteComposio}`,
+    } },
     "./mes-agents": {
       agentsARefuser: () => [],
       agentAutorise: () => false,
@@ -98,7 +103,7 @@ function fixture() {
       return modules[nom];
     },
     // Le module ne reçoit jamais process.env du poste, même pour son faux spawn.
-    process: { platform: "linux", env: { KLYRA_CLAUDE_PATH: BIN, PATH: "" } },
+    process: { platform: "linux", env: { KLYRA_CLAUDE_PATH: BIN, PATH: "", COMPOSIO_API_KEY: "sentinelle-fictive", KLYRA_COMPOSIO_SENTINEL: "sentinelle-fictive" } },
     setTimeout: (fn) => { const id = ++sequence; minuteurs.set(id, fn); return id; },
     clearTimeout: (id) => minuteurs.delete(id),
   }, { filename });
@@ -111,7 +116,7 @@ function fixture() {
     }, (event) => events.push(event), () => null);
     return { events, child: processus.at(-1) };
   };
-  return { api, lancer, processus };
+  return { api, lancer, processus, changerCompte: () => { compteComposio = "compte-fictif-b"; } };
 }
 
 function permission(child, id) {
@@ -189,6 +194,29 @@ test("conversation normale : réutilisation du processus conservée", ({ lancer,
   assert.equal(a.child.stdin.writableEnded, false);
   assert.equal(a.child.ecrits.filter((e) => e.type === "user").length, 2);
   assert.equal(a.child.contexte().routineRun, undefined);
+});
+
+test("routine et Composio : les deux contextes et règles coexistent sans clé dans le processus", ({ lancer }) => {
+  const { child } = lancer("reponse-a", { routineRun: "run-a" });
+  const configuration = JSON.parse(child.args[child.args.indexOf("--mcp-config") + 1]);
+  assert.equal(configuration.contexte.routineRun, "run-a");
+  assert.equal(configuration.composio, "capacite-compte-fictif-a");
+  const consigne = child.args[child.args.indexOf("--append-system-prompt") + 1];
+  assert.ok(consigne.includes("Ce tour est une exécution de routine."));
+  assert.ok(consigne.includes("Pour Composio, commence par composio_etat"));
+  assert.equal(JSON.stringify(child.options.env).includes("sentinelle-fictive"), false);
+});
+
+test("changement Composio : renouvellement du processus même dans le contexte routine", ({ lancer, processus, changerCompte }) => {
+  const a = lancer("reponse-a", { routineRun: "run-a", sessionId: SESSION });
+  changerCompte();
+  const b = lancer("reponse-b", { routineRun: "run-a", sessionId: SESSION });
+  assert.equal(processus.length, 2);
+  assert.notEqual(a.child, b.child);
+  assert.equal(a.child.stdin.writableEnded, true);
+  const configuration = JSON.parse(b.child.args[b.child.args.indexOf("--mcp-config") + 1]);
+  assert.equal(configuration.composio, "capacite-compte-fictif-b");
+  assert.equal(configuration.contexte.routineRun, "run-a");
 });
 
 console.log(`${passed} scénarios Claude/routines vérifiés : vrai module, faux processus, aucun accès utilisateur ou fournisseur.`);
