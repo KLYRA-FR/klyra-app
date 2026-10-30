@@ -8,6 +8,6 @@ export const NAVIGATION: { href: string; label: string; icon: IconName }[] = [
   { href: "/", label: "Accueil", icon: "accueil-ronds" },
   { href: "/chats", label: "Chats", icon: "message-square" },
   { href: "/planning", label: "Planning", icon: "calendar-01" },
-  { href: "/routines", label: "Routines", icon: "lightning-01" },
+  { href: "/routines", label: "Automatisations", icon: "lightning-01" },
   { href: "/artefacts", label: "Artefacts", icon: "artefacts-forme" },
 ];

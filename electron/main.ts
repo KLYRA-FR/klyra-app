@@ -50,7 +50,7 @@ import {
   type Utilisation,
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
-import { arreterRoutines, brancherRoutines, demarrerRoutines } from "./routines";
+import { arreterRoutines, brancherRoutines, commencerRoutine, demarrerRoutines } from "./routines";
 import {
   arreterDictee,
   choisirModele,
@@ -389,17 +389,26 @@ function registerBridge() {
   });
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
+    const suivreRoutine = options.routineRun
+      ? commencerRoutine(options.routineRun, options.chatId ?? "", requestId, options.agent ?? "principal")
+      : null;
     const sender = BrowserWindow.getAllWindows()[0]?.webContents;
     const envoyer = (id: string) => (agentEvent: AgentEvent) => {
+      if (id === requestId && suivreRoutine) agentEvent = suivreRoutine(agentEvent);
       if (sender && !sender.isDestroyed()) sender.send("claude:event", id, agentEvent);
     };
     // Quand une tâche de fond se termine, l'agent reprend la parole : une nouvelle réponse s'ouvre.
-    streamAgent(requestId, options, envoyer(requestId), (sessionId) => {
-      if (!sender || sender.isDestroyed()) return null;
-      const id = randomUUID();
-      sender.send("claude:spontane", id, sessionId);
-      return { requestId: id, emit: envoyer(id) };
-    });
+    try {
+      streamAgent(requestId, options, envoyer(requestId), (sessionId) => {
+        if (!sender || sender.isDestroyed()) return null;
+        const id = randomUUID();
+        sender.send("claude:spontane", id, sessionId);
+        return { requestId: id, emit: envoyer(id) };
+      });
+    } catch (error) {
+      if (!suivreRoutine) throw error;
+      envoyer(requestId)({ type: "fin", ok: false, texte: "", erreur: error instanceof Error ? error.message : String(error) });
+    }
     return null;
   });
   handle("projets:dossier-existe", (dossier: string) => dossierExiste(dossier));

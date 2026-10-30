@@ -32,7 +32,7 @@
     "test:liens": "node scripts/test-liens.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
     "test:coordonnees": "node scripts/test-coordonnees.cjs",
-    "test:routines": "node scripts/test-routine-schedule.cjs && node scripts/test-routines.cjs",
+    "test:routines": "node scripts/test-routine-schedule.cjs && node scripts/test-routines.cjs && node scripts/test-routine-ipc.cjs && node scripts/test-routine-claude.cjs",
     "test:ordinateur": "electron scripts/test-ordinateur.cjs",
     "test:sons": "electron scripts/test-sons.cjs",
     "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm entrees && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",

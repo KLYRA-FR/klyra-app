@@ -20,11 +20,36 @@ test("daily : heure d’hiver, heure d’été et seuil strict", () => {
   assert.equal(next(schedule, "2026-07-01T10:00:00Z"), "2026-07-02T10:00:00.000Z");
 });
 
-test("daily : heure inexistante ignorée ; heure doublée exécutée deux fois", () => {
+test("daily : heure inexistante ignorée ; heure doublée exécutée une seule fois", () => {
   const schedule = validate({ kind: "daily", time: "02:30" });
   assert.equal(next(schedule, "2026-03-28T02:00:00Z"), "2026-03-30T00:30:00.000Z");
   assert.deepEqual(upcomingOccurrences(schedule, "Europe/Paris", d("2026-10-24T23:00:00Z"), 3), [
-    "2026-10-25T00:30:00.000Z", "2026-10-25T01:30:00.000Z", "2026-10-26T01:30:00.000Z",
+    "2026-10-25T00:30:00.000Z", "2026-10-26T01:30:00.000Z", "2026-10-27T01:30:00.000Z",
+  ]);
+  // Ouvrir/reprendre pendant le second passage ne crée pas une nouvelle échéance locale.
+  assert.equal(next(schedule, "2026-10-25T01:00:00Z"), "2026-10-26T01:30:00.000Z");
+});
+
+test("automne : toute récurrence civile garde le premier passage de chaque minute locale", () => {
+  const after = "2026-10-25T00:30:00Z";
+  const cases = [
+    [{ kind: "hourly", minute: 30 }, "2026-10-25T02:30:00.000Z"],
+    [{ kind: "weekly", weekday: 0, time: "02:30" }, "2026-11-01T01:30:00.000Z"],
+    [{ kind: "monthly", day: 25, time: "02:30" }, "2026-11-25T01:30:00.000Z"],
+    [{ kind: "advanced", months: [10], days: { kind: "every-day" }, time: { kind: "at-time", time: "02:30" } }, "2026-10-26T01:30:00.000Z"],
+    [{ kind: "custom", expression: "30 2 * * *" }, "2026-10-26T01:30:00.000Z"],
+    [{ kind: "advanced", months: [10], days: { kind: "every-day" }, time: { kind: "every", amount: 30, unit: "minutes" } }, "2026-10-25T02:00:00.000Z"],
+  ];
+  for (const [schedule, expected] of cases) assert.equal(next(validate(schedule), after), expected);
+  // Intervalle absolu : le retour d'horloge ne supprime pas une heure réellement écoulée.
+  const absolute = validate({ kind: "interval", amount: 1, unit: "hours", anchorAt: after });
+  assert.equal(next(absolute, after), "2026-10-25T01:30:00.000Z");
+});
+
+test("automne : décalage de trente minutes, sans hypothèse d'un recul d'une heure", () => {
+  const schedule = validate({ kind: "daily", time: "01:45" }, "Australia/Lord_Howe");
+  assert.deepEqual(upcomingOccurrences(schedule, "Australia/Lord_Howe", d("2026-04-04T13:00:00Z"), 2), [
+    "2026-04-04T14:45:00.000Z", "2026-04-05T15:15:00.000Z",
   ]);
 });
 

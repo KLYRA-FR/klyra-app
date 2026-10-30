@@ -12,8 +12,6 @@ import type { Routine, RoutineRun } from "./types";
  */
 
 const VERSION = 1;
-/** Exécutions gardées par routine (les plus récentes). */
-export const RUNS_PER_ROUTINE = 100;
 /** Le process qui tient le verrou le rafraîchit (`refresh`) ; sans nouvelle depuis ce délai, il est repris. */
 export const LOCK_STALE_MS = 2 * 60_000;
 
@@ -172,7 +170,7 @@ export class RoutineStore {
       .map((run, ordre) => ({ run, ordre }))
       .filter(({ run }) => run.routineId === routineId)
       .sort((a, b) => b.run.createdAt.localeCompare(a.run.createdAt) || b.ordre - a.ordre)
-      .slice(0, Math.max(0, Math.min(limit, RUNS_PER_ROUTINE)))
+      .slice(0, Math.max(0, limit))
       .map(({ run }) => structuredClone(run));
   }
 
@@ -180,7 +178,6 @@ export class RoutineStore {
   transaction<T>(change: (data: RoutinesData) => T): T {
     const copie = structuredClone(this.data);
     const resultat = change(copie);
-    copie.runs = elaguer(copie.runs);
     controler(copie);
     this.write(copie);
     this.data = copie;
@@ -198,21 +195,6 @@ export class RoutineStore {
     }
     renameSync(temporaire, this.file);
   }
-}
-
-/** Garde les dernières exécutions de chaque routine, jamais une exécution encore active. */
-function elaguer(runs: RoutineRun[]): RoutineRun[] {
-  const parRoutine = new Map<string, RoutineRun[]>();
-  for (const run of runs) parRoutine.set(run.routineId, [...(parRoutine.get(run.routineId) ?? []), run]);
-  const garder = new Set<RoutineRun>();
-  const ordre = new Map(runs.map((run, index) => [run, index]));
-  for (const liste of parRoutine.values()) {
-    const tries = [...liste].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || ordre.get(b)! - ordre.get(a)!);
-    tries.forEach((run, index) => {
-      if (index < RUNS_PER_ROUTINE || run.status === "queued" || run.status === "running") garder.add(run);
-    });
-  }
-  return runs.filter((run) => garder.has(run));
 }
 
 function vivant(pid: number): boolean {

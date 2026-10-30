@@ -149,7 +149,18 @@ let combien = 0;
 export interface Appelant {
   chatId: string;
   roleId: string;
+  routineRun?: string;
 }
+
+let outilsRoutines: {
+  active: (appelant: Appelant) => boolean;
+  signaler: (appelant: Appelant, outcome: "no-update" | "failed", reason?: string) => void;
+} | null = null;
+export function brancherOutilsRoutines(outils: typeof outilsRoutines) { outilsRoutines = outils; }
+const OUTILS_ROUTINES = [
+  { name: "routine_no_update", description: "Seulement dans cette exécution de routine : indique qu’il n’y a rien à signaler. L’historique conserve l’exécution. Ne l’utilise pas si tu as un résultat à transmettre.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "routine_report_failure", description: "Seulement dans cette exécution de routine : signale que la tâche n’a pas pu être accomplie, avec un motif court. Termine ensuite ta réponse : l’historique marquera l’échec.", inputSchema: { type: "object", properties: { reason: { type: "string", minLength: 1, maxLength: 2000 } }, required: ["reason"], additionalProperties: false } },
+];
 
 /** Les outils des fils sont exécutés par l'interface (elle tient les conversations) ; main.ts branche ce relais. */
 let relaisFils: ((nom: string, args: Record<string, unknown>, appelant: Appelant) => Promise<string>) | null = null;
@@ -244,6 +255,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
   const appelant: Appelant = {
     chatId: String(req.headers["x-klyra-chat"] ?? ""),
     roleId: String(req.headers["x-klyra-agent"] ?? "principal"),
+    routineRun: typeof req.headers["x-klyra-routine"] === "string" ? req.headers["x-klyra-routine"] : undefined,
   };
   const composio = String(req.headers["x-klyra-composio"] ?? "");
   let brut = "";
@@ -289,7 +301,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
@@ -303,6 +315,15 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
         } catch (e) {
           return texte(e instanceof Error ? e.message : "Composio est indisponible.", true);
         }
+      }
+      if (OUTILS_ROUTINES.some((o) => o.name === nom)) {
+        if (!outilsRoutines?.active(appelant)) return texte("Cet outil exige une exécution de routine en cours dans cette conversation.", true);
+        const failure = nom === "routine_report_failure";
+        if (failure && (typeof args.reason !== "string" || !args.reason.trim() || args.reason.length > 2000)) return texte("Indique un motif de 1 à 2 000 caractères.", true);
+        try {
+          outilsRoutines.signaler(appelant, failure ? "failed" : "no-update", failure ? String(args.reason).trim() : undefined);
+          return texte(failure ? "Échec enregistré pour cette exécution." : "Rien à signaler enregistré pour cette exécution.");
+        } catch (e) { return texte(e instanceof Error ? e.message : String(e), true); }
       }
       if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
       if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name) {
@@ -351,7 +372,7 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
       klyra: {
         type: "http",
         url: serveur.url,
-        headers: { Authorization: `Bearer ${serveur.jeton}`, "X-Klyra-Chat": appelant.chatId, "X-Klyra-Agent": appelant.roleId, ...(composio ? { "X-Klyra-Composio": composio } : {}) },
+        headers: { Authorization: `Bearer ${serveur.jeton}`, "X-Klyra-Chat": appelant.chatId, "X-Klyra-Agent": appelant.roleId, ...(composio ? { "X-Klyra-Composio": composio } : {}), ...(appelant.routineRun ? { "X-Klyra-Routine": appelant.routineRun } : {}) },
       },
     },
   });
@@ -361,4 +382,5 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
 export const OUTILS_APP = () => [
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
   ...[...OUTILS_FILS, OUTIL_PROPOSER].map((o) => `mcp__klyra__${o.name}`),
+  ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
 ];

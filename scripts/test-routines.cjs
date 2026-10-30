@@ -27,7 +27,7 @@ function test(name, run) {
 }
 
 /** Un banc : un dossier, une horloge, un minuteur et une interface simulés. Redémarrable sur le même dossier. */
-function banc(start, { hote = true, dir } = {}) {
+function banc(start, { hote = true, dir, agentError } = {}) {
   const b = {
     dir: dir ?? fs.mkdtempSync(path.join(os.tmpdir(), "klyra-routines-")),
     t: Date.parse(start),
@@ -46,9 +46,10 @@ function banc(start, { hote = true, dir } = {}) {
         deliver: (run) => {
           if (!b.hote) return false;
           b.livrees.push(run.id);
+          b.onDeliver?.(run);
           return true;
         },
-        cancel: (run) => b.annulees.push(run.id),
+        cancel: (run) => { b.annulees.push(run.id); b.onCancel?.(run); },
       },
       now: () => new Date(b.t),
       setTimer: (fn, ms) => {
@@ -62,6 +63,7 @@ function banc(start, { hote = true, dir } = {}) {
       },
       newId: () => `id-${++ids}`,
       defaultTimezone: () => "Europe/Paris",
+      agentError,
     });
     b.engine.start();
     if (b.hote) b.engine.setHostReady(true);
@@ -95,12 +97,13 @@ const quotidienne = (b, extra = {}) =>
   b.engine.create({ agentId: "hugo", name: "Point de midi", instruction: "Fais le point des tâches.", schedule: { kind: "daily", time: "12:00" }, ...extra });
 
 const finir = (b, run, ok = true) => {
-  b.engine.report(run.id, { state: "running", chatId: "direct-hugo", messageId: `m-${run.id}` });
+  if (!b.store.run(run.id).startedAt) b.engine.claim(run.id, "direct-hugo", `m-${run.id}`, run.agentId);
+  const { chatId, messageId } = b.store.run(run.id).delivery;
   b.engine.report(
     run.id,
     ok
-      ? { state: "succeeded", chatId: "direct-hugo", messageId: `m-${run.id}`, result: "Trois tâches en retard." }
-      : { state: "failed", chatId: "direct-hugo", messageId: `m-${run.id}`, error: "Le dossier du projet est introuvable." },
+      ? { state: "succeeded", chatId, messageId, result: "Trois tâches en retard." }
+      : { state: "failed", chatId, messageId, error: "Le dossier du projet est introuvable." },
   );
 };
 
@@ -122,7 +125,7 @@ test("2. échéance : une exécution planifiée, queued → running → succeede
   assert.equal(run.scheduledFor, "2026-01-10T11:00:00.000Z");
   assert.equal(run.status, "queued");
   assert.deepEqual(b.livrees, [run.id]);
-  b.engine.report(run.id, { state: "running", chatId: "direct-hugo", messageId: "m1" });
+  b.engine.claim(run.id, "direct-hugo", "m1", run.agentId);
   assert.equal(b.engine.history(r.id)[0].status, "running");
   b.engine.report(run.id, { state: "succeeded", chatId: "direct-hugo", messageId: "m1", result: "Trois tâches en retard." });
   const fini = b.engine.history(r.id)[0];
@@ -293,8 +296,13 @@ test("11. changement d'heure : heure sautée et heure doublée, via le moteur", 
   const a = automne.engine.create({ agentId: "hugo", name: "Nuit", instruction: "x", schedule: { kind: "daily", time: "02:30" } });
   assert.equal(a.nextRunAt, "2026-10-25T00:30:00.000Z");
   finir(automne, (automne.aller("2026-10-25T00:30:00Z"), automne.runs(a.id)[0]));
-  // Le 25/10, 02:30 existe deux fois : deux passages (parité OpenBot inférée, cf. ETAT-IMPLEMENTATION).
-  assert.equal(automne.engine.get(a.id).nextRunAt, "2026-10-25T01:30:00.000Z");
+  // Le second 02:30 n'est pas une nouvelle échéance ; même après redémarrage.
+  assert.equal(automne.engine.get(a.id).nextRunAt, "2026-10-26T01:30:00.000Z");
+  automne.fermer();
+  automne.t = Date.parse("2026-10-25T01:00:00Z");
+  automne.demarrer();
+  automne.aller("2026-10-25T01:31:00Z");
+  assert.equal(automne.runs(a.id).length, 1);
   const once = automne.engine.create({ agentId: "iris", name: "Une fois", instruction: "x", schedule: { kind: "once", date: "2027-03-28", time: "02:30" } });
   assert.equal(once.nextRunAt, "2027-03-28T01:00:00.000Z");
 });
@@ -323,7 +331,7 @@ test("13. agent occupé : la routine attend en file puis part ; pas de second ru
   // Un agent à la fois : Hugo prend A, B attend ; Iris part en parallèle.
   assert.deepEqual(b.livrees.sort(), [a.id, c.id].sort());
   assert.equal(bb.dispatchedAt, null);
-  b.engine.report(a.id, { state: "running", chatId: "direct-hugo", messageId: "m-a" });
+  b.engine.claim(a.id, "direct-hugo", "m-a", a.agentId);
   // Le lendemain, A tourne encore et B attend toujours : l'échéance de B est résumée, pas empilée.
   b.aller("2026-01-11T11:00:00Z");
   const runsB = b.runs(r2.id);
@@ -430,7 +438,7 @@ test("fenêtre rechargée pendant un run : interrompu, l'agent se libère pour l
   const r1 = quotidienne(b);
   const r2 = b.engine.create({ agentId: "hugo", name: "B", instruction: "b", schedule: { kind: "manual" } });
   const run = b.engine.runNow(r1.id);
-  b.engine.report(run.id, { state: "running", chatId: "dm-hugo", messageId: "m" });
+  b.engine.claim(run.id, "dm-hugo", "m", run.agentId);
   const suivante = b.engine.runNow(r2.id);
   assert.ok(!b.livrees.includes(suivante.id));
   b.engine.setHostReady(false);
@@ -449,7 +457,7 @@ test("interruption : en file → annulée ; en cours → interrompue et arrêté
   assert.equal(b.engine.interrupt(enFile.id).status, "cancelled");
   assert.ok(b.annulees.includes(enFile.id));
   const run = b.engine.runNow(r.id);
-  b.engine.report(run.id, { state: "running", chatId: "direct-hugo", messageId: "m" });
+  b.engine.claim(run.id, "direct-hugo", "m", run.agentId);
   b.engine.update(r.id, { active: false });
   assert.equal(b.engine.history(r.id)[0].status, "running");
   const stop = b.engine.interrupt(run.id);
@@ -465,7 +473,7 @@ test("suppression : refusée pendant un run, sinon routine et historique supprim
   const b = banc("2026-01-10T08:00:00Z");
   const r = quotidienne(b);
   const run = b.engine.runNow(r.id);
-  b.engine.report(run.id, { state: "running", chatId: "direct-hugo", messageId: "m" });
+  b.engine.claim(run.id, "direct-hugo", "m", run.agentId);
   assert.throws(() => b.engine.remove(r.id), /Interrompez/);
   finir(b, run);
   b.engine.remove(r.id);
@@ -477,7 +485,7 @@ test("redémarrage : un run en cours à l'arrêt devient « interrompu », le re
   const b = banc("2026-01-10T08:00:00Z");
   const r = quotidienne(b);
   const run = b.engine.runNow(r.id);
-  b.engine.report(run.id, { state: "running", chatId: "direct-hugo", messageId: "m" });
+  b.engine.claim(run.id, "direct-hugo", "m", run.agentId);
   b.fermer();
   b.demarrer();
   const [apres] = b.runs(r.id);
@@ -522,10 +530,11 @@ test("reprise de l'ancien minuteur : fréquences converties, identifiants gardé
       relais: [{ id: "l1", de: "iris", vers: "hugo", consigne: "Intègre." }] },
     { id: "r3", nom: "Cassée", roleId: "hugo", consigne: "x", frequence: { type: "jour", heure: "9h" }, projectId: null, active: true },
   ];
-  const { imported, errors } = b.engine.importLegacy(anciennes.map((a) => ({ id: a.id, ...convertirRoutine(a, "Europe/Paris") })));
+  assert.throws(() => b.engine.importLegacy(anciennes.map((a) => ({ id: a.id, ...convertirRoutine(a, "Europe/Paris") }))), /Cassée/);
+  assert.equal(b.engine.list().length, 0, "migration atomique : aucune ligne partielle");
+  const { imported, errors } = b.engine.importLegacy(anciennes.slice(0, 2).map((a) => ({ id: a.id, ...convertirRoutine(a, "Europe/Paris") })));
   assert.equal(imported, 2);
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /Cassée/);
+  assert.equal(errors.length, 0);
   const hebdo = b.engine.get("r1");
   assert.deepEqual(hebdo.schedule, { kind: "weekly", weekday: 0, time: "18:00" });
   assert.equal(hebdo.nextRunAt, "2026-01-11T17:00:00.000Z");
@@ -533,7 +542,300 @@ test("reprise de l'ancien minuteur : fréquences converties, identifiants gardé
   assert.deepEqual(manuelle.schedule, { kind: "manual" });
   assert.equal(manuelle.nextRunAt, null);
   assert.equal(manuelle.relais.length, 1);
+  assert.equal(manuelle.active, false);
+  assert.match(manuelle.blockedReason, /relais/);
+  assert.throws(() => b.engine.runNow(manuelle.id), /relais/);
+  assert.throws(() => b.engine.update(manuelle.id, { active: true }), /relais/);
+  assert.deepEqual(b.engine.update(manuelle.id, { name: "Ancienne revue" }).relais, anciennes[1].relais);
+  assert.deepEqual(b.engine.update(manuelle.id, { relais: [], active: true }).relais, []);
+  assert.equal(b.engine.get(manuelle.id).blockedReason, undefined);
   assert.equal(b.engine.importLegacy(anciennes.slice(0, 1).map((a) => ({ id: a.id, ...convertirRoutine(a, "Europe/Paris") }))).imported, 0);
+});
+
+test("claim durable avant lancement : doublons refusés, même après redémarrage immédiat", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  assert.throws(() => b.engine.claim("absente", "dm-hugo", "m", "hugo"), /introuvable/);
+  assert.throws(() => b.engine.claim(run.id, "dm-hugo", "m", "iris"), /correspond/);
+  assert.equal(b.store.run(run.id).status, "queued");
+  let lancements = 0;
+  const lancer = () => {
+    b.engine.claim(run.id, "dm-hugo", "m", "hugo");
+    lancements++;
+  };
+  lancer();
+  // Aucun compte rendu renderer, aucune attente de 400 ms : le claim est déjà sur disque.
+  const relu = new RoutineStore(b.dir);
+  relu.load();
+  assert.equal(relu.run(run.id).status, "running");
+  assert.deepEqual(relu.run(run.id).delivery, { chatId: "dm-hugo", messageId: "m" });
+  assert.throws(lancer, /déjà été prise en charge/);
+  b.engine.setHostReady(false);
+  b.engine.interruptRunning("Fenêtre rechargée.");
+  b.engine.setHostReady(true);
+  assert.throws(lancer, /déjà été prise en charge/);
+  b.fermer();
+  b.demarrer();
+  assert.throws(lancer, /déjà été prise en charge/);
+  assert.equal(lancements, 1);
+  assert.equal(b.livrees.filter((id) => id === run.id).length, 1);
+});
+
+test("claim : disque indisponible = aucun lancement, reprise possible après réparation", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  const transaction = b.store.transaction.bind(b.store);
+  b.store.transaction = () => { throw new Error("EIO disque indisponible"); };
+  let lancements = 0;
+  const lancer = () => { b.engine.claim(run.id, "dm-hugo", "m", "hugo"); lancements++; };
+  assert.throws(lancer, /EIO/);
+  assert.equal(b.store.run(run.id).status, "queued");
+  assert.equal(lancements, 0);
+  b.store.transaction = transaction;
+  lancer();
+  assert.equal(lancements, 1);
+});
+
+test("remise : écrit avant appel hôte synchrone, panne disque = aucune remise puis nouvel essai", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b, { schedule: { kind: "manual" } });
+  const transaction = b.store.transaction.bind(b.store);
+  let appels = 0;
+  b.store.transaction = (fn) => {
+    if (++appels === 2) throw new Error("EIO enregistrement de la remise");
+    return transaction(fn);
+  };
+  const run = b.engine.runNow(routine.id);
+  assert.equal(b.livrees.length, 0);
+  assert.equal(b.store.run(run.id).dispatchedAt, null);
+  assert.throws(() => b.engine.claim(run.id, "dm-hugo", "m", "hugo"), /attend encore/);
+  b.onDeliver = (delivered) => {
+    const relu = new RoutineStore(b.dir);
+    relu.load();
+    assert.ok(relu.run(delivered.id).dispatchedAt);
+    b.engine.claim(delivered.id, "dm-hugo", "m", "hugo");
+  };
+  b.avancer(MIN);
+  assert.equal(b.livrees.length, 1);
+  assert.equal(b.store.run(run.id).status, "running");
+});
+
+test("interruption : état persisté avant événement de fin synchrone", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  b.engine.claim(run.id, "dm-hugo", "m", "hugo");
+  b.onCancel = (cancelled) => {
+    const relu = new RoutineStore(b.dir);
+    relu.load();
+    assert.equal(relu.run(cancelled.id).status, "interrupted");
+    b.engine.report(cancelled.id, { state: "failed", chatId: "dm-hugo", messageId: "m", error: "Processus arrêté." });
+  };
+  assert.equal(b.engine.interrupt(run.id).status, "interrupted");
+  assert.equal(b.store.run(run.id).error, "Interrompue.");
+});
+
+test("un compte rendu renderer ne crée pas de claim et ne change pas sa destination", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  b.engine.report(run.id, { state: "running", chatId: "dm-hugo", messageId: "faux" });
+  b.engine.report(run.id, { state: "succeeded", chatId: "dm-hugo", messageId: "faux", result: "ok" });
+  assert.equal(b.store.run(run.id).status, "queued");
+  assert.equal(b.store.run(run.id).startedAt, null);
+  b.engine.claim(run.id, "dm-hugo", "vrai", "hugo");
+  b.engine.report(run.id, { state: "queued", chatId: "autre" });
+  b.engine.report(run.id, { state: "failed", chatId: null, messageId: null, error: "tardif" });
+  b.engine.report(run.id, { state: "succeeded", chatId: "dm-hugo", messageId: "faux", result: "tardif" });
+  assert.equal(b.store.run(run.id).status, "running");
+  assert.deepEqual(b.store.run(run.id).delivery, { chatId: "dm-hugo", messageId: "vrai" });
+});
+
+test("permission : état visible, file bloquée, pas de rétrogradation renderer, interruption distincte", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const autre = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  b.engine.attention(run.id, true);
+  assert.equal(b.store.run(run.id).status, "queued");
+  b.engine.claim(run.id, "dm-hugo", "m", "hugo");
+  b.engine.attention(run.id, true);
+  assert.equal(b.store.run(run.id).status, "needs-attention");
+  const attente = b.engine.runNow(autre.id);
+  assert.ok(!b.livrees.includes(attente.id));
+  b.engine.report(run.id, { state: "running", chatId: "dm-hugo", messageId: "m" });
+  assert.equal(b.store.run(run.id).status, "needs-attention");
+  b.engine.update(routine.id, { active: false });
+  assert.equal(b.store.run(run.id).status, "needs-attention");
+  assert.throws(() => b.engine.remove(routine.id), /Interrompez/);
+  b.engine.attention(run.id, false);
+  assert.equal(b.store.run(run.id).status, "running");
+  b.engine.attention(run.id, true);
+  assert.equal(b.engine.interrupt(run.id).status, "interrupted");
+  assert.ok(b.annulees.includes(run.id));
+  assert.ok(b.livrees.includes(attente.id));
+});
+
+test("permission : conservée hors fenêtre de rétention, interrompue au redémarrage", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  b.engine.claim(run.id, "dm-hugo", "m", "hugo");
+  b.engine.attention(run.id, true);
+  b.store.transaction((data) => {
+    for (let i = 0; i < 105; i++) data.runs.push({ ...run, id: `fini-${i}`, status: "cancelled", createdAt: "2026-01-10T09:00:00.000Z" });
+  });
+  assert.equal(b.store.run(run.id).status, "needs-attention");
+  b.fermer();
+  b.demarrer();
+  // Après interruption elle devient terminale, donc peut sortir de la rétention.
+  assert.ok(!b.engine.activeRuns().some((r) => r.id === run.id));
+  assert.throws(() => b.engine.claim(run.id, "dm-hugo", "m", "hugo"), /introuvable|prise en charge/);
+});
+
+test("signaux : réservés au run en cours, échec sincère sans libérer l'agent trop tôt", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const autre = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  assert.throws(() => b.engine.signal(run.id, "no-update"), /exécution.*en cours/);
+  b.engine.claim(run.id, "dm-hugo", "m", "hugo");
+  assert.throws(() => b.engine.signal(run.id, "failed", "  "), /Expliquez/);
+  b.engine.signal(run.id, "failed", "La source ne répond pas.");
+  assert.equal(b.store.run(run.id).status, "running");
+  assert.equal(b.store.run(run.id).finishedAt, null);
+  const queued = b.engine.runNow(autre.id);
+  assert.ok(!b.livrees.includes(queued.id));
+  assert.throws(() => b.engine.signal(run.id, "no-update"), /échec.*déjà/);
+  b.engine.report(run.id, { state: "succeeded", chatId: "dm-hugo", messageId: "m", result: "Impossible de finir." });
+  assert.equal(b.store.run(run.id).status, "failed");
+  assert.equal(b.store.run(run.id).error, "La source ne répond pas.");
+  assert.equal(b.store.run(run.id).result, "Impossible de finir.");
+  assert.ok(b.livrees.includes(queued.id));
+  assert.throws(() => b.engine.signal(run.id, "failed", "autre"), /exécution.*en cours/);
+});
+
+test("signaux : rien à signaler reste dans l'historique, une erreur réelle reste un échec", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  b.engine.claim(run.id, "dm-hugo", "m", "hugo");
+  b.engine.signal(run.id, "no-update");
+  finir(b, run);
+  assert.equal(b.store.run(run.id).status, "succeeded");
+  assert.equal(b.store.run(run.id).outcome, "no-update");
+  const failed = b.engine.runNow(routine.id);
+  b.engine.claim(failed.id, "dm-hugo", "m2", "hugo");
+  b.engine.signal(failed.id, "no-update");
+  b.engine.report(failed.id, { state: "failed", chatId: "dm-hugo", messageId: "m2", error: "Erreur fournisseur." });
+  assert.equal(b.store.run(failed.id).status, "failed");
+  assert.equal(b.store.run(failed.id).error, "Erreur fournisseur.");
+});
+
+test("agents : création, reprise et manuel refusent un agent inactif sans le réactiver", () => {
+  const etat = new Map();
+  const b = banc("2026-01-10T08:00:00Z", { agentError: (id) => etat.get(id) ?? null });
+  const routine = quotidienne(b);
+  b.engine.update(routine.id, { active: false });
+  etat.set("hugo", "Agent désactivé.");
+  assert.throws(() => quotidienne(b), /désactivé/);
+  assert.throws(() => b.engine.runNow(routine.id), /désactivé/);
+  assert.throws(() => b.engine.update(routine.id, { active: true }), /désactivé/);
+  assert.equal(b.engine.get(routine.id).active, false);
+  assert.equal(b.runs(routine.id).length, 0);
+  assert.equal(etat.get("hugo"), "Agent désactivé.");
+});
+
+test("agents : suppression avant échéance ou après mise en file = échec lisible, aucun rappel", () => {
+  const etat = new Map();
+  const b = banc("2026-01-10T08:00:00Z", { agentError: (id) => etat.get(id) ?? null });
+  const routine = quotidienne(b);
+  etat.set("hugo", "La fiche de l’agent a été retirée.");
+  b.aller("2026-01-10T11:00:00Z");
+  assert.equal(b.runs(routine.id)[0].status, "failed");
+  assert.match(b.runs(routine.id)[0].error, /retirée/);
+  assert.equal(b.livrees.length, 0);
+  etat.delete("hugo");
+  const queued = b.engine.runNow(routine.id);
+  assert.ok(b.livrees.includes(queued.id));
+  etat.set("hugo", "Agent désactivé.");
+  assert.throws(() => b.engine.claim(queued.id, "dm-hugo", "m", "hugo"), /désactivé/);
+  assert.equal(b.store.run(queued.id).status, "failed");
+  assert.equal(b.store.run(queued.id).startedAt, null);
+  assert.ok(b.annulees.includes(queued.id));
+});
+
+test("agents : file persistée revalidée après redémarrage, contrôle indisponible fermé", () => {
+  let erreur = null;
+  const b = banc("2026-01-10T08:00:00Z", { hote: false, agentError: () => erreur });
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  b.fermer();
+  erreur = "Agent désactivé pendant l’arrêt.";
+  b.hote = true;
+  b.demarrer();
+  assert.equal(b.store.run(run.id).status, "failed");
+  assert.equal(b.livrees.length, 0);
+  const panne = banc("2026-01-10T08:00:00Z", { agentError: () => { throw new Error("EIO fiches"); } });
+  assert.throws(() => quotidienne(panne), /ne peut pas être vérifié.*EIO/);
+});
+
+test("migration : nom trop long refusé sans tronquage et sans reprise partielle", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const ancienne = { id: "long", nom: "x".repeat(81), roleId: "hugo", consigne: "Bilan.", frequence: { type: "manuel" }, active: true };
+  const converted = convertirRoutine(ancienne, "Europe/Paris");
+  assert.equal(converted.input.name, ancienne.nom);
+  assert.throws(() => b.engine.importLegacy([{ id: ancienne.id, ...converted }]), /1 à 80/);
+  assert.equal(b.engine.list().length, 0);
+});
+
+test("migration : anciennes chaînes du moteur de développement bloquées au lancement", () => {
+  const b = banc("2026-01-10T08:00:00Z", { hote: false });
+  const routine = quotidienne(b);
+  const run = b.engine.runNow(routine.id);
+  const relais = [{ id: "l", de: "hugo", vers: "iris", consigne: "Relecture." }];
+  b.store.transaction((data) => { data.routines[0].relais = relais; });
+  b.fermer();
+  b.hote = true;
+  b.demarrer();
+  const apres = b.engine.get(routine.id);
+  assert.equal(apres.active, false);
+  assert.equal(apres.nextRunAt, null);
+  assert.deepEqual(apres.relais, relais);
+  assert.match(apres.blockedReason, /relais/);
+  assert.equal(b.store.run(run.id).status, "failed");
+  assert.equal(b.livrees.length, 0);
+});
+
+test("migration : l'ancienne échéance passée produit un seul rattrapage et un résumé", () => {
+  const b = banc("2026-01-13T08:00:00Z", { hote: false });
+  const ancienne = {
+    id: "daily-legacy", nom: "Ancien point", roleId: "hugo", consigne: "Point.", active: true,
+    frequence: { type: "jour", heure: "12:00" }, prochaine: "2026-01-10T11:00:00Z",
+  };
+  b.engine.importLegacy([{ id: ancienne.id, ...convertirRoutine(ancienne, "Europe/Paris") }]);
+  assert.equal(b.engine.get(ancienne.id).nextRunAt, "2026-01-10T11:00:00.000Z");
+  b.engine.tick();
+  const runs = b.runs(ancienne.id);
+  assert.equal(runs.length, 2);
+  assert.equal(runs.find((r) => r.status === "queued").scheduledFor, "2026-01-12T11:00:00.000Z");
+  assert.equal(runs.find((r) => r.missed).missed.count, 2);
+  assert.equal(b.engine.get(ancienne.id).nextRunAt, "2026-01-13T11:00:00.000Z");
+  for (const prochaine of ["hier", "2026-02-30T11:00:00Z", "2026-01-01T25:00:00Z", "2026-01-01"]) {
+    assert.throws(() => b.engine.importLegacy([{ id: "bad", ...convertirRoutine({ ...ancienne, prochaine }, "Europe/Paris") }]), /ancienne prochaine/);
+    assert.equal(b.engine.list().length, 1);
+  }
+});
+
+test("migration : routine manuelle avec date sentinelle conservée sans fausse échéance", () => {
+  const b = banc("2026-01-13T08:00:00Z");
+  const ancienne = { id: "manuel", nom: "À la demande", roleId: "hugo", consigne: "Point.", active: true, frequence: { type: "manuel" }, prochaine: new Date(8.64e15).toISOString() };
+  b.engine.importLegacy([{ id: ancienne.id, ...convertirRoutine(ancienne, "Europe/Paris") }]);
+  assert.equal(b.engine.get(ancienne.id).nextRunAt, null);
+  assert.equal(b.engine.get(ancienne.id).active, true);
+  assert.equal(b.engine.runNow(ancienne.id).status, "queued");
 });
 
 test("une routine en erreur n'arrête pas les autres", () => {
@@ -552,6 +854,43 @@ test("une routine en erreur n'arrête pas les autres", () => {
   assert.equal(corrigee.nextRunAt, "2026-01-12T11:00:00.000Z");
   b.aller("2026-01-12T11:00:00Z");
   assert.equal(b.runs(r1.id)[0].scheduledFor, "2026-01-12T11:00:00.000Z");
+});
+
+test("réaffectation : ancien run conserve son agent, prochain départ au nouvel agent", () => {
+  const b = banc("2026-01-10T08:00:00Z");
+  const r = quotidienne(b);
+  const ancien = b.engine.runNow(r.id);
+  const changee = b.engine.update(r.id, { agentId: "iris" });
+  assert.equal(changee.nextRunAt, r.nextRunAt);
+  assert.equal(b.runs(r.id)[0].agentId, "hugo");
+  b.engine.interrupt(ancien.id);
+  assert.equal(b.engine.runNow(r.id).agentId, "iris");
+});
+
+test("calendrier : fuseau et pause viennent du moteur, agent inactif absent", () => {
+  const actifs = new Set(["hugo"]);
+  const b = banc("2026-10-24T00:00:00Z", { agentError: (id) => actifs.has(id) ? null : "Agent désactivé" });
+  const r = b.engine.create({ agentId: "hugo", name: "DST", instruction: "test", schedule: { kind: "daily", time: "02:30" }, timezone: "Europe/Paris" });
+  const from = "2026-10-25T00:00:00Z", to = "2026-10-26T23:00:00Z";
+  assert.deepEqual(b.engine.passages(from, to).map((p) => p.at), ["2026-10-25T00:30:00.000Z", "2026-10-26T01:30:00.000Z"]);
+  assert.throws(() => b.engine.passages(from, "2028-01-01T00:00:00Z"), /Période/);
+  actifs.clear();
+  assert.deepEqual(b.engine.passages(from, to), []);
+  actifs.add("hugo");
+  b.engine.update(r.id, { active: false });
+  assert.deepEqual(b.engine.passages(from, to), []);
+});
+
+test("historique : aucune purge à 100 runs, anciens résultats lisibles après redémarrage", () => {
+  const b = banc("2026-10-30T12:00:00Z");
+  const r = quotidienne(b, { schedule: { kind: "manual" } });
+  for (let i = 0; i < 105; i++) finir(b, b.engine.runNow(r.id));
+  assert.equal(b.store.runs.length, 105);
+  assert.equal(b.engine.history(r.id, 51).length, 51);
+  b.fermer(); b.demarrer();
+  const toutes = b.engine.history(r.id, 200);
+  assert.equal(toutes.length, 105);
+  assert.equal(toutes.at(-1).result, "Trois tâches en retard.");
 });
 
 for (const dir of dossiers) fs.rmSync(dir, { recursive: true, force: true });

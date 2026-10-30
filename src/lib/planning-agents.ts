@@ -1,7 +1,8 @@
 import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { cleJour, depuisCle, libelleJour } from "@/lib/dates";
-import { libelleFrequence } from "@/lib/planning";
-import type { Artefact, Categorie, Chat, Evenement, Project, Role, Routine, Tache } from "@/types/domain";
+import { libellePlanning, quandRoutine } from "@/lib/routines-affichage";
+import type { Routine } from "@/types/routines";
+import type { Artefact, Categorie, Chat, Evenement, Project, Role, Tache } from "@/types/domain";
 import type { Workflow } from "@/types/workflows";
 
 /** Le calendrier donné aux agents : de la semaine passée aux deux mois qui viennent. */
@@ -85,13 +86,13 @@ export function planningPourAgents(donnees: {
   const lignesRoutines = routines.map(
     (r) =>
       `- ${ligne(
-        `**${r.nom}**`,
-        r.active ? "active" : "en pause",
-        libelleFrequence(r.frequence),
-        r.active && r.frequence.type !== "manuel" && `prochaine le ${r.prochaine.slice(0, 16).replace("T", " à ")}`,
-        `confiée à ${agent(r.roleId)}`,
+        `**${r.name}**`,
+        r.blockedReason ?? (!roles.some((a) => a.id === r.agentId) ? "agent indisponible — aucun lancement" : r.active ? "active" : "en pause"),
+        libellePlanning(r.schedule),
+        r.active && r.nextRunAt && `prochaine le ${quandRoutine(r.nextRunAt, r.timezone)} (${r.timezone})`,
+        `confiée à ${agent(r.agentId)}`,
         projet(r.projectId) && `projet ${projet(r.projectId)}`,
-      )}${note(r.consigne)}`,
+      )}${note(r.instruction)}`,
   );
 
   /* Le reste de l'app : projets, conversations, artefacts, workflows. */

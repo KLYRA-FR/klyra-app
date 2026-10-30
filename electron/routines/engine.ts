@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { nextOccurrence, upcomingOccurrences, validateSchedule } from "./schedule";
+import { nextOccurrence, validateSchedule } from "./schedule";
 import type { RoutineStore } from "./store";
 import {
   isTerminal,
@@ -41,6 +41,7 @@ const INSTRUCTION_MAX = 100_000;
 const RESULT_MAX = 4_000;
 const ERROR_MAX = 2_000;
 const AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const LEGACY_CHAIN = "Cette ancienne routine contient des relais entre agents. Ses données sont conservées, mais elle ne peut pas être exécutée comme une routine à un seul agent.";
 
 export class RoutineError extends Error {
   constructor(
@@ -66,6 +67,8 @@ export interface EngineOptions {
   clearTimer?: (handle: unknown) => void;
   newId?: () => string;
   defaultTimezone?: () => string;
+  /** null : l'agent existe et est actif ; sinon un motif lisible qui interdit son lancement. */
+  agentError?: (agentId: string) => string | null;
   onChange?: () => void;
   log?: (message: string, error?: unknown) => void;
 }
@@ -78,6 +81,7 @@ export class RoutineEngine {
   private readonly clearTimer: (handle: unknown) => void;
   private readonly newId: () => string;
   private readonly defaultTimezone: () => string;
+  private readonly agentError: (agentId: string) => string | null;
   private readonly onChange: () => void;
   private readonly log: (message: string, error?: unknown) => void;
   private timer: unknown = null;
@@ -94,6 +98,7 @@ export class RoutineEngine {
     this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
     this.newId = options.newId ?? randomUUID;
     this.defaultTimezone = options.defaultTimezone ?? (() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+    this.agentError = options.agentError ?? (() => null);
     this.onChange = options.onChange ?? (() => {});
     this.log = options.log ?? (() => {});
   }
@@ -106,6 +111,16 @@ export class RoutineEngine {
     this.started = true;
     const now = this.now();
     try {
+      // Les essais de l'ancien moteur ont pu conserver des chaînes actives. Les données
+      // restent intactes ; aucune exécution partielle n'est présentée comme une migration réussie.
+      if (this.store.routines.some((r) => blockedReason(r) && (r.active || r.nextRunAt || !r.blockedReason))) {
+        this.store.transaction((data) => {
+          for (const routine of data.routines) {
+            const reason = blockedReason(routine);
+            if (reason) Object.assign(routine, { blockedReason: reason, active: false, nextRunAt: null });
+          }
+        });
+      }
       // Le Claude Code d'une exécution en cours s'arrête avec l'app : elle ne reprendra pas.
       this.interruptRunning("L’app s’est fermée pendant l’exécution.");
       this.catchUpAll(now, "app-closed");
@@ -133,12 +148,12 @@ export class RoutineEngine {
   }
 
   /** La fenêtre est partie (fermée, rechargée) : ses réponses en cours ne reviendront pas. */
-  interruptRunning(reason: string): RoutineRun[] {
+  interruptRunning(reason: string, runIds?: readonly string[]): RoutineRun[] {
     const now = this.now();
-    const running = this.store.runs.filter((r) => r.status === "running").map((r) => structuredClone(r));
+    const running = this.store.runs.filter((r) => hasStarted(r) && (!runIds || runIds.includes(r.id))).map((r) => structuredClone(r));
     if (!running.length) return [];
     this.store.transaction((data) => {
-      for (const run of data.runs) if (run.status === "running") Object.assign(run, finish(now, "interrupted", reason));
+      for (const run of data.runs) if (running.some((r) => r.id === run.id)) Object.assign(run, finish(now, "interrupted", reason));
     });
     this.dispatch();
     this.onChange();
@@ -150,7 +165,7 @@ export class RoutineEngine {
     this.hostReady = ready;
     if (!ready || !this.started) return;
     for (const run of this.store.runs) {
-      if (isTerminal(run.status) || !run.dispatchedAt) continue;
+      if (run.status !== "queued" || !run.dispatchedAt || this.failUnavailable(run)) continue;
       // L'interface ignore une exécution déjà postée (même id) : seul son état revient.
       this.host.deliver(run, this.store.routine(run.routineId));
     }
@@ -179,11 +194,32 @@ export class RoutineEngine {
   /** Les prochaines exécutions sur `days` jours ; aucune en pause. */
   upcoming(routineId: string, days = 7, limit = 200): string[] {
     const routine = this.routine(routineId);
-    if (!routine.active || !routine.nextRunAt) return [];
+    if (!routine.active || !routine.nextRunAt || blockedReason(routine) || this.agentIssue(routine.agentId)) return [];
     const end = this.now().getTime() + days * DAY;
-    const first = routine.nextRunAt;
-    const rest = upcomingOccurrences(routine.schedule, routine.timezone, new Date(first), Math.max(0, limit - 1));
-    return [first, ...rest].filter((at) => Date.parse(at) <= end);
+    const dates: string[] = [];
+    let at: string | null = routine.nextRunAt;
+    while (at && dates.length < limit && Date.parse(at) <= end) {
+      dates.push(at);
+      at = nextOccurrence(routine.schedule, routine.timezone, new Date(at));
+    }
+    return dates;
+  }
+
+  /** Exécutions confiées à l'interface et pas encore finies. */
+  passages(debut: string, fin: string): { routineId: string; at: string }[] {
+    const from = Date.parse(debut), to = Date.parse(fin);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 93 * DAY) throw new RoutineError("invalide", "Période de calendrier invalide (93 jours maximum).");
+    const threshold = Math.max(from, this.now().getTime());
+    const result: { routineId: string; at: string }[] = [];
+    for (const r of this.store.routines) {
+      if (!r.active || !r.nextRunAt || blockedReason(r) || this.agentIssue(r.agentId)) continue;
+      let at = Date.parse(r.nextRunAt) >= threshold ? r.nextRunAt : nextOccurrence(r.schedule, r.timezone, new Date(threshold - 1));
+      for (let n = 0; at && Date.parse(at) < to && n < 62; n++) {
+        result.push({ routineId: r.id, at });
+        at = nextOccurrence(r.schedule, r.timezone, new Date(at));
+      }
+    }
+    return result.sort((a, b) => a.at.localeCompare(b.at));
   }
 
   /** Exécutions confiées à l'interface et pas encore finies. */
@@ -197,6 +233,7 @@ export class RoutineEngine {
     const now = this.now();
     if (!input || typeof input !== "object") throw new RoutineError("invalide", "Routine invalide.");
     const agentId = agent(input.agentId);
+    this.requireAgent(agentId);
     const timezone = input.timezone ?? this.defaultTimezone();
     const schedule = this.schedule(input.schedule, timezone, now);
     const active = input.active ?? true;
@@ -230,7 +267,18 @@ export class RoutineEngine {
     if (patch.name !== undefined) next.name = name(patch.name);
     if (patch.instruction !== undefined) next.instruction = instruction(patch.instruction);
     if (patch.projectId !== undefined) next.projectId = projectId(patch.projectId);
-    if (patch.relais !== undefined) next.relais = structuredClone(patch.relais);
+    if (patch.agentId !== undefined) {
+      next.agentId = agent(patch.agentId);
+      this.requireAgent(next.agentId);
+    }
+    // Seule la suppression volontaire des relais est permise ; la sauvegarde de migration reste intacte.
+    const simplifier = Array.isArray(patch.relais) && patch.relais.length === 0 && !!current.relais?.length;
+    if (simplifier) {
+      next.relais = [];
+      delete next.blockedReason;
+    } else if (patch.relais !== undefined && JSON.stringify(patch.relais) !== JSON.stringify(current.relais ?? [])) {
+      throw new RoutineError("relais-incompatibles", "Les anciens relais sont conservés et ne peuvent pas être modifiés par le moteur des routines.");
+    }
     if (patch.positions !== undefined) next.positions = structuredClone(patch.positions);
     if (patch.active !== undefined && typeof patch.active !== "boolean") throw new RoutineError("invalide", "État actif invalide.");
     const planning = patch.schedule !== undefined || patch.timezone !== undefined;
@@ -241,9 +289,15 @@ export class RoutineEngine {
     if (patch.missedPolicy !== undefined) next.missedPolicy = missedPolicy(patch.missedPolicy);
     if (next.schedule.kind === "once") next.missedPolicy = "run-once";
     const reprise = patch.active === true && !current.active;
+    const reason = blockedReason(next);
+    if (patch.active === true) {
+      if (reason) throw new RoutineError("relais-incompatibles", reason);
+      this.requireAgent(next.agentId);
+    }
     next.active = patch.active ?? current.active;
+    if (reason) Object.assign(next, { blockedReason: reason, active: false, nextRunAt: null });
     if (!next.active) next.nextRunAt = null;
-    else if (planning || reprise) {
+    else if (planning || reprise || simplifier) {
       next.nextRunAt = nextOccurrence(next.schedule, next.timezone, now);
       if (!next.nextRunAt && next.schedule.kind === "once") {
         throw new RoutineError("date-passee", "Choisissez une nouvelle date future pour réactiver cette routine.");
@@ -262,15 +316,15 @@ export class RoutineEngine {
   remove(id: string): void {
     this.routine(id);
     const runs = this.store.runs.filter((r) => r.routineId === id && !isTerminal(r.status));
-    if (runs.some((r) => r.status === "running")) {
+    if (runs.some((r) => hasStarted(r))) {
       throw new RoutineError("en-cours", "Interrompez d’abord l’exécution en cours.");
     }
-    for (const run of runs) if (run.dispatchedAt) this.host.cancel(run);
     try {
       this.store.transaction((data) => {
         data.routines = data.routines.filter((r) => r.id !== id);
         data.runs = data.runs.filter((r) => r.routineId !== id);
       });
+      for (const run of runs) if (run.dispatchedAt) this.host.cancel(run);
       this.retry.delete(id);
       this.dispatch();
     } finally {
@@ -282,9 +336,9 @@ export class RoutineEngine {
   /**
    * Reprend les routines de l'ancien minuteur (une seule fois, en une transaction).
    * Les identifiants sont gardés : la conversation `routine-<id>` d'une routine de projet continue.
-   * Une routine invalide est signalée et laissée dans l'ancien fichier, jamais perdue.
+   * Une routine invalide fait refuser l'import complet : aucune reprise partielle silencieuse.
    */
-  importLegacy(items: { id: string; input: RoutineInput; extras: RoutinePatch }[]): { imported: number; errors: string[] } {
+  importLegacy(items: { id: string; input: RoutineInput; extras: RoutinePatch & { nextRunAt?: string } }[]): { imported: number; errors: string[] } {
     const now = this.now();
     const errors: string[] = [];
     const routines: Routine[] = [];
@@ -294,7 +348,12 @@ export class RoutineEngine {
         if (this.store.routine(item.id) || routines.some((r) => r.id === item.id)) continue;
         const timezone = item.input.timezone ?? this.defaultTimezone();
         const schedule = this.schedule(item.input.schedule, timezone, now);
-        const active = item.input.active ?? true;
+        const blocked = item.extras.relais?.length ? LEGACY_CHAIN : undefined;
+        const active = blocked ? false : item.input.active ?? true;
+        if (typeof active !== "boolean") throw new RoutineError("invalide", "État actif invalide.");
+        // « Manuel » utilisait une date sentinelle à l'extrémité du calendrier JS.
+        // Elle n'est pas une échéance ; les routines en pause n'ont pas de date due non plus.
+        const previous = !active || schedule.kind === "manual" || item.extras.nextRunAt === undefined ? undefined : legacyInstant(item.extras.nextRunAt);
         routines.push({
           id: item.id,
           agentId: agent(item.input.agentId),
@@ -303,11 +362,12 @@ export class RoutineEngine {
           schedule,
           timezone,
           active,
-          nextRunAt: active ? nextOccurrence(schedule, timezone, now) : null,
+          nextRunAt: active && schedule.kind !== "manual" ? previous ?? nextOccurrence(schedule, timezone, now) : null,
           missedPolicy: schedule.kind === "once" ? "run-once" : missedPolicy(item.input.missedPolicy ?? "skip"),
           projectId: projectId(item.input.projectId ?? null),
           ...(item.extras.relais?.length ? { relais: structuredClone(item.extras.relais) } : {}),
           ...(item.extras.positions ? { positions: structuredClone(item.extras.positions) } : {}),
+          ...(blocked ? { blockedReason: blocked } : {}),
           createdAt: now.toISOString(),
           updatedAt: now.toISOString(),
         });
@@ -315,6 +375,7 @@ export class RoutineEngine {
         errors.push(`${String(item?.input?.name ?? item?.id)} : ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+    if (errors.length) throw new RoutineError("migration", `Les anciennes routines n’ont pas été reprises. Les données sont conservées. ${errors.join("\n")}`);
     this.store.transaction((data) => void data.routines.push(...routines));
     this.arm();
     this.onChange();
@@ -324,6 +385,9 @@ export class RoutineEngine {
   /** « Exécuter maintenant » : une exécution manuelle, sans toucher à la programmation. */
   runNow(id: string): RoutineRun {
     const routine = this.routine(id);
+    const reason = blockedReason(routine);
+    if (reason) throw new RoutineError("relais-incompatibles", reason);
+    this.requireAgent(routine.agentId);
     if (this.store.runs.some((r) => r.routineId === id && !isTerminal(r.status))) {
       throw new RoutineError("deja-en-cours", "Cette routine a déjà une exécution en cours ou en attente.");
     }
@@ -331,6 +395,7 @@ export class RoutineEngine {
     const run = this.newRun(routine, "manual", now.toISOString(), now);
     this.store.transaction((data) => void data.runs.push(run));
     this.dispatch();
+    this.arm();
     this.onChange();
     return structuredClone(this.store.run(run.id) ?? run);
   }
@@ -340,9 +405,8 @@ export class RoutineEngine {
     const run = this.store.run(runId);
     if (!run) throw new RoutineError("introuvable", "Exécution introuvable.");
     if (isTerminal(run.status)) throw new RoutineError("terminee", "Cette exécution est déjà terminée.");
-    if (run.dispatchedAt) this.host.cancel(run);
     const now = this.now();
-    const commencee = run.status === "running";
+    const commencee = hasStarted(run);
     this.store.transaction((data) => {
       const cible = data.runs.find((r) => r.id === runId)!;
       Object.assign(
@@ -350,9 +414,67 @@ export class RoutineEngine {
         finish(now, commencee ? "interrupted" : "cancelled", commencee ? "Interrompue." : "Annulée avant son lancement."),
       );
     });
+    if (run.dispatchedAt) this.host.cancel(run);
     this.dispatch();
+    this.arm();
     this.onChange();
     return structuredClone(this.store.run(runId)!);
+  }
+
+  /**
+   * Appelé par le main, juste avant le véritable envoi à Claude Code. La prise en charge
+   * est écrite sur disque avant tout effet ; un rechargement, même immédiat, ne peut pas
+   * remettre le même run en file. Un arrêt entre cette écriture et l'envoi reste interrompu.
+   */
+  claim(runId: string, chatId: string, messageId: string, agentId: string): void {
+    const run = this.store.run(runId);
+    if (!run) throw new RoutineError("introuvable", "Exécution introuvable.");
+    if (run.status !== "queued" || run.startedAt) throw new RoutineError("deja-lancee", "Cette exécution a déjà été prise en charge ou est terminée.");
+    if (!run.dispatchedAt) throw new RoutineError("non-confiee", "Cette exécution attend encore d’être confiée à l’agent.");
+    if (agentId !== run.agentId) throw new RoutineError("agent-invalide", "L’agent ne correspond pas à celui de cette exécution.");
+    if (![chatId, messageId].every((v) => typeof v === "string" && v.length > 0 && v.length <= 200)) {
+      throw new RoutineError("invalide", "La conversation ou le message de l’exécution est invalide.");
+    }
+    const reason = this.unavailable(run);
+    if (reason) {
+      this.failUnavailable(run, reason);
+      this.dispatch();
+      throw new RoutineError("agent-indisponible", reason);
+    }
+    const at = this.now().toISOString();
+    this.store.transaction((data) => {
+      const cible = data.runs.find((r) => r.id === runId)!;
+      Object.assign(cible, { status: "running", startedAt: at, updatedAt: at, delivery: { chatId, messageId } });
+    });
+    this.onChange();
+  }
+
+  /** L'attente d'une permission est observée par le main, puis levée par un événement explicite. */
+  attention(runId: string, waiting: boolean): void {
+    const run = this.store.run(runId);
+    if (!run || !hasStarted(run)) return;
+    const status = waiting ? "needs-attention" : "running";
+    if (run.status === status) return;
+    this.store.transaction((data) => {
+      const cible = data.runs.find((r) => r.id === runId)!;
+      Object.assign(cible, { status, updatedAt: this.now().toISOString() });
+    });
+    this.onChange();
+  }
+
+  /** Un outil de la vraie exécution peut préciser son résultat, sans libérer son agent avant la fin du tour. */
+  signal(runId: string, outcome: "no-update" | "failed", reason?: string): void {
+    const run = this.store.run(runId);
+    if (!run || !run.startedAt || !hasStarted(run)) throw new RoutineError("hors-execution", "Ce signal exige une exécution de routine en cours.");
+    if (outcome !== "no-update" && outcome !== "failed") throw new RoutineError("invalide", "Signal de routine invalide.");
+    const error = outcome === "failed" ? String(reason ?? "").trim() : null;
+    if (outcome === "failed" && (!error || error.length > ERROR_MAX)) throw new RoutineError("invalide", `Expliquez l’échec en 1 à ${ERROR_MAX} caractères.`);
+    if (outcome === "no-update" && run.outcome === "failed") throw new RoutineError("echec-signale", "Un échec a déjà été signalé pour cette exécution.");
+    this.store.transaction((data) => {
+      const cible = data.runs.find((r) => r.id === runId)!;
+      Object.assign(cible, { outcome, error, updatedAt: this.now().toISOString() });
+    });
+    this.onChange();
   }
 
   /** Ce que l'interface dit d'une exécution qu'on lui a confiée. Une exécution finie ne change plus. */
@@ -361,6 +483,12 @@ export class RoutineEngine {
     if (!run || isTerminal(run.status) || !report || typeof report !== "object") return;
     const sansConversation = report.state === "failed" && report.chatId === null;
     if (!sansConversation && (typeof report.chatId !== "string" || !report.chatId)) return;
+    // Les événements tardifs du renderer ne peuvent ni démarrer un run, ni modifier
+    // la livraison acquise, ni masquer une permission que le main attend encore.
+    if (report.state === "running") return;
+    if (report.state === "queued" && run.startedAt) return;
+    if (report.state === "succeeded" && !hasStarted(run)) return;
+    if (run.startedAt && (sansConversation || report.chatId !== run.delivery?.chatId || ("messageId" in report && report.messageId !== run.delivery?.messageId))) return;
     const now = this.now();
     this.store.transaction((data) => {
       const cible = data.runs.find((r) => r.id === runId)!;
@@ -369,13 +497,8 @@ export class RoutineEngine {
         case "queued":
           cible.delivery = { chatId: report.chatId, messageId: cible.delivery?.messageId ?? null };
           break;
-        case "running":
-          cible.status = "running";
-          cible.startedAt ??= now.toISOString();
-          cible.delivery = { chatId: report.chatId, messageId: String(report.messageId) };
-          break;
         case "succeeded":
-          Object.assign(cible, finish(now, "succeeded", null));
+          Object.assign(cible, finish(now, cible.outcome === "failed" ? "failed" : "succeeded", cible.outcome === "failed" ? cible.error : null));
           cible.startedAt ??= now.toISOString();
           cible.delivery = { chatId: report.chatId, messageId: String(report.messageId) };
           cible.result = String(report.result ?? "").slice(0, RESULT_MAX);
@@ -404,6 +527,8 @@ export class RoutineEngine {
       if (!r.active || !r.nextRunAt) continue;
       prochaine = Math.min(prochaine, this.retry.get(r.id)?.at ?? Date.parse(r.nextRunAt));
     }
+    // Une remise à l'interface peut avoir échoué même pour une routine manuelle.
+    if (this.store.runs.some((r) => r.status === "queued" && !r.dispatchedAt)) prochaine = Math.min(prochaine, this.now().getTime() + MAX_TIMER_MS);
     if (!Number.isFinite(prochaine)) return;
     const delai = Math.min(MAX_TIMER_MS, Math.max(0, prochaine - this.now().getTime()));
     this.timer = this.setTimer(() => this.tick(), delai);
@@ -555,37 +680,83 @@ export class RoutineEngine {
 
   /** Une exécution de routine à la fois par agent ; les suivantes attendent en file. */
   private dispatch(): void {
-    if (!this.started || !this.hostReady) return;
+    if (!this.started) return;
+    // Revalider aussi les runs déjà confiés mais encore dans la file du renderer.
+    // Un agent peut être désactivé ou sa fiche retirée entre l'échéance et son tour.
+    for (const run of this.store.runs) if (run.status === "queued") this.failUnavailable(run);
+    if (!this.hostReady) return;
     const occupes = new Set(
-      this.store.runs.filter((r) => r.status === "running" || (r.status === "queued" && r.dispatchedAt)).map((r) => r.agentId),
+      this.store.runs.filter((r) => hasStarted(r) || (r.status === "queued" && r.dispatchedAt)).map((r) => r.agentId),
     );
     const enFile = this.store.runs
       .filter((r) => r.status === "queued" && !r.dispatchedAt)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     for (const run of enFile) {
       if (occupes.has(run.agentId)) continue;
+      const at = this.now().toISOString();
+      try {
+        // La remise est enregistrée AVANT l'événement : l'hôte peut prendre le run
+        // en charge synchroniquement. Une écriture ratée interdit toute remise.
+        this.store.transaction((data) => {
+          const cible = data.runs.find((r) => r.id === run.id)!;
+          Object.assign(cible, { dispatchedAt: at, updatedAt: at });
+        });
+      } catch (error) {
+        this.log(`Exécution ${run.id} : remise impossible à enregistrer.`, error);
+        continue;
+      }
       let confiee = false;
       try {
-        confiee = this.host.deliver(run, this.store.routine(run.routineId));
+        confiee = this.host.deliver(structuredClone(this.store.run(run.id)!), this.store.routine(run.routineId));
       } catch (error) {
         this.log(`Exécution ${run.id} : l’interface ne l’a pas reçue.`, error);
       }
-      if (!confiee) return;
-      occupes.add(run.agentId);
-      const at = this.now().toISOString();
-      try {
-        this.store.transaction((data) => {
-          const cible = data.runs.find((r) => r.id === run.id);
-          if (cible) Object.assign(cible, { dispatchedAt: at, updatedAt: at });
-        });
-      } catch (error) {
-        // Confiée quand même : l'interface ne la poste qu'une fois (même id) si elle revient.
-        this.log(`Exécution ${run.id} : confiée, mais non notée sur le disque.`, error);
+      if (!confiee) {
+        try {
+          this.store.transaction((data) => {
+            const cible = data.runs.find((r) => r.id === run.id)!;
+            if (cible.status === "queued" && !cible.startedAt) cible.dispatchedAt = null;
+          });
+        } catch (error) {
+          this.log(`Exécution ${run.id} : remise différée ; elle sera vérifiée au retour de la fenêtre.`, error);
+        }
+        return;
       }
+      occupes.add(run.agentId);
     }
   }
 
   /* ─── Outils ───────────────────────────────────────────────── */
+
+  private agentIssue(agentId: string): string | null {
+    try {
+      return this.agentError(agentId);
+    } catch (error) {
+      return `L’agent ne peut pas être vérifié : ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  private requireAgent(agentId: string): void {
+    const error = this.agentIssue(agentId);
+    if (error) throw new RoutineError("agent-indisponible", error);
+  }
+
+  private unavailable(run: RoutineRun): string | null {
+    const routine = this.store.routine(run.routineId);
+    return (routine ? blockedReason(routine) : "La routine n’existe plus.") || this.agentIssue(run.agentId);
+  }
+
+  /** Échec durable avant lancement ; la file du renderer est retirée seulement après l'écriture. */
+  private failUnavailable(run: RoutineRun, reason = this.unavailable(run)): boolean {
+    if (!reason || run.status !== "queued") return false;
+    this.store.transaction((data) => {
+      const cible = data.runs.find((r) => r.id === run.id)!;
+      Object.assign(cible, finish(this.now(), "failed", reason.slice(0, ERROR_MAX)));
+    });
+    if (run.dispatchedAt) this.host.cancel(run);
+    this.onChange();
+    return true;
+  }
 
   private routine(id: string): Routine {
     const routine = typeof id === "string" ? this.store.routine(id) : undefined;
@@ -624,6 +795,14 @@ export class RoutineEngine {
     };
   }
 
+}
+
+function blockedReason(routine: Routine): string | null {
+  return routine.blockedReason || (routine.relais?.length ? LEGACY_CHAIN : null);
+}
+
+function hasStarted(run: RoutineRun): boolean {
+  return run.status === "running" || run.status === "needs-attention";
 }
 
 function finish(now: Date, status: RoutineRun["status"], error: string | null): Partial<RoutineRun> {
@@ -691,4 +870,16 @@ function projectId(value: unknown): string | null {
   if (value === null) return null;
   if (typeof value !== "string" || !value || value.length > 200) throw new RoutineError("invalide", "Projet invalide.");
   return value;
+}
+
+/** L'ancienne échéance est gardée, même passée : le démarrage appliquera la politique de rattrapage. */
+function legacyInstant(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value) || !Number.isFinite(Date.parse(value))) {
+    throw new RoutineError("migration", "L’ancienne prochaine exécution n’est pas un instant ISO valide.");
+  }
+  const date = value.slice(0, 10);
+  if (new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) {
+    throw new RoutineError("migration", "La date de l’ancienne prochaine exécution n’existe pas.");
+  }
+  return new Date(value).toISOString();
 }

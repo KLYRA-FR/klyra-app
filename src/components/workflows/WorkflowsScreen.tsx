@@ -494,7 +494,7 @@ export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
             <Icon name="lightning-01" size={24} />
           </span>
           <h1 className="m-0 text-h3 leading-[1] tracking-[-0.04em] text-texte-principal">
-            <span className="font-semibold">Tes routines,</span> <span className="font-normal">en workflows</span>
+            <span className="font-semibold">Tes workflows</span>
           </h1>
           <p className="m-0 text-ui text-texte-secondaire">
             Un déclencheur lance tes agents, l’un après l’autre : chacun passe son résultat au suivant. Ajoute des conditions, des

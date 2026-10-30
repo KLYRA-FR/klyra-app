@@ -178,7 +178,7 @@ export type AgentEvent =
   | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
   /** La demande a reçu sa réponse (de toi, ou d'office en accès complet). */
   | { type: "autorisation-fin"; id: string; accepte: boolean }
-  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string };
+  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean };
 
 export interface StreamOptions {
   /** Le sous-agent qui répond (`~/.claude/agents/<nom>.md`), ou null pour la session principale. */
@@ -203,6 +203,8 @@ export interface StreamOptions {
   acces?: "demander" | "projet" | "tout";
   /** La conversation de l'app : les outils des fils savent d'où vient l'agent. */
   chatId?: string;
+  /** Réservé par le moteur avant de lancer ce tour. */
+  routineRun?: string;
 }
 
 /** Réponse à une demande d'autorisation. « toujours » : accordé pour le reste de la session. */
@@ -235,6 +237,7 @@ interface Tour {
  * donc pendant que tu lui écris, et il n'y a jamais deux agents sur la même conversation.
  */
 interface Processus {
+  routineRun?: string;
   child: ChildProcess;
   /** Ce qui ne change pas en cours de route sans relancer Claude Code. */
   signature: string;
@@ -364,6 +367,7 @@ export function autoriser(requestId: string, demandeId: string, decision: Decisi
       : [];
   repondre(child, demandeId, decision !== "non", demande.entree, regles);
   demandes.get(requestId)?.delete(demandeId);
+  parRequete.get(requestId)?.tour.emit({ type: "autorisation-fin", id: demandeId, accepte: decision !== "non" });
   return true;
 }
 
@@ -605,6 +609,7 @@ function lireLigne(proc: Processus, ligne: string) {
 function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
   const child = spawn(bin, args, { cwd, env: environnementClaude(), windowsHide: true });
   const proc: Processus = {
+    routineRun: options.routineRun,
     child,
     signature,
     modele: options.modele ?? null,
@@ -674,11 +679,11 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature()]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
-  if (ouvert && vivant(ouvert) && (ouvert.signature === signature || ouvert.tours.length)) {
+  if (ouvert && vivant(ouvert) && (ouvert.signature === signature || (ouvert.tours.length && !options.routineRun && !ouvert.routineRun))) {
     /* La conversation a déjà son Claude Code : on lui écrit. Le modèle et l'accès changent en route. */
     proc = ouvert;
     proc.spontane = spontane;
@@ -719,7 +724,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     ];
     // Les outils de l'app (fils, autres IA ajoutées dans les Réglages), par son serveur MCP local.
     const capaciteComposio = espaceComposio.creerCapacite();
-    const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal" }, capaciteComposio);
+    const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, capaciteComposio);
     if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? OUTILS_APP() : []));
     if (mcp) args.push("--mcp-config", mcp);
     if (options.agent) args.push("--agent", options.agent);
@@ -731,6 +736,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS,
       "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Réglages › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
     ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
+    if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignes.join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);

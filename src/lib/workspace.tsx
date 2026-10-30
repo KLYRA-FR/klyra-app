@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
+import { Bouton } from "@/components/ui/Bouton";
 import { createMockWorkspace, type MockWorkspace } from "@/data/mock";
 import { AgentsProvider, useAgents } from "@/lib/agents";
 import { getBridge, type Acces, type AgentEvent } from "@/lib/bridge";
@@ -13,6 +14,7 @@ import { prochainPassage } from "@/lib/planning";
 import { lireProposition } from "@/lib/proposition-agent";
 import { reglagesActuels } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
+import { useRoutines } from "@/lib/routines";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -105,6 +107,16 @@ interface WorkspaceState extends MockWorkspace {
   executions: ExecutionWorkflow[];
   /** Le profil du compte d'équipe connecté (cf. `src/lib/identite.ts`). En mémoire seulement : jamais écrit sur le disque. */
   profilCompte: ProfilCompte | null;
+}
+
+function conversationsAEnregistrer(etat: WorkspaceState) {
+  return {
+    version: VERSION_STOCKAGE, chats: etat.chats, messages: etat.messages,
+    routines: etat.routines, artefacts: etat.artefacts, projects: etat.projects,
+    currentUser: etat.currentUser, acces: etat.acces, taches: etat.taches,
+    evenements: etat.evenements, categories: etat.categories,
+    workflows: etat.workflows, executions: etat.executions,
+  };
 }
 
 type WorkspaceAction =
@@ -302,7 +314,7 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       const { message } = action;
       return {
         ...state,
-        messages: [...state.messages, message],
+        messages: [...(message.routineRun ? state.messages.filter((m) => m.id !== message.id) : state.messages), message],
         chats: state.chats.map((chat) =>
           chat.id === message.chatId ? { ...chat, updatedAt: message.createdAt } : chat,
         ),
@@ -558,24 +570,8 @@ const WorkspaceContext = createContext<WorkspaceApi | null>(null);
 
 function WorkspaceStore({ children }: { children: ReactNode }) {
   const bridge = getBridge();
-  /* Qui lance les routines. `demande` : le moteur du process principal en a la charge (KLYRA_ROUTINES),
-     même s'il n'a pas pu démarrer, et l'ancien minuteur ci-dessous se tait ; `actif` : il tourne.
-     null : pas encore su, personne ne lance rien. */
-  const [moteurRoutines, setMoteurRoutines] = useState<{ demande: boolean; actif: boolean } | null>(() =>
-    bridge?.routines ? null : { demande: false, actif: false },
-  );
-  useEffect(() => {
-    const routines = bridge?.routines;
-    if (!routines) return;
-    const lire = () =>
-      void routines.etat().then((r) =>
-        // Un pont sans `demande` (process principal plus ancien) n'a pas de moteur.
-        setMoteurRoutines(r.ok ? { demande: r.data.demande ?? r.data.actif, actif: r.data.actif } : { demande: true, actif: false }),
-      );
-    lire();
-    // Le moteur peut démarrer plus tard (verrou repris) : il le signale par `routines:change`.
-    return routines.onChange(lire);
-  }, [bridge]);
+  const [erreurChargement, setErreurChargement] = useState<string | null>(null);
+  const { routines: routinesLocales, actif: moteurRoutines } = useRoutines();
   const { roles, status: statutAgents } = useAgents();
   const [state, dispatch] = useReducer(reducer, undefined, (): WorkspaceState => {
     const mock = createMockWorkspace();
@@ -638,6 +634,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     let actif = true;
     void bridge.conversations.read().then((reponse) => {
       if (!actif) return;
+      if (!reponse.ok) { setErreurChargement(reponse.message); return; }
       const data = reponse.ok
         ? (reponse.data as {
             version?: number;
@@ -657,6 +654,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           } | null)
         : null;
       const valide = data?.version === VERSION_STOCKAGE;
+      if (data !== null && !valide) { setErreurChargement("Le format des conversations n’est pas reconnu. Les données existantes sont conservées."); return; }
       const messages = (valide ? (data.messages ?? []) : []).map((m) =>
         // Une réponse coupée par la fermeture de l'app ne reprendra pas.
         m.statut === "en-cours"
@@ -694,7 +692,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             : e,
         ),
       });
-    });
+    }).catch((error: unknown) => { if (actif) setErreurChargement(error instanceof Error ? error.message : String(error)); });
     return () => {
       actif = false;
     };
@@ -704,21 +702,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!bridge || !state.charge) return;
     const timer = setTimeout(() => {
-      void bridge.conversations.write({
-        version: VERSION_STOCKAGE,
-        chats: state.chats,
-        messages: state.messages,
-        routines: state.routines,
-        artefacts: state.artefacts,
-        projects: state.projects,
-        currentUser: state.currentUser,
-        acces: state.acces,
-        taches: state.taches,
-        evenements: state.evenements,
-        categories: state.categories,
-        workflows: state.workflows,
-        executions: state.executions,
-      });
+      void bridge.conversations.write(conversationsAEnregistrer(stateRef.current));
     }, 400);
     return () => clearTimeout(timer);
   }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
@@ -733,7 +717,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           evenements: state.evenements,
           taches: state.taches,
           categories: state.categories,
-          routines: state.routines,
+          routines: routinesLocales,
           projects: state.projects,
           roles,
           chats: state.chats,
@@ -744,7 +728,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       );
     }, 1000);
     return () => clearTimeout(timer);
-  }, [bridge, state.charge, state.evenements, state.taches, state.categories, state.routines, state.projects, roles, state.chats, state.artefacts, state.workflows, moi.name]);
+  }, [bridge, state.charge, state.evenements, state.taches, state.categories, routinesLocales, state.projects, roles, state.chats, state.artefacts, state.workflows, moi.name]);
 
   /* Fermeture de l'app : le dernier état part tout de suite, sans attendre le regroupement. */
   useEffect(() => {
@@ -752,21 +736,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     return bridge.conversations.avantFermeture(() => {
       const etat = stateRef.current;
       if (!etat.charge) return;
-      void bridge.conversations.write({
-        version: VERSION_STOCKAGE,
-        chats: etat.chats,
-        messages: etat.messages,
-        routines: etat.routines,
-        artefacts: etat.artefacts,
-        projects: etat.projects,
-        currentUser: etat.currentUser,
-        acces: etat.acces,
-        taches: etat.taches,
-        evenements: etat.evenements,
-        categories: etat.categories,
-        workflows: etat.workflows,
-        executions: etat.executions,
-      });
+      void bridge.conversations.write(conversationsAEnregistrer(etat));
     });
   }, [bridge]);
 
@@ -1021,7 +991,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             });
           }
           terminer();
-          if (event.erreur !== "Arrêté par toi.") {
+          if (event.erreur !== "Arrêté par toi." && !event.silencieux) {
             const notifiee = prevenir(chatId, roleId, messageId, event.ok);
             // Le son de l'app, sauf si la notification du système sonne déjà.
             if (!(notifiee && notificationSonore(event.ok ? "agentFini" : "agentErreur"))) jouer(event.ok ? "fin-de-tache" : "erreur");
@@ -1058,7 +1028,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     (chatId: string, roleId: RoleId, messageUtilisateur: Message) => {
       const chat = stateRef.current.chats.find((c) => c.id === chatId);
       if (!chat) return;
-      const messageId = crypto.randomUUID();
+      const messageId = messageUtilisateur.routineRun ? `routine-answer-${messageUtilisateur.routineRun}` : crypto.randomUUID();
       const reponse: Message = {
         id: messageId,
         chatId,
@@ -1120,8 +1090,19 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       suivreReponse(chatId, roleId, messageId);
 
       const project = stateRef.current.projects.find((p) => p.id === chat.projectId);
-      void bridge.claude
-        .stream(messageId, {
+      // La consigne ET sa réponse sont durables avant le claim dans Electron.
+      const demarrer = async () => {
+        if (messageUtilisateur.routineRun) {
+          const etat = stateRef.current;
+          const messages = etat.messages.filter((m) => m.id !== messageUtilisateur.id && m.id !== reponse.id);
+          stateRef.current = { ...etat, messages: [...messages, messageUtilisateur, reponse] };
+          const sauvegarde = await bridge.conversations.write(conversationsAEnregistrer(stateRef.current));
+          if (!sauvegarde.ok) {
+            void bridge.routines?.signaler(messageUtilisateur.routineRun, { state: "failed", chatId: null, messageId: null, error: sauvegarde.message });
+            throw new Error(sauvegarde.message);
+          }
+        }
+        return bridge.claude.stream(messageId, {
           agent: roleId === "principal" ? null : roleId,
           prompt: construirePrompt(chat, roleId, messageUtilisateur),
           dossier: chat.kind === "equipe" ? (project?.folder ?? null) : null,
@@ -1131,8 +1112,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           acces: stateRef.current.acces,
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
           chatId,
-        })
-        .then((r) => {
+          ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
+        });
+      };
+      void demarrer().then((r) => {
           if (!r.ok)
             ecouteurs.current.get(messageId)?.({
               type: "fin",
@@ -1140,7 +1123,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
               texte: "",
               erreur: r.message,
             });
-        });
+        }).catch((error: unknown) => ecouteurs.current.get(messageId)?.({
+          type: "fin", ok: false, texte: "", erreur: error instanceof Error ? error.message : String(error),
+        }));
     },
     [bridge, construirePrompt, suivant, suivreReponse],
   );
@@ -1182,8 +1167,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       const chat = assurerChat(chatId);
       if (!chat) return;
 
-      // L'agent travaille encore : le message attend son tour.
-      if (stateRef.current.travail[chatId] && !horsFile) {
+      // Une routine attend aussi si son agent travaille dans une autre conversation.
+      const agentOccupe = routineRun && Object.values(stateRef.current.travail).some((t) => t.roleId === to);
+      if ((stateRef.current.travail[chatId] && !horsFile) || agentOccupe) {
         dispatch({
           type: "file/ajouter",
           chatId,
@@ -1198,7 +1184,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       }
 
       const message: Message = {
-        id: crypto.randomUUID(),
+        id: routineRun ? `routine-user-${routineRun}` : crypto.randomUUID(),
         chatId,
         author: { kind: "user" },
         createdAt: new Date().toISOString(),
@@ -1221,6 +1207,17 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   useEffect(() => {
     envoyerRef.current = envoyer;
   });
+  // Une routine qui attend un agent occupé ailleurs repart quand cet agent se libère.
+  useEffect(() => {
+    const ids = new Set(Object.values(state.travail).map((t) => t.roleId));
+    for (const [chatId, file] of Object.entries(state.file)) {
+      const prochain = file[0];
+      if (!prochain?.routineRun || state.travail[chatId] || ids.has(prochain.to ?? "")) continue;
+      ids.add(prochain.to ?? "");
+      dispatch({ type: "file/retirer", chatId, id: prochain.id });
+      timers.current.push(setTimeout(() => envoyerRef.current(chatId, prochain.text, prochain.to, prochain.fichiers, true, prochain.routineRun), 0));
+    }
+  }, [state.travail, state.file]);
   const sendMessage = useCallback(
     (chatId: string, text: string, to: RoleId | null, fichiers: string[] = []) => envoyer(chatId, text, to, fichiers),
     [envoyer],
@@ -1527,104 +1524,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [],
   );
 
-  const executerRoutine = useCallback((routine: Routine, rattrapee: boolean) => {
-    const relais = routine.relais ?? [];
-    const chatId = chatDeRoutine(routine);
-    const maintenant = new Date();
-    const suite: Routine = {
-      ...routine,
-      prochaine: prochainPassage(routine.frequence, maintenant).toISOString(),
-      historique: [
-        {
-          at: maintenant.toISOString(),
-          chatId,
-          rattrapee,
-          ...(relais.length > 0 && {
-            etapes: [{ roleId: routine.roleId, statut: "en-cours" as const, depuis: maintenant.toISOString() }],
-          }),
-        },
-        ...routine.historique,
-      ].slice(0, 30),
-    };
-    dispatch({ type: "routine/enregistrer", routine: suite });
-    stateRef.current = {
-      ...stateRef.current,
-      routines: stateRef.current.routines.map((r) => (r.id === suite.id ? suite : r)),
-    };
-    envoyerRef.current(chatId, `Routine « ${routine.nom} »\n\n${routine.consigne}`, routine.roleId, []);
-  }, [chatDeRoutine]);
-
-  /* La chaîne avance : quand un agent a fini sa réponse, elle part à ceux à qui
-     il passe la main. Chaque agent ne travaille qu'une fois par passage (pas de boucle). */
-  const avancerChaines = useCallback(() => {
-    const { routines, messages } = stateRef.current;
-    for (const routine of routines) {
-      const h = routine.historique[0];
-      if (!h?.etapes?.some((e) => e.statut === "en-cours")) continue;
-      let etapes = h.etapes;
-      const envois: { vers: RoleId; texte: string }[] = [];
-      for (const e of h.etapes) {
-        if (e.statut !== "en-cours") continue;
-        const reponse = messages.find(
-          (m) =>
-            m.chatId === h.chatId &&
-            m.author.kind === "role" &&
-            m.author.roleId === e.roleId &&
-            m.createdAt >= e.depuis &&
-            m.statut !== "en-cours",
-        );
-        if (!reponse) continue;
-        const ok = reponse.statut !== "erreur";
-        etapes = etapes.map((x) => (x.roleId === e.roleId ? { ...x, statut: ok ? "fait" : "erreur" } : x));
-        if (!ok) continue;
-        const nom = rolesRef.current.find((r) => r.id === e.roleId)?.name ?? e.roleId;
-        const rendu = texteDe(reponse).slice(0, 12000);
-        for (const l of routine.relais ?? []) {
-          if (l.de !== e.roleId || etapes.some((x) => x.roleId === l.vers)) continue;
-          etapes = [...etapes, { roleId: l.vers, statut: "en-cours", depuis: new Date().toISOString() }];
-          envois.push({
-            vers: l.vers,
-            texte: `Routine « ${routine.nom} »\n\n${l.consigne.trim() || "Prends la suite."}\n\n— Ce que ${nom} a rendu :\n\n${rendu}`,
-          });
-        }
-      }
-      if (etapes === h.etapes) continue;
-      const suite: Routine = { ...routine, historique: [{ ...h, etapes }, ...routine.historique.slice(1)] };
-      dispatch({ type: "routine/enregistrer", routine: suite });
-      stateRef.current = {
-        ...stateRef.current,
-        routines: stateRef.current.routines.map((r) => (r.id === suite.id ? suite : r)),
-      };
-      for (const { vers, texte } of envois) envoyerRef.current(h.chatId, texte, vers, []);
-    }
-  }, []);
-  useEffect(() => {
-    if (!state.charge) return;
-    const id = setTimeout(avancerChaines, 0);
-    return () => clearTimeout(id);
-  }, [state.charge, state.messages, avancerChaines]);
-
-  /* Toutes les 30 s, les tâches dont l'heure est passée partent. Une heure
-     passée pendant que l'app était fermée est rattrapée une seule fois. */
-  useEffect(() => {
-    // Le moteur du process principal a la main : l'ancien minuteur ne doit rien lancer en double.
-    if (!state.charge || !moteurRoutines || moteurRoutines.demande) return;
-    const verifier = () => {
-      const maintenant = Date.now();
-      for (const r of stateRef.current.routines) {
-        if (!r.active || r.frequence.type === "manuel" || new Date(r.prochaine).getTime() > maintenant) continue;
-        executerRoutine(r, maintenant - new Date(r.prochaine).getTime() > 5 * 60_000);
-      }
-    };
-    verifier();
-    const id = setInterval(verifier, 30_000);
-    return () => clearInterval(id);
-  }, [state.charge, moteurRoutines, executerRoutine]);
-
   /* Le moteur du process principal (electron/routines/) : ses exécutions partent ici par le chemin
-     habituel des messages, et leur état lui revient. Inactif tant que KLYRA_ROUTINES ne l'active pas. */
+     habituel des messages. */
   useLivraisonRoutines({
-    bridge: moteurRoutines?.actif ? bridge : null,
+    bridge: moteurRoutines ? bridge : null,
     // Les fiches des agents lues sur le disque : un agent pas encore chargé (ou une lecture
     // en erreur) n'est pas un agent introuvable. Les exécutions attendent.
     pret: state.charge && statutAgents === "disque",
@@ -1653,10 +1556,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const supprimerRoutine = useCallback((id: string) => dispatch({ type: "routine/supprimer", id }), []);
   const lancerRoutine = useCallback(
     (id: string) => {
-      const routine = stateRef.current.routines.find((r) => r.id === id);
-      if (routine) executerRoutine(routine, false);
+      void bridge?.routines?.executer(id);
     },
-    [executerRoutine],
+    [bridge],
   );
 
   const ajouterArtefact = useCallback((artefact: Omit<Artefact, "id" | "ajouteLe">) => {
@@ -2122,7 +2024,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       deciderApprobation,
     ],
   );
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+  return <WorkspaceContext.Provider value={value}>{erreurChargement ? <section role="alert" className="m-5 rounded-xl border border-bordure-forte bg-fond-surface p-5 text-texte-principal"><h1 className="text-h4 font-semibold">Les conversations n’ont pas pu être chargées</h1><p className="text-ui-s">{erreurChargement}</p><p className="text-ui-s">Aucune donnée n’a été remplacée. Les routines attendent que les conversations soient disponibles.</p><Bouton onClick={() => window.location.reload()}>Réessayer</Bouton></section> : children}</WorkspaceContext.Provider>;
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {

@@ -199,6 +199,9 @@ contextBridge.exposeInMainWorld("klyra", {
     interrompre: (runId: string) => ipcRenderer.invoke("routines:interrompre", runId),
     historique: (id: string, limit?: number) => ipcRenderer.invoke("routines:historique", id, limit),
     prochaines: (id: string) => ipcRenderer.invoke("routines:prochaines", id),
+    passages: (debut: string, fin: string) => ipcRenderer.invoke("routines:passages", debut, fin),
+    apercu: (schedule: unknown, timezone: string) => ipcRenderer.invoke("routines:apercu", schedule, timezone),
+    enCours: () => ipcRenderer.invoke("routines:en-cours"),
     pret: () => ipcRenderer.invoke("routines:pret"),
     signaler: (runId: string, rapport: unknown) => ipcRenderer.invoke("routines:signaler", runId, rapport),
     onLivrer: (callback: (run: unknown, routine: unknown) => void) => {

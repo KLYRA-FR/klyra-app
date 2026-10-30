@@ -23,6 +23,7 @@ export interface AncienneRoutine {
   frequence: AncienneFrequence;
   projectId: string | null;
   active: boolean;
+  prochaine?: string;
   relais?: RelaisRoutine[];
   positions?: Record<string, { x: number; y: number }>;
 }
@@ -42,12 +43,12 @@ export function convertirFrequence(f: AncienneFrequence): RoutineSchedule {
 /** Les champs du moteur, plus ce que le moteur garde sans l'exécuter (relais, positions). */
 export function convertirRoutine(ancienne: AncienneRoutine, timezone: string): {
   input: RoutineInput;
-  extras: { relais?: RelaisRoutine[]; positions?: Record<string, { x: number; y: number }> };
+  extras: { relais?: RelaisRoutine[]; positions?: Record<string, { x: number; y: number }>; nextRunAt?: string };
 } {
   return {
     input: {
       agentId: ancienne.roleId,
-      name: ancienne.nom.slice(0, 80),
+      name: ancienne.nom,
       instruction: ancienne.consigne,
       schedule: convertirFrequence(ancienne.frequence),
       timezone,
@@ -56,6 +57,6 @@ export function convertirRoutine(ancienne: AncienneRoutine, timezone: string): {
       missedPolicy: "run-once",
       projectId: ancienne.projectId ?? null,
     },
-    extras: { relais: ancienne.relais, positions: ancienne.positions },
+    extras: { relais: ancienne.relais, positions: ancienne.positions, nextRunAt: ancienne.prochaine },
   };
 }

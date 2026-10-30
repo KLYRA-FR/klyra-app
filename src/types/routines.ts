@@ -52,11 +52,12 @@ export interface Routine {
   projectId: string | null;
   relais?: RelaisRoutine[];
   positions?: Record<string, { x: number; y: number }>;
+  blockedReason?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
+export type RunStatus = "queued" | "running" | "needs-attention" | "succeeded" | "failed" | "interrupted" | "cancelled";
 
 /** Pourquoi des échéances n'ont pas été exécutées. */
 export type MissedReason = "app-closed" | "sleep" | "busy";
@@ -85,6 +86,7 @@ export interface RoutineRun {
   delivery: { chatId: string; messageId: string | null } | null;
   /** Début de la réponse de l'agent (le texte complet reste dans la conversation). */
   result: string | null;
+  outcome?: "no-update" | "failed";
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -110,7 +112,7 @@ export type RoutineInput = {
   projectId?: string | null;
 };
 
-export type RoutinePatch = Partial<Omit<RoutineInput, "agentId">> & {
+export type RoutinePatch = Partial<RoutineInput> & {
   relais?: RelaisRoutine[];
   positions?: Record<string, { x: number; y: number }>;
 };

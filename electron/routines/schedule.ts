@@ -238,7 +238,9 @@ function occurrencesOnDay(schedule: RoutineSchedule, timezone: string, date: Loc
   const cached = occurrencesCache.get(key);
   if (cached) return cached;
   const zoneOffsets = offsets(date, timezone);
-  const result = [...new Set(dayMinutes(schedule).flatMap((minute) => localCandidates(date, minute, timezone, zoneOffsets)))].sort((a, b) => a - b);
+  // Une minute civile correspond à une seule échéance, même quand l'horloge recule.
+  // On garde son premier passage. Les intervalles absolus ne passent pas par ce calcul.
+  const result = [...new Set(dayMinutes(schedule).flatMap((minute) => localCandidates(date, minute, timezone, zoneOffsets).slice(0, 1)))].sort((a, b) => a - b);
   if (occurrencesCache.size >= 64) occurrencesCache.delete(occurrencesCache.keys().next().value as string);
   occurrencesCache.set(key, result);
   return result;
