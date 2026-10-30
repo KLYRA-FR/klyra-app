@@ -6,6 +6,8 @@ import { Icon } from "@/components/icons/Icon";
 import { AgentRond, VisuelAgent, type StatutAgent } from "@/components/roles/AgentRond";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
+import { estEpinglee } from "@/lib/epinglage";
+import { BoutonEpingle } from "@/components/chat/BoutonEpingle";
 import {
   idDirect,
   useAgentOccupe,
@@ -52,12 +54,16 @@ function Corps({
   heure,
   apercu,
   enCours,
+  epinglee = false,
+  avecBouton = false,
 }: {
   titre: string;
   etiquette?: string;
   heure: string | null;
   apercu: string;
   enCours: boolean;
+  epinglee?: boolean;
+  avecBouton?: boolean;
 }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -68,15 +74,26 @@ function Corps({
             {etiquette}
           </span>
         )}
-        {heure && <span className="ml-auto shrink-0 pl-1 text-ui-3xs text-texte-tertiaire">{heure}</span>}
-      </span>
-      <span
-        className={cn(
-          "truncate text-ui-xs",
-          enCours ? "klyra-respire font-medium text-texte-principal" : "text-texte-tertiaire",
+        {(heure || avecBouton) && (
+          <span className={cn("ml-auto shrink-0 pl-1 text-ui-3xs text-texte-tertiaire", avecBouton && "min-w-8 text-right group-hover/conv:opacity-0 group-has-[:focus-visible]/conv:opacity-0")}>
+            {heure}
+          </span>
         )}
-      >
-        {apercu}
+      </span>
+      <span className={cn("flex min-w-0 items-center gap-1.5", avecBouton && "group-hover/conv:pr-8 group-has-[:focus-visible]/conv:pr-8")}>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-ui-xs",
+            enCours ? "klyra-respire font-medium text-texte-principal" : "text-texte-tertiaire",
+          )}
+        >
+          {apercu}
+        </span>
+        {epinglee && (
+          <span role="img" aria-label="Épinglée" className="flex shrink-0 text-icone-secondaire group-hover/conv:opacity-0 group-has-[:focus-visible]/conv:opacity-0">
+            <Icon name="pin-01" size={12} />
+          </span>
+        )}
       </span>
     </span>
   );
@@ -160,10 +177,12 @@ export function LigneConversation({ chat, active, projet }: { chat: Chat; active
   const qui = travail ? roles.find((r) => r.id === travail.roleId)?.name : null;
 
   return (
+    <div className="group/conv relative">
     <Link
       href={`/chat?id=${chat.id}`}
+      data-conversation={chat.id}
       aria-current={active ? "page" : undefined}
-      className={cn(LIGNE, active ? LIGNE_ACTIVE : LIGNE_REPOS)}
+      className={cn(LIGNE, active ? LIGNE_ACTIVE : "group-hover/conv:bg-fond-survol")}
     >
       <span className="relative">
         <Grappe chat={chat} roles={roles} />
@@ -182,8 +201,12 @@ export function LigneConversation({ chat, active, projet }: { chat: Chat; active
         heure={apercu.at ? formatListDate(apercu.at) : null}
         apercu={qui ? `${qui} travaille…` : apercu.text || "Nouvelle conversation"}
         enCours={!!travail}
+        epinglee={estEpinglee(chat)}
+        avecBouton
       />
     </Link>
+    <BoutonEpingle chat={chat} className="right-2 hover:bg-fond-surface" />
+    </div>
   );
 }
 

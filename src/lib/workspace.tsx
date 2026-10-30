@@ -17,6 +17,7 @@ import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
+import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
@@ -533,6 +534,7 @@ interface WorkspaceApi {
   /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id. */
   creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null) => string;
   renommerChat: (chatId: string, titre: string) => void;
+  epinglerChat: (chatId: string, epingler: boolean) => void;
   /** Ferme un fil : il s'arrête et part dans les archivés (« supprimé » : caché des archivés). Rien n'est effacé. */
   archiverFil: (chatId: string, supprime?: boolean) => void;
   rouvrirFil: (chatId: string) => void;
@@ -1376,6 +1378,21 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     if (propre) dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, title: propre }) });
   }, []);
 
+  const epinglerChat = useCallback((chatId: string, epingler: boolean) => {
+    const maintenant = new Date().toISOString();
+    const chats = basculerEpingle(stateRef.current.chats, chatId, epingler, maintenant);
+    if (chats === stateRef.current.chats) return;
+    // La fermeture peut précéder le prochain rendu et l'écriture regroupée de 400 ms.
+    stateRef.current = { ...stateRef.current, chats };
+    dispatch({ type: "chat/update", id: chatId, patch: (c) => avecEpingle(c, epingler, maintenant) });
+    // Fermer la dernière fenêtre peut détruire le renderer avant « avantFermeture ».
+    // Le main attend déjà la fin des écritures IPC avant de quitter.
+    if (bridge && stateRef.current.charge) {
+      if (ecritureRegroupee.current) clearTimeout(ecritureRegroupee.current);
+      void bridge.conversations.write(conversationsAEnregistrer(stateRef.current));
+    }
+  }, [bridge]);
+
   const archiverFil = useCallback(
     (chatId: string, supprime = false) => {
       // Un fil archivé s'arrête : il ne travaille plus.
@@ -1993,6 +2010,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       nouvelleConversation,
       creerFil,
       renommerChat,
+      epinglerChat,
       archiverFil,
       rouvrirFil,
       startChat,
@@ -2039,6 +2057,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       nouvelleConversation,
       creerFil,
       renommerChat,
+      epinglerChat,
       archiverFil,
       rouvrirFil,
       startChat,
@@ -2176,12 +2195,12 @@ export function useNonLus(chatId: string): number {
   }, [messages, chats, chatId]);
 }
 
-/** Conversations d'équipe, de la plus récente à la plus ancienne. */
+/** Conversations d'équipe : épinglées en tête, puis les plus récentes. */
 export function useRecentChats(limit?: number): Chat[] {
   const { chats } = useWorkspace().state;
   return useMemo(() => {
-    const sorted = chats.filter((c) => c.kind === "equipe").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return limit ? sorted.slice(0, limit) : sorted;
+    const sorted = trierConversations(chats.filter((c) => c.kind === "equipe"));
+    return limit === undefined ? sorted : sorted.slice(0, limit);
   }, [chats, limit]);
 }
 

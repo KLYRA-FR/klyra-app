@@ -47,6 +47,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
 
       {/* Fondu en haut et en bas de la liste qui défile. */}
       <nav
+        data-liste-conversations
         aria-label="Agents et conversations"
         className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-3 [mask-image:linear-gradient(to_bottom,transparent,black_8px,black_calc(100%-16px),transparent)] [scrollbar-width:none]"
       >

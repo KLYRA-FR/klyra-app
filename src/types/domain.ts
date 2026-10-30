@@ -141,6 +141,8 @@ export interface Chat {
   title: string;
   roleIds: RoleId[];
   updatedAt: string;
+  /** Épinglée en haut des listes d'équipe : date de pose. Préférence locale, jamais lue par les agents. */
+  epingleLe?: string;
   /** Session Claude Code de chaque agent dans cette conversation : il s'en souvient d'un message à l'autre. */
   sessions: Record<RoleId, string>;
   /** Dernier message lu, pour les non-lus de la barre latérale. */

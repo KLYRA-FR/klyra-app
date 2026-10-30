@@ -552,6 +552,18 @@ body[data-glisse] iframe {
   outline: none;
 }
 
+/* L'épingle éclaire la conversation à sa nouvelle place, sans halo dans le panneau. */
+[data-conversation][data-eclaire] {
+  animation: klyra-eclaire 1800ms var(--ease-sortie);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-conversation][data-eclaire] {
+    animation: none;
+    background-color: var(--color-fond-teinte-bleue);
+  }
+}
+
 /* Le rappel restauré par Annuler, sans déplacement de sa ligne. */
 [data-rappel][data-eclaire] {
   border-radius: var(--radius-sm);

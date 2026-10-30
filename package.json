@@ -25,6 +25,8 @@
     "test:maj-modeles": "node scripts/test-maj-modeles.mjs",
     "test:bibliotheque": "node scripts/test-bibliotheque.mjs",
     "test:conversation": "node scripts/test-conversation.mjs",
+    "test:epinglage": "vitest run src/lib/epinglage.test.ts",
+    "test:epingler": "node scripts/test-epinglage.mjs",
     "test:coller": "node scripts/test-collage.mjs",
     "test:chercher": "node scripts/test-recherche.mjs",
     "test:reporter": "node scripts/test-report.mjs",
