@@ -38,6 +38,19 @@ export const envoyerLienConnexion = internalMutation({
   },
 });
 
+/** Tests et essais en développement : combien d'e-mails simulés une adresse a reçus (100 au plus). */
+export const nombreCourrielsSimules = internalQuery({
+  args: { a: v.string() },
+  returns: v.number(),
+  handler: async (ctx, { a }) => {
+    const liste = await ctx.db
+      .query("courrielsSimules")
+      .withIndex("by_a", (q) => q.eq("a", a))
+      .take(100);
+    return liste.length;
+  },
+});
+
 /** Tests et essais en développement : le dernier e-mail simulé pour une adresse. */
 export const dernierCourrielSimule = internalQuery({
   args: { a: v.string() },

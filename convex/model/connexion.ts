@@ -1,7 +1,28 @@
 import type { Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { erreur } from "./acces";
+import { reserverLien } from "./limites";
 import { couleurSuivante, normaliserEmail } from "./valeurs";
+
+/** Une adresse qui peut recevoir un lien : membre actif, ou invitation en attente (mêmes règles que plus bas). */
+export async function peutRecevoirUnLien(ctx: QueryCtx, email: string): Promise<boolean> {
+  const user = await ctx.db
+    .query("users")
+    .withIndex("email", (q) => q.eq("email", email))
+    .first();
+  const membre = user
+    ? await ctx.db
+        .query("membres")
+        .withIndex("by_userId", (q) => q.eq("userId", user._id))
+        .unique()
+    : null;
+  if (membre?.actif) return true;
+  const invitation = await ctx.db
+    .query("invitations")
+    .withIndex("by_email_and_statut", (q) => q.eq("email", email).eq("statut", "en_attente"))
+    .first();
+  return invitation !== null;
+}
 
 type Etape = "oauth" | "credentials" | "email" | "phone" | "verification";
 
@@ -39,6 +60,22 @@ export async function accepterConnexion(
     .withIndex("by_email_and_statut", (q) => q.eq("email", email).eq("statut", "en_attente"))
     .first();
   if (!membre?.actif && invitation === null) throw erreur("connexion_refusee");
+
+  /* Demande de lien : le délai (`limites.ts`) a déjà été appliqué par `connexion:demanderLien`, qui
+     laisse un ticket ; un appel direct à `auth:signIn` (ancienne version de l'app) passe ici par le
+     même délai. Refusé, rien n'est écrit : le lien déjà envoyé reste valable. */
+  if (args.type === "email") {
+    const ticket = await ctx.db
+      .query("ticketsLien")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+    const maintenant = Date.now();
+    if (ticket) await ctx.db.delete("ticketsLien", ticket._id);
+    if (!ticket || ticket.expire <= maintenant) {
+      const reservation = await reserverLien(ctx, email, maintenant);
+      if (!reservation.acceptee) throw erreur("trop_tot");
+    }
+  }
 
   const userId = existant ?? (await ctx.db.insert("users", { email }));
   if (args.type === "email") return userId;

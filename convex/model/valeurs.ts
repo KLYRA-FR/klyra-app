@@ -17,7 +17,8 @@ export type CodeErreur =
   | "deja_membre"
   | "deja_invitee"
   | "introuvable"
-  | "dernier_admin";
+  | "dernier_admin"
+  | "trop_tot";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

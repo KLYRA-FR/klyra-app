@@ -38,6 +38,23 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_actif_and_role", ["actif", "role"]),
 
+  /**
+   * Les liens de connexion demandés par adresse sur la dernière heure (cf. `model/limites.ts`),
+   * pour toute adresse saisie, invitée ou non : la réponse ne dit pas qui est dans l'équipe.
+   * Une ligne est oubliée une heure après sa dernière demande.
+   */
+  demandesLien: defineTable({
+    email: v.string(),
+    /** Les instants (ms) des demandes acceptées, du plus ancien au plus récent ; cinq au plus. */
+    envois: v.array(v.number()),
+  }).index("by_email", ["email"]),
+
+  /** Une demande acceptée par `connexion:demanderLien` : Convex Auth la consomme en créant le lien. */
+  ticketsLien: defineTable({
+    email: v.string(),
+    expire: v.number(),
+  }).index("by_email", ["email"]),
+
   /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
   courrielsSimules: defineTable({
     a: v.string(),

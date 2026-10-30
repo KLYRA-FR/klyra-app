@@ -42,6 +42,13 @@ interface CompteApi {
   moi: Membre | null;
   /** L'adresse à qui le dernier lien a été demandé, tant qu'il est valable. */
   adresseEnAttente: string | null;
+  /**
+   * Quand un nouveau lien pourra être demandé (horloge de cet ordinateur, d'après l'attente
+   * donnée par le serveur). Le serveur applique le délai lui-même : ce n'est qu'un affichage.
+   */
+  prochaineDemande: number | null;
+  /** La dernière demande est arrivée pendant le délai : aucun nouveau lien n'est parti. */
+  demandeRefusee: boolean;
   /** Une demande de lien ou une connexion est en cours. */
   occupe: boolean;
   erreur: string | null;
@@ -58,6 +65,8 @@ const INDISPONIBLE: CompteApi = {
   etat: "indisponible",
   moi: null,
   adresseEnAttente: null,
+  prochaineDemande: null,
+  demandeRefusee: false,
   occupe: false,
   erreur: null,
   demanderLien: async () => false,
@@ -78,22 +87,35 @@ export const normaliserEmail = (email: string) => email.trim().toLowerCase();
 const DUREE_LIEN_MS = 15 * 60_000;
 const CLE_ADRESSE = "klyra:compte:adresse";
 
-function lireAdresse(): string | null {
+/** La dernière demande de lien : l'adresse, quand le lien est parti, quand en redemander un. Survit au redémarrage. */
+interface Demande {
+  email: string;
+  le: number;
+  prochaine: number;
+}
+
+function lireDemande(): Demande | null {
   try {
-    const brut = JSON.parse(localStorage.getItem(CLE_ADRESSE) ?? "null") as { email: string; le: number } | null;
-    return brut && Date.now() - brut.le < DUREE_LIEN_MS ? brut.email : null;
+    const brut = JSON.parse(localStorage.getItem(CLE_ADRESSE) ?? "null") as Partial<Demande> | null;
+    if (!brut?.email || typeof brut.le !== "number" || Date.now() - brut.le >= DUREE_LIEN_MS) return null;
+    return { email: brut.email, le: brut.le, prochaine: typeof brut.prochaine === "number" ? brut.prochaine : 0 };
   } catch {
     return null;
   }
 }
 
-function garderAdresse(email: string | null) {
+function garderDemande(demande: Demande | null) {
   try {
-    if (email) localStorage.setItem(CLE_ADRESSE, JSON.stringify({ email, le: Date.now() }));
+    if (demande) localStorage.setItem(CLE_ADRESSE, JSON.stringify(demande));
     else localStorage.removeItem(CLE_ADRESSE);
   } catch {
-    /* pas de stockage : l'adresse reste en mémoire */
+    /* pas de stockage : la demande reste en mémoire */
   }
+}
+
+/** « 42 s », « 56 min » : l'attente avant un nouveau lien. */
+export function formaterAttente(ms: number): string {
+  return ms < 60_000 ? `${Math.max(1, Math.ceil(ms / 1000))} s` : `${Math.ceil(ms / 60_000)} min`;
 }
 
 const MESSAGES: Record<string, string> = {
@@ -106,6 +128,7 @@ const MESSAGES: Record<string, string> = {
   deja_invitee: "Cette adresse est déjà invitée.",
   introuvable: "Cette personne ou cette invitation n’existe plus.",
   dernier_admin: "Il faut garder au moins un admin dans l’équipe.",
+  trop_tot: "Un lien vient déjà d’être demandé pour cette adresse : attends une minute avant d’en redemander un.",
 };
 
 /** Le code d'erreur renvoyé par une fonction Convex (`convex/model/valeurs.ts`), ou null. */
@@ -172,41 +195,56 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
   const { isLoading, isAuthenticated } = useConvexAuth();
   const { signIn, signOut } = useAuthActions();
   const moi = useQuery(api.equipe.moi, isAuthenticated ? {} : "skip");
-  const [adresseEnAttente, setAdresseEnAttente] = useState<string | null>(() => lireAdresse());
+  const [demande, setDemande] = useState<(Demande & { refusee: boolean }) | null>(() => {
+    const gardee = lireDemande();
+    return gardee && { ...gardee, refusee: false };
+  });
   const [occupe, setOccupe] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const envoyerDemande = useMutation(api.connexion.demanderLien);
 
   const oublierAdresse = useCallback(() => {
-    garderAdresse(null);
-    setAdresseEnAttente(null);
+    garderDemande(null);
+    setDemande(null);
   }, []);
 
+  /* Le serveur répond de la même façon pour toute adresse (invitée, membre ou non) : acceptée ou
+     non selon le délai, et l'attente avant la suivante. L'e-mail ne part que pour une adresse admise. */
+  /* Un double clic ne fait qu'une demande (le serveur, lui, n'enverrait de toute façon qu'un lien). */
+  const demandeEnCours = useRef(false);
   const demanderLien = useCallback(
     async (saisie: string) => {
+      if (demandeEnCours.current) return false;
+      demandeEnCours.current = true;
       const email = normaliserEmail(saisie);
       setErreur(null);
       setOccupe(true);
       try {
-        await signIn("postshiba", { email });
+        const { acceptee, attenteMs } = await envoyerDemande({ email });
+        const precedente = lireDemande();
+        const maintenant = Date.now();
+        const suivante = {
+          email,
+          le: acceptee || precedente?.email !== email ? maintenant : precedente.le,
+          prochaine: maintenant + attenteMs,
+        };
+        garderDemande(suivante);
+        setDemande({ ...suivante, refusee: !acceptee });
+        return true;
       } catch (e) {
-        /* Adresse ni invitée ni membre : le même message qu'un envoi, pour ne pas dire qui est dans l'équipe. */
-        if (codeErreur(e) !== "connexion_refusee") {
-          setErreur(messageErreur(e));
-          return false;
-        }
+        setErreur(messageErreur(e));
+        return false;
       } finally {
+        demandeEnCours.current = false;
         setOccupe(false);
       }
-      garderAdresse(email);
-      setAdresseEnAttente(email);
-      return true;
     },
-    [signIn],
+    [envoyerDemande],
   );
 
   const ouvrirCode = useCallback(
     async (code: string) => {
-      const email = lireAdresse();
+      const email = lireDemande()?.email;
       setErreur(null);
       if (!email) {
         setErreur("Ce lien a été demandé depuis un autre ordinateur, ou il y a plus de 15 minutes. Demande un nouveau lien ici.");
@@ -278,8 +316,21 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
   useEffect(() => () => appliquerProfilCompte(null), [appliquerProfilCompte]);
 
   const valeur = useMemo<CompteApi>(
-    () => ({ etat, moi: moi ?? null, adresseEnAttente, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil }),
-    [etat, moi, adresseEnAttente, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil],
+    () => ({
+      etat,
+      moi: moi ?? null,
+      adresseEnAttente: demande?.email ?? null,
+      prochaineDemande: demande?.prochaine ?? null,
+      demandeRefusee: demande?.refusee ?? false,
+      occupe,
+      erreur,
+      demanderLien,
+      ouvrirLienColle,
+      oublierAdresse,
+      seDeconnecter,
+      modifierMonProfil,
+    }),
+    [etat, moi, demande, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil],
   );
   return <CompteContext.Provider value={valeur}>{children}</CompteContext.Provider>;
 }
