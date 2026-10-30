@@ -37,7 +37,7 @@ export function ChiffresEquipe({ agents, exemple }: { agents: number; exemple: b
       icone: <Icon name="users-profiles-01" size={18} />,
       valeur: agents,
       libelle: "Agents dans l’équipe",
-      detail: exemple ? "Fiches d’exemple" : "Installés sur ce poste",
+      detail: exemple ? "Aperçu" : "Dans Mes agents",
     },
     {
       icone: <Icon name="message-square" size={18} />,

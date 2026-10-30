@@ -64,7 +64,7 @@ export const SECTIONS: SectionReglages[] = [
     entrees: [
       { id: "compte-equipe", titre: "Compte d’équipe", mots: "connexion deconnexion lien magique e-mail adresse session" },
       { id: "profil-equipe", titre: "Ton profil d’équipe", mots: "nom intitule couleur" },
-      { id: "membres", titre: "Membres", mots: "equipe role admin retirer personnes" },
+      { id: "membres", titre: "Membres de l’équipe", mots: "equipe role admin retirer personnes membres" },
       { id: "inviter", titre: "Inviter quelqu’un", mots: "invitation ajouter adresse admin membre" },
       { id: "invitations", titre: "Invitations en attente", mots: "annuler invitation" },
     ],

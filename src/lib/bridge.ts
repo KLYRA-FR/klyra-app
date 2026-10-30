@@ -35,6 +35,8 @@ export type OrigineAgent =
 export interface EntreeMesAgents {
   actif: boolean;
   ajouteLe: number;
+  /** Quand la personne l'a désactivé (absent s'il est actif). */
+  desactiveLe?: number;
   origine: OrigineAgent;
   empreinte: string | null;
 }
@@ -58,7 +60,7 @@ export interface HistoryEntry {
 }
 
 /** Préférences personnelles de chaque agent : rôle court, couleur et nom affiché (sans toucher à la fiche). */
-export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string }>;
+export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string; modele?: string }>;
 
 export interface ClaudeResult {
   ok: boolean;

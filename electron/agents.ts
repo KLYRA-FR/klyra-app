@@ -37,7 +37,7 @@ export interface HistoryEntry {
 }
 
 /** Préférences personnelles de chaque agent : rôle court, couleur et nom affiché (sans toucher à la fiche). */
-export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string }>;
+export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string; modele?: string }>;
 
 export class AgentError extends Error {
   constructor(

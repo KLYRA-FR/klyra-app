@@ -1,6 +1,8 @@
+"use client";
+
 import type { CSSProperties } from "react";
-import Link from "next/link";
 import { cn } from "@/lib/cn";
+import { MenuCreationAgent } from "./MenuCreationAgent";
 
 /** Le « + » en carrés pixel (cases de 7 px) : [colonne, ligne]. */
 const PLUS = [
@@ -27,8 +29,8 @@ const BLEUS = ["var(--color-bleu-k1-500)", "var(--color-bleu-k1-400)", "var(--co
  * La place du prochain agent, à la suite des cartes de l'équipe : le gris du
  * bloc des circuits (fond-page), et un « + » en pixels, dans les bleus de
  * son chevron : une onde brève part du centre, et ses branches s'écartent au
- * survol.
- * Désactivée hors de l'app de bureau.
+ * survol. Elle ouvre le menu de création ; hors de l'app de bureau, seule la
+ * bibliothèque y reste ouverte.
  */
 export function CarteNouvelAgent({ actif, delai = 0 }: { actif: boolean; /** Moment de son entrée, après les cartes d'agents. */ delai?: number }) {
   const contenu = (
@@ -62,28 +64,25 @@ export function CarteNouvelAgent({ actif, delai = 0 }: { actif: boolean; /** Mom
       </svg>
       <span className="flex flex-col items-center gap-0.5 text-center">
         <span className="text-ui font-semibold text-texte-principal">Nouvel agent</span>
-        <span className="text-ui-xs text-texte-tertiaire">{actif ? "Créer sa fiche" : "Dans l’app de bureau"}</span>
+        <span className="text-ui-xs text-texte-tertiaire">{actif ? "Créer ou ajouter" : "Ajouter depuis la bibliothèque"}</span>
       </span>
     </>
   );
 
   const classes = cn(
     // Même gris que le bloc « Qui passe la main à qui » et ses étapes (fond-page).
-    "klyra-entree flex h-[192px] flex-col items-center justify-center gap-4 rounded-2xl border border-bordure-subtile bg-fond-page no-underline",
-    "transition-[background-color,transform] duration-[220ms] ease-sortie",
-    actif ? "hover:-translate-y-0.5 hover:bg-fond-survol" : "cursor-not-allowed opacity-60",
+    "klyra-entree flex h-[192px] w-full cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border border-bordure-subtile bg-fond-page no-underline",
+    "transition-[background-color,transform] duration-[220ms] ease-sortie hover:-translate-y-0.5 hover:bg-fond-survol",
   );
 
-  if (!actif) {
-    return (
-      <div aria-disabled="true" title="Ouvre l’app de bureau pour créer un agent." className={classes} style={{ "--delai": `${delai}ms` } as CSSProperties}>
-        {contenu}
-      </div>
-    );
-  }
+  /* Le menu de création (spec §9.1) : le décrire à l'assistant, remplir la fiche, ou la bibliothèque. */
   return (
-    <Link href="/equipe?nouveau=1" className={classes} style={{ "--delai": `${delai}ms` } as CSSProperties}>
-      {contenu}
-    </Link>
+    <MenuCreationAgent
+      declencheur={({ ref, basculer, attributs }) => (
+        <button ref={ref} type="button" onClick={basculer} {...attributs} className={classes} style={{ "--delai": `${delai}ms` } as CSSProperties}>
+          {contenu}
+        </button>
+      )}
+    />
   );
 }

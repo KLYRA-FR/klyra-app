@@ -5,7 +5,7 @@ import { appliquerDependances, avecIdentifiant, dependancesManquantes, identifia
 // Les règles de la bibliothèque (`convex/model/definitions.ts`) servent aussi ici : aperçu, dossiers, identifiants.
 import { AGENT_TEMPLATES } from "@/data/agent-templates.generated";
 import { DEFAULT_META, PRINCIPAL } from "@/data/agents";
-import { getField, parseAgentFile, parseBody, splitDescription } from "@/lib/agent-file";
+import { getField, parseAgentFile, parseBody, serializeAgentFile, setFields, splitDescription } from "@/lib/agent-file";
 import {
   BridgeError,
   getBridge,
@@ -60,10 +60,16 @@ function teinteParDefaut(name: string): RoleTeinte {
 
 const estTeinte = (t: string | null | undefined): t is RoleTeinte => (ROLE_TEINTES as string[]).includes(t ?? "");
 
-/** La fiche locale d'une définition : sous l'identifiant choisi (mot pour mot s'il ne change pas), dossiers remplis. */
-function ficheLocale(partage: string, id: string, valeurs: Record<string, string>): string {
-  const memeNom = getField(parseAgentFile(partage).frontmatter, "name") === id;
-  return appliquerDependances(memeNom ? partage : avecIdentifiant(partage, id), valeurs).contenu;
+/**
+ * La fiche locale d'une définition : sous l'identifiant choisi (mot pour mot s'il ne change pas),
+ * dossiers remplis, et le modèle choisi par la personne s'il diffère (une préférence, comme son nom).
+ */
+function ficheLocale(partage: string, id: string, valeurs: Record<string, string>, modele?: string): string {
+  const { frontmatter, body } = parseAgentFile(partage);
+  const memeNom = getField(frontmatter, "name") === id;
+  const base = memeNom ? partage : avecIdentifiant(partage, id);
+  const avecModele = modele && modele !== getField(frontmatter, "model") ? serializeAgentFile({ frontmatter: setFields(parseAgentFile(base).frontmatter, { model: modele }), body }) : base;
+  return appliquerDependances(avecModele, valeurs).contenu;
 }
 
 /** Construit un agent à partir du texte de sa fiche et des préférences de la personne. */
@@ -141,7 +147,12 @@ interface AgentsApi {
   /** Enregistre la fiche et les réglages de l'app ; lève une BridgeError « conflit » si le fichier a changé. */
   save: (id: string, content: string, reglage: { tag: string; teinte: RoleTeinte; nom?: string }, expectedModifiedAt: number | null) => Promise<void>;
   /** Préférences personnelles seules (nom affiché, rôle court, couleur) : la fiche ne change pas. */
-  saveReglage: (id: string, reglage: { tag: string; teinte: RoleTeinte; nom?: string }) => Promise<void>;
+  saveReglage: (id: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string }) => Promise<void>;
+  /**
+   * Le modèle d'un agent. Reçu de la bibliothèque : une préférence gardée aux mises à jour, sans
+   * le détacher (sa fiche est réécrite depuis la version suivie) ; sinon, écrit dans sa fiche.
+   */
+  changerModele: (id: string, modele: string) => Promise<void>;
   create: (id: string, content: string, reglage: { tag: string; teinte: RoleTeinte }) => Promise<void>;
   history: (id: string) => Promise<HistoryEntry[]>;
   readVersion: (id: string, versionId: string) => Promise<string>;
@@ -231,12 +242,15 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     return bridge;
   }, [bridge]);
 
+  /* Les préférences d'un agent : on remplace ce qui est donné, le reste (modèle choisi…) est gardé. */
   const saveMeta = useCallback(
-    async (id: string, reglage: { tag: string; teinte: RoleTeinte; nom?: string }) => {
-      const current = metaRef.current[id];
-      const nom = reglage.nom?.trim() || undefined;
-      if (current?.tag === reglage.tag && current?.teinte === reglage.teinte && current?.nom === nom) return;
-      const next = { ...metaRef.current, [id]: { tag: reglage.tag, teinte: reglage.teinte, ...(nom ? { nom } : {}) } };
+    async (id: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string; modele?: string }) => {
+      const current = metaRef.current[id] ?? {};
+      const voulu = { ...current, ...reglage };
+      if ("nom" in reglage && !reglage.nom?.trim()) delete voulu.nom;
+      if ("modele" in reglage && !reglage.modele) delete voulu.modele;
+      if (JSON.stringify(voulu) === JSON.stringify(current)) return;
+      const next = { ...metaRef.current, [id]: voulu };
       metaRef.current = next;
       unwrap(await requireBridge().agents.writeMeta(next));
       setMeta(next);
@@ -269,7 +283,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       },
       identifiantLibre: (propose) => identifiantLibre(propose, pris),
       installer: async (def, { id, origine, valeurs = {} }) => {
-        const local = ficheLocale(def.contenu, id, valeurs);
+        const local = ficheLocale(def.contenu, id, valeurs, metaRef.current[id]?.modele);
         const { mes: choix } = unwrap(
           await requireBridge().agents.installer(id, local, origine, origine.type === "bibliotheque" ? def.contenu : null),
         );
@@ -278,7 +292,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         return id;
       },
       appliquer: async (id, partage, origine, forcer = false) => {
-        const local = ficheLocale(partage, id, origine.type === "bibliotheque" ? origine.valeurs : {});
+        const local = ficheLocale(partage, id, origine.type === "bibliotheque" ? origine.valeurs : {}, metaRef.current[id]?.modele);
         const fiche = filesRef.current.find((f) => f.name === id);
         const { mes: choix } = unwrap(
           await requireBridge().agents.appliquer(id, local, origine, partage, fiche?.file.modifiedAt ?? null, forcer),
@@ -297,6 +311,22 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       },
       saveReglage: async (id, reglage) => {
         await saveMeta(id, reglage);
+      },
+      changerModele: async (id, modele) => {
+        const fiche = filesRef.current.find((f) => f.name === id);
+        if (!fiche) throw new BridgeError("introuvable", `La fiche « ${id} » n’existe plus sur le disque.`);
+        const origine = mes?.agents[id]?.origine;
+        const partage = origine?.type === "bibliotheque" ? unwrap(await requireBridge().agents.definitionRecue(id)) : null;
+        if (origine?.type === "bibliotheque" && partage) {
+          /* Agent reçu : le modèle est une préférence, la fiche est réécrite depuis la version suivie. */
+          await saveMeta(id, { modele });
+          const local = ficheLocale(partage, id, origine.valeurs, modele);
+          setMes(unwrap(await requireBridge().agents.appliquer(id, local, origine, partage, fiche.file.modifiedAt, false)).mes);
+        } else {
+          const { frontmatter, body } = parseAgentFile(fiche.content);
+          unwrap(await requireBridge().agents.write(id, serializeAgentFile({ frontmatter: setFields(frontmatter, { model: modele }), body }), fiche.file.modifiedAt));
+        }
+        await reload();
       },
       create: async (id, content, reglage) => {
         unwrap(await requireBridge().agents.create(id, content));

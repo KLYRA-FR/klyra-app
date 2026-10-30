@@ -3,12 +3,13 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { LigneAgent, LigneConversation, SectionBarre } from "@/components/shell/LignesBarre";
+import { MenuCreationAgent } from "@/components/team/MenuCreationAgent";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { idDirect, useChat, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
 
 /**
  * Panneau blanc des conversations, à côté du rail (comme celui d'un projet) :
- * l'équipe, une ligne par agent avec ce qu'il fait, puis les conversations
+ * Mes agents, une ligne par agent avec ce qu'il fait, puis les conversations
  * d'équipe. L'utilisation de Claude est dans le rail.
  */
 export function PanneauConversations({ onClose }: { onClose: () => void }) {
@@ -49,23 +50,48 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
         aria-label="Agents et conversations"
         className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-3 [mask-image:linear-gradient(to_bottom,transparent,black_8px,black_calc(100%-16px),transparent)] [scrollbar-width:none]"
       >
+        {/* L'assistant, puis les agents actifs de Mes agents : les seuls qu'on peut appeler. */}
         <SectionBarre
-          titre="Équipe"
+          titre="Mes agents"
           href="/equipe"
-          nombre={roles.length - 1}
+          nombre={roles.length > 1 ? roles.length - 1 : undefined}
           action={
-            <BoutonIcone
-              taille="mini"
-              icone={<Icon name="plus-01" size={16} />}
-              libelle="Nouvel agent"
-              className="text-icone-secondaire"
-              onClick={() => router.push("/equipe?nouveau=1")}
+            <MenuCreationAgent
+              alignement="droite"
+              declencheur={({ ref, basculer, ouvert, attributs }) => (
+                <BoutonIcone
+                  ref={ref}
+                  taille="mini"
+                  actif={ouvert}
+                  icone={<Icon name="plus-01" size={16} />}
+                  libelle="Créer un agent"
+                  className="text-icone-secondaire"
+                  onClick={basculer}
+                  {...attributs}
+                />
+              )}
             />
           }
         >
           {roles.map((role) => (
             <LigneAgent key={role.id} role={role} active={currentId === idDirect(role.id) || agentDuFil === role.id} />
           ))}
+          {roles.length === 1 && (
+            <MenuCreationAgent
+              declencheur={({ ref, basculer, attributs }) => (
+                <button
+                  ref={ref}
+                  type="button"
+                  onClick={basculer}
+                  {...attributs}
+                  className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-ui-s text-texte-tertiaire transition-colors duration-[120ms] hover:bg-fond-survol hover:text-texte-secondaire"
+                >
+                  <Icon name="plus-01" size={16} className="ml-1.5 text-icone-secondaire" />
+                  Créer un agent
+                </button>
+              )}
+            />
+          )}
         </SectionBarre>
 
         {conversations.length > 0 && (

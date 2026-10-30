@@ -43,6 +43,8 @@ export type Origine =
 export interface EntreeAgent {
   actif: boolean;
   ajouteLe: number;
+  /** Quand la personne l'a désactivé (absent s'il est actif). */
+  desactiveLe?: number;
   origine: Origine;
   /** Empreinte de la fiche telle que l'app l'a écrite : une autre empreinte sur le disque = modifiée ailleurs. */
   empreinte: string | null;
@@ -199,8 +201,12 @@ export function nommerAssistant(nom: string, teinte: string | null): Promise<Mes
 
 export function activer(id: string, actif: boolean): Promise<MesAgents> {
   return modifier((e) => {
-    if (!e.agents[id]) throw new Error(`« ${id} » n’est pas dans Mes agents.`);
-    e.agents[id].actif = actif;
+    const entree = e.agents[id];
+    if (!entree) throw new Error(`« ${id} » n’est pas dans Mes agents.`);
+    if (entree.actif === actif) return e;
+    entree.actif = actif;
+    if (actif) delete entree.desactiveLe;
+    else entree.desactiveLe = Date.now();
     return e;
   });
 }
@@ -211,7 +217,7 @@ export function ajouter(id: string, origine: Origine, contenu: string | null): P
   return modifier((e) => {
     const deja = e.agents[id];
     e.agents[id] = deja
-      ? { ...deja, actif: true }
+      ? { ...deja, actif: true, desactiveLe: undefined }
       : { actif: true, ajouteLe: Date.now(), origine, empreinte: contenu === null ? null : empreinte(contenu) };
     return e;
   });

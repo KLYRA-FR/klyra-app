@@ -35,12 +35,21 @@ export function confierAEditeur(proposition: PropositionAgent): void {
   }
 }
 
+/** Le brouillon confié, sans l'effacer : l'éditeur peut se monter deux fois (développement). */
 export function reprendreDansEditeur(): PropositionAgent | null {
   try {
     const brut = sessionStorage.getItem(CLE);
-    sessionStorage.removeItem(CLE);
     return brut ? lireProposition(JSON.parse(brut) as Record<string, unknown>) : null;
   } catch {
     return null;
+  }
+}
+
+/** Le brouillon a servi (agent créé) ou a été abandonné. */
+export function oublierProposition(): void {
+  try {
+    sessionStorage.removeItem(CLE);
+  } catch {
+    /* rien à oublier */
   }
 }
