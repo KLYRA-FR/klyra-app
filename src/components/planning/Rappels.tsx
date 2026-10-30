@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
@@ -9,6 +9,10 @@ import { aujourdhui, echeance, enRetard, libellePeriode } from "@/lib/dates";
 import { jouer } from "@/lib/sons/sons";
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte, type Tache } from "@/types/domain";
+import { MenuReporter } from "./MenuReporter";
+
+/** Annoncer un report au lecteur d'écran (la région `aria-live` de `Rappels`). */
+const AnnonceRappels = createContext<(texte: string) => void>(() => {});
 
 /**
  * Rappels, comme l'app d'Apple, rangés en catégories côte à côte (Perso,
@@ -175,13 +179,15 @@ function Reglages({
 
 function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
   const { enregistrerTache, supprimerTache } = useWorkspace();
+  const annoncer = useContext(AnnonceRappels);
   const [titre, setTitre] = useState(tache.titre);
   const [ouverte, setOuverte] = useState(false);
+  const ligne = useRef<HTMLLIElement>(null);
   const retard = !tache.faite && enRetard(echeance(tache), tache.fin ? null : tache.heure);
   const maj = (patch: Partial<Tache>) => enregistrerTache({ ...tache, ...patch });
 
   return (
-    <li className="group/rappel flex items-start gap-2.5 border-b border-bordure-subtile py-2 last:border-b-0">
+    <li ref={ligne} className="group/rappel flex items-start gap-2.5 border-b border-bordure-subtile py-2 last:border-b-0">
       {/* Le rond (20 px) et la première ligne du texte (20 px) partagent le même centre. */}
       <CaseTache
         faite={tache.faite}
@@ -210,6 +216,22 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
               tache.faite ? "text-texte-tertiaire line-through decoration-bordure-forte" : "text-texte-principal",
             )}
           />
+          {!tache.faite && (
+            <MenuReporter
+              tache={tache}
+              onReporte={({ annonce }) => {
+                /* Le panneau se referme pour montrer la nouvelle date, et la ligne, retriée, reste à l'écran. */
+                setOuverte(false);
+                annoncer(annonce);
+                requestAnimationFrame(() =>
+                  ligne.current?.scrollIntoView({
+                    block: "nearest",
+                    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+                  }),
+                );
+              }}
+            />
+          )}
           <button
             type="button"
             onClick={() => setOuverte((o) => !o)}
@@ -228,7 +250,10 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
           </button>
         </div>
         {!ouverte && tache.date && (
-          <span className={cn("text-ui-xs", retard ? "font-medium text-texte-erreur" : "text-texte-tertiaire")}>
+          <span
+            data-echeance={tache.id}
+            className={cn("-mx-1 self-start rounded-2xs px-1 text-ui-xs", retard ? "font-medium text-texte-erreur" : "text-texte-tertiaire")}
+          >
             {libellePeriode(tache.date, tache.heure, tache.fin)}
           </span>
         )}
@@ -440,6 +465,7 @@ export function Rappels() {
   const { state, changerCategories } = useWorkspace();
   /* Un rappel coché reste là, barré : il ne part qu'avec la poubelle. */
   const [voirFaits, setVoirFaits] = useState(true);
+  const [annonce, setAnnonce] = useState("");
   const categories = state.categories;
   const ids = new Set(categories.map((c) => c.id));
   const faits = state.taches.filter((t) => t.faite).length;
@@ -470,9 +496,11 @@ export function Rappels() {
 
       {/* Les catégories côte à côte ; on fait défiler s'il y en a beaucoup. */}
       <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-2">
-        {categories.map((c, i) => (
-          <Colonne key={c.id} categorie={c} taches={deLaColonne(c, i)} voirFaits={voirFaits} />
-        ))}
+        <AnnonceRappels.Provider value={setAnnonce}>
+          {categories.map((c, i) => (
+            <Colonne key={c.id} categorie={c} taches={deLaColonne(c, i)} voirFaits={voirFaits} />
+          ))}
+        </AnnonceRappels.Provider>
         <button
           type="button"
           onClick={nouvelleCategorie}
@@ -482,6 +510,9 @@ export function Rappels() {
           Nouvelle catégorie
         </button>
       </div>
+      <p aria-live="polite" className="sr-only">
+        {annonce}
+      </p>
     </section>
   );
 }
