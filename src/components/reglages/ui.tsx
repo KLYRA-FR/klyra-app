@@ -3,6 +3,17 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { jouer } from "@/lib/sons/sons";
+import { Icon } from "@/components/icons/Icon";
+
+/** État lisible sans dépendre de sa couleur (texte AA, point décoratif en attente). */
+export function Pastille({ texte, ton }: { texte: string; ton: "ok" | "attente" | "neutre" }) {
+  return <span className={cn("inline-flex items-center gap-1.5 rounded-pill px-2.5 py-0.5 text-ui-2xs font-medium",
+    ton === "ok" ? "bg-fond-teinte-bleue text-texte-accent" : ton === "attente" ? "bg-fond-tag-orange text-texte-principal" : "bg-fond-surface-grise text-texte-secondaire")}>
+    {ton === "ok" && <Icon name="check-01" size={12} />}
+    {ton === "attente" && <span aria-hidden className="size-1.5 rounded-full bg-orange-k1-500" />}
+    {texte}
+  </span>;
+}
 
 /** L'ancre d'un réglage : la recherche y mène et l'éclaire un instant. */
 export const ancreReglage = (id: string) => `reglage-${id}`;

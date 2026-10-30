@@ -23,7 +23,9 @@ export async function demarrerFournisseur(agentsSurveilles) {
     const outilAgent = (corps.tools ?? []).find((t) => t.name === "Agent" || t.name === "Task");
     // Un sous-agent n'a que sa fiche pour consigne ; un agent lancé par l'app (`--agent`) a aussi celles de l'app.
     const sousAgent = systeme.includes("dans cette app") ? null : (systeme.match(/SOUS-AGENT-TEST-([a-z0-9-]+)/)?.[1] ?? null);
-    const dernier = corps.messages?.at(-1);
+    // Claude peut ajouter un message système après le résultat d'outil.
+    // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
+    const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
     const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste) /m.test(texteDe(m.content)));
     const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste) ([a-z0-9-]+)/m) : null;

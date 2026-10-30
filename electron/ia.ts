@@ -5,6 +5,7 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { enregistrerAppelIa } from "./consommation";
+import { espaceComposio, OUTILS_COMPOSIO } from "./composio";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -244,6 +245,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
     chatId: String(req.headers["x-klyra-chat"] ?? ""),
     roleId: String(req.headers["x-klyra-agent"] ?? "principal"),
   };
+  const composio = String(req.headers["x-klyra-composio"] ?? "");
   let brut = "";
   for await (const morceau of req) {
     brut += morceau;
@@ -286,11 +288,22 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
             },
           ]
         : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : [])] });
+      const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
+      return resultat({ tools: [...demander, ...OUTILS_FILS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+      if (OUTILS_COMPOSIO.some((o) => o.name === nom)) {
+        try {
+          const donnees = nom === "composio_etat" ? await espaceComposio.comptesChoisis(composio) : nom === "composio_rechercher"
+            ? await espaceComposio.rechercher(composio, args.service, args.recherche)
+            : await espaceComposio.executer(composio, args.outil, args.arguments);
+          return texte(JSON.stringify(donnees), !!donnees && typeof donnees === "object" && "succes" in donnees && donnees.succes === false);
+        } catch (e) {
+          return texte(e instanceof Error ? e.message : "Composio est indisponible.", true);
+        }
+      }
       if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
       if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name) {
         if (!relaisFils) return texte("L'app n'est pas prête, réessaie dans un instant.", true);
@@ -331,14 +344,14 @@ export async function demarrerServeurMcp(): Promise<void> {
 }
 
 /** La configuration MCP d'un agent : qui il est et dans quelle conversation, pour les fils. */
-export function configMcp(appelant: Appelant): string | null {
+export function configMcp(appelant: Appelant, composio: string | null = null): string | null {
   if (!serveur) return null;
   return JSON.stringify({
     mcpServers: {
       klyra: {
         type: "http",
         url: serveur.url,
-        headers: { Authorization: `Bearer ${serveur.jeton}`, "X-Klyra-Chat": appelant.chatId, "X-Klyra-Agent": appelant.roleId },
+        headers: { Authorization: `Bearer ${serveur.jeton}`, "X-Klyra-Chat": appelant.chatId, "X-Klyra-Agent": appelant.roleId, ...(composio ? { "X-Klyra-Composio": composio } : {}) },
       },
     },
   });

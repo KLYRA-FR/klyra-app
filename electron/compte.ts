@@ -42,6 +42,9 @@ const fichierJetons = () => path.join(app.getPath("userData"), "compte.json");
 /** En mémoire, en clair ; sur le disque, chiffrées. Sans trousseau, rien n'est écrit. */
 let jetons: Map<string, string> | null = null;
 let ecriture: Promise<void> = Promise.resolve();
+let revisionSession = 0;
+/** Monotone : local → équipe → local ne réactive jamais une ancienne capacité d'outil. */
+export const revisionCompte = () => revisionSession;
 
 function charger(): Map<string, string> {
   if (jetons) return jetons;
@@ -83,12 +86,17 @@ export function lireJeton(cle: unknown): string | null {
 export async function ecrireJeton(cle: unknown, valeur: unknown): Promise<void> {
   const nom = verifierCle(cle);
   if (typeof valeur !== "string" || valeur.length > TAILLE_MAX) throw new Error("Jeton de session invalide.");
+  if (nom.startsWith("__convexAuthJWT_") && charger().get(nom) !== valeur) revisionSession++;
   charger().set(nom, valeur);
   await enregistrer();
 }
 
 export async function retirerJeton(cle: unknown): Promise<void> {
-  if (charger().delete(verifierCle(cle))) await enregistrer();
+  const nom = verifierCle(cle);
+  if (charger().delete(nom)) {
+    if (nom.startsWith("__convexAuthJWT_")) revisionSession++;
+    await enregistrer();
+  }
 }
 
 /* ─── Liens de connexion ──────────────────────────────────────── */

@@ -4,9 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { getBridge, type AutorisationsComputerUse, type EtatAutorisation } from "@/lib/bridge";
-import { cn } from "@/lib/cn";
 import { useReglages } from "@/lib/reglages";
-import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau } from "../ui";
+import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau, Pastille } from "../ui";
 
 const ETATS: Record<EtatAutorisation, { texte: string; ton: "ok" | "attente" | "neutre" }> = {
   accordee: { texte: "Accordée", ton: "ok" },
@@ -15,21 +14,6 @@ const ETATS: Record<EtatAutorisation, { texte: string; ton: "ok" | "attente" | "
   "sans-objet": { texte: "Rien à autoriser", ton: "neutre" },
   inconnue: { texte: "Inconnue sur ce système", ton: "neutre" },
 };
-
-function Pastille({ etat }: { etat: EtatAutorisation }) {
-  const { texte, ton } = ETATS[etat];
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-pill px-2.5 py-0.5 text-ui-2xs font-medium",
-        ton === "ok" ? "bg-fond-teinte-bleue text-texte-accent" : ton === "attente" ? "bg-fond-tag-orange text-texte-accent-orange" : "bg-fond-surface-grise text-texte-secondaire",
-      )}
-    >
-      {ton === "ok" && <Icon name="check-01" size={12} />}
-      {texte}
-    </span>
-  );
-}
 
 /**
  * Computer Use : l'interrupteur qui autorise les agents à piloter
@@ -98,7 +82,7 @@ export function ComputerUse() {
             <SeulementBureau />
           ) : (
             <>
-              {autorisations && <Pastille etat={autorisations.accessibilite} />}
+              {autorisations && <Pastille {...ETATS[autorisations.accessibilite]} />}
               {mac && autorisations?.accessibilite !== "accordee" && (
                 <Bouton variant="blanc" taille="compact" iconeDroite={<Icon name="link-external" size={16} />} onClick={() => void ouvrir("accessibilite")}>
                   Ouvrir les réglages
@@ -112,7 +96,7 @@ export function ComputerUse() {
             <SeulementBureau />
           ) : (
             <>
-              {autorisations && <Pastille etat={autorisations.ecran} />}
+              {autorisations && <Pastille {...ETATS[autorisations.ecran]} />}
               {mac && autorisations?.ecran !== "accordee" && (
                 <Bouton variant="blanc" taille="compact" iconeDroite={<Icon name="link-external" size={16} />} onClick={() => void ouvrir("ecran")}>
                   Ouvrir les réglages
