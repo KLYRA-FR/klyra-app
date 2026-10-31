@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import presence from "@convex-dev/presence/test";
 import { convexTest, type TestConvex } from "convex-test";
 import { vi } from "vitest";
 import { api, internal } from "./_generated/api";
@@ -14,7 +15,9 @@ export type Essai = TestConvex<typeof schema>;
 /** Horloge simulée : les délais se testent en l'avançant (`patienter`), jamais en attendant. */
 export function nouvelEssai(): Essai {
   vi.useFakeTimers();
-  return convexTest(schema, modules);
+  const t = convexTest(schema, modules);
+  presence.register(t);
+  return t;
 }
 
 /** Avance l'horloge, puis laisse finir ce qui devait partir entre-temps (envoi du lien, nettoyages). */

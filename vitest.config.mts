@@ -8,7 +8,7 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 20
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
-    include: ["convex/**/*.test.ts", "src/lib/fichiers.test.tsx", "src/lib/identite.test.ts", "src/lib/collage.test.ts", "src/lib/recherche.test.ts", "src/lib/report.test.ts", "src/lib/maj-modele.test.ts", "src/lib/modeles-klyra.test.ts", "src/lib/suppression-rappels.test.ts", "src/lib/epinglage.test.ts", "src/lib/export-conversation.test.ts", "src/lib/apercu/apercu.test.ts"],
+    include: ["convex/**/*.test.ts", "src/lib/fichiers.test.tsx", "src/lib/identite.test.ts", "src/lib/collage.test.ts", "src/lib/recherche.test.ts", "src/lib/report.test.ts", "src/lib/maj-modele.test.ts", "src/lib/modeles-klyra.test.ts", "src/lib/suppression-rappels.test.ts", "src/lib/rappel-compte.test.ts", "src/lib/epinglage.test.ts", "src/lib/export-conversation.test.ts", "src/lib/apercu/apercu.test.ts"],
     environment: "edge-runtime",
     server: { deps: { inline: ["convex-test"] } },
     env: {

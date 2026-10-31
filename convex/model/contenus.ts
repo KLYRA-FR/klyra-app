@@ -1,6 +1,7 @@
 /** Les textes des e-mails et de la page d'ouverture du lien. */
 
 export const EXPEDITEUR_CONNEXION = "KLYRA <connexion@notifications.klyra.fr>";
+export const EXPEDITEUR_RAPPELS = "KLYRA <rappels@notifications.klyra.fr>";
 
 export const DUREE_LIEN_MINUTES = 15;
 
@@ -26,6 +27,28 @@ export function courrielConnexion(lien: string): Courriel {
 <p style="color:#6b6b6b;font-size:13px">Il est valable ${DUREE_LIEN_MINUTES} minutes et ne sert qu’une fois. Si tu n’as rien demandé, ignore ce message.</p>
 </body></html>`;
   return { sujet: "Ton lien de connexion à KLYRA", texte, html };
+}
+
+/** L'e-mail d'un rappel assigné pendant que l'app est fermée. Jamais les notes. */
+export function courrielRappel(rappel: { titre: string; echeance: string; par: string }): Courriel {
+  const titre = echapper(rappel.titre);
+  const par = echapper(rappel.par);
+  const echeance = echapper(rappel.echeance);
+  const texte = [
+    "Bonjour,",
+    "",
+    `${rappel.par} t’a assigné un rappel : « ${rappel.titre} ».`,
+    `Échéance : ${rappel.echeance}.`,
+    "",
+    "Ouvre KLYRA pour le voir.",
+  ].join("\n");
+  const html = `<!doctype html><html lang="fr"><body style="font-family:'Google Sans Flex',system-ui,sans-serif;color:#303030;line-height:1.5">
+<p>Bonjour,</p>
+<p>${par} t’a assigné un rappel : « ${titre} ».</p>
+<p>Échéance : ${echeance}.</p>
+<p>Ouvre KLYRA pour le voir.</p>
+</body></html>`;
+  return { sujet: `Rappel : ${rappel.titre}`, texte, html };
 }
 
 /** Le code d'un lien magique : celui que génère Convex Auth (32 caractères alphanumériques). */
