@@ -8,7 +8,7 @@ import { CaseTache, nouvelleTache, PastilleCategorie } from "@/components/planni
 import { AgentRond } from "@/components/roles/AgentRond";
 import { cn } from "@/lib/cn";
 import { aujourdhui, depuisCle, echeance, enRetard, libellePeriode } from "@/lib/dates";
-import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
+import { rendezVousEntre } from "@/lib/agenda-equipe";
 import { usePassagesRoutines } from "@/lib/routines-passages";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -112,7 +112,7 @@ function AuProgramme({ annoncer }: { annoncer: (texte: string) => void }) {
 
   const elements = useMemo(() => {
     return [
-      ...[...state.evenements, ...evenementsEquipeEntre(debut, fin)]
+      ...[...state.evenements, ...rendezVousEntre(state.profilCompte !== null && state.evenementsCompte !== null, state.evenementsCompte, debut, fin)]
         .filter((e) => e.date === cle)
         .map((e) => ({ id: e.id, heure: e.debut, fin: e.fin, titre: e.titre, roleId: null as string | null, tache: null as Tache | null })),
       ...passages.map(({ routine, at }) => ({
@@ -127,7 +127,7 @@ function AuProgramme({ annoncer }: { annoncer: (texte: string) => void }) {
         .filter((t) => t.date === cle && t.heure)
         .map((t) => ({ id: t.id, heure: t.heure, fin: null as string | null, titre: t.titre, roleId: null as string | null, tache: t as Tache | null })),
     ].sort((a, b) => (a.heure ?? "").localeCompare(b.heure ?? ""));
-  }, [state.evenements, state.taches, passages, cle, debut, fin]);
+  }, [state.evenements, state.evenementsCompte, state.profilCompte, state.taches, passages, cle, debut, fin]);
 
   const passe = (heure: string | null, fin: string | null) => !!heure && (fin ?? heure) < maintenant;
   const visibles = avecRetenues(
