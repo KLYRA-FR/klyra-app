@@ -107,7 +107,7 @@ function ShellLayout({ children }: { children: ReactNode }) {
         <main className={cn("relative m-2", MAIN)}>
           <Page>{children}</Page>
           {fichier?.projectId === project.id && (
-            <Visionneuse key={fichier.chemin} project={project} chemin={fichier.chemin} onFermer={fermerFichier} />
+            <Visionneuse key={fichier.chemin} project={project} chemin={fichier.chemin} ancre={fichier.ancre} retour={fichier.retour} onFermer={fermerFichier} />
           )}
         </main>
       </div>

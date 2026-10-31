@@ -2,6 +2,11 @@ import { execFile } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { Feuille } from "./apercu/classeur";
+import { lireDocx, type BlocDocument } from "./apercu/docx";
+import { lireXls } from "./apercu/xls";
+import { lireXlsx } from "./apercu/xlsx";
+import { ErreurApercu } from "./apercu/zip";
 
 /**
  * Les projets sur le disque de chacun : le contenu réel d'un dossier, et le
@@ -117,9 +122,19 @@ const IMAGES: Record<string, string> = {
 const IMAGE_MAX = 15 * 1024 * 1024;
 const TEXTE_MAX = 1.5 * 1024 * 1024;
 
+/** Classeurs et documents Word : lus ici, sur l'ordinateur ; rien ne part vers un service. */
+const LECTEURS: Record<string, (octets: Buffer) => { type: "classeur"; feuilles: Feuille[] } | { type: "document"; blocs: BlocDocument[] }> = {
+  xlsx: (o) => ({ type: "classeur", feuilles: lireXlsx(o) }),
+  xlsm: (o) => ({ type: "classeur", feuilles: lireXlsx(o) }),
+  xls: (o) => ({ type: "classeur", feuilles: lireXls(o) }),
+  docx: (o) => ({ type: "document", blocs: lireDocx(o) }),
+};
+
 export type ContenuFichier =
   | { type: "image"; dataUrl: string; taille: number }
   | { type: "texte"; texte: string; taille: number }
+  | { type: "classeur"; feuilles: Feuille[]; taille: number }
+  | { type: "document"; blocs: BlocDocument[]; taille: number }
   | { type: "autre"; taille: number; raison: string };
 
 /** Le chemin complet d'un fichier du projet ; refuse tout chemin qui sortirait du dossier. */
@@ -133,15 +148,27 @@ export function cheminDansProjet(dossier: string, relatif: string): string {
 
 export async function lireFichier(dossier: string, relatif: string): Promise<ContenuFichier> {
   const chemin = cheminDansProjet(dossier, relatif);
-  const infos = await stat(chemin);
+  const infos = await stat(chemin).catch(() => null);
+  // Un lien d'un document vers un fichier déplacé ou vers un dossier : un message clair, pas l'erreur du système.
+  if (!infos) throw new Error("Ce fichier n’existe pas (ou plus) dans le projet.");
+  if (!infos.isFile()) throw new Error("Ce lien mène à un dossier, pas à un fichier.");
   const ext = path.extname(chemin).slice(1).toLowerCase();
   if (IMAGES[ext]) {
     if (infos.size > IMAGE_MAX) return { type: "autre", taille: infos.size, raison: "Image trop lourde pour l’aperçu." };
     const contenu = await readFile(chemin);
     return { type: "image", dataUrl: `data:${IMAGES[ext]};base64,${contenu.toString("base64")}`, taille: infos.size };
   }
+  // PDF : pas de lecteur dans l'app (il faudrait le module PDF de Chromium dans la fenêtre principale, ou pdf.js).
+  if (ext === "pdf") return { type: "autre", taille: infos.size, raison: "Pas d’aperçu pour ce type de fichier." };
   if (infos.size > TEXTE_MAX) return { type: "autre", taille: infos.size, raison: "Fichier trop lourd pour l’aperçu." };
   const contenu = await readFile(chemin);
+  if (LECTEURS[ext]) {
+    try {
+      return { ...LECTEURS[ext](contenu), taille: infos.size };
+    } catch (e) {
+      return { type: "autre", taille: infos.size, raison: e instanceof ErreurApercu ? e.message : "Fichier illisible pour l’aperçu." };
+    }
+  }
   // Un octet nul dans le début du fichier : c'est du binaire (police, vidéo, archive…).
   if (contenu.subarray(0, 8000).includes(0)) return { type: "autre", taille: infos.size, raison: "Pas d’aperçu pour ce type de fichier." };
   return { type: "texte", texte: contenu.toString("utf8"), taille: infos.size };

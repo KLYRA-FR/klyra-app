@@ -127,9 +127,40 @@ export interface ResultatPublication {
   sortie: string;
 }
 
+/** Une cellule d'un classeur, déjà mise en forme (date, pourcentage…) ; `nombre` : alignée à droite. */
+export interface CelluleClasseur {
+  texte: string;
+  nombre?: true;
+}
+
+export interface FeuilleClasseur {
+  nom: string;
+  lignes: (CelluleClasseur | null)[][];
+  colonnes: number;
+  tronquee: boolean;
+}
+
+/** Un bout de texte d'un document Word ; `lien` : http, https ou mailto seulement. */
+export interface MorceauDocument {
+  texte: string;
+  gras?: true;
+  italique?: true;
+  souligne?: true;
+  barre?: true;
+  lien?: string;
+}
+
+export type BlocDocument =
+  | { type: "titre"; niveau: number; morceaux: MorceauDocument[] }
+  | { type: "paragraphe"; morceaux: MorceauDocument[]; style?: "titre" | "sous-titre" | "citation" }
+  | { type: "liste"; niveau: number; marque: string | null; morceaux: MorceauDocument[] }
+  | { type: "tableau"; lignes: { morceaux: MorceauDocument[]; etendue?: number }[][] };
+
 export type ContenuFichier =
   | { type: "image"; dataUrl: string; taille: number }
   | { type: "texte"; texte: string; taille: number }
+  | { type: "classeur"; feuilles: FeuilleClasseur[]; taille: number }
+  | { type: "document"; blocs: BlocDocument[]; taille: number }
   | { type: "autre"; taille: number; raison: string };
 
 export interface StreamOptions {
