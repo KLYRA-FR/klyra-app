@@ -76,7 +76,26 @@ ecrire("docs/ancien.xls", readFileSync(path.join(FIXTURES, "ancien.xls")));
 ecrire("docs/compte-rendu.docx", readFileSync(path.join(FIXTURES, "compte-rendu.docx")));
 ecrire("docs/rapport.pdf", "%PDF-1.4\n1 0 obj << >> endobj\n%%EOF\n");
 ecrire("docs/police.woff2", Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 1, 0, 0, 0, 0]));
-ecrire("src/app.ts", "export const a = 1;\nexport const b = 2;\n");
+ecrire(
+  "src/app.ts",
+  `// Point d'entrée\nimport { lire } from "./lire";\n\nexport const LIMITE = 42;\nexport function ouvrir(chemin: string): Promise<void> {\n  return lire(chemin, { ${Array.from({ length: 30 }, (_, i) => `option${i}: true`).join(", ")} });\n}\n`,
+);
+/* Un fichier par langage demandé : chacun doit recevoir des couleurs. */
+const LANGAGES = {
+  "src/vue.jsx": 'export default () => <div className="a">Salut</div>;\n',
+  "src/style.css": ".carte { color: #003fe4; margin: 0 2px; }\n",
+  "public/index.html": '<!doctype html>\n<html lang="fr"><body class="a">Texte</body></html>\n',
+  "outils/script.py": 'def lire(chemin):\n    """Doc."""\n    return None  # rien\n',
+  "outils/main.go": 'package main\n\nfunc main() { println("ok") }\n',
+  "outils/lib.rs": 'fn main() { let x: u8 = 1; println!("{}", x); }\n',
+  "outils/deploy.sh": '#!/bin/sh\nif [ -n "$X" ]; then echo ok; fi\n',
+  "config/app.yml": "nom: klyra\nactif: true # oui\n",
+  "config/app.yaml": "liste:\n  - 1\n",
+  "config/donnees.xml": '<?xml version="1.0"?>\n<racine id="1"/>\n',
+  "config/schema.sql": "SELECT id FROM clients WHERE statut = 'active';\n",
+};
+for (const [chemin, contenu] of Object.entries(LANGAGES)) ecrire(chemin, contenu);
+ecrire("notes.txt", "Texte simple, export const sans couleur.\n");
 ecrire("config.json", JSON.stringify({ nom: "klyra", valeurs: Array.from({ length: 30 }, (_, i) => ({ id: i, actif: i % 2 === 0 })) }));
 writeFileSync(path.join(TMP, "secret-hors-projet.md"), "SECRET HORS PROJET");
 
@@ -179,8 +198,9 @@ try {
   /* ─── Bascule Aperçu / Source ─── */
   await ouvrir("00_CONTROL/DASHBOARD.md");
   await app.cliquer("Source", `document.querySelector(${q(V)})`);
-  const source = await app.ev(`(() => { const t = ${vue('[data-vue="source"]')}; return t && { premiere: t.querySelector("tr td:nth-child(2)").innerText, numero: t.querySelector("tr td").innerText, lignes: t.querySelectorAll("tr").length }; })()`);
-  verifier(source?.premiere === "# Tableau de bord" && source.numero === "1" && source.lignes > 100, `Source : la vue numérotée d’avant (${q(source)})`);
+  const source = await app.ev(`(() => { const t = ${vue('[data-vue="source"]')}; return t && { premiere: t.querySelector("[data-ligne]").innerText, numero: t.querySelector('[aria-hidden="true"] div').innerText, lignes: t.querySelectorAll("[data-ligne]").length, titre: t.querySelector('[data-jeton="titre"]')?.innerText, langage: t.dataset.langage }; })()`);
+  verifier(source?.premiere === "# Tableau de bord" && source.numero === "1" && source.lignes > 100, `Source : la vue numérotée (${q({ ...source, titre: undefined })})`);
+  verifier(source?.langage === "markdown" && source.titre === "# Tableau de bord", "Source du Markdown colorée (titres)");
   await capture("markdown-source");
   await app.cliquer("Aperçu", `document.querySelector(${q(V)})`);
   verifier(await app.quand(`!!${vue('[data-vue="apercu"] table')}`), "retour à l’aperçu");
@@ -222,10 +242,30 @@ try {
   /* ─── Code, JSON ─── */
   verifier(await ouvrir("src/app.ts"), "app.ts s’ouvre");
   verifier(await app.ev(`!!${vue('[data-vue="source"]')} && !${vue('[aria-label="Affichage du fichier"]')}`), "code : numéros de ligne, pas de bascule");
+  const code = await app.ev(`(() => { const j = (t) => ${tous("[data-jeton]")}.filter((e) => e.dataset.jeton === t).map((e) => e.innerText); return { motcle: j("motcle"), chaine: j("chaine"), nombre: j("nombre"), commentaire: j("commentaire"), type: j("type") }; })()`);
+  verifier(
+    code.motcle.includes("import") && code.motcle.includes("export") && code.chaine.includes('"./lire"') && code.nombre.includes("42") && code.commentaire.includes("// Point d'entrée") && code.type.includes("Promise"),
+    `code TypeScript coloré (${q(code)})`,
+  );
+  const defilement = await app.ev(`(() => { const s = ${vue('[data-vue="source"]')}.parentElement; const l = ${vue('[data-ligne="6"]')}; return { large: s.scrollWidth > s.clientWidth + 100, uneLigne: l.getBoundingClientRect().height < 30 }; })()`);
+  verifier(defilement.large && defilement.uneLigne, `longue ligne : défilement horizontal, pas de retour à la ligne (${q(defilement)})`);
+  const selection = await app.ev(`(() => { const pre = ${vue('[data-vue="source"] pre')}; getSelection().selectAllChildren(pre); const t = getSelection().toString(); getSelection().removeAllRanges(); return t; })()`);
+  verifier(selection.startsWith("// Point d'entrée\nimport { lire }") && !/^1\\n2/.test(selection), "le code se sélectionne, sans les numéros de ligne");
+  verifier(await app.ev(`!${vue('[contenteditable], textarea, input')}`), "lecture seule : rien d’éditable");
+  await capture("code-ts");
+  for (const chemin of Object.keys(LANGAGES)) {
+    await ouvrir(chemin);
+    const r = await app.ev(`({ langage: ${vue('[data-vue="source"]')}?.dataset.langage, couleurs: ${tous("[data-jeton]")}.length })`);
+    verifier(r.langage && r.couleurs >= 2, `${chemin} : ${r.langage}, ${r.couleurs} mots colorés`);
+  }
+  await capture("code-xml");
+  verifier(await ouvrir("notes.txt"), "notes.txt s’ouvre");
+  verifier(await app.ev(`${vue('[data-vue="source"]')}?.dataset.langage === "" && !${vue("[data-jeton]")} && ${tous("[data-ligne]")}.length === 2`), "langage inconnu : numéros de ligne, aucune couleur");
   verifier(await ouvrir("config.json"), "config.json s’ouvre");
-  const json = await app.ev(`${tous('[data-vue="source"] tr')}.length`);
+  verifier(await app.ev(`${tous('[data-jeton="cle"]')}.some((e) => e.innerText === '"nom"')`), "JSON coloré (clés)");
+  const json = await app.ev(`${tous('[data-vue="source"] [data-ligne]')}.length`);
   await app.cliquer("Source", `document.querySelector(${q(V)})`);
-  const jsonSource = await app.ev(`${tous('[data-vue="source"] tr')}.length`);
+  const jsonSource = await app.ev(`${tous('[data-vue="source"] [data-ligne]')}.length`);
   verifier(json > 30 && jsonSource === 1, `JSON minifié : indenté (${json} lignes), source d’une ligne (${jsonSource})`);
 
   /* ─── Sans aperçu ─── */

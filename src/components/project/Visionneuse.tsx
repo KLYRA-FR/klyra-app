@@ -5,6 +5,7 @@ import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { Onglets } from "@/components/ui/Onglets";
 import { ancreDe, cibleLien } from "@/lib/apercu/liens";
+import { langageDe } from "@/lib/apercu/coloration";
 import { lireMarkdown } from "@/lib/apercu/markdown";
 import { indenterJson, renduDe } from "@/lib/apercu/texte";
 import { getBridge, type ContenuFichier } from "@/lib/bridge";
@@ -71,6 +72,7 @@ export function Visionneuse({
   const corps = useRef<HTMLDivElement>(null);
   const nom = nomFichier(chemin);
   const rendu = renduDe(chemin);
+  const langage = langageDe(chemin);
 
   useEffect(() => {
     if (!bridge) return;
@@ -214,7 +216,7 @@ export function Visionneuse({
         {texte !== null &&
           (!formate || vue === "source" ? (
             <Defilant>
-              <VueSource texte={texte} />
+              <VueSource texte={texte} langage={langage} />
             </Defilant>
           ) : markdown ? (
             <Defilant>
@@ -224,7 +226,7 @@ export function Visionneuse({
             <TableauTexte texte={texte} tsv={/\.tsv$/i.test(chemin)} />
           ) : (
             <Defilant>
-              <VueSource texte={jsonIndente ?? texte} />
+              <VueSource texte={jsonIndente ?? texte} langage={langage} />
             </Defilant>
           ))}
 

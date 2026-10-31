@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
+import { colorer, langageDe, type Jeton, type Langage } from "./coloration";
 import { ancreDe, cibleLien } from "./liens";
 import { lireMarkdown, texteBrut, type Bloc, type Inline } from "./markdown";
 import { aUnEntete, indenterJson, lireCsv, renduDe } from "./texte";
@@ -196,5 +197,63 @@ describe("CSV, TSV et JSON", () => {
     expect(JSON.parse(indente!)).toEqual(JSON.parse(minifie));
     expect(indenterJson('{\n  "deja": "lisible"\n}')).toBeNull();
     expect(indenterJson("{invalide")).toBeNull();
+  });
+});
+
+describe("coloration de la vue Source", () => {
+  /** Les mots colorés d'un texte, « jeton:texte », dans l'ordre. */
+  const jetons = (texte: string, langage: Langage) =>
+    colorer(texte, langage)
+      .flat()
+      .filter((m) => m.jeton)
+      .map((m) => `${m.jeton}:${m.texte}`);
+  const contient = (texte: string, langage: Langage, attendus: `${Jeton}:${string}`[]) => {
+    const trouves = jetons(texte, langage);
+    for (const a of attendus) expect(trouves, `${langage} : ${a}`).toContain(a);
+  };
+
+  test("langage selon l'extension ; inconnu → pas de couleur", () => {
+    expect(["a.js", "a.jsx", "a.ts", "a.tsx", "a.json", "a.css", "a.html", "a.py", "a.go", "a.rs", "a.sh", "a.yml", "a.yaml", "a.xml", "a.sql", "a.md"].map(langageDe)).toEqual([
+      "js", "jsx", "js", "jsx", "json", "css", "html", "python", "go", "rust", "shell", "yaml", "yaml", "html", "sql", "markdown",
+    ]);
+    expect(langageDe("a.txt")).toBeNull();
+    expect(langageDe("Makefile")).toBeNull();
+    expect(colorer("const a = 1; // rien", null)).toEqual([[{ texte: "const a = 1; // rien", jeton: null }]]);
+  });
+
+  test("le texte est rendu à l'identique, ligne par ligne", () => {
+    const source = "/* bloc\n   sur deux lignes */\nconst a = `x\ny`;\n\n\tfin";
+    const lignes = colorer(source, "js");
+    expect(lignes.map((l) => l.map((m) => m.texte).join("")).join("\n")).toBe(source);
+    expect(lignes[1][0]).toEqual({ texte: "   sur deux lignes */", jeton: "commentaire" });
+  });
+
+  test("TypeScript et JSX", () => {
+    contient('import { x } from "y";\nexport const N = 42; // note\nfunction f(a: string): Promise<void> {}', "js", [
+      "motcle:import", "chaine:\"y\"", "motcle:export", "motcle:const", "nombre:42", "commentaire:// note", "type:string", "type:Promise",
+    ]);
+    contient('return <Bouton variant="blanc" onClick={() => go()}>Ok</Bouton>;', "jsx", ["motcle:return", "balise:<Bouton", "attribut:variant", 'chaine:"blanc"', "attribut:onClick", "balise:>", "balise:</Bouton"]);
+  });
+
+  test("JSON, CSS, HTML, XML", () => {
+    contient('{"nom": "klyra", "n": 2, "ok": true, "rien": null}', "json", ['cle:"nom"', 'chaine:"klyra"', "nombre:2", "nombre:true", "nombre:null"]);
+    contient("@media (max-width: 600px) {\n  .a:hover { color: #003fe4; margin: 0 1.5rem !important; }\n}", "css", ["motcle:@media", "cle:color", "nombre:#003fe4", "nombre:1.5rem", "motcle:!important"]);
+    expect(jetons(".a:hover {", "css")).not.toContain("cle:a");
+    contient('<!-- note -->\n<a href="/x" class=\'b\'>Lien &amp; texte</a>', "html", ["commentaire:<!-- note -->", "balise:<a", "attribut:href", 'chaine:"/x"', "balise:>", "nombre:&amp;", "balise:</a"]);
+    contient('<?xml version="1.0"?>\n<racine id="1"/>', "html", ['motcle:<?xml version="1.0"?>', "balise:<racine", "balise:/>"]);
+  });
+
+  test("Python, Go, Rust, shell", () => {
+    contient('@app.route("/")\ndef f(x=None):\n    """doc\n    suite"""\n    return x  # fin', "python", ['variable:@app.route', "motcle:def", "nombre:None", 'chaine:"""doc', "motcle:return", "commentaire:# fin"]);
+    contient("package main\nfunc main() { var s string = `brut`; _ = nil }", "go", ["motcle:package", "motcle:func", "type:string", "chaine:`brut`", "nombre:nil"]);
+    contient("fn main<'a>() { let v: Vec<u8> = vec![1]; println!(\"{}\", 'c'); }", "rust", ["motcle:fn", "type:'a", "motcle:let", "type:Vec", "type:u8", "variable:vec!", "chaine:\"{}\"", "chaine:'c'"]);
+    contient('#!/bin/sh\nif [ -n "$X" ]; then echo ${HOME} # fin\nfi', "shell", ["commentaire:#!/bin/sh", "motcle:if", 'chaine:"$X"', "motcle:then", "variable:${HOME}", "commentaire:# fin", "motcle:fi"]);
+    expect(jetons("echo a#b", "shell")).not.toContain("commentaire:#b");
+  });
+
+  test("YAML, SQL, Markdown", () => {
+    contient("---\nnom: klyra # app\nliste:\n  - cle: 'v'\n    actif: true\n    n: 3", "yaml", ["motcle:---", "cle:nom", "commentaire:# app", "cle:  - cle", "chaine:'v'", "cle:    actif", "nombre:true", "nombre:3"]);
+    contient("SELECT id, nom FROM clients WHERE statut = 'active' -- note\nLIMIT 10;", "sql", ["motcle:SELECT", "motcle:FROM", "motcle:WHERE", "chaine:'active'", "commentaire:-- note", "motcle:LIMIT", "nombre:10"]);
+    contient("# Titre\n\n- [lien](a.md) et `code` et **gras**\n> cité\n```ts\nx\n```", "markdown", ["titre:# Titre", "motcle:-", "lien:[lien](a.md)", "chaine:`code`", "gras:**gras**", "motcle:> ", "commentaire:```ts", "commentaire:```"]);
   });
 });
