@@ -268,6 +268,8 @@ function ArbreProjet({ project }: { project: Project }) {
     <FileTree
       key={project.id}
       nodes={arbre.noeuds}
+      contenu={arbre.contenu}
+      charger={arbre.charger}
       modified={modified}
       onOuvrir={(chemin) => ouvrirFichier({ projectId: project.id, chemin })}
     />

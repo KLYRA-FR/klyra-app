@@ -1,17 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { Onglets } from "@/components/ui/Onglets";
+import { ancreDe, cibleLien } from "@/lib/apercu/liens";
+import { langageDe } from "@/lib/apercu/coloration";
+import { lireMarkdown } from "@/lib/apercu/markdown";
+import { indenterJson, renduDe } from "@/lib/apercu/texte";
 import { getBridge, type ContenuFichier } from "@/lib/bridge";
 import { poste } from "@/lib/plateforme";
 import { nomFichier } from "@/lib/fichiers";
 import type { Project } from "@/types/domain";
+import { DocumentMarkdown } from "./apercu/DocumentMarkdown";
+import { DocumentWord } from "./apercu/DocumentWord";
+import { Classeur, TableauTexte } from "./apercu/Grille";
+import { VueSource } from "./apercu/VueSource";
 
 /** Ce qu'on demande quand on clique un fichier : le projet et son chemin relatif. */
 export interface DemandeFichier {
   projectId: string;
   chemin: string;
+  /** Le titre à atteindre, pour un lien `fichier.md#titre`. */
+  ancre?: string | null;
+  /** Les fichiers ouverts avant celui-ci par des liens : le bouton retour y revient. */
+  retour?: string[];
 }
 
 /** Clic sur un fichier d'un projet : la visionneuse s'ouvre (cf. AppShell). */
@@ -25,16 +38,41 @@ function taille(octets: number): string {
   return `${(octets / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`;
 }
 
+const SANS_RETOUR: string[] = [];
+
+function Defilant({ children }: { children: ReactNode }) {
+  return <div className="min-h-0 flex-1 overflow-auto">{children}</div>;
+}
+
 /**
- * La visionneuse d'un fichier du projet, comme l'aperçu de VS Code : l'image
- * sur un fond neutre, ou le texte avec ses numéros de ligne. Échap ferme.
+ * La visionneuse d'un fichier du projet. Un document se lit mis en forme
+ * (Markdown, Word, CSV, Excel) ; le bouton « Source » rend la vue numérotée,
+ * comme l'aperçu de VS Code, qui reste celle du code. Une image s'affiche sur
+ * un fond neutre. Les liens d'un document ouvrent les fichiers du projet ici,
+ * et les adresses web hors de l'app. Échap ferme.
  */
-export function Visionneuse({ project, chemin, onFermer }: { project: Project; chemin: string; onFermer: () => void }) {
+export function Visionneuse({
+  project,
+  chemin,
+  ancre = null,
+  retour = SANS_RETOUR,
+  onFermer,
+}: {
+  project: Project;
+  chemin: string;
+  ancre?: string | null;
+  retour?: string[];
+  onFermer: () => void;
+}) {
   const bridge = getBridge();
   const [contenu, setContenu] = useState<ContenuFichier | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<string | null>(null);
+  const [vue, setVue] = useState<"apercu" | "source">("apercu");
+  const corps = useRef<HTMLDivElement>(null);
   const nom = nomFichier(chemin);
+  const rendu = renduDe(chemin);
+  const langage = langageDe(chemin);
 
   useEffect(() => {
     if (!bridge) return;
@@ -55,21 +93,77 @@ export function Visionneuse({ project, chemin, onFermer }: { project: Project; c
     return () => window.removeEventListener("keydown", echap);
   }, [onFermer]);
 
-  const lignes = contenu?.type === "texte" ? contenu.texte.split("\n") : [];
+  const texte = contenu?.type === "texte" ? contenu.texte : null;
+  const lignes = useMemo(() => (texte === null ? 0 : texte.split("\n").length), [texte]);
+  const markdown = useMemo(() => (texte !== null && rendu === "markdown" ? lireMarkdown(texte) : null), [texte, rendu]);
+  const jsonIndente = useMemo(() => (texte !== null && rendu === "json" ? indenterJson(texte) : null), [texte, rendu]);
+  /** Une vue mise en forme existe : le choix Aperçu / Source s'affiche. */
+  const formate = texte !== null && (rendu === "markdown" || rendu === "tableau" || jsonIndente !== null);
+
+  const defiler = useCallback((cible: string | null) => {
+    if (!cible || !corps.current) return;
+    const titre =
+      corps.current.querySelector<HTMLElement>(`[data-ancre="${CSS.escape(cible)}"]`) ??
+      corps.current.querySelector<HTMLElement>(`[data-ancre="${CSS.escape(ancreDe(cible))}"]`);
+    titre?.scrollIntoView({ block: "start" });
+  }, []);
+
+  // Arrivé par un lien `fichier.md#titre` : on va au titre dès que le document est affiché.
+  useEffect(() => {
+    if (markdown && vue === "apercu") defiler(ancre);
+  }, [markdown, vue, ancre, defiler]);
+
+  const suivreLien = useCallback(
+    (href: string) => {
+      const cible = cibleLien(href, chemin);
+      if (cible.type === "externe") window.open(cible.url, "_blank", "noreferrer");
+      else if (cible.type === "ancre") defiler(cible.ancre);
+      else if (cible.type === "fichier" && cible.chemin === chemin) defiler(cible.ancre);
+      else if (cible.type === "fichier") ouvrirFichier({ projectId: project.id, chemin: cible.chemin, ancre: cible.ancre, retour: [...retour, chemin] });
+    },
+    [chemin, defiler, project.id, retour],
+  );
+
+  const precedent = retour[retour.length - 1];
+  const details = [
+    chemin,
+    contenu && taille(contenu.taille),
+    dimensions,
+    texte !== null && `${lignes} lignes`,
+    contenu?.type === "classeur" && contenu.feuilles.length > 1 && `${contenu.feuilles.length} feuilles`,
+  ].filter(Boolean);
 
   return (
     <div role="dialog" aria-label={nom} className="absolute inset-0 z-40 flex flex-col bg-fond-surface">
       <header className="flex items-center gap-3 border-b border-bordure-subtile px-4 py-3">
-        <Icon name={contenu?.type === "image" ? "image-01" : "file-code"} size={20} className="shrink-0 text-icone-secondaire" />
+        {precedent && (
+          <BoutonIcone
+            taille="compact"
+            icone={<Icon name="chevron-left" size={16} />}
+            libelle={`Revenir à ${nomFichier(precedent)}`}
+            onClick={() => ouvrirFichier({ projectId: project.id, chemin: precedent, retour: retour.slice(0, -1) })}
+          />
+        )}
+        <Icon
+          name={contenu?.type === "image" ? "image-01" : contenu?.type === "texte" && (!formate || vue === "source") ? "file-code" : "file-01"}
+          size={20}
+          className="shrink-0 text-icone-secondaire"
+        />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-ui font-semibold text-texte-principal">{nom}</span>
-          <span className="klyra-mono truncate text-ui-2xs text-texte-tertiaire">
-            {chemin}
-            {contenu ? ` · ${taille(contenu.taille)}` : ""}
-            {dimensions ? ` · ${dimensions}` : ""}
-            {contenu?.type === "texte" ? ` · ${lignes.length} lignes` : ""}
-          </span>
+          <span className="klyra-mono truncate text-ui-2xs text-texte-tertiaire">{details.join(" · ")}</span>
         </div>
+        {formate && (
+          <Onglets
+            libelle="Affichage du fichier"
+            onglets={[
+              { id: "apercu", label: "Aperçu" },
+              { id: "source", label: "Source" },
+            ]}
+            valeur={vue}
+            onChange={setVue}
+          />
+        )}
         {bridge && (
           <>
             <Bouton variant="blanc" taille="compact" onClick={() => void bridge.projets.ouvrirFichier(project.folder, chemin)}>
@@ -86,7 +180,7 @@ export function Visionneuse({ project, chemin, onFermer }: { project: Project; c
         <BoutonIcone taille="compact" icone={<Icon name="x-01" size={16} />} libelle="Fermer (Échap)" onClick={onFermer} />
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={corps} className="flex min-h-0 flex-1 flex-col">
         {!bridge && <p className="m-0 p-6 text-ui-s text-texte-secondaire">La visionneuse marche dans l’app de bureau.</p>}
         {erreur && (
           <p role="alert" className="m-0 p-6 text-ui-s text-texte-erreur">
@@ -96,38 +190,52 @@ export function Visionneuse({ project, chemin, onFermer }: { project: Project; c
         {bridge && !contenu && !erreur && <p className="m-0 p-6 text-ui-s text-texte-tertiaire">Lecture…</p>}
 
         {contenu?.type === "image" && (
-          /* Damier discret derrière l'image, pour voir la transparence. */
-          <div
-            className="flex min-h-full items-center justify-center p-8"
-            style={{
-              backgroundColor: "var(--color-fond-page)",
-              backgroundImage:
-                "linear-gradient(45deg, var(--color-fond-surface-grise) 25%, transparent 25%), linear-gradient(-45deg, var(--color-fond-surface-grise) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--color-fond-surface-grise) 75%), linear-gradient(-45deg, transparent 75%, var(--color-fond-surface-grise) 75%)",
-              backgroundSize: "16px 16px",
-              backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element -- image locale en data URL */}
-            <img
-              src={contenu.dataUrl}
-              alt={nom}
-              onLoad={(e) => setDimensions(`${e.currentTarget.naturalWidth} × ${e.currentTarget.naturalHeight} px`)}
-              className="max-h-full max-w-full object-contain shadow-ombre-xs"
-            />
-          </div>
+          <Defilant>
+            {/* Damier discret derrière l'image, pour voir la transparence. */}
+            <div
+              className="flex min-h-full items-center justify-center p-8"
+              style={{
+                backgroundColor: "var(--color-fond-page)",
+                backgroundImage:
+                  "linear-gradient(45deg, var(--color-fond-surface-grise) 25%, transparent 25%), linear-gradient(-45deg, var(--color-fond-surface-grise) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--color-fond-surface-grise) 75%), linear-gradient(-45deg, transparent 75%, var(--color-fond-surface-grise) 75%)",
+                backgroundSize: "16px 16px",
+                backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- image locale en data URL */}
+              <img
+                src={contenu.dataUrl}
+                alt={nom}
+                onLoad={(e) => setDimensions(`${e.currentTarget.naturalWidth} × ${e.currentTarget.naturalHeight} px`)}
+                className="max-h-full max-w-full object-contain shadow-ombre-xs"
+              />
+            </div>
+          </Defilant>
         )}
 
-        {contenu?.type === "texte" && (
-          <table className="klyra-mono w-full border-collapse text-ui-xs leading-[1.6]">
-            <tbody>
-              {lignes.map((ligne, i) => (
-                <tr key={i}>
-                  <td className="w-12 pr-3 pl-4 text-right align-top text-texte-tertiaire select-none">{i + 1}</td>
-                  <td className="pr-4 whitespace-pre-wrap text-texte-principal [overflow-wrap:anywhere]">{ligne || " "}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {texte !== null &&
+          (!formate || vue === "source" ? (
+            <Defilant>
+              <VueSource texte={texte} langage={langage} />
+            </Defilant>
+          ) : markdown ? (
+            <Defilant>
+              <DocumentMarkdown document={markdown} chemin={chemin} dossier={project.folder} suivre={suivreLien} />
+            </Defilant>
+          ) : rendu === "tableau" ? (
+            <TableauTexte texte={texte} tsv={/\.tsv$/i.test(chemin)} />
+          ) : (
+            <Defilant>
+              <VueSource texte={jsonIndente ?? texte} langage={langage} />
+            </Defilant>
+          ))}
+
+        {contenu?.type === "classeur" && <Classeur feuilles={contenu.feuilles} />}
+
+        {contenu?.type === "document" && (
+          <Defilant>
+            <DocumentWord blocs={contenu.blocs} chemin={chemin} suivre={suivreLien} />
+          </Defilant>
         )}
 
         {contenu?.type === "autre" && (
