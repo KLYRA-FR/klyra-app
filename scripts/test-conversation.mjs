@@ -137,7 +137,7 @@ const etat = (a) =>
       ouvert: b?.getAttribute("aria-expanded") === "true",
       haspopup: b?.getAttribute("aria-haspopup"),
       menu: !!menu,
-      lignes: menu ? [...menu.querySelectorAll('[role="menuitem"]')].map((l) => l.innerText.trim()) : [],
+      lignes: menu ? [...menu.querySelectorAll('[role="menuitem"]')].map((l) => l.innerText.trim().split("\\n")[0]) : [],
       focus: focus?.getAttribute("aria-label") ?? focus?.innerText?.trim() ?? focus?.tagName,
       titre: document.querySelector("main header h1")?.innerText ?? null,
       champ: document.querySelector('main header input[aria-label="Nom de la conversation"]') ? { valeur: document.activeElement?.value, selection: document.activeElement?.selectionEnd - document.activeElement?.selectionStart, focus: document.activeElement?.getAttribute("aria-label") } : null,
@@ -181,9 +181,11 @@ try {
   await app.touche("Enter", ENTREE);
   e = await etat(app);
   verifier(e.ouvert && e.menu && e.focus === "Renommer", "Entrée ouvre le menu, focus sur sa première ligne");
-  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Ouvrir le projet"]), `menu de conversation : ${e.lignes.join(", ")}`);
+  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Exporter en Markdown…", "Ouvrir le projet"]), `menu de conversation : ${e.lignes.join(", ")}`);
   await app.touche("ArrowDown", { vk: 40 });
   const bas = (await etat(app)).focus;
+  await app.touche("ArrowDown", { vk: 40 });
+  const exporter = (await etat(app)).focus;
   await app.touche("ArrowDown", { vk: 40 });
   const projet = (await etat(app)).focus;
   await app.touche("ArrowDown", { vk: 40 });
@@ -192,7 +194,7 @@ try {
   const fin = (await etat(app)).focus;
   await app.touche("Home", { vk: 36 });
   const debut = (await etat(app)).focus;
-  verifier(bas === "Épingler" && projet === "Ouvrir le projet" && boucle === "Renommer" && fin === "Ouvrir le projet" && debut === "Renommer", "trois lignes, flèches en boucle, Début et Fin");
+  verifier(bas === "Épingler" && exporter === "Exporter en Markdown…" && projet === "Ouvrir le projet" && boucle === "Renommer" && fin === "Ouvrir le projet" && debut === "Renommer", "quatre lignes, flèches en boucle, Début et Fin");
   await app.touche("Escape", { vk: 27 });
   e = await etat(app);
   verifier(!e.menu && !e.ouvert && e.focus === "Plus d’options", "Échap ferme le menu et rend le focus au bouton");
@@ -288,11 +290,14 @@ try {
   await app.cliquer(BOUTON);
   e = await etat(app);
   const enfants = await app.ev(`document.querySelector('[role="menu"][aria-label="Options de la conversation"]')?.children.length`);
-  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler"]) && enfants === 2, `sans projet : renommage et épingle (${e.lignes.join(", ")})`);
+  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Exporter en Markdown…"]) && enfants === 3, `sans projet : renommage, épingle et export (${e.lignes.join(", ")})`);
   await app.touche("Escape", { vk: 27 });
 
   await app.aller("/chat?id=dm-principal");
-  verifier(!(await etat(app)).bouton, "la conversation directe garde son en-tête, sans ce menu");
+  await app.cliquer(BOUTON);
+  e = await etat(app);
+  verifier(e.bouton && JSON.stringify(e.lignes) === JSON.stringify(["Exporter en Markdown…"]), "la conversation directe propose seulement l’export dans son menu");
+  await app.touche("Escape", { vk: 27 });
   verifier(app.erreurs.length === 0, `aucune erreur dans la page après redémarrage${app.erreurs.length ? ` (${app.erreurs.join(" | ")})` : ""}`);
 } catch (e) {
   verifier(false, `le test a planté : ${e instanceof Error ? e.message : e}`);

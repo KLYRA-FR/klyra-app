@@ -348,6 +348,10 @@ export interface KlyraBridge {
     avantFermeture: (callback: () => void) => () => void;
     read: () => Promise<Reponse<unknown>>;
     write: (data: unknown) => Promise<Reponse<void>>;
+    /** Absent avant la relance de l'app ; seul le sélecteur main choisit la destination. */
+    exporter?: (demande: { contenu: string; nomPropose: string }) => Promise<Reponse<
+      { statut: "annule" | "occupe" } | { statut: "enregistre"; chemin: string; nom: string }
+    >>;
   };
   /** Le moteur des routines (electron/routines/). Absent avant la relance de l'app. */
   routines?: {

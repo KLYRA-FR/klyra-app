@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { plagesDans, SURLIGNAGE } from "@/components/recherche/surligner";
@@ -9,6 +9,7 @@ import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { formatDaySeparator, formatJourHeure, formatTime, isSameDay } from "@/lib/format";
 import { requeteRetenue } from "@/lib/recherche-session";
+import { DEPART_ROUTINE } from "@/lib/message-routine";
 import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse } from "./ActionsReponse";
@@ -56,9 +57,6 @@ function ActionsSurvol({ message, align }: { message: Message; align: "start" | 
     </div>
   );
 }
-
-/** Le début d'un message envoyé par une routine (« Tâche planifiée » : l'ancien nom). */
-const DEPART_ROUTINE = /^(?:Routine|Tâche planifiée) « (.+?) »\n\n/;
 
 function UserMessage({ message, suite }: { message: Message; suite: boolean }) {
   /* Une routine : son nom et son heure au-dessus, la consigne seule dans la bulle. */
@@ -299,7 +297,7 @@ function useArriveeRecherche(
 }
 
 /** Fil de la conversation, collé en bas comme dans une messagerie. */
-export function MessageThread({ chatId }: { chatId: string }) {
+export function MessageThread({ chatId, messageExport }: { chatId: string; messageExport?: ReactNode }) {
   const chat = useChat(chatId);
   const messages = useChatMessages(chatId);
   const travail = useTravail(chatId);
@@ -341,6 +339,7 @@ export function MessageThread({ chatId }: { chatId: string }) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
+      {messageExport}
       <div
         ref={zone}
         onScroll={(e) => {

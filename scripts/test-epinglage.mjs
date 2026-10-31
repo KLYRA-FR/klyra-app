@@ -276,7 +276,7 @@ try {
   });
   await etape("7 · Menu d’en-tête", async () => {
     await app.charger(fixture(), `/chat?id=${id("D")}`); await menu();
-    verifier(memes(await app.ev(`[...document.querySelectorAll(${q(`${MENU} [role=menuitem]`)})].map(e=>e.textContent.trim())`), ["Renommer", "Épingler", "Ouvrir le projet"]), "menu à trois lignes dans l’ordre prévu");
+    verifier(memes(await app.ev(`[...document.querySelectorAll(${q(`${MENU} [role=menuitem]`)})].map(e=>e.innerText.trim().split('\\n')[0])`), ["Renommer", "Épingler", "Exporter en Markdown…", "Ouvrir le projet"]), "menu à quatre lignes dans l’ordre prévu, épingle toujours deuxième");
     await app.touche("ArrowUp"); verifier((await app.ev("document.activeElement.textContent.trim()")) === "Ouvrir le projet", "flèche haut boucle sur la dernière ligne");
     await app.touche("Home"); await app.touche("ArrowDown"); await app.touche("Enter");
     verifier(!(await present(MENU)) && await focus(OPTIONS), "Entrée ferme le menu et rend le focus au « … »");
@@ -295,10 +295,10 @@ try {
     await basculerMenu();
     verifier(memes(await app.ev(`[...document.querySelectorAll('[role=tablist][aria-label="Conversations ouvertes"] [role=tab]')].map(e=>e.textContent)`), tabs) && memes(await stockage(), prefs), "onglets A, B, C gardés dans leur ordre d’ouverture et brouillon intact");
     verifier(memes(await recherche(), resultats), "mêmes résultats de recherche, dans le même ordre");
-    await app.aller("/chat?id=dm-principal"); verifier(!(await present(OPTIONS)), "conversation directe sans menu d’épinglage");
+    await app.aller("/chat?id=dm-principal"); await app.clic(OPTIONS); verifier((await texte(MENU)) === "Exporter en Markdown…", "conversation directe : export seul, aucun épinglage"); await app.touche("Escape");
     verifier(memes(await app.ev(`[...document.querySelectorAll(${q(`${NAV} a[href^='/chat?id=dm-']`)})].map(e=>e.getAttribute('href'))`), agents), "Mes agents garde son ordre");
     verifier(!(await present(`${NAV} [data-epingle^="dm-"]`)), "aucun bouton d’épingle de conversation directe dans le panneau, y compris à côté des liens d’agents");
-    await app.aller("/chat?id=fil-fictif"); verifier(!(await present(OPTIONS)), "fil sans menu d’épinglage");
+    await app.aller("/chat?id=fil-fictif"); await app.clic(OPTIONS); verifier((await texte(MENU)) === "Exporter en Markdown…", "fil : export seul, aucun épinglage"); await app.touche("Escape");
     await enregistrer(); verifier(!donnees().chats.filter(c=>c.kind === "direct").some(c=>Object.hasOwn(c,"epingleLe")), "directe et fil sans champ épingle");
   });
   await etape("9 · Cas limites et petite fenêtre", async () => {

@@ -15,6 +15,8 @@ import { texteDe, useChat, useChatMessages, useProjects, useRoles, useWorkspace 
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageThread } from "./MessageThread";
+import { MessageExport } from "./MessageExport";
+import { useExporterConversation } from "./useExporterConversation";
 import { OngletsConversations } from "./OngletsConversations";
 import { OngletsFils } from "./OngletsFils";
 import { PanneauLateral, usePanneauLateral } from "./PanneauLateral";
@@ -108,6 +110,7 @@ export function ChatScreen() {
   const horsDeMesAgents =
     chat?.kind === "direct" ? tous.find((a) => a.role.id === chat.roleIds[0] && a.statut !== "actif") : undefined;
   const project = useProjects().find((p) => p.id === chat?.projectId);
+  const exportConversation = useExporterConversation(chat, project);
   const [previewOpen, setPreviewOpen] = useState(true);
   const modifiedLabel = useModifiedLabel(chat?.id ?? "");
   /* Conversation directe : le panneau de l'agent (réglages, fichiers, tâches) à droite. */
@@ -178,14 +181,17 @@ export function ChatScreen() {
         {project && chat.kind === "equipe" && <OngletsConversations key={project.id} project={project} chatId={chat.id} />}
         {chat.kind === "direct" && <OngletsFils roleId={chat.roleIds[0] ?? "principal"} chatId={chat.id} />}
         <ChatHeader
+          key={`header-${chat.id}`}
           chat={chat}
+          actionExport={exportConversation.action}
           project={project}
           previewOpen={chat.kind === "direct" ? panneauOuvert : previewOpen}
           onTogglePreview={() =>
             chat.kind === "direct" ? setPanneauOuvert((v) => !v) : setPreviewOpen((v) => !v)
           }
         />
-        <MessageThread key={chat.id} chatId={chat.id} />
+        <MessageThread key={chat.id} chatId={chat.id} messageExport={exportConversation.message &&
+          <MessageExport key={exportConversation.numero} message={exportConversation.message} onFermer={exportConversation.fermer} />} />
         {horsDeMesAgents ? (
           <BarreHorsDeMesAgents key={`hors-${chat.id}`} agent={horsDeMesAgents} chatId={chat.id} />
         ) : (

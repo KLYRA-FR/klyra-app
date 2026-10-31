@@ -5,29 +5,34 @@ import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { apparition } from "@/lib/mouvement";
+import { cn } from "@/lib/cn";
+import type { ActionExport } from "./useExporterConversation";
 import type { Project } from "@/types/domain";
 
 const MENU =
   "absolute top-full right-0 z-50 mt-1 flex w-max min-w-[220px] flex-col gap-0.5 rounded-lg border border-bordure-subtile bg-fond-surface p-1.5 shadow-ombre-flottante";
 
-function Ligne({ icone, children, onClick }: { icone: IconName; children: ReactNode; onClick: () => void }) {
+function Ligne({ icone, children, onClick, desactivee = false, detail }: { icone: IconName; children: ReactNode; onClick: () => void; desactivee?: boolean; detail?: string }) {
   return (
     <button
       type="button"
       role="menuitem"
       tabIndex={-1}
-      onClick={onClick}
-      className="flex h-8 cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent px-2 text-left text-ui-s whitespace-nowrap text-texte-principal hover:bg-fond-survol focus-visible:bg-fond-survol focus-visible:-outline-offset-2"
+      aria-disabled={desactivee || undefined}
+      onClick={(e) => { if (!desactivee && e.detail <= 1) onClick(); }}
+      className={cn("flex gap-2.5 rounded-sm border-0 bg-transparent px-2 text-left text-ui-s whitespace-nowrap focus-visible:bg-fond-survol focus-visible:-outline-offset-2",
+        detail ? "min-h-8 items-start py-1.5" : "h-8 items-center",
+        desactivee ? "cursor-not-allowed text-texte-tertiaire" : "cursor-pointer text-texte-principal hover:bg-fond-survol")}
     >
-      <Icon name={icone} size={16} className="shrink-0 text-icone-secondaire" />
-      {children}
+      <Icon name={icone} size={16} className={cn("shrink-0 text-icone-secondaire", desactivee && "opacity-60", detail && "mt-0.5")} />
+      <span className="flex flex-col">{children}{detail && <span className="text-ui-xs leading-[1.35] text-texte-tertiaire">{detail}</span>}</span>
     </button>
   );
 }
 
 /**
- * Le « … » de l'en-tête d'une conversation d'équipe : la renommer, l'épingler, ouvrir son
- * projet. Au clavier, les flèches parcourent le menu ; Échap ou Tab le
+ * Le « … » d'une conversation : export pour toutes, nom/épingle/projet pour l'équipe.
+ * Au clavier, les flèches parcourent le menu (ligne grisée comprise) ; Échap ou Tab le
  * ferment et rendent le focus au bouton, un clic ailleurs le ferme.
  */
 export function MenuConversation({
@@ -36,13 +41,15 @@ export function MenuConversation({
   onRenommer,
   epinglee,
   onEpingler,
+  actionExport,
 }: {
-  project: Project | undefined;
+  project?: Project;
   /** Le « … » lui-même : l'en-tête y rend le focus après un renommage au clavier. */
   bouton: RefObject<HTMLButtonElement | null>;
-  onRenommer: () => void;
-  epinglee: boolean;
-  onEpingler: () => void;
+  onRenommer?: () => void;
+  epinglee?: boolean;
+  onEpingler?: () => void;
+  actionExport?: ActionExport;
 }) {
   const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
@@ -95,7 +102,7 @@ export function MenuConversation({
   };
 
   return (
-    <div ref={zone} className="relative">
+    <div ref={zone} className="relative shrink-0">
       <BoutonIcone
         ref={bouton}
         taille="compact"
@@ -114,7 +121,7 @@ export function MenuConversation({
       />
       {ouvert && (
         <div ref={apparition} id={idMenu} role="menu" aria-label="Options de la conversation" onKeyDown={parcourir} className={MENU}>
-          <Ligne
+          {onRenommer && <Ligne
             icone="pencil-01"
             onClick={() => {
               fermer(false);
@@ -122,8 +129,8 @@ export function MenuConversation({
             }}
           >
             Renommer
-          </Ligne>
-          <Ligne
+          </Ligne>}
+          {onEpingler && <Ligne
             icone={epinglee ? "pin-off-01" : "pin-01"}
             onClick={() => {
               fermer(true);
@@ -131,7 +138,13 @@ export function MenuConversation({
             }}
           >
             {epinglee ? "Retirer l'épingle" : "Épingler"}
-          </Ligne>
+          </Ligne>}
+          {actionExport && <Ligne
+            icone="download-02"
+            desactivee={actionExport.vide}
+            detail={actionExport.vide ? "Pas encore de message" : undefined}
+            onClick={() => { fermer(true); actionExport.lancer(bouton.current); }}
+          >Exporter en Markdown…</Ligne>}
           {project && (
             <Ligne
               icone="projets-dossier"

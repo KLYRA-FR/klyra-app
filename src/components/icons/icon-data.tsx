@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
    trait 2). L'encre #303030 est remplacée par currentColor. Pour ajouter une
    icône : la reprendre telle quelle du design system, jamais d'un autre set. */
 export const ICONS = {
+  "download-02": { viewBox: "0 0 24 24", body: <><path d="M4 15.2044L4 18.8925C4 19.4514 4.21071 19.9875 4.58579 20.3827C4.96086 20.778 5.46957 21 6 21H18C18.5304 21 19.0391 20.778 19.4142 20.3827C19.7893 19.9875 20 19.4514 20 18.8925V15.2044M12.0011 3V14.9425M12.0011 14.9425L16.5725 10.3793M12.0011 14.9425L7.42969 10.3793" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></> },
   /* Dessinées par Iris (point 9) : le groupe Icons n'a pas d'épingle. Même grille, même trait. */
   "pin-01": { viewBox: "0 0 24 24", body: <><path d="M8.4 2.4H15.6M9.6 2.4V9L6.4 12.6V15.6H17.6V12.6L14.4 9V2.4M12 15.6V21.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></> },
   "pin-off-01": { viewBox: "0 0 24 24", body: <><path d="M2.4 3.6L20.4 21.6M8.4 2.4H15.6M9.6 2.4V8.4M7.69 11.15L6.4 12.6V15.6H12.8M16 15.6H17.6V12.6L14.4 9V2.4M12 15.6V21.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></> },
