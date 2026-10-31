@@ -641,3 +641,33 @@ body[data-glisse] iframe {
 .klyra-curseur:active::-webkit-slider-thumb {
   transform: scale(1.1);
 }
+
+/* Routines : les seuils portent sur l'écran disponible, rail exclu. */
+.klyra-routines-grille {
+  container: routines / inline-size;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.klyra-routines-barre { grid-column: 1 / -1; grid-row: 1; }
+.klyra-routines-colonne { grid-column: 1; grid-row: 2; }
+.klyra-routines-corps { grid-column: 2; grid-row: 2; }
+.klyra-routines-agent-compact { display: none; min-width: 0; max-width: 100%; }
+.klyra-routines-agent-compact > button { max-width: 100%; }
+@container routines (width < 1180px) {
+  .klyra-routines-panneau {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    z-index: 30;
+    max-width: 100%;
+    box-shadow: var(--shadow-ombre-lg);
+  }
+}
+@container routines (width < 760px) {
+  .klyra-routines-colonne { display: none; }
+  .klyra-routines-corps { grid-column: 1 / -1; }
+  .klyra-routines-agent-compact { display: block; }
+  .klyra-routines-barre > div:first-child { width: 100%; }
+  .klyra-routines-panneau { inset: 0; width: 100%; }
+}

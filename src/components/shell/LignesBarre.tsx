@@ -25,10 +25,10 @@ import type { Chat, Message, Role } from "@/types/domain";
  * en train de faire).
  */
 
-const LIGNE =
+export const LIGNE =
   "group/ligne flex h-[54px] items-center gap-2.5 rounded-md px-2 no-underline transition-[background-color,scale] duration-[120ms] ease-sortie active:scale-[0.99]";
-const LIGNE_ACTIVE = "bg-fond-surface-grise";
-const LIGNE_REPOS = "hover:bg-fond-survol";
+export const LIGNE_ACTIVE = "bg-fond-surface-grise";
+export const LIGNE_REPOS = "hover:bg-fond-survol";
 
 /** Ce que l'agent fait en ce moment, tiré de la dernière étape de sa réponse. */
 function etapeEnCours(messages: Message[], messageId: string): string | null {
