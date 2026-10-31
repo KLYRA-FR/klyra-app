@@ -71,6 +71,8 @@ Lien direct vers un écran : `https://www.figma.com/design/YEmyuRbNcN1t0GkHktxQE
 
 ## Où on en est
 
+- **31/10/2026 — Routines en canevas, colonne des agents** : spec d'Iris du 31/10 appliquée par Noé depuis `a2d320b`. Une carte par routine, un agent par canevas, placement automatique, zoom et déplacement du fond ; menu des gestes existants, formulaire actuel dans un panneau de 380 px et Exécutions dans un panneau de 300 px. Colonne de 280 px, Mes agents puis les propriétaires inactifs ; remplacement par la liste Agent sous 760 px, panneaux superposés sous 1180 px. Moteur, types, formulaire, planning et libs routines inchangés, aucun fichier ou import workflows ; aucune position persistée. Recette détaillée, limites, preuve d'isolation et retour arrière : [ROUTINES-CANEVAS.md](ROUTINES-CANEVAS.md). Build, types, lint, smoke natif Linux et 83 scénarios de routines réussis ; gestes vérifiés sur export statique avec preload/moteur réels, fournisseur et profils fictifs. Suivi : klyra-app — routines sur le canevas (openbot-thread-76795551-020b-4902-85be-2b54c416d442).
+
 ### Fait
 - [x] Veille et wireframes Figma (9 écrans)
 - [x] Dépôt `pelin-klyra/klyra-app` : Electron + Next.js 16 + `klyra-ui` en noir et blanc

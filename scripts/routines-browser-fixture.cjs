@@ -3,6 +3,8 @@
  * Profil fictif pour vérifier l'export statique dans OpenBot Browser.
  * node scripts/routines-browser-fixture.cjs --app=/chemin/klyra-routines-schedule
  * node scripts/routines-browser-fixture.cjs --app=/chemin/klyra-routines-schedule --self-test
+ * node scripts/routines-browser-fixture.cjs --cas=canevas --port=3180
+ * node scripts/routines-browser-fixture.cjs --cas=canevas --moteur-arrete --port=3181
  *
  * Le preload compilé, le moteur, l'adaptateur routines/index et conversations.js sont réels.
  * Electron, les comptes et l'agent sont simulés. Aucun shell, SDK IA, clé, compte ni HOME réel.
@@ -24,6 +26,9 @@ const argument = (name, fallback) => process.argv.find((arg) => arg.startsWith(`
 const appDir = path.resolve(argument("app", path.join(__dirname, "..")));
 const outDir = path.join(appDir, "out");
 const selfTest = process.argv.includes("--self-test");
+const cas = argument("cas", "");
+const moteurArrete = process.argv.includes("--moteur-arrete");
+if (cas && cas !== "canevas") throw new Error("Cas inconnu. Le seul cas préparé est --cas=canevas.");
 const port = Number(argument("port", selfTest ? "0" : "3179"));
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Port invalide.");
 for (const file of ["out/routines.html", "dist-electron/preload.js", "dist-electron/routines/index.js", "dist-electron/conversations.js"]) {
@@ -118,6 +123,76 @@ function lireStore() {
   return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
 }
 
+/** Données d'écran fictives, validées par le store AVANT tout chargement du moteur. */
+function preparerCanevas() {
+  const { RoutineStore } = require(path.join(appDir, "dist-electron/routines/store.js"));
+  const { nextOccurrence } = require(path.join(appDir, "dist-electron/routines/schedule.js"));
+  const now = Date.now();
+  const jour = 86_400_000;
+  const iso = (offset = 0) => new Date(now + offset).toISOString();
+  const timezone = "UTC";
+  const routine = (id, agentId, name, instruction, schedule, rang, extras = {}) => ({
+    id, agentId, name, instruction, schedule, timezone, active: true,
+    nextRunAt: nextOccurrence(schedule, timezone, new Date(now)), missedPolicy: "skip", projectId: null,
+    createdAt: iso(-60 * jour + rang * 60_000), updatedAt: iso(-jour), ...extras,
+  });
+  const routines = [
+    routine("canevas-point", "principal", "Point quotidien fictif", "Fais le point sur les tâches fictives.\nSignale les échéances proches.\nSignale les blocages.\nIndique les décisions qui attendent.\nAucune donnée métier n’est consultée.\nCette longue consigne sert à vérifier son affichage complet.", { kind: "daily", time: "23:59" }, 0),
+    routine("canevas-attente", "principal", "Accord fictif", "[permission] Demande une autorisation fictive. Aucune commande ne sera exécutée.", { kind: "manual" }, 1),
+    routine("canevas-dev", "dev", "Travail long fictif", "[long] Attends dans le faux agent afin de vérifier l’interruption. Aucun programme n’est lancé.", { kind: "manual" }, 2),
+    routine("canevas-design", "designer", "Revue fictive", "Vérifie seulement la réponse du faux agent, sans page ni fichier réel.", { kind: "weekly", weekday: 1, time: "09:00" }, 3),
+    routine("canevas-relais", "principal", "Ancienne chaîne fictive", "Consigne conservée du premier agent fictif.", { kind: "daily", time: "23:59" }, 4, {
+      active: false, nextRunAt: null,
+      relais: [
+        { id: "relais-fictif-1", de: "principal", vers: "dev", consigne: "Relais fictif conservé vers le développeur." },
+        { id: "relais-fictif-2", de: "dev", vers: "designer", consigne: "Relais fictif conservé vers le designer." },
+      ],
+      blockedReason: "Cette ancienne routine contient des relais entre agents. Ses données sont conservées, mais elle ne peut pas être exécutée comme une routine à un seul agent.",
+    }),
+    routine("canevas-absent", "absent-fictif", "Agent absent fictif", "Aucune fiche de cet agent fictif n’existe dans ce profil temporaire.", { kind: "daily", time: "23:59" }, 5),
+    routine("canevas-desactive", "archive-fictif", "Agent désactivé fictif", "L’agent de test reste désactivé ; aucune action métier.", { kind: "daily", time: "23:59" }, 6),
+  ];
+  // Deux fiches propres au cas canevas : un agent désactivé et un agent actif sans routine.
+  for (const [id, name, actif] of [["archive-fictif", "Agent désactivé fictif", false], ["sans-routine", "Agent sans routine fictif", true]]) {
+    fichiersAgents[id] = `---\nname: ${id}\ndisplayName: ${name}\ndescription: Profil de test du canevas\nmodel: sonnet\n---\n# ${name}\nAucune donnée réelle.\n`;
+    fs.writeFileSync(path.join(agentsDir, `${id}.md`), fichiersAgents[id]);
+    mes.agents[id] = { actif, ajouteLe: now, origine: { type: "local" }, empreinte: null };
+  }
+  const runs = Array.from({ length: 55 }, (_, i) => {
+    const at = iso(-(55 - i) * jour);
+    const status = i === 54 ? "succeeded" : ["succeeded", "failed", "interrupted", "cancelled"][i % 4];
+    return {
+      id: `canevas-historique-${String(i + 1).padStart(2, "0")}`, routineId: "canevas-point", agentId: "principal",
+      kind: "scheduled", scheduledFor: at, routineName: "Point quotidien fictif — version précédente",
+      instruction: "Ancienne consigne fictive figée au lancement.", projectId: null, status,
+      error: status === "failed" ? "Échec fictif : la source de test est indisponible." : status === "interrupted" ? "Exécution fictive interrompue." : status === "cancelled" ? "Annulée avant son lancement." : null,
+      dispatchedAt: at, delivery: { chatId: "dm-principal", messageId: `canevas-message-${i + 1}` },
+      result: status === "succeeded" ? `Résultat fictif ${i + 1} : aucun service externe ni donnée réelle n’a été consulté.` : null,
+      createdAt: at, startedAt: status === "cancelled" ? null : new Date(Date.parse(at) + 1000).toISOString(),
+      finishedAt: new Date(Date.parse(at) + 4000).toISOString(), updatedAt: new Date(Date.parse(at) + 4000).toISOString(),
+    };
+  });
+  const store = new RoutineStore(path.join(root, "routines"));
+  store.load();
+  store.transaction((data) => { data.routines.push(...routines); data.runs.push(...runs); });
+  // Les liens historiques mènent à de vrais messages de ce profil fictif.
+  const conversationFile = path.join(root, "conversations.json");
+  const data = JSON.parse(fs.readFileSync(conversationFile, "utf8"));
+  data.chats = ["principal", ...Object.keys(fichiersAgents), "absent-fictif"].map((id) => ({
+    id: `dm-${id}`, kind: "direct", projectId: null, title: "", roleIds: [id], updatedAt: iso(), sessions: {}, luJusqua: null,
+  }));
+  data.messages = runs.map((run) => ({
+    id: run.delivery.messageId, chatId: run.delivery.chatId, author: { kind: "role", roleId: "principal" },
+    createdAt: run.finishedAt, parts: [{ type: "text", text: run.result ?? run.error }],
+    statut: run.status === "succeeded" ? "fait" : "erreur", routineRun: run.id,
+  }));
+  fs.writeFileSync(conversationFile, JSON.stringify(data));
+  assert.equal(store.history("canevas-point", 100).length, 55);
+  assert.equal(store.routines.length, 7);
+  console.log(`Cas canevas préparé avant le moteur : ${routines.map((r) => r.id).join(", ")}.`);
+  console.log("Agent actif sans routine : sans-routine. Historique canevas-point : 55 lignes et messages fictifs liés.");
+}
+
 function streamAgent(client, requestId, options) {
   if (typeof requestId !== "string" || !options || typeof options.prompt !== "string") throw new Error("Demande fictive invalide.");
   const observer = options.routineRun
@@ -162,6 +237,10 @@ function listing() {
 }
 
 async function invoke(client, name, args) {
+  if (moteurArrete && name.startsWith("routines:")) {
+    if (name === "routines:etat") return ok({ actif: false, erreur: "Moteur arrêté dans le profil fictif. Aucun départ n’est possible." });
+    return fail("Le moteur du profil fictif est arrêté.", "indisponible");
+  }
   if (handlers.has(name)) return handlers.get(name)({ sender: client }, ...args);
   try {
     switch (name) {
@@ -394,15 +473,42 @@ async function verifier(base) {
 }
 
 async function main() {
+  if (cas === "canevas") preparerCanevas();
   chargerAdaptateur();
-  await api.demarrerRoutines();
+  if (!moteurArrete) await api.demarrerRoutines();
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
   const base = `http://127.0.0.1:${server.address().port}`;
   console.log(`PROFIL FICTIF : ${base}/routines?vue=routines`);
   console.log(`Données temporaires : ${root}`);
   console.log(`Export servi : ${outDir}`);
+  if (moteurArrete) console.log("Moteur arrêté simulé : etat.actif=false ; les autres IPC routines refusent les gestes.");
   console.log("Aucun fournisseur réel. Modes dans la consigne : [permission], [long], [erreur], [echec-declare], [rien].");
-  if (selfTest) { try { await verifier(base); } finally { await shutdown(); fs.rmSync(root, { recursive: true, force: true }); } }
+  if (selfTest) {
+    try {
+      if (cas || moteurArrete) {
+        const client = new EventEmitter();
+        const etat = await invoke(client, "routines:etat", []);
+        assert.equal(etat.ok, true);
+        assert.equal(etat.data.actif, !moteurArrete);
+        if (moteurArrete) {
+          assert.match(etat.data.erreur, /Moteur arrêté/);
+          assert.equal((await invoke(client, "routines:creer", [{}])).code, "indisponible");
+        }
+        if (cas === "canevas") {
+          const store = lireStore();
+          assert.equal(store.routines.length, 7);
+          assert.equal(store.runs.length, 55);
+          assert.equal(store.routines.find((r) => r.id === "canevas-relais").active, false);
+          assert.equal((await conversations.readConversations()).messages.length, 55);
+          if (!moteurArrete) {
+            assert.equal((await invoke(client, "routines:historique", ["canevas-point", 51])).data.length, 51);
+            assert.equal((await invoke(client, "routines:executer", ["canevas-relais"])).code, "relais-incompatibles");
+          }
+        }
+        console.log("SELF-TEST CAS OK : seed validé avant moteur, historique et conversations fictifs, relais bloqués, état du moteur conforme.");
+      } else await verifier(base);
+    } finally { await shutdown(); fs.rmSync(root, { recursive: true, force: true }); }
+  }
   else for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => { void shutdown().then(() => process.exit(0)); });
 }
 
