@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from "next/navigation";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { PresenceKlyra } from "@/components/planning/PresenceKlyra";
 import { getBridge, type KlyraBridge } from "@/lib/bridge";
 import { ecartProfils, identiteValable, initialeDe } from "@/lib/identite";
 import { useWorkspace } from "@/lib/workspace";
@@ -139,6 +140,10 @@ const MESSAGES: Record<string, string> = {
   secret_detecte: "La fiche contient ce qui ressemble à une clé ou un mot de passe : retire-le avant de partager.",
   chemin_personnel: "La fiche contient encore un chemin de ton ordinateur : rouvre l’aperçu avant de partager.",
   dependance_invalide: "Les dossiers à configurer ne correspondent pas à la fiche : rouvre l’aperçu avant de partager.",
+  reserve_au_createur: "Seul qui a créé le rappel peut changer ça.",
+  rappel_invalide: "Ce rappel n’est pas valable : vérifie le titre, la date et la catégorie.",
+  membre_inconnu: "Cette personne n’est plus dans l’équipe.",
+  lot_trop_grand: "Trop de rappels d’un coup : 100 au plus.",
 };
 
 /** Le code d'erreur renvoyé par une fonction Convex (`convex/model/valeurs.ts`), ou null. */
@@ -342,7 +347,12 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
     }),
     [etat, moi, demande, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil],
   );
-  return <CompteContext.Provider value={valeur}>{children}</CompteContext.Provider>;
+  return (
+    <CompteContext.Provider value={valeur}>
+      <PresenceKlyra actif={etat === "connecte"} />
+      {children}
+    </CompteContext.Provider>
+  );
 }
 
 export function useCompte(): CompteApi {

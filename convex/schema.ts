@@ -84,6 +84,48 @@ export default defineSchema({
     .index("by_retireeLe_and_majLe", ["retireeLe", "majLe"])
     .index("by_auteurId_and_slug", ["auteurId", "slug"]),
 
+  /**
+   * Un rappel partagé (cf. `docs/CONVEX-PLAN.md`, § 2). Visible par qui l'a créé et par
+   * la personne à qui il est assigné. `liste` est la catégorie de l'assigné, sur son
+   * ordinateur ; null : la colonne « Assignés par l'équipe ».
+   */
+  rappels: defineTable({
+    titre: v.string(),
+    notes: v.string(),
+    /** « 2026-10-31 », ou null : pas de date. Le jour est celui choisi, pas un calcul de fuseau. */
+    jour: v.union(v.string(), v.null()),
+    /** « 14:00 », ou null. null avec un jour : journée entière. */
+    heure: v.union(v.string(), v.null()),
+    /** Dernier jour d'une période, strictement après `jour`, ou null. */
+    fin: v.union(v.string(), v.null()),
+    jourEntier: v.boolean(),
+    /** Instant (ms) où le rappel passe en retard. null : pas d'échéance. */
+    echeance: v.union(v.number(), v.null()),
+    creePar: v.id("membres"),
+    assigneA: v.id("membres"),
+    statut: v.union(v.literal("a_faire"), v.literal("fait"), v.literal("en_retard")),
+    faitLe: v.union(v.number(), v.null()),
+    priorite: v.union(v.literal(0), v.literal(1), v.literal(2), v.literal(3)),
+    /** La fonction qui le passera en retard, annulée si l'échéance change. */
+    planificationId: v.union(v.id("_scheduled_functions"), v.null()),
+    /** L'identifiant du rappel sur l'ordinateur, pour un import sans doublon. */
+    origineLocale: v.union(v.string(), v.null()),
+    liste: v.union(v.string(), v.null()),
+  })
+    .index("by_assigneA_and_statut_and_echeance", ["assigneA", "statut", "echeance"])
+    .index("by_creePar_and_echeance", ["creePar", "echeance"])
+    .index("by_assigneA_and_origineLocale", ["assigneA", "origineLocale"]),
+
+  /** Écrite dans la même mutation que le changement, ou par la fonction planifiée à l'échéance. */
+  notifications: defineTable({
+    destinataire: v.id("membres"),
+    type: v.union(v.literal("assigne"), v.literal("echeance"), v.literal("fait"), v.literal("modifie")),
+    rappelId: v.id("rappels"),
+    lue: v.boolean(),
+  })
+    .index("by_destinataire_and_lue", ["destinataire", "lue"])
+    .index("by_rappelId", ["rappelId"]),
+
   /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
   courrielsSimules: defineTable({
     a: v.string(),

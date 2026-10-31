@@ -58,6 +58,7 @@
   "dependencies": {
     "@auth/core": "^0.41.3",
     "@convex-dev/auth": "0.0.96",
+    "@convex-dev/presence": "^0.4.0",
     "@postshiba/convex": "0.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -1,15 +1,17 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
+import { useCompte } from "@/lib/compte";
 import { aujourdhui, echeance, enRetard, libellePeriode } from "@/lib/dates";
 import { jouer } from "@/lib/sons/sons";
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte, type Tache } from "@/types/domain";
 import { MenuReporter } from "./MenuReporter";
+import { LignesCompte, RappelsCompte, rappelsDansColonne } from "./RappelsCompte";
 
 /** Annoncer un report au lecteur d'écran (la région `aria-live` de `Rappels`). */
 const AnnonceRappels = createContext<(texte: string) => void>(() => {});
@@ -378,7 +380,7 @@ function ReglageCategorie({ categorie, onFermer }: { categorie: Categorie; onFer
 
 /* ─── Une colonne ──────────────────────────────────────────────── */
 
-function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; taches: Tache[]; voirFaits: boolean }) {
+function Colonne({ categorie, taches, voirFaits, avant }: { categorie: Categorie; taches: Tache[]; voirFaits: boolean; avant?: ReactNode }) {
   const { enregistrerTache } = useWorkspace();
   const [reglage, setReglage] = useState(false);
   const [titre, setTitre] = useState("");
@@ -425,6 +427,7 @@ function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; tache
       {reglage && <ReglageCategorie categorie={categorie} onFermer={() => setReglage(false)} />}
 
       <ul className="m-0 flex list-none flex-col p-0">
+        {avant}
         {aFaire.map((t) => (
           <LigneRappel key={t.id} tache={t} teinte={categorie.teinte} />
         ))}
@@ -479,26 +482,51 @@ function Colonne({ categorie, taches, voirFaits }: { categorie: Categorie; tache
 
 export function Rappels() {
   const { state, changerCategories } = useWorkspace();
+  const compte = useCompte();
+  const moi = compte.moi;
+  const connecte = compte.etat === "connecte" && moi !== null;
   /* Un rappel coché reste là, barré : il ne part qu'avec la poubelle. */
   const [voirFaits, setVoirFaits] = useState(true);
   const [annonce, setAnnonce] = useState("");
+  const [masques, setMasques] = useState<ReadonlySet<string>>(() => new Set());
+  const recevoirMasques = useCallback((ids: ReadonlySet<string>) => {
+    setMasques((avant) => (avant.size === ids.size && [...ids].every((id) => avant.has(id)) ? avant : ids));
+  }, []);
   const categories = state.categories;
   const ids = new Set(categories.map((c) => c.id));
-  const faits = state.taches.filter((t) => t.faite).length;
+  /* Importé dans le compte : on ne le montre plus ici. La copie locale reste. */
+  const taches = connecte ? state.taches.filter((t) => !masques.has(t.id)) : state.taches;
+  const faits = taches.filter((t) => t.faite).length;
 
   /* Un rappel sans catégorie connue va dans la première colonne. */
-  const deLaColonne = (c: Categorie, i: number) => state.taches.filter((t) => t.liste === c.id || (i === 0 && !ids.has(t.liste)));
+  const deLaColonne = (c: Categorie, i: number) => taches.filter((t) => t.liste === c.id || (i === 0 && !ids.has(t.liste)));
 
   const nouvelleCategorie = () => {
     const teinte = ROLE_TEINTES[categories.length % ROLE_TEINTES.length];
     changerCategories([...categories, { id: crypto.randomUUID(), nom: "Nouvelle catégorie", teinte, icone: "list" }]);
   };
 
+  const colonnes = (avant?: (categorie: Categorie, index: number) => ReactNode) => (
+    <AnnonceRappels.Provider value={setAnnonce}>
+      {categories.map((c, i) => (
+        <Colonne key={c.id} categorie={c} taches={deLaColonne(c, i)} voirFaits={voirFaits} avant={avant?.(c, i)} />
+      ))}
+      <button
+        type="button"
+        onClick={nouvelleCategorie}
+        className="flex h-[120px] w-[200px] shrink-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-bordure-forte bg-transparent text-ui-s text-texte-secondaire hover:border-bleu-k1-500 hover:text-texte-principal"
+      >
+        <Icon name="plus-01" size={20} />
+        Nouvelle catégorie
+      </button>
+    </AnnonceRappels.Provider>
+  );
+
   return (
     <section aria-label="Rappels" className="flex flex-col gap-3">
       <header className="flex items-baseline gap-3">
         <h2 className="m-0 text-h4 leading-[1.1] font-semibold tracking-[-0.03em] text-texte-principal">Rappels</h2>
-        <span className="text-ui-s text-texte-tertiaire">{state.taches.filter((t) => !t.faite).length} à faire</span>
+        {!connecte && <span className="text-ui-s text-texte-tertiaire">{taches.filter((t) => !t.faite).length} à faire</span>}
         {faits > 0 && (
           <button
             type="button"
@@ -510,22 +538,26 @@ export function Rappels() {
         )}
       </header>
 
-      {/* Les catégories côte à côte ; on fait défiler s'il y en a beaucoup. */}
-      <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-2">
-        <AnnonceRappels.Provider value={setAnnonce}>
-          {categories.map((c, i) => (
-            <Colonne key={c.id} categorie={c} taches={deLaColonne(c, i)} voirFaits={voirFaits} />
-          ))}
-        </AnnonceRappels.Provider>
-        <button
-          type="button"
-          onClick={nouvelleCategorie}
-          className="flex h-[120px] w-[200px] shrink-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-bordure-forte bg-transparent text-ui-s text-texte-secondaire hover:border-bleu-k1-500 hover:text-texte-principal"
+      {connecte && moi ? (
+        <RappelsCompte
+          categories={categories}
+          idsCategories={ids}
+          tachesLocales={state.taches}
+          voirFaits={voirFaits}
+          onMasques={recevoirMasques}
         >
-          <Icon name="plus-01" size={20} />
-          Nouvelle catégorie
-        </button>
-      </div>
+          {(mes) => colonnes((categorie, index) => (
+            <LignesCompte
+              rappels={rappelsDansColonne(mes, moi._id, categorie.id, index, ids)}
+              moiId={moi._id}
+              categories={categories}
+              voirFaits={voirFaits}
+            />
+          ))}
+        </RappelsCompte>
+      ) : (
+        <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-2">{colonnes()}</div>
+      )}
       <p aria-live="polite" className="sr-only">
         {annonce}
       </p>

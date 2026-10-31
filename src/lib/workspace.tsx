@@ -506,7 +506,7 @@ function chatTitle(text: string): string {
  * rendez-vous, accord attendu). Le son : celui du système si le réglage
  * « Son » est actif, sinon celui de KLYRA ; jamais les deux.
  */
-function notifierRappel(titre: string, corps: string, encoreValide?: () => boolean) {
+export function notifierRappel(titre: string, corps: string, encoreValide?: () => boolean) {
   void reglagesActuels().then(({ notifications: n }) => {
     if (encoreValide && !encoreValide()) return;
     const systeme = typeof Notification !== "undefined";

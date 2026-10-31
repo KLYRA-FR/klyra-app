@@ -28,7 +28,12 @@ export type CodeErreur =
   | "cle_non_partagee"
   | "secret_detecte"
   | "chemin_personnel"
-  | "dependance_invalide";
+  | "dependance_invalide"
+  // Rappels assignés (cf. `convex/rappels.ts`).
+  | "reserve_au_createur"
+  | "rappel_invalide"
+  | "membre_inconnu"
+  | "lot_trop_grand";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

@@ -17,7 +17,7 @@ const postshiba = configuration ? new PostShiba(components.postshiba, { ...confi
  * Sans PostShiba, un déploiement de développement peut garder les e-mails dans
  * `courrielsSimules` (KLYRA_COURRIEL_SIMULE=1). Sinon, l'envoi échoue : jamais de lien perdu sans le dire.
  */
-async function envoyer(ctx: MutationCtx, de: string, a: string, courriel: Courriel): Promise<void> {
+export async function envoyerCourriel(ctx: MutationCtx, de: string, a: string, courriel: Courriel): Promise<void> {
   if (env.KLYRA_COURRIEL_SIMULE === "1") {
     await ctx.db.insert("courrielsSimules", { a, sujet: courriel.sujet, texte: courriel.texte });
     return;
@@ -33,7 +33,7 @@ export const envoyerLienConnexion = internalMutation({
   args: { a: v.string(), lien: v.string() },
   returns: v.null(),
   handler: async (ctx, { a, lien }) => {
-    await envoyer(ctx, EXPEDITEUR_CONNEXION, a, courrielConnexion(lien));
+    await envoyerCourriel(ctx, EXPEDITEUR_CONNEXION, a, courrielConnexion(lien));
     return null;
   },
 });

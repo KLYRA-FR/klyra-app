@@ -19,7 +19,10 @@ import type * as model_connexion from "../model/connexion.js";
 import type * as model_contenus from "../model/contenus.js";
 import type * as model_definitions from "../model/definitions.js";
 import type * as model_limites from "../model/limites.js";
+import type * as model_rappels from "../model/rappels.js";
 import type * as model_valeurs from "../model/valeurs.js";
+import type * as presence from "../presence.js";
+import type * as rappels from "../rappels.js";
 
 import type {
   ApiFromModules,
@@ -39,7 +42,10 @@ declare const fullApi: ApiFromModules<{
   "model/contenus": typeof model_contenus;
   "model/definitions": typeof model_definitions;
   "model/limites": typeof model_limites;
+  "model/rappels": typeof model_rappels;
   "model/valeurs": typeof model_valeurs;
+  presence: typeof presence;
+  rappels: typeof rappels;
 }>;
 
 /**
@@ -70,4 +76,5 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   postshiba: import("@postshiba/convex/_generated/component.js").ComponentApi<"postshiba">;
+  presence: import("@convex-dev/presence/_generated/component.js").ComponentApi<"presence">;
 };

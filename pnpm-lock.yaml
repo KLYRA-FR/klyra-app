@@ -19,6 +19,9 @@ importers:
       '@convex-dev/auth':
         specifier: 0.0.96
         version: 0.0.96(@auth/core@0.41.3)(convex@1.48.0(react@19.3.0))(react@19.3.0)
+      '@convex-dev/presence':
+        specifier: ^0.4.0
+        version: 0.4.0(convex@1.48.0(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@postshiba/convex':
         specifier: 0.1.0
         version: 0.1.0(convex-helpers@0.1.131(@standard-schema/spec@1.1.0)(convex@1.48.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)(zod@4.6.7))(convex@1.48.0(react@19.3.0))(react@19.3.0)
@@ -202,6 +205,20 @@ packages:
     peerDependencies:
       convex: ^1.36.1
       react: ^18.3.1 || ^19.0.0
+
+  '@convex-dev/presence@0.4.0':
+    resolution: {integrity: sha512-T1f2aHyS2D2dxvMnvY+qSJBIRG0W7ph8+mgOvZif52JLlLNscCHTangAgNWR4VLYGhXFFDxwSSpdh7vxzA/hPQ==}
+    peerDependencies:
+      convex: ^1.36.1
+      expo-crypto: '>=14.1.0'
+      react: ~18.3.1 || ^19.0.0
+      react-dom: ~18.3.1 || ^19.0.0
+      react-native: '>=0.79.0'
+    peerDependenciesMeta:
+      expo-crypto:
+        optional: true
+      react-native:
+        optional: true
 
   '@convex-dev/rate-limiter@0.3.2':
     resolution: {integrity: sha512-+oBPsBfFbzdxiF/9XaaTQmVnvDlvEfg/c69/v8LxTbw4VLuiflIKlfnPQL8OS0azXQQ11hcPWHmU8ytFmHKDXA==}
@@ -3811,6 +3828,13 @@ snapshots:
     dependencies:
       convex: 1.48.0(react@19.3.0)
       react: 19.3.0
+
+  '@convex-dev/presence@0.4.0(convex@1.48.0(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@convex-dev/batch-worker': 0.2.2(convex@1.48.0(react@19.3.0))(react@19.3.0)
+      convex: 1.48.0(react@19.3.0)
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
 
   '@convex-dev/rate-limiter@0.3.2(convex@1.48.0(react@19.3.0))(react@19.3.0)':
     dependencies:
