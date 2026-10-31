@@ -10,7 +10,8 @@ import { CHAMP } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { cn } from "@/lib/cn";
 import { aujourdhui, cleJour, depuisCle, grilleMois } from "@/lib/dates";
-import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
+import { rendezVousEntre } from "@/lib/agenda-equipe";
+import { FenetreEvenementCompte } from "./AgendaCompte";
 import { joursSpeciauxEntre, type GenreJour, type JourSpecial } from "@/lib/jours-speciaux";
 import { usePassagesRoutines } from "@/lib/routines-passages";
 import { useProjects, useWorkspace } from "@/lib/workspace";
@@ -70,15 +71,23 @@ interface Passage {
   heure: string;
 }
 
-function useContenu(debut: Date, fin: Date) {
+function lectureSeule(e: Evenement): boolean {
+  return e.compteId ? e.modifiable === false : Boolean(e.equipe);
+}
+
+function useContenu(debut: Date, fin: Date, filtre: string | null) {
   const { state } = useWorkspace();
   const passagesRoutines = usePassagesRoutines(debut, fin);
+  const comptePret = state.profilCompte !== null && state.evenementsCompte !== null;
   return useMemo(() => {
     const evenements = new Map<string, Evenement[]>();
     const taches = new Map<string, Tache[]>();
     const passages = new Map<string, Passage[]>();
     const pousser = <T,>(m: Map<string, T[]>, cle: string, v: T) => m.set(cle, [...(m.get(cle) ?? []), v]);
-    for (const e of [...state.evenements, ...evenementsEquipeEntre(debut, fin)]) pousser(evenements, e.date, e);
+    for (const e of [...state.evenements, ...rendezVousEntre(comptePret, state.evenementsCompte, debut, fin)]) {
+      if (filtre && e.organisateur && e.organisateur !== filtre) continue;
+      pousser(evenements, e.date, e);
+    }
     for (const t of state.taches) {
       if (!t.date) continue;
       /* Un rappel sur plusieurs jours apparaît chaque jour, du premier au dernier. */
@@ -91,7 +100,7 @@ function useContenu(debut: Date, fin: Date) {
       pousser(passages, cleJour(date), { routine, heure: fmtHeure.format(date) });
     }
     return { evenements, taches, passages, speciaux: joursSpeciauxEntre(debut, fin) };
-  }, [state.evenements, state.taches, passagesRoutines, debut, fin]);
+  }, [state.evenements, state.evenementsCompte, state.taches, passagesRoutines, debut, fin, filtre, comptePret]);
 }
 
 /* ─── Les petites formes du calendrier, comme dans Calendrier d'Apple ── */
@@ -113,8 +122,9 @@ function PastilleJour({ jour }: { jour: JourSpecial }) {
   );
 }
 
-/** Un événement sur toute la journée : pastille bleue claire. */
-function PastilleEvenement({ titre, onClick }: { titre: string; onClick?: () => void }) {
+/** Un événement sur toute la journée : pastille de la couleur de l'organisateur, bleue sinon. */
+function PastilleEvenement({ titre, teinte, onClick }: { titre: string; teinte?: RoleTeinte; onClick?: () => void }) {
+  const p = teinte ? AGENT_PASTELS[teinte] : null;
   return (
     <span
       role={onClick ? "button" : undefined}
@@ -126,7 +136,8 @@ function PastilleEvenement({ titre, onClick }: { titre: string; onClick?: () => 
             }
           : undefined
       }
-      className="flex h-5 min-w-0 shrink-0 items-center rounded-full bg-fond-teinte-bleue px-2 text-ui-2xs font-medium text-texte-accent"
+      className={cn("flex h-5 min-w-0 shrink-0 items-center rounded-full px-2 text-ui-2xs font-medium", p ? "" : "bg-fond-teinte-bleue text-texte-accent")}
+      style={p ? { background: p.bas, color: p.encre } : undefined}
     >
       <span className="truncate">{titre}</span>
     </span>
@@ -137,7 +148,7 @@ type Genre = "e" | "t" | "tf" | "r";
 
 /** Devant un élément à heure : un trait pour un événement, un rond pour un rappel (plein s'il est fait). */
 function Repere({ type, couleur }: { type: Genre; couleur?: string }) {
-  if (type === "e") return <span aria-hidden="true" className="h-3.5 w-[3px] shrink-0 rounded-full bg-bleu-k1-500" />;
+  if (type === "e") return <span aria-hidden="true" className={cn("h-3.5 w-[3px] shrink-0 rounded-full", couleur ? "" : "bg-bleu-k1-500")} style={couleur ? { background: couleur } : undefined} />;
   if (type === "r") return <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full border border-dashed border-bordure-forte" />;
   return (
     <span
@@ -368,10 +379,12 @@ function useSurvolCreneau(nbJours: number) {
 
 function GrilleHeures({
   jours,
+  filtre,
   onCreer,
   onOuvrir,
 }: {
   jours: Date[];
+  filtre: string | null;
   onCreer: (cle: string, heure: string) => void;
   onOuvrir: (e: Evenement) => void;
 }) {
@@ -383,7 +396,7 @@ function GrilleHeures({
     d.setDate(d.getDate() + 1);
     return d;
   }, [jours]);
-  const { evenements, taches, passages, speciaux } = useContenu(debut, fin);
+  const { evenements, taches, passages, speciaux } = useContenu(debut, fin, filtre);
   const zone = useRef<HTMLDivElement>(null);
   const auj = aujourdhui();
   const [minute, setMinute] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
@@ -446,7 +459,7 @@ function GrilleHeures({
               {(evenements.get(cle) ?? [])
                 .filter((e) => !e.debut)
                 .map((e) => (
-                  <PastilleEvenement key={e.id} titre={e.titre} onClick={() => onOuvrir(e)} />
+                  <PastilleEvenement key={e.id} titre={e.titre} teinte={e.teinte} onClick={lectureSeule(e) ? undefined : () => onOuvrir(e)} />
                 ))}
               {(taches.get(cle) ?? [])
                 .filter((t) => !t.heure)
@@ -538,25 +551,29 @@ function GrilleHeures({
                   /* Comme dans Calendrier : un bloc teinté, un trait à gauche ; passé, il se grise en hachures. */
                   const passe = cle < auj || (cle === auj && fin <= minute);
                   const hauteur = Math.max(22, ((fin - debut) / 60) * HEURE - 2);
+                  const pastel = e.teinte ? AGENT_PASTELS[e.teinte] : null;
+                  const fixe = lectureSeule(e);
                   return (
                     <button
                       key={e.id}
                       type="button"
-                      disabled={e.equipe}
-                      title={e.equipe ? `${e.titre} · ${e.notes} · chaque semaine` : undefined}
+                      disabled={fixe}
+                      title={fixe ? `${e.titre}${e.notes ? ` · ${e.notes}` : ""}` : undefined}
                       onClick={(ev) => {
                         ev.stopPropagation();
                         onOuvrir(e);
                       }}
                       className={cn(
                         "absolute flex cursor-pointer flex-col gap-0.5 overflow-hidden rounded-sm border-0 py-1 pr-1.5 pl-3 text-left transition-[filter] duration-[120ms] hover:brightness-[0.97] disabled:cursor-default",
-                        passe ? "text-texte-tertiaire" : "bg-fond-teinte-bleue text-texte-accent",
+                        passe ? "text-texte-tertiaire" : pastel ? "" : "bg-fond-teinte-bleue text-texte-accent",
                       )}
                       style={{
                         top: (debut / 60) * HEURE + 1,
                         height: hauteur,
                         left: `calc(${(colonne / n) * 100}% + 2px)`,
                         width: `calc(${100 / n}% - 4px)`,
+                        background: !passe && pastel ? pastel.bas : undefined,
+                        color: !passe && pastel ? pastel.encre : undefined,
                         backgroundImage: passe
                           ? "repeating-linear-gradient(135deg, var(--color-fond-surface-grise) 0 6px, var(--color-fond-page) 6px 12px)"
                           : undefined,
@@ -566,8 +583,9 @@ function GrilleHeures({
                         aria-hidden="true"
                         className={cn(
                           "absolute top-1 bottom-1 left-1 w-[3px] rounded-full",
-                          passe ? "bg-gris-k1-100" : e.equipe ? "bg-bleu-k2-500" : "bg-bleu-k1-500",
+                          passe ? "bg-gris-k1-100" : pastel ? "" : e.equipe ? "bg-bleu-k2-500" : "bg-bleu-k1-500",
                         )}
+                        style={!passe && pastel ? { background: pastel.accent } : undefined}
                       />
                       <span className="flex min-w-0 items-start gap-1">
                         <span className="min-w-0 flex-1 truncate text-ui-2xs leading-4 font-semibold">{e.titre}</span>
@@ -640,7 +658,7 @@ function GrilleHeures({
 
 /* ─── Mois ─────────────────────────────────────────────────────── */
 
-function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
+function Mois({ cle, filtre, onJour }: { cle: string; filtre: string | null; onJour: (cle: string) => void }) {
   const ref = useMemo(() => depuisCle(cle), [cle]);
   const jours = useMemo(() => grilleMois(ref.getFullYear(), ref.getMonth()), [ref]);
   const fin = useMemo(() => {
@@ -648,7 +666,7 @@ function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
     d.setDate(d.getDate() + 1);
     return d;
   }, [jours]);
-  const { evenements, taches, passages, speciaux } = useContenu(jours[0], fin);
+  const { evenements, taches, passages, speciaux } = useContenu(jours[0], fin, filtre);
   const { state } = useWorkspace();
   const couleurDe = (t: Tache) => {
     const teinte = (state.categories.find((c) => c.id === t.liste) ?? state.categories[0])?.teinte;
@@ -672,7 +690,7 @@ function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
         const items = [
           ...(evenements.get(c) ?? [])
             .filter((e) => e.debut)
-            .map((e) => ({ id: e.id, texte: e.titre, heure: e.debut, type: "e" as Genre, couleur: undefined as string | undefined })),
+            .map((e) => ({ id: e.id, texte: e.titre, heure: e.debut, type: "e" as Genre, couleur: e.teinte ? AGENT_PASTELS[e.teinte].accent : undefined })),
           ...(taches.get(c) ?? []).map((t) => ({
             id: t.id,
             texte: t.titre,
@@ -718,7 +736,7 @@ function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
               <PastilleJour key={j.nom} jour={j} />
             ))}
             {journee.map((e) => (
-              <PastilleEvenement key={e.id} titre={e.titre} />
+              <PastilleEvenement key={e.id} titre={e.titre} teinte={e.teinte} />
             ))}
             {items.slice(0, reste).map((it) => (
               <span key={it.id} className="flex min-w-0 items-center gap-1.5 px-0.5 text-ui-2xs leading-5">
@@ -738,9 +756,21 @@ function Mois({ cle, onJour }: { cle: string; onJour: (cle: string) => void }) {
 /* ─── Le calendrier ────────────────────────────────────────────── */
 
 export function Agenda() {
+  const { state } = useWorkspace();
   const [vue, setVue] = useState<Vue>("semaine");
   const [cle, setCle] = useState(aujourdhui());
   const [edition, setEdition] = useState<Evenement | null>(null);
+  const [editionCompte, setEditionCompte] = useState(false);
+  const [filtre, setFiltre] = useState<string | null>(null);
+  const connecte = state.profilCompte !== null;
+  const personnes = useMemo(() => {
+    const vus = new Map<string, { id: string; nom: string; teinte: RoleTeinte }>();
+    for (const e of state.evenementsCompte ?? []) {
+      if (!e.organisateur || vus.has(e.organisateur)) continue;
+      vus.set(e.organisateur, { id: e.organisateur, nom: e.organisateurNom ?? "Quelqu’un", teinte: e.teinte ?? "bleu-k1" });
+    }
+    return [...vus.values()].sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+  }, [state.evenementsCompte]);
 
   const jours = useMemo(() => {
     if (vue === "jour") return [depuisCle(cle)];
@@ -753,7 +783,8 @@ export function Agenda() {
       ? capitaliser(fmtJour.format(depuisCle(cle)))
       : capitaliser(fmtMois.format(vue === "mois" ? depuisCle(cle) : jours[0]));
 
-  const creer = (date: string, debut: string | null) =>
+  const creer = (date: string, debut: string | null) => {
+    setEditionCompte(connecte);
     setEdition({
       id: crypto.randomUUID(),
       titre: "",
@@ -764,6 +795,12 @@ export function Agenda() {
       projectId: null,
       notifie: false,
     });
+  };
+  const ouvrir = (e: Evenement) => {
+    if (lectureSeule(e)) return;
+    setEditionCompte(Boolean(e.compteId));
+    setEdition(e);
+  };
 
   return (
     <section aria-label="Calendrier" className="flex flex-col gap-3">
@@ -817,19 +854,56 @@ export function Agenda() {
         </Bouton>
       </header>
 
+      {personnes.length > 0 && (
+        <div role="group" aria-label="Filtrer par organisateur" className="flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            aria-pressed={filtre === null}
+            onClick={() => setFiltre(null)}
+            className={cn(
+              "h-7 cursor-pointer rounded-full border-0 px-2.5 text-ui-xs font-medium",
+              filtre === null ? "bg-fond-surface-grise text-texte-principal" : "bg-transparent text-texte-secondaire",
+            )}
+          >
+            Tous
+          </button>
+          {personnes.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              aria-pressed={filtre === p.id}
+              onClick={() => setFiltre(filtre === p.id ? null : p.id)}
+              className={cn(
+                "flex h-7 cursor-pointer items-center gap-1.5 rounded-full border-0 px-2.5 text-ui-xs font-medium",
+                filtre === p.id ? "bg-fond-surface-grise text-texte-principal" : "bg-transparent text-texte-secondaire",
+              )}
+            >
+              <span aria-hidden="true" className="size-2 rounded-full" style={{ background: AGENT_PASTELS[p.teinte].accent }} />
+              {p.nom}
+            </button>
+          ))}
+        </div>
+      )}
+
       {vue === "mois" ? (
         <Mois
           cle={cle}
+          filtre={filtre}
           onJour={(c) => {
             setCle(c);
             setVue("jour");
           }}
         />
       ) : (
-        <GrilleHeures jours={jours} onCreer={creer} onOuvrir={setEdition} />
+        <GrilleHeures jours={jours} filtre={filtre} onCreer={creer} onOuvrir={ouvrir} />
       )}
 
-      {edition && <FenetreEvenement key={edition.id} initial={edition} onFermer={() => setEdition(null)} />}
+      {edition && editionCompte && connecte && (
+        <FenetreEvenementCompte key={edition.id} initial={edition} onFermer={() => setEdition(null)} />
+      )}
+      {edition && !editionCompte && (
+        <FenetreEvenement key={edition.id} initial={edition} onFermer={() => setEdition(null)} />
+      )}
     </section>
   );
 }

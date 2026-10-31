@@ -33,8 +33,10 @@ export function planningPourAgents(donnees: {
   workflows: Workflow[];
   /** Le prénom de la personne, pour le titre. */
   personne?: string;
+  /** Connecté : les rendez-vous du compte sont déjà dans `evenements`. On ne rajoute pas le Weekly codé en dur. */
+  sansEquipe?: boolean;
 }): string {
-  const { evenements, taches, categories, routines, projects, roles, chats, artefacts, workflows, personne } = donnees;
+  const { evenements, taches, categories, routines, projects, roles, chats, artefacts, workflows, personne, sansEquipe } = donnees;
   const maintenant = new Date();
   const debut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate() - JOURS_AVANT);
   const fin = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate() + JOURS_APRES);
@@ -42,9 +44,9 @@ export function planningPourAgents(donnees: {
   const agent = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
 
   /* Calendrier : tes rendez-vous (les hebdomadaires répétés) et ceux de l'équipe, jour par jour. */
-  const occurrences: Evenement[] = [...evenementsEquipeEntre(debut, fin)];
+  const occurrences: Evenement[] = sansEquipe ? [] : [...evenementsEquipeEntre(debut, fin)];
   for (const e of evenements) {
-    if (!e.repete) {
+    if (!e.repete || e.occurrence) {
       if (e.date >= cleJour(debut) && e.date < cleJour(fin)) occurrences.push(e);
       continue;
     }
