@@ -36,39 +36,26 @@ const IGNORES = new Set([
   "coverage",
   ".DS_Store",
 ]);
-const PROFONDEUR_MAX = 6;
-const NOEUDS_MAX = 4000;
-
 function absolu(dossier: string): string {
   return dossier.startsWith("~") ? path.join(os.homedir(), dossier.slice(1)) : dossier;
 }
 
-/** L'arborescence d'un dossier, dossiers d'abord, sans les dossiers lourds. */
-export async function arbreDossier(dossier: string): Promise<Noeud[]> {
+/**
+ * Un niveau de l'arborescence d'un projet (la racine, ou le dossier `relatif`),
+ * dossiers d'abord, sans les dossiers lourds. Tous les éléments du niveau sont
+ * rendus ; le contenu d'un dossier se lit quand on l'ouvre (pas de parcours en
+ * profondeur, qui coupait les derniers dossiers d'un gros projet).
+ */
+export async function arbreDossier(dossier: string, relatif = ""): Promise<Noeud[]> {
   const racine = absolu(dossier);
   if (!path.isAbsolute(racine)) throw new Error("Chemin de projet invalide.");
-  let compte = 0;
-
-  const lire = async (relatif: string, profondeur: number): Promise<Noeud[]> => {
-    if (profondeur > PROFONDEUR_MAX || compte > NOEUDS_MAX) return [];
-    const entrees = await readdir(path.join(racine, relatif), { withFileTypes: true }).catch(() => []);
-    const triees = entrees
-      .filter((e) => !IGNORES.has(e.name) && !e.name.startsWith("node_modules") && (e.isDirectory() || e.isFile()))
-      .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "fr"));
-    const noeuds: Noeud[] = [];
-    for (const e of triees) {
-      if (++compte > NOEUDS_MAX) break;
-      const chemin = relatif ? `${relatif}/${e.name}` : e.name;
-      noeuds.push(
-        e.isDirectory()
-          ? { name: e.name, path: chemin, kind: "dossier", children: await lire(chemin, profondeur + 1) }
-          : { name: e.name, path: chemin, kind: "fichier" },
-      );
-    }
-    return noeuds;
-  };
-
-  return lire("", 0);
+  const cible = relatif ? cheminDansProjet(dossier, relatif) : racine;
+  const base = relatif ? path.relative(path.resolve(racine), cible).split(path.sep).join("/") : "";
+  const entrees = await readdir(cible, { withFileTypes: true });
+  return entrees
+    .filter((e) => !IGNORES.has(e.name) && !e.name.startsWith("node_modules") && (e.isDirectory() || e.isFile()))
+    .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "fr"))
+    .map((e): Noeud => ({ name: e.name, path: base ? `${base}/${e.name}` : e.name, kind: e.isDirectory() ? "dossier" : "fichier" }));
 }
 
 /**

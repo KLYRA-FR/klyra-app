@@ -17,7 +17,7 @@ const { lireXls } = require("../dist-electron/apercu/xls.js");
 const { lireDocx } = require("../dist-electron/apercu/docx.js");
 const { formaterNombre } = require("../dist-electron/apercu/classeur.js");
 const { ErreurApercu } = require("../dist-electron/apercu/zip.js");
-const { lireFichier } = require("../dist-electron/projets.js");
+const { arbreDossier, lireFichier } = require("../dist-electron/projets.js");
 
 const FIXTURES = path.join(__dirname, "fixtures", "apercu");
 const echecs = [];
@@ -152,6 +152,39 @@ verifier(bombe.length < 200 * 1024 && refuse(() => lireXlsx(bombe), /lourd|abîm
   } finally {
     rmSync(projet, { recursive: true, force: true });
     rmSync(path.join(path.dirname(projet), "secret-hors-projet.md"), { force: true });
+  }
+
+  /* ─── Arbre du projet : tous les éléments de chaque niveau, même au-delà de 4 000 nœuds ─── */
+  const gros = mkdtempSync(path.join(os.tmpdir(), "klyra-arbre-"));
+  try {
+    // 00_CONTROL rempli de 60 dossiers × 80 fichiers (4 800 nœuds) : l'ancien parcours s'arrêtait avant 30_CLIENTS.
+    for (let d = 0; d < 60; d++) {
+      mkdirSync(path.join(gros, "00_CONTROL", `d${d}`), { recursive: true });
+      for (let f = 0; f < 80; f++) writeFileSync(path.join(gros, "00_CONTROL", `d${d}`, `f${f}.md`), "");
+    }
+    for (const d of ["10_PERSONAL", "20_COMPANY", "30_CLIENTS/CL-0001", "40_KNOWLEDGE", "50_AGENT-OS", "90_ARCHIVES", "node_modules/x", ".git", ".claude"]) mkdirSync(path.join(gros, d), { recursive: true });
+    writeFileSync(path.join(gros, "README.md"), "");
+    writeFileSync(path.join(gros, "30_CLIENTS", "CL-0001", "CLIENT.md"), "");
+    const racine = (await arbreDossier(gros)).map((n) => `${n.kind === "dossier" ? "/" : ""}${n.name}`);
+    verifier(
+      racine.join(" ") === "/.claude /00_CONTROL /10_PERSONAL /20_COMPANY /30_CLIENTS /40_KNOWLEDGE /50_AGENT-OS /90_ARCHIVES README.md",
+      `arbre de 4 800+ nœuds : la racine montre tout, sans node_modules ni .git (${racine.join(" ")})`,
+    );
+    verifier((await arbreDossier(gros, "00_CONTROL")).length === 60, "un dossier se lit à son ouverture : ses 60 sous-dossiers");
+    verifier((await arbreDossier(gros, "00_CONTROL/d59")).length === 80, "dernier sous-dossier : ses 80 fichiers");
+    const client = await arbreDossier(gros, "30_CLIENTS/CL-0001");
+    verifier(client.length === 1 && client[0].path === "30_CLIENTS/CL-0001/CLIENT.md" && client[0].kind === "fichier", "chemins relatifs à la racine du projet");
+    verifier(await arbreDossier(gros, "../").then(() => false, (e) => /pas dans le projet/.test(e.message)), "arbre : un dossier hors du projet est refusé");
+    // Le vrai DIGITAL-OS de ce serveur, en lecture seule, s'il est là.
+    const dos = "/var/lib/openbot/DIGITAL-OS";
+    const reel = await arbreDossier(dos).catch(() => null);
+    if (reel) {
+      const noms = reel.filter((n) => n.kind === "dossier").map((n) => n.name);
+      const attendus = [".claude", "00_CONTROL", "10_PERSONAL", "20_COMPANY", "30_CLIENTS", "40_KNOWLEDGE", "50_AGENT-OS", "90_ARCHIVES"];
+      verifier(attendus.every((a) => noms.includes(a)) && reel.some((n) => n.kind === "fichier"), `DIGITAL-OS : racine complète (${reel.map((n) => n.name).join(", ")})`);
+    }
+  } finally {
+    rmSync(gros, { recursive: true, force: true });
   }
 
   console.log(echecs.length ? `\n${echecs.length} échec(s)` : "\nTout est bon.");

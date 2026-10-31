@@ -96,6 +96,10 @@ const LANGAGES = {
 };
 for (const [chemin, contenu] of Object.entries(LANGAGES)) ecrire(chemin, contenu);
 ecrire("notes.txt", "Texte simple, export const sans couleur.\n");
+/* Plus de 4 000 nœuds dans un dossier placé avant les autres : l'ancien arbre coupait tout ce qui suivait. */
+for (let f = 0; f < 1200; f++) ecrire(`01_GROS/f${String(f).padStart(4, "0")}.md`, "");
+for (let d = 0; d < 40; d++) for (let f = 0; f < 80; f++) ecrire(`01_GROS/sous/d${d}/f${f}.md`, "");
+mkdirSync(path.join(PROJET, "node_modules", "paquet"), { recursive: true });
 ecrire("config.json", JSON.stringify({ nom: "klyra", valeurs: Array.from({ length: 30 }, (_, i) => ({ id: i, actif: i % 2 === 0 })) }));
 writeFileSync(path.join(TMP, "secret-hors-projet.md"), "SECRET HORS PROJET");
 
@@ -144,6 +148,16 @@ try {
 
   /* ─── Markdown, ouvert depuis l'arbre comme le ferait Corentin ─── */
   verifier(await app.quand(`[...document.querySelectorAll("button")].some((b) => b.innerText.trim() === "00_CONTROL")`), "l’arbre du projet s’affiche");
+  const ARBRE = `document.querySelector('aside[aria-label^="Projet"]')`;
+  const racine = await app.ev(`[...${ARBRE}.querySelectorAll(":scope ul > li > button")].map((b) => b.innerText.trim())`);
+  const attendue = ["00_CONTROL", "01_GROS", "30_CLIENTS", "assets", "config", "docs", "outils", "public", "src", "config.json", "notes.txt"];
+  verifier(q(racine) === q(attendue), `arbre de plus de 4 000 nœuds : la racine montre tout, sans node_modules (${racine.join(", ")})`);
+  await app.cliquer("01_GROS");
+  verifier(await app.quand(`${ARBRE}.innerText.includes("Liste coupée : 201 autres éléments non affichés")`), "dossier de 1 201 éléments : la coupure est dite à l’écran");
+  await app.cliquer("sous");
+  verifier(await app.quand(`[...${ARBRE}.querySelectorAll("button")].some((b) => b.innerText.trim() === "d39")`), "un sous-dossier se lit à son ouverture");
+  await capture("arbre-gros-dossier");
+  await app.cliquer("01_GROS");
   await app.cliquer("00_CONTROL");
   await app.quand(`[...document.querySelectorAll("button")].some((b) => b.innerText.trim() === "DASHBOARD.md")`);
   await app.cliquer("DASHBOARD.md");

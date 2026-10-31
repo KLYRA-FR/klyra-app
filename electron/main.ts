@@ -421,9 +421,9 @@ function registerBridge() {
     const choix = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     return choix.canceled ? null : (choix.filePaths[0] ?? null);
   });
-  handle("projets:arbre", (dossier: string) => {
+  handle("projets:arbre", (dossier: string, relatif?: string) => {
     if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
-    return arbreDossier(dossier);
+    return arbreDossier(dossier, typeof relatif === "string" ? relatif : "");
   });
   handle("projets:pages", (dossier: string) => {
     if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");

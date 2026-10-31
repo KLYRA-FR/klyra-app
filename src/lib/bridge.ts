@@ -270,7 +270,8 @@ export interface KlyraBridge {
     /** Sélecteur de dossier du système ; null si on annule. */
     choisirDossier: () => Promise<Reponse<string | null>>;
     /** Le contenu réel du dossier d'un projet. */
-    arbre: (dossier: string) => Promise<Reponse<FileNode[]>>;
+    /** Un niveau de l'arborescence : la racine, ou le dossier `relatif` du projet. */
+    arbre: (dossier: string, relatif?: string) => Promise<Reponse<FileNode[]>>;
     /** Les pages du site (routes Next), pour les suggestions de la barre d'adresse de l'aperçu. */
     pages?: (dossier: string) => Promise<Reponse<string[]>>;
     /** Le contenu d'un fichier du projet, pour la visionneuse. */
