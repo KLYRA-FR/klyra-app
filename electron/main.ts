@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -23,12 +24,15 @@ import {
   ajouter,
   changerOrigine,
   chargerMesAgents,
+  dossierAgents,
+  generation,
   garderDefinitionRecue,
   lireDefinitionRecue,
   mesAgents,
   MODELES_KLYRA,
   nommerAssistant,
   origineValide,
+  presentationActifs,
 } from "./mes-agents";
 import { readFile, writeFile } from "node:fs/promises";
 import {
@@ -106,7 +110,8 @@ import {
   vignetteArtefact,
 } from "./artefacts";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { garderJetonServeur, jetonServeur, oublierJetonServeur } from "./jetons-serveurs";
+import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
+import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, type Equipe } from "./agents-distants";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 
@@ -383,13 +388,18 @@ function registerBridge() {
   });
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
-  handle("claude:cancel", (requestId: string) => cancelAgent(requestId));
+  handle("claude:cancel", (requestId: string) => (annulerDistant(requestId) ? undefined : cancelAgent(requestId)));
   handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision) => {
     if (!["oui", "toujours", "non"].includes(decision)) throw new Error("Réponse invalide.");
-    return autoriser(requestId, demandeId, decision);
+    return autoriserDistant(requestId, demandeId, decision) ?? autoriser(requestId, demandeId, decision);
   });
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
+    /* Une conversation sur un VPS relié : l'agent tourne là-bas. Les routines restent sur ce PC. */
+    if (typeof options.lieu === "string" && options.lieu && !options.routineRun) {
+      void streamDistant(options.lieu, requestId, options);
+      return null;
+    }
     const suivreRoutine = options.routineRun
       ? commencerRoutine(options.routineRun, options.chatId ?? "", requestId, options.agent ?? "principal")
       : null;
@@ -594,6 +604,19 @@ function registerBridge() {
     const json: unknown = await reponse.json().catch(() => null);
     return { status: reponse.status, json };
   };
+  /* Les agents actifs de Mes agents, tels quels, pour le VPS de la personne (cf. agents-distants.ts). */
+  const equipePourVps = (): Equipe => {
+    const fiches = presentationActifs().flatMap(({ id, nom }) => {
+      try {
+        return [{ id, nom, contenu: readFileSync(path.join(dossierAgents(), `${id}.md`), "utf8") }];
+      } catch {
+        return [];
+      }
+    });
+    const assistant = mesAgents().assistant.nom ?? null;
+    const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches])).digest("hex").slice(0, 16);
+    return { fiches, assistant, empreinte };
+  };
   const depuisFenetre = (event: Electron.IpcMainInvokeEvent) => {
     const win = fenetrePrincipale;
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
@@ -610,13 +633,37 @@ function registerBridge() {
     const lu = await appairerServeur(adresse, code, hostname(), demanderVps);
     if (!lu.ok) return lu;
     await garderJetonServeur(lu.adresse ?? origineVps(adresse), lu.jeton);
+    relierServeur(lu.adresse ?? origineVps(adresse));
     return { ok: true as const, nom: lu.nom, version: lu.version };
   }));
   /* Retirer : le serveur oublie cet appareil s’il répond ; ce PC oublie le jeton dans tous les cas. */
+  /* L'interface a chargé ses conversations : les réponses arrivées des VPS pendant l'absence de l'app peuvent s'ouvrir. */
+  let vpsBranches = false;
+  ipcMain.handle("serveur:pret", (event) => repondre(() => {
+    depuisFenetre(event);
+    if (vpsBranches) return;
+    vpsBranches = true;
+    brancherAgentsDistants(
+      {
+        fenetre: () => {
+          const sender = fenetrePrincipale?.webContents;
+          if (!sender || sender.isDestroyed()) return null;
+          return {
+            evenement: (id, agentEvent) => sender.send("claude:event", id, agentEvent),
+            spontane: (id, sessionId) => sender.send("claude:spontane", id, sessionId),
+          };
+        },
+        equipe: equipePourVps,
+        jeton: jetonServeur,
+      },
+      originesServeurs(),
+    );
+  }));
   ipcMain.handle("serveur:retirer", (event, adresse: unknown) => repondre(async () => {
     depuisFenetre(event);
     const origine = origineVps(adresse);
     const confirme = await retirerAppareil(origine, jetonServeur(origine), demanderVps);
+    oublierServeur(origine);
     await oublierJetonServeur(origine);
     return confirme;
   }));

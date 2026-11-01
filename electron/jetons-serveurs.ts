@@ -57,3 +57,8 @@ export async function garderJetonServeur(origine: string, jeton: string): Promis
 export async function oublierJetonServeur(origine: string): Promise<void> {
   if (charger().delete(origine)) await enregistrer();
 }
+
+/** Les VPS reliés à ce PC. */
+export function originesServeurs(): string[] {
+  return [...charger().keys()];
+}

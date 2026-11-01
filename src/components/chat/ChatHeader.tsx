@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { ChoixLieu } from "./ChoixLieu";
 import { ChoixModele } from "./ChoixModele";
 import { MenuConversation } from "./MenuConversation";
 import type { ActionExport } from "./useExporterConversation";
@@ -42,6 +43,7 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
           {etat}
         </span>
       </div>
+      <ChoixLieu chat={chat} />
       <ChoixModele chat={chat} />
       {/* Sa fiche complète (rôle, compétences, historique) : l'équipe n'est plus dans le menu. */}
       {role.id !== "principal" && (

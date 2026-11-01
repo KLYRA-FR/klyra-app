@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { CHEMIN, CHEMIN_APPAIRER, CHEMIN_APPAREIL, DUREE_CODE_MS, creerCode, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
+import { creerAgents } from "./agents.mjs";
+import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, DUREE_CODE_MS, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
 function dossierJetable() {
   return mkdtempSync(path.join(tmpdir(), "klyra-serveur-"));
@@ -58,7 +59,7 @@ test("un code s’échange une fois contre un jeton, qui ouvre le serveur", asyn
     assert.equal(encore.statut, 401, "un code ne sert qu’une fois");
 
     const lu = await appel(ecoute.port, CHEMIN, { jeton });
-    assert.deepEqual(lu.json, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1" });
+    assert.deepEqual(lu.json, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1", agents: "absent", equipe: "" });
     assert.equal((await appel(ecoute.port, CHEMIN, { jeton: `${jeton.slice(0, -2)}xx` })).statut, 401);
 
     // Le serveur ne garde que des empreintes.
@@ -140,4 +141,135 @@ test("la page publique ne montre ni lien ni code, le reste est fermé", async ()
     rmSync(dossier, { recursive: true, force: true });
   }
   await assert.rejects(fetch(`http://127.0.0.1:${ecoute.port}${CHEMIN}`));
+});
+
+/** Un faux Claude Code : répond « Bonjour <message> » en flux, et demande l'accord avant un outil si le message contient « outil ». */
+const FAUX_CLAUDE = `#!/usr/bin/env node
+const args = process.argv.slice(2);
+require("node:fs").appendFileSync(process.env.HOME + "/args.log", JSON.stringify(args) + "\\n");
+const ecrire = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+const session = "11111111-2222-3333-4444-555555555555";
+let attente = null;
+let tampon = "";
+process.stdin.on("data", (d) => {
+  tampon += d;
+  const lignes = tampon.split("\\n");
+  tampon = lignes.pop();
+  for (const l of lignes) {
+    if (!l.trim()) continue;
+    const m = JSON.parse(l);
+    if (m.type === "user") {
+      ecrire({ type: "system", subtype: "init", session_id: session });
+      if (m.message.content.includes("outil")) {
+        attente = m.message.content;
+        ecrire({ type: "control_request", request_id: "d1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } } });
+        continue;
+      }
+      ecrire({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Bonjour " + m.message.content } } });
+      ecrire({ type: "result", subtype: "success", is_error: false, result: "Bonjour " + m.message.content, session_id: session });
+    }
+    if (m.type === "control_response" && attente) {
+      const ok = m.response.response.behavior === "allow";
+      ecrire({ type: "result", subtype: "success", is_error: false, result: ok ? "outil lancé" : "refusé", session_id: session });
+      attente = null;
+    }
+  }
+});
+`;
+
+function lireFlux(port, jeton, depuis, instance, jusqua) {
+  return new Promise((resolve, reject) => {
+    const controle = new AbortController();
+    const recus = [];
+    let instanceRecue = null;
+    fetch(`http://127.0.0.1:${port}${CHEMIN_AGENT}/evenements?depuis=${depuis}&instance=${instance}`, { headers: { Authorization: `Bearer ${jeton}` }, signal: controle.signal })
+      .then(async (reponse) => {
+        const lecteur = reponse.body.getReader();
+        let tampon = "";
+        for (;;) {
+          const { value, done } = await lecteur.read();
+          if (done) break;
+          tampon += new TextDecoder().decode(value);
+          const blocs = tampon.split("\n\n");
+          tampon = blocs.pop();
+          for (const bloc of blocs) {
+            const data = bloc.split("\n").find((l) => l.startsWith("data: "));
+            if (!data) continue;
+            const json = JSON.parse(data.slice(6));
+            if (bloc.startsWith("event: instance")) instanceRecue = json.instance;
+            else recus.push(json);
+            if (jusqua(recus)) {
+              controle.abort();
+              return resolve({ recus, instance: instanceRecue });
+            }
+          }
+        }
+      })
+      .catch((e) => (e.name === "AbortError" ? null : reject(e)));
+    setTimeout(() => {
+      controle.abort();
+      reject(new Error(`flux incomplet : ${JSON.stringify(recus)}`));
+    }, 5000);
+  });
+}
+
+test("un agent répond sur le VPS, en flux, avec rattrapage et autorisation", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const claude = path.join(home, "faux-claude");
+  writeFileSync(claude, FAUX_CLAUDE);
+  chmodSync(claude, 0o755);
+  writeFileSync(path.join(dossier, "claude-token"), "jeton-claude");
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, claude });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  try {
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", corps: { requestId: "r0" } })).statut, 401);
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.agents, "pret");
+
+    const fiches = await appel(ecoute.port, CHEMIN_FICHES, {
+      methode: "PUT",
+      jeton,
+      corps: { fiches: [{ id: "lou", nom: "Lou", contenu: "---\nname: lou\n---\nPrompt." }], assistant: "Cicco", empreinte: "e1" },
+    });
+    assert.equal(fiches.statut, 200);
+    assert.equal(fiches.json.equipe, "e1");
+    assert.equal(readFileSync(path.join(home, ".claude", "agents", "lou.md"), "utf8").includes("Prompt."), true);
+    assert.equal((await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [{ id: "../x", contenu: "" }] } })).statut, 400);
+
+    const options = { agent: null, prompt: "toi", sessionId: null, acces: "projet" };
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r1", options } })).statut, 202);
+    const premier = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.event?.type === "fin"));
+    const types = premier.recus.map((e) => e.event.type).filter((t) => t !== "jetons");
+    assert.deepEqual(types, ["session", "texte", "fin"]);
+    assert.equal(premier.recus.at(-1).event.texte, "Bonjour toi");
+    assert.equal(premier.recus.at(-1).requestId, "r1");
+    const args = readFileSync(path.join(home, "args.log"), "utf8");
+    assert.match(args, /Klyra-VPS/);
+    assert.match(args, /Cicco/);
+
+    // Rattrapage : depuis le dernier numéro lu, seulement la suite.
+    const dernier = premier.recus.at(-1).seq;
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r2", options: { ...options, prompt: "outil", sessionId: "11111111-2222-3333-4444-555555555555" } } });
+    const demande = await lireFlux(ecoute.port, jeton, dernier, premier.instance, (recus) => recus.some((e) => e.event?.type === "autorisation"));
+    assert.equal(demande.recus.every((e) => e.seq > dernier), true);
+    const id = demande.recus.find((e) => e.event?.type === "autorisation").event.id;
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/autoriser`, { methode: "POST", jeton, corps: { requestId: "r2", demandeId: id, decision: "oui" } })).json.ok, true);
+    const fin = await lireFlux(ecoute.port, jeton, dernier, premier.instance, (recus) => recus.some((e) => e.event?.type === "fin"));
+    assert.equal(fin.recus.find((e) => e.event?.type === "fin").event.texte, "outil lancé");
+
+    // Une autre instance du journal (serveur redémarré) : tout est renvoyé depuis le début.
+    const autre = await lireFlux(ecoute.port, jeton, 9999, "ancienne", (recus) => recus.length >= 3);
+    assert.equal(autre.recus[0].seq, 1);
+
+    const inconnu = await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r3", options: { ...options, agent: "absent" } } });
+    assert.equal(inconnu.statut, 202);
+    const refus = await lireFlux(ecoute.port, jeton, 0, premier.instance, (recus) => recus.some((e) => e.requestId === "r3"));
+    assert.match(refus.recus.find((e) => e.requestId === "r3").event.erreur, /pas dans Mes agents/);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
 });

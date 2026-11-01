@@ -157,6 +157,8 @@ export interface Chat {
   amorce?: string;
   /** Un fil : une conversation à part d'un agent, consacrée à une seule tâche (un onglet de son chat). */
   fil?: Fil;
+  /** Le VPS où tournent ses agents (origine https) ; absent : ce PC. Changer de lieu repart d'une session neuve. */
+  lieu?: string | null;
 }
 
 /**

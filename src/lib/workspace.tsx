@@ -1,5 +1,6 @@
 "use client";
 
+import { lieuParDefaut, retenirLieu } from "./lieux";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
 import { Bouton } from "@/components/ui/Bouton";
@@ -528,6 +529,8 @@ interface WorkspaceApi {
   sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[]) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
+  /** Ce PC (null) ou un VPS relié. Les agents repartent d'une session neuve sur l'autre machine. */
+  choisirLieu: (chatId: string, lieu: string | null) => void;
   /** Repart de zéro avec l'agent : les messages et sa mémoire de cette conversation sont effacés. */
   nouvelleConversation: (chatId: string) => void;
   /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id. */
@@ -722,6 +725,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             : e,
         ),
       });
+      // Les conversations sont là (après le rendu) : les réponses des VPS arrivées pendant l'absence peuvent s'ouvrir.
+      setTimeout(() => void bridge.serveur?.pret?.().catch(() => undefined), 1000);
     }).catch((error: unknown) => { if (actif) setErreurChargement(error instanceof Error ? error.message : String(error)); });
     return () => {
       actif = false;
@@ -1138,7 +1143,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         return bridge.claude.stream(messageId, {
           agent: roleId === "principal" ? null : roleId,
           prompt: construirePrompt(chat, roleId, messageUtilisateur),
-          dossier: chat.kind === "equipe" ? (project?.folder ?? null) : null,
+          // Sur un VPS, le dossier du PC n'existe pas : l'agent travaille dans son atelier là-bas.
+          dossier: chat.lieu ? null : chat.kind === "equipe" ? (project?.folder ?? null) : null,
+          lieu: chat.lieu ?? null,
           sessionId: chat.sessions[roleId] ?? null,
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
@@ -1184,6 +1191,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         updatedAt: new Date().toISOString(),
         sessions: {},
         luJusqua: null,
+        lieu: lieuParDefaut(),
       };
       dispatch({ type: "chat/add", chat });
       stateRef.current = {
@@ -1268,6 +1276,19 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [assurerChat],
   );
 
+  const choisirLieu = useCallback(
+    (chatId: string, lieu: string | null) => {
+      if (!assurerChat(chatId)) return;
+      retenirLieu(lieu);
+      dispatch({
+        type: "chat/update",
+        id: chatId,
+        patch: (c) => ((c.lieu ?? null) === lieu ? c : { ...c, lieu, sessions: {} }),
+      });
+    },
+    [assurerChat],
+  );
+
   /** Sous une réponse : la refaire, plus détaillée, plus concise, en cherchant sur le web, ou avec un autre modèle. */
   const reessayer = useCallback(
     (chatId: string, messageId: string, facon: FaconReessai, modele?: string) => {
@@ -1321,6 +1342,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       sessions: {},
       luJusqua: null,
       modele: chat.modele,
+      lieu: chat.lieu,
       effort: chat.effort,
       amorce: repris
         .map((m) => `${nom(m)} : ${texteDe(m)}`)
@@ -2023,6 +2045,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       state,
       sendMessage,
       choisirModele,
+      choisirLieu,
       nouvelleConversation,
       creerFil,
       renommerChat,
@@ -2072,6 +2095,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       poserEvenementsCompte,
       sendMessage,
       choisirModele,
+      choisirLieu,
       nouvelleConversation,
       creerFil,
       renommerChat,

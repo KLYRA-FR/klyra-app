@@ -186,6 +186,10 @@ export interface StreamOptions {
   /** La conversation de l'app : les outils des fils savent d'où vient l'agent. */
   chatId?: string;
   routineRun?: string;
+  /** Le VPS où tourne la conversation (origine https) ; absent : ce PC. */
+  lieu?: string | null;
+  /** Sur le VPS : le dossier du projet sur cette machine. */
+  dossierVps?: string | null;
 }
 
 /** Ce qu'un agent peut faire sans demander (cf. electron/claude.ts). */
@@ -490,6 +494,8 @@ export interface KlyraBridge {
     appairer: (adresse: string, code: string) => Promise<Reponse<{ ok: true; nom: string; version: string } | { ok: false; message: string }>>;
     /** Le serveur oublie cet appareil s’il répond (vrai), ce PC oublie le jeton dans tous les cas. */
     retirer: (adresse: string) => Promise<Reponse<boolean>>;
+    /** Les conversations sont chargées : les réponses des VPS arrivées pendant l’absence peuvent s’ouvrir. */
+    pret?: () => Promise<Reponse<void>>;
     onLien: (callback: () => void) => () => void;
   };
   /** Les mises à jour de l'app (cf. electron/maj.ts). */

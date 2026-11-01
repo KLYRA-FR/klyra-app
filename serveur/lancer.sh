@@ -8,6 +8,7 @@
 #   dont l'adresse change à chaque redémarrage.
 # - Relancer la commande met le serveur à jour et donne un nouveau lien. Les appareils déjà reliés le restent.
 # - Tout oublier : curl … | sudo sh -s -- revoquer-tout
+# - Connecter Claude Code (agents sur le VPS) : curl … | sudo sh -s -- connecter-claude
 set -eu
 
 PORT="${KLYRA_SERVEUR_PORT:-8791}"
@@ -15,8 +16,9 @@ NOM="${KLYRA_SERVEUR_NOM:-$(hostname 2>/dev/null || echo KLYRA)}"
 SOURCE="${KLYRA_SERVEUR_SOURCE:-https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur}"
 NODE_VERSION="22.12.0"
 UTILISATEUR="klyra"
+# Le dossier de klyra (ses agents y travaillent) ; le code à part, à root : ni le serveur ni ses agents ne le réécrivent.
 RACINE="/var/lib/klyra"
-CODE_DIR="$RACINE/serveur"
+CODE_DIR="/opt/klyra-serveur"
 DONNEES="$RACINE/donnees"
 COMMANDE="${1:-}"
 
@@ -40,11 +42,40 @@ if ! id "$UTILISATEUR" >/dev/null 2>&1; then
   useradd --system --create-home --home-dir "$RACINE" --shell /bin/bash "$UTILISATEUR"
 fi
 mkdir -p "$CODE_DIR" "$DONNEES"
-# Le code appartient à root : le serveur (et plus tard ses agents) ne peut pas le réécrire.
-chown root:"$UTILISATEUR" "$RACINE" "$CODE_DIR"
-chmod 750 "$RACINE" "$CODE_DIR"
-chown "$UTILISATEUR":"$UTILISATEUR" "$DONNEES"
+chown root:root "$CODE_DIR"
+chmod 755 "$CODE_DIR"
+chown "$UTILISATEUR":"$UTILISATEUR" "$RACINE" "$DONNEES"
+chmod 750 "$RACINE"
 chmod 700 "$DONNEES"
+
+# Claude Code, pour les agents du VPS : installé pour klyra, connecté à l'abonnement de la personne
+# par un jeton longue durée (claude setup-token), gardé dans donnees/claude-token.
+CLAUDE="$RACINE/.local/bin/claude"
+installer_claude() {
+  if [ ! -x "$CLAUDE" ]; then
+    dire "Installation de Claude Code pour les agents du VPS…"
+    en_klyra bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >/dev/null 2>&1 || dire "Claude Code n'a pas pu s'installer : les agents du VPS ne répondront pas."
+  fi
+}
+connecter_claude() {
+  [ -x "$CLAUDE" ] || echouer "Claude Code n'est pas installé pour klyra."
+  [ -r /dev/tty ] || echouer "il faut un terminal pour connecter Claude Code."
+  dire ""
+  dire "Connexion de Claude Code à ton abonnement : ouvre le lien qui s'affiche, valide, puis copie le jeton (sk-ant-oat…)."
+  en_klyra "$CLAUDE" setup-token < /dev/tty > /dev/tty 2>&1 || true
+  printf 'Colle le jeton ici, puis Entrée : ' > /dev/tty
+  stty -echo < /dev/tty 2>/dev/null || true
+  read -r JETON < /dev/tty || JETON=""
+  stty echo < /dev/tty 2>/dev/null || true
+  printf '\n' > /dev/tty
+  case "$JETON" in
+    sk-ant-*) ;;
+    *) echouer "ce n'est pas un jeton Claude (il commence par sk-ant-). Relance : curl … | sudo sh -s -- connecter-claude" ;;
+  esac
+  (umask 077 && printf '%s' "$JETON" > "$DONNEES/claude-token")
+  chown "$UTILISATEUR":"$UTILISATEUR" "$DONNEES/claude-token"
+  dire "Claude Code est connecté : les agents peuvent tourner sur ce VPS."
+}
 
 if [ "$COMMANDE" = "revoquer-tout" ]; then
   [ -f "$CODE_DIR/klyra-serveur.mjs" ] || echouer "le serveur n'est pas installé."
@@ -52,7 +83,12 @@ if [ "$COMMANDE" = "revoquer-tout" ]; then
   en_klyra "$NODE" "$CODE_DIR/klyra-serveur.mjs" revoquer-tout
   exit 0
 fi
-[ -z "$COMMANDE" ] || echouer "commande inconnue : $COMMANDE (seule « revoquer-tout » existe)."
+if [ "$COMMANDE" = "connecter-claude" ]; then
+  installer_claude
+  connecter_claude
+  exit 0
+fi
+[ -z "$COMMANDE" ] || echouer "commande inconnue : $COMMANDE (revoquer-tout ou connecter-claude)."
 
 # ─── L'ancienne version, lancée en arrière-plan sans service ──────────
 for ancien in /root/.klyra-serveur "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)/.klyra-serveur}"; do
@@ -70,23 +106,23 @@ done
 NODE=""
 if command -v node >/dev/null && [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 22 ]; then
   NODE="$(command -v node)"
-elif [ -x "$RACINE/node/bin/node" ]; then
-  NODE="$RACINE/node/bin/node"
+elif [ -x "$CODE_DIR/node/bin/node" ]; then
+  NODE="$CODE_DIR/node/bin/node"
 else
   dire "Téléchargement de Node $NODE_VERSION…"
-  curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$ARCH_NODE.tar.gz" -o "$RACINE/node.tar.gz"
-  rm -rf "$RACINE/node" && mkdir "$RACINE/node"
-  tar -xzf "$RACINE/node.tar.gz" -C "$RACINE/node" --strip-components=1
-  rm "$RACINE/node.tar.gz"
-  NODE="$RACINE/node/bin/node"
+  curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$ARCH_NODE.tar.gz" -o "$CODE_DIR/node.tar.gz"
+  rm -rf "$CODE_DIR/node" && mkdir "$CODE_DIR/node"
+  tar -xzf "$CODE_DIR/node.tar.gz" -C "$CODE_DIR/node" --strip-components=1
+  rm "$CODE_DIR/node.tar.gz"
+  NODE="$CODE_DIR/node/bin/node"
 fi
 printf '%s' "$NODE" > "$CODE_DIR/node-chemin"
 
 dire "Téléchargement du serveur KLYRA…"
 curl -fsSL "$SOURCE/klyra-serveur.mjs" -o "$CODE_DIR/klyra-serveur.mjs"
 curl -fsSL "$SOURCE/qr.mjs" -o "$CODE_DIR/qr.mjs"
-chown root:"$UTILISATEUR" "$CODE_DIR"/*
-chmod 640 "$CODE_DIR"/*
+curl -fsSL "$SOURCE/agents.mjs" -o "$CODE_DIR/agents.mjs"
+chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────
 # Séparé d'OpenBot et du reste de la machine : seul son dossier est en écriture.
@@ -111,7 +147,7 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=$RACINE
-InaccessiblePaths=-/var/lib/openbot -/opt/OpenBot -/root
+InaccessiblePaths=-/var/lib/openbot -/opt/OpenBot -/root -/etc/sudoers.d
 
 [Install]
 WantedBy=multi-user.target
@@ -140,11 +176,10 @@ if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
 fi
 
 if [ -z "$ADRESSE" ]; then
-  if [ ! -x "$RACINE/cloudflared" ]; then
+  if [ ! -x "$CODE_DIR/cloudflared" ]; then
     dire "Téléchargement du tunnel…"
-    curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARCH_CF" -o "$RACINE/cloudflared"
-    chown root:"$UTILISATEUR" "$RACINE/cloudflared"
-    chmod 750 "$RACINE/cloudflared"
+    curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARCH_CF" -o "$CODE_DIR/cloudflared"
+    chmod 755 "$CODE_DIR/cloudflared"
   fi
   cat > /etc/systemd/system/klyra-tunnel.service <<EOF
 [Unit]
@@ -153,7 +188,7 @@ After=klyra-serveur.service
 
 [Service]
 User=$UTILISATEUR
-ExecStart=$RACINE/cloudflared tunnel --url http://127.0.0.1:$PORT --no-autoupdate
+ExecStart=$CODE_DIR/cloudflared tunnel --url http://127.0.0.1:$PORT --no-autoupdate
 StandardOutput=append:$DONNEES/tunnel.log
 StandardError=append:$DONNEES/tunnel.log
 Restart=always
@@ -179,6 +214,14 @@ EOF
     [ -n "$ADRESSE" ] || sleep 1
   done
   [ -n "$ADRESSE" ] || echouer "le tunnel n'a pas donné d'adresse. Détail : $DONNEES/tunnel.log"
+fi
+
+# ─── Claude Code pour les agents ─────────────────────────────────────
+installer_claude
+if [ -x "$CLAUDE" ] && [ ! -s "$DONNEES/claude-token" ] && [ ! -f "$RACINE/.claude/.credentials.json" ]; then
+  if [ -r /dev/tty ]; then ( connecter_claude ) || dire "Claude Code n'est pas connecté. Plus tard : curl … | sudo sh -s -- connecter-claude"
+  else dire "Claude Code n'est pas encore connecté. Pour les agents : curl … | sudo sh -s -- connecter-claude"
+  fi
 fi
 
 # ─── Lien et QR à usage unique ───────────────────────────────────────

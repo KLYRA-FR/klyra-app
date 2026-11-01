@@ -32,6 +32,15 @@ Réglages facultatifs : `KLYRA_SERVEUR_NOM` (nom de la machine par défaut) et `
 
 Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS" KLYRA_SERVEUR_DONNEES=./donnees node serveur/klyra-serveur.mjs`, avec son propre https devant (`KLYRA_SERVEUR_CERT` et `KLYRA_SERVEUR_CLE`, ou un proxy), puis `node serveur/klyra-serveur.mjs appairer` pour un code.
 
+## Agents sur le VPS
+
+- `lancer.sh` installe Claude Code pour `klyra` (`/var/lib/klyra/.local/bin/claude`) et le connecte à l’abonnement de la personne : `claude setup-token`, jeton collé dans le terminal, gardé dans `donnees/claude-token`. Plus tard : `curl … | sudo sh -s -- connecter-claude`.
+- `GET /klyra/v1/serveur` dit `agents: "pret" | "non-connecte" | "absent"`.
+- `serveur/agents.mjs` lance Claude Code comme l’app (un processus par conversation, `--permission-prompt-tool stdio`), dans `/var/lib/klyra/atelier`, avec les fiches des agents actifs du PC (`PUT /klyra/v1/agents/fiches`, envoyées par l’app quand elles changent). Ni fils, ni Composio, ni planning, ni pièces jointes.
+- Événements numérotés, gardés 24 h : `GET /klyra/v1/agent/evenements?depuis=N&instance=…` (SSE). Commandes : `POST /klyra/v1/agent/envoyer | autoriser | annuler`.
+- Dans l’app, `electron/agents-distants.ts` garde un flux par VPS relié (ouvert au démarrage, curseur dans `serveurs-curseurs.json`) et rend les mêmes événements que les agents du PC. Une réponse finie pendant que l’app était fermée s’ouvre à la réouverture.
+- Chaque conversation choisit sa machine dans son en-tête (« Ce PC » ou un VPS relié). Changer de machine repart d’une session neuve. Les routines restent sur le PC.
+
 ## Dans l’app
 
 La fenêtre PC (1100 px et plus) a la colonne Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Sans serveur, l’écran montre deux gestes : coller la commande sur le VPS, coller le lien qu’elle affiche. Dans Electron, un lien `klyra://rejoindre` déjà copié remplit le champ vide. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.
