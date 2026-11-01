@@ -7,6 +7,7 @@ import {
   ajouterServeur,
   carnetVide,
   choisirServeur,
+  appairer,
   interroger,
   lireCarnet,
   lireCorps,
@@ -14,44 +15,49 @@ import {
   lireSaisie,
   placePour,
   quitterServeur,
+  retirer,
   retirerServeur,
 } from "./serveur-vps";
 
-const klyra = { adresse: "https://klyra-vps.exemple:8787", invitation: null, nom: "Klyra-vps", version: "1" };
-const autre = { adresse: "https://autre.exemple", invitation: "abc", nom: "Autre", version: "1" };
+const klyra = { adresse: "https://klyra-vps.exemple:8787", nom: "Klyra-vps", version: "1" };
+const autre = { adresse: "https://autre.exemple", nom: "Autre", version: "1" };
 
 describe("adresse d’un VPS", () => {
   test("une adresse https devient l’origine, sans chemin", () => {
-    expect(lireSaisie("https://mon-vps.exemple:8787/klyra/v1/serveur", "")).toEqual({
+    expect(lireSaisie("https://mon-vps.exemple:8787/klyra/v1/serveur")).toEqual({
       ok: true,
       adresse: "https://mon-vps.exemple:8787",
-      invitation: null,
+      code: null,
     });
   });
 
   test("un hôte nu ou une IPv4 ne remplace pas le lien", () => {
-    expect(lireSaisie("mon-vps.exemple:8787", "").ok).toBe(false);
-    expect(lireSaisie("2.24.45.214", "").ok).toBe(false);
-    expect(lireSaisie("https://2.24.45.214", "").ok).toBe(false);
+    expect(lireSaisie("mon-vps.exemple:8787").ok).toBe(false);
+    expect(lireSaisie("2.24.45.214").ok).toBe(false);
+    expect(lireSaisie("https://2.24.45.214").ok).toBe(false);
   });
 
   test("http n’est accepté que sur la machine locale", () => {
-    expect(lireSaisie("http://127.0.0.1:8787", "").ok).toBe(true);
-    expect(lireSaisie("http://mon-vps.exemple", "").ok).toBe(false);
+    expect(lireSaisie("http://127.0.0.1:8787").ok).toBe(true);
+    expect(lireSaisie("http://mon-vps.exemple").ok).toBe(false);
   });
 
-  test("l’invitation klyra:// porte l’adresse et le code", () => {
-    const lu = lireSaisie("klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple%3A8787&invitation=code", "");
-    expect(lu).toEqual({ ok: true, adresse: "https://mon-vps.exemple:8787", invitation: "code" });
+  test("le lien klyra:// porte l’adresse et le code à usage unique", () => {
+    const lu = lireSaisie("klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple%3A8787&code=abcdefgh23");
+    expect(lu).toEqual({ ok: true, adresse: "https://mon-vps.exemple:8787", code: "ABCDEFGH23" });
   });
 
-  test("le champ invitation remplace celui du lien, et ne se retrouve pas dans l’adresse", () => {
-    const lu = lireSaisie("klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple&invitation=lien", "champ");
-    expect(lu).toEqual({ ok: true, adresse: "https://mon-vps.exemple", invitation: "champ" });
+  test("un code illisible est refusé, une ancienne invitation n’est plus lue", () => {
+    expect(lireSaisie("klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple&code=a%20b").ok).toBe(false);
+    expect(lireSaisie("klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple&invitation=ancienne")).toEqual({
+      ok: true,
+      adresse: "https://mon-vps.exemple",
+      code: null,
+    });
   });
 
   test("un mot de passe dans l’adresse est refusé", () => {
-    expect(lireSaisie("https://moi:secret@mon-vps.exemple", "").ok).toBe(false);
+    expect(lireSaisie("https://moi:secret@mon-vps.exemple").ok).toBe(false);
   });
 
   test("le chemin du protocole est fixe", () => {
@@ -116,7 +122,7 @@ describe("carnet de serveurs", () => {
 
 describe("lien copié", () => {
   test("un lien klyra://rejoindre lisible est repris", () => {
-    const lien = "klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple&invitation=abc";
+    const lien = "klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple&code=ABCDEFGH23";
     expect(lienCopie(`  ${lien}\n`)).toBe(lien);
   });
 
@@ -124,6 +130,7 @@ describe("lien copié", () => {
     expect(lienCopie("https://mon-vps.exemple")).toBeNull();
     expect(lienCopie("un mot de passe")).toBeNull();
     expect(lienCopie("klyra://rejoindre?invitation=abc")).toBeNull();
+    expect(lienCopie("klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple&invitation=ancienne")).toBeNull();
     expect(lienCopie("klyra://connexion?code=abc")).toBeNull();
     expect(lienCopie(null)).toBeNull();
   });
@@ -135,28 +142,52 @@ describe("appel au VPS", () => {
     delete (globalThis as { window?: unknown }).window;
   });
 
-  test("la fenêtre n’appelle pas fetch : une coupure connect-src ne donne plus le silence", async () => {
+  test("la fenêtre n’appelle pas fetch : le processus principal appaire et garde le jeton", async () => {
     const fetchMock = vi.fn(() => {
       throw new Error("Refused to connect because it violates the document's Content Security Policy.");
     });
     vi.stubGlobal("fetch", fetchMock);
+    const appels: unknown[][] = [];
     (globalThis as { window?: unknown }).window = {
       klyra: {
         serveur: {
-          interroger: async () => ({ ok: true, data: { ok: true, nom: "Klyra-VPS", version: "1" } }),
+          interroger: async (...args: unknown[]) => (appels.push(["interroger", ...args]), { ok: true, data: { ok: true, nom: "Klyra-VPS", version: "1" } }),
+          appairer: async (...args: unknown[]) => (appels.push(["appairer", ...args]), { ok: true, data: { ok: true, nom: "Klyra-VPS", version: "1" } }),
+          retirer: async (...args: unknown[]) => (appels.push(["retirer", ...args]), { ok: true, data: true }),
         },
       },
     };
-    await expect(interroger("https://exemple.test", "code")).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    await expect(appairer("https://exemple.test", "ABCDEFGH23")).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    await expect(interroger("https://exemple.test")).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    await retirer("https://exemple.test");
+    expect(appels).toEqual([
+      ["appairer", "https://exemple.test", "ABCDEFGH23"],
+      ["interroger", "https://exemple.test"],
+      ["retirer", "https://exemple.test"],
+    ]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test("hors Electron, le téléphone appelle en fetch", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ produit: "klyra-serveur", protocole: 1, nom: "Klyra-VPS", version: "1" }), { status: 200 })),
-    );
-    await expect(interroger("https://exemple.test", null)).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
-    expect(fetch).toHaveBeenCalledOnce();
+  test("hors Electron, le téléphone appaire en fetch puis envoie son jeton", async () => {
+    const memoire = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (cle: string) => memoire.get(cle) ?? null,
+      setItem: (cle: string, valeur: string) => void memoire.set(cle, valeur),
+    });
+    const corps = { produit: "klyra-serveur", protocole: 1, nom: "Klyra-VPS", version: "1" };
+    const jeton = "j".repeat(43);
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/klyra/v1/appairer")) return new Response(JSON.stringify({ ...corps, jeton }), { status: 200 });
+      if (url.endsWith("/klyra/v1/appareil")) return new Response(null, { status: 204 });
+      const auth = (init?.headers as Record<string, string> | undefined)?.Authorization;
+      return auth === `Bearer ${jeton}` ? new Response(JSON.stringify(corps), { status: 200 }) : new Response("{}", { status: 401 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(interroger("https://exemple.test")).resolves.toEqual({ ok: false, message: MESSAGE_INVITATION });
+    await expect(appairer("https://exemple.test", "ABCDEFGH23")).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    await expect(interroger("https://exemple.test")).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    await retirer("https://exemple.test");
+    await expect(interroger("https://exemple.test")).resolves.toEqual({ ok: false, message: MESSAGE_INVITATION });
   });
 });

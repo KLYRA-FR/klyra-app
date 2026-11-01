@@ -1,14 +1,26 @@
 /**
  * Raccordement à un VPS déjà en marche.
- * Le téléphone ouvre le lien d’invitation, ou le QR affiché par le serveur.
- * Le chemin doit rester celui de `serveur/klyra-serveur.mjs`.
- * Hors Electron, l’appel part d’ici. Dans la fenêtre PC, il part du processus principal.
+ * Le lien (ou le QR) affiché dans le terminal du VPS porte un code à usage unique,
+ * échangé contre un jeton d’appareil. Les chemins sont ceux de `serveur/klyra-serveur.mjs`.
+ * Dans la fenêtre PC, les appels partent du processus principal, qui garde le jeton chiffré.
+ * Hors Electron (téléphone), ils partent d’ici et le jeton reste dans ce navigateur.
  */
 
-import { CHEMIN_SERVEUR, MESSAGE_SILENCE, lireCorps, lireSaisie, type Lecture } from "../../electron/lecture-serveur";
+import {
+  CHEMIN_APPAIRER,
+  CHEMIN_APPAREIL,
+  CHEMIN_SERVEUR,
+  MESSAGE_INVITATION,
+  MESSAGE_SILENCE,
+  lireAppairage,
+  lireCorps,
+  lireSaisie,
+  type Lecture,
+} from "../../electron/lecture-serveur";
 
 export {
   CHEMIN_SERVEUR,
+  MESSAGE_CODE,
   MESSAGE_INVITATION,
   MESSAGE_REPONSE,
   MESSAGE_SILENCE,
@@ -22,6 +34,8 @@ export type { Lecture, Saisie } from "../../electron/lecture-serveur";
 export const CLE_CARNET = "klyra:serveurs";
 /** Lien `klyra://rejoindre` reçu par Electron, en attendant l’écran Serveurs. */
 export const CLE_LIEN_ATTENTE = "klyra:lien-attente";
+/** Hors Electron seulement : les jetons d’appareil, par origine. */
+const CLE_JETONS = "klyra:jetons-serveurs";
 
 const ATTENTE_MS = 8_000;
 const MAX_SERVEURS = 20;
@@ -31,7 +45,6 @@ export type EtatServeur = "joint" | "quitte";
 export interface ServeurConnu {
   id: string;
   adresse: string;
-  invitation: string | null;
   nom: string;
   version: string;
   etat: EtatServeur;
@@ -47,14 +60,15 @@ export function carnetVide(): Carnet {
 }
 
 /** Commande montrée sur l’écran vide : `serveur/lancer.sh`, lu sur main (dépôt public). */
-export const COMMANDE_SERVEUR = "curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lancer.sh | sh";
+export const COMMANDE_SERVEUR = "curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lancer.sh | sudo sh";
 
 /** Le texte copié, s’il est un lien `klyra://rejoindre` lisible. Tout autre texte reste dans le presse-papiers. */
 export function lienCopie(texte: unknown): string | null {
   if (typeof texte !== "string") return null;
   const brut = texte.trim();
   if (brut.length > 2048 || !brut.toLowerCase().startsWith("klyra://rejoindre")) return null;
-  return lireSaisie(brut, "").ok ? brut : null;
+  const lu = lireSaisie(brut);
+  return lu.ok && lu.code ? brut : null;
 }
 
 function estServeur(valeur: unknown): valeur is ServeurConnu {
@@ -63,7 +77,6 @@ function estServeur(valeur: unknown): valeur is ServeurConnu {
   return (
     typeof serveur.id === "string" &&
     typeof serveur.adresse === "string" &&
-    (serveur.invitation === null || typeof serveur.invitation === "string") &&
     typeof serveur.nom === "string" &&
     typeof serveur.version === "string" &&
     (serveur.etat === "joint" || serveur.etat === "quitte")
@@ -76,7 +89,8 @@ export function lireCarnet(brut: string | null): Carnet {
     if (!valeur || typeof valeur !== "object") return carnetVide();
     const carnet = valeur as Record<string, unknown>;
     if (!Array.isArray(carnet.liste)) return carnetVide();
-    const liste = carnet.liste.filter(estServeur).slice(0, MAX_SERVEURS);
+    // Une ancienne entrée garde son invitation : elle n’est plus lue.
+    const liste = carnet.liste.filter(estServeur).slice(0, MAX_SERVEURS).map(({ id, adresse, nom, version, etat }) => ({ id, adresse, nom, version, etat }));
     const actif = typeof carnet.actif === "string" && liste.some((serveur) => serveur.id === carnet.actif) ? carnet.actif : null;
     return { actif, liste };
   } catch {
@@ -118,6 +132,12 @@ export function placePour(carnet: Carnet, adresse: string): boolean {
 
 type ReponsePont = { ok: true; data: unknown } | { ok: false; code: string; message: string };
 
+interface PontServeur {
+  interroger?: (adresse: string) => Promise<ReponsePont>;
+  appairer?: (adresse: string, code: string) => Promise<ReponsePont>;
+  retirer?: (adresse: string) => Promise<ReponsePont>;
+}
+
 function estLecture(valeur: unknown): valeur is Lecture {
   if (!valeur || typeof valeur !== "object") return false;
   const lu = valeur as Record<string, unknown>;
@@ -126,44 +146,95 @@ function estLecture(valeur: unknown): valeur is Lecture {
   return false;
 }
 
-/** Présent dans la fenêtre Electron. Absent sur le téléphone : l’appel reste un fetch. */
-function pontInterroger(): ((adresse: string, invitation: string | null) => Promise<ReponsePont>) | null {
-  const fenetre = (globalThis as { window?: { klyra?: { serveur?: { interroger?: (adresse: string, invitation: string | null) => Promise<ReponsePont> } } } }).window;
-  const interrogerPont = fenetre?.klyra?.serveur?.interroger;
-  return typeof interrogerPont === "function" ? interrogerPont : null;
+/** Présent dans la fenêtre Electron (avec `appairer`). Absent sur le téléphone : les appels restent des fetch. */
+function pont(): PontServeur | null {
+  const fenetre = (globalThis as { window?: { klyra?: { serveur?: PontServeur } } }).window;
+  const serveur = fenetre?.klyra?.serveur;
+  return serveur && typeof serveur.appairer === "function" ? serveur : null;
 }
 
-/** Appelle le VPS. Toute panne réseau, délai dépassé compris, est un serveur qui ne répond pas. */
-export async function interroger(adresse: string, invitation: string | null, signal?: AbortSignal): Promise<Lecture> {
-  const pont = pontInterroger();
-  if (pont) {
-    if (signal?.aborted) return { ok: false, message: MESSAGE_SILENCE };
-    try {
-      const reponse = await pont(adresse, invitation);
-      if (!reponse.ok || !estLecture(reponse.data)) return { ok: false, message: MESSAGE_SILENCE };
-      return reponse.data;
-    } catch {
-      return { ok: false, message: MESSAGE_SILENCE };
-    }
+async function parPont(appel: () => Promise<ReponsePont>, signal?: AbortSignal): Promise<Lecture> {
+  if (signal?.aborted) return { ok: false, message: MESSAGE_SILENCE };
+  try {
+    const reponse = await appel();
+    if (!reponse.ok || !estLecture(reponse.data)) return { ok: false, message: MESSAGE_SILENCE };
+    return reponse.data;
+  } catch {
+    return { ok: false, message: MESSAGE_SILENCE };
   }
+}
 
+function lireJetons(): Record<string, string> {
+  try {
+    const brut: unknown = JSON.parse(localStorage.getItem(CLE_JETONS) ?? "{}");
+    return brut && typeof brut === "object" ? (brut as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function ecrireJeton(adresse: string, jeton: string | null) {
+  try {
+    const jetons = lireJetons();
+    if (jeton) jetons[adresse] = jeton;
+    else delete jetons[adresse];
+    localStorage.setItem(CLE_JETONS, JSON.stringify(jetons));
+  } catch {
+    /* Sans stockage, il faudra relier le serveur à nouveau. */
+  }
+}
+
+/** Un fetch hors Electron. Toute panne réseau, délai dépassé compris, est un serveur qui ne répond pas. */
+async function appelDirect(url: string, init: RequestInit, signal?: AbortSignal): Promise<{ status: number; json: unknown } | null> {
   const controle = new AbortController();
   const delai = setTimeout(() => controle.abort(), ATTENTE_MS);
   const annuler = () => controle.abort();
   signal?.addEventListener("abort", annuler);
   try {
-    const reponse = await fetch(`${adresse}${CHEMIN_SERVEUR}`, {
-      method: "GET",
-      headers: invitation ? { "X-Klyra-Invitation": invitation } : {},
-      signal: controle.signal,
-      cache: "no-store",
-    });
-    const corps: unknown = await reponse.json().catch(() => null);
-    return lireCorps(reponse.status, corps);
+    const reponse = await fetch(url, { ...init, signal: controle.signal, cache: "no-store", redirect: "error" });
+    return { status: reponse.status, json: await reponse.json().catch(() => null) };
   } catch {
-    return { ok: false, message: MESSAGE_SILENCE };
+    return null;
   } finally {
     clearTimeout(delai);
     signal?.removeEventListener("abort", annuler);
   }
+}
+
+/** Le serveur répond-il à cet appareil ? */
+export async function interroger(adresse: string, signal?: AbortSignal): Promise<Lecture> {
+  const electron = pont();
+  if (electron?.interroger) return parPont(() => electron.interroger!(adresse), signal);
+  const jeton = lireJetons()[adresse];
+  if (!jeton) return { ok: false, message: MESSAGE_INVITATION };
+  const recu = await appelDirect(`${adresse}${CHEMIN_SERVEUR}`, { headers: { Authorization: `Bearer ${jeton}` } }, signal);
+  return recu ? lireCorps(recu.status, recu.json) : { ok: false, message: MESSAGE_SILENCE };
+}
+
+/** Échange le code du lien contre un jeton d’appareil, gardé là où l’app tourne. */
+export async function appairer(adresse: string, code: string): Promise<Lecture> {
+  const electron = pont();
+  if (electron?.appairer) return parPont(() => electron.appairer!(adresse, code));
+  const recu = await appelDirect(`${adresse}${CHEMIN_APPAIRER}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, appareil: "Téléphone" }),
+  });
+  if (!recu) return { ok: false, message: MESSAGE_SILENCE };
+  const lu = lireAppairage(recu.status, recu.json);
+  if (!lu.ok) return lu;
+  ecrireJeton(adresse, lu.jeton);
+  return { ok: true, nom: lu.nom, version: lu.version };
+}
+
+/** Le serveur oublie cet appareil s’il répond ; l’app oublie le jeton dans tous les cas. */
+export async function retirer(adresse: string): Promise<void> {
+  const electron = pont();
+  if (electron?.retirer) {
+    await electron.retirer(adresse).catch(() => null);
+    return;
+  }
+  const jeton = lireJetons()[adresse];
+  if (jeton) await appelDirect(`${adresse}${CHEMIN_APPAREIL}`, { method: "DELETE", headers: { Authorization: `Bearer ${jeton}` } });
+  ecrireJeton(adresse, null);
 }

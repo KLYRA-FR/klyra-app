@@ -15,12 +15,14 @@ import {
   ajouterServeur,
   carnetVide,
   choisirServeur,
+  appairer,
   interroger,
   lienCopie,
   lireCarnet,
   lireSaisie,
   placePour,
   quitterServeur,
+  retirer,
   retirerServeur,
   type Carnet,
   type Lecture,
@@ -40,7 +42,7 @@ function sondeDe(lecture: Lecture): Sonde {
 
 function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, enCours: boolean): string {
   if (etat === "quitte") return "Quitté";
-  const detail = sonde === "repond" ? "Répond" : sonde === "invitation" ? "Invitation refusée" : sonde === "version" ? "Autre version" : sonde === "silence" ? "Ne répond pas" : "Vérification…";
+  const detail = sonde === "repond" ? "Répond" : sonde === "invitation" ? "Plus relié" : sonde === "version" ? "Autre version" : sonde === "silence" ? "Ne répond pas" : "Vérification…";
   return enCours ? `En cours · ${detail}` : detail;
 }
 
@@ -59,7 +61,7 @@ function Guide() {
         <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">1</span>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <p className="text-body-s text-texte-principal">Colle cette commande sur ton VPS</p>
-          <p className="text-ui text-texte-secondaire">Dans le terminal du VPS. Elle installe et lance tout, sans domaine ni certificat.</p>
+          <p className="text-ui text-texte-secondaire">Dans le terminal du VPS. Elle installe et lance tout. Avec Tailscale sur le VPS et ici, l’adresse ne change jamais.</p>
           <div className="flex items-start gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
             <code className="min-w-0 flex-1 text-ui-xs leading-[1.6] [overflow-wrap:anywhere] text-texte-principal">{COMMANDE_SERVEUR}</code>
             <Bouton variant="blanc" taille="mini" onClick={copier}>
@@ -73,7 +75,7 @@ function Guide() {
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <p className="text-body-s text-texte-principal">Colle ici le lien qu’elle affiche</p>
           <p className="text-ui text-texte-secondaire">
-            {getBridge() ? "Il commence par klyra://rejoindre. S’il est déjà copié, l’app le reprend toute seule." : "Il commence par klyra://rejoindre."}
+            {getBridge() ? "Il commence par klyra://rejoindre et sert une seule fois, 10 minutes. S’il est déjà copié, l’app le reprend toute seule." : "Il commence par klyra://rejoindre et sert une seule fois, 10 minutes."}
           </p>
         </div>
       </li>
@@ -102,7 +104,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
     const controle = new AbortController();
     for (const serveur of carnet.liste) {
       if (serveur.etat !== "joint") continue;
-      void interroger(serveur.adresse, serveur.invitation, controle.signal).then((lecture) => {
+      void interroger(serveur.adresse, controle.signal).then((lecture) => {
         if (controle.signal.aborted) return;
         setSondes((etat) => ({ ...etat, [serveur.id]: sondeDe(lecture) }));
       });
@@ -139,14 +141,15 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const tenter = async (adresse: string, code: string | null) => {
     setOccupe(true);
     setErreur(null);
-    const lecture = await interroger(adresse, code);
+    // Avec un code : premier lien. Sans code : un serveur que cet appareil connaît déjà.
+    const lecture = code ? await appairer(adresse, code) : await interroger(adresse);
     setOccupe(false);
     if (!lecture.ok) {
       setSondes((etat) => ({ ...etat, [adresse]: sondeDe(lecture) }));
       setErreur(lecture.message);
       return;
     }
-    setCarnet((etat) => ajouterServeur(etat, { adresse, invitation: code, nom: lecture.nom, version: lecture.version }));
+    setCarnet((etat) => ajouterServeur(etat, { adresse, nom: lecture.nom, version: lecture.version }));
     setSondes((etat) => ({ ...etat, [adresse]: "repond" }));
     setSaisie("");
     setRepris(false);
@@ -161,7 +164,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
       const lien = sessionStorage.getItem(CLE_LIEN_ATTENTE);
       if (!lien) return;
       sessionStorage.removeItem(CLE_LIEN_ATTENTE);
-      const lu = lireSaisie(lien, "");
+      const lu = lireSaisie(lien);
       if (!lu.ok) {
         setSaisie(lien);
         setErreur(lu.message);
@@ -172,7 +175,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
         setErreur("Retire un serveur avant d’en ajouter un autre.");
         return;
       }
-      void tenterRef.current(lu.adresse, lu.invitation);
+      void tenterRef.current(lu.adresse, lu.code);
     };
     appliquer();
     window.addEventListener("klyra:rejoindre", appliquer);
@@ -181,7 +184,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
 
   const rejoindre = (e: FormEvent) => {
     e.preventDefault();
-    const lu = lireSaisie(saisie, "");
+    const lu = lireSaisie(saisie);
     if (!lu.ok) {
       setErreur(lu.message);
       return;
@@ -190,7 +193,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
       setErreur("Retire un serveur avant d’en ajouter un autre.");
       return;
     }
-    void tenter(lu.adresse, lu.invitation);
+    void tenter(lu.adresse, lu.code);
   };
 
   const cadreTel = cadre === "telephone";
@@ -206,7 +209,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
         <h1 className="text-h3 font-medium text-texte-principal">Serveurs</h1>
       )}
       <p className={cadreTel ? "px-4 pb-2 text-ui text-texte-secondaire" : "pb-4 text-ui text-texte-secondaire"}>
-        {carnet.liste.length === 0 ? "Relie l’app à un serveur KLYRA qui tourne sur ton VPS." : "Le QR est affiché par le serveur. Ici, on colle le lien d’invitation."}
+        {carnet.liste.length === 0 ? "Relie l’app à un serveur KLYRA qui tourne sur ton VPS." : "Pour ajouter un VPS, lance la commande sur la machine et colle le lien qu’elle affiche."}
       </p>
       {carnet.liste.length === 0 ? (
         <div className={cadreTel ? "min-h-0 flex-1 overflow-y-auto px-4" : "min-h-0 flex-1 overflow-y-auto"}>
@@ -239,12 +242,15 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
                     <button
                       type="button"
                       className="min-h-11 text-ui text-texte-principal"
-                      onClick={() => void tenter(serveur.adresse, serveur.invitation)}
+                      onClick={() => void tenter(serveur.adresse, null)}
                     >
                       Rejoindre
                     </button>
                   )}
-                  <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => setCarnet((etat) => retirerServeur(etat, serveur.id))}>
+                  <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => {
+                      void retirer(serveur.adresse);
+                      setCarnet((etat) => retirerServeur(etat, serveur.id));
+                    }}>
                     Retirer
                   </button>
                 </span>

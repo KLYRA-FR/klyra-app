@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -104,7 +105,8 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
-import { appelerServeur, politiqueContenu } from "./appel-serveur";
+import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
+import { garderJetonServeur, jetonServeur, oublierJetonServeur } from "./jetons-serveurs";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 
@@ -576,23 +578,47 @@ function registerBridge() {
   handle("compte:jeton:retirer", (cle: string) => retirerJeton(cle));
   handle("compte:code", () => prendreCode());
   handle("serveur:lien", () => prendreLienRejoindre());
-  /* Le rendu ne fetch pas le VPS : la politique de la fenêtre le couperait. */
-  ipcMain.handle("serveur:interroger", (event, adresse: unknown, invitation: unknown) => repondre(() => {
+  /* Le rendu ne fetch pas le VPS : la politique de la fenêtre le couperait. Il ne voit jamais le jeton. */
+  const demanderVps: DemandeHttp = async (url, requete, signal) => {
+    const headers: Record<string, string> = {};
+    if (requete.jeton) headers.Authorization = `Bearer ${requete.jeton}`;
+    if (requete.corps !== undefined) headers["Content-Type"] = "application/json";
+    const reponse = await net.fetch(url, {
+      method: requete.methode,
+      headers,
+      body: requete.corps === undefined ? undefined : JSON.stringify(requete.corps),
+      signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+    const json: unknown = await reponse.json().catch(() => null);
+    return { status: reponse.status, json };
+  };
+  const depuisFenetre = (event: Electron.IpcMainInvokeEvent) => {
     const win = fenetrePrincipale;
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
       throw new Error("Accès au serveur refusé.");
     }
-    return appelerServeur(adresse, invitation, async (url, code, signal) => {
-      const reponse = await net.fetch(url, {
-        method: "GET",
-        headers: code ? { "X-Klyra-Invitation": code } : {},
-        signal,
-        redirect: "error",
-        cache: "no-store",
-      });
-      const json: unknown = await reponse.json().catch(() => null);
-      return { status: reponse.status, json };
-    });
+  };
+  const origineVps = (adresse: unknown) => (typeof adresse === "string" ? adresse : "");
+  ipcMain.handle("serveur:interroger", (event, adresse: unknown) => repondre(() => {
+    depuisFenetre(event);
+    return appelerServeur(adresse, jetonServeur(origineVps(adresse)), demanderVps);
+  }));
+  ipcMain.handle("serveur:appairer", (event, adresse: unknown, code: unknown) => repondre(async () => {
+    depuisFenetre(event);
+    const lu = await appairerServeur(adresse, code, hostname(), demanderVps);
+    if (!lu.ok) return lu;
+    await garderJetonServeur(lu.adresse ?? origineVps(adresse), lu.jeton);
+    return { ok: true as const, nom: lu.nom, version: lu.version };
+  }));
+  /* Retirer : le serveur oublie cet appareil s’il répond ; ce PC oublie le jeton dans tous les cas. */
+  ipcMain.handle("serveur:retirer", (event, adresse: unknown) => repondre(async () => {
+    depuisFenetre(event);
+    const origine = origineVps(adresse);
+    const confirme = await retirerAppareil(origine, jetonServeur(origine), demanderVps);
+    await oublierJetonServeur(origine);
+    return confirme;
   }));
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));

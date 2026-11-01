@@ -484,8 +484,12 @@ export interface KlyraBridge {
   serveur?: {
     /** Le dernier lien klyra://rejoindre ouvert, une seule fois. */
     prendreLien: () => Promise<Reponse<string | null>>;
-    /** Appel depuis le processus principal. Le rendu ne fetch pas cette origine. */
-    interroger: (adresse: string, invitation: string | null) => Promise<Reponse<{ ok: true; nom: string; version: string } | { ok: false; message: string }>>;
+    /** Appels depuis le processus principal. Le rendu ne fetch pas cette origine et ne voit pas le jeton. */
+    interroger: (adresse: string) => Promise<Reponse<{ ok: true; nom: string; version: string } | { ok: false; message: string }>>;
+    /** Échange le code du lien contre un jeton, gardé chiffré par le processus principal. */
+    appairer: (adresse: string, code: string) => Promise<Reponse<{ ok: true; nom: string; version: string } | { ok: false; message: string }>>;
+    /** Le serveur oublie cet appareil s’il répond (vrai), ce PC oublie le jeton dans tous les cas. */
+    retirer: (adresse: string) => Promise<Reponse<boolean>>;
     onLien: (callback: () => void) => () => void;
   };
   /** Les mises à jour de l'app (cf. electron/maj.ts). */
