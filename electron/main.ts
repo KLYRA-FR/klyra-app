@@ -74,7 +74,7 @@ import {
 import { ecrirePlanning } from "./planning";
 import { ajouterMcpDirect, APPS_MCP, chargerMcpDirects, listerMcpDirects, retirerMcpDirect } from "./mcp-direct";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
-import { espaceComposio, importerCleComposio, verifierFenetreComposio } from "./composio";
+import { espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
 import { lireConsommation, lireJournal } from "./consommation";
 import { rattraperHistorique } from "./historique";
@@ -301,8 +301,9 @@ function registerBridge() {
     verifierFenetreComposio(event, fenetrePrincipale, DEV_URL);
     return fn(...args);
   }));
-  composio("composio:etat", () => espaceComposio.etat());
+  composio("composio:etat", () => etatAvecLogos());
   composio("composio:importer", (contexte) => importerCleComposio(fenetrePrincipale!, contexte));
+  composio("composio:saisir", (contexte, cle) => saisirCleComposio(contexte, cle));
   composio("composio:retirer", (contexte) => espaceComposio.retirerConfiguration(contexte));
   composio("composio:selectionner", (contexte, service, compte) => espaceComposio.selectionner(contexte, service, compte));
   composio("composio:connecter", (contexte, service, configuration) => espaceComposio.connecter(contexte, service, configuration));

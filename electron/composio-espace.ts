@@ -124,7 +124,7 @@ export class EspaceComposio {
     return this.serialiser(async () => {
       const c = await this.contexte(attendu);
       if (!this.d.coffreDisponible()) throw new Error("Le coffre du système est indisponible : la clé ne peut pas être protégée.");
-      if (!/^[\x21-\x7e]{16,512}$/.test(cle)) throw new Error("Le fichier doit contenir uniquement une clé API de projet Composio.");
+      if (!/^[\x21-\x7e]{16,512}$/.test(cle)) throw new Error("Ce n’est pas une clé API de projet Composio : elle tient sur une ligne, sans espace.");
       // Vérification metadata seulement : aucun compte créé ni outil métier exécuté.
       await this.d.api(cle).listerServices();
       this.verifier(c);

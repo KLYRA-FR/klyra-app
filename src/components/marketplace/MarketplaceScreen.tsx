@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { MenuLignes } from "@/components/team/MenuLignes";
@@ -56,14 +57,25 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
   const connecte = !!etat?.configure && !etat.erreur;
   const [demander, confirmation] = useConfirmation();
   const [cle, setCle] = useState(false);
+  const [saisie, setSaisie] = useState("");
   const [ajout, setAjout] = useState(false);
+  const [succes, setSucces] = useState("");
 
-  const importer = async () => {
-    if (await faire("importer", (p, c) => p.importer(c), "Composio est connecté. Tu peux supprimer le fichier de la clé.")) setCle(false);
+  // Le pont répond « faux » si la fenêtre de fichier est fermée sans choix : rien n'est annoncé.
+  const connecter = async (importee: boolean | null) => {
+    if (!importee) return;
+    setCle(false);
+    setSaisie("");
+    setSucces("Composio est connecté.");
+  };
+  const importer = async () => connecter(await faire("importer", (p, c) => p.importer(c)));
+  const valider = async () => {
+    if (saisie.trim()) await connecter(await faire("saisir", (p, c) => p.saisir(c, saisie)));
   };
   const remplacer = async () => {
-    if (!(await demander({ titre: "Remplacer la clé Composio ?", texte: "Avec la clé d’un autre projet, les apps connectées jusqu’ici ne seront plus accessibles. Les comptes de tes agents sont remis à zéro.", confirmer: "Choisir le fichier…" }))) return;
-    await importer();
+    if (!(await demander({ titre: "Remplacer la clé Composio ?", texte: "Avec la clé d’un autre projet, les apps connectées jusqu’ici ne seront plus accessibles. Les comptes de tes agents sont remis à zéro.", confirmer: "Remplacer" }))) return;
+    setSucces("");
+    setCle(true);
   };
   const deconnecter = async () => {
     if (!(await demander({ titre: "Se déconnecter de Composio ?", texte: "Tes agents n’auront plus accès aux apps Composio sur cet ordinateur. Les comptes restent chez Composio.", confirmer: "Se déconnecter" }))) return;
@@ -85,7 +97,7 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
     <section aria-labelledby="titre-composio" className="klyra-carte-flottante flex flex-col gap-5 rounded-xl p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 flex-1 basis-72 items-start gap-4">
-          <Logo nom="Composio" grand />
+          <Logo nom="Composio" logo="composio" grand />
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 id="titre-composio" className="m-0 text-ui font-semibold text-texte-principal">Composio</h2>
@@ -120,19 +132,22 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
       )}
       {etat?.configure && etat.erreur && <Erreur>{etat.erreur.message}</Erreur>}
       {erreur && !etat?.erreur && <Erreur>{erreur}</Erreur>}
-      {message && <p role="status" className="m-0 text-ui-xs text-texte-secondaire">{message}</p>}
+      {(message || succes) && <p role="status" className="m-0 text-ui-xs text-texte-secondaire">{message || succes}</p>}
 
       {cle && etat && (
-        <Modale titre="Se connecter à Composio" onFermer={() => setCle(false)} className="w-[460px]" actions={<>
-          <Bouton onClick={() => setCle(false)}>Annuler</Bouton>
-          <BoutonPrincipal data-autofocus disabled={occupe || !etat.coffreDisponible} onClick={() => void importer()}>{action === "importer" ? "Vérification…" : "Importer la clé…"}</BoutonPrincipal>
+        <Modale titre={etat.configure ? "Remplacer la clé Composio" : "Se connecter à Composio"} onFermer={() => { setCle(false); setSaisie(""); }} className="w-[460px]" actions={<>
+          <Bouton onClick={() => { setCle(false); setSaisie(""); }}>Annuler</Bouton>
+          <BoutonPrincipal disabled={occupe || !etat.coffreDisponible || !saisie.trim()} onClick={() => void valider()}>{action === "saisir" ? "Vérification…" : "Connecter"}</BoutonPrincipal>
         </>}>
-          <div className="flex flex-col gap-3">
-            <p className="m-0">Crée une clé de projet dans la console Composio, enregistre-la dans un fichier, puis importe-le. La clé reste chiffrée sur cet ordinateur.</p>
-            <Bouton variant="discret" className="self-start" onClick={() => void api.console()} iconeDroite={<Icon name="link-external" size={16} />}>Ouvrir la console Composio</Bouton>
+          <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void valider(); }}>
+            <Champ label="Clé API Composio" aide={<>Dans la console Composio, Settings › API Keys. Chiffrée sur cet ordinateur. <button type="button" onClick={() => void api.console()} className="cursor-pointer border-0 bg-transparent p-0 text-texte-accent">Ouvrir la console</button></>}>
+              <Input data-autofocus size="sm" type="password" value={saisie} onChange={(e) => setSaisie(e.target.value)} autoComplete="off" spellCheck={false} placeholder="ak_…" className={cn(CHAMP, "klyra-mono")} />
+            </Champ>
+            <Bouton variant="discret" className="self-start" disabled={occupe || !etat.coffreDisponible} onClick={() => void importer()}>{action === "importer" ? "Vérification…" : "Ou importer un fichier de clé…"}</Bouton>
             {!etat.coffreDisponible && <Erreur>Cet ordinateur n’a pas de coffre sécurisé : la clé ne peut pas être gardée.</Erreur>}
-            {api.echec?.nom === "importer" && <Erreur>{api.echec.texte}</Erreur>}
-          </div>
+            {(api.echec?.nom === "saisir" || api.echec?.nom === "importer") && <Erreur>{api.echec.texte}</Erreur>}
+            <button type="submit" hidden />
+          </form>
         </Modale>
       )}
       {ajout && etat && <ConnexionComposio api={api} onFermer={() => setAjout(false)} onTermine={(service, compte) => {
@@ -158,7 +173,7 @@ function ServiceComposio({ service, api, choisir, retirer }: {
   const statut = choisi ? statutCompteComposio(choisi) : { texte: comptes.length ? "Aucun compte choisi" : "Introuvable", ton: "attente" as const };
   return (
     <div data-service-composio={service.slug} className="flex flex-wrap items-center gap-3 py-3">
-      <Logo nom={service.nom} />
+      <Logo nom={service.nom} src={service.logo ?? undefined} />
       <div className="flex min-w-0 flex-1 basis-40 flex-col">
         <span className="truncate text-ui-s font-medium text-texte-principal">{service.nom}</span>
         {comptes.length <= 1 && choisi && <span className="truncate text-ui-xs text-texte-tertiaire">{nomCompteComposio(choisi)}</span>}
@@ -215,7 +230,7 @@ function AppsDirectes() {
       <div className="grid gap-3 @md:grid-cols-2 @3xl:grid-cols-3">
         {APPS.map((a) => {
           const branche = liste.find((m) => m.app === a.id);
-          return <CarteApp key={a.id} id={a.id} nom={a.nom} description={a.description} branche={branche} bureau={!!pont} onConnecter={() => setOuvert(a.id)} onRetirer={() => branche && void retirer(branche)} />;
+          return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={a.description} branche={branche} bureau={!!pont} onConnecter={() => setOuvert(a.id)} onRetirer={() => branche && void retirer(branche)} />;
         })}
         {persos.map((m) => <CarteApp key={m.id} nom={m.nom} description={new URL(m.url).host} branche={m} bureau={!!pont} onConnecter={() => {}} onRetirer={() => void retirer(m)} />)}
         <button
@@ -234,13 +249,13 @@ function AppsDirectes() {
   );
 }
 
-function CarteApp({ id, nom, description, branche, bureau, onConnecter, onRetirer }: {
-  id?: string; nom: string; description: string; branche?: McpDirect; bureau: boolean; onConnecter: () => void; onRetirer: () => void;
+function CarteApp({ id, logo, nom, description, branche, bureau, onConnecter, onRetirer }: {
+  id?: string; logo?: string; nom: string; description: string; branche?: McpDirect; bureau: boolean; onConnecter: () => void; onRetirer: () => void;
 }) {
   return (
     <div data-app-mcp={id} className="klyra-carte-flottante flex min-h-[132px] flex-col justify-between gap-3 rounded-lg p-4">
       <div className="flex items-start gap-3">
-        <Logo nom={nom} />
+        <Logo nom={nom} logo={logo} />
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-ui-s font-semibold text-texte-principal">{nom}</span>
           <span className="line-clamp-2 text-ui-xs text-texte-tertiaire">{description}</span>
@@ -304,11 +319,12 @@ function ConnexionMcp({ app, lienJeton, onFermer, onAjoute }: {
   );
 }
 
-/** L'initiale de l'app, dans un carré gris (pas de logos de marque dans l'app). */
-function Logo({ nom, grand }: { nom: string; grand?: boolean }) {
+/** Le logo officiel de l'app (public/logos : Composio, et simple-icons en CC0 ; ou celui que donne Composio), sinon son initiale. */
+function Logo({ nom, logo, src, grand }: { nom: string; logo?: string; src?: string; grand?: boolean }) {
+  const image = src ?? (logo ? `/logos/${logo}.svg` : null);
   return (
-    <span aria-hidden className={cn("flex shrink-0 items-center justify-center rounded-md bg-fond-surface-grise font-semibold text-texte-principal", grand ? "size-12 text-ui" : "size-9 text-ui-s")}>
-      {nom.charAt(0).toUpperCase()}
+    <span aria-hidden className={cn("flex shrink-0 items-center justify-center rounded-md font-semibold text-texte-principal", image ? "border border-bordure-subtile bg-fond-surface" : "bg-fond-surface-grise", grand ? "size-12 text-ui" : "size-9 text-ui-s")}>
+      {image ? <Image src={image} alt="" width={grand ? 28 : 20} height={grand ? 28 : 20} /> : nom.charAt(0).toUpperCase()}
     </span>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import Image from "next/image";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
@@ -75,8 +76,9 @@ export function ConnexionComposio({ api, initial, ancien, onFermer, onTermine }:
             <input data-autofocus aria-controls="catalogue-composio" onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); document.querySelector<HTMLElement>('#catalogue-composio [role="option"]:not([disabled])')?.focus(); } }} type="search" value={requete} onChange={(e) => setRequete(e.target.value)} className="h-9 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-ui-s text-texte-principal outline-none focus:border-focus" placeholder="Nom du service…" />
           </label>
           <div id="catalogue-composio" role="listbox" aria-label="Services du projet Composio" className="klyra-defilement-fin max-h-48 overflow-y-auto rounded-md border border-bordure-subtile p-1">
-            {filtres.map((s) => <button key={s.slug} type="button" role="option" aria-selected={s.slug === slug} disabled={!s.configurations.some((c) => c.active)} tabIndex={slug === s.slug || (!slug && s === filtres.find((c) => c.configurations.some((a) => a.active))) ? 0 : -1} onKeyDown={fleches} onClick={() => choisir(s)} className={cn("flex w-full flex-col gap-0.5 rounded-sm border-0 p-2 text-left disabled:opacity-50", s.slug === slug ? "bg-fond-survol text-texte-principal" : "bg-transparent hover:bg-fond-survol")}>
-              <span className="text-ui-s font-medium">{s.nom}</span><span className="line-clamp-2 text-ui-xs text-texte-secondaire">{s.description || s.slug}{!s.configurations.some((c) => c.active) ? " · Configuration inactive" : ""}</span>
+            {filtres.map((s) => <button key={s.slug} type="button" role="option" aria-selected={s.slug === slug} disabled={!s.configurations.some((c) => c.active)} tabIndex={slug === s.slug || (!slug && s === filtres.find((c) => c.configurations.some((a) => a.active))) ? 0 : -1} onKeyDown={fleches} onClick={() => choisir(s)} className={cn("flex w-full items-start gap-2.5 rounded-sm border-0 p-2 text-left disabled:opacity-50", s.slug === slug ? "bg-fond-survol text-texte-principal" : "bg-transparent hover:bg-fond-survol")}>
+              {s.logo ? <Image src={s.logo} alt="" width={20} height={20} className="mt-0.5 shrink-0" /> : <span aria-hidden className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-xs bg-fond-surface-grise text-ui-3xs font-semibold">{s.nom.charAt(0).toUpperCase()}</span>}
+              <span className="flex min-w-0 flex-col gap-0.5"><span className="text-ui-s font-medium">{s.nom}</span><span className="line-clamp-2 text-ui-xs text-texte-secondaire">{s.description || s.slug}{!s.configurations.some((c) => c.active) ? " · Configuration inactive" : ""}</span></span>
             </button>)}
             {!filtres.length && <p className="m-2 text-ui-xs">Aucun service de ton projet ne correspond.</p>}
           </div>

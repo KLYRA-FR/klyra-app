@@ -4,6 +4,7 @@ import path from "node:path";
 import { ComposioApi } from "./composio-api";
 import { EspaceComposio, type ConfigurationComposio } from "./composio-espace";
 import { identiteComposio, revisionIdentiteComposio } from "./composio-identite";
+import type { EtatComposio } from "./composio-types";
 
 function coffreDisponible(): boolean {
   return safeStorage.isEncryptionAvailable() && (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text");
@@ -83,6 +84,41 @@ export async function importerCleComposio(win: BrowserWindow, contexte: unknown)
     throw new Error("Ce fichier ne peut pas être lu. Choisis un fichier contenant uniquement la clé de projet Composio.");
   }
   await espaceComposio.configurer(contexte, cle);
+  return true;
+}
+
+/* Les logos des apps : téléchargés une fois par main, rendus à l'écran en `data:`
+   (la page n'a pas le droit de charger une image extérieure). */
+const logos = new Map<string, Promise<string | null>>();
+const TYPES_LOGO = ["image/svg+xml", "image/png", "image/jpeg", "image/webp"];
+
+async function telechargerLogo(url: string): Promise<string | null> {
+  try {
+    const r = await net.fetch(url, { signal: AbortSignal.timeout(5000) });
+    const type = (r.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!r.ok || !TYPES_LOGO.includes(type)) return null;
+    const donnees = Buffer.from(await r.arrayBuffer());
+    return donnees.length <= 200_000 ? `data:${type};base64,${donnees.toString("base64")}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** L'état Composio pour l'écran, avec le logo de chaque app quand Composio en donne un. */
+export async function etatAvecLogos(): Promise<EtatComposio> {
+  const etat = await espaceComposio.etat();
+  const services = await Promise.all(etat.services.map(async (s) => {
+    if (!s.logo || !/^https:\/\//.test(s.logo)) return { ...s, logo: null };
+    if (!logos.has(s.logo)) logos.set(s.logo, telechargerLogo(s.logo));
+    return { ...s, logo: await logos.get(s.logo)! };
+  }));
+  return { ...etat, services };
+}
+
+/** La clé collée dans la fenêtre : vérifiée auprès de Composio, puis gardée dans le coffre. Elle ne revient jamais vers l'écran. */
+export async function saisirCleComposio(contexte: unknown, cle: unknown): Promise<boolean> {
+  if (typeof cle !== "string" || cle.length > 1024) throw new Error("Ce n’est pas une clé API de projet Composio.");
+  await espaceComposio.configurer(contexte, cle.trim());
   return true;
 }
 

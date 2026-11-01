@@ -12,6 +12,8 @@ export interface VueServiceComposio {
   slug: string;
   nom: string;
   description: string;
+  /** Le logo, déjà téléchargé par main : une image en `data:`, ou null. */
+  logo?: string | null;
   configurations: { id: string; nom: string; methode: string; active: boolean }[];
 }
 
