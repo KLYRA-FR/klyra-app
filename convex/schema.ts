@@ -5,7 +5,8 @@ import { vRole, vStatutInvitation } from "./model/valeurs";
 
 /**
  * Données partagées de l'équipe, hébergées par Convex (cf. `docs/CONVEX-PLAN.md`).
- * Les conversations, les fichiers et les clés restent sur l'ordinateur.
+ * Les fichiers et les clés restent sur l'ordinateur. Une copie des conversations
+ * (messages, cartes d'agents et de projets) est aussi dans le compte, pour le téléphone.
  */
 export default defineSchema({
   ...authTables,
@@ -47,6 +48,8 @@ export default defineSchema({
     email: v.string(),
     /** Les instants (ms) des demandes acceptées, du plus ancien au plus récent ; cinq au plus. */
     envois: v.array(v.number()),
+    /** D'où part la dernière demande acceptée. Absent : l'ordinateur (`klyra://`). */
+    cible: v.optional(v.union(v.literal("web"), v.literal("poste"))),
   }).index("by_email", ["email"]),
 
   /** Une demande acceptée par `connexion:demanderLien` : Convex Auth la consomme en créant le lien. */
@@ -155,6 +158,86 @@ export default defineSchema({
   })
     .index("by_participant_and_debut", ["participant", "debut"])
     .index("by_evenement", ["evenementId"]),
+
+  /**
+   * Un ordinateur du compte. Le téléphone lit `dernierSignal` : ouvert s'il date
+   * de moins de 25 s. Le téléphone ne s'écrit pas ici.
+   */
+  postes: defineTable({
+    membreId: v.id("membres"),
+    /** Identifiant stable de cet ordinateur, choisi par l'app, pas par le téléphone. */
+    cle: v.string(),
+    systeme: v.union(v.literal("mac"), v.literal("windows"), v.literal("autre")),
+    nom: v.string(),
+    dernierSignal: v.number(),
+  }).index("by_membre_and_cle", ["membreId", "cle"]),
+
+  /**
+   * Copie des conversations de l'ordinateur (spec mobile M-4). La copie locale
+   * reste dans `conversations.json`. Ni sessions Claude, ni fichiers, ni clés.
+   */
+  conversationsCompte: defineTable({
+    membreId: v.id("membres"),
+    origine: v.string(),
+    kind: v.union(v.literal("direct"), v.literal("equipe")),
+    titre: v.string(),
+    projetId: v.union(v.string(), v.null()),
+    projetNom: v.union(v.string(), v.null()),
+    roleIds: v.array(v.string()),
+    misAJour: v.string(),
+    epingleLe: v.union(v.string(), v.null()),
+    extrait: v.string(),
+    extraitLe: v.union(v.string(), v.null()),
+    nonLus: v.number(),
+    /** Tâches du fil, JSON court. */
+    taches: v.string(),
+  })
+    .index("by_membre_and_origine", ["membreId", "origine"])
+    .index("by_membre_and_misAJour", ["membreId", "misAJour"]),
+
+  messagesCompte: defineTable({
+    membreId: v.id("membres"),
+    conversationOrigine: v.string(),
+    origine: v.string(),
+    auteurKind: v.union(v.literal("user"), v.literal("role")),
+    auteurId: v.union(v.string(), v.null()),
+    creeLe: v.string(),
+    texte: v.string(),
+    /** Parties réduites (texte, nombre d'étapes, tâches), JSON. */
+    parties: v.string(),
+    statut: v.union(v.literal("en-cours"), v.literal("fait"), v.literal("erreur"), v.null()),
+  })
+    .index("by_membre_and_conversation_and_creeLe", ["membreId", "conversationOrigine", "creeLe"])
+    .index("by_membre_and_origine", ["membreId", "origine"]),
+
+  /** Carte d'identité d'un agent, pour lire un fil sans la fiche (M-4). */
+  cartesAgents: defineTable({
+    membreId: v.id("membres"),
+    origine: v.string(),
+    nom: v.string(),
+    teinte: v.string(),
+    roleCourt: v.string(),
+    actif: v.boolean(),
+  }).index("by_membre_and_origine", ["membreId", "origine"]),
+
+  /** Carte d'un projet, sans son dossier (M-4). */
+  cartesProjets: defineTable({
+    membreId: v.id("membres"),
+    origine: v.string(),
+    nom: v.string(),
+    accroche: v.string(),
+    statut: v.string(),
+    epingle: v.boolean(),
+  }).index("by_membre_and_origine", ["membreId", "origine"]),
+
+  /** Message écrit sur le téléphone : il part sur l'ordinateur à son ouverture. */
+  messagesFile: defineTable({
+    membreId: v.id("membres"),
+    conversationOrigine: v.string(),
+    texte: v.string(),
+    creeLe: v.number(),
+    pris: v.boolean(),
+  }).index("by_membre_and_pris_and_creeLe", ["membreId", "pris", "creeLe"]),
 
   /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
   courrielsSimules: defineTable({

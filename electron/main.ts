@@ -103,7 +103,7 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
-import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, PROTOCOLE, prendreCode, recevoirLien, retirerJeton, sourcesConvex } from "./compte";
+import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 
 /**
@@ -572,6 +572,7 @@ function registerBridge() {
   handle("compte:jeton:ecrire", (cle: string, valeur: string) => ecrireJeton(cle, valeur));
   handle("compte:jeton:retirer", (cle: string) => retirerJeton(cle));
   handle("compte:code", () => prendreCode());
+  handle("serveur:lien", () => prendreLienRejoindre());
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
   ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {
@@ -643,24 +644,30 @@ function premierPlan() {
   win.focus();
 }
 
-/* Un lien de connexion (klyra://connexion?code=…) : l'interface vient prendre le code. */
-function ouvrirLienConnexion(lien: unknown) {
-  if (!recevoirLien(lien)) return;
-  premierPlan();
-  fenetrePrincipale?.webContents.send("compte:lien");
+/* klyra://connexion ouvre le compte. klyra://rejoindre ouvre l’écran Serveurs. */
+function ouvrirLienKlyra(lien: unknown) {
+  if (recevoirLien(lien)) {
+    premierPlan();
+    fenetrePrincipale?.webContents.send("compte:lien");
+    return;
+  }
+  if (recevoirLienRejoindre(lien)) {
+    premierPlan();
+    fenetrePrincipale?.webContents.send("serveur:lien");
+  }
 }
 /* Mac : le système passe le lien à l'app, ouverte ou non. */
 app.on("open-url", (event, lien) => {
   event.preventDefault();
-  ouvrirLienConnexion(lien);
+  ouvrirLienKlyra(lien);
 });
 /* Windows : le lien arrive dans les arguments, d'une seconde instance ou au lancement. */
 const lienDans = (argv: string[]) => argv.find((a) => a.startsWith(`${PROTOCOLE}://`));
 app.on("second-instance", (_event, argv) => {
   premierPlan();
-  ouvrirLienConnexion(lienDans(argv));
+  ouvrirLienKlyra(lienDans(argv));
 });
-recevoirLien(lienDans(process.argv));
+ouvrirLienKlyra(lienDans(process.argv));
 
 void app.whenReady().then(async () => {
   /* Mes agents d'abord : sa première création décide entre reprise et nouveau profil,

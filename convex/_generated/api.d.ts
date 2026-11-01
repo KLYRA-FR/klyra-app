@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as bibliotheque from "../bibliotheque.js";
 import type * as connexion from "../connexion.js";
+import type * as conversationsCompte from "../conversationsCompte.js";
 import type * as courriels from "../courriels.js";
 import type * as equipe from "../equipe.js";
 import type * as evenements from "../evenements.js";
@@ -23,6 +24,7 @@ import type * as model_evenements from "../model/evenements.js";
 import type * as model_limites from "../model/limites.js";
 import type * as model_rappels from "../model/rappels.js";
 import type * as model_valeurs from "../model/valeurs.js";
+import type * as postes from "../postes.js";
 import type * as presence from "../presence.js";
 import type * as rappels from "../rappels.js";
 
@@ -36,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   bibliotheque: typeof bibliotheque;
   connexion: typeof connexion;
+  conversationsCompte: typeof conversationsCompte;
   courriels: typeof courriels;
   equipe: typeof equipe;
   evenements: typeof evenements;
@@ -48,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   "model/limites": typeof model_limites;
   "model/rappels": typeof model_rappels;
   "model/valeurs": typeof model_valeurs;
+  postes: typeof postes;
   presence: typeof presence;
   rappels: typeof rappels;
 }>;

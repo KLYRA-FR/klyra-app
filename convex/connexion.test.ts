@@ -105,6 +105,18 @@ describe("page relais du lien", () => {
     expect(await reponse.text()).toContain(`klyra://connexion?code=${code}`);
   });
 
+  test("une demande web ne redirige pas vers klyra:// et propose de copier le lien", async () => {
+    const t = nouvelEssai();
+    const code = "B".repeat(32);
+    const reponse = await t.fetch(`/connexion?code=${code}&cible=web`);
+    expect(reponse.status).toBe(200);
+    const page = await reponse.text();
+    expect(page).not.toContain("klyra://");
+    expect(page).toContain("Copier le lien");
+    expect(page).toContain("Toujours rien ?");
+    expect(page).toContain(`cible=web`);
+  });
+
   test("un code mal formé n'ouvre rien et n'est pas recopié dans la page", async () => {
     const t = nouvelEssai();
     const reponse = await t.fetch(`/connexion?code=${encodeURIComponent('"><script>alert(1)</script>')}`);

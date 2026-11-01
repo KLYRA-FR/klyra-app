@@ -15,10 +15,12 @@ import { RegionAnnonces } from "@/components/team/RegionAnnonces";
 import { useRaccourciRecherche, useRaccourciReglages } from "@/lib/raccourcis";
 import { BibliothequeProvider } from "@/lib/bibliotheque";
 import { CompteProvider } from "@/lib/compte";
+import { CLE_LIEN_ATTENTE } from "@/lib/serveur-vps";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
 import { PLATEFORME } from "@/lib/plateforme";
 import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
+import { CoqueTelephone } from "@/components/telephone/CoqueTelephone";
 import { AppRail } from "./AppRail";
 import { SonsApp } from "./SonsApp";
 
@@ -38,6 +40,40 @@ function useOpenProject(): Project | undefined {
 
 /** Largeur de fenêtre sous laquelle le panneau des fichiers se replie. */
 const FILES_MIN_WIDTH = 1280;
+/** Sous ce seuil, la coque téléphone. À partir de 760 px, le rail du bureau, y compris Electron. */
+const TELEPHONE_MAX = 760;
+
+function useTelephone(): boolean {
+  const [largeur, setLargeur] = useState<number | null>(null);
+  useEffect(() => {
+    const lire = () => setLargeur(window.innerWidth);
+    lire();
+    window.addEventListener("resize", lire);
+    return () => window.removeEventListener("resize", lire);
+  }, []);
+  if (largeur !== null) return largeur < TELEPHONE_MAX;
+  if (typeof window === "undefined") return false;
+  return window.innerWidth < TELEPHONE_MAX;
+}
+
+/** Electron a ouvert klyra://rejoindre : l’écran Serveurs consomme le lien. */
+function EcouteRejoindre() {
+  const router = useRouter();
+  useEffect(() => {
+    const pont = getBridge()?.serveur;
+    if (!pont) return;
+    const prendre = async () => {
+      const recu = await pont.prendreLien();
+      if (!recu.ok || !recu.data) return;
+      sessionStorage.setItem(CLE_LIEN_ATTENTE, recu.data);
+      window.dispatchEvent(new Event("klyra:rejoindre"));
+      router.push("/serveurs");
+    };
+    void prendre();
+    return pont.onLien(() => void prendre());
+  }, [router]);
+  return null;
+}
 
 const MAIN =
   "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface shadow-ombre-ambiante";
@@ -152,6 +188,7 @@ function ShellLayout({ children }: { children: ReactNode }) {
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const isClient = useIsClient();
+  const telephone = useTelephone();
   /* Sur la racine, pour les styles propres au système (barres de défilement),
      fenêtres ouvertes hors du cadre comprises. */
   useEffect(() => {
@@ -166,12 +203,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           <BibliothequeProvider>
             <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
               <SonsApp />
+              <EcouteRejoindre />
               <RegionAnnonces />
               <Suspense>
-                <ShellLayout>{children}</ShellLayout>
-                {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
-                <FenetreRecherche />
-                <MessageSuppression />
+                {telephone ? (
+                  <CoqueTelephone />
+                ) : (
+                  <>
+                    <ShellLayout>{children}</ShellLayout>
+                    {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
+                    <FenetreRecherche />
+                    <MessageSuppression />
+                  </>
+                )}
               </Suspense>
             </div>
           </BibliothequeProvider>

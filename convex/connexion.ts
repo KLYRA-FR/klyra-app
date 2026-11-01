@@ -17,13 +17,24 @@ const TICKET_MS = 5 * 60_000;
  * L'e-mail part ensuite, en arrière-plan, seulement pour une adresse admise.
  */
 export const demanderLien = mutation({
-  args: { email: v.string() },
+  args: {
+    email: v.string(),
+    /** « web » : le téléphone. Absent : l'ordinateur, comme avant. */
+    cible: v.optional(v.union(v.literal("web"), v.literal("poste"))),
+  },
   returns: v.object({ acceptee: v.boolean(), attenteMs: v.number() }),
   handler: async (ctx, args) => {
     const email = normaliserEmail(args.email);
     if (!estEmail(email)) throw erreur("adresse_invalide");
     const maintenant = Date.now();
     const reservation = await reserverLien(ctx, email, maintenant);
+    if (reservation.acceptee) {
+      const ligne = await ctx.db
+        .query("demandesLien")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .unique();
+      if (ligne) await ctx.db.patch("demandesLien", ligne._id, { cible: args.cible ?? "poste" });
+    }
     if (reservation.acceptee && (await peutRecevoirUnLien(ctx, email))) {
       const ticket = await ctx.db.insert("ticketsLien", { email, expire: maintenant + TICKET_MS });
       await ctx.scheduler.runAfter(0, api.auth.signIn, { provider: "postshiba", params: { email } });

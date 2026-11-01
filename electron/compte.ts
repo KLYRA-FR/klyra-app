@@ -2,6 +2,7 @@ import { app, safeStorage } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { lienRejoindre } from "./lien-rejoindre";
 
 /**
  * Le compte d'équipe (Convex, cf. `docs/CONVEX-PLAN.md`) côté système :
@@ -133,6 +134,22 @@ export function prendreCode(): string | null {
   const code = codeEnAttente;
   codeEnAttente = null;
   return code;
+}
+
+/** Le dernier lien `klyra://rejoindre`, que l’écran Serveurs vient prendre (une seule fois). */
+let lienServeurEnAttente: string | null = null;
+
+export function recevoirLienRejoindre(lien: unknown): boolean {
+  const recu = lienRejoindre(lien);
+  if (recu === null) return false;
+  lienServeurEnAttente = recu;
+  return true;
+}
+
+export function prendreLienRejoindre(): string | null {
+  const lien = lienServeurEnAttente;
+  lienServeurEnAttente = null;
+  return lien;
 }
 
 /**
