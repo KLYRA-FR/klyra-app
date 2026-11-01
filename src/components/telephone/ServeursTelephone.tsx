@@ -4,16 +4,19 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
+import { getBridge } from "@/lib/bridge";
 import { useCompte } from "@/lib/compte";
 import {
   CLE_CARNET,
   CLE_LIEN_ATTENTE,
+  COMMANDE_SERVEUR,
   MESSAGE_INVITATION,
   MESSAGE_VERSION,
   ajouterServeur,
   carnetVide,
   choisirServeur,
   interroger,
+  lienCopie,
   lireCarnet,
   lireSaisie,
   placePour,
@@ -41,6 +44,50 @@ function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, enCours: bo
   return enCours ? `En cours · ${detail}` : detail;
 }
 
+/** Écran vide : les trois gestes pour obtenir un lien, la commande à copier en premier. */
+function Guide() {
+  const [copie, setCopie] = useState(false);
+  const copier = () => {
+    void navigator.clipboard?.writeText(COMMANDE_SERVEUR).then(() => {
+      setCopie(true);
+      setTimeout(() => setCopie(false), 2000);
+    });
+  };
+  return (
+    <ol className="flex flex-col gap-6 py-2">
+      <li className="flex gap-3">
+        <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">1</span>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <p className="text-body-s text-texte-principal">Lance le serveur sur le VPS</p>
+          <p className="text-ui text-texte-secondaire">Depuis le dossier de l’app sur la machine, avec Node 22 ou plus récent.</p>
+          <div className="flex items-start gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
+            <code className="min-w-0 flex-1 text-ui-xs leading-[1.6] [overflow-wrap:anywhere] text-texte-principal">{COMMANDE_SERVEUR}</code>
+            <Bouton variant="blanc" taille="mini" onClick={copier}>
+              {copie ? "Copiée" : "Copier"}
+            </Bouton>
+          </div>
+        </div>
+      </li>
+      <li className="flex gap-3">
+        <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">2</span>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <p className="text-body-s text-texte-principal">Ouvre sa page en https</p>
+          <p className="text-ui text-texte-secondaire">
+            L’adresse https qui mène à ce port affiche le QR et le lien d’invitation. Sur un téléphone, scanne le QR. Ici, copie le lien.
+          </p>
+        </div>
+      </li>
+      <li className="flex gap-3">
+        <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">3</span>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <p className="text-body-s text-texte-principal">Colle le lien ci-dessous</p>
+          {getBridge() ? <p className="text-ui text-texte-secondaire">S’il est déjà copié, l’app le reprend toute seule.</p> : null}
+        </div>
+      </li>
+    </ol>
+  );
+}
+
 /** Liste, lien, quitter, retirer. Le QR reste sur la page du VPS. */
 export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const router = useRouter();
@@ -51,6 +98,8 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
   const [sondes, setSondes] = useState<Record<string, Sonde>>({});
+  const [repris, setRepris] = useState(false);
+  const dernierRepris = useRef<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(CLE_CARNET, JSON.stringify(carnet));
@@ -71,6 +120,28 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const connecte = compte.etat === "connecte";
   const formulaire = carnet.liste.length === 0 || ajout;
 
+  // Dans Electron seulement (le navigateur demanderait l’autorisation) : un lien copié remplit le champ vide, une seule fois.
+  useEffect(() => {
+    if (!formulaire || saisie || !getBridge()) return;
+    const lire = () => {
+      void navigator.clipboard
+        ?.readText()
+        .then((texte) => {
+          const lien = lienCopie(texte);
+          if (!lien || lien === dernierRepris.current) return;
+          dernierRepris.current = lien;
+          setSaisie((actuelle) => actuelle || lien);
+          setRepris(true);
+        })
+        .catch(() => {
+          /* Le champ reste à remplir à la main. */
+        });
+    };
+    lire();
+    window.addEventListener("focus", lire);
+    return () => window.removeEventListener("focus", lire);
+  }, [formulaire, saisie]);
+
   const tenterRef = useRef<(adresse: string, code: string | null) => Promise<void>>(async () => {});
   const tenter = async (adresse: string, code: string | null) => {
     setOccupe(true);
@@ -85,6 +156,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
     setCarnet((etat) => ajouterServeur(etat, { adresse, invitation: code, nom: lecture.nom, version: lecture.version }));
     setSondes((etat) => ({ ...etat, [adresse]: "repond" }));
     setSaisie("");
+    setRepris(false);
     setAjout(false);
   };
   useEffect(() => {
@@ -140,46 +212,54 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
       ) : (
         <h1 className="text-h3 font-medium text-texte-principal">Serveurs</h1>
       )}
-      <p className={cadreTel ? "px-4 pb-2 text-ui text-texte-secondaire" : "pb-4 text-ui text-texte-secondaire"}>Le QR est affiché par le serveur. Ici, on colle le lien d’invitation.</p>
-      <ul className={cadreTel ? "min-h-0 flex-1 overflow-y-auto px-4" : "min-h-0 flex-1 overflow-y-auto"}>
-        {carnet.liste.map((serveur) => {
-          const enCours = serveur.id === carnet.actif;
-          return (
-            <li key={serveur.id} className="border-b border-bordure-subtile py-3">
-              <button
-                type="button"
-                className="flex min-h-11 w-full flex-col justify-center text-left"
-                aria-current={enCours ? "true" : undefined}
-                onClick={() => {
-                  if (serveur.etat === "joint") setCarnet((etat) => choisirServeur(etat, serveur.id));
-                }}
-              >
-                <span className="text-body-s text-texte-principal">{serveur.nom}</span>
-                <span className="text-ui-xs text-texte-secondaire">{serveur.adresse}</span>
-                <span className="text-ui-xs text-texte-secondaire">{libelle(serveur.etat, sondes[serveur.id], enCours)}</span>
-              </button>
-              <span className="mt-1 flex gap-4">
-                {serveur.etat === "joint" ? (
-                  <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => setCarnet((etat) => quitterServeur(etat, serveur.id))}>
-                    Quitter
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="min-h-11 text-ui text-texte-principal"
-                    onClick={() => void tenter(serveur.adresse, serveur.invitation)}
-                  >
-                    Rejoindre
-                  </button>
-                )}
-                <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => setCarnet((etat) => retirerServeur(etat, serveur.id))}>
-                  Retirer
+      <p className={cadreTel ? "px-4 pb-2 text-ui text-texte-secondaire" : "pb-4 text-ui text-texte-secondaire"}>
+        {carnet.liste.length === 0 ? "Relie l’app à un serveur KLYRA qui tourne sur ton VPS." : "Le QR est affiché par le serveur. Ici, on colle le lien d’invitation."}
+      </p>
+      {carnet.liste.length === 0 ? (
+        <div className={cadreTel ? "min-h-0 flex-1 overflow-y-auto px-4" : "min-h-0 flex-1 overflow-y-auto"}>
+          <Guide />
+        </div>
+      ) : (
+        <ul className={cadreTel ? "min-h-0 flex-1 overflow-y-auto px-4" : "min-h-0 flex-1 overflow-y-auto"}>
+          {carnet.liste.map((serveur) => {
+            const enCours = serveur.id === carnet.actif;
+            return (
+              <li key={serveur.id} className="border-b border-bordure-subtile py-3">
+                <button
+                  type="button"
+                  className="flex min-h-11 w-full flex-col justify-center text-left"
+                  aria-current={enCours ? "true" : undefined}
+                  onClick={() => {
+                    if (serveur.etat === "joint") setCarnet((etat) => choisirServeur(etat, serveur.id));
+                  }}
+                >
+                  <span className="text-body-s text-texte-principal">{serveur.nom}</span>
+                  <span className="text-ui-xs text-texte-secondaire">{serveur.adresse}</span>
+                  <span className="text-ui-xs text-texte-secondaire">{libelle(serveur.etat, sondes[serveur.id], enCours)}</span>
                 </button>
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+                <span className="mt-1 flex gap-4">
+                  {serveur.etat === "joint" ? (
+                    <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => setCarnet((etat) => quitterServeur(etat, serveur.id))}>
+                      Quitter
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="min-h-11 text-ui text-texte-principal"
+                      onClick={() => void tenter(serveur.adresse, serveur.invitation)}
+                    >
+                      Rejoindre
+                    </button>
+                  )}
+                  <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => setCarnet((etat) => retirerServeur(etat, serveur.id))}>
+                    Retirer
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <div className={cadreTel ? (connecte ? "shrink-0 px-4 pt-3 pb-4" : "shrink-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]") : "shrink-0 pt-3"}>
         {formulaire ? (
           <form onSubmit={rejoindre} className="flex flex-col gap-3">
@@ -193,10 +273,14 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
                 spellCheck={false}
                 placeholder="klyra://rejoindre?…"
                 value={saisie}
-                onChange={(e) => setSaisie(e.target.value)}
+                onChange={(e) => {
+                  setSaisie(e.target.value);
+                  setRepris(false);
+                }}
                 className={CHAMP}
               />
             </label>
+            {repris && saisie ? <p className="text-ui-xs text-texte-secondaire">Lien repris du presse-papiers.</p> : null}
             {erreur ? (
               <p role="alert" className="text-ui text-texte-principal">
                 {erreur}

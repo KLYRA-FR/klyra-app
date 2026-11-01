@@ -19,7 +19,7 @@ La page `/` montre le QR et le lien. Elle répond aussi à `GET /klyra/v1/serveu
 
 ## Dans l’app
 
-La fenêtre PC (1100 px et plus) a la colonne Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.
+La fenêtre PC (1100 px et plus) a la colonne Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Sans serveur, l’écran montre les trois gestes (lancer, ouvrir la page en https, coller) et la commande à copier. Dans Electron, un lien `klyra://rejoindre` déjà copié remplit le champ vide. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.
 
 Safari ouvre aussi la page https du programme, sur le VPS. Le QR et le lien y sont affichés. Toucher Rejoindre relie ce serveur. Depuis un autre écran, la caméra scanne le même QR. Un autre VPS se rejoint avec son propre lien.
 

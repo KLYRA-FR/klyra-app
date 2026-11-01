@@ -9,6 +9,7 @@ import {
   choisirServeur,
   lireCarnet,
   lireCorps,
+  lienCopie,
   lireSaisie,
   placePour,
   quitterServeur,
@@ -109,5 +110,20 @@ describe("carnet de serveurs", () => {
     expect(placePour(carnet, "https://nouveau.exemple")).toBe(false);
     expect(ajouterServeur(carnet, { ...klyra, adresse: "https://nouveau.exemple", nom: "Nouveau" }).liste).toHaveLength(20);
     expect(placePour(carnet, "https://s0.exemple")).toBe(true);
+  });
+});
+
+describe("lien copié", () => {
+  test("un lien klyra://rejoindre lisible est repris", () => {
+    const lien = "klyra://rejoindre?adresse=https%3A%2F%2Fmon-vps.exemple&invitation=abc";
+    expect(lienCopie(`  ${lien}\n`)).toBe(lien);
+  });
+
+  test("tout autre texte est ignoré", () => {
+    expect(lienCopie("https://mon-vps.exemple")).toBeNull();
+    expect(lienCopie("un mot de passe")).toBeNull();
+    expect(lienCopie("klyra://rejoindre?invitation=abc")).toBeNull();
+    expect(lienCopie("klyra://connexion?code=abc")).toBeNull();
+    expect(lienCopie(null)).toBeNull();
   });
 });
