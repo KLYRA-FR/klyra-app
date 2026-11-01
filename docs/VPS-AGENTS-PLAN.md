@@ -64,7 +64,15 @@
 
 Chaque PR suit `docs/CONTRIBUER.md`. Retour arrière : une PR de revert. Les conversations sans `lieu` sont lues comme « Ce PC » : une version antérieure de l'app les lit sans erreur.
 
-## 7. Questions pour Corentin
+## Décisions du 01/11
+
+1. **Adresse fixe : Tailscale.** `tailscale serve` sur le VPS ; le serveur n'est plus sur Internet. Le tunnel gratuit reste seulement quand Tailscale n'est pas installé.
+2. **Un VPS par personne.** Chacun relie son propre VPS depuis l'app ; un seul utilisateur `klyra` par VPS. Pas de partage d'un VPS entre membres de l'équipe pour l'instant.
+3. **Compte Claude : l'abonnement de la personne**, limites partagées entre son PC et son VPS.
+4. **Accès « tout » autorisé dès la PR 3**, limité aux droits de l'utilisateur `klyra`.
+5. **KLYRA séparé d'OpenBot** sur la même machine (utilisateur, ports, dossiers), comme proposé.
+
+## 7. Questions pour Corentin (tranchées le 01/11, ci-dessus)
 
 1. **Adresse fixe** : Tailscale (privé, chacun rejoint le réseau) ou tunnel Cloudflare nommé sur un domaine KLYRA (public, rien à installer) ? Recommandation : Tailscale, puisque ton PC et le VPS y sont déjà.
 2. **Qui utilise le VPS** : toi seul, ou aussi Pelin et Yanis ? Si plusieurs personnes : un utilisateur `klyra` commun, ou un par personne (leurs conversations et fichiers séparés) ?
