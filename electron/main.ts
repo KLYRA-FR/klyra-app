@@ -110,6 +110,7 @@ import {
   vignetteArtefact,
 } from "./artefacts";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
+import { arbreVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, type Equipe } from "./agents-distants";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
@@ -431,9 +432,16 @@ function registerBridge() {
     const choix = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     return choix.canceled ? null : (choix.filePaths[0] ?? null);
   });
-  handle("projets:arbre", (dossier: string, relatif?: string) => {
+  /* `lieu` : un projet sur un VPS relié (son origine) ; absent, un dossier de ce PC. */
+  handle("projets:arbre", (dossier: string, relatif?: string, lieu?: string | null) => {
     if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
-    return arbreDossier(dossier, typeof relatif === "string" ? relatif : "");
+    const rel = typeof relatif === "string" ? relatif : "";
+    if (typeof lieu === "string" && lieu) return arbreVps(lieu, jetonServeur(lieu), dossier, rel);
+    return arbreDossier(dossier, rel);
+  });
+  handle("projets:creer-dossier-vps", (lieu: string, dossier: string) => {
+    if (typeof lieu !== "string" || typeof dossier !== "string") throw new Error("Dossier invalide.");
+    return creerDossierVps(lieu, jetonServeur(lieu), dossier);
   });
   handle("projets:pages", (dossier: string) => {
     if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
@@ -497,7 +505,9 @@ function registerBridge() {
     if (typeof id === "string" && pcm instanceof Uint8Array && pcm.byteLength <= 64 * 1024) envoyerAudio(id, pcm, valider === true);
   });
   handle("dictee:fermer", (id: string) => fermerSession(String(id)));
-  handle("projets:lire-fichier", (dossier: string, relatif: string) => lireFichier(dossier, relatif));
+  handle("projets:lire-fichier", (dossier: string, relatif: string, lieu?: string | null) =>
+    typeof lieu === "string" && lieu ? lireFichierVps(lieu, jetonServeur(lieu), dossier, relatif) : lireFichier(dossier, relatif),
+  );
   handle("projets:ouvrir-fichier", async (dossier: string, relatif: string) => {
     const erreur = await shell.openPath(cheminDansProjet(dossier, relatif));
     if (erreur) throw new Error(erreur);

@@ -112,8 +112,10 @@ export interface Project {
   roleIds: RoleId[];
   brief: string;
   previewUrl: string;
-  /** Dossier du projet sur le disque. */
+  /** Dossier du projet sur le disque (de ce PC, ou du VPS si `lieu`). */
   folder: string;
+  /** Le VPS où vit le projet (origine https) ; absent : ce PC. Ses conversations y tournent. */
+  lieu?: string | null;
   files: FileNode[];
   updatedAt: string;
 }

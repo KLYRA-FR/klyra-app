@@ -77,7 +77,7 @@ export function Visionneuse({
   useEffect(() => {
     if (!bridge) return;
     let actif = true;
-    void bridge.projets.lireFichier(project.folder, chemin).then((r) => {
+    void bridge.projets.lireFichier(project.folder, chemin, project.lieu ?? null).then((r) => {
       if (!actif) return;
       if (r.ok) setContenu(r.data);
       else setErreur(r.message);
@@ -85,7 +85,7 @@ export function Visionneuse({
     return () => {
       actif = false;
     };
-  }, [bridge, project.folder, chemin]);
+  }, [bridge, project.folder, project.lieu, chemin]);
 
   useEffect(() => {
     const echap = (e: KeyboardEvent) => e.key === "Escape" && onFermer();
@@ -164,7 +164,8 @@ export function Visionneuse({
             onChange={setVue}
           />
         )}
-        {bridge && (
+        {/* Un fichier du VPS n'est pas sur ce PC : pas d'app par défaut ni de gestionnaire de fichiers. */}
+        {bridge && !project.lieu && (
           <>
             <Bouton variant="blanc" taille="compact" onClick={() => void bridge.projets.ouvrirFichier(project.folder, chemin)}>
               Ouvrir avec l’app par défaut
@@ -241,7 +242,7 @@ export function Visionneuse({
         {contenu?.type === "autre" && (
           <div className="flex flex-col items-center gap-3 p-12 text-center">
             <span className="text-ui-s text-texte-secondaire">{contenu.raison}</span>
-            {bridge && (
+            {bridge && !project.lieu && (
               <Bouton variant="sombre" taille="compact" onClick={() => void bridge.projets.ouvrirFichier(project.folder, chemin)}>
                 Ouvrir avec l’app par défaut
               </Bouton>

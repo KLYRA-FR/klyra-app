@@ -139,24 +139,36 @@ export async function lireFichier(dossier: string, relatif: string): Promise<Con
   // Un lien d'un document vers un fichier déplacé ou vers un dossier : un message clair, pas l'erreur du système.
   if (!infos) throw new Error("Ce fichier n’existe pas (ou plus) dans le projet.");
   if (!infos.isFile()) throw new Error("Ce lien mène à un dossier, pas à un fichier.");
-  const ext = path.extname(chemin).slice(1).toLowerCase();
+  const lire = tailleALire(chemin, infos.size);
+  return contenuFichier(chemin, infos.size, lire ? await readFile(chemin) : null);
+}
+
+/** Combien d'octets la visionneuse lit pour ce fichier (0 : aucun, l'aperçu le refuse d'avance). */
+export function tailleALire(nom: string, taille: number): number {
+  const ext = path.extname(nom).slice(1).toLowerCase();
+  if (IMAGES[ext]) return taille > IMAGE_MAX ? 0 : taille;
+  if (ext === "pdf" || taille > TEXTE_MAX) return 0;
+  return taille;
+}
+
+/** L'aperçu d'un fichier à partir de ses octets : sur ce PC, ou reçus d'un VPS (`projets-vps.ts`). */
+export function contenuFichier(nom: string, taille: number, contenu: Buffer | null): ContenuFichier {
+  const ext = path.extname(nom).slice(1).toLowerCase();
   if (IMAGES[ext]) {
-    if (infos.size > IMAGE_MAX) return { type: "autre", taille: infos.size, raison: "Image trop lourde pour l’aperçu." };
-    const contenu = await readFile(chemin);
-    return { type: "image", dataUrl: `data:${IMAGES[ext]};base64,${contenu.toString("base64")}`, taille: infos.size };
+    if (!contenu || taille > IMAGE_MAX) return { type: "autre", taille, raison: "Image trop lourde pour l’aperçu." };
+    return { type: "image", dataUrl: `data:${IMAGES[ext]};base64,${contenu.toString("base64")}`, taille };
   }
   // PDF : pas de lecteur dans l'app (il faudrait le module PDF de Chromium dans la fenêtre principale, ou pdf.js).
-  if (ext === "pdf") return { type: "autre", taille: infos.size, raison: "Pas d’aperçu pour ce type de fichier." };
-  if (infos.size > TEXTE_MAX) return { type: "autre", taille: infos.size, raison: "Fichier trop lourd pour l’aperçu." };
-  const contenu = await readFile(chemin);
+  if (ext === "pdf") return { type: "autre", taille, raison: "Pas d’aperçu pour ce type de fichier." };
+  if (!contenu || taille > TEXTE_MAX) return { type: "autre", taille, raison: "Fichier trop lourd pour l’aperçu." };
   if (LECTEURS[ext]) {
     try {
-      return { ...LECTEURS[ext](contenu), taille: infos.size };
+      return { ...LECTEURS[ext](contenu), taille };
     } catch (e) {
-      return { type: "autre", taille: infos.size, raison: e instanceof ErreurApercu ? e.message : "Fichier illisible pour l’aperçu." };
+      return { type: "autre", taille, raison: e instanceof ErreurApercu ? e.message : "Fichier illisible pour l’aperçu." };
     }
   }
   // Un octet nul dans le début du fichier : c'est du binaire (police, vidéo, archive…).
-  if (contenu.subarray(0, 8000).includes(0)) return { type: "autre", taille: infos.size, raison: "Pas d’aperçu pour ce type de fichier." };
-  return { type: "texte", texte: contenu.toString("utf8"), taille: infos.size };
+  if (contenu.subarray(0, 8000).includes(0)) return { type: "autre", taille, raison: "Pas d’aperçu pour ce type de fichier." };
+  return { type: "texte", texte: contenu.toString("utf8"), taille };
 }

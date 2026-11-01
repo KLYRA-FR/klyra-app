@@ -14,12 +14,14 @@ import { createServer as creerHttps } from "node:https";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { creerAgents } from "./agents.mjs";
+import { ErreurFichier, creerFichiers } from "./fichiers.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
 export const CHEMIN_APPAIRER = "/klyra/v1/appairer";
 export const CHEMIN_APPAREIL = "/klyra/v1/appareil";
 export const CHEMIN_AGENT = "/klyra/v1/agent";
 export const CHEMIN_FICHES = "/klyra/v1/agents/fiches";
+export const CHEMIN_FICHIERS = "/klyra/v1/fichiers";
 export const PROTOCOLE = 1;
 
 export const DUREE_CODE_MS = 10 * 60_000;
@@ -199,7 +201,7 @@ function jetonDe(req) {
 
 /**
  * @param {{ nom?: string, dossier: string, maintenant?: () => number, journal?: ReturnType<typeof creerJournal>,
- *   agents?: ReturnType<typeof creerAgents> }} options
+ *   agents?: ReturnType<typeof creerAgents>, fichiers?: ReturnType<typeof creerFichiers> }} options
  */
 export function creerGestionnaire(options) {
   const nom = (options.nom ?? "").trim() || "KLYRA";
@@ -207,6 +209,7 @@ export function creerGestionnaire(options) {
   const maintenant = options.maintenant ?? Date.now;
   const journal = options.journal ?? null;
   const agents = options.agents ?? null;
+  const fichiers = options.fichiers ?? null;
   let echecs = 0;
 
   const appareilDe = (req) => {
@@ -217,7 +220,11 @@ export function creerGestionnaire(options) {
   };
   const corpsServeur = () => ({ produit: "klyra-serveur", protocole: PROTOCOLE, nom, version: String(PROTOCOLE) });
   /** Ce que l'app doit savoir pour proposer ce VPS dans le sélecteur. */
-  const capacites = () => ({ agents: agents ? agents.etat() : "absent", equipe: agents ? agents.empreinteEquipe() : "" });
+  const capacites = () => ({
+    agents: agents ? agents.etat() : "absent",
+    equipe: agents ? agents.empreinteEquipe() : "",
+    ...(fichiers ? { projets: fichiers.racine } : {}),
+  });
 
   return async function gestionnaire(req, res) {
     if (req.method === "OPTIONS") {
@@ -276,6 +283,21 @@ export function creerGestionnaire(options) {
       res.writeHead(204, ENTETES_CORS);
       res.end();
       return;
+    }
+
+    if (url.pathname.startsWith(`${CHEMIN_FICHIERS}/`)) {
+      if (!fichiers) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      const action = url.pathname.slice(CHEMIN_FICHIERS.length + 1);
+      const dossierProjet = url.searchParams.get("dossier") ?? "";
+      try {
+        if (action === "arbre" && req.method === "GET") return repondre(res, 200, { noeuds: await fichiers.arbre(dossierProjet, url.searchParams.get("relatif") ?? "") });
+        if (action === "lire" && req.method === "GET") return repondre(res, 200, await fichiers.lire(dossierProjet, url.searchParams.get("relatif") ?? ""));
+        if (action === "dossier" && req.method === "POST") return repondre(res, 200, { dossier: await fichiers.creerDossier(dossierProjet) });
+      } catch (erreur) {
+        return repondre(res, 400, { erreur: "fichier", message: erreur instanceof ErreurFichier ? erreur.message : "Lecture impossible sur le VPS." });
+      }
+      return repondre(res, 404, { erreur: "introuvable" });
     }
 
     if (url.pathname.startsWith(`${CHEMIN_AGENT}/`) || url.pathname === CHEMIN_FICHES) {
@@ -399,6 +421,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     dossier,
     journal,
     agents,
+    fichiers: creerFichiers(process.env.HOME || path.dirname(dossier)),
     port,
     hote: process.env.KLYRA_SERVEUR_HOTE ?? "127.0.0.1",
     cert: certChemin ? lireFichier(certChemin, "Certificat") : undefined,

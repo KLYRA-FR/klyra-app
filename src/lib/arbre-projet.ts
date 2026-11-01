@@ -35,7 +35,7 @@ export function useArbreProjet(project: Project): ArbreProjet {
       if (!bridge) return;
       const dossier = project.folder;
       enCours.current.add(chemin);
-      void bridge.projets.arbre(dossier, chemin).then((r) => {
+      void bridge.projets.arbre(dossier, chemin, project.lieu ?? null).then((r) => {
         enCours.current.delete(chemin);
         lus.current.add(chemin);
         // Un autre projet entre-temps : ses dossiers lus repartent de zéro.
@@ -43,7 +43,7 @@ export function useArbreProjet(project: Project): ArbreProjet {
         setDossiers((d) => ({ dossier, contenus: { ...(d.dossier === dossier ? d.contenus : {}), [chemin]: lu } }));
       });
     },
-    [bridge, project.folder],
+    [bridge, project.folder, project.lieu],
   );
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export function useArbreProjet(project: Project): ArbreProjet {
     enCours.current.clear();
     lus.current.clear();
     const lire = () =>
-      void bridge.projets.arbre(project.folder).then((r) => {
+      void bridge.projets.arbre(project.folder, undefined, project.lieu ?? null).then((r) => {
         if (!actif) return;
         setEtat(r.ok ? { dossier: project.folder, noeuds: r.data, erreur: null } : { dossier: project.folder, noeuds: [], erreur: r.message });
       });
@@ -68,7 +68,7 @@ export function useArbreProjet(project: Project): ArbreProjet {
       actif = false;
       document.removeEventListener("visibilitychange", auRetour);
     };
-  }, [bridge, project.folder, lireDossier]);
+  }, [bridge, project.folder, project.lieu, lireDossier]);
 
   const contenu = useCallback(
     (chemin: string) => (dossiers.dossier === project.folder ? dossiers.contenus[chemin] : undefined),

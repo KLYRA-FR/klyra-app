@@ -66,9 +66,10 @@ contextBridge.exposeInMainWorld("klyra", {
   projets: {
     dossierExiste: (dossier: string) => ipcRenderer.invoke("projets:dossier-existe", dossier),
     choisirDossier: () => ipcRenderer.invoke("projets:choisir-dossier"),
-    arbre: (dossier: string, relatif?: string) => ipcRenderer.invoke("projets:arbre", dossier, relatif),
+    arbre: (dossier: string, relatif?: string, lieu?: string | null) => ipcRenderer.invoke("projets:arbre", dossier, relatif, lieu),
+    creerDossierVps: (lieu: string, dossier: string) => ipcRenderer.invoke("projets:creer-dossier-vps", lieu, dossier),
     pages: (dossier: string) => ipcRenderer.invoke("projets:pages", dossier),
-    lireFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:lire-fichier", dossier, relatif),
+    lireFichier: (dossier: string, relatif: string, lieu?: string | null) => ipcRenderer.invoke("projets:lire-fichier", dossier, relatif, lieu),
     ouvrirFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:ouvrir-fichier", dossier, relatif),
     montrerFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:montrer-fichier", dossier, relatif),
   },

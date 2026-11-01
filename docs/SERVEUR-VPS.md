@@ -41,6 +41,13 @@ Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS"
 - Dans l’app, `electron/agents-distants.ts` garde un flux par VPS relié (ouvert au démarrage, curseur dans `serveurs-curseurs.json`) et rend les mêmes événements que les agents du PC. Une réponse finie pendant que l’app était fermée s’ouvre à la réouverture.
 - Chaque conversation choisit sa machine dans son en-tête (« Ce PC » ou un VPS relié). Changer de machine repart d’une session neuve. Les routines restent sur le PC.
 
+## Projets sur le VPS
+
+- À la création d’un projet, « Machine » choisit ce PC ou un VPS relié (pas modifiable ensuite). Sur le VPS, le dossier est un chemin sous `/var/lib/klyra/projets/`, créé s’il n’existe pas (`POST /klyra/v1/fichiers/dossier`).
+- L’arbre (`GET /klyra/v1/fichiers/arbre`, un niveau à la fois) et la visionneuse (`GET /klyra/v1/fichiers/lire`, octets bruts) passent par `electron/projets-vps.ts` ; l’aperçu se fait sur le PC (`contenuFichier`, le même que pour un projet local). Pas d’« Ouvrir avec l’app par défaut » ni de gestionnaire de fichiers pour un fichier du VPS.
+- Le serveur refuse tout chemin hors de `/var/lib/klyra` (arbre, lecture, création, dossier de travail d’un agent).
+- Les conversations d’un projet du VPS y tournent, dans son dossier.
+
 ## Dans l’app
 
 La fenêtre PC (1100 px et plus) a la colonne Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Sans serveur, l’écran montre deux gestes : coller la commande sur le VPS, coller le lien qu’elle affiche. Dans Electron, un lien `klyra://rejoindre` déjà copié remplit le champ vide. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.

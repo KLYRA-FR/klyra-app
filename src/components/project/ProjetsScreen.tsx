@@ -10,6 +10,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge } from "@/lib/bridge";
+import { useServeursRelies } from "@/lib/lieux";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
@@ -39,7 +40,17 @@ function identifiant(nom: string, existants: Project[]): string {
   return id;
 }
 
-/** Ajouter ou modifier un projet : son dossier sur ce Mac, son nom, à quoi il sert. */
+/** Les projets d'un VPS vivent sous le dossier de l'utilisateur klyra (serveur/lancer.sh, serveur/fichiers.mjs). */
+const RACINE_VPS = "/var/lib/klyra/projets";
+const nomDossier = (nom: string) =>
+  nom
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+/** Ajouter ou modifier un projet : son dossier sur ce Mac (ou sur un VPS relié), son nom, à quoi il sert. */
 function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini: (id: string | null) => void }) {
   const projects = useProjects();
   const { enregistrerProjet } = useWorkspace();
@@ -52,6 +63,11 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   const [status, setStatus] = useState<ProjectStatus>(initial?.status ?? "en-cours");
   const [pinned, setPinned] = useState(initial?.pinned ?? false);
   const [essai, setEssai] = useState(false);
+  // Un projet vit sur ce PC ou sur un VPS relié ; on ne le déplace pas après coup (ses chemins en dépendent).
+  const serveurs = useServeursRelies();
+  const [lieu, setLieu] = useState<string | null>(initial ? (initial.lieu ?? null) : null);
+  const [erreurVps, setErreurVps] = useState<string | null>(null);
+  const surVps = !!lieu;
 
   const choisir = async () => {
     if (!bridge) return;
@@ -63,14 +79,25 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   };
 
   const erreurs = {
-    folder: folder ? undefined : `Choisis le dossier du projet sur ${poste.ton}.`,
+    folder: surVps
+      ? folder.startsWith(`${RACINE_VPS}/`)
+        ? undefined
+        : `Sur le VPS, un projet vit sous ${RACINE_VPS}/.`
+      : folder
+        ? undefined
+        : `Choisis le dossier du projet sur ${poste.ton}.`,
     name: name.trim() ? undefined : "Donne-lui un nom.",
   };
 
-  const enregistrer = (e: FormEvent) => {
+  const enregistrer = async (e: FormEvent) => {
     e.preventDefault();
     setEssai(true);
     if (erreurs.folder || erreurs.name) return;
+    if (lieu && !initial && bridge?.projets.creerDossierVps) {
+      setErreurVps(null);
+      const r = await bridge.projets.creerDossierVps(lieu, folder);
+      if (!r.ok) return setErreurVps(r.message);
+    }
     const project: Project = {
       id: initial?.id ?? identifiant(name, projects),
       name: name.trim(),
@@ -80,6 +107,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
       status,
       pinned,
       folder,
+      ...(lieu ? { lieu } : {}),
       roleIds: initial?.roleIds ?? ["principal"],
       files: [],
       updatedAt: new Date().toISOString(),
@@ -89,7 +117,26 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   };
 
   return (
-    <form onSubmit={enregistrer} className="klyra-carte-flottante @container flex flex-col gap-5 rounded-lg p-5">
+    <form onSubmit={(e) => void enregistrer(e)} className="klyra-carte-flottante @container flex flex-col gap-5 rounded-lg p-5">
+      {(serveurs.length > 0 || surVps) && (
+        <Champ label="Machine" aide={initial ? "Un projet reste sur sa machine." : "Ses conversations y tournent, et ses fichiers y vivent."}>
+          <ListeDeroulante
+            value={lieu ?? "pc"}
+            disabled={!!initial}
+            options={[{ value: "pc", label: "Ce PC" }, ...serveurs.map((s) => ({ value: s.adresse, label: s.nom }))]}
+            onChange={(valeur) => {
+              const suivant = valeur === "pc" ? null : valeur;
+              setLieu(suivant);
+              setFolder(suivant ? `${RACINE_VPS}/${nomDossier(name) || "projet"}` : "");
+            }}
+          />
+        </Champ>
+      )}
+      {surVps ? (
+        <Champ label="Dossier sur le VPS" erreur={essai ? (erreurs.folder ?? erreurVps ?? undefined) : undefined} aide="Créé s’il n’existe pas. Les agents du VPS y travaillent.">
+          <Input size="sm" value={folder} disabled={!!initial} onChange={(e) => setFolder(e.target.value.trim())} className={cn(CHAMP, "klyra-mono")} />
+        </Champ>
+      ) : (
       <Champ label="Dossier" erreur={essai ? erreurs.folder : undefined} aide={bridge ? "Les agents travaillent dans ce dossier : ils y lisent et y modifient les fichiers." : "Choisir un dossier marche dans l’app de bureau."}>
         <div className="flex flex-wrap items-center gap-2">
           <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="folder-open-01" size={20} />} onClick={() => void choisir()} disabled={!bridge}>
@@ -98,6 +145,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
           {folder && <span className="klyra-mono min-w-0 text-ui-xs text-texte-secondaire [overflow-wrap:anywhere]">{court(folder)}</span>}
         </div>
       </Champ>
+      )}
 
       <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
         <Champ label="Nom" erreur={essai ? erreurs.name : undefined}>

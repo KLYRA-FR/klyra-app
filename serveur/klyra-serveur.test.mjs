@@ -273,3 +273,41 @@ test("un agent répond sur le VPS, en flux, avec rattrapage et autorisation", as
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("les projets du VPS : arbre, lecture et création sous le dossier de klyra seulement", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const { creerFichiers } = await import("./fichiers.mjs");
+  const ecoute = await ecouter({ dossier, port: 0, fichiers: creerFichiers(home) });
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const projet = path.join(home, "projets", "site");
+    assert.equal((await appel(ecoute.port, `/klyra/v1/fichiers/dossier?dossier=${encodeURIComponent(projet)}`, { methode: "POST" })).statut, 401);
+    const cree = await appel(ecoute.port, `/klyra/v1/fichiers/dossier?dossier=${encodeURIComponent(projet)}`, { methode: "POST", jeton });
+    assert.equal(cree.json.dossier, projet);
+    writeFileSync(path.join(projet, "lisez-moi.md"), "# Bonjour");
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(path.join(projet, "src"));
+    mkdirSync(path.join(projet, "node_modules"));
+
+    const arbre = await appel(ecoute.port, `/klyra/v1/fichiers/arbre?dossier=${encodeURIComponent(projet)}`, { jeton });
+    assert.deepEqual(arbre.json.noeuds, [
+      { name: "src", path: "src", kind: "dossier" },
+      { name: "lisez-moi.md", path: "lisez-moi.md", kind: "fichier" },
+    ]);
+    const lu = await appel(ecoute.port, `/klyra/v1/fichiers/lire?dossier=${encodeURIComponent(projet)}&relatif=lisez-moi.md`, { jeton });
+    assert.equal(Buffer.from(lu.json.base64, "base64").toString(), "# Bonjour");
+    assert.equal(lu.json.taille, 9);
+
+    const sortie = await appel(ecoute.port, `/klyra/v1/fichiers/lire?dossier=${encodeURIComponent(projet)}&relatif=../../../etc/passwd`, { jeton });
+    assert.equal(sortie.statut, 400);
+    const ailleurs = await appel(ecoute.port, `/klyra/v1/fichiers/arbre?dossier=${encodeURIComponent("/etc")}`, { jeton });
+    assert.equal(ailleurs.statut, 400);
+    assert.match(ailleurs.json.message, /sous/);
+    assert.equal((await appel(ecoute.port, `/klyra/v1/fichiers/dossier?dossier=${encodeURIComponent("/tmp/x")}`, { methode: "POST", jeton })).statut, 400);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

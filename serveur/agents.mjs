@@ -355,6 +355,8 @@ export function creerAgents(options) {
 
     let cwd = atelier;
     if (demande.dossier) {
+      const rel = path.relative(path.resolve(home), path.resolve(demande.dossier));
+      if (rel.startsWith("..") || path.isAbsolute(rel)) return echec(`Un projet du VPS doit être sous ${home}.`);
       if (!existsSync(demande.dossier)) return echec(`Le dossier du projet est introuvable sur le VPS : ${demande.dossier}`);
       cwd = demande.dossier;
     } else mkdirSync(atelier, { recursive: true });
