@@ -9,8 +9,8 @@ import { cn } from "@/lib/cn";
 import type { VueCompteComposio, VueServiceComposio } from "@/lib/bridge";
 import type { ComposioApiInterface } from "@/lib/composio";
 import { compteComposioActif } from "@/lib/composio-vues";
-import { normaliser } from "../catalogue";
-import { Erreur } from "../ui";
+import { normaliser } from "@/components/reglages/catalogue";
+import { Erreur } from "@/components/reglages/ui";
 
 export function ConnexionComposio({ api, initial, ancien, onFermer, onTermine }: {
   api: ComposioApiInterface; initial?: string; ancien?: VueCompteComposio;

@@ -38,7 +38,7 @@ app.whenReady().then(async () => {
   assert.equal(initial.profil.type, "local");
   ok("profil vierge local, aucune session héritée");
 
-  const frame = { url: "app://klyra/reglages?section=composio" };
+  const frame = { url: "app://klyra/marketplace" };
   const win = { webContents: { mainFrame: frame } };
   const event = { sender: win.webContents, senderFrame: frame };
   natif.verifierFenetreComposio(event, win);

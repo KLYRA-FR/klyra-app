@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { enregistrerAppelIa } from "./consommation";
 import { espaceComposio, OUTILS_COMPOSIO } from "./composio";
+import { serveursMcpDirects } from "./mcp-direct";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -364,11 +365,13 @@ export async function demarrerServeurMcp(): Promise<void> {
   });
 }
 
-/** La configuration MCP d'un agent : qui il est et dans quelle conversation, pour les fils. */
+/** La configuration MCP d'un agent : qui il est et dans quelle conversation, pour les fils.
+ *  S'y ajoutent les MCP directs branchés dans la Marketplace. */
 export function configMcp(appelant: Appelant, composio: string | null = null): string | null {
   if (!serveur) return null;
   return JSON.stringify({
     mcpServers: {
+      ...serveursMcpDirects(),
       klyra: {
         type: "http",
         url: serveur.url,

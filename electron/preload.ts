@@ -117,6 +117,12 @@ contextBridge.exposeInMainWorld("klyra", {
     retirer: (id: string) => ipcRenderer.invoke("ia:retirer", id),
     tester: (id: string) => ipcRenderer.invoke("ia:tester", id),
   },
+  mcp: {
+    apps: () => ipcRenderer.invoke("mcp:apps"),
+    lister: () => ipcRenderer.invoke("mcp:lister"),
+    ajouter: (entree: unknown) => ipcRenderer.invoke("mcp:ajouter", entree),
+    retirer: (id: string) => ipcRenderer.invoke("mcp:retirer", id),
+  },
   composio: {
     etat: () => ipcRenderer.invoke("composio:etat"),
     importer: (contexte: string) => ipcRenderer.invoke("composio:importer", contexte),
