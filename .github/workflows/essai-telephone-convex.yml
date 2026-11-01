@@ -27,7 +27,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Déployer les fonctions de cc9f7bc
+      - name: Poser KLYRA_APP_URL
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
@@ -35,4 +35,4 @@ jobs:
             echo "::error title=Secret CONVEX_DEPLOY_KEY manquant::La clé de déploiement de production est absente."
             exit 1
           fi
-          pnpm exec convex deploy --typecheck enable --codegen enable --message "essai telephone cc9f7bc"
+          pnpm exec convex env set KLYRA_APP_URL https://positioning-columns-eco-clearance.trycloudflare.com
