@@ -19,6 +19,7 @@ import { CompteClaudeProvider } from "@/lib/compte-claude";
 import { PLATEFORME } from "@/lib/plateforme";
 import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
+import { CoqueTelephone } from "@/components/telephone/CoqueTelephone";
 import { AppRail } from "./AppRail";
 import { SonsApp } from "./SonsApp";
 
@@ -38,6 +39,21 @@ function useOpenProject(): Project | undefined {
 
 /** Largeur de fenêtre sous laquelle le panneau des fichiers se replie. */
 const FILES_MIN_WIDTH = 1280;
+/** Sous ce seuil, la coque téléphone. Le bureau (≥ 1100 px, Electron) ne change pas. */
+const TELEPHONE_MAX = 760;
+
+function useTelephone(): boolean {
+  const [largeur, setLargeur] = useState<number | null>(null);
+  useEffect(() => {
+    const lire = () => setLargeur(window.innerWidth);
+    lire();
+    window.addEventListener("resize", lire);
+    return () => window.removeEventListener("resize", lire);
+  }, []);
+  if (largeur !== null) return largeur < TELEPHONE_MAX;
+  if (typeof window === "undefined") return false;
+  return window.innerWidth < TELEPHONE_MAX;
+}
 
 const MAIN =
   "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface shadow-ombre-ambiante";
@@ -152,6 +168,7 @@ function ShellLayout({ children }: { children: ReactNode }) {
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const isClient = useIsClient();
+  const telephone = useTelephone();
   /* Sur la racine, pour les styles propres au système (barres de défilement),
      fenêtres ouvertes hors du cadre comprises. */
   useEffect(() => {
@@ -168,10 +185,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               <SonsApp />
               <RegionAnnonces />
               <Suspense>
-                <ShellLayout>{children}</ShellLayout>
-                {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
-                <FenetreRecherche />
-                <MessageSuppression />
+                {telephone ? (
+                  <CoqueTelephone />
+                ) : (
+                  <>
+                    <ShellLayout>{children}</ShellLayout>
+                    {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
+                    <FenetreRecherche />
+                    <MessageSuppression />
+                  </>
+                )}
               </Suspense>
             </div>
           </BibliothequeProvider>

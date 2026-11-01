@@ -33,7 +33,17 @@ export const envoyerLienConnexion = internalMutation({
   args: { a: v.string(), lien: v.string() },
   returns: v.null(),
   handler: async (ctx, { a, lien }) => {
-    await envoyerCourriel(ctx, EXPEDITEUR_CONNEXION, a, courrielConnexion(lien));
+    const demande = await ctx.db
+      .query("demandesLien")
+      .withIndex("by_email", (q) => q.eq("email", a.trim().toLowerCase()))
+      .unique();
+    let envoye = lien;
+    if (demande?.cible === "web") {
+      const url = new URL(lien);
+      url.searchParams.set("cible", "web");
+      envoye = url.toString();
+    }
+    await envoyerCourriel(ctx, EXPEDITEUR_CONNEXION, a, courrielConnexion(envoye));
     return null;
   },
 });

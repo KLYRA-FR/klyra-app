@@ -7,6 +7,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from "next/navigation";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { SignalPoste } from "@/components/compte/SignalPoste";
+import { SyncCompte } from "@/components/compte/SyncCompte";
 import { AgendaCompte } from "@/components/planning/AgendaCompte";
 import { PresenceKlyra } from "@/components/planning/PresenceKlyra";
 import { getBridge, type KlyraBridge } from "@/lib/bridge";
@@ -15,8 +17,9 @@ import { useWorkspace } from "@/lib/workspace";
 
 /**
  * Le compte d'équipe, en ligne sur Convex (cf. `docs/CONVEX-PLAN.md`) : connexion par
- * lien magique, puis l'équipe. Les jetons de session sont gardés par le trousseau du
- * système (electron/compte.ts). Dans un navigateur, sans l'app de bureau, il n'y a pas de compte.
+ * lien magique, puis l'équipe. Sur l'ordinateur, les jetons sont dans le trousseau
+ * (electron/compte.ts). Dans le navigateur du téléphone, ils restent dans le
+ * stockage de la page. L'adresse de production est publique (electron/compte.ts).
  */
 
 export type Role = "admin" | "membre";
@@ -145,6 +148,8 @@ const MESSAGES: Record<string, string> = {
   rappel_invalide: "Ce rappel n’est pas valable : vérifie le titre, la date et la catégorie.",
   membre_inconnu: "Cette personne n’est plus dans l’équipe.",
   lot_trop_grand: "Trop de rappels d’un coup : 100 au plus.",
+  conversation_invalide: "Cette conversation n’est pas valable.",
+  poste_invalide: "Ce poste n’est pas valable.",
   evenement_invalide: "Cet événement n’est pas valable : vérifie le titre, le jour et l’heure.",
   reserve_a_lorganisateur: "Seul l’organisateur peut changer cet événement.",
 };
@@ -166,17 +171,42 @@ export function messageErreur(erreur: unknown): string {
   return "Le serveur de l’équipe ne répond pas. Vérifie la connexion, puis réessaie.";
 }
 
-/** Le code d'un lien de connexion : klyra://connexion?code=… ou la page relais https://…/connexion?code=…. */
+/** Le code d'un lien : klyra://, la page relais, ou l'adresse https de l'app (`/?code=`). */
 export function codeDuLien(lien: string): string | null {
   try {
     const url = new URL(lien.trim());
-    const relais = url.protocol === "https:" && url.hostname.endsWith(".convex.site") && url.pathname === "/connexion";
-    const app = url.protocol === "klyra:" && url.hostname === "connexion";
     const code = url.searchParams.get("code");
-    return (relais || app) && code && /^[A-Za-z0-9]{16,128}$/.test(code) ? code : null;
+    if (!code || !/^[A-Za-z0-9]{16,128}$/.test(code)) return null;
+    const relais = url.protocol === "https:" && url.hostname.endsWith(".convex.site") && url.pathname === "/connexion";
+    const protocole = url.protocol === "klyra:" && url.hostname === "connexion";
+    const page = url.protocol === "https:" && (url.pathname === "/" || url.pathname === "");
+    return relais || protocole || page ? code : null;
   } catch {
     return null;
   }
+}
+
+/** Mêmes adresses que `electron/compte.ts`. Elles ne sont pas secrètes. */
+const CONVEX_PRODUCTION = "https://calculating-cuttlefish-710.eu-west-1.convex.cloud";
+const CONVEX_DEVELOPPEMENT = "https://coordinated-ox-134.eu-west-1.convex.cloud";
+
+function adresseNavigateur(): string {
+  const forcee = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (forcee && /^https:\/\/[a-z0-9.-]+\.convex\.cloud$/.test(forcee)) return forcee;
+  if (typeof window !== "undefined" && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) return CONVEX_DEVELOPPEMENT;
+  return CONVEX_PRODUCTION;
+}
+
+function stockageNavigateur(): TokenStorage {
+  return {
+    getItem: async (cle) => localStorage.getItem(cle),
+    setItem: async (cle, valeur) => {
+      localStorage.setItem(cle, valeur);
+    },
+    removeItem: async (cle) => {
+      localStorage.removeItem(cle);
+    },
+  };
 }
 
 function stockageSysteme(pont: NonNullable<KlyraBridge["compte"]>): TokenStorage {
@@ -195,20 +225,19 @@ function stockageSysteme(pont: NonNullable<KlyraBridge["compte"]>): TokenStorage
 }
 
 export function CompteProvider({ children }: { children: ReactNode }) {
-  const pont = getBridge()?.compte;
-  /* Une fois pour toute la vie de la fenêtre : l'adresse est connue dès le premier rendu. */
-  const [client] = useState(() => (pont?.adresse ? new ConvexReactClient(pont.adresse) : null));
-  const [stockage] = useState(() => (pont ? stockageSysteme(pont) : undefined));
-  if (!client || !pont) return <CompteContext.Provider value={INDISPONIBLE}>{children}</CompteContext.Provider>;
+  const pont = getBridge()?.compte ?? null;
+  /* Une fois pour toute la vie de la fenêtre. Le téléphone n'a pas de pont : il parle à Convex lui-même. */
+  const [client] = useState(() => new ConvexReactClient(pont?.adresse || adresseNavigateur()));
+  const [stockage] = useState(() => (pont ? stockageSysteme(pont) : stockageNavigateur()));
   return (
-    /* Le code n'arrive jamais dans l'adresse de la page : c'est le lien klyra:// qui l'apporte. */
+    /* Le code n'est pas consommé par Convex Auth tout seul : la règle « même appareil » reste ici. */
     <ConvexAuthProvider client={client} storage={stockage} shouldHandleCode={false} replaceURL={() => {}}>
       <CompteConnecte pont={pont}>{children}</CompteConnecte>
     </ConvexAuthProvider>
   );
 }
 
-function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["compte"]>; children: ReactNode }) {
+function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["compte"]> | null; children: ReactNode }) {
   const router = useRouter();
   const { isLoading, isAuthenticated } = useConvexAuth();
   const { signIn, signOut } = useAuthActions();
@@ -238,7 +267,7 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
       setErreur(null);
       setOccupe(true);
       try {
-        const { acceptee, attenteMs } = await envoyerDemande({ email });
+        const { acceptee, attenteMs } = await envoyerDemande({ email, cible: pont ? "poste" : "web" });
         const precedente = lireDemande();
         const maintenant = Date.now();
         const suivante = {
@@ -257,7 +286,7 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
         setOccupe(false);
       }
     },
-    [envoyerDemande],
+    [envoyerDemande, pont],
   );
 
   const ouvrirCode = useCallback(
@@ -287,6 +316,17 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
     ouvrirRef.current = ouvrirCode;
   }, [ouvrirCode]);
   useEffect(() => {
+    if (!pont) {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      if (!code || !/^[A-Za-z0-9]{16,128}$/.test(code)) return;
+      const url = new URL(window.location.href);
+      url.searchParams.delete("code");
+      url.searchParams.delete("cible");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      void ouvrirRef.current(code);
+      return;
+    }
     const prendre = async () => {
       const r = await pont.prendreCode();
       if (!r.ok || !r.data) return;
@@ -352,7 +392,10 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
   );
   return (
     <CompteContext.Provider value={valeur}>
-      <PresenceKlyra actif={etat === "connecte"} />
+      {/* Le téléphone ne bat pas la présence : sinon il ferait croire que le Mac est ouvert. */}
+      <PresenceKlyra actif={etat === "connecte" && pont !== null} />
+      <SignalPoste actif={etat === "connecte" && pont !== null} />
+      <SyncCompte actif={etat === "connecte" && pont !== null} />
       <AgendaCompte actif={etat === "connecte"} />
       {children}
     </CompteContext.Provider>

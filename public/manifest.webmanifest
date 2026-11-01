@@ -1,0 +1,16 @@
+{
+  "name": "KLYRA",
+  "short_name": "KLYRA",
+  "start_url": "/chats",
+  "display": "standalone",
+  "background_color": "#f7f7f7",
+  "theme_color": "#f7f7f7",
+  "icons": [
+    {
+      "src": "/brand/logo-icone.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

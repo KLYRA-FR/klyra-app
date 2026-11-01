@@ -12,6 +12,11 @@ const app = defineApp({
     POSTSHIBA_CLUSTER_ID: v.optional(v.string()),
     /** "1" sur un déploiement de développement sans PostShiba : les e-mails vont dans `courrielsSimules`. */
     KLYRA_COURRIEL_SIMULE: v.optional(v.string()),
+    /**
+     * Adresse https de l'app web (téléphone). Sans elle, une demande venue du web
+     * ne redirige pas : la page relais donne le lien https à coller. Jamais `klyra://` dans ce cas.
+     */
+    KLYRA_APP_URL: v.optional(v.string()),
   },
 });
 /* Les e-mails (liens de connexion, rappels) : file durable, nouvelles tentatives, limite horaire. */
