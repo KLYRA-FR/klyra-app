@@ -248,6 +248,15 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("compte:lien", listener);
     },
   },
+  serveur: {
+    /** Le dernier lien klyra://rejoindre, une seule fois. */
+    prendreLien: () => ipcRenderer.invoke("serveur:lien"),
+    onLien: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("serveur:lien", listener);
+      return () => ipcRenderer.removeListener("serveur:lien", listener);
+    },
+  },
   anthropicAdmin: {
     etat: () => ipcRenderer.invoke("anthropic-admin:etat"),
     definir: (cle: string) => ipcRenderer.invoke("anthropic-admin:definir", cle),

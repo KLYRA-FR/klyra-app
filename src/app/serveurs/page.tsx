@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { EcranServeurs } from "@/components/telephone/ServeursTelephone";
 
 export const metadata: Metadata = { title: "Serveurs — KLYRA" };
 
-/** La page existe pour l’export statique. Sous 760 px, la coque la remplace. */
+/** À partir de 760 px, la fenêtre montre cet écran. Sous 760 px, la coque le remplace. */
 export default function ServeursPage() {
-  return null;
+  return <EcranServeurs cadre="bureau" />;
 }

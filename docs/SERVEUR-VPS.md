@@ -17,8 +17,10 @@ Le port 8791 est un exemple de port libre. On ne prend pas 22, 3077, 3417, 50959
 
 La page `/` montre le QR et le lien. Elle répond aussi à `GET /klyra/v1/serveur`. S’il est arrêté, la connexion échoue.
 
-## Sur l’iPhone
+## Dans l’app
 
-Safari ouvre la page https du serveur. Le QR est sur cette page. Toucher Rejoindre relie ce serveur. Depuis un autre écran, la caméra de l’iPhone scanne le même QR. Dans l’app, Plus puis Serveurs : coller le lien pour celui-ci, puis le lien d’un autre VPS. Quitter laisse la ligne. Retirer l’enlève de ce téléphone.
+La fenêtre PC (1100 px et plus) a la colonne Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.
+
+Safari ouvre aussi la page https du programme, sur le VPS. Le QR et le lien y sont affichés. Toucher Rejoindre relie ce serveur. Depuis un autre écran, la caméra scanne le même QR. Un autre VPS se rejoint avec son propre lien.
 
 Arrêter seulement ce programme : le processus `node serveur/klyra-serveur.mjs`. Le service OpenBot ne s’arrête pas.

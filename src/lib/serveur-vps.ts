@@ -7,6 +7,8 @@
 export const PROTOCOLE_SERVEUR = 1;
 export const CHEMIN_SERVEUR = "/klyra/v1/serveur";
 export const CLE_CARNET = "klyra:serveurs";
+/** Lien `klyra://rejoindre` reçu par Electron, en attendant l’écran Serveurs. */
+export const CLE_LIEN_ATTENTE = "klyra:lien-attente";
 
 export const MESSAGE_SILENCE = "Ce serveur ne répond pas. S’il est éteint, la connexion échoue.";
 export const MESSAGE_INVITATION = "Cette invitation n’est pas la bonne.";

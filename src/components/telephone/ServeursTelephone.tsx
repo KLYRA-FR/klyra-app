@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { useCompte } from "@/lib/compte";
 import {
   CLE_CARNET,
+  CLE_LIEN_ATTENTE,
   MESSAGE_INVITATION,
   MESSAGE_VERSION,
   ajouterServeur,
@@ -40,8 +41,8 @@ function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, enCours: bo
   return enCours ? `En cours · ${detail}` : detail;
 }
 
-/** Colonne Serveurs. On rejoint par le QR du serveur, ou en collant son lien. */
-export function ServeursTelephone() {
+/** Liste, lien, quitter, retirer. Le QR reste sur la page du VPS. */
+export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const router = useRouter();
   const compte = useCompte();
   const [carnet, setCarnet] = useState<Carnet>(() => (typeof window === "undefined" ? carnetVide() : lireCarnet(localStorage.getItem(CLE_CARNET))));
@@ -70,6 +71,7 @@ export function ServeursTelephone() {
   const connecte = compte.etat === "connecte";
   const formulaire = carnet.liste.length === 0 || ajout;
 
+  const tenterRef = useRef<(adresse: string, code: string | null) => Promise<void>>(async () => {});
   const tenter = async (adresse: string, code: string | null) => {
     setOccupe(true);
     setErreur(null);
@@ -85,6 +87,32 @@ export function ServeursTelephone() {
     setSaisie("");
     setAjout(false);
   };
+  useEffect(() => {
+    tenterRef.current = tenter;
+  });
+
+  useEffect(() => {
+    const appliquer = () => {
+      const lien = sessionStorage.getItem(CLE_LIEN_ATTENTE);
+      if (!lien) return;
+      sessionStorage.removeItem(CLE_LIEN_ATTENTE);
+      const lu = lireSaisie(lien, "");
+      if (!lu.ok) {
+        setSaisie(lien);
+        setErreur(lu.message);
+        setAjout(true);
+        return;
+      }
+      if (!placePour(lireCarnet(localStorage.getItem(CLE_CARNET)), lu.adresse)) {
+        setErreur("Retire un serveur avant d’en ajouter un autre.");
+        return;
+      }
+      void tenterRef.current(lu.adresse, lu.invitation);
+    };
+    appliquer();
+    window.addEventListener("klyra:rejoindre", appliquer);
+    return () => window.removeEventListener("klyra:rejoindre", appliquer);
+  }, []);
 
   const rejoindre = (e: FormEvent) => {
     e.preventDefault();
@@ -100,15 +128,20 @@ export function ServeursTelephone() {
     void tenter(lu.adresse, lu.invitation);
   };
 
+  const cadreTel = cadre === "telephone";
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone
-        titre="Serveurs"
-        pastille={connecte}
-        retour={connecte ? () => router.push("/plus") : undefined}
-      />
-      <p className="px-4 pb-2 text-ui text-texte-secondaire">Le QR est affiché par le serveur. Ici, on colle le lien d’invitation.</p>
-      <ul className="min-h-0 flex-1 overflow-y-auto px-4">
+    <div className={cadreTel ? "flex min-h-0 flex-1 flex-col" : "mx-auto flex min-h-0 w-full max-w-[760px] flex-1 flex-col px-8 pt-8 pb-8"}>
+      {cadreTel ? (
+        <EnteteTelephone
+          titre="Serveurs"
+          pastille={connecte}
+          retour={connecte ? () => router.push("/plus") : undefined}
+        />
+      ) : (
+        <h1 className="text-h3 font-medium text-texte-principal">Serveurs</h1>
+      )}
+      <p className={cadreTel ? "px-4 pb-2 text-ui text-texte-secondaire" : "pb-4 text-ui text-texte-secondaire"}>Le QR est affiché par le serveur. Ici, on colle le lien d’invitation.</p>
+      <ul className={cadreTel ? "min-h-0 flex-1 overflow-y-auto px-4" : "min-h-0 flex-1 overflow-y-auto"}>
         {carnet.liste.map((serveur) => {
           const enCours = serveur.id === carnet.actif;
           return (
@@ -147,7 +180,7 @@ export function ServeursTelephone() {
           );
         })}
       </ul>
-      <div className={connecte ? "shrink-0 px-4 pt-3 pb-4" : "shrink-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]"}>
+      <div className={cadreTel ? (connecte ? "shrink-0 px-4 pt-3 pb-4" : "shrink-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]") : "shrink-0 pt-3"}>
         {formulaire ? (
           <form onSubmit={rejoindre} className="flex flex-col gap-3">
             <label className="flex flex-col gap-2 text-ui text-texte-principal">
@@ -186,4 +219,9 @@ export function ServeursTelephone() {
       </div>
     </div>
   );
+}
+
+/** Sous 760 px. Le bureau utilise le même écran, dans la page /serveurs. */
+export function ServeursTelephone() {
+  return <EcranServeurs cadre="telephone" />;
 }

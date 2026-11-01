@@ -453,6 +453,12 @@ export interface KlyraBridge {
     prendreCode: () => Promise<Reponse<string | null>>;
     onLien: (callback: () => void) => () => void;
   };
+  /** Un VPS déjà en marche (cf. electron/lien-rejoindre.ts). Absent avant la relance de l’app. */
+  serveur?: {
+    /** Le dernier lien klyra://rejoindre ouvert, une seule fois. */
+    prendreLien: () => Promise<Reponse<string | null>>;
+    onLien: (callback: () => void) => () => void;
+  };
   /** Les mises à jour de l'app (cf. electron/maj.ts). */
   maj?: {
     etat: () => Promise<Reponse<EtatMaj>>;
