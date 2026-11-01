@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { getBridge } from "@/lib/bridge";
+import { signalerCarnet } from "@/lib/lieux";
 import { useCompte } from "@/lib/compte";
 import {
   CLE_CARNET,
@@ -14,7 +15,6 @@ import {
   MESSAGE_VERSION,
   ajouterServeur,
   carnetVide,
-  choisirServeur,
   appairer,
   interroger,
   lienCopie,
@@ -40,10 +40,16 @@ function sondeDe(lecture: Lecture): Sonde {
   return "silence";
 }
 
-function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, enCours: boolean): string {
+const AGENTS: Record<string, string> = {
+  pret: "agents prêts",
+  "non-connecte": "Claude Code à connecter (connecter-claude)",
+  absent: "Claude Code absent : relance la commande",
+};
+
+function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, agents: string | undefined): string {
   if (etat === "quitte") return "Quitté";
   const detail = sonde === "repond" ? "Répond" : sonde === "invitation" ? "Plus relié" : sonde === "version" ? "Autre version" : sonde === "silence" ? "Ne répond pas" : "Vérification…";
-  return enCours ? `En cours · ${detail}` : detail;
+  return sonde === "repond" && agents && AGENTS[agents] ? `${detail} · ${AGENTS[agents]}` : detail;
 }
 
 /** Écran vide : la commande à coller sur le VPS, puis le lien qu’elle affiche. */
@@ -93,11 +99,13 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
   const [sondes, setSondes] = useState<Record<string, Sonde>>({});
+  const [agentsVps, setAgentsVps] = useState<Record<string, string>>({});
   const [repris, setRepris] = useState(false);
   const dernierRepris = useRef<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(CLE_CARNET, JSON.stringify(carnet));
+    signalerCarnet();
   }, [carnet]);
 
   useEffect(() => {
@@ -107,6 +115,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
       void interroger(serveur.adresse, controle.signal).then((lecture) => {
         if (controle.signal.aborted) return;
         setSondes((etat) => ({ ...etat, [serveur.id]: sondeDe(lecture) }));
+        if (lecture.ok && lecture.agents) setAgentsVps((etat) => ({ ...etat, [serveur.id]: lecture.agents! }));
       });
     }
     return () => controle.abort();
@@ -218,21 +227,14 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
       ) : (
         <ul className={cadreTel ? "min-h-0 flex-1 overflow-y-auto px-4" : "min-h-0 flex-1 overflow-y-auto"}>
           {carnet.liste.map((serveur) => {
-            const enCours = serveur.id === carnet.actif;
             return (
               <li key={serveur.id} className="border-b border-bordure-subtile py-3">
-                <button
-                  type="button"
-                  className="flex min-h-11 w-full flex-col justify-center text-left"
-                  aria-current={enCours ? "true" : undefined}
-                  onClick={() => {
-                    if (serveur.etat === "joint") setCarnet((etat) => choisirServeur(etat, serveur.id));
-                  }}
-                >
+                {/* Le choix de la machine se fait dans chaque conversation : ici, seulement l'état. */}
+                <div className="flex min-h-11 w-full flex-col justify-center text-left">
                   <span className="text-body-s text-texte-principal">{serveur.nom}</span>
                   <span className="text-ui-xs text-texte-secondaire">{serveur.adresse}</span>
-                  <span className="text-ui-xs text-texte-secondaire">{libelle(serveur.etat, sondes[serveur.id], enCours)}</span>
-                </button>
+                  <span className="text-ui-xs text-texte-secondaire">{libelle(serveur.etat, sondes[serveur.id], agentsVps[serveur.id])}</span>
+                </div>
                 <span className="mt-1 flex gap-4">
                   {serveur.etat === "joint" ? (
                     <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => setCarnet((etat) => quitterServeur(etat, serveur.id))}>

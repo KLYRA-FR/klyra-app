@@ -268,6 +268,8 @@ contextBridge.exposeInMainWorld("klyra", {
     interroger: (adresse: string) => ipcRenderer.invoke("serveur:interroger", adresse),
     appairer: (adresse: string, code: string) => ipcRenderer.invoke("serveur:appairer", adresse, code),
     retirer: (adresse: string) => ipcRenderer.invoke("serveur:retirer", adresse),
+    /** Les conversations sont chargées : les réponses des VPS arrivées pendant l’absence peuvent s’ouvrir. */
+    pret: () => ipcRenderer.invoke("serveur:pret"),
     onLien: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on("serveur:lien", listener);

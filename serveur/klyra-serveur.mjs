@@ -7,22 +7,29 @@
  * dans le terminal. L’app l’échange contre un jeton d’appareil (POST /klyra/v1/appairer).
  * Le serveur ne garde que l’empreinte des codes et des jetons. Aucun secret sur la page publique.
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer as creerHttp } from "node:http";
 import { createServer as creerHttps } from "node:https";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { creerAgents } from "./agents.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
 export const CHEMIN_APPAIRER = "/klyra/v1/appairer";
 export const CHEMIN_APPAREIL = "/klyra/v1/appareil";
+export const CHEMIN_AGENT = "/klyra/v1/agent";
+export const CHEMIN_FICHES = "/klyra/v1/agents/fiches";
 export const PROTOCOLE = 1;
 
 export const DUREE_CODE_MS = 10 * 60_000;
 /** Au-delà, tous les codes en attente tombent : il faut relancer `appairer`. */
 const ECHECS_MAX = 5;
 const CORPS_MAX = 2048;
+const CORPS_AGENT_MAX = 1_000_000;
+const CORPS_FICHES_MAX = 5_000_000;
+const JOURNAL_MAX = 5000;
+const JOURNAL_DUREE_MS = 24 * 60 * 60 * 1000;
 const APPAREILS_MAX = 20;
 
 const empreinte = (secret) => createHash("sha256").update(secret, "utf8").digest("hex");
@@ -84,7 +91,7 @@ export function revoquerTout(dossier) {
 
 const ENTETES_CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
 };
 
@@ -117,7 +124,7 @@ p{margin:0;font-size:15px;line-height:1.35}
 </main></body></html>`;
 }
 
-function lireCorpsRequete(req) {
+function lireCorpsRequete(req, max = CORPS_MAX) {
   return new Promise((resolve) => {
     let texte = "";
     let trop = false;
@@ -125,7 +132,7 @@ function lireCorpsRequete(req) {
     req.on("data", (morceau) => {
       if (trop) return;
       texte += morceau;
-      if (texte.length > CORPS_MAX) trop = true;
+      if (texte.length > max) trop = true;
     });
     req.on("end", () => {
       if (trop) return resolve(null);
@@ -139,17 +146,67 @@ function lireCorpsRequete(req) {
   });
 }
 
+/**
+ * Les événements des agents, numérotés, gardés 24 h (5 000 au plus) : l'app les lit en direct
+ * (`GET /klyra/v1/agent/evenements`, flux SSE) et rattrape, en se reconnectant, ce qu'elle a manqué.
+ * `instance` change à chaque démarrage : l'app sait alors que la numérotation repart de zéro.
+ */
+export function creerJournal(maintenant = Date.now) {
+  const instance = randomBytes(8).toString("hex");
+  let seq = 0;
+  let entrees = [];
+  const abonnes = new Set();
+  const ecrireA = (res, entree) => res.write(`id: ${entree.seq}\ndata: ${JSON.stringify(entree)}\n\n`);
+  function ajouter(entree) {
+    const complete = { seq: ++seq, t: maintenant(), ...entree };
+    entrees.push(complete);
+    const limite = maintenant() - JOURNAL_DUREE_MS;
+    if (entrees.length > JOURNAL_MAX || entrees[0].t < limite) entrees = entrees.filter((e) => e.t >= limite).slice(-JOURNAL_MAX);
+    for (const res of abonnes) ecrireA(res, complete);
+  }
+  return {
+    instance,
+    publier: (requestId, event, sessionId) => ajouter({ requestId, sessionId: sessionId ?? null, event }),
+    /** Une tâche de fond fait reparler l'agent : l'app ouvre une réponse sous ce numéro. */
+    spontane: (sessionId) => {
+      const requestId = randomUUID();
+      ajouter({ requestId, sessionId, spontane: true });
+      return requestId;
+    },
+    abonner(res, depuis, instanceConnue) {
+      res.write(`event: instance\ndata: ${JSON.stringify({ instance })}\n\n`);
+      const debut = instanceConnue === instance ? depuis : 0;
+      for (const entree of entrees) if (entree.seq > debut) ecrireA(res, entree);
+      abonnes.add(res);
+      const battement = setInterval(() => res.write(": battement\n\n"), 20_000);
+      res.on("close", () => {
+        clearInterval(battement);
+        abonnes.delete(res);
+      });
+    },
+    fermerTout() {
+      for (const res of abonnes) res.end();
+      abonnes.clear();
+    },
+  };
+}
+
 function jetonDe(req) {
   const valeur = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
   const trouve = /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(valeur.trim());
   return trouve ? trouve[1] : null;
 }
 
-/** @param {{ nom?: string, dossier: string, maintenant?: () => number }} options */
+/**
+ * @param {{ nom?: string, dossier: string, maintenant?: () => number, journal?: ReturnType<typeof creerJournal>,
+ *   agents?: ReturnType<typeof creerAgents> }} options
+ */
 export function creerGestionnaire(options) {
   const nom = (options.nom ?? "").trim() || "KLYRA";
   const dossier = options.dossier;
   const maintenant = options.maintenant ?? Date.now;
+  const journal = options.journal ?? null;
+  const agents = options.agents ?? null;
   let echecs = 0;
 
   const appareilDe = (req) => {
@@ -159,6 +216,8 @@ export function creerGestionnaire(options) {
     return lireAppareils(dossier).find((a) => egal(a.empreinte, cherche)) ?? null;
   };
   const corpsServeur = () => ({ produit: "klyra-serveur", protocole: PROTOCOLE, nom, version: String(PROTOCOLE) });
+  /** Ce que l'app doit savoir pour proposer ce VPS dans le sélecteur. */
+  const capacites = () => ({ agents: agents ? agents.etat() : "absent", equipe: agents ? agents.empreinteEquipe() : "" });
 
   return async function gestionnaire(req, res) {
     if (req.method === "OPTIONS") {
@@ -219,6 +278,40 @@ export function creerGestionnaire(options) {
       return;
     }
 
+    if (url.pathname.startsWith(`${CHEMIN_AGENT}/`) || url.pathname === CHEMIN_FICHES) {
+      if (!agents || !journal) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      const action = url.pathname === CHEMIN_FICHES ? "fiches" : url.pathname.slice(CHEMIN_AGENT.length + 1);
+      if (action === "evenements") {
+        if (req.method !== "GET") return repondre(res, 405, { erreur: "methode" });
+        res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store", Connection: "keep-alive", ...ENTETES_CORS });
+        const depuis = Number(url.searchParams.get("depuis") ?? "0");
+        journal.abonner(res, Number.isFinite(depuis) ? depuis : 0, url.searchParams.get("instance") ?? "");
+        return;
+      }
+      if (action === "fiches") {
+        if (req.method !== "PUT") return repondre(res, 405, { erreur: "methode" });
+        const corps = await lireCorpsRequete(req, CORPS_FICHES_MAX);
+        try {
+          agents.recevoirFiches(corps);
+        } catch {
+          return repondre(res, 400, { erreur: "fiches" });
+        }
+        return repondre(res, 200, capacites());
+      }
+      if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+      const corps = await lireCorpsRequete(req, CORPS_AGENT_MAX);
+      const requestId = typeof corps?.requestId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(corps.requestId) ? corps.requestId : null;
+      if (!requestId) return repondre(res, 400, { erreur: "requete" });
+      if (action === "envoyer") {
+        agents.envoyer(requestId, corps.options);
+        return repondre(res, 202, { requestId });
+      }
+      if (action === "autoriser") return repondre(res, 200, { ok: agents.autoriser(requestId, String(corps.demandeId ?? ""), String(corps.decision ?? "")) });
+      if (action === "annuler") return repondre(res, 200, { ok: agents.annuler(requestId) });
+      return repondre(res, 404, { erreur: "introuvable" });
+    }
+
     if (url.pathname !== CHEMIN) return repondre(res, 404, { erreur: "introuvable" });
     if (req.method !== "GET") return repondre(res, 405, { erreur: "methode" });
     const appareil = appareilDe(req);
@@ -228,11 +321,11 @@ export function creerGestionnaire(options) {
     if (appareil.vu?.slice(0, 16) !== date.slice(0, 16)) {
       ecrireJson(fichierAppareils(dossier), lireAppareils(dossier).map((a) => (a.id === appareil.id ? { ...a, vu: date } : a)));
     }
-    return repondre(res, 200, corpsServeur());
+    return repondre(res, 200, { ...corpsServeur(), ...capacites() });
   };
 }
 
-/** @param {{ nom?: string, dossier: string, port?: number, hote?: string, cert?: Buffer, cle?: Buffer, maintenant?: () => number }} options */
+/** @param {Parameters<typeof creerGestionnaire>[0] & { port?: number, hote?: string, cert?: Buffer, cle?: Buffer }} options */
 export function ecouter(options) {
   const gestionnaire = creerGestionnaire(options);
   const appel = (req, res) => {
@@ -250,7 +343,11 @@ export function ecouter(options) {
       resolve({
         serveur,
         port: typeof adresse === "object" && adresse ? adresse.port : port,
-        fermer: () => new Promise((fini, echec) => serveur.close((err) => (err ? echec(err) : fini()))),
+        fermer: () => {
+          options.journal?.fermerTout();
+          options.agents?.fermerTout();
+          return new Promise((fini, echec) => serveur.close((err) => (err ? echec(err) : fini())));
+        },
       });
     });
   });
@@ -294,9 +391,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.stderr.write("KLYRA_SERVEUR_PORT n’est pas un port.\n");
     process.exit(1);
   }
+  const nomServeur = (process.env.KLYRA_SERVEUR_NOM ?? "").trim() || "KLYRA";
+  const journal = creerJournal();
+  const agents = creerAgents({ home: process.env.HOME || path.dirname(dossier), donnees: dossier, nomServeur, publier: journal.publier, spontane: journal.spontane });
   const ecoute = await ecouter({
     nom: process.env.KLYRA_SERVEUR_NOM,
     dossier,
+    journal,
+    agents,
     port,
     hote: process.env.KLYRA_SERVEUR_HOTE ?? "127.0.0.1",
     cert: certChemin ? lireFichier(certChemin, "Certificat") : undefined,

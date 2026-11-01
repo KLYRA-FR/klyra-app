@@ -205,6 +205,10 @@ export interface StreamOptions {
   chatId?: string;
   /** Réservé par le moteur avant de lancer ce tour. */
   routineRun?: string;
+  /** Le VPS où tourne la conversation (son origine https) ; absent : ce PC (cf. agents-distants.ts). */
+  lieu?: string | null;
+  /** Sur le VPS : le dossier du projet sur cette machine. */
+  dossierVps?: string | null;
 }
 
 /** Réponse à une demande d'autorisation. « toujours » : accordé pour le reste de la session. */

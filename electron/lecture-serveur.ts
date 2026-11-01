@@ -21,7 +21,7 @@ export type Saisie =
   | { ok: false; message: string };
 
 export type Lecture =
-  | { ok: true; nom: string; version: string }
+  | { ok: true; nom: string; version: string; agents?: string }
   | { ok: false; message: string };
 
 export type Appairage =
@@ -89,7 +89,8 @@ export function lireCorps(statut: number, corps: unknown): Lecture {
   if (typeof recu.nom !== "string" || !recu.nom.trim() || typeof recu.version !== "string" || !recu.version.trim()) {
     return { ok: false, message: MESSAGE_REPONSE };
   }
-  return { ok: true, nom: recu.nom.trim().slice(0, 80), version: recu.version.trim().slice(0, 40) };
+  const agents = typeof recu.agents === "string" && ["pret", "absent", "non-connecte"].includes(recu.agents) ? { agents: recu.agents } : {};
+  return { ok: true, nom: recu.nom.trim().slice(0, 80), version: recu.version.trim().slice(0, 40), ...agents };
 }
 
 /** Réponse de `POST /klyra/v1/appairer`. Le jeton ne sort jamais de là où il est gardé. */
