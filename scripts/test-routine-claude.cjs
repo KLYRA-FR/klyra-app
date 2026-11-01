@@ -54,6 +54,7 @@ function fixture() {
   const minuteurs = new Map();
   let sequence = 0;
   let compteComposio = "compte-fictif-a";
+  let connectActif = false;
   const modules = {
     "node:child_process": {
       spawn: (bin, args, options) => {
@@ -80,10 +81,13 @@ function fixture() {
       configMcp: (contexte, composio) => JSON.stringify({ contexte, composio }),
       OUTILS_APP: () => [],
     },
-    "./composio": { espaceComposio: {
-      signature: () => compteComposio,
-      creerCapacite: () => `capacite-${compteComposio}`,
-    } },
+    "./composio": {
+      espaceComposio: {
+        signature: () => compteComposio,
+        creerCapacite: () => `capacite-${compteComposio}`,
+      },
+      composioConnect: { serveur: () => connectActif ? { type: "http", url: "https://connect.composio.dev/mcp", headers: {} } : null },
+    },
     "./mes-agents": {
       agentsARefuser: () => [],
       agentAutorise: () => false,
@@ -116,7 +120,7 @@ function fixture() {
     }, (event) => events.push(event), () => null);
     return { events, child: processus.at(-1) };
   };
-  return { api, lancer, processus, changerCompte: () => { compteComposio = "compte-fictif-b"; } };
+  return { api, lancer, processus, changerCompte: () => { compteComposio = "compte-fictif-b"; }, activerConnect: () => { connectActif = true; } };
 }
 
 function permission(child, id) {
@@ -205,6 +209,14 @@ test("routine et Composio : les deux contextes et règles coexistent sans clé d
   assert.ok(consigne.includes("Ce tour est une exécution de routine."));
   assert.ok(consigne.includes("Pour Composio, commence par composio_etat"));
   assert.equal(JSON.stringify(child.options.env).includes("sentinelle-fictive"), false);
+});
+
+test("Composio Connect actif : consigne Connect, plus celle de la clé de projet", ({ lancer, activerConnect }) => {
+  activerConnect();
+  const { child } = lancer("reponse-a", { routineRun: "run-a" });
+  const consigne = child.args[child.args.indexOf("--append-system-prompt") + 1];
+  assert.ok(consigne.includes("utilise le serveur MCP composio (Composio Connect)"));
+  assert.ok(!consigne.includes("Pour Composio, commence par composio_etat"));
 });
 
 test("changement Composio : renouvellement du processus même dans le contexte routine", ({ lancer, processus, changerCompte }) => {
