@@ -6,7 +6,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { createMockWorkspace, type MockWorkspace } from "@/data/mock";
 import { AgentsProvider, useAgents } from "@/lib/agents";
 import { getBridge, type Acces, type AgentEvent } from "@/lib/bridge";
-import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
+import { rendezVousEntre } from "@/lib/agenda-equipe";
 import { identiteAffichee, type Identite, type ProfilCompte } from "@/lib/identite";
 import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
@@ -111,6 +111,8 @@ interface WorkspaceState extends MockWorkspace {
   executions: ExecutionWorkflow[];
   /** Le profil du compte d'équipe connecté (cf. `src/lib/identite.ts`). En mémoire seulement : jamais écrit sur le disque. */
   profilCompte: ProfilCompte | null;
+  /** Événements du compte, occurrences déjà développées. null : pas encore reçus. Jamais écrits sur le disque. */
+  evenementsCompte: Evenement[] | null;
 }
 
 /** Liste explicite : les états transitoires (dont Annuler) ne quittent jamais la mémoire. */
@@ -154,6 +156,7 @@ type WorkspaceAction =
   | { type: "profil/enregistrer"; user: User }
   | { type: "profil/modifier"; patch: Partial<User> }
   | { type: "compte/profil"; profil: ProfilCompte | null }
+  | { type: "compte/evenements"; evenements: Evenement[] | null }
   | { type: "routine/enregistrer"; routine: Routine }
   | { type: "routine/supprimer"; id: string }
   | { type: "artefact/ajouter"; artefact: Artefact }
@@ -268,7 +271,9 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case "profil/modifier":
       return { ...state, currentUser: { ...state.currentUser, ...action.patch } };
     case "compte/profil":
-      return { ...state, profilCompte: action.profil };
+      return { ...state, profilCompte: action.profil, evenementsCompte: action.profil ? state.evenementsCompte : null };
+    case "compte/evenements":
+      return { ...state, evenementsCompte: action.evenements };
     case "routine/enregistrer": {
       const existe = state.routines.some((r) => r.id === action.routine.id);
       return {
@@ -558,6 +563,8 @@ interface WorkspaceApi {
   modifierProfil: (patch: Partial<User>) => void;
   /** Le compte d'équipe connecté (ou null) : posé par `CompteProvider`, gardé en mémoire seulement. */
   appliquerProfilCompte: (profil: ProfilCompte | null) => void;
+  /** Les événements du compte (ou null en se déconnectant). En mémoire seulement. */
+  poserEvenementsCompte: (evenements: Evenement[] | null) => void;
   /** Qui tu es dans l'app, selon les règles de `src/lib/identite.ts`. */
   moi: Identite;
   choisirAcces: (acces: Acces) => void;
@@ -615,6 +622,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           workflows: [],
           executions: [],
           profilCompte: null,
+          evenementsCompte: null,
         }
       : {
           ...mock,
@@ -631,6 +639,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           workflows: [],
           executions: [],
           profilCompte: null,
+          evenementsCompte: null,
         };
   });
 
@@ -734,9 +743,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const ecrire = bridge?.planning?.ecrire;
     if (!ecrire || !state.charge) return;
     const timer = setTimeout(() => {
+      const comptePret = state.profilCompte !== null && state.evenementsCompte !== null;
       void ecrire(
         planningPourAgents({
-          evenements: state.evenements,
+          evenements: comptePret ? [...state.evenements, ...(state.evenementsCompte ?? [])] : state.evenements,
           taches: state.taches,
           categories: state.categories,
           routines: routinesLocales,
@@ -746,11 +756,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           artefacts: state.artefacts,
           workflows: state.workflows,
           personne: moi.name,
+          sansEquipe: comptePret,
         }),
       );
     }, 1000);
     return () => clearTimeout(timer);
-  }, [bridge, state.charge, state.evenements, state.taches, state.categories, routinesLocales, state.projects, roles, state.chats, state.artefacts, state.workflows, moi.name]);
+  }, [bridge, state.charge, state.evenements, state.evenementsCompte, state.profilCompte, state.taches, state.categories, routinesLocales, state.projects, roles, state.chats, state.artefacts, state.workflows, moi.name]);
 
   /* Fermeture de l'app : le dernier état part tout de suite, sans attendre le regroupement. */
   useEffect(() => {
@@ -1623,6 +1634,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const enregistrerProfil = useCallback((user: User) => dispatch({ type: "profil/enregistrer", user }), []);
   const modifierProfil = useCallback((patch: Partial<User>) => dispatch({ type: "profil/modifier", patch }), []);
   const appliquerProfilCompte = useCallback((profil: ProfilCompte | null) => dispatch({ type: "compte/profil", profil }), []);
+  const poserEvenementsCompte = useCallback((evenements: Evenement[] | null) => dispatch({ type: "compte/evenements", evenements }), []);
   const choisirAcces = useCallback((acces: Acces) => dispatch({ type: "acces/choisir", acces }), []);
   /* Les actions de rappels sont visibles immédiatement par les notifications,
      le prochain clic (ou blur) et la fermeture, avant le prochain rendu React. */
@@ -1671,9 +1683,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           return true;
         });
       }
-      /* Les rendez-vous d'équipe : une notification par occurrence, retenue le temps de la session. */
-      const demain = new Date(maintenant + 86_400_000);
-      for (const e of evenementsEquipeEntre(new Date(maintenant), demain)) {
+      /* Les rendez-vous d'équipe : une notification par occurrence, retenue le temps de la session.
+         L'horizon couvre le lendemain : un rendez-vous à 00:05 se signale dès 23:55. */
+      const horizon = new Date(maintenant + 86_400_000);
+      const fin = new Date(horizon.getFullYear(), horizon.getMonth(), horizon.getDate() + 1);
+      const comptePret = stateRef.current.profilCompte !== null && stateRef.current.evenementsCompte !== null;
+      for (const e of rendezVousEntre(comptePret, stateRef.current.evenementsCompte, new Date(maintenant), fin)) {
+        if (!e.debut) continue;
         const debut = new Date(`${e.date}T${e.debut}`).getTime();
         if (notifiesEquipe.current.has(e.id) || debut - 10 * 60_000 > maintenant || debut < maintenant) continue;
         notifiesEquipe.current.add(e.id);
@@ -2031,6 +2047,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       enregistrerProfil,
       modifierProfil,
       appliquerProfilCompte,
+      poserEvenementsCompte,
       moi,
       choisirAcces,
       repondreAutorisation,
@@ -2052,6 +2069,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       moi,
       modifierProfil,
       appliquerProfilCompte,
+      poserEvenementsCompte,
       sendMessage,
       choisirModele,
       nouvelleConversation,

@@ -33,7 +33,10 @@ export type CodeErreur =
   | "reserve_au_createur"
   | "rappel_invalide"
   | "membre_inconnu"
-  | "lot_trop_grand";
+  | "lot_trop_grand"
+  // Calendrier commun (cf. `convex/evenements.ts`).
+  | "evenement_invalide"
+  | "reserve_a_lorganisateur";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

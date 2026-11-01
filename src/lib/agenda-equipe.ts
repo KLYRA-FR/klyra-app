@@ -10,6 +10,18 @@ const RENDEZ_VOUS: { id: string; titre: string; jour: number; debut: string; fin
   { id: "weekly-klyra", titre: "Weekly KLYRA", jour: 2, debut: "09:00", fin: "09:30", notes: "Réunion de toute l’équipe" },
 ];
 
+/**
+ * Rendez-vous d'équipe entre deux dates (fin exclue).
+ * Connecté, avec la liste du compte déjà reçue : cette liste, à la place du Weekly codé en dur.
+ * Tant que la liste n'est pas là, le Weekly codé en dur reste, pour ne pas laisser un trou.
+ */
+export function rendezVousEntre(comptePret: boolean, duCompte: Evenement[] | null, debut: Date, fin: Date): Evenement[] {
+  if (!comptePret) return evenementsEquipeEntre(debut, fin);
+  const a = cleJour(debut);
+  const b = cleJour(fin);
+  return (duCompte ?? []).filter((e) => e.date >= a && e.date < b);
+}
+
 /** Les rendez-vous d'équipe entre deux dates (fin exclue), comme des événements. */
 export function evenementsEquipeEntre(debut: Date, fin: Date): Evenement[] {
   const liste: Evenement[] = [];

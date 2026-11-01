@@ -126,6 +126,36 @@ export default defineSchema({
     .index("by_destinataire_and_lue", ["destinataire", "lue"])
     .index("by_rappelId", ["rappelId"]),
 
+  /**
+   * Un événement du calendrier commun (cf. `docs/CONVEX-PLAN.md`, § 3). Visible par
+   * l'organisateur et les participants. `cle` identifie le Weekly, une seule fois.
+   */
+  evenements: defineTable({
+    titre: v.string(),
+    notes: v.string(),
+    /** « 2026-10-27 » : le jour, ou le premier jour d'une répétition. */
+    jour: v.string(),
+    /** « 09:00 », ou null pour un jour entier. */
+    debut: v.union(v.string(), v.null()),
+    fin: v.union(v.string(), v.null()),
+    jourEntier: v.boolean(),
+    organisateur: v.id("membres"),
+    touteEquipe: v.boolean(),
+    repetition: v.union(v.literal("aucune"), v.literal("semaine")),
+    /** Instant du premier début, fourni par l'ordinateur, pour l'index de période. */
+    debutMs: v.number(),
+    cle: v.union(v.string(), v.null()),
+  }).index("by_cle", ["cle"]),
+
+  /** Une personne qui voit l'événement. `debut` recopie le premier début, pour chercher par période. */
+  participations: defineTable({
+    evenementId: v.id("evenements"),
+    participant: v.id("membres"),
+    debut: v.number(),
+  })
+    .index("by_participant_and_debut", ["participant", "debut"])
+    .index("by_evenement", ["evenementId"]),
+
   /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
   courrielsSimules: defineTable({
     a: v.string(),

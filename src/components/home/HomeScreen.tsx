@@ -13,7 +13,7 @@ import { Stickers } from "./Stickers";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
-import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
+import { rendezVousEntre } from "@/lib/agenda-equipe";
 import { aujourdhui } from "@/lib/dates";
 import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
 import { deuxiemeBloc, premierBloc } from "@/lib/mouvement";
@@ -48,7 +48,7 @@ function useResumeDuJour(): string {
   const rappels = state.taches.filter((t) => !t.faite && t.date !== null && t.date <= cle).length;
   const demain = new Date();
   demain.setHours(24, 0, 0, 0);
-  const rdv = [...state.evenements, ...evenementsEquipeEntre(new Date(), demain)].filter((e) => e.date === cle).length;
+  const rdv = [...state.evenements, ...rendezVousEntre(state.profilCompte !== null && state.evenementsCompte !== null, state.evenementsCompte, new Date(), demain)].filter((e) => e.date === cle).length;
   if (!rappels && !rdv) return "Rien d’imposé aujourd’hui : la journée est à toi.";
   const morceaux = [
     rappels && `${rappels} rappel${rappels > 1 ? "s" : ""}`,

@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useRouter } from "next/navigation";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { AgendaCompte } from "@/components/planning/AgendaCompte";
 import { PresenceKlyra } from "@/components/planning/PresenceKlyra";
 import { getBridge, type KlyraBridge } from "@/lib/bridge";
 import { ecartProfils, identiteValable, initialeDe } from "@/lib/identite";
@@ -144,6 +145,8 @@ const MESSAGES: Record<string, string> = {
   rappel_invalide: "Ce rappel n’est pas valable : vérifie le titre, la date et la catégorie.",
   membre_inconnu: "Cette personne n’est plus dans l’équipe.",
   lot_trop_grand: "Trop de rappels d’un coup : 100 au plus.",
+  evenement_invalide: "Cet événement n’est pas valable : vérifie le titre, le jour et l’heure.",
+  reserve_a_lorganisateur: "Seul l’organisateur peut changer cet événement.",
 };
 
 /** Le code d'erreur renvoyé par une fonction Convex (`convex/model/valeurs.ts`), ou null. */
@@ -350,6 +353,7 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
   return (
     <CompteContext.Provider value={valeur}>
       <PresenceKlyra actif={etat === "connecte"} />
+      <AgendaCompte actif={etat === "connecte"} />
       {children}
     </CompteContext.Provider>
   );

@@ -395,10 +395,24 @@ export interface Evenement {
   projectId: string | null;
   /** Notification envoyée (10 min avant le début). */
   notifie: boolean;
-  /** Rendez-vous de toute l'équipe (cf. lib/agenda-equipe) : en lecture seule. */
+  /** Rendez-vous de toute l'équipe. Le Weekly codé en dur est en lecture seule ; celui du compte suit `modifiable`. */
   equipe?: boolean;
   /** Se répète chaque semaine. */
   repete?: boolean;
+  /** Occurrence déjà développée par le compte : le planning ne la redéploie pas. Jamais écrit sur le disque. */
+  occurrence?: boolean;
+  /** Identifiant Convex. Absent : rendez-vous de cet ordinateur. */
+  compteId?: string;
+  /** Premier jour d'une répétition du compte. */
+  origine?: string;
+  /** Couleur de l'organisateur. */
+  teinte?: RoleTeinte;
+  organisateur?: string;
+  organisateurNom?: string;
+  /** Faux pour le Weekly et pour un participant qui n'organise pas. Absent : on peut modifier. */
+  modifiable?: boolean;
+  /** Participants du compte, organisateur compris. */
+  participants?: string[];
 }
 
 /** Une catégorie de rappels : une colonne, avec sa couleur et son icône. */
