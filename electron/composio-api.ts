@@ -36,6 +36,8 @@ export interface ServiceComposio {
   slug: string;
   nom: string;
   description: string;
+  /** L'adresse du logo donnée par Composio (https seulement) ; main le télécharge avant l'écran. */
+  logo: string | null;
   configurations: ConfigurationComposio[];
 }
 export interface OutilComposio {
@@ -202,13 +204,14 @@ export class ComposioApi {
     const noms = new Map(catalogue.map((v) => {
       const r = objet(v);
       const meta = estObjet(r.meta) ? r.meta : {};
-      return [chaine(r.slug), { nom: texte(r.name, 200), description: texte(meta.description, 2000) }];
+      const logo = typeof meta.logo === "string" && /^https:\/\/[^\s]{1,500}$/.test(meta.logo) ? meta.logo : null;
+      return [chaine(r.slug), { nom: texte(r.name, 200), description: texte(meta.description, 2000), logo }];
     }));
     const services = new Map<string, ServiceComposio>();
     for (const v of configs) {
       const r = objet(v);
       const slug = chaine(objet(r.toolkit).slug);
-      const s = services.get(slug) ?? { slug, nom: noms.get(slug)?.nom || slug, description: noms.get(slug)?.description || "", configurations: [] };
+      const s = services.get(slug) ?? { slug, nom: noms.get(slug)?.nom || slug, description: noms.get(slug)?.description || "", logo: noms.get(slug)?.logo ?? null, configurations: [] };
       s.configurations.push({ id: chaine(r.id), nom: texte(r.name, 200), methode: texte(r.auth_scheme, 80), active: r.status === "ENABLED" });
       services.set(slug, s);
     }

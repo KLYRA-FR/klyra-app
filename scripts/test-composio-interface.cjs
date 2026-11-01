@@ -23,6 +23,8 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "klyra-composio-interface-"));
 app.setPath("userData", path.join(TMP, "userdata"));
 app.setPath("sessionData", path.join(TMP, "session"));
 const CLE_MAIN_SEULEMENT = "cle-sentinelle-interdite-dans-le-renderer";
+const CLE_SAISIE = "ak_cle-collee-par-la-personne-0123";
+let importAnnule = true;
 const clone = (v) => structuredClone(v);
 let revision = 1;
 let fixture = { contexte: "fixture-1", profil: { nom: "Profil simulé", type: "local" }, configure: false, coffreDisponible: true, services: [], comptes: [], selections: {}, enAttente: [], verifieLe: null, erreur: null };
@@ -60,7 +62,9 @@ ipcMain.handle("fixture:composio", async (_event, nom, contexte, ...args) => {
   }
   if (nom === "console") return { ok: true, data: null };
   if (contexte !== fixture.contexte) return { ok: false, code: "contexte", message: "Contexte de test périmé." };
-  if (nom === "importer") {
+  if (nom === "importer" && importAnnule) return { ok: true, data: false };
+  if (nom === "saisir" && args[0] !== CLE_SAISIE) return { ok: false, code: "acces", message: "Composio refuse cette clé (simulation)." };
+  if (nom === "importer" || nom === "saisir") {
     assert.ok(CLE_MAIN_SEULEMENT.length > 0);
     changer({ configure: true, services: [service], verifieLe: Date.now(), erreur: null });
     return { ok: true, data: true };
@@ -217,13 +221,26 @@ app.whenReady().then(async () => {
     await capture("01-vierge");
 
     await cliquer("Se connecter à Composio");
-    await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Importer la clé…')");
-    verifier(await ev("document.activeElement?.closest('[role=dialog]') !== null"), "fenêtre de connexion : focus placé dedans");
-    await cliquer("Ouvrir la console Composio", '[role="dialog"] button');
+    await attendre("document.querySelector('[role=dialog] input[type=password]')");
+    verifier(await ev("document.activeElement === document.querySelector('[role=dialog] input[type=password]')"), "fenêtre de connexion : focus dans le champ de la clé");
+    verifier(await ev("[...document.querySelectorAll('[role=dialog] button')].some((b) => b.innerText.trim() === 'Connecter' && b.disabled)"), "Connecter désactivé tant qu’aucune clé n’est collée");
+    await cliquer("Ouvrir la console", '[role="dialog"] button');
     verifier(journal.some((j) => j.nom === "console"), "console Composio ouverte par le pont, sans URL dans le renderer");
-    await cliquer("Importer la clé…", '[role="dialog"] button');
+    await cliquer("Ou importer un fichier de clé…", '[role="dialog"] button');
+    for (let i = 0; i < 100 && !journal.some((j) => j.nom === "importer"); i++) await pause(20);
+    await rendu();
+    verifier(await ev("document.querySelector('[role=dialog]') !== null") && !(await texte()).includes("Composio est connecté."), "fichier non choisi : fenêtre gardée, aucun faux succès");
+    await saisir('[role="dialog"] input[type=password]', "ak_mauvaise-cle-000000");
+    await cliquer("Connecter", '[role="dialog"] button');
+    await attendre("document.querySelector('[role=dialog] [role=alert]')?.innerText.includes('refuse cette clé')", "clé refusée affichée dans la fenêtre");
+    verifier(!(await carteComposio()).includes("Connecté"), "clé refusée : Composio n’est pas annoncé connecté");
+    await ev("document.querySelector('[role=dialog] input[type=password]').select()");
+    await saisir('[role="dialog"] input[type=password]', CLE_SAISIE);
+    await capture("01b-cle-saisie");
+    await cliquer("Connecter", '[role="dialog"] button');
     await attendre("!document.querySelector('[role=dialog]') && document.body.innerText.includes('Aucune app connectée pour l’instant.')");
-    verifier(journal.some((j) => j.nom === "importer") && (await carteComposio()).includes("Connecté"), "import simulé par IPC : Composio connecté, sans champ secret");
+    verifier(journal.some((j) => j.nom === "saisir" && j.args[0] === CLE_SAISIE) && (await carteComposio()).includes("Connecté") && (await texte()).includes("Composio est connecté."), "clé collée : transmise une fois au pont, Composio connecté");
+    verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(CLE_SAISIE)})`)), "clé collée : elle ne reste pas dans la page");
 
     await ouvrirConnexion();
     verifier(await ev("document.querySelectorAll('[role=dialog] input[type=radio]').length === 0"), "ajout d’app : aucune autorisation anticipée dans la fenêtre");
@@ -326,7 +343,7 @@ app.whenReady().then(async () => {
 
     verifier(await ev("document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('main').scrollWidth <= document.querySelector('main').clientWidth + 1"), "fenêtre 1100 × 700 : pas de débordement horizontal global");
     verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(CLE_MAIN_SEULEMENT)}) || JSON.stringify(window.klyra).includes(${JSON.stringify(CLE_MAIN_SEULEMENT)})`)), "aucune clé sentinelle dans DOM ou bridge renderer");
-    verifier(await ev("document.querySelectorAll('input[type=password]').length === 0"), "aucun champ de secret hors de la fenêtre MCP");
+    verifier(await ev("document.querySelectorAll('input[type=password]').length === 0"), "aucun champ de secret hors des fenêtres de connexion");
     verifier(exterieurs.length === 0, "aucune requête réseau extérieure demandée");
     verifier(erreurs.length === 0, `aucune erreur console UI (${erreurs.length})`);
     await capture("07-final");

@@ -126,6 +126,7 @@ contextBridge.exposeInMainWorld("klyra", {
   composio: {
     etat: () => ipcRenderer.invoke("composio:etat"),
     importer: (contexte: string) => ipcRenderer.invoke("composio:importer", contexte),
+    saisir: (contexte: string, cle: string) => ipcRenderer.invoke("composio:saisir", contexte, cle),
     retirer: (contexte: string) => ipcRenderer.invoke("composio:retirer", contexte),
     selectionner: (contexte: string, service: string, compte: string | null) => ipcRenderer.invoke("composio:selectionner", contexte, service, compte),
     connecter: (contexte: string, service: string, configuration: string) => ipcRenderer.invoke("composio:connecter", contexte, service, configuration),

@@ -440,6 +440,8 @@ export interface KlyraBridge {
   composio?: {
     etat: () => Promise<Reponse<EtatComposio>>;
     importer: (contexte: string) => Promise<Reponse<boolean>>;
+    /** La clé collée : elle part vers main une fois, pour être vérifiée puis chiffrée. */
+    saisir: (contexte: string, cle: string) => Promise<Reponse<boolean>>;
     retirer: (contexte: string) => Promise<Reponse<void>>;
     selectionner: (contexte: string, service: string, compte: string | null) => Promise<Reponse<void>>;
     connecter: (contexte: string, service: string, configuration: string) => Promise<Reponse<{ compteId: string; service: string; expireLe: string | null }>>;
