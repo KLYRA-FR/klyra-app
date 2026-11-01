@@ -9,6 +9,7 @@ import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
+import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { quandRoutine } from "@/lib/routines-affichage";
 import { cn } from "@/lib/cn";
 import { useRole, useWorkspace } from "@/lib/workspace";
@@ -45,6 +46,7 @@ function normaliser(input?: RoutineInput | Routine | null): Valeurs {
     active: input?.active ?? true,
     missedPolicy: input?.schedule.kind === "once" ? "run-once" : input?.missedPolicy ?? "skip",
     projectId: input?.projectId ?? null,
+    lieu: input?.lieu ?? null,
   };
 }
 
@@ -110,7 +112,10 @@ function SaisieRoutine({ initiale, valeursInitiales, onEnregistrer, onAnnuler, o
   const role = useRole(valeurs.agentId);
   const agentActif = roles.some((agent) => agent.id === valeurs.agentId);
   const agentConnu = tous.some((agent) => agent.role.id === valeurs.agentId);
-  const projetPresent = valeurs.projectId === null || projects.some((projet) => projet.id === valeurs.projectId);
+  // Une routine tourne sur ce PC ou sur un VPS relié (qui la lance PC éteint) ; ses projets sont ceux de sa machine.
+  const serveursRelies = useServeursRelies();
+  const projetsIci = projects.filter((projet) => (projet.lieu ?? null) === (valeurs.lieu ?? null));
+  const projetPresent = valeurs.projectId === null || projetsIci.some((projet) => projet.id === valeurs.projectId);
   const modifie = JSON.stringify(valeurs) !== JSON.stringify(base);
   const erreurs = erreursSaisie(valeurs, agentActif, role.name, projetPresent);
   if (serveur) erreurs[serveur.champ] = serveur.message;
@@ -260,14 +265,25 @@ function SaisieRoutine({ initiale, valeursInitiales, onEnregistrer, onAnnuler, o
           </div>
         )}
       </div>
+      {(serveursRelies.length > 0 || valeurs.lieu) && (
+        <Champ label="Machine" aide={initiale ? "Une routine reste sur sa machine." : "Sur un VPS, elle tourne même quand ce PC est éteint."}>
+          <ListeDeroulante libelle="Machine" value={valeurs.lieu ?? "pc"} disabled={occupé || !!initiale}
+            options={[
+              { value: "pc", label: "Ce PC" },
+              ...serveursRelies.map((s) => ({ value: s.adresse, label: s.nom })),
+              ...(valeurs.lieu && !serveursRelies.some((s) => s.adresse === valeurs.lieu) ? [{ value: valeurs.lieu, label: `${nomLieu(valeurs.lieu, serveursRelies)} (plus relié)`, disabled: true }] : []),
+            ]}
+            onChange={(value) => setValeurs((courantes) => ({ ...courantes, lieu: value === "pc" ? null : value, projectId: null }))} />
+        </Champ>
+      )}
       <div data-champ="projectId">
         <Champ label="Où arrive le résultat">
           <div role="group" aria-label="Où arrive le résultat" aria-describedby={description("projectId")}>
             <ListeDeroulante libelle="Où arrive le résultat" value={valeurs.projectId ?? ""} disabled={occupé}
               options={[
-                { value: "", label: `Conversation avec ${role.name}` },
+                { value: "", label: valeurs.lieu ? `Conversation de la routine, sur ${nomLieu(valeurs.lieu, serveursRelies)}` : `Conversation avec ${role.name}` },
                 ...(!projetPresent ? [{ value: valeurs.projectId!, label: "Projet indisponible", disabled: true }] : []),
-                ...projects.map((projet) => ({ value: projet.id, label: `Projet ${projet.name}` })),
+                ...projetsIci.map((projet) => ({ value: projet.id, label: `Projet ${projet.name}` })),
               ]}
               onChange={(value) => changer("projectId", value || null)} />
           </div>

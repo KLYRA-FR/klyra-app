@@ -56,7 +56,7 @@ import {
 } from "./claude";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
 import { echecExport, exporterConversation, verifierFenetreExport } from "./export-conversation";
-import { arreterRoutines, brancherRoutines, commencerRoutine, demarrerRoutines } from "./routines";
+import { arreterRoutines, brancherRoutines, commencerRoutine, demarrerRoutines, synchroniserToutesRoutinesVps } from "./routines";
 import {
   arreterDictee,
   choisirModele,
@@ -112,7 +112,8 @@ import {
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { arbreVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
-import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, type Equipe } from "./agents-distants";
+import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
+import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 
@@ -660,7 +661,7 @@ function registerBridge() {
           if (!sender || sender.isDestroyed()) return null;
           return {
             evenement: (id, agentEvent) => sender.send("claude:event", id, agentEvent),
-            spontane: (id, sessionId) => sender.send("claude:spontane", id, sessionId),
+            spontane: (id, sessionId, contexte) => sender.send("claude:spontane", id, sessionId, contexte),
           };
         },
         equipe: equipePourVps,
@@ -668,6 +669,8 @@ function registerBridge() {
       },
       originesServeurs(),
     );
+    brancherRoutinesVps({ jeton: jetonServeur, equipe: synchroniserEquipe });
+    void synchroniserToutesRoutinesVps();
   }));
   ipcMain.handle("serveur:retirer", (event, adresse: unknown) => repondre(async () => {
     depuisFenetre(event);

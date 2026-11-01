@@ -1046,9 +1046,29 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
      sa réponse s'ouvre dans la conversation de cette session. */
   useEffect(() => {
     if (!bridge?.claude.onSpontane) return;
-    return bridge.claude.onSpontane((requestId, sessionId) => {
-      const chat = stateRef.current.chats.find((c) => Object.values(c.sessions).includes(sessionId));
-      const roleId = chat && Object.entries(chat.sessions).find(([, s]) => s === sessionId)?.[0];
+    return bridge.claude.onSpontane((requestId, sessionId, contexte) => {
+      let chat = stateRef.current.chats.find((c) => Object.values(c.sessions).includes(sessionId));
+      let roleId = chat && Object.entries(chat.sessions).find(([, s]) => s === sessionId)?.[0];
+      // Une routine tenue par un VPS : sa réponse va dans sa conversation, créée à sa première exécution.
+      if ((!chat || !roleId) && contexte && /^routine-/.test(contexte.chatId)) {
+        roleId = contexte.agentId;
+        chat = stateRef.current.chats.find((c) => c.id === contexte.chatId);
+        if (!chat) {
+          chat = {
+            id: contexte.chatId,
+            kind: "equipe",
+            projectId: null,
+            title: `Routine « ${contexte.titre} »`,
+            roleIds: [roleId],
+            updatedAt: new Date().toISOString(),
+            sessions: {},
+            luJusqua: null,
+            lieu: contexte.lieu,
+          };
+          dispatch({ type: "chat/add", chat });
+          stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
+        }
+      }
       if (!chat || !roleId) return;
       dispatch({
         type: "message/add",

@@ -15,8 +15,8 @@ import type { AgentEvent, StreamOptions } from "./claude";
 
 export interface Fenetre {
   evenement: (requestId: string, event: AgentEvent) => void;
-  /** Une réponse que l'interface n'a pas demandée (tâche de fond, ou réponse finie pendant l'absence de l'app). */
-  spontane: (requestId: string, sessionId: string) => void;
+  /** Une réponse que l'interface n'a pas demandée (tâche de fond, routine du VPS, réponse finie pendant l'absence de l'app). */
+  spontane: (requestId: string, sessionId: string, contexte: (ContexteReponse & { lieu: string }) | null) => void;
 }
 
 export interface Equipe {
@@ -31,12 +31,20 @@ interface Liaison {
   jeton: (origine: string) => string | null;
 }
 
+/** Une réponse de routine : la conversation où l'ouvrir (serveur/routines.mjs). */
+export interface ContexteReponse {
+  chatId: string;
+  agentId: string;
+  titre: string;
+}
+
 interface Entree {
   seq: number;
   requestId: string;
   sessionId: string | null;
   event?: AgentEvent;
   spontane?: boolean;
+  contexte?: ContexteReponse;
 }
 
 const ATTENTE_MS = 15_000;
@@ -99,6 +107,12 @@ async function requete(origine: string, chemin: string, methode: "POST" | "PUT",
   }
 }
 
+function contexteDe(origine: string, entree: Entree): (ContexteReponse & { lieu: string }) | null {
+  const c = entree.contexte;
+  if (!c || typeof c.chatId !== "string" || !/^routine-[A-Za-z0-9_-]{1,80}$/.test(c.chatId) || typeof c.agentId !== "string") return null;
+  return { chatId: c.chatId, agentId: c.agentId, titre: typeof c.titre === "string" ? c.titre.slice(0, 200) : "Routine", lieu: origine };
+}
+
 function distribuer(origine: string, entree: Entree) {
   const fenetre = liaison?.fenetre();
   if (!fenetre || typeof entree.requestId !== "string") return;
@@ -106,16 +120,16 @@ function distribuer(origine: string, entree: Entree) {
     if (!entree.sessionId || connues.has(entree.requestId)) return;
     connues.add(entree.requestId);
     enCours.set(entree.requestId, origine);
-    fenetre.spontane(entree.requestId, entree.sessionId);
+    fenetre.spontane(entree.requestId, entree.sessionId, contexteDe(origine, entree));
     return;
   }
   if (!entree.event) return;
   if (!connues.has(entree.requestId)) {
-    // Une réponse finie ou poursuivie pendant que l'app était fermée : elle s'ouvre comme une réponse spontanée.
+    // Une réponse de routine, ou finie pendant que l'app était fermée : elle s'ouvre comme une réponse spontanée.
     if (!entree.sessionId) return;
     connues.add(entree.requestId);
     enCours.set(entree.requestId, origine);
-    fenetre.spontane(entree.requestId, entree.sessionId);
+    fenetre.spontane(entree.requestId, entree.sessionId, contexteDe(origine, entree));
   }
   fenetre.evenement(entree.requestId, entree.event);
   if (entree.event.type === "fin") enCours.delete(entree.requestId);
@@ -216,7 +230,7 @@ export function oublierServeur(origine: string) {
 }
 
 /** Envoie au VPS les fiches des agents actifs, si elles ont changé depuis le dernier envoi. */
-async function synchroniserEquipe(origine: string): Promise<void> {
+export async function synchroniserEquipe(origine: string): Promise<void> {
   const equipe = liaison?.equipe();
   if (!equipe || equipeEnvoyee.get(origine) === equipe.empreinte) return;
   const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", equipe);

@@ -15,6 +15,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { creerAgents } from "./agents.mjs";
 import { ErreurFichier, creerFichiers } from "./fichiers.mjs";
+import { creerRoutines } from "./routines.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
 export const CHEMIN_APPAIRER = "/klyra/v1/appairer";
@@ -22,6 +23,7 @@ export const CHEMIN_APPAREIL = "/klyra/v1/appareil";
 export const CHEMIN_AGENT = "/klyra/v1/agent";
 export const CHEMIN_FICHES = "/klyra/v1/agents/fiches";
 export const CHEMIN_FICHIERS = "/klyra/v1/fichiers";
+export const CHEMIN_ROUTINES = "/klyra/v1/routines";
 export const PROTOCOLE = 1;
 
 export const DUREE_CODE_MS = 10 * 60_000;
@@ -168,7 +170,8 @@ export function creerJournal(maintenant = Date.now) {
   }
   return {
     instance,
-    publier: (requestId, event, sessionId) => ajouter({ requestId, sessionId: sessionId ?? null, event }),
+    /** `contexte` : une réponse de routine, à ouvrir dans la conversation de la routine. */
+    publier: (requestId, event, sessionId, contexte = null) => ajouter({ requestId, sessionId: sessionId ?? null, event, ...(contexte ? { contexte } : {}) }),
     /** Une tâche de fond fait reparler l'agent : l'app ouvre une réponse sous ce numéro. */
     spontane: (sessionId) => {
       const requestId = randomUUID();
@@ -201,7 +204,7 @@ function jetonDe(req) {
 
 /**
  * @param {{ nom?: string, dossier: string, maintenant?: () => number, journal?: ReturnType<typeof creerJournal>,
- *   agents?: ReturnType<typeof creerAgents>, fichiers?: ReturnType<typeof creerFichiers> }} options
+ *   agents?: ReturnType<typeof creerAgents>, fichiers?: ReturnType<typeof creerFichiers>, routines?: ReturnType<typeof creerRoutines> }} options
  */
 export function creerGestionnaire(options) {
   const nom = (options.nom ?? "").trim() || "KLYRA";
@@ -210,6 +213,7 @@ export function creerGestionnaire(options) {
   const journal = options.journal ?? null;
   const agents = options.agents ?? null;
   const fichiers = options.fichiers ?? null;
+  const routines = options.routines ?? null;
   let echecs = 0;
 
   const appareilDe = (req) => {
@@ -224,6 +228,7 @@ export function creerGestionnaire(options) {
     agents: agents ? agents.etat() : "absent",
     equipe: agents ? agents.empreinteEquipe() : "",
     ...(fichiers ? { projets: fichiers.racine } : {}),
+    ...(routines ? { routines: true } : {}),
   });
 
   return async function gestionnaire(req, res) {
@@ -283,6 +288,26 @@ export function creerGestionnaire(options) {
       res.writeHead(204, ENTETES_CORS);
       res.end();
       return;
+    }
+
+    if (url.pathname === CHEMIN_ROUTINES || url.pathname.startsWith(`${CHEMIN_ROUTINES}/`)) {
+      if (!routines) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      const action = url.pathname.slice(CHEMIN_ROUTINES.length + 1);
+      try {
+        if (action === "" && req.method === "PUT") {
+          routines.recevoir((await lireCorpsRequete(req, CORPS_FICHES_MAX))?.routines);
+          return repondre(res, 200, { ok: true });
+        }
+        if (action === "historique" && req.method === "GET") {
+          return repondre(res, 200, { runs: routines.historique(url.searchParams.get("id") ?? "", Number(url.searchParams.get("limite") ?? "50")) });
+        }
+        if (action === "executer" && req.method === "POST") return repondre(res, 200, { run: routines.executer(String((await lireCorpsRequete(req))?.id ?? "")) });
+        if (action === "interrompre" && req.method === "POST") return repondre(res, 200, { ok: routines.interrompre(String((await lireCorpsRequete(req))?.runId ?? "")) });
+      } catch (erreur) {
+        return repondre(res, 400, { erreur: erreur instanceof Error ? erreur.message : "routine" });
+      }
+      return repondre(res, 404, { erreur: "introuvable" });
     }
 
     if (url.pathname.startsWith(`${CHEMIN_FICHIERS}/`)) {
@@ -368,6 +393,7 @@ export function ecouter(options) {
         fermer: () => {
           options.journal?.fermerTout();
           options.agents?.fermerTout();
+          options.routines?.arreter();
           return new Promise((fini, echec) => serveur.close((err) => (err ? echec(err) : fini())));
         },
       });
@@ -414,18 +440,28 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1);
   }
   const nomServeur = (process.env.KLYRA_SERVEUR_NOM ?? "").trim() || "KLYRA";
+  const home = process.env.HOME || path.dirname(dossier);
   const journal = creerJournal();
-  const agents = creerAgents({ home: process.env.HOME || path.dirname(dossier), donnees: dossier, nomServeur, publier: journal.publier, spontane: journal.spontane });
+  /* Les réponses de routine portent leur conversation ; le moteur des routines suit leur fin. */
+  let routines = null;
+  const publier = (requestId, event, sessionId) => {
+    journal.publier(requestId, event, sessionId, routines?.contexte(requestId) ?? null);
+    routines?.surEvenement(requestId, event);
+  };
+  const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane });
+  routines = creerRoutines({ donnees: dossier, home, envoyer: agents.envoyer, annuler: agents.annuler });
   const ecoute = await ecouter({
     nom: process.env.KLYRA_SERVEUR_NOM,
     dossier,
     journal,
     agents,
-    fichiers: creerFichiers(process.env.HOME || path.dirname(dossier)),
+    fichiers: creerFichiers(home),
+    routines,
     port,
     hote: process.env.KLYRA_SERVEUR_HOTE ?? "127.0.0.1",
     cert: certChemin ? lireFichier(certChemin, "Certificat") : undefined,
     cle: cleChemin ? lireFichier(cleChemin, "Clé") : undefined,
   });
+  routines.demarrer();
   process.stdout.write(`klyra-serveur ${ecoute.port}\n`);
 }

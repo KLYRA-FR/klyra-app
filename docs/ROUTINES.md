@@ -26,6 +26,8 @@ Le détail présente la prochaine exécution, les cinq prochains départs de la 
 
 Le moteur est actif dans l’app installée : aucun flag de développement, aucun ancien minuteur de routine en secours. Il s’exécute uniquement **sur cet ordinateur, app ouverte** ; Convex ne lance aucun agent et ne synchronise pas ce fichier. App fermée, machine arrêtée ou en veille : rien ne part. Copier manuellement les données sur un deuxième ordinateur n’en fait pas un hôte partagé : chacun serait autonome.
 
+**Exception : une routine tenue par un VPS relié** (champ « Machine », `Routine.lieu`, choisi à la création et figé). Ce PC garde sa définition et l’affiche, mais ne la lance jamais : il n’avance que son échéance affichée. Après chaque changement, la liste des routines du VPS lui est renvoyée (`electron/routines-vps.ts`) ; le serveur (`serveur/routines.mjs`) la planifie avec le même calcul (`serveur/horaires.mjs`, généré depuis `schedule.ts`), la lance PC éteint, garde son historique et sa conversation (`routine-<id>`, une session reprise d’une exécution à l’autre). Mêmes garanties : une exécution active par routine et par agent, « en cours » écrit avant l’appel, interrompue au redémarrage sans relance, retard de plus de 5 min selon `skip` / `run-once`. Exécuter, interrompre et l’historique passent par le serveur. Les outils `routine_no_update` / `routine_report_failure` n’existent pas sur le VPS : la fin de tour fait foi.
+
 ## Règles d’exécution
 
 - Une récurrence à heure civile fixe ne part qu’une fois lorsque cette minute se répète à l’automne. L’heure inexistante au printemps est sautée ; pour une exécution unique, elle est déplacée à la première minute valide. Les intervalles restent des durées absolues.

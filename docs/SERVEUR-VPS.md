@@ -48,6 +48,12 @@ Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS"
 - Le serveur refuse tout chemin hors de `/var/lib/klyra` (arbre, lecture, création, dossier de travail d’un agent).
 - Les conversations d’un projet du VPS y tournent, dans son dossier.
 
+## Routines sur le VPS
+
+- « Machine » dans le formulaire d’une routine (à la création). Le VPS la lance même quand le PC est éteint ; sa réponse s’ouvre dans la conversation « Routine « … » » à la réouverture de l’app.
+- `PUT /klyra/v1/routines` (liste complète, envoyée après chaque changement), `POST /klyra/v1/routines/executer | interrompre`, `GET /klyra/v1/routines/historique`.
+- `serveur/horaires.mjs` est généré : `node scripts/horaires-serveur.mjs` après tout changement de `electron/routines/schedule.ts` (`test:serveur` vérifie qu’il est à jour).
+
 ## Dans l’app
 
 La fenêtre PC (1100 px et plus) a la colonne Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Sans serveur, l’écran montre deux gestes : coller la commande sur le VPS, coller le lien qu’elle affiche. Dans Electron, un lien `klyra://rejoindre` déjà copié remplit le champ vide. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.

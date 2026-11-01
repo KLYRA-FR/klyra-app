@@ -29,6 +29,8 @@ export interface Routine {
   missedPolicy: MissedPolicy;
   /** Rangée dans un projet : elle part dans la conversation d'équipe du projet (comportement existant). */
   projectId: string | null;
+  /** Le VPS qui la tient (origine https) : il la planifie et la lance, PC éteint. Absent : ce PC. */
+  lieu?: string | null;
   relais?: RelaisRoutine[];
   positions?: Record<string, { x: number; y: number }>;
   /** Ancienne chaîne conservée mais incompatible avec une routine à un seul agent. */
@@ -91,6 +93,8 @@ export interface RoutineInput {
   active?: boolean;
   missedPolicy?: MissedPolicy;
   projectId?: string | null;
+  /** À la création seulement : une routine reste sur sa machine. */
+  lieu?: string | null;
 }
 
 export type RoutinePatch = Partial<RoutineInput> & {
