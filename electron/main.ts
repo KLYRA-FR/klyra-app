@@ -74,7 +74,7 @@ import {
 import { ecrirePlanning } from "./planning";
 import { ajouterMcpDirect, APPS_MCP, chargerMcpDirects, listerMcpDirects, retirerMcpDirect } from "./mcp-direct";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
-import { espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio } from "./composio";
+import { composioConnect, espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
 import { lireConsommation, lireJournal } from "./consommation";
 import { rattraperHistorique } from "./historique";
@@ -304,6 +304,10 @@ function registerBridge() {
   composio("composio:etat", () => etatAvecLogos());
   composio("composio:importer", (contexte) => importerCleComposio(fenetrePrincipale!, contexte));
   composio("composio:saisir", (contexte, cle) => saisirCleComposio(contexte, cle));
+  composio("composio:connect:etat", () => composioConnect.etat());
+  composio("composio:connect:connecter", () => composioConnect.connecter());
+  composio("composio:connect:annuler", () => composioConnect.annuler());
+  composio("composio:connect:deconnecter", () => composioConnect.deconnecter());
   composio("composio:retirer", (contexte) => espaceComposio.retirerConfiguration(contexte));
   composio("composio:selectionner", (contexte, service, compte) => espaceComposio.selectionner(contexte, service, compte));
   composio("composio:connecter", (contexte, service, configuration) => espaceComposio.connecter(contexte, service, configuration));
@@ -693,6 +697,9 @@ void app.whenReady().then(async () => {
 
   void demarrerServeurMcp();
   void chargerMcpDirects();
+  /* Composio Connect : jetons relus, puis renouvelés avant leur expiration. */
+  void composioConnect.charger();
+  setInterval(() => void composioConnect.renouvelerSiBesoin(), 60_000);
   void nettoyerServeurOrphelin();
   createWindow();
   demarrerMisesAJour();

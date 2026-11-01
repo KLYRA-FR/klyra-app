@@ -5,7 +5,7 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { enregistrerAppelIa } from "./consommation";
-import { espaceComposio, OUTILS_COMPOSIO } from "./composio";
+import { composioConnect, espaceComposio, OUTILS_COMPOSIO } from "./composio";
 import { serveursMcpDirects } from "./mcp-direct";
 
 /**
@@ -369,9 +369,11 @@ export async function demarrerServeurMcp(): Promise<void> {
  *  S'y ajoutent les MCP directs branchés dans la Marketplace. */
 export function configMcp(appelant: Appelant, composio: string | null = null): string | null {
   if (!serveur) return null;
+  const connect = composioConnect.serveur();
   return JSON.stringify({
     mcpServers: {
       ...serveursMcpDirects(),
+      ...(connect ? { composio: connect } : {}),
       klyra: {
         type: "http",
         url: serveur.url,
