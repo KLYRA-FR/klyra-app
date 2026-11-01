@@ -141,6 +141,10 @@ export function AppRail({
       <div className="flex shrink-0 flex-col items-center gap-1 pt-2">
         <PastilleMaj />
         <UtilisationRail />
+        {/* Les apps à brancher (Composio, MCP directs). */}
+        <Link href="/marketplace" title="Marketplace" aria-current={pathname === "/marketplace" ? "page" : undefined} className={entree(pathname === "/marketplace")}>
+          <Entree icone="boutique-01" nom="Marketplace" active={pathname === "/marketplace"} />
+        </Link>
         {SEPARATEUR}
         {/* Les réglages s'ouvrent d'un clic sur l'avatar. */}
         <span className="pt-1">

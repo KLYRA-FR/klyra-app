@@ -10,7 +10,6 @@ import { chercher, estSection, SECTIONS, type IdSection, type Resultat } from ".
 import { Agents } from "./sections/Agents";
 import { Claude } from "./sections/Claude";
 import { ComputerUse } from "./sections/ComputerUse";
-import { Composio } from "./sections/Composio";
 import { Equipe } from "./sections/Equipe";
 import { General } from "./sections/General";
 import { MisesAJour } from "./sections/MisesAJour";
@@ -28,7 +27,6 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
   equipe: () => <Equipe />,
   claude: () => <Claude />,
   agents: () => <Agents />,
-  composio: () => <Composio />,
   "autres-ia": () => (
     <div id={ancreReglage("autres-ia")} className="klyra-reglage scroll-mt-6 rounded-lg">
       <AutresIa />

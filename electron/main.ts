@@ -72,6 +72,7 @@ import {
   type ModeleLocal,
 } from "./dictee";
 import { ecrirePlanning } from "./planning";
+import { ajouterMcpDirect, APPS_MCP, chargerMcpDirects, listerMcpDirects, retirerMcpDirect } from "./mcp-direct";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
 import { espaceComposio, importerCleComposio, verifierFenetreComposio } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
@@ -563,6 +564,11 @@ function registerBridge() {
   handle("ia:ajouter", (entree: { nom: string; fournisseur: Fournisseur; url: string; modele: string; cle: string }) => ajouterIa(entree));
   handle("ia:retirer", (id: string) => retirerIa(String(id)));
   handle("ia:tester", (id: string) => testerIa(String(id)));
+  /* Les MCP directs de la Marketplace (electron/mcp-direct.ts) : le jeton ne revient jamais vers l'écran. */
+  handle("mcp:apps", () => APPS_MCP);
+  handle("mcp:lister", () => listerMcpDirects());
+  handle("mcp:ajouter", (entree: { app: string | null; nom?: string; url?: string; jeton?: string }) => ajouterMcpDirect(entree));
+  handle("mcp:retirer", (id: string) => retirerMcpDirect(String(id)));
   handle("planning:ecrire", (markdown: string) => {
     if (typeof markdown !== "string" || markdown.length > 2 * 1024 * 1024) throw new Error("Planning invalide.");
     return ecrirePlanning(markdown);
@@ -685,6 +691,7 @@ void app.whenReady().then(async () => {
   void demarrerRoutines();
 
   void demarrerServeurMcp();
+  void chargerMcpDirects();
   void nettoyerServeurOrphelin();
   createWindow();
   demarrerMisesAJour();

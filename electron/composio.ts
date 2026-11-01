@@ -89,12 +89,12 @@ export async function importerCleComposio(win: BrowserWindow, contexte: unknown)
 export const OUTILS_COMPOSIO = [
   {
     name: "composio_etat",
-    description: "Liste les services Composio dont un compte a été choisi dans KLYRA, avec le nom de ce compte et son état relu. Aucun appel métier ni changement de connexion. Une liste vide signifie qu’il faut choisir un compte dans Réglages › Composio.",
+    description: "Liste les services Composio dont un compte a été choisi dans KLYRA, avec le nom de ce compte et son état relu. Aucun appel métier ni changement de connexion. Une liste vide signifie qu’il faut choisir un compte dans Marketplace › Composio.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "composio_rechercher",
-    description: "Cherche les outils et leurs schémas pour un service Composio (ex. gmail) dont la personne a choisi un compte dans Réglages › Composio. Ne connecte aucun compte et n’exécute aucune opération métier. Le service doit déjà être configuré ici ; une fiche d’agent ou un CLI externe ne prouve pas sa connexion.",
+    description: "Cherche les outils et leurs schémas pour un service Composio (ex. gmail) dont la personne a choisi un compte dans Marketplace › Composio. Ne connecte aucun compte et n’exécute aucune opération métier. Le service doit déjà être configuré ici ; une fiche d’agent ou un CLI externe ne prouve pas sa connexion.",
     inputSchema: { type: "object", properties: { service: { type: "string" }, recherche: { type: "string", description: "L’action à trouver." } }, required: ["service", "recherche"], additionalProperties: false },
   },
   {

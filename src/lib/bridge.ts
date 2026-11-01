@@ -6,6 +6,15 @@
 import type { FileNode } from "@/types/domain";
 import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
+
+/** Un MCP direct branché dans la Marketplace : tout, sauf le jeton. */
+export interface McpDirect {
+  id: string;
+  app: string | null;
+  nom: string;
+  url: string;
+  avecJeton: boolean;
+}
 import type { Routine as RoutineMoteur, RoutineInput, RoutinePatch, RoutineRun, RunReport } from "@/types/routines";
 
 export type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
@@ -325,6 +334,13 @@ export interface KlyraBridge {
     ajouter: (entree: { nom: string; fournisseur: string; url: string; modele: string; cle: string }) => Promise<Reponse<AutreIa[]>>;
     retirer: (id: string) => Promise<Reponse<AutreIa[]>>;
     tester: (id: string) => Promise<Reponse<string>>;
+  };
+  /** Les MCP directs de la Marketplace (cf. electron/mcp-direct.ts). Le jeton ne revient jamais. */
+  mcp?: {
+    apps: () => Promise<Reponse<Record<string, { nom: string; url: string; jeton: string }>>>;
+    lister: () => Promise<Reponse<McpDirect[]>>;
+    ajouter: (entree: { app: string | null; nom?: string; url?: string; jeton?: string }) => Promise<Reponse<McpDirect[]>>;
+    retirer: (id: string) => Promise<Reponse<McpDirect[]>>;
   };
   /** Le planning en clair, que les agents lisent (~/.klyra/planning/planning.md). */
   planning?: {

@@ -23,6 +23,7 @@ const PAGES: Record<string, string> = {
   "/artefacts": "Artefacts",
   "/reglages": "Réglages",
   "/serveurs": "Serveurs",
+  "/marketplace": "Marketplace",
 };
 
 /** Les écrans d'une fiche d'agent (`/equipe?agent=…&mode=…`). */

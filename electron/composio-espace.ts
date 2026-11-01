@@ -263,7 +263,7 @@ export class EspaceComposio {
     const slug = serviceValide(service);
     if (typeof recherche !== "string" || !recherche.trim() || recherche.length > 250) throw new Error("Décris brièvement l’outil recherché.");
     const id = config.selections[slug];
-    if (!id) throw new Error("Aucun compte choisi pour ce service. Choisis-le dans Réglages › Composio.");
+    if (!id) throw new Error("Aucun compte choisi pour ce service. Choisis-le dans Marketplace › Composio.");
     const api = this.d.api(config.cle);
     const compte = await api.lireCompte(id);
     this.appartient(compte, config, slug);
