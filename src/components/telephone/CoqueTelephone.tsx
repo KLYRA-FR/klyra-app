@@ -9,6 +9,7 @@ import { ChatsTelephone } from "./ChatsTelephone";
 import { ConnexionTelephone } from "./ConnexionTelephone";
 import { FilTelephone } from "./FilTelephone";
 import { PlanningTelephone } from "./PlanningTelephone";
+import { ServeursTelephone } from "./ServeursTelephone";
 
 const CLE_INSTALL = "klyra:installer";
 
@@ -20,6 +21,7 @@ function ecran(pathname: string): ReactNode {
   if (pathname === "/projets") return <ProjetsTelephone />;
   if (pathname === "/plus") return <PlusTelephone />;
   if (pathname === "/reglages") return <ReglagesTelephone />;
+  if (pathname === "/serveurs") return <ServeursTelephone />;
   if (pathname === "/routines") return <EcranMac titre="Automatisations" phrase="Les routines sont sur ton Mac. Elles ne partent que quand KLYRA y est ouverte." />;
   if (pathname === "/artefacts") return <EcranMac titre="Artefacts" phrase="La liste est sur ton Mac." />;
   if (pathname === "/projet" || pathname === "/fichiers") return <EcranMac titre="Projet" phrase="Les fichiers de ce projet sont sur ton Mac. Ils s’affichent quand KLYRA y est ouverte." />;
@@ -50,6 +52,7 @@ export function CoqueTelephone() {
   }, []);
 
   const fil = pathname === "/chat";
+  const serveurs = pathname === "/serveurs";
   const continuer = () => {
     localStorage.setItem(CLE_INSTALL, "navigateur");
     setInstalle(true);
@@ -68,10 +71,10 @@ export function CoqueTelephone() {
             Continuer dans le navigateur
           </button>
         </div>
-      ) : compte.etat === "connecte" ? (
+      ) : compte.etat === "connecte" || serveurs ? (
         <>
           {ecran(pathname)}
-          {fil ? null : <BarreOnglets />}
+          {fil || compte.etat !== "connecte" ? null : <BarreOnglets />}
         </>
       ) : (
         <ConnexionTelephone />

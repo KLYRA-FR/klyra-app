@@ -56,6 +56,7 @@ export function PlusTelephone() {
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone titre="Plus" />
       <ul className="px-4">
+        <Ligne href="/serveurs" titre="Serveurs" detail="Ajouter un VPS qui existe déjà, par son adresse." />
         <Ligne href="/routines" titre="Automatisations" detail="Sur ton Mac : les routines ne partent que quand KLYRA y est ouverte." />
         <Ligne href="/artefacts" titre="Artefacts" detail="Sur ton Mac : la liste est sur l’ordinateur." />
         <Ligne href="/reglages" titre="Réglages" detail="Se déconnecter de ce téléphone." />

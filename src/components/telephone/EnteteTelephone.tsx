@@ -10,10 +10,12 @@ export function EnteteTelephone({
   titre,
   retour,
   droite,
+  pastille = true,
 }: {
   titre: string;
   retour?: () => void;
   droite?: ReactNode;
+  pastille?: boolean;
 }) {
   return (
     <header className="shrink-0 bg-fond-page pt-[env(safe-area-inset-top)]">
@@ -22,7 +24,7 @@ export function EnteteTelephone({
           <BoutonIcone variant="discret" taille="md" libelle="Retour" onClick={retour} icone={<Icon name="chevron-left" size={24} />} />
         ) : null}
         <h1 className="min-w-0 flex-1 truncate text-body-s font-medium text-texte-principal">{titre}</h1>
-        <PastillePoste />
+        {pastille ? <PastillePoste /> : null}
         {droite}
       </div>
     </header>
