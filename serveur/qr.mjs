@@ -107,7 +107,7 @@ export function infoVersion(version) {
 }
 
 function capacite(version) {
-  const [ec, n1, d1, n2, d2] = BLOCS[version];
+  const [, n1, d1, n2, d2] = BLOCS[version];
   return n1 * d1 + n2 * d2 - (version >= 10 ? 3 : 2);
 }
 
@@ -309,7 +309,7 @@ function penalite(modules) {
     chercher(texte);
   }
   let noirs = 0;
-  for (const ligne of modules) for (const module of ligne) noirs += module;
+  for (const ligne of modules) for (const cellule of ligne) noirs += cellule;
   const ratio = Math.abs(noirs * 100 / (taille * taille) - 50) / 5;
   score += Math.floor(ratio) * 10;
   return score;
@@ -377,7 +377,7 @@ export function qrMatrice(texte) {
   const octets = [...Buffer.from(texte, "utf8")];
   const version = choisirVersion(octets.length);
   if (!version) throw new Error("lien trop long pour le QR");
-  const [ec, n1, d1, n2, d2] = BLOCS[version];
+  const [, n1, d1, n2, d2] = BLOCS[version];
   const places = n1 * d1 + n2 * d2;
   const bitsDonnees = bitsDuMessage(octets, version, places);
   const mots = [];
