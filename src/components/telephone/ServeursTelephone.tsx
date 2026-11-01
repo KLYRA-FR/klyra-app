@@ -40,13 +40,12 @@ function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, enCours: bo
   return enCours ? `En cours · ${detail}` : detail;
 }
 
-/** Colonne Serveurs. On colle l’adresse d’un VPS déjà lancé, puis d’un autre. */
+/** Colonne Serveurs. On rejoint par le QR du serveur, ou en collant son lien. */
 export function ServeursTelephone() {
   const router = useRouter();
   const compte = useCompte();
   const [carnet, setCarnet] = useState<Carnet>(() => (typeof window === "undefined" ? carnetVide() : lireCarnet(localStorage.getItem(CLE_CARNET))));
   const [saisie, setSaisie] = useState("");
-  const [invitation, setInvitation] = useState("");
   const [ajout, setAjout] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
@@ -84,13 +83,12 @@ export function ServeursTelephone() {
     setCarnet((etat) => ajouterServeur(etat, { adresse, invitation: code, nom: lecture.nom, version: lecture.version }));
     setSondes((etat) => ({ ...etat, [adresse]: "repond" }));
     setSaisie("");
-    setInvitation("");
     setAjout(false);
   };
 
   const rejoindre = (e: FormEvent) => {
     e.preventDefault();
-    const lu = lireSaisie(saisie, invitation);
+    const lu = lireSaisie(saisie, "");
     if (!lu.ok) {
       setErreur(lu.message);
       return;
@@ -109,7 +107,7 @@ export function ServeursTelephone() {
         pastille={connecte}
         retour={connecte ? () => router.push("/plus") : undefined}
       />
-      <p className="px-4 pb-2 text-ui text-texte-secondaire">Ajoute un VPS qui existe déjà, par son adresse.</p>
+      <p className="px-4 pb-2 text-ui text-texte-secondaire">Le QR est affiché par le serveur. Ici, on colle le lien d’invitation.</p>
       <ul className="min-h-0 flex-1 overflow-y-auto px-4">
         {carnet.liste.map((serveur) => {
           const enCours = serveur.id === carnet.actif;
@@ -153,29 +151,16 @@ export function ServeursTelephone() {
         {formulaire ? (
           <form onSubmit={rejoindre} className="flex flex-col gap-3">
             <label className="flex flex-col gap-2 text-ui text-texte-principal">
-              Adresse
+              Lien d’invitation
               <input
-                aria-label="Adresse du VPS"
+                aria-label="Lien d’invitation"
                 inputMode="url"
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder="https://mon-vps:8787"
+                placeholder="klyra://rejoindre?…"
                 value={saisie}
                 onChange={(e) => setSaisie(e.target.value)}
-                className={CHAMP}
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-ui text-texte-principal">
-              Invitation
-              <input
-                aria-label="Invitation"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                placeholder="Facultative"
-                value={invitation}
-                onChange={(e) => setInvitation(e.target.value)}
                 className={CHAMP}
               />
             </label>

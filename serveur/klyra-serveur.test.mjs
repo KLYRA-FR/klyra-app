@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { CHEMIN, ecouter } from "./klyra-serveur.mjs";
+import { CHEMIN, ecouter, lienInvitation } from "./klyra-serveur.mjs";
 
 async function lire(port, chemin, headers) {
   const reponse = await fetch(`http://127.0.0.1:${port}${chemin}`, { headers, cache: "no-store" });
@@ -40,6 +40,14 @@ test("deux VPS répondent par leur nom, et se taisent s’ils sont fermés", asy
     const options = await fetch(`http://127.0.0.1:${un.port}${CHEMIN}`, { method: "OPTIONS" });
     assert.equal(options.status, 204);
     assert.equal(options.headers.get("access-control-allow-headers"), "X-Klyra-Invitation");
+
+    const page = await fetch(`http://127.0.0.1:${un.port}/`);
+    const html = await page.text();
+    assert.equal(page.status, 200);
+    assert.match(html, /Rejoindre Klyra-vps/);
+    assert.match(html, /<svg/);
+    assert.match(html, new RegExp(lienInvitation(`http://127.0.0.1:${un.port}`).replace(/[?]/g, "\\?")));
+    assert.doesNotMatch(html, /tarif|Adresse du VPS|type="text"/i);
 
     const ailleurs = await lire(un.port, "/tarif");
     assert.equal(ailleurs.statut, 404);

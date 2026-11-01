@@ -1,6 +1,7 @@
 /**
  * Raccordement à un VPS déjà en marche.
- * Le téléphone parle à l’adresse collée. Le chemin doit rester celui de `serveur/klyra-serveur.mjs`.
+ * Le téléphone ouvre le lien d’invitation, ou le QR affiché par le serveur.
+ * Le chemin doit rester celui de `serveur/klyra-serveur.mjs`.
  */
 
 export const PROTOCOLE_SERVEUR = 1;
@@ -43,9 +44,16 @@ export function carnetVide(): Carnet {
   return { actif: null, liste: [] };
 }
 
+function estIpv4(hote: string): boolean {
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hote);
+}
+
 export function lireSaisie(texte: string, invitationSaisie: string): Saisie {
   const brut = texte.trim();
-  if (!brut) return { ok: false, message: "Indique l’adresse du VPS." };
+  if (!brut) return { ok: false, message: "Colle le lien d’invitation." };
+  if (estIpv4(brut.split("/")[0]?.split(":")[0] ?? "")) {
+    return { ok: false, message: "Colle le lien d’invitation, pas une adresse IP." };
+  }
 
   let invitationLien: string | null = null;
   let candidat = brut;
@@ -63,13 +71,18 @@ export function lireSaisie(texte: string, invitationSaisie: string): Saisie {
     candidat = adresse;
   }
 
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidat)) candidat = `https://${candidat}`;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidat)) {
+    return { ok: false, message: "Colle le lien d’invitation." };
+  }
 
   let url: URL;
   try {
     url = new URL(candidat);
   } catch {
     return { ok: false, message: "Cette adresse n’est pas lisible." };
+  }
+  if (estIpv4(url.hostname) && url.hostname !== "127.0.0.1" && !brut.toLowerCase().startsWith("klyra://")) {
+    return { ok: false, message: "Colle le lien d’invitation, pas une adresse IP." };
   }
   if (url.username || url.password) return { ok: false, message: "L’adresse ne doit pas contenir de mot de passe." };
   if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false, message: "L’adresse doit commencer par https://." };

@@ -27,12 +27,10 @@ describe("adresse d’un VPS", () => {
     });
   });
 
-  test("un hôte sans schéma est lu en https", () => {
-    expect(lireSaisie("mon-vps.exemple:8787", "")).toEqual({
-      ok: true,
-      adresse: "https://mon-vps.exemple:8787",
-      invitation: null,
-    });
+  test("un hôte nu ou une IPv4 ne remplace pas le lien", () => {
+    expect(lireSaisie("mon-vps.exemple:8787", "").ok).toBe(false);
+    expect(lireSaisie("2.24.45.214", "").ok).toBe(false);
+    expect(lireSaisie("https://2.24.45.214", "").ok).toBe(false);
   });
 
   test("http n’est accepté que sur la machine locale", () => {

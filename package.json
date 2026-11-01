@@ -48,7 +48,7 @@
     "whisper": "node scripts/preparer-whisper.mjs",
     "entrees": "node scripts/preparer-entrees.mjs",
     "test:convex": "vitest run convex",
-    "test:serveur": "vitest run src/lib/serveur-vps.test.ts && node --test serveur/klyra-serveur.test.mjs",
+    "test:serveur": "vitest run src/lib/serveur-vps.test.ts && node --test serveur/klyra-serveur.test.mjs serveur/qr.test.mjs",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:identite": "vitest run src/lib/identite.test.ts",
     "test:collage": "vitest run src/lib/collage.test.ts",
