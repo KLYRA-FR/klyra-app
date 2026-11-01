@@ -2,18 +2,26 @@
  * Raccordement à un VPS déjà en marche.
  * Le téléphone ouvre le lien d’invitation, ou le QR affiché par le serveur.
  * Le chemin doit rester celui de `serveur/klyra-serveur.mjs`.
+ * Hors Electron, l’appel part d’ici. Dans la fenêtre PC, il part du processus principal.
  */
 
-export const PROTOCOLE_SERVEUR = 1;
-export const CHEMIN_SERVEUR = "/klyra/v1/serveur";
+import { CHEMIN_SERVEUR, MESSAGE_SILENCE, lireCorps, lireSaisie, type Lecture } from "../../electron/lecture-serveur";
+
+export {
+  CHEMIN_SERVEUR,
+  MESSAGE_INVITATION,
+  MESSAGE_REPONSE,
+  MESSAGE_SILENCE,
+  MESSAGE_VERSION,
+  PROTOCOLE_SERVEUR,
+  lireCorps,
+  lireSaisie,
+} from "../../electron/lecture-serveur";
+export type { Lecture, Saisie } from "../../electron/lecture-serveur";
+
 export const CLE_CARNET = "klyra:serveurs";
 /** Lien `klyra://rejoindre` reçu par Electron, en attendant l’écran Serveurs. */
 export const CLE_LIEN_ATTENTE = "klyra:lien-attente";
-
-export const MESSAGE_SILENCE = "Ce serveur ne répond pas. S’il est éteint, la connexion échoue.";
-export const MESSAGE_INVITATION = "Cette invitation n’est pas la bonne.";
-export const MESSAGE_VERSION = "Ce serveur ne parle pas la même version.";
-export const MESSAGE_REPONSE = "Ce serveur n’a pas répondu comme un VPS KLYRA.";
 
 const ATTENTE_MS = 8_000;
 const MAX_SERVEURS = 20;
@@ -34,70 +42,8 @@ export interface Carnet {
   liste: ServeurConnu[];
 }
 
-export type Saisie =
-  | { ok: true; adresse: string; invitation: string | null }
-  | { ok: false; message: string };
-
-export type Lecture =
-  | { ok: true; nom: string; version: string }
-  | { ok: false; message: string };
-
 export function carnetVide(): Carnet {
   return { actif: null, liste: [] };
-}
-
-function estIpv4(hote: string): boolean {
-  return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hote);
-}
-
-export function lireSaisie(texte: string, invitationSaisie: string): Saisie {
-  const brut = texte.trim();
-  if (!brut) return { ok: false, message: "Colle le lien d’invitation." };
-  if (estIpv4(brut.split("/")[0]?.split(":")[0] ?? "")) {
-    return { ok: false, message: "Colle le lien d’invitation, pas une adresse IP." };
-  }
-
-  let invitationLien: string | null = null;
-  let candidat = brut;
-  if (brut.toLowerCase().startsWith("klyra://")) {
-    let lien: URL;
-    try {
-      lien = new URL(brut);
-    } catch {
-      return { ok: false, message: "Cette invitation n’est pas lisible." };
-    }
-    if (lien.hostname !== "rejoindre") return { ok: false, message: "Cette invitation n’est pas lisible." };
-    const adresse = lien.searchParams.get("adresse")?.trim() ?? "";
-    if (!adresse) return { ok: false, message: "Cette invitation n’a pas d’adresse." };
-    invitationLien = lien.searchParams.get("invitation");
-    candidat = adresse;
-  }
-
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidat)) {
-    return { ok: false, message: "Colle le lien d’invitation." };
-  }
-
-  let url: URL;
-  try {
-    url = new URL(candidat);
-  } catch {
-    return { ok: false, message: "Cette adresse n’est pas lisible." };
-  }
-  if (estIpv4(url.hostname) && url.hostname !== "127.0.0.1" && !brut.toLowerCase().startsWith("klyra://")) {
-    return { ok: false, message: "Colle le lien d’invitation, pas une adresse IP." };
-  }
-  if (url.username || url.password) return { ok: false, message: "L’adresse ne doit pas contenir de mot de passe." };
-  if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false, message: "L’adresse doit commencer par https://." };
-  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
-  if (url.protocol === "http:" && !local) return { ok: false, message: "L’adresse doit commencer par https://." };
-  if (!url.hostname || url.origin === "null" || url.origin.length > 200) return { ok: false, message: "Cette adresse n’est pas lisible." };
-
-  const champ = invitationSaisie.trim();
-  const invitation = champ || invitationLien?.trim() || null;
-  if (invitation && (invitation.length > 200 || /[\r\n]/.test(invitation))) {
-    return { ok: false, message: "Cette invitation n’est pas lisible." };
-  }
-  return { ok: true, adresse: url.origin, invitation };
 }
 
 /** Commande montrée sur l’écran vide : `serveur/lancer.sh`, lu sur main (dépôt public). */
@@ -170,20 +116,37 @@ export function placePour(carnet: Carnet, adresse: string): boolean {
   return carnet.liste.some((serveur) => serveur.id === adresse) || carnet.liste.length < MAX_SERVEURS;
 }
 
-export function lireCorps(statut: number, corps: unknown): Lecture {
-  if (statut === 401) return { ok: false, message: MESSAGE_INVITATION };
-  if (!corps || typeof corps !== "object") return { ok: false, message: MESSAGE_REPONSE };
-  const recu = corps as Record<string, unknown>;
-  if (recu.produit !== "klyra-serveur") return { ok: false, message: MESSAGE_REPONSE };
-  if (recu.protocole !== PROTOCOLE_SERVEUR) return { ok: false, message: MESSAGE_VERSION };
-  if (typeof recu.nom !== "string" || !recu.nom.trim() || typeof recu.version !== "string" || !recu.version.trim()) {
-    return { ok: false, message: MESSAGE_REPONSE };
-  }
-  return { ok: true, nom: recu.nom.trim().slice(0, 80), version: recu.version.trim().slice(0, 40) };
+type ReponsePont = { ok: true; data: unknown } | { ok: false; code: string; message: string };
+
+function estLecture(valeur: unknown): valeur is Lecture {
+  if (!valeur || typeof valeur !== "object") return false;
+  const lu = valeur as Record<string, unknown>;
+  if (lu.ok === true) return typeof lu.nom === "string" && typeof lu.version === "string";
+  if (lu.ok === false) return typeof lu.message === "string";
+  return false;
+}
+
+/** Présent dans la fenêtre Electron. Absent sur le téléphone : l’appel reste un fetch. */
+function pontInterroger(): ((adresse: string, invitation: string | null) => Promise<ReponsePont>) | null {
+  const fenetre = (globalThis as { window?: { klyra?: { serveur?: { interroger?: (adresse: string, invitation: string | null) => Promise<ReponsePont> } } } }).window;
+  const interrogerPont = fenetre?.klyra?.serveur?.interroger;
+  return typeof interrogerPont === "function" ? interrogerPont : null;
 }
 
 /** Appelle le VPS. Toute panne réseau, délai dépassé compris, est un serveur qui ne répond pas. */
 export async function interroger(adresse: string, invitation: string | null, signal?: AbortSignal): Promise<Lecture> {
+  const pont = pontInterroger();
+  if (pont) {
+    if (signal?.aborted) return { ok: false, message: MESSAGE_SILENCE };
+    try {
+      const reponse = await pont(adresse, invitation);
+      if (!reponse.ok || !estLecture(reponse.data)) return { ok: false, message: MESSAGE_SILENCE };
+      return reponse.data;
+    } catch {
+      return { ok: false, message: MESSAGE_SILENCE };
+    }
+  }
+
   const controle = new AbortController();
   const delai = setTimeout(() => controle.abort(), ATTENTE_MS);
   const annuler = () => controle.abort();

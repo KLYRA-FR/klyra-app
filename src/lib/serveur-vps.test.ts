@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   CHEMIN_SERVEUR,
   MESSAGE_INVITATION,
@@ -7,6 +7,7 @@ import {
   ajouterServeur,
   carnetVide,
   choisirServeur,
+  interroger,
   lireCarnet,
   lireCorps,
   lienCopie,
@@ -125,5 +126,37 @@ describe("lien copié", () => {
     expect(lienCopie("klyra://rejoindre?invitation=abc")).toBeNull();
     expect(lienCopie("klyra://connexion?code=abc")).toBeNull();
     expect(lienCopie(null)).toBeNull();
+  });
+});
+
+describe("appel au VPS", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  test("la fenêtre n’appelle pas fetch : une coupure connect-src ne donne plus le silence", async () => {
+    const fetchMock = vi.fn(() => {
+      throw new Error("Refused to connect because it violates the document's Content Security Policy.");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    (globalThis as { window?: unknown }).window = {
+      klyra: {
+        serveur: {
+          interroger: async () => ({ ok: true, data: { ok: true, nom: "Klyra-VPS", version: "1" } }),
+        },
+      },
+    };
+    await expect(interroger("https://exemple.test", "code")).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("hors Electron, le téléphone appelle en fetch", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ produit: "klyra-serveur", protocole: 1, nom: "Klyra-VPS", version: "1" }), { status: 200 })),
+    );
+    await expect(interroger("https://exemple.test", null)).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });
