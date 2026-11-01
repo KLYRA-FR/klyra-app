@@ -11,6 +11,7 @@ import { convertirRoutine, type AncienneRoutine } from "./migration";
 import { LOCK_STALE_MS, RoutineStore, RoutineStoreError } from "./store";
 import type { RoutineInput, RoutinePatch, RunReport } from "./types";
 import { upcomingOccurrences, validateSchedule } from "./schedule";
+import { executerRoutineVps, historiqueRoutineVps, interrompreRoutineVps, synchroniserRoutinesVps } from "../routines-vps";
 
 /**
  * Les routines dans le process principal : le moteur, son fichier, et le lien avec
@@ -135,6 +136,30 @@ function suivreHote(contenu: WebContents) {
   };
 }
 
+/* ─── Routines tenues par un VPS ─────────────────────────────────── */
+
+/** Les VPS à qui l'on a déjà envoyé des routines : un VPS dont la dernière routine part reçoit une liste vide. */
+const originesRoutines = new Set<string>();
+let synchro: ReturnType<typeof setTimeout> | null = null;
+
+/** Après un changement : la liste de chaque VPS concerné lui est renvoyée (regroupé, 1,5 s). */
+function planifierRoutinesVps() {
+  if (synchro) clearTimeout(synchro);
+  synchro = setTimeout(() => void synchroniserToutesRoutinesVps(), 1500);
+}
+
+export async function synchroniserToutesRoutinesVps(): Promise<void> {
+  synchro = null;
+  if (!engine) return;
+  const routines = engine.list();
+  for (const r of routines) if (r.lieu) originesRoutines.add(r.lieu);
+  for (const origine of originesRoutines) {
+    await synchroniserRoutinesVps(origine, routines).catch((e) => console.error(`[routines] ${origine} :`, e instanceof Error ? e.message : e));
+  }
+}
+
+const lieuDe = (id: string) => moteur().list().find((r) => r.id === id)?.lieu ?? null;
+
 /** Au lancement de l'app, après `app.whenReady`. */
 export async function demarrerRoutines(): Promise<void> {
   if (engine) return;
@@ -167,7 +192,10 @@ export async function demarrerRoutines(): Promise<void> {
           if (hote && !hote.isDestroyed()) hote.send("routines:annuler", run);
         },
       },
-      onChange: () => diffuser("routines:change"),
+      onChange: () => {
+        diffuser("routines:change");
+        planifierRoutinesVps();
+      },
       log: (message, error) => console.error(`[routines] ${message}`, error ?? ""),
     });
     if (premiere) await importerAnciennes(engine);
@@ -236,9 +264,19 @@ export function brancherRoutines(): void {
   handle("routines:creer", (input: RoutineInput) => moteur().create(input));
   handle("routines:modifier", (id: string, patch: RoutinePatch) => moteur().update(id, patch));
   handle("routines:supprimer", (id: string) => moteur().remove(id));
-  handle("routines:executer", (id: string) => moteur().runNow(id));
-  handle("routines:interrompre", (runId: string) => moteur().interrupt(runId));
-  handle("routines:historique", (id: string, limit?: number) => moteur().history(id, limit ?? 50));
+  /* Une routine tenue par un VPS : il la lance, l'arrête et garde son historique. Ses exécutions s'appellent `<routine>~<…>`. */
+  handle("routines:executer", (id: string) => {
+    const lieu = lieuDe(String(id));
+    return lieu ? executerRoutineVps(lieu, String(id)) : moteur().runNow(id);
+  });
+  handle("routines:interrompre", (runId: string) => {
+    const lieu = String(runId).includes("~") ? lieuDe(String(runId).split("~")[0]) : null;
+    return lieu ? interrompreRoutineVps(lieu, String(runId)) : moteur().interrupt(runId);
+  });
+  handle("routines:historique", (id: string, limit?: number) => {
+    const lieu = lieuDe(String(id));
+    return lieu ? historiqueRoutineVps(lieu, String(id), limit ?? 50) : moteur().history(id, limit ?? 50);
+  });
   handle("routines:prochaines", (id: string) => moteur().upcoming(id));
   handle("routines:passages", (debut: string, fin: string) => moteur().passages(debut, fin));
   handle("routines:apercu", (schedule: unknown, timezone: string) => {

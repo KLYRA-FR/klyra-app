@@ -73,7 +73,8 @@ Chaque PR suit `docs/CONTRIBUER.md`. Retour arrière : une PR de revert. Les con
   - **Le choix de la machine est dans l'en-tête de chaque conversation** (`ChoixLieu`), pas en haut de la barre : les conversations directes ont un identifiant fixe par agent (`dm-principal`). Le dernier choix sert aux nouvelles conversations.
   - **Fiches envoyées telles quelles** (le VPS est celui de la personne) : pas de `preparerPublication`, qui vit côté Convex.
 
-- **PR 5 (projets)** : un projet porte sa machine (`Project.lieu`) ; ses fichiers sont lus par le serveur, l'aperçu se fait sur le PC.
+- **PR 5 (projets)** (fusionnée, PR 54) : un projet porte sa machine (`Project.lieu`) ; ses fichiers sont lus par le serveur, l'aperçu se fait sur le PC.
+- **PR 6 (routines)** : une routine choisit sa machine à la création. Le PC garde sa définition et l'affiche ; le VPS la planifie (même calcul, `serveur/horaires.mjs` généré depuis `schedule.ts`), la lance et garde son historique. Détail et garanties : `docs/ROUTINES.md`.
 
 ## Décisions du 01/11
 

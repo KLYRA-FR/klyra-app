@@ -174,6 +174,14 @@ export type ContenuFichier =
   | { type: "document"; blocs: BlocDocument[]; taille: number }
   | { type: "autre"; taille: number; raison: string };
 
+/** Une réponse de routine tenue par un VPS (electron/agents-distants.ts). */
+export interface ContexteReponse {
+  chatId: string;
+  agentId: string;
+  titre: string;
+  lieu: string;
+}
+
 export interface StreamOptions {
   agent: string | null;
   prompt: string;
@@ -271,7 +279,8 @@ export interface KlyraBridge {
     stream: (requestId: string, options: StreamOptions) => Promise<Reponse<null>>;
     onEvent: (callback: (requestId: string, event: AgentEvent) => void) => () => void;
     /** L'agent reprend la parole de lui-même (une tâche de fond s'est terminée) : une nouvelle réponse. */
-    onSpontane?: (callback: (requestId: string, sessionId: string) => void) => () => void;
+    /** `contexte` : une réponse de routine d'un VPS, à ouvrir dans sa conversation (créée au besoin). */
+    onSpontane?: (callback: (requestId: string, sessionId: string, contexte: ContexteReponse | null) => void) => () => void;
     utilisation: () => Promise<Reponse<Utilisation | null>>;
     compte: () => Promise<Reponse<CompteClaude>>;
     /** Ouvre la connexion Anthropic dans le navigateur et attend qu'elle soit validée. */

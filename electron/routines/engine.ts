@@ -249,6 +249,7 @@ export class RoutineEngine {
       nextRunAt: active ? nextOccurrence(schedule, timezone, now) : null,
       missedPolicy: schedule.kind === "once" ? "run-once" : missedPolicy(input.missedPolicy ?? "skip"),
       projectId: projectId(input.projectId ?? null),
+      ...(input.lieu ? { lieu: lieu(input.lieu) } : {}),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
@@ -267,6 +268,9 @@ export class RoutineEngine {
     if (patch.name !== undefined) next.name = name(patch.name);
     if (patch.instruction !== undefined) next.instruction = instruction(patch.instruction);
     if (patch.projectId !== undefined) next.projectId = projectId(patch.projectId);
+    if (patch.lieu !== undefined && (patch.lieu ?? null) !== (current.lieu ?? null)) {
+      throw new RoutineError("machine", "Une routine reste sur sa machine : crée-la à nouveau sur l’autre.");
+    }
     if (patch.agentId !== undefined) {
       next.agentId = agent(patch.agentId);
       this.requireAgent(next.agentId);
@@ -385,6 +389,7 @@ export class RoutineEngine {
   /** « Exécuter maintenant » : une exécution manuelle, sans toucher à la programmation. */
   runNow(id: string): RoutineRun {
     const routine = this.routine(id);
+    if (routine.lieu) throw new RoutineError("sur-vps", "Cette routine tourne sur un VPS : elle s’y lance.");
     const reason = blockedReason(routine);
     if (reason) throw new RoutineError("relais-incompatibles", reason);
     this.requireAgent(routine.agentId);
@@ -525,7 +530,7 @@ export class RoutineEngine {
     let prochaine = Infinity;
     for (const r of this.store.routines) {
       if (!r.active || !r.nextRunAt) continue;
-      prochaine = Math.min(prochaine, this.retry.get(r.id)?.at ?? Date.parse(r.nextRunAt));
+      prochaine = Math.min(prochaine, r.lieu ? Date.parse(r.nextRunAt) : (this.retry.get(r.id)?.at ?? Date.parse(r.nextRunAt)));
     }
     // Une remise à l'interface peut avoir échoué même pour une routine manuelle.
     if (this.store.runs.some((r) => r.status === "queued" && !r.dispatchedAt)) prochaine = Math.min(prochaine, this.now().getTime() + MAX_TIMER_MS);
@@ -555,6 +560,14 @@ export class RoutineEngine {
   private catchUpAll(now: Date, reason: MissedReason): void {
     for (const routine of [...this.store.routines]) {
       if (!routine.active || !routine.nextRunAt || Date.parse(routine.nextRunAt) > now.getTime()) continue;
+      // Tenue par un VPS : il la lance ; ici, seule l'échéance affichée avance.
+      if (routine.lieu) {
+        this.store.transaction((data) => {
+          const r = data.routines.find((x) => x.id === routine.id);
+          if (r) r.nextRunAt = r.schedule.kind === "once" ? null : nextOccurrence(r.schedule, r.timezone, now);
+        });
+        continue;
+      }
       if ((this.retry.get(routine.id)?.at ?? 0) > now.getTime()) continue;
       // Une routine en erreur n'arrête pas les autres.
       try {
@@ -863,6 +876,11 @@ function instruction(value: unknown): string {
 
 function missedPolicy(value: unknown) {
   if (value !== "skip" && value !== "run-once") throw new RoutineError("invalide", "Politique de rattrapage invalide.");
+  return value;
+}
+
+function lieu(value: unknown): string {
+  if (typeof value !== "string" || !/^https?:\/\/[^\s/]{1,200}$/.test(value)) throw new RoutineError("invalide", "Machine invalide.");
   return value;
 }
 

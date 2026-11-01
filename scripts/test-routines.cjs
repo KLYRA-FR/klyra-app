@@ -893,5 +893,22 @@ test("historique : aucune purge à 100 runs, anciens résultats lisibles après 
   assert.equal(toutes.at(-1).result, "Trois tâches en retard.");
 });
 
+test("tenue par un VPS : jamais lancée ici, échéance affichée qui avance, machine figée", () => {
+  const b = banc("2026-10-30T11:00:00Z");
+  const r = quotidienne(b, { lieu: "https://klyra-vps.exemple.ts.net:8791" });
+  assert.equal(r.lieu, "https://klyra-vps.exemple.ts.net:8791");
+  b.aller("2026-10-30T12:00:30Z");
+  b.aller("2026-10-31T13:00:00Z");
+  assert.equal(b.livrees.length, 0, "le VPS la lance, pas ce PC");
+  assert.equal(b.store.runs.length, 0, "ni exécution ni rattrapage ici");
+  assert.ok(Date.parse(b.engine.list().find((x) => x.id === r.id).nextRunAt) > b.t, "l'échéance affichée suit le planning");
+  assert.throws(() => b.engine.runNow(r.id), /VPS/);
+  assert.throws(() => b.engine.update(r.id, { lieu: null }), /reste sur sa machine/);
+  b.engine.update(r.id, { name: "Point du VPS", lieu: "https://klyra-vps.exemple.ts.net:8791" });
+  assert.throws(() => quotidienne(b, { lieu: "pas une adresse" }), /Machine invalide/);
+  const ici = quotidienne(b, { name: "Sur le PC" });
+  assert.equal(ici.lieu, undefined);
+});
+
 for (const dir of dossiers) fs.rmSync(dir, { recursive: true, force: true });
 console.log(`${checked} scénarios du moteur vérifiés.`);

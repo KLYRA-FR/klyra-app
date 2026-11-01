@@ -47,8 +47,8 @@ contextBridge.exposeInMainWorld("klyra", {
       ipcRenderer.on("claude:event", listener);
       return () => ipcRenderer.removeListener("claude:event", listener);
     },
-    onSpontane: (callback: (requestId: string, sessionId: string) => void) => {
-      const listener = (_e: unknown, requestId: string, sessionId: string) => callback(requestId, sessionId);
+    onSpontane: (callback: (requestId: string, sessionId: string, contexte: unknown) => void) => {
+      const listener = (_e: unknown, requestId: string, sessionId: string, contexte: unknown) => callback(requestId, sessionId, contexte ?? null);
       ipcRenderer.on("claude:spontane", listener);
       return () => ipcRenderer.removeListener("claude:spontane", listener);
     },
