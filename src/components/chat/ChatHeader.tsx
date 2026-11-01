@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { ChoixLieu } from "./ChoixLieu";
 import { ChoixModele } from "./ChoixModele";
 import { MenuConversation } from "./MenuConversation";
@@ -124,6 +125,7 @@ function ChampTitre({ titre, onFin }: { titre: string; onFin: (nouveau: string |
 
 export function ChatHeader({ chat, project, previewOpen, onTogglePreview, actionExport }: ChatHeaderProps) {
   const { renommerChat } = useWorkspace();
+  const serveurs = useServeursRelies();
   const basculerEpingle = useBasculerEpingle();
   /* La conversation dont le titre est en cours de renommage. */
   const [edition, setEdition] = useState<string | null>(null);
@@ -159,6 +161,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview, action
         )}
         <span className="truncate text-ui-xs text-texte-tertiaire">
           {project?.name} · {roleCount} {roleCount > 1 ? "agents" : "agent"} dans la conversation
+          {chat.lieu ? ` · sur ${nomLieu(chat.lieu, serveurs)}` : ""}
         </span>
       </div>
 

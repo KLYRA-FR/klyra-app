@@ -122,6 +122,7 @@ dire "Téléchargement du serveur KLYRA…"
 curl -fsSL "$SOURCE/klyra-serveur.mjs" -o "$CODE_DIR/klyra-serveur.mjs"
 curl -fsSL "$SOURCE/qr.mjs" -o "$CODE_DIR/qr.mjs"
 curl -fsSL "$SOURCE/agents.mjs" -o "$CODE_DIR/agents.mjs"
+curl -fsSL "$SOURCE/fichiers.mjs" -o "$CODE_DIR/fichiers.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────

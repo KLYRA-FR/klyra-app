@@ -67,11 +67,13 @@ Chaque PR suit `docs/CONTRIBUER.md`. Retour arrière : une PR de revert. Les con
 ## Où on en est
 
 - **PR 1 (appairage sûr)** : fusionnée (PR 52).
-- **PR 2, 3 et 4 réunies** (sélecteur, agents sur le VPS, fiches) : une seule PR, pour ne pas publier un sélecteur grisé. Écarts au plan :
+- **PR 2, 3 et 4 réunies** (fusionnées, PR 53) (sélecteur, agents sur le VPS, fiches) : une seule PR, pour ne pas publier un sélecteur grisé. Écarts au plan :
   - **Flux SSE plutôt que WebSocket** : `GET /klyra/v1/agent/evenements` (événements numérotés, rattrapage par `depuis` et `instance`), commandes en `POST` (`envoyer`, `autoriser`, `annuler`). Node n'a pas de serveur WebSocket sans dépendance ; le SSE passe par Tailscale et Cloudflare sans réglage.
   - **Pas de module partagé avec `electron/claude.ts`** : le serveur est livré en fichiers `.mjs` lus par `curl`. `serveur/agents.mjs` reprend la même logique (processus par conversation, tours, autorisations, refus des agents inactifs) ; un changement de `REGLES_COMMUNES` se fait des deux côtés.
   - **Le choix de la machine est dans l'en-tête de chaque conversation** (`ChoixLieu`), pas en haut de la barre : les conversations directes ont un identifiant fixe par agent (`dm-principal`). Le dernier choix sert aux nouvelles conversations.
   - **Fiches envoyées telles quelles** (le VPS est celui de la personne) : pas de `preparerPublication`, qui vit côté Convex.
+
+- **PR 5 (projets)** : un projet porte sa machine (`Project.lieu`) ; ses fichiers sont lus par le serveur, l'aperçu se fait sur le PC.
 
 ## Décisions du 01/11
 

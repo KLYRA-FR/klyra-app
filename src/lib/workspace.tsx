@@ -1146,6 +1146,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           // Sur un VPS, le dossier du PC n'existe pas : l'agent travaille dans son atelier là-bas.
           dossier: chat.lieu ? null : chat.kind === "equipe" ? (project?.folder ?? null) : null,
           lieu: chat.lieu ?? null,
+          dossierVps: chat.lieu && chat.kind === "equipe" && project?.lieu === chat.lieu ? project.folder : null,
           sessionId: chat.sessions[roleId] ?? null,
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
@@ -1370,6 +1371,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       updatedAt: new Date().toISOString(),
       sessions: {},
       luJusqua: null,
+      // Un projet du VPS : ses conversations y tournent.
+      lieu: stateRef.current.projects.find((p) => p.id === projectId)?.lieu ?? null,
     };
     dispatch({ type: "chat/add", chat });
     stateRef.current = {

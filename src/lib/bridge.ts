@@ -286,11 +286,14 @@ export interface KlyraBridge {
     choisirDossier: () => Promise<Reponse<string | null>>;
     /** Le contenu réel du dossier d'un projet. */
     /** Un niveau de l'arborescence : la racine, ou le dossier `relatif` du projet. */
-    arbre: (dossier: string, relatif?: string) => Promise<Reponse<FileNode[]>>;
+    /** `lieu` : un projet sur un VPS relié (son origine) ; absent, un dossier de ce PC. */
+    arbre: (dossier: string, relatif?: string, lieu?: string | null) => Promise<Reponse<FileNode[]>>;
+    /** Crée le dossier d’un nouveau projet sur le VPS ; rend son chemin. */
+    creerDossierVps?: (lieu: string, dossier: string) => Promise<Reponse<string>>;
     /** Les pages du site (routes Next), pour les suggestions de la barre d'adresse de l'aperçu. */
     pages?: (dossier: string) => Promise<Reponse<string[]>>;
     /** Le contenu d'un fichier du projet, pour la visionneuse. */
-    lireFichier: (dossier: string, relatif: string) => Promise<Reponse<ContenuFichier>>;
+    lireFichier: (dossier: string, relatif: string, lieu?: string | null) => Promise<Reponse<ContenuFichier>>;
     /** Ouvre le fichier avec l'app par défaut du Mac. */
     ouvrirFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
     montrerFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
