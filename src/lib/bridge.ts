@@ -457,6 +457,8 @@ export interface KlyraBridge {
   serveur?: {
     /** Le dernier lien klyra://rejoindre ouvert, une seule fois. */
     prendreLien: () => Promise<Reponse<string | null>>;
+    /** Appel depuis le processus principal. Le rendu ne fetch pas cette origine. */
+    interroger: (adresse: string, invitation: string | null) => Promise<Reponse<{ ok: true; nom: string; version: string } | { ok: false; message: string }>>;
     onLien: (callback: () => void) => () => void;
   };
   /** Les mises à jour de l'app (cf. electron/maj.ts). */
