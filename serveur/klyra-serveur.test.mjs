@@ -16,8 +16,10 @@ async function lire(port, chemin, headers) {
 }
 
 test("le client et le VPS partagent le chemin", () => {
-  const source = readFileSync(new URL("../src/lib/serveur-vps.ts", import.meta.url), "utf8");
-  assert.match(source, /export const CHEMIN_SERVEUR = "\/klyra\/v1\/serveur"/);
+  const client = readFileSync(new URL("../src/lib/serveur-vps.ts", import.meta.url), "utf8");
+  const lecture = readFileSync(new URL("../electron/lecture-serveur.ts", import.meta.url), "utf8");
+  assert.match(lecture, /export const CHEMIN_SERVEUR = "\/klyra\/v1\/serveur"/);
+  assert.match(client, /lecture-serveur/);
   assert.equal(CHEMIN, "/klyra/v1/serveur");
 });
 

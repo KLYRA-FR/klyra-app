@@ -104,6 +104,7 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
+import { appelerServeur, politiqueContenu } from "./appel-serveur";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 
@@ -144,18 +145,9 @@ if (process.platform === "win32") app.setAppUserModelId("design.klyra.app");
    toujours dans le même dossier, quel que soit le nom affiché de l'app. */
 if (!process.env.KLYRA_USER_DATA) app.setPath("userData", path.join(app.getPath("appData"), "klyra-app"));
 
-/* L'export Next injecte des scripts inline : 'unsafe-inline' reste nécessaire. */
-const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  // Le compte d'équipe : le déploiement Convex de l'app, et lui seul.
-  `connect-src 'self' ${sourcesConvex().join(" ")}`,
-  // L'aperçu d'un projet : son serveur de dev, sur ce Mac.
-  "frame-src http://localhost:* http://127.0.0.1:*",
-].join("; ");
+/* L'export Next injecte des scripts inline : 'unsafe-inline' reste nécessaire.
+   Le compte Convex est la seule origine nommée. L'appel au VPS ne part pas du rendu. */
+const CONTENT_SECURITY_POLICY = politiqueContenu(sourcesConvex());
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -584,6 +576,24 @@ function registerBridge() {
   handle("compte:jeton:retirer", (cle: string) => retirerJeton(cle));
   handle("compte:code", () => prendreCode());
   handle("serveur:lien", () => prendreLienRejoindre());
+  /* Le rendu ne fetch pas le VPS : la politique de la fenêtre le couperait. */
+  ipcMain.handle("serveur:interroger", (event, adresse: unknown, invitation: unknown) => repondre(() => {
+    const win = fenetrePrincipale;
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
+      throw new Error("Accès au serveur refusé.");
+    }
+    return appelerServeur(adresse, invitation, async (url, code, signal) => {
+      const reponse = await net.fetch(url, {
+        method: "GET",
+        headers: code ? { "X-Klyra-Invitation": code } : {},
+        signal,
+        redirect: "error",
+        cache: "no-store",
+      });
+      const json: unknown = await reponse.json().catch(() => null);
+      return { status: reponse.status, json };
+    });
+  }));
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
   ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {
