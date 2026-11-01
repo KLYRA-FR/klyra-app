@@ -100,8 +100,8 @@ export function lireSaisie(texte: string, invitationSaisie: string): Saisie {
   return { ok: true, adresse: url.origin, invitation };
 }
 
-/** Commande montrée sur l’écran vide, la même que dans `docs/SERVEUR-VPS.md`. */
-export const COMMANDE_SERVEUR = 'KLYRA_SERVEUR_NOM="Mon VPS" KLYRA_SERVEUR_PORT=8791 node serveur/klyra-serveur.mjs';
+/** Commande montrée sur l’écran vide : `serveur/lancer.sh`, lu sur main (dépôt public). */
+export const COMMANDE_SERVEUR = "curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lancer.sh | sh";
 
 /** Le texte copié, s’il est un lien `klyra://rejoindre` lisible. Tout autre texte reste dans le presse-papiers. */
 export function lienCopie(texte: unknown): string | null {

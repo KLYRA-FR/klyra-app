@@ -44,7 +44,7 @@ function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, enCours: bo
   return enCours ? `En cours · ${detail}` : detail;
 }
 
-/** Écran vide : les trois gestes pour obtenir un lien, la commande à copier en premier. */
+/** Écran vide : la commande à coller sur le VPS, puis le lien qu’elle affiche. */
 function Guide() {
   const [copie, setCopie] = useState(false);
   const copier = () => {
@@ -58,8 +58,8 @@ function Guide() {
       <li className="flex gap-3">
         <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">1</span>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <p className="text-body-s text-texte-principal">Lance le serveur sur le VPS</p>
-          <p className="text-ui text-texte-secondaire">Depuis le dossier de l’app sur la machine, avec Node 22 ou plus récent.</p>
+          <p className="text-body-s text-texte-principal">Colle cette commande sur ton VPS</p>
+          <p className="text-ui text-texte-secondaire">Dans le terminal du VPS. Elle installe et lance tout, sans domaine ni certificat.</p>
           <div className="flex items-start gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
             <code className="min-w-0 flex-1 text-ui-xs leading-[1.6] [overflow-wrap:anywhere] text-texte-principal">{COMMANDE_SERVEUR}</code>
             <Bouton variant="blanc" taille="mini" onClick={copier}>
@@ -71,17 +71,10 @@ function Guide() {
       <li className="flex gap-3">
         <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">2</span>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <p className="text-body-s text-texte-principal">Ouvre sa page en https</p>
+          <p className="text-body-s text-texte-principal">Colle ici le lien qu’elle affiche</p>
           <p className="text-ui text-texte-secondaire">
-            L’adresse https qui mène à ce port affiche le QR et le lien d’invitation. Sur un téléphone, scanne le QR. Ici, copie le lien.
+            {getBridge() ? "Il commence par klyra://rejoindre. S’il est déjà copié, l’app le reprend toute seule." : "Il commence par klyra://rejoindre."}
           </p>
-        </div>
-      </li>
-      <li className="flex gap-3">
-        <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">3</span>
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <p className="text-body-s text-texte-principal">Colle le lien ci-dessous</p>
-          {getBridge() ? <p className="text-ui text-texte-secondaire">S’il est déjà copié, l’app le reprend toute seule.</p> : null}
         </div>
       </li>
     </ol>
