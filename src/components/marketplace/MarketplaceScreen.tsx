@@ -157,7 +157,7 @@ function ServiceComposio({ service, api, choisir, retirer }: {
   const choisi = comptes.find((c) => c.id === choix);
   const statut = choisi ? statutCompteComposio(choisi) : { texte: comptes.length ? "Aucun compte choisi" : "Introuvable", ton: "attente" as const };
   return (
-    <div className="flex flex-wrap items-center gap-3 py-3">
+    <div data-service-composio={service.slug} className="flex flex-wrap items-center gap-3 py-3">
       <Logo nom={service.nom} />
       <div className="flex min-w-0 flex-1 basis-40 flex-col">
         <span className="truncate text-ui-s font-medium text-texte-principal">{service.nom}</span>
@@ -215,7 +215,7 @@ function AppsDirectes() {
       <div className="grid gap-3 @md:grid-cols-2 @3xl:grid-cols-3">
         {APPS.map((a) => {
           const branche = liste.find((m) => m.app === a.id);
-          return <CarteApp key={a.id} nom={a.nom} description={a.description} branche={branche} bureau={!!pont} onConnecter={() => setOuvert(a.id)} onRetirer={() => branche && void retirer(branche)} />;
+          return <CarteApp key={a.id} id={a.id} nom={a.nom} description={a.description} branche={branche} bureau={!!pont} onConnecter={() => setOuvert(a.id)} onRetirer={() => branche && void retirer(branche)} />;
         })}
         {persos.map((m) => <CarteApp key={m.id} nom={m.nom} description={new URL(m.url).host} branche={m} bureau={!!pont} onConnecter={() => {}} onRetirer={() => void retirer(m)} />)}
         <button
@@ -234,11 +234,11 @@ function AppsDirectes() {
   );
 }
 
-function CarteApp({ nom, description, branche, bureau, onConnecter, onRetirer }: {
-  nom: string; description: string; branche?: McpDirect; bureau: boolean; onConnecter: () => void; onRetirer: () => void;
+function CarteApp({ id, nom, description, branche, bureau, onConnecter, onRetirer }: {
+  id?: string; nom: string; description: string; branche?: McpDirect; bureau: boolean; onConnecter: () => void; onRetirer: () => void;
 }) {
   return (
-    <div className="klyra-carte-flottante flex min-h-[132px] flex-col justify-between gap-3 rounded-lg p-4">
+    <div data-app-mcp={id} className="klyra-carte-flottante flex min-h-[132px] flex-col justify-between gap-3 rounded-lg p-4">
       <div className="flex items-start gap-3">
         <Logo nom={nom} />
         <div className="flex min-w-0 flex-col gap-0.5">

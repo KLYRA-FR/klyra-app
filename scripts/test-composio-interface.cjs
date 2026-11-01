@@ -1,11 +1,13 @@
 /**
- * Vraie UI exportée, faux bridge exclusif au test, fenêtre Electron cachée.
+ * La Marketplace (Composio et MCP directs) : vraie UI exportée, faux bridge
+ * exclusif au test, fenêtre Electron cachée.
  * Aucun import du main productif, compte, coffre, clé ou réseau extérieur.
  *   pnpm build
  *   xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-composio-interface.cjs
  * KLYRA_TEST_RUNTIME_ROOT : dépôt contenant out/ (sinon ..).
  * KLYRA_TEST_PREUVES : dossier facultatif des captures PNG marquées « Données simulées ».
- * Les résultats vérifient l'UI et ses appels au pont, pas l'OAuth ni le stockage natif.
+ * Les résultats vérifient l'UI et ses appels au pont, pas l'OAuth, le stockage natif
+ * ni les vrais serveurs MCP.
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- Harnais Electron CommonJS. */
 const assert = require("node:assert/strict");
@@ -91,6 +93,26 @@ ipcMain.handle("fixture:composio", async (_event, nom, contexte, ...args) => {
   return { ok: true, data: undefined };
 });
 
+/* Les MCP directs : la liste vit ici, le jeton n'est jamais renvoyé à l'écran. */
+const JETON_MCP = "jeton-mcp-sentinelle-du-test";
+let mcpListe = [];
+const mcpJournal = [];
+const APPS_MCP = { github: { nom: "GitHub", url: "https://api.githubcopilot.com/mcp/", jeton: "https://github.com/settings/personal-access-tokens" } };
+ipcMain.handle("fixture:mcp", (_event, nom, arg) => {
+  mcpJournal.push({ nom, entree: clone(arg ?? null) });
+  if (nom === "apps") return { ok: true, data: APPS_MCP };
+  if (nom === "lister") return { ok: true, data: clone(mcpListe) };
+  if (nom === "ajouter") {
+    const connue = arg.app ? APPS_MCP[arg.app] : null;
+    const url = connue?.url ?? arg.url;
+    if (!url.startsWith("https://")) return { ok: false, code: "erreur", message: "L’adresse doit commencer par https://." };
+    mcpListe = [...mcpListe, { id: `mcp_${++sequence}`, app: arg.app, nom: connue?.nom ?? arg.nom, url, avecJeton: !!arg.jeton }];
+    return { ok: true, data: clone(mcpListe) };
+  }
+  if (nom === "retirer") { mcpListe = mcpListe.filter((m) => m.id !== arg); return { ok: true, data: clone(mcpListe) }; }
+  throw new Error(`Action MCP test inconnue : ${nom}`);
+});
+
 const ev = (code) => win.webContents.executeJavaScript(code, true);
 const rendu = () => ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
 async function attendre(expression, nom = expression, max = 10_000) {
@@ -121,7 +143,24 @@ async function touche(key) {
   await attendre(`window.__klyraTestTouche === ${JSON.stringify(attendu)}`, `réception clavier ${key}`);
   await rendu();
 }
-async function actualiser() { await cliquer("Actualiser"); await attendre("![...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Actualisation…')"); }
+/** Connecté : « Actualiser » est dans le menu de la carte ; en erreur, « Réessayer » est visible. */
+async function actualiser() {
+  const lectures = journal.filter((j) => j.nom === "etat").length;
+  if (await ev("!!document.querySelector('button[aria-label=\"Plus d’options pour Composio\"]')")) {
+    await cible('button[aria-label="Plus d’options pour Composio"]');
+    await cliquer("Actualiser", '[role="menuitem"]');
+  } else await cliquer("Réessayer");
+  for (let i = 0; i < 200 && journal.filter((j) => j.nom === "etat").length === lectures; i++) await pause(20);
+  await pause(100); await rendu();
+}
+const carteComposio = () => ev("document.querySelector('section[aria-labelledby=titre-composio]')?.innerText ?? ''");
+/** Saisie réelle (insertText) dans le champ ciblé, comme au clavier. */
+async function saisir(selecteur, valeur) {
+  await attendre(`document.querySelector(${JSON.stringify(selecteur)})`, selecteur);
+  await ev(`document.querySelector(${JSON.stringify(selecteur)}).focus()`);
+  await win.webContents.insertText(valeur);
+  await rendu();
+}
 const texte = () => ev("document.body.innerText");
 async function capture(nom) {
   if (!PREUVES) return;
@@ -132,7 +171,7 @@ async function capture(nom) {
   fs.writeFileSync(path.join(PREUVES, `ui-${nom}-simulation.png`), image.toPNG());
 }
 async function ouvrirConnexion() {
-  await cliquer("Connecter un service");
+  await cliquer("Ajouter une app");
   await attendre("document.querySelector('[role=dialog] input[type=search]')");
   await cible('[role="dialog"] [role="option"]');
 }
@@ -144,7 +183,7 @@ async function confirmerCompteAttendu() {
 
 app.whenReady().then(async () => {
   try {
-    assert.ok(fs.existsSync(path.join(OUT, "reglages.html")), "build Next absent");
+    assert.ok(fs.existsSync(path.join(OUT, "marketplace.html")), "build Next absent");
     const mime = { ".html": "text/html", ".txt": "text/plain", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
     server = createServer((req, res) => {
       try {
@@ -168,149 +207,126 @@ app.whenReady().then(async () => {
     win = new BrowserWindow({ show: false, width: 1100, height: 700, useContentSize: true, webPreferences: { preload: path.join(__dirname, "faux-composio-interface-preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } });
     win.webContents.on("console-message", ({ level, message }) => { if (level === "error" && !message.includes("favicon")) erreurs.push(message); });
     win.webContents.setWindowOpenHandler(({ url }) => { exterieurs.push(new URL(url).origin); return { action: "deny" }; });
-    await win.loadURL(`${base}/reglages?section=composio`);
-    await attendre("document.body.innerText.includes('Actualisation…')", "état chargement");
-    verifier(await ev("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Actualisation…' && b.disabled)"), "chargement visible et actualisation désactivée");
+    await win.loadURL(`${base}/marketplace`);
+    await attendre("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio')", "carte Composio affichée");
+    verifier(await ev("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio' && b.disabled)"), "chargement : connexion Composio désactivée tant que l’état n’est pas lu");
     await capture("00-chargement");
     lectureBloquee = false; libererLecture?.();
-    await attendre("document.body.innerText.includes('Composio · Pas configuré')");
-    verifier((await texte()).includes("Préparer ton projet"), "profil vierge : configuration honnête sans compte fictif");
+    await attendre("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio' && !b.disabled)");
+    verifier(!(await carteComposio()).includes("Connecté") && !(await ev("document.querySelector('[data-service-composio]') !== null")), "profil vierge : un seul bouton de connexion, aucun compte fictif");
     await capture("01-vierge");
-    await cliquer("Importer la clé du projet…");
-    await attendre("document.body.innerText.includes('Aucun compte connecté pour ce profil')");
-    verifier(journal.some((j) => j.nom === "importer"), "import simulé par IPC sans champ secret renderer");
 
-    changer({ comptes: [account("A"), account("B"), account("Expire", "EXPIRED")], selections: { gmail: "A" }, verifieLe: Date.now() });
-    await actualiser();
-    verifier(await ev("document.querySelectorAll('[data-compte-composio]').length === 3"), "multi-comptes : trois états réels de la fixture affichés");
-    await capture("02-comptes-1100x700");
-    await rendu();
-    await attendre("document.querySelector('[role=combobox]') && !document.querySelector('[role=combobox]').disabled", "choix des agents disponible");
-    await ev("document.querySelector('[role=combobox]').focus()");
-    await attendre("document.activeElement === document.querySelector('[role=combobox]')", "focus du choix des agents");
-    await touche("Space");
-    await attendre("document.querySelector('[role=combobox]')?.getAttribute('aria-expanded') === 'true'", "liste ouverte au clavier");
-    await touche("Home");
-    await attendre("document.getElementById(document.querySelector('[role=combobox]')?.getAttribute('aria-activedescendant'))?.innerText.includes('a@example.test')", "première option active au clavier");
-    await touche("Down");
-    await attendre("document.getElementById(document.querySelector('[role=combobox]')?.getAttribute('aria-activedescendant'))?.innerText.includes('b@example.test')", "seconde option active au clavier");
-    await touche("Enter");
-    await attendre("document.querySelector('[role=combobox]')?.innerText.includes('b@example.test')");
-    verifier(fixture.selections.gmail === "B", "sélection A vers B au clavier transmise au pont");
-    await cible('[role="combobox"]');
-    verifier(await ev("[...document.querySelectorAll('[role=option]')].some((e) => e.innerText.includes('expire@example.test') && e.getAttribute('aria-disabled') === 'true')"), "compte expiré non sélectionnable");
-    await touche("End"); await touche("Enter");
-    await attendre("document.querySelector('[role=combobox]')?.innerText.includes('Aucun')");
-    verifier(!fixture.selections.gmail, "Aucun efface le choix sans remplacement");
-    await cible('[role="combobox"]'); await cliquer("a@example.test", '[role="option"]');
-    await attendre("document.querySelector('[role=combobox]')?.innerText.includes('a@example.test')");
-
-    changer({ comptes: [account("B")], selections: { gmail: "A" } }); await actualiser();
-    verifier((await texte()).includes("le compte choisi n’est plus présent"), "compte choisi absent : avertissement sans faux connecté");
-    verifier(await ev("document.querySelector('[role=combobox]')?.innerText.includes('introuvable')"), "compte disparu : référence explicite conservée, jamais présenté comme Aucun");
-    await cible('[role="combobox"]');
-    verifier(await ev("[...document.querySelectorAll('[role=option]')].some((e) => e.innerText.includes('introuvable') && e.getAttribute('aria-disabled') === 'true')") && fixture.selections.gmail === "A", "compte disparu désactivé dans la liste, choix backend inchangé");
-    await touche("Escape");
-    changer({ comptes: [account("A", "EXPIRED"), account("B")], selections: { gmail: "A" } }); await actualiser();
-    verifier((await texte()).includes("Tes agents ne peuvent pas utiliser Gmail"), "compte choisi expiré : agents annoncés indisponibles");
-    changer({ erreur: { code: "reseau", message: "Erreur réseau simulée" }, comptes: [], verifieLe: null }); await actualiser();
-    verifier((await texte()).includes("Composio · Hors ligne") && !(await ev("document.querySelector('[data-compte-composio]') !== null")), "échec API : listes vidées et état hors ligne");
-    changer({ erreur: { code: "acces", message: "Clé refusée simulée" } }); await actualiser();
-    verifier(await ev("document.body.innerText.includes('Composio · Clé refusée') && [...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Remplacer la clé…' && !b.disabled)"), "clé refusée : remplacement reste accessible");
-    await capture("03-cle-refusee");
-    changer({ erreur: null, comptes: [account("A"), account("B")], selections: { gmail: "A" }, verifieLe: Date.now() }); await actualiser();
-
-    changer({ services: [{ ...service, configurations: [...service.configurations, { id: "auth_secondaire", nom: "Configuration secondaire", methode: "OAUTH2", active: true }] }] }); await actualiser();
-    const connexionsAvantChoix = journal.filter((j) => j.nom === "connecter").length;
-    await ouvrirConnexion();
-    verifier(await ev("document.querySelector('[role=dialog] [role=combobox]')?.innerText.includes('Choisir une configuration…') && [...document.querySelectorAll('[role=dialog] button')].some((b) => b.innerText.trim() === 'Continuer dans le navigateur' && b.disabled)") && journal.filter((j) => j.nom === "connecter").length === connexionsAvantChoix, "plusieurs configurations actives : aucun choix par défaut, Continuer désactivé, aucun appel de connexion");
-    await cible('[role="dialog"] [role="combobox"]');
-    await cliquer("Configuration secondaire · OAUTH2", '[role="option"]');
-    await cliquer("Continuer dans le navigateur");
-    await attendre("document.body.innerText.includes('Termine la connexion dans le navigateur')");
-    const connexionsApresChoix = journal.filter((j) => j.nom === "connecter");
-    verifier(connexionsApresChoix.length === connexionsAvantChoix + 1 && JSON.stringify(connexionsApresChoix.at(-1).args) === JSON.stringify(["gmail", "auth_secondaire"]), "configuration choisie explicitement : seul auth_secondaire est transmis au pont pour Gmail");
-    await cliquer("Fermer");
-    changer({ services: [service], comptes: [account("A"), account("B")], selections: { gmail: "A" }, enAttente: [] }); await actualiser();
+    await cliquer("Se connecter à Composio");
+    await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Importer la clé…')");
+    verifier(await ev("document.activeElement?.closest('[role=dialog]') !== null"), "fenêtre de connexion : focus placé dedans");
+    await cliquer("Ouvrir la console Composio", '[role="dialog"] button');
+    verifier(journal.some((j) => j.nom === "console"), "console Composio ouverte par le pont, sans URL dans le renderer");
+    await cliquer("Importer la clé…", '[role="dialog"] button');
+    await attendre("!document.querySelector('[role=dialog]') && document.body.innerText.includes('Aucune app connectée pour l’instant.')");
+    verifier(journal.some((j) => j.nom === "importer") && (await carteComposio()).includes("Connecté"), "import simulé par IPC : Composio connecté, sans champ secret");
 
     await ouvrirConnexion();
-    verifier(await ev("document.activeElement?.closest('[role=dialog]') !== null"), "focus placé dans la fenêtre de connexion");
-    for (let i = 0; i < 9; i++) await touche("Tab");
-    verifier(await ev("document.activeElement?.closest('[role=dialog]') !== null"), "Tab reste dans la fenêtre modale");
-    verifier(await ev("document.querySelectorAll('[role=dialog] input[type=radio]').length === 0"), "connexion : aucune autorisation anticipée de sélectionner le compte");
-    await capture("04-connexion");
+    verifier(await ev("document.querySelectorAll('[role=dialog] input[type=radio]').length === 0"), "ajout d’app : aucune autorisation anticipée dans la fenêtre");
+    await capture("02-ajout-app");
     await cliquer("Continuer dans le navigateur");
     await attendre("document.body.innerText.includes('Termine la connexion dans le navigateur')");
-    verifier(fixture.selections.gmail === "A", "ouverture simulée du navigateur ne confirme ni ne sélectionne le nouveau compte");
-    await capture("05-attente-confirmation");
-    const abandonne = pending.compteId;
-    await cliquer("Fermer");
-    changer({ comptes: fixture.comptes.map((c) => c.id === abandonne ? { ...c, statut: "ACTIVE" } : c), enAttente: [] });
-    await actualiser();
-    verifier(fixture.selections.gmail === "A", "fermer conserve le choix même si OAuth termine ensuite");
+    verifier(!fixture.selections.gmail && !journal.some((j) => j.nom === "selectionner"), "ouverture du navigateur : rien n’est choisi avant la confirmation de Composio");
+    const premier = pending.compteId;
+    await confirmerCompteAttendu();
+    await attendre(`document.querySelector('[data-service-composio="gmail"]')?.innerText.includes('${premier.toLowerCase()}@example.test')`, "Gmail listé avec son compte");
+    verifier(fixture.selections.gmail === premier && journal.filter((j) => j.nom === "selectionner").length === 1, "première connexion confirmée : le compte est choisi d’office pour les agents");
 
     await ouvrirConnexion(); await cliquer("Continuer dans le navigateur");
     await attendre("document.body.innerText.includes('Termine la connexion dans le navigateur')");
-    const consenti = pending.compteId;
-    const choixAvantConfirmation = journal.filter((j) => j.nom === "selectionner").length;
+    const second = pending.compteId;
     await confirmerCompteAttendu();
-    verifier(fixture.selections.gmail === "A" && journal.filter((j) => j.nom === "selectionner").length === choixAvantConfirmation, "ACTIVE relu : aucun choix automatique ni appel selectionner");
-    await cible(`[data-compte-composio="${consenti}"] [data-utiliser-composio]`);
-    await attendre(`document.querySelector('[role=combobox]')?.innerText.includes('${consenti}@example.test')`);
-    verifier(fixture.selections.gmail === consenti, "clic explicite Utiliser pour tes agents sélectionne le compte confirmé");
-    verifier(fixture.comptes.some((c) => c.id === "A"), "connexion supplémentaire conserve l'ancien compte");
+    await attendre("document.querySelector('[data-service-composio=\"gmail\"] [role=combobox]')", "choix du compte quand Gmail en a deux");
+    verifier(fixture.selections.gmail === premier && journal.filter((j) => j.nom === "selectionner").length === 1, "connexion suivante : le compte déjà choisi n’est pas remplacé");
+    await capture("03-deux-comptes");
 
-    changer({ comptes: fixture.comptes.map((c) => c.id === "A" ? { ...c, statut: "EXPIRED" } : c) }); await actualiser();
-    await cible('[data-compte-composio="A"] button:not([aria-label])');
-    await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Reconnecter Gmail')");
-    verifier((await texte()).includes("Tes agents gardent le compte choisi jusqu’à ce que tu le changes."), "reconnexion : maintien du compte actuel annoncé");
-    await cliquer("Continuer dans le navigateur");
-    await attendre("document.body.innerText.includes('Termine la connexion dans le navigateur')");
-    const reconnecte = pending.compteId;
-    await confirmerCompteAttendu();
-    verifier(fixture.selections.gmail === consenti && fixture.comptes.some((c) => c.id === "A"), "reconnexion confirmée : compte choisi et ancien compte conservés");
-    verifier((await texte()).includes("L’ancien compte reste chez Composio."), "effet de reconnexion annoncé avec retrait séparé");
-    await cible(`[data-compte-composio="${reconnecte}"] [data-utiliser-composio]`);
-    await attendre(`document.querySelector('[role=combobox]')?.innerText.includes('${reconnecte}@example.test')`);
-    verifier(fixture.selections.gmail === reconnecte, "reconnexion : nouveau compte choisi uniquement après clic explicite");
+    const liste = '[data-service-composio="gmail"] [role=combobox]';
+    await ev(`document.querySelector('${liste}').focus()`);
+    await attendre(`document.activeElement === document.querySelector('${liste}')`, "focus du choix de compte");
+    await touche("Space");
+    await attendre(`document.querySelector('${liste}')?.getAttribute('aria-expanded') === 'true'`, "liste ouverte au clavier");
+    await touche("Home");
+    await touche("Down");
+    await attendre(`document.getElementById(document.querySelector('${liste}')?.getAttribute('aria-activedescendant'))?.innerText.includes('${second.toLowerCase()}@example.test')`, "second compte actif au clavier");
+    await touche("Enter");
+    await attendre(`document.querySelector('${liste}')?.innerText.includes('${second.toLowerCase()}@example.test')`);
+    verifier(fixture.selections.gmail === second, "choix du second compte au clavier transmis au pont");
+    await cible(liste); await touche("End"); await touche("Enter");
+    await attendre(`document.querySelector('${liste}')?.innerText.includes('Aucun')`);
+    verifier(!fixture.selections.gmail && (await ev("document.querySelector('[data-service-composio=\"gmail\"]').innerText.includes('Aucun compte choisi')")), "Aucun efface le choix et l’annonce sur la ligne");
 
-    const menu = `[data-compte-composio="${reconnecte}"] button[aria-label]`;
-    await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true);
+    changer({ comptes: fixture.comptes.map((c) => c.id === premier ? { ...c, statut: "EXPIRED" } : c), selections: { gmail: premier } }); await actualiser();
+    verifier(await ev("document.querySelector('[data-service-composio=\"gmail\"]').innerText.includes('Expiré')"), "compte choisi expiré : état visible, jamais présenté comme connecté");
+    await cible(liste);
+    verifier(await ev(`[...document.querySelectorAll('[role=option]')].some((e) => e.innerText.includes('${premier.toLowerCase()}@example.test') && e.getAttribute('aria-disabled') === 'true')`), "compte expiré non sélectionnable");
+    await touche("Escape");
+
+    changer({ erreur: { code: "reseau", message: "Erreur réseau simulée" }, comptes: [], verifieLe: null }); await actualiser();
+    verifier((await carteComposio()).includes("Hors ligne") && !(await ev("document.querySelector('[data-service-composio]') !== null")), "échec API : apps masquées et état hors ligne");
+    changer({ erreur: { code: "acces", message: "Clé refusée simulée" } }); await actualiser();
+    verifier((await carteComposio()).includes("À vérifier") && (await carteComposio()).includes("Clé refusée simulée"), "clé refusée : état et motif affichés");
+    await capture("04-cle-refusee");
+    changer({ erreur: null, comptes: [account(premier), account(second)], selections: { gmail: second }, verifieLe: Date.now() }); await actualiser();
+    await attendre("document.querySelector('[data-service-composio=\"gmail\"]')");
+
+    const menuGmail = 'button[aria-label="Plus d’options pour Gmail"]';
+    await cible(menuGmail); await cliquer(`Déconnecter ${second.toLowerCase()}@example.test…`, '[role="menuitem"]');
     await attendre("document.querySelector('[role=alertdialog]')");
     verifier(!journal.some((j) => j.nom === "deconnecter"), "déconnexion : aucune mutation avant confirmation");
-    verifier((await texte()).includes("ni tes agents ni aucun autre outil qui l’utilise"), "confirmation : effet sur tous les consommateurs de la connexion annoncé");
-    await capture("06-deconnexion-confirmation");
     verifier(await ev("document.activeElement?.closest('[role=alertdialog]') !== null"), "confirmation : focus dans la fenêtre avant Échap");
     await touche("Escape");
     await attendre("!document.querySelector('[role=alertdialog]')");
-    verifier(fixture.comptes.some((c) => c.id === reconnecte), "Échap annule la déconnexion");
+    verifier(fixture.comptes.some((c) => c.id === second), "Échap annule la déconnexion");
     echecDeconnexion = "distante";
-    await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true); await cliquer("Déconnecter", '[role="alertdialog"] button');
-    await attendre("document.querySelector('[role=combobox]')?.innerText.trim() === 'Aucun' && document.body.innerText.includes('Déconnexion…')");
-    verifier(!fixture.selections.gmail && fixture.comptes.some((c) => c.id === reconnecte), "déconnexion en cours : Aucun avant la réponse, ligne conservée");
-    libererDeconnexion();
-    await attendre(`document.querySelector('[data-compte-composio="${reconnecte}"]')?.innerText.includes('Tes agents n’utilisent déjà plus ce compte.')`);
-    verifier(await ev("document.querySelector('[role=combobox]')?.innerText.trim() === 'Aucun'") && !(await texte()).includes("Connexion retirée chez Composio."), "suppression refusée : erreur sous la ligne, Aucun conservé, aucun faux succès");
-    await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true);
-    const comptesAvantPanne = clone(fixture.comptes);
-    echecDeconnexion = "horsligne";
-    await cliquer("Déconnecter", '[role="alertdialog"] button');
-    await attendre("document.body.innerText.includes('Déconnexion…')");
-    libererDeconnexion();
-    await attendre("document.body.innerText.includes('Déconnexion à vérifier')");
-    verifier((await texte()).includes(`${reconnecte}@example.test`) && (await texte()).includes("État non vérifié") && (await texte()).includes("Tes agents n’utilisent déjà plus ce compte."), "panne persistante : compte en échec conservé avec état non vérifié, sans ancien statut connecté");
-    verifier(await ev("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Déconnecter…' && !b.disabled)"), "panne persistante : action de déconnexion disponible pour réessayer");
-    await capture("06b-deconnexion-echec");
+    await cible(menuGmail); await cliquer(`Déconnecter ${second.toLowerCase()}@example.test…`, '[role="menuitem"]'); await cliquer("Déconnecter", '[role="alertdialog"] button');
+    for (let i = 0; i < 250 && !libererDeconnexion; i++) await pause(20);
+    libererDeconnexion(); libererDeconnexion = null;
+    await attendre("document.body.innerText.includes('n’a pas été confirmée')", "erreur de déconnexion affichée");
+    verifier(!(await texte()).includes("Gmail est déconnecté."), "suppression refusée : erreur visible, aucun faux succès");
     echecDeconnexion = null;
-    changer({ comptes: comptesAvantPanne, erreur: null, verifieLe: Date.now() }); await actualiser();
-    await cible(menu); await cliquer("Déconnecter…", '[role="menuitem"]', true); await cliquer("Déconnecter", '[role="alertdialog"] button');
-    await attendre(`!document.querySelector('[data-compte-composio="${reconnecte}"]')`);
-    verifier(!fixture.selections.gmail && journal.filter((j) => j.nom === "deconnecter").length === 3, "déconnexion réessayée : un appel par confirmation, compte retiré, choix Aucun");
+    await cible(menuGmail); await cliquer(`Déconnecter ${second.toLowerCase()}@example.test…`, '[role="menuitem"]'); await cliquer("Déconnecter", '[role="alertdialog"] button');
+    await attendre(`document.body.innerText.includes('Gmail est déconnecté.') && !document.querySelector('[data-service-composio="gmail"]')?.innerText.includes('${second.toLowerCase()}@example.test')`);
+    verifier(!fixture.comptes.some((c) => c.id === second) && journal.filter((j) => j.nom === "deconnecter").length === 2, "déconnexion confirmée : un appel par confirmation, compte retiré");
 
-    await ev("document.querySelector('[role=combobox]').scrollIntoView({block:'center'})");
+    await cible('button[aria-label="Plus d’options pour Composio"]'); await cliquer("Se déconnecter…", '[role="menuitem"]'); await cliquer("Se déconnecter", '[role="alertdialog"] button');
+    await attendre("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio' && !b.disabled)");
+    verifier(journal.some((j) => j.nom === "retirer"), "se déconnecter de Composio : clé retirée par le pont, retour au bouton unique");
+
+    await cible('[data-app-mcp="github"] button');
+    await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Connecter GitHub')");
+    verifier(await ev("[...document.querySelectorAll('[role=dialog] button')].some((b) => b.innerText.trim() === 'Connecter' && b.disabled)"), "MCP GitHub : Connecter désactivé sans jeton");
+    verifier(await ev("document.querySelector('[role=dialog] a[href]')?.getAttribute('href') === 'https://github.com/settings/personal-access-tokens'"), "MCP GitHub : lien vers la création du jeton");
+    await saisir('[role="dialog"] input[type=password]', JETON_MCP);
+    await capture("05-mcp-github");
+    await cliquer("Connecter", '[role="dialog"] button');
+    await attendre("!document.querySelector('[role=dialog]') && document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Connecté')");
+    verifier(mcpJournal.some((j) => j.nom === "ajouter" && j.entree.app === "github" && j.entree.jeton === JETON_MCP), "MCP GitHub : jeton transmis une fois au pont");
+    verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(JETON_MCP)})`)), "MCP GitHub : le jeton ne reste pas dans la page");
+
+    await cliquer("Autre serveur MCP");
+    await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Adresse du serveur')");
+    await saisir('[role="dialog"] input:not([type=password]):not([placeholder])', "Serveur maison");
+    await saisir('[role="dialog"] input[placeholder="https://"]', "http://mcp.exemple.test/mcp");
+    await cliquer("Connecter", '[role="dialog"] button');
+    await attendre("document.querySelector('[role=dialog] [role=alert]')?.innerText.includes('https://')", "adresse non https refusée");
+    verifier(await ev("document.querySelector('[role=dialog]') !== null"), "MCP personnalisé : refus affiché, fenêtre gardée ouverte");
+    await ev("(() => { const i = document.querySelector('[role=dialog] input[placeholder=\"https://\"]'); i.select(); })()");
+    await saisir('[role="dialog"] input[placeholder="https://"]', "https://mcp.exemple.test/mcp");
+    await cliquer("Connecter", '[role="dialog"] button');
+    await attendre("!document.querySelector('[role=dialog]') && document.body.innerText.includes('mcp.exemple.test')");
+    verifier(mcpJournal.some((j) => j.nom === "ajouter" && j.entree.app === null && j.entree.nom === "Serveur maison"), "MCP personnalisé : nom et adresse transmis, jeton facultatif");
+
+    await cible('[data-app-mcp="github"] button'); await cliquer("Retirer", '[role="alertdialog"] button');
+    await attendre("!document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Connecté')");
+    verifier(mcpJournal.some((j) => j.nom === "retirer") && !mcpListe.some((m) => m.app === "github"), "MCP GitHub retiré après confirmation");
+
     verifier(await ev("document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('main').scrollWidth <= document.querySelector('main').clientWidth + 1"), "fenêtre 1100 × 700 : pas de débordement horizontal global");
     verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(CLE_MAIN_SEULEMENT)}) || JSON.stringify(window.klyra).includes(${JSON.stringify(CLE_MAIN_SEULEMENT)})`)), "aucune clé sentinelle dans DOM ou bridge renderer");
-    verifier(await ev("document.querySelectorAll('input[type=password]').length === 0"), "aucun champ de secret dans l'interface");
+    verifier(await ev("document.querySelectorAll('input[type=password]').length === 0"), "aucun champ de secret hors de la fenêtre MCP");
     verifier(exterieurs.length === 0, "aucune requête réseau extérieure demandée");
     verifier(erreurs.length === 0, `aucune erreur console UI (${erreurs.length})`);
     await capture("07-final");
