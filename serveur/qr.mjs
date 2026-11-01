@@ -507,3 +507,21 @@ export function lireQr(modules) {
   }
   return Buffer.from(octets).toString("utf8");
 }
+
+/** Le même QR pour un terminal, en demi-blocs : les modules clairs sont dessinés (terminal sombre), marge de 2. */
+export function qrTerminal(texte) {
+  const modules = qrMatrice(texte);
+  const taille = modules.length;
+  const clair = (y, x) => y < 0 || x < 0 || y >= taille || x >= taille || !modules[y][x];
+  const lignes = [];
+  for (let y = -2; y < taille + 2; y += 2) {
+    let ligne = "";
+    for (let x = -2; x < taille + 2; x += 1) {
+      const haut = clair(y, x);
+      const bas = clair(y + 1, x);
+      ligne += haut && bas ? "\u2588" : haut ? "\u2580" : bas ? "\u2584" : " ";
+    }
+    lignes.push(ligne);
+  }
+  return lignes.join("\n");
+}

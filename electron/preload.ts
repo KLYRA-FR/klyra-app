@@ -264,8 +264,10 @@ contextBridge.exposeInMainWorld("klyra", {
   serveur: {
     /** Le dernier lien klyra://rejoindre, une seule fois. */
     prendreLien: () => ipcRenderer.invoke("serveur:lien"),
-    /** L’appel part du processus principal : la politique du rendu ne le coupe pas. */
-    interroger: (adresse: string, invitation: string | null) => ipcRenderer.invoke("serveur:interroger", adresse, invitation),
+    /** Les appels partent du processus principal : la politique du rendu ne les coupe pas, et le jeton y reste. */
+    interroger: (adresse: string) => ipcRenderer.invoke("serveur:interroger", adresse),
+    appairer: (adresse: string, code: string) => ipcRenderer.invoke("serveur:appairer", adresse, code),
+    retirer: (adresse: string) => ipcRenderer.invoke("serveur:retirer", adresse),
     onLien: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on("serveur:lien", listener);

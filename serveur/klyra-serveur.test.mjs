@@ -1,64 +1,143 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { CHEMIN, ecouter, lienInvitation } from "./klyra-serveur.mjs";
+import { CHEMIN, CHEMIN_APPAIRER, CHEMIN_APPAREIL, DUREE_CODE_MS, creerCode, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
-async function lire(port, chemin, headers) {
-  const reponse = await fetch(`http://127.0.0.1:${port}${chemin}`, { headers, cache: "no-store" });
-  const texte = await reponse.text();
-  let corps = null;
-  try {
-    corps = JSON.parse(texte);
-  } catch {
-    corps = null;
-  }
-  return { statut: reponse.status, corps, origine: reponse.headers.get("access-control-allow-origin") };
+function dossierJetable() {
+  return mkdtempSync(path.join(tmpdir(), "klyra-serveur-"));
 }
 
-test("le client et le VPS partagent le chemin", () => {
-  const client = readFileSync(new URL("../src/lib/serveur-vps.ts", import.meta.url), "utf8");
+async function appel(port, chemin, { methode = "GET", jeton, corps } = {}) {
+  const headers = {};
+  if (jeton) headers.Authorization = `Bearer ${jeton}`;
+  if (corps !== undefined) headers["Content-Type"] = "application/json";
+  const reponse = await fetch(`http://127.0.0.1:${port}${chemin}`, {
+    method: methode,
+    headers,
+    body: corps === undefined ? undefined : JSON.stringify(corps),
+    cache: "no-store",
+  });
+  const texte = await reponse.text();
+  let json = null;
+  try {
+    json = JSON.parse(texte);
+  } catch {
+    json = null;
+  }
+  return { statut: reponse.status, json, texte, origine: reponse.headers.get("access-control-allow-origin") };
+}
+
+test("le client et le VPS partagent les chemins", () => {
   const lecture = readFileSync(new URL("../electron/lecture-serveur.ts", import.meta.url), "utf8");
   assert.match(lecture, /export const CHEMIN_SERVEUR = "\/klyra\/v1\/serveur"/);
-  assert.match(client, /lecture-serveur/);
+  assert.match(lecture, /export const CHEMIN_APPAIRER = "\/klyra\/v1\/appairer"/);
+  assert.match(lecture, /export const CHEMIN_APPAREIL = "\/klyra\/v1\/appareil"/);
   assert.equal(CHEMIN, "/klyra/v1/serveur");
 });
 
-test("deux VPS répondent par leur nom, et se taisent s’ils sont fermés", async () => {
-  const un = await ecouter({ nom: "Klyra-vps", port: 0 });
-  const deux = await ecouter({ nom: "Autre", invitation: "code-test", port: 0 });
+test("un code s’échange une fois contre un jeton, qui ouvre le serveur", async () => {
+  const dossier = dossierJetable();
+  const ecoute = await ecouter({ nom: "Klyra-vps", dossier, port: 0 });
   try {
-    const premier = await lire(un.port, CHEMIN);
-    assert.equal(premier.statut, 200);
-    assert.equal(premier.origine, "*");
-    assert.deepEqual(premier.corps, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1" });
+    const sansJeton = await appel(ecoute.port, CHEMIN);
+    assert.equal(sansJeton.statut, 401);
+    assert.equal(sansJeton.origine, "*");
 
-    const sansCode = await lire(deux.port, CHEMIN);
-    assert.equal(sansCode.statut, 401);
-    const avecCode = await lire(deux.port, CHEMIN, { "X-Klyra-Invitation": "code-test" });
-    assert.equal(avecCode.corps.nom, "Autre");
-    const mauvais = await lire(deux.port, CHEMIN, { "X-Klyra-Invitation": "autre" });
-    assert.equal(mauvais.statut, 401);
+    const code = creerCode(dossier);
+    assert.match(code, /^[A-HJ-NP-Z2-9]{10}$/);
+    const appaire = await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: code.toLowerCase(), appareil: "PC de test" } });
+    assert.equal(appaire.statut, 200);
+    assert.equal(appaire.json.produit, "klyra-serveur");
+    assert.equal(appaire.json.nom, "Klyra-vps");
+    const jeton = appaire.json.jeton;
+    assert.match(jeton, /^[A-Za-z0-9_-]{43}$/);
 
-    const options = await fetch(`http://127.0.0.1:${un.port}${CHEMIN}`, { method: "OPTIONS" });
-    assert.equal(options.status, 204);
-    assert.equal(options.headers.get("access-control-allow-headers"), "X-Klyra-Invitation");
+    const encore = await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code } });
+    assert.equal(encore.statut, 401, "un code ne sert qu’une fois");
 
-    const page = await fetch(`http://127.0.0.1:${un.port}/`);
-    const html = await page.text();
-    assert.equal(page.status, 200);
-    assert.match(html, /Rejoindre Klyra-vps/);
-    assert.match(html, /<svg/);
-    assert.match(html, new RegExp(lienInvitation(`http://127.0.0.1:${un.port}`).replace(/[?]/g, "\\?")));
-    assert.doesNotMatch(html, /tarif|Adresse du VPS|type="text"/i);
+    const lu = await appel(ecoute.port, CHEMIN, { jeton });
+    assert.deepEqual(lu.json, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1" });
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton: `${jeton.slice(0, -2)}xx` })).statut, 401);
 
-    const ailleurs = await lire(un.port, "/tarif");
-    assert.equal(ailleurs.statut, 404);
-    const post = await fetch(`http://127.0.0.1:${un.port}${CHEMIN}`, { method: "POST" });
-    assert.equal(post.status, 405);
+    // Le serveur ne garde que des empreintes.
+    const stockes = readFileSync(path.join(dossier, "appareils.json"), "utf8");
+    assert.equal(stockes.includes(jeton), false);
+    assert.equal(readFileSync(path.join(dossier, "codes.json"), "utf8").includes(code), false);
+    assert.equal(lireAppareils(dossier)[0].nom, "PC de test");
   } finally {
-    await un.fermer();
-    await deux.fermer();
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
   }
+});
 
-  await assert.rejects(fetch(`http://127.0.0.1:${un.port}${CHEMIN}`));
+test("un code expire, et trop d’essais font tomber les codes en attente", async () => {
+  const dossier = dossierJetable();
+  let horloge = 1_000_000;
+  const ecoute = await ecouter({ dossier, port: 0, maintenant: () => horloge });
+  try {
+    const vieux = creerCode(dossier, horloge);
+    horloge += DUREE_CODE_MS + 1;
+    assert.equal((await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: vieux } })).statut, 401);
+
+    const bon = creerCode(dossier, horloge);
+    for (let i = 0; i < 5; i += 1) {
+      assert.equal((await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: `FAUX${i}` } })).statut, 401);
+    }
+    assert.equal((await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: bon } })).statut, 401);
+
+    const corpsIllisible = await fetch(`http://127.0.0.1:${ecoute.port}${CHEMIN_APPAIRER}`, { method: "POST", body: "x".repeat(5000) });
+    assert.equal(corpsIllisible.status, 401);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("un appareil se retire lui-même, et tout peut être révoqué", async () => {
+  const dossier = dossierJetable();
+  const ecoute = await ecouter({ dossier, port: 0 });
+  try {
+    const jetonDe = async () => (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const un = await jetonDe();
+    const deux = await jetonDe();
+
+    assert.equal((await appel(ecoute.port, CHEMIN_APPAREIL, { methode: "DELETE" })).statut, 401);
+    assert.equal((await appel(ecoute.port, CHEMIN_APPAREIL, { methode: "DELETE", jeton: un })).statut, 204);
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton: un })).statut, 401);
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton: deux })).statut, 200);
+
+    revoquerTout(dossier);
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton: deux })).statut, 401);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("la page publique ne montre ni lien ni code, le reste est fermé", async () => {
+  const dossier = dossierJetable();
+  const ecoute = await ecouter({ nom: "Klyra-vps", dossier, port: 0 });
+  try {
+    const code = creerCode(dossier);
+    const page = await appel(ecoute.port, "/");
+    assert.equal(page.statut, 200);
+    assert.match(page.texte, /Klyra-vps/);
+    assert.doesNotMatch(page.texte, /klyra:\/\/|<svg|<script/);
+    assert.equal(page.texte.includes(code), false);
+
+    const options = await fetch(`http://127.0.0.1:${ecoute.port}${CHEMIN}`, { method: "OPTIONS" });
+    assert.equal(options.status, 204);
+    assert.equal(options.headers.get("access-control-allow-headers"), "Authorization, Content-Type");
+
+    assert.equal((await appel(ecoute.port, "/rejoindre")).statut, 404);
+    assert.equal((await appel(ecoute.port, "/tarif")).statut, 404);
+    assert.equal((await appel(ecoute.port, CHEMIN, { methode: "POST" })).statut, 405);
+    assert.equal((await appel(ecoute.port, CHEMIN_APPAIRER)).statut, 405);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+  await assert.rejects(fetch(`http://127.0.0.1:${ecoute.port}${CHEMIN}`));
 });
