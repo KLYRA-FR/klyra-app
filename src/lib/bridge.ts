@@ -6,6 +6,8 @@
 import type { FileNode } from "@/types/domain";
 import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
+import type { EtatConnect } from "../../electron/composio-connect";
+export type { EtatConnect };
 
 /** Un MCP direct branché dans la Marketplace : tout, sauf le jeton. */
 export interface McpDirect {
@@ -447,6 +449,13 @@ export interface KlyraBridge {
     connecter: (contexte: string, service: string, configuration: string) => Promise<Reponse<{ compteId: string; service: string; expireLe: string | null }>>;
     deconnecter: (contexte: string, compte: string) => Promise<Reponse<void>>;
     console: () => Promise<Reponse<void>>;
+    /** Composio Connect : connexion par le navigateur, sans clé. Les jetons restent dans main. */
+    connect?: {
+      etat: () => Promise<Reponse<EtatConnect>>;
+      connecter: () => Promise<Reponse<boolean>>;
+      annuler: () => Promise<Reponse<void>>;
+      deconnecter: () => Promise<Reponse<void>>;
+    };
   };
   /** La consommation de l'année (cf. electron/consommation.ts). */
   consommation?: {

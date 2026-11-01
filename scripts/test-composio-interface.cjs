@@ -117,6 +117,26 @@ ipcMain.handle("fixture:mcp", (_event, nom, arg) => {
   throw new Error(`Action MCP test inconnue : ${nom}`);
 });
 
+/* Composio Connect : main ouvre le navigateur ; ici, le test décide quand la connexion aboutit. */
+let connectEtat = { connecte: false, compte: null, enCours: false, erreur: null };
+let terminerConnect = null;
+const connectJournal = [];
+ipcMain.handle("fixture:connect", async (_event, nom) => {
+  connectJournal.push(nom);
+  if (nom === "etat") return { ok: true, data: clone(connectEtat) };
+  if (nom === "connecter") {
+    connectEtat = { ...connectEtat, enCours: true };
+    const fini = await new Promise((r) => { terminerConnect = r; });
+    terminerConnect = null;
+    connectEtat = { connecte: fini, compte: fini ? "corentin@example.test" : null, enCours: false, erreur: null };
+    return { ok: true, data: fini };
+  }
+  if (nom === "annuler") { terminerConnect?.(false); return { ok: true, data: null }; }
+  if (nom === "deconnecter") { connectEtat = { connecte: false, compte: null, enCours: false, erreur: null }; return { ok: true, data: null }; }
+  throw new Error(`Action Connect test inconnue : ${nom}`);
+});
+const boutonPret = (texte) => `[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === ${JSON.stringify(texte)} && !b.disabled)`;
+
 const ev = (code) => win.webContents.executeJavaScript(code, true);
 const rendu = () => ev("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
 async function attendre(expression, nom = expression, max = 10_000) {
@@ -150,8 +170,8 @@ async function touche(key) {
 /** Connecté : « Actualiser » est dans le menu de la carte ; en erreur, « Réessayer » est visible. */
 async function actualiser() {
   const lectures = journal.filter((j) => j.nom === "etat").length;
-  if (await ev("!!document.querySelector('button[aria-label=\"Plus d’options pour Composio\"]')")) {
-    await cible('button[aria-label="Plus d’options pour Composio"]');
+  if (await ev("!!document.querySelector('button[aria-label=\"Plus d’options pour la clé de projet\"]')")) {
+    await cible('button[aria-label="Plus d’options pour la clé de projet"]');
     await cliquer("Actualiser", '[role="menuitem"]');
   } else await cliquer("Réessayer");
   for (let i = 0; i < 200 && journal.filter((j) => j.nom === "etat").length === lectures; i++) await pause(20);
@@ -212,15 +232,37 @@ app.whenReady().then(async () => {
     win.webContents.on("console-message", ({ level, message }) => { if (level === "error" && !message.includes("favicon")) erreurs.push(message); });
     win.webContents.setWindowOpenHandler(({ url }) => { exterieurs.push(new URL(url).origin); return { action: "deny" }; });
     await win.loadURL(`${base}/marketplace`);
-    await attendre("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio')", "carte Composio affichée");
-    verifier(await ev("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio' && b.disabled)"), "chargement : connexion Composio désactivée tant que l’état n’est pas lu");
-    await capture("00-chargement");
-    lectureBloquee = false; libererLecture?.();
-    await attendre("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio' && !b.disabled)");
+    await attendre(boutonPret("Se connecter à Composio"), "connexion Composio prête");
     verifier(!(await carteComposio()).includes("Connecté") && !(await ev("document.querySelector('[data-service-composio]') !== null")), "profil vierge : un seul bouton de connexion, aucun compte fictif");
-    await capture("01-vierge");
+    await capture("00-vierge");
 
     await cliquer("Se connecter à Composio");
+    await attendre("document.body.innerText.includes('Termine dans le navigateur…')");
+    verifier(connectJournal.includes("connecter") && await ev("document.querySelectorAll('input[type=password]').length === 0"), "Composio Connect : le navigateur est ouvert par main, aucune clé demandée");
+    await cliquer("Annuler");
+    await attendre(boutonPret("Se connecter à Composio"));
+    verifier(connectJournal.includes("annuler") && !(await carteComposio()).includes("Connecté"), "annulation : rien n’est annoncé connecté");
+    await cliquer("Se connecter à Composio");
+    await attendre("document.body.innerText.includes('Termine dans le navigateur…')");
+    for (let i = 0; i < 100 && !terminerConnect; i++) await pause(20);
+    terminerConnect(true);
+    await attendre("document.body.innerText.includes('Connecté en tant que corentin@example.test')", "compte Composio affiché");
+    verifier((await carteComposio()).includes("Composio te donne un lien à valider"), "connexion terminée : compte affiché, apps branchées au premier besoin");
+    await capture("01-connect");
+    await cible('button[aria-label="Plus d’options pour Composio"]'); await cliquer("Se déconnecter…", '[role="menuitem"]');
+    await attendre("document.querySelector('[role=alertdialog]')");
+    verifier(!connectJournal.includes("deconnecter"), "déconnexion Composio : rien avant confirmation");
+    await cliquer("Se déconnecter", '[role="alertdialog"] button');
+    await attendre(boutonPret("Se connecter à Composio"));
+    verifier(connectJournal.includes("deconnecter") && !(await carteComposio()).includes("Connecté en tant que"), "déconnexion Composio confirmée : jetons effacés par main");
+
+    await ev("document.querySelector('section[aria-labelledby=titre-composio] details > summary').click()");
+    await attendre("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Coller une clé…')", "mode développeur ouvert");
+    verifier(await ev("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Coller une clé…' && b.disabled)"), "mode développeur : clé désactivée tant que l’état n’est pas lu");
+    lectureBloquee = false; libererLecture?.();
+    await attendre(boutonPret("Coller une clé…"));
+
+    await cliquer("Coller une clé…");
     await attendre("document.querySelector('[role=dialog] input[type=password]')");
     verifier(await ev("document.activeElement === document.querySelector('[role=dialog] input[type=password]')"), "fenêtre de connexion : focus dans le champ de la clé");
     verifier(await ev("[...document.querySelectorAll('[role=dialog] button')].some((b) => b.innerText.trim() === 'Connecter' && b.disabled)"), "Connecter désactivé tant qu’aucune clé n’est collée");
@@ -229,7 +271,7 @@ app.whenReady().then(async () => {
     await cliquer("Ou importer un fichier de clé…", '[role="dialog"] button');
     for (let i = 0; i < 100 && !journal.some((j) => j.nom === "importer"); i++) await pause(20);
     await rendu();
-    verifier(await ev("document.querySelector('[role=dialog]') !== null") && !(await texte()).includes("Composio est connecté."), "fichier non choisi : fenêtre gardée, aucun faux succès");
+    verifier(await ev("document.querySelector('[role=dialog]') !== null") && !(await texte()).includes("La clé de projet est enregistrée."), "fichier non choisi : fenêtre gardée, aucun faux succès");
     await saisir('[role="dialog"] input[type=password]', "ak_mauvaise-cle-000000");
     await cliquer("Connecter", '[role="dialog"] button');
     await attendre("document.querySelector('[role=dialog] [role=alert]')?.innerText.includes('refuse cette clé')", "clé refusée affichée dans la fenêtre");
@@ -239,7 +281,7 @@ app.whenReady().then(async () => {
     await capture("01b-cle-saisie");
     await cliquer("Connecter", '[role="dialog"] button');
     await attendre("!document.querySelector('[role=dialog]') && document.body.innerText.includes('Aucune app connectée pour l’instant.')");
-    verifier(journal.some((j) => j.nom === "saisir" && j.args[0] === CLE_SAISIE) && (await carteComposio()).includes("Connecté") && (await texte()).includes("Composio est connecté."), "clé collée : transmise une fois au pont, Composio connecté");
+    verifier(journal.some((j) => j.nom === "saisir" && j.args[0] === CLE_SAISIE) && (await carteComposio()).includes("Connecté") && (await texte()).includes("La clé de projet est enregistrée."), "clé collée : transmise une fois au pont, Composio connecté");
     verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(CLE_SAISIE)})`)), "clé collée : elle ne reste pas dans la page");
 
     await ouvrirConnexion();
@@ -309,9 +351,9 @@ app.whenReady().then(async () => {
     await attendre(`document.body.innerText.includes('Gmail est déconnecté.') && !document.querySelector('[data-service-composio="gmail"]')?.innerText.includes('${second.toLowerCase()}@example.test')`);
     verifier(!fixture.comptes.some((c) => c.id === second) && journal.filter((j) => j.nom === "deconnecter").length === 2, "déconnexion confirmée : un appel par confirmation, compte retiré");
 
-    await cible('button[aria-label="Plus d’options pour Composio"]'); await cliquer("Se déconnecter…", '[role="menuitem"]'); await cliquer("Se déconnecter", '[role="alertdialog"] button');
-    await attendre("[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Se connecter à Composio' && !b.disabled)");
-    verifier(journal.some((j) => j.nom === "retirer"), "se déconnecter de Composio : clé retirée par le pont, retour au bouton unique");
+    await cible('button[aria-label="Plus d’options pour la clé de projet"]'); await cliquer("Retirer la clé…", '[role="menuitem"]'); await cliquer("Retirer", '[role="alertdialog"] button');
+    await attendre(boutonPret("Coller une clé…"));
+    verifier(journal.some((j) => j.nom === "retirer"), "retirer la clé de projet : clé retirée par le pont");
 
     await cible('[data-app-mcp="github"] button');
     await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Connecter GitHub')");

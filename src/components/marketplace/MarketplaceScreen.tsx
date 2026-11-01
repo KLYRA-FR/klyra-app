@@ -11,7 +11,7 @@ import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { Modale, useConfirmation } from "@/components/ui/Modale";
 import { Erreur, Pastille } from "@/components/reglages/ui";
-import { getBridge, type McpDirect, type VueCompteComposio, type VueServiceComposio } from "@/lib/bridge";
+import { getBridge, type EtatConnect, type McpDirect, type VueCompteComposio, type VueServiceComposio } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { useComposio, type ComposioApiInterface } from "@/lib/composio";
 import { compteComposioActif, nomCompteComposio, statutCompteComposio } from "@/lib/composio-vues";
@@ -46,12 +46,91 @@ export function MarketplaceScreen() {
 
 /* ─── Composio ─────────────────────────────────────────────── */
 
-function CarteComposio() {
-  const api = useComposio();
-  return <ContenuComposio key={api.scope} api={api} />;
+/** Composio Connect : la connexion par le navigateur, avec le compte Composio de la personne. */
+function useComposioConnect() {
+  const pont = getBridge()?.composio?.connect;
+  const [etat, setEtat] = useState<EtatConnect | null>(null);
+  const [erreur, setErreur] = useState("");
+  const relire = useCallback(async () => {
+    if (!pont) return;
+    const r = await pont.etat();
+    if (r.ok) setEtat(r.data);
+  }, [pont]);
+  useEffect(() => {
+    const debut = window.setTimeout(() => void relire(), 0);
+    window.addEventListener("focus", relire);
+    return () => { window.clearTimeout(debut); window.removeEventListener("focus", relire); };
+  }, [relire]);
+  const connecter = async () => {
+    if (!pont) return;
+    setErreur("");
+    setEtat((e) => e && { ...e, enCours: true });
+    const r = await pont.connecter();
+    if (!r.ok) setErreur(r.message);
+    await relire();
+  };
+  return {
+    pont, etat, erreur, connecter, relire,
+    annuler: async () => { await pont?.annuler(); await relire(); },
+    deconnecter: async () => { await pont?.deconnecter(); await relire(); },
+  };
 }
 
-function ContenuComposio({ api }: { api: ComposioApiInterface }) {
+function CarteComposio() {
+  const api = useComposio();
+  const connect = useComposioConnect();
+  const [demander, confirmation] = useConfirmation();
+  const [dev, setDev] = useState(false);
+  const etat = connect.etat;
+  const deconnecter = async () => {
+    if (!(await demander({ titre: "Se déconnecter de Composio ?", texte: "Tes agents n’auront plus accès à tes apps Composio sur cet ordinateur. Les apps restent connectées chez Composio.", confirmer: "Se déconnecter" }))) return;
+    await connect.deconnecter();
+  };
+  return (
+    <section aria-labelledby="titre-composio" className="klyra-carte-flottante flex flex-col gap-5 rounded-xl p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-1 basis-72 items-start gap-4">
+          <Logo nom="Composio" logo="composio" grand />
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="titre-composio" className="m-0 text-ui font-semibold text-texte-principal">Composio</h2>
+              <span className="rounded-pill bg-fond-teinte-bleue px-2 py-0.5 text-ui-2xs font-medium text-texte-accent">Recommandé</span>
+              {etat?.connecte && <Pastille texte="Connecté" ton="ok" />}
+            </div>
+            <p className="m-0 text-ui-s text-texte-secondaire">Gmail, Slack, Notion, Google Agenda et des centaines d’autres apps, en une seule connexion.</p>
+          </div>
+        </div>
+        {!connect.pont ? <span className="text-ui-xs text-texte-tertiaire">Dans l’app de bureau.</span> : etat?.enCours ? (
+          <div className="flex items-center gap-3">
+            <span role="status" className="text-ui-s text-texte-secondaire">Termine dans le navigateur…</span>
+            <Bouton onClick={() => void connect.annuler()}>Annuler</Bouton>
+          </div>
+        ) : etat?.connecte ? (
+          <MenuLignes libelle="Options de Composio" declencheur={(d) => <BoutonIcone ref={d.ref} {...d.attributs} libelle="Plus d’options pour Composio" variant="discret" onClick={d.basculer} icone={<Icon name="dot-horizontal" size={16} />} />} lignes={[
+            { id: "console", titre: "Ouvrir Composio", icone: "link-external", onChoisir: () => void api.console() },
+            { id: "deconnecter", titre: "Se déconnecter…", icone: "trash-01", separee: true, onChoisir: () => void deconnecter() },
+          ]} />
+        ) : (
+          <BoutonPrincipal disabled={!etat} onClick={() => void connect.connecter()}>Se connecter à Composio</BoutonPrincipal>
+        )}
+      </div>
+      {etat?.connecte && <p role="status" className="m-0 text-ui-s text-texte-secondaire">
+        Connecté{etat.compte ? <> en tant que <span className="font-medium text-texte-principal">{etat.compte}</span></> : ""}. Tes agents branchent une app la première fois qu’ils en ont besoin : Composio te donne un lien à valider.
+      </p>}
+      {(connect.erreur || etat?.erreur) && !etat?.enCours && <Erreur>{connect.erreur || etat?.erreur}</Erreur>}
+      <details open={dev || !!api.etat?.configure} onToggle={(e) => setDev(e.currentTarget.open)} className="border-t border-bordure-subtile pt-4">
+        <summary className="cursor-pointer text-ui-xs text-texte-tertiaire">Mode développeur : clé de projet</summary>
+        <div className="mt-4 flex flex-col gap-4">
+          <ModeDeveloppeur key={api.scope} api={api} />
+        </div>
+      </details>
+      {confirmation}
+    </section>
+  );
+}
+
+/** L'ancien branchement par clé de projet (API Composio), pour qui en a déjà une. */
+function ModeDeveloppeur({ api }: { api: ComposioApiInterface }) {
   const { etat, erreur, chargement, action, message, faire } = api;
   const occupe = !!action || chargement;
   const connecte = !!etat?.configure && !etat.erreur;
@@ -66,7 +145,7 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
     if (!importee) return;
     setCle(false);
     setSaisie("");
-    setSucces("Composio est connecté.");
+    setSucces("La clé de projet est enregistrée.");
   };
   const importer = async () => connecter(await faire("importer", (p, c) => p.importer(c)));
   const valider = async () => {
@@ -78,8 +157,8 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
     setCle(true);
   };
   const deconnecter = async () => {
-    if (!(await demander({ titre: "Se déconnecter de Composio ?", texte: "Tes agents n’auront plus accès aux apps Composio sur cet ordinateur. Les comptes restent chez Composio.", confirmer: "Se déconnecter" }))) return;
-    await faire("retirer", (p, c) => p.retirer(c), "Composio est déconnecté de cet ordinateur.");
+    if (!(await demander({ titre: "Retirer la clé de projet ?", texte: "Tes agents n’auront plus accès aux apps de ce projet Composio sur cet ordinateur. Les comptes restent chez Composio.", confirmer: "Retirer" }))) return;
+    await faire("retirer", (p, c) => p.retirer(c), "La clé de projet est retirée de cet ordinateur.");
   };
   const choisir = (service: string, compte: VueCompteComposio | null) => faire("selectionner", (p, c) => p.selectionner(c, service, compte?.id ?? null));
   const retirerCompte = async (compte: VueCompteComposio, service: string) => {
@@ -94,33 +173,26 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
   const titreEtat = chargement && !etat ? null : connecte ? <Pastille texte="Connecté" ton="ok" /> : etat?.configure && etat.erreur ? <Pastille texte={etat.erreur.code === "reseau" ? "Hors ligne" : "À vérifier"} ton="attente" /> : null;
 
   return (
-    <section aria-labelledby="titre-composio" className="klyra-carte-flottante flex flex-col gap-5 rounded-xl p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-1 basis-72 items-start gap-4">
-          <Logo nom="Composio" logo="composio" grand />
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 id="titre-composio" className="m-0 text-ui font-semibold text-texte-principal">Composio</h2>
-              <span className="rounded-pill bg-fond-teinte-bleue px-2 py-0.5 text-ui-2xs font-medium text-texte-accent">Recommandé</span>
-              {titreEtat}
-            </div>
-            <p className="m-0 text-ui-s text-texte-secondaire">Gmail, Slack, Notion, Google Agenda et des centaines d’autres apps, en une seule connexion.</p>
-          </div>
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 basis-60 flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-2"><span className="text-ui-s font-medium text-texte-principal">Clé de projet</span>{titreEtat}</div>
+          <span className="text-ui-xs text-texte-tertiaire">Pour un projet Composio déjà préparé dans sa console.</span>
         </div>
-        {!api.bureau ? <span className="text-ui-xs text-texte-tertiaire">Dans l’app de bureau.</span> : connecte ? (
+        {!api.bureau ? null : connecte ? (
           <div className="flex items-center gap-2">
             <Bouton disabled={occupe || !peutAjouter} onClick={() => setAjout(true)} iconeGauche={<Icon name="plus-01" size={16} />}>Ajouter une app</Bouton>
-            <MenuLignes libelle="Options de Composio" declencheur={(d) => <BoutonIcone ref={d.ref} {...d.attributs} libelle="Plus d’options pour Composio" disabled={occupe} variant="discret" onClick={d.basculer} icone={<Icon name="dot-horizontal" size={16} />} />} lignes={[
+            <MenuLignes libelle="Options de la clé de projet" declencheur={(d) => <BoutonIcone ref={d.ref} {...d.attributs} libelle="Plus d’options pour la clé de projet" disabled={occupe} variant="discret" onClick={d.basculer} icone={<Icon name="dot-horizontal" size={16} />} />} lignes={[
               { id: "console", titre: "Ouvrir la console Composio", icone: "link-external", onChoisir: () => void api.console() },
               { id: "actualiser", titre: "Actualiser", icone: "refresh-01", onChoisir: () => void api.actualiser() },
               { id: "remplacer", titre: "Remplacer la clé…", icone: "lock-01", onChoisir: () => void remplacer() },
-              { id: "deconnecter", titre: "Se déconnecter…", icone: "trash-01", separee: true, onChoisir: () => void deconnecter() },
+              { id: "deconnecter", titre: "Retirer la clé…", icone: "trash-01", separee: true, onChoisir: () => void deconnecter() },
             ]} />
           </div>
         ) : etat?.configure ? (
           <Bouton disabled={occupe} onClick={() => void api.actualiser()} iconeGauche={<Icon name="refresh-01" size={16} />}>{chargement ? "Actualisation…" : "Réessayer"}</Bouton>
         ) : (
-          <BoutonPrincipal disabled={occupe || !etat} onClick={() => setCle(true)}>Se connecter à Composio</BoutonPrincipal>
+          <Bouton disabled={occupe || !etat} onClick={() => setCle(true)}>Coller une clé…</Bouton>
         )}
       </div>
 
@@ -135,7 +207,7 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
       {(message || succes) && <p role="status" className="m-0 text-ui-xs text-texte-secondaire">{message || succes}</p>}
 
       {cle && etat && (
-        <Modale titre={etat.configure ? "Remplacer la clé Composio" : "Se connecter à Composio"} onFermer={() => { setCle(false); setSaisie(""); }} className="w-[460px]" actions={<>
+        <Modale titre={etat.configure ? "Remplacer la clé de projet" : "Clé de projet Composio"} onFermer={() => { setCle(false); setSaisie(""); }} className="w-[460px]" actions={<>
           <Bouton onClick={() => { setCle(false); setSaisie(""); }}>Annuler</Bouton>
           <BoutonPrincipal disabled={occupe || !etat.coffreDisponible || !saisie.trim()} onClick={() => void valider()}>{action === "saisir" ? "Vérification…" : "Connecter"}</BoutonPrincipal>
         </>}>
@@ -156,7 +228,7 @@ function ContenuComposio({ api }: { api: ComposioApiInterface }) {
         if (!etat.selections[service.slug]) void choisir(service.slug, compte);
       }} />}
       {confirmation}
-    </section>
+    </>
   );
 }
 

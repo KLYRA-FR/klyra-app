@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
-import { espaceComposio } from "./composio";
+import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -261,6 +261,9 @@ interface Processus {
 export type Spontane = (sessionId: string) => { requestId: string; emit: (event: AgentEvent) => void } | null;
 
 /** Les fils : comment l'agent confie une tâche à un coéquipier (outils du serveur MCP de l'app). */
+/** Composio Connect : le serveur MCP « composio », rejoint avec le compte de la personne. */
+const CONSIGNE_COMPOSIO_CONNECT = "Pour les apps de la personne (Gmail, Slack, Notion, Google Agenda…), utilise le serveur MCP composio (Composio Connect) : cherche l’action avec ses outils de recherche, lis son schéma, puis exécute-la. Si l’app n’est pas encore connectée, Composio te donne un lien d’autorisation : transmets-le tel quel à la personne et attends qu’elle te dise l’avoir validé. Ne te rabats pas en silence sur un CLI ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier : demande avant d’envoyer, publier, payer ou supprimer.";
+
 const CONSIGNE_FILS = `Dans cette app, une tâche = un fil : une conversation à part d'un agent, ouverte dans un onglet de son chat, qui tourne sans bloquer. Pour confier à un coéquipier (ou à toi-même) un travail qui ne se règle pas tout de suite, utilise l'outil ouvrir_fil avec un brief complet (le fil ne voit pas ta conversation), après avoir regardé avec lister_fils qu'il n'en existe pas déjà un sur le même sujet. Une tâche = un responsable. Quand le coéquipier a fini, sa réponse te revient d'elle-même : ne la surveille pas en boucle. Tu peux lire un fil (lire_fil), y ajouter une précision (ecrire_dans_fil), l'arrêter (arreter_fil), et le fermer (fermer_fil) une fois le travail fait et vérifié. Cite toujours un fil avec son titre et son identifiant : Rapport hebdo (klyra-fil-…). Les fils d'un même agent partagent ses fichiers : évite que deux fils modifient les mêmes fichiers en même temps. Pour une petite recherche rapide, pas besoin de fil.`;
 
 /** Dit à l'agent où lire le planning de la personne (electron/planning.ts). */
@@ -734,7 +737,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     for (const d of dossiersJoints) args.push("--add-dir", d);
     // L'agenda, les rappels et les routines de la personne, que l'app tient à jour.
     const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS,
-      "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
+      composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
     ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
     if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignes.join("\n\n"));

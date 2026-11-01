@@ -1,7 +1,8 @@
 import { app, dialog, net, safeStorage, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
-import { open, readFile, rename, writeFile } from "node:fs/promises";
+import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ComposioApi } from "./composio-api";
+import { ComposioConnect, type JetonsConnect } from "./composio-connect";
 import { EspaceComposio, type ConfigurationComposio } from "./composio-espace";
 import { identiteComposio, revisionIdentiteComposio } from "./composio-identite";
 import type { EtatComposio } from "./composio-types";
@@ -54,6 +55,30 @@ export const espaceComposio = new EspaceComposio({
   lire, ecrire, coffreDisponible,
   api: (cle) => new ComposioApi(cle, (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)),
   ouvrir: (url) => shell.openExternal(url),
+});
+
+/* Composio Connect : les jetons OAuth, chiffrés par le trousseau dans userData/composio-connect.json. */
+const fichierConnect = () => path.join(app.getPath("userData"), "composio-connect.json");
+
+export const composioConnect = new ComposioConnect({
+  fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : (input as string), init),
+  ouvrir: (url) => shell.openExternal(url),
+  lire: async () => {
+    try {
+      const { contenu } = JSON.parse(await readFile(fichierConnect(), "utf8")) as { contenu: string };
+      if (!coffreDisponible()) return null;
+      return JSON.parse(safeStorage.decryptString(Buffer.from(contenu, "base64"))) as JetonsConnect;
+    } catch {
+      return null;
+    }
+  },
+  ecrire: async (jetons) => {
+    if (!jetons) { await rm(fichierConnect(), { force: true }); return; }
+    if (!coffreDisponible()) throw new Error("Le coffre du système est indisponible : la connexion ne peut pas être gardée.");
+    const temporaire = `${fichierConnect()}.tmp`;
+    await writeFile(temporaire, JSON.stringify({ version: 1, contenu: safeStorage.encryptString(JSON.stringify(jetons)).toString("base64") }), { encoding: "utf8", mode: 0o600 });
+    await rename(temporaire, fichierConnect());
+  },
 });
 
 /** Les IPC de configuration n'acceptent que le frame principal de la fenêtre KLYRA. */

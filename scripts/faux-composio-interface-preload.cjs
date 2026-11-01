@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld("klyra", {
   systeme: { utilisateur: () => succes({ nom: "Profil simulé", identifiant: "fixture" }), sonsCoupes: () => succes(true), onOuvrirChat: ecouter },
   planning: { ecrire: () => succes() },
   mcp: { apps: () => ipcRenderer.invoke("fixture:mcp", "apps"), lister: () => ipcRenderer.invoke("fixture:mcp", "lister"), ajouter: (entree) => ipcRenderer.invoke("fixture:mcp", "ajouter", entree), retirer: (id) => ipcRenderer.invoke("fixture:mcp", "retirer", id) },
-  composio: Object.fromEntries(["etat", "importer", "saisir", "retirer", "selectionner", "connecter", "deconnecter", "console"].map((nom) => [nom, appel(nom)])),
+  composio: { ...Object.fromEntries(["etat", "importer", "saisir", "retirer", "selectionner", "connecter", "deconnecter", "console"].map((nom) => [nom, appel(nom)])),
+    connect: Object.fromEntries(["etat", "connecter", "annuler", "deconnecter"].map((nom) => [nom, () => ipcRenderer.invoke("fixture:connect", nom)])) },
 });
