@@ -21,6 +21,8 @@ import { PLATEFORME } from "@/lib/plateforme";
 import { estConversationAgent, useChat, useProject, WorkspaceProvider } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
 import { CoqueTelephone } from "@/components/telephone/CoqueTelephone";
+import { RelaisPush } from "@/components/compte/RelaisPush";
+import { composition } from "@/lib/coque";
 import { AppRail } from "./AppRail";
 import { SonsApp } from "./SonsApp";
 
@@ -40,21 +42,6 @@ function useOpenProject(): Project | undefined {
 
 /** Largeur de fenêtre sous laquelle le panneau des fichiers se replie. */
 const FILES_MIN_WIDTH = 1280;
-/** Sous ce seuil, la coque téléphone. À partir de 760 px, le rail du bureau, y compris Electron. */
-const TELEPHONE_MAX = 760;
-
-function useTelephone(): boolean {
-  const [largeur, setLargeur] = useState<number | null>(null);
-  useEffect(() => {
-    const lire = () => setLargeur(window.innerWidth);
-    lire();
-    window.addEventListener("resize", lire);
-    return () => window.removeEventListener("resize", lire);
-  }, []);
-  if (largeur !== null) return largeur < TELEPHONE_MAX;
-  if (typeof window === "undefined") return false;
-  return window.innerWidth < TELEPHONE_MAX;
-}
 
 /** Electron a ouvert klyra://rejoindre : l’écran Serveurs consomme le lien. */
 function EcouteRejoindre() {
@@ -188,13 +175,15 @@ function ShellLayout({ children }: { children: ReactNode }) {
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const isClient = useIsClient();
-  const telephone = useTelephone();
   /* Sur la racine, pour les styles propres au système (barres de défilement),
      fenêtres ouvertes hors du cadre comprises. */
   useEffect(() => {
     document.documentElement.dataset.plateforme = PLATEFORME;
   }, []);
   if (!isClient) return <div className="h-full bg-fond-page" />;
+  /* L'app de bureau (Electron) garde sa composition. Hors d'elle, l'app web : la coque du téléphone,
+     composée à la tablette au-delà de 760 px (spec mobile M-2 et § 9), jamais le bureau et ses données d'exemple. */
+  const bureau = composition({ largeur: window.innerWidth, hauteur: window.innerHeight, electron: getBridge() !== null }) === "bureau";
 
   return (
     <WorkspaceProvider>
@@ -206,15 +195,17 @@ export function AppShell({ children }: { children: ReactNode }) {
               <EcouteRejoindre />
               <RegionAnnonces />
               <Suspense>
-                {telephone ? (
-                  <CoqueTelephone />
-                ) : (
+                {bureau ? (
                   <>
                     <ShellLayout>{children}</ShellLayout>
                     {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
                     <FenetreRecherche />
                     <MessageSuppression />
+                    {/* Ce que le bureau notifie part aussi aux téléphones abonnés, fenêtre sans focus. */}
+                    <RelaisPush />
                   </>
+                ) : (
+                  <CoqueTelephone />
                 )}
               </Suspense>
             </div>

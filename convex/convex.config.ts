@@ -17,6 +17,13 @@ const app = defineApp({
      * ne redirige pas : la page relais donne le lien https à coller. Jamais `klyra://` dans ce cas.
      */
     KLYRA_APP_URL: v.optional(v.string()),
+    /**
+     * Notifications du téléphone (web push) : `npx web-push generate-vapid-keys`. Sans les deux clés,
+     * rien ne part et Réglages › Ce téléphone le dit. Le sujet (mailto: ou https:) : `KLYRA_APP_URL` à défaut.
+     */
+    VAPID_PUBLIC_KEY: v.optional(v.string()),
+    VAPID_PRIVATE_KEY: v.optional(v.string()),
+    VAPID_SUJET: v.optional(v.string()),
   },
 });
 /* Les e-mails (liens de connexion, rappels) : file durable, nouvelles tentatives, limite horaire. */

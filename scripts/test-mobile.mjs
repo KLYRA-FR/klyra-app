@@ -270,7 +270,7 @@ try {
   verifier(textesTel.every((t) => !/ton Mac|Sur ton Mac/.test(t)), "téléphone : aucun « ton Mac » écrit en dur (poste Linux)");
   await allerTel("/chats");
   await telephone.ev(`[...document.querySelectorAll('header button')].find((b) => /ouvert|fermé/i.test(b.innerText))?.click()`);
-  verifier(await telephone.quand("document.querySelector('[role=dialog][aria-label=\"État du poste\"]')", 5000), "feuille « État du poste » ouverte");
+  verifier(await telephone.quand("[...document.querySelectorAll('[role=dialog]')].some((d) => d.innerText.includes('Ordinateurs'))", 5000), "feuille des ordinateurs (T-23) ouverte");
   verifier(!(await telephone.texte()).includes("Me prévenir"), "feuille du poste : plus de « Me prévenir à l’ouverture »");
   await telephone.cliquer("Fermer");
 
@@ -345,10 +345,14 @@ try {
   verifier(texte.includes("lance revoquer-tout sur le VPS"), "VPS : MO-T12 sous la liste");
   await bureau.ev(`localStorage.removeItem('klyra:serveurs'); window.dispatchEvent(new Event('klyra:carnet'))`);
 
-  /* 12. Navigateur large, sans app de bureau : seulement MO-T1. */
+  /* 12. Navigateur large, sans app de bureau : la coque composée à la tablette (rail), jamais le bureau et ses données d'exemple. */
   await telephone.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await telephone.ev(`location.href = ${JSON.stringify(`http://127.0.0.1:${PORT_WEB}/reglages?section=mobile`)}`);
-  verifier(await telephone.quand("document.body.innerText.includes('La page Mobile se règle dans l’app de bureau')", 20000), "navigateur : MO-T1 seulement");
+  /* Le téléphone a été déconnecté à l'étape 7 : la connexion de la coque, pas MO-T1 du bureau. */
+  verifier(
+    await telephone.quand("document.documentElement.dataset.composition === 'tablette' && document.body.innerText.includes('Connecte-toi à KLYRA') && !document.body.innerText.includes('La page Mobile se règle')", 20000),
+    "navigateur large : la coque à la tablette, jamais le bureau",
+  );
 
   /* 13. Retiré de l'équipe par l'admin : le texte d'Équipe, rien d'autre. */
   const membres = await sessionAdmin.query(fn("equipe:membres"), {});

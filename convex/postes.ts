@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { erreur, exigerMembre, sessionActuelle } from "./model/acces";
+import { prevenirOuverture } from "./notificationsPush";
 
 /** Sans signal pendant ce délai, le téléphone dit le poste fermé (2,5 × 10 s). */
 export const OUVERT_MS = 25_000;
@@ -22,8 +23,11 @@ export const signaler = mutation({
     const dernierSignal = Date.now();
     /* La session de cet ordinateur : Réglages › Mobile ne la compte pas parmi les téléphones. */
     const sessionId = (await sessionActuelle(ctx))?._id;
-    if (existant) await ctx.db.patch("postes", existant._id, { systeme: args.systeme, nom, dernierSignal, sessionId });
-    else await ctx.db.insert("postes", { membreId: moi._id, cle: args.cle, systeme: args.systeme, nom, dernierSignal, sessionId });
+    if (existant) {
+      await ctx.db.patch("postes", existant._id, { systeme: args.systeme, nom, dernierSignal, sessionId });
+      /* De retour après une absence : « Me prévenir à l'ouverture » part, une fois (T-23). */
+      if (dernierSignal - existant.dernierSignal >= OUVERT_MS) await prevenirOuverture(ctx, moi._id, { cle: args.cle, systeme: args.systeme, nom });
+    } else await ctx.db.insert("postes", { membreId: moi._id, cle: args.cle, systeme: args.systeme, nom, dernierSignal, sessionId });
     return null;
   },
 });

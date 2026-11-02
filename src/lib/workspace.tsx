@@ -12,6 +12,7 @@ import { identiteAffichee, type Identite, type ProfilCompte } from "@/lib/identi
 import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
+import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { lireProposition } from "@/lib/proposition-agent";
 import { reglagesActuels } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
@@ -911,12 +912,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const nom = rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent";
     const message = stateRef.current.messages.find((m) => m.id === messageId);
     const extrait = message ? texteDe(message).replace(/[*`#>_]/g, "").replace(/\s+/g, " ").trim() : "";
-    void notifier(
-      ok ? `${nom} a fini` : `${nom} s’est arrêté sur une erreur`,
-      extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? "")),
-      chatId,
-      ok ? "agentFini" : "agentErreur",
-    );
+    const titre = ok ? `${nom} a fini` : `${nom} s’est arrêté sur une erreur`;
+    const corps = extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? ""));
+    void notifier(titre, corps, chatId, ok ? "agentFini" : "agentErreur");
+    /* Le téléphone aussi, si la fenêtre n'a pas le focus (spec mobile § 8). */
+    pousserAuTelephone({ evenement: ok ? "agentFini" : "agentErreur", titre, corps, lien: lienMessage(chatId, messageId) });
     return true;
   };
 
@@ -984,6 +984,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "autorisation": {
           const e = event.entree;
           const detail = [e.command, e.file_path, e.notebook_path, e.url, e.pattern].find((v) => typeof v === "string");
+          const libelle = libelleEtape(event.outil, event.entree, rolesRef.current);
+          /* « Hugo demande ton accord » sur le téléphone, si la fenêtre n'a pas le focus (spec mobile § 8). */
+          pousserAuTelephone({
+            evenement: "accord",
+            titre: `${rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent"} demande ton accord`,
+            corps: libelle,
+            lien: lienMessage(chatId, messageId),
+          });
           maj((m) => ({
             ...m,
             parts: [
@@ -992,7 +1000,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
                 type: "autorisation",
                 id: event.id,
                 outil: event.outil,
-                libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
+                libelle,
                 detail: typeof detail === "string" ? detail : "",
                 description: event.description,
                 statut: "attente",
@@ -1918,6 +1926,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }),
         llm: appelLibre,
         notifier: (titre, texte) => {
+          pousserAuTelephone({ evenement: "workflow", titre, corps: texte, lien: lienWorkflow(wf.id) });
           // Les Réglages peuvent couper les notifications des workflows, ou leur son : alors celui de KLYRA.
           void reglagesActuels().then(({ notifications: n }) => {
             if (!n.actives || !n.workflow) return;
@@ -1953,6 +1962,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             approbations.current.set(etapeId, resoudre);
             signal.addEventListener("abort", () => resoudre(false));
             notifierRappel(`${wf.titre} attend ton accord`, "Ouvre le workflow pour approuver ou refuser.");
+            pousserAuTelephone({ evenement: "accord", titre: `${wf.titre} attend ton accord`, corps: "Ouvre le workflow pour approuver ou refuser.", lien: lienWorkflow(wf.id) });
           }),
       };
     },

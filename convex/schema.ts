@@ -316,6 +316,8 @@ export default defineSchema({
     /** Événements choisis dans Réglages › Ce téléphone, JSON. */
     preferences: v.string(),
     cree: v.number(),
+    /** « Me prévenir à l'ouverture » (T-23) : les clés des postes attendus, retirées à leur retour. */
+    ouverturesAttendues: v.optional(v.array(v.string())),
   })
     .index("by_membre", ["membreId"])
     .index("by_sessionId", ["sessionId"])
