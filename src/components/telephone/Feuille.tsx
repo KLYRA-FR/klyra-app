@@ -59,7 +59,8 @@ export function Feuille({
   );
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex items-end bg-black/20" onClick={onFermer} onKeyDown={touche}>
+    /* À la tablette (`data-composition`, posé par la coque), la feuille devient une fenêtre centrée (spec § 9). */
+    <div className="fixed inset-0 z-40 flex items-end bg-black/20 in-data-[composition=tablette]:items-center in-data-[composition=tablette]:justify-center in-data-[composition=tablette]:p-6" onClick={onFermer} onKeyDown={touche}>
       <section
         ref={carte}
         role={role}
@@ -68,6 +69,7 @@ export function Feuille({
         onClick={(e) => e.stopPropagation()}
         className={cn(
           "flex w-full flex-col rounded-t-3xl bg-fond-surface shadow-ombre-levee motion-safe:animate-[feuille_220ms_cubic-bezier(0.16,1,0.3,1)]",
+          "in-data-[composition=tablette]:max-w-[520px] in-data-[composition=tablette]:rounded-3xl",
           haute ? "h-[90vh]" : "max-h-[85vh]",
         )}
       >
