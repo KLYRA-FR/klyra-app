@@ -161,6 +161,8 @@ export interface Chat {
   fil?: Fil;
   /** Le VPS où tournent ses agents (origine https) ; absent : ce PC. Changer de lieu repart d'une session neuve. */
   lieu?: string | null;
+  /** Les sessions laissées sur les autres machines (« pc » ou l'origine du VPS), reprises quand la conversation y revient. */
+  sessionsParLieu?: Record<string, Record<RoleId, string>>;
 }
 
 /**

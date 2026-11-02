@@ -13,6 +13,7 @@ import { useProjects } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
 import { NAVIGATION } from "./navigation";
 import { PastilleMaj } from "./PastilleMaj";
+import { SelecteurServeur } from "./SelecteurServeur";
 
 /** Une entrée du rail : l'icône seule, à sa taille de dessin (24 px, trait plein) ; le nom au survol. */
 const ENTREE =
@@ -69,6 +70,9 @@ export function AppRail({
       <Link href="/" aria-label="KLYRA, accueil" className="mb-3 flex h-10 shrink-0 items-center [-webkit-app-region:drag]">
         <Image src="/brand/logo-icone.svg" alt="" width={36} height={36} priority />
       </Link>
+
+      {/* La machine où tournent les agents : ce PC ou un VPS relié, comme dans OpenBot. */}
+      <SelecteurServeur />
 
       {/* Le milieu défile si la fenêtre est basse : le bas du rail reste visible. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto [scrollbar-width:none]">

@@ -39,7 +39,8 @@ Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS"
 - `serveur/agents.mjs` lance Claude Code comme l’app (un processus par conversation, `--permission-prompt-tool stdio`), dans `/var/lib/klyra/atelier`, avec les fiches des agents actifs du PC (`PUT /klyra/v1/agents/fiches`, envoyées par l’app quand elles changent). Ni fils, ni Composio, ni planning, ni pièces jointes.
 - Événements numérotés, gardés 24 h : `GET /klyra/v1/agent/evenements?depuis=N&instance=…` (SSE). Commandes : `POST /klyra/v1/agent/envoyer | autoriser | annuler`.
 - Dans l’app, `electron/agents-distants.ts` garde un flux par VPS relié (ouvert au démarrage, curseur dans `serveurs-curseurs.json`) et rend les mêmes événements que les agents du PC. Une réponse finie pendant que l’app était fermée s’ouvre à la réouverture.
-- Chaque conversation choisit sa machine dans son en-tête (« Ce PC » ou un VPS relié). Changer de machine repart d’une session neuve. Les routines restent sur le PC.
+- **Le sélecteur du rail** (en haut, sous le logo, comme dans OpenBot) choisit la machine active : « Ce PC » ou un VPS relié, avec son état (répond, ne répond pas, Claude Code à connecter), interrogé chaque minute et à l’ouverture du menu. Les conversations directes avec les agents y passent (pas les fils, ni celles d’un projet) ; les nouveaux projets et routines la proposent. Impossible de changer pendant qu’un agent travaille dans une conversation directe. Le menu mène aussi à « Ajouter un serveur », aux réglages (écran Serveurs) et à « Retirer » le serveur actif.
+- Une conversation garde la session de ses agents sur chaque machine (`Chat.sessionsParLieu`) : revenir sur une machine reprend sa mémoire là-bas. L’en-tête d’une conversation garde son propre choix (`ChoixLieu`), pour elle seule.
 
 ## Projets sur le VPS
 
@@ -56,7 +57,7 @@ Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS"
 
 ## Dans l’app
 
-La fenêtre PC (1100 px et plus) a la colonne Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Sans serveur, l’écran montre deux gestes : coller la commande sur le VPS, coller le lien qu’elle affiche. Dans Electron, un lien `klyra://rejoindre` déjà copié remplit le champ vide. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.
+La fenêtre PC a le sélecteur en haut du rail et l’écran Serveurs. Le téléphone (moins de 760 px) l’a dans Plus, puis Serveurs. Les deux collent le lien, quittent ou retirent un serveur. Sans serveur, l’écran montre deux gestes : coller la commande sur le VPS, coller le lien qu’elle affiche. Dans Electron, un lien `klyra://rejoindre` déjà copié remplit le champ vide. Electron ouvre `klyra://rejoindre` et arrive sur cet écran, comme il ouvre `klyra://connexion`.
 
 La fenêtre appelle le https du lien depuis le processus principal, et seulement cette origine (http seulement sur la machine locale). La politique `connect-src` de la fenêtre reste l’app et le compte Convex. Le téléphone, hors Electron, continue d’appeler en fetch.
 

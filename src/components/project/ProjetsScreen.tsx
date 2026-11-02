@@ -10,7 +10,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge } from "@/lib/bridge";
-import { useServeursRelies } from "@/lib/lieux";
+import { lieuParDefaut, useServeursRelies } from "@/lib/lieux";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
@@ -55,7 +55,9 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   const projects = useProjects();
   const { enregistrerProjet } = useWorkspace();
   const bridge = getBridge();
-  const [folder, setFolder] = useState(initial?.folder ?? "");
+  // Un nouveau projet part sur la machine active (sélecteur du rail).
+  const [lieu, setLieu] = useState<string | null>(() => (initial ? (initial.lieu ?? null) : lieuParDefaut()));
+  const [folder, setFolder] = useState(() => initial?.folder ?? (lieu ? `${RACINE_VPS}/projet` : ""));
   const [name, setName] = useState(initial?.name ?? "");
   const [subtitle, setSubtitle] = useState(initial?.subtitle ?? "");
   const [brief, setBrief] = useState(initial?.brief ?? "");
@@ -65,7 +67,6 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   const [essai, setEssai] = useState(false);
   // Un projet vit sur ce PC ou sur un VPS relié ; on ne le déplace pas après coup (ses chemins en dépendent).
   const serveurs = useServeursRelies();
-  const [lieu, setLieu] = useState<string | null>(initial ? (initial.lieu ?? null) : null);
   const [erreurVps, setErreurVps] = useState<string | null>(null);
   const surVps = !!lieu;
 
