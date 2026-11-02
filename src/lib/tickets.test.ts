@@ -6,6 +6,8 @@ import {
   avecEtapes,
   colonneTicket,
   ERREUR_ARRET,
+  ferme,
+  FILTRES_PAR_DEFAUT,
   ligneTicket,
   lireEcheance,
   lireEtatOutil,
@@ -14,6 +16,7 @@ import {
   peutMettreAJour,
   poserEtape,
   rouvert,
+  tableauTickets,
   trierTickets,
 } from "./tickets";
 
@@ -177,5 +180,55 @@ describe("liste des tickets", () => {
       "Rapport hebdo (klyra-fil-1234abcd) · Hugo · bloqué : attend l'accès Figma · priorité moyenne · échéance 2026-11-05 · projet Klyra.fr · lancé par Iris",
     );
     expect(ligneTicket(c, { travaille: true, agent: "Hugo" })).toBe("Rapport hebdo (klyra-fil-1234abcd) · Hugo · en cours · priorité moyenne · échéance 2026-11-05");
+  });
+});
+
+describe("tableau", () => {
+  const maintenant = new Date("2026-11-10T12:00:00.000Z");
+  const fils = [
+    chat("faire", { etape: "a-faire" }),
+    chat("travaille", { etape: "a-valider" }),
+    chat("bloque", { etape: "bloque", roleId: "designer", lancePar: { roleId: "dev", chatId: "dm-dev" } }),
+    chat("valider", { etape: "a-valider", projetId: "klyra" }),
+    chat("ferme-recent", { statut: "archive", fermeLe: "2026-11-09T08:00:00.000Z" }),
+    chat("ferme-hier", { statut: "archive", fermeLe: "2026-11-09T20:00:00.000Z" }),
+    chat("ferme-vieux", { statut: "archive", fermeLe: "2026-10-20T08:00:00.000Z" }),
+    // Fermé avant les tickets : pas de fermeLe, sa dernière activité fait foi.
+    chat("ferme-ancien", { statut: "archive" }, { updatedAt: "2026-11-08T08:00:00.000Z" }),
+    chat("supprime", { statut: "archive", supprime: true, fermeLe: "2026-11-09T08:00:00.000Z" }),
+  ];
+  const travaille = (id: string) => id === "travaille";
+  const ids = (t: ReturnType<typeof tableauTickets>) => Object.fromEntries(Object.entries(t.colonnes).map(([k, v]) => [k, v.map((c) => c.id)]));
+
+  test("chaque fil dans sa colonne ; Terminé : les 7 derniers jours, du plus récent au plus ancien", () => {
+    const t = tableauTickets([...fils, { ...chat("pas-un-fil"), fil: undefined }], travaille, FILTRES_PAR_DEFAUT, maintenant);
+    expect(ids(t)).toEqual({
+      "a-faire": ["faire"],
+      "en-cours": ["travaille"],
+      bloque: ["bloque"],
+      "a-valider": ["valider"],
+      termine: ["ferme-hier", "ferme-recent", "ferme-ancien"],
+    });
+    expect(t.termines).toBe(4);
+    expect(tableauTickets(fils, travaille, FILTRES_PAR_DEFAUT, maintenant, true).colonnes.termine.map((c) => c.id)).toEqual([
+      "ferme-hier",
+      "ferme-recent",
+      "ferme-ancien",
+      "ferme-vieux",
+    ]);
+  });
+
+  test("filtres : agent, projet, origine", () => {
+    expect(ids(tableauTickets(fils, travaille, { ...FILTRES_PAR_DEFAUT, agent: "designer" }, maintenant)).bloque).toEqual(["bloque"]);
+    expect(ids(tableauTickets(fils, travaille, { ...FILTRES_PAR_DEFAUT, agent: "designer" }, maintenant))["a-faire"]).toEqual([]);
+    expect(ids(tableauTickets(fils, travaille, { ...FILTRES_PAR_DEFAUT, projet: "klyra" }, maintenant))["a-valider"]).toEqual(["valider"]);
+    expect(tableauTickets(fils, travaille, { ...FILTRES_PAR_DEFAUT, origine: "agents" }, maintenant).colonnes.bloque.map((c) => c.id)).toEqual(["bloque"]);
+    expect(tableauTickets(fils, travaille, { ...FILTRES_PAR_DEFAUT, origine: "moi" }, maintenant).colonnes.bloque).toEqual([]);
+  });
+
+  test("fermer date le fil ; rouvrir efface la date", () => {
+    const f = ferme(fil({ etape: "a-valider" }), false, maintenant);
+    expect(f).toMatchObject({ statut: "archive", supprime: false, fermeLe: "2026-11-10T12:00:00.000Z" });
+    expect(rouvert(f, true).fermeLe).toBeNull();
   });
 });

@@ -38,6 +38,7 @@
     "test:annuler": "node scripts/test-annulation.mjs",
     "test:suppression": "vitest run src/lib/suppression-rappels.test.ts",
     "test:tickets": "vitest run src/lib/tickets.test.ts",
+    "test:tickets:app": "node scripts/test-tickets.mjs",
     "test:profil": "node scripts/test-profil.mjs",
     "test:liens": "node scripts/test-liens.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",

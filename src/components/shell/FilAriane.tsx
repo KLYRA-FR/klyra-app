@@ -18,6 +18,7 @@ const PAGES: Record<string, string> = {
   "/projets": "Projets",
   "/fichiers": "Fichiers",
   "/equipe": "Équipe",
+  "/tickets": "Tickets",
   "/planning": "Planning",
   "/routines": "Automatisations",
   "/artefacts": "Artefacts",

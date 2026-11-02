@@ -19,7 +19,7 @@ import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
-import { apresReponse, auDebut, avecEtapes, ligneTicket, type ChampsTicket, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
+import { apresReponse, auDebut, avecEtapes, ferme, ligneTicket, type ChampsTicket, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
@@ -1480,7 +1480,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       dispatch({
         type: "chat/update",
         id: chatId,
-        patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, statut: "archive", supprime } } : c),
+        patch: (c) => (c.fil ? { ...c, fil: ferme(c.fil, supprime, new Date()) } : c),
       });
     },
     [bridge],

@@ -179,7 +179,7 @@ function Reglages({
   );
 }
 
-function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
+export function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
   const { enregistrerTache, supprimerTache } = useWorkspace();
   const annoncer = useContext(AnnonceRappels);
   const [titre, setTitre] = useState(tache.titre);
@@ -282,7 +282,7 @@ function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
 }
 
 /** Tri : datés d'abord (par échéance), puis les autres dans l'ordre d'écriture. */
-function trier(taches: Tache[]) {
+export function trierRappels(taches: Tache[]) {
   return [...taches].sort((a, b) => {
     // "~" peut précéder les chiffres avec localeCompare : les sans date vont explicitement après.
     if (Boolean(a.date) !== Boolean(b.date)) return a.date ? -1 : 1;
@@ -392,7 +392,7 @@ function Colonne({ categorie, taches, voirFaits, avant }: { categorie: Categorie
   const champ = useRef<HTMLTextAreaElement>(null);
   const { accent } = AGENT_PASTELS[categorie.teinte] ?? AGENT_PASTELS.violet;
 
-  const aFaire = trier(taches.filter((t) => !t.faite));
+  const aFaire = trierRappels(taches.filter((t) => !t.faite));
   const faits = taches.filter((t) => t.faite);
 
   const ajouter = () => {
