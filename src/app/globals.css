@@ -671,3 +671,15 @@ body[data-glisse] iframe {
   .klyra-routines-barre > div:first-child { width: 100%; }
   .klyra-routines-panneau { inset: 0; width: 100%; }
 }
+
+/* Téléphone : la feuille monte du bas en 220 ms (spec mobile § 9). Sans mouvement : elle apparaît. */
+@keyframes feuille {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}

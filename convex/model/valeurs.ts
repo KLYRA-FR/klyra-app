@@ -42,7 +42,11 @@ export type CodeErreur =
   | "poste_invalide"
   // Réglages › Mobile : sessions des téléphones (cf. `convex/telephones.ts`).
   | "session_actuelle"
-  | "session_ordinateur";
+  | "session_ordinateur"
+  // Demandes du téléphone à l'ordinateur (cf. `convex/demandesPoste.ts`).
+  | "demande_invalide"
+  | "trop_de_demandes"
+  | "fichier_trop_lourd";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

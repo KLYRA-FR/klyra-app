@@ -13,6 +13,7 @@ import type * as bibliotheque from "../bibliotheque.js";
 import type * as connexion from "../connexion.js";
 import type * as conversationsCompte from "../conversationsCompte.js";
 import type * as courriels from "../courriels.js";
+import type * as demandesPoste from "../demandesPoste.js";
 import type * as equipe from "../equipe.js";
 import type * as evenements from "../evenements.js";
 import type * as http from "../http.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   connexion: typeof connexion;
   conversationsCompte: typeof conversationsCompte;
   courriels: typeof courriels;
+  demandesPoste: typeof demandesPoste;
   equipe: typeof equipe;
   evenements: typeof evenements;
   http: typeof http;

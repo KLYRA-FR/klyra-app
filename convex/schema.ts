@@ -211,6 +211,11 @@ export default defineSchema({
     nonLus: v.number(),
     /** Tâches du fil, JSON court. */
     taches: v.string(),
+    /** La machine de la conversation : null ce PC, sinon l'id du VPS relié. Absent : version d'avant. */
+    lieu: v.optional(v.union(v.string(), v.null())),
+    /** Fil d'un agent : l'id de sa conversation directe. Archivé : la date. Absents : version d'avant. */
+    parent: v.optional(v.union(v.string(), v.null())),
+    archiveLe: v.optional(v.union(v.string(), v.null())),
   })
     .index("by_membre_and_origine", ["membreId", "origine"])
     .index("by_membre_and_misAJour", ["membreId", "misAJour"]),
@@ -257,7 +262,64 @@ export default defineSchema({
     texte: v.string(),
     creeLe: v.number(),
     pris: v.boolean(),
+    /** Ce qui part avec le message (destinataire, modèle, effort, façon de réessayer…), JSON court. Absent : version d'avant. */
+    options: v.optional(v.string()),
+    /** Pièces jointes déposées dans le stockage du compte, effacées une fois écrites sur le poste. */
+    pieces: v.optional(
+      v.array(v.object({ fichier: v.id("_storage"), nom: v.string(), type: v.string(), taille: v.number() })),
+    ),
   }).index("by_membre_and_pris_and_creeLe", ["membreId", "pris", "creeLe"]),
+
+  /**
+   * Un geste du téléphone sur une conversation (renommer, épingler, archiver un fil…), « Compte » dans
+   * la spec : déjà appliqué à la copie du compte, il part sur l'ordinateur à son ouverture, dans l'ordre.
+   */
+  operationsFile: defineTable({
+    membreId: v.id("membres"),
+    conversationOrigine: v.union(v.string(), v.null()),
+    type: v.string(),
+    /** JSON court. */
+    valeur: v.string(),
+    creeLe: v.number(),
+    pris: v.boolean(),
+  }).index("by_membre_and_pris_and_creeLe", ["membreId", "pris", "creeLe"]),
+
+  /**
+   * Demande du téléphone à l'ordinateur ouvert (spec mobile M-3) : lire un dossier, un fichier, les
+   * routines… La réponse n'est pas gardée (M-7) : effacée dès que le téléphone l'a lue, ou à l'expiration.
+   */
+  demandesPoste: defineTable({
+    membreId: v.id("membres"),
+    /** L'ordinateur visé ; null : le premier ordinateur ouvert du compte qui la prend. */
+    posteCle: v.union(v.string(), v.null()),
+    /** « domaine.geste », par exemple « fichiers.lire ». */
+    type: v.string(),
+    /** JSON. */
+    args: v.string(),
+    statut: v.union(v.literal("attente"), v.literal("prise"), v.literal("faite"), v.literal("erreur")),
+    /** JSON de la réponse, quand elle tient dans le document. */
+    reponse: v.union(v.string(), v.null()),
+    /** Réponse trop grande pour le document : déposée dans le stockage, effacée avec la demande. */
+    fichier: v.union(v.id("_storage"), v.null()),
+    erreur: v.union(v.object({ code: v.string(), message: v.string() }), v.null()),
+    creeLe: v.number(),
+    expireLe: v.number(),
+  }).index("by_membre_and_statut_and_creeLe", ["membreId", "statut", "creeLe"]),
+
+  /** Notifications web du téléphone (spec mobile § 8) : un abonnement par session. */
+  abonnementsPush: defineTable({
+    membreId: v.id("membres"),
+    sessionId: v.id("authSessions"),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    /** Événements choisis dans Réglages › Ce téléphone, JSON. */
+    preferences: v.string(),
+    cree: v.number(),
+  })
+    .index("by_membre", ["membreId"])
+    .index("by_sessionId", ["sessionId"])
+    .index("by_endpoint", ["endpoint"]),
 
   /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
   courrielsSimules: defineTable({
