@@ -257,7 +257,8 @@ try {
     await telephone.ev(`window.next.router.push(${JSON.stringify(chemin)})`);
     await attendre(1200);
   };
-  await allerTel("/reglages");
+  /* `/reglages` liste les sections (T-22) ; « Ce téléphone » est la section Mobile. */
+  await allerTel("/reglages?section=mobile");
   verifier(await telephone.quand("document.body.innerText.includes('Ce téléphone') && document.body.innerText.includes('Passe par ton compte, puis par')", 15000), "Ce téléphone : MO-T15");
   texte = await telephone.texte();
   verifier(texte.includes(MOI.email) && texte.includes("Se déconnecter de ce téléphone") && texte.includes("Ordinateurs") && texte.includes("KLYRA est ouverte sur"), "Ce téléphone : adresse, sortie, ordinateurs et leur état");
