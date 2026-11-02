@@ -13,7 +13,7 @@ Rien n’est publié. Cette page dit ce qu’une future publication à adresse s
 
 1. **Une adresse https stable** (un nom de domaine, ou un sous-domaine d’un hébergeur statique). Un tunnel temporaire (`trycloudflare.com`, port local) change à chaque lancement : il ne convient pas.
 2. **Un hébergement de fichiers statiques** qui sert `out/` tel quel, avec une règle : une adresse sans extension sert le fichier `.html` du même nom (`/chats` → `chats.html`, `/reglages` → `reglages.html`), et `/` sert `index.html`. Pas besoin de Node côté serveur.
-3. **Publier depuis `main`**, après fusion, avec la même commande `pnpm build` que l’app de bureau. Aucun workflow de `.github/workflows/` ne le fait aujourd’hui : l’ajouter est une décision de publication (accord de Corentin, mise en œuvre par Diego).
+3. **Publier depuis `main`**, après fusion, avec la même commande `pnpm build` que l’app de bureau. `.github/workflows/app-web.yml` construit déjà l’export à chaque push sur `main` et le garde en artefact (`app-web`, 14 jours) sans rien mettre en ligne : l’étape de mise en ligne vers l’hébergement choisi s’ajoute après « Construire » (accord de Corentin, mise en œuvre par Diego).
 4. **Poser `KLYRA_APP_URL`** dans le déploiement Convex de production, une fois l’adresse en ligne : l’adresse https, sans barre finale (`convex/convex.config.ts`). Elle n’est pas secrète. C’est un changement de production : sur accord de Corentin seulement.
 
 ## Ce que `KLYRA_APP_URL` change
@@ -24,7 +24,7 @@ Rien n’est publié. Cette page dit ce qu’une future publication à adresse s
 
 ## Ce que la publication ne change pas
 
-- Le téléphone écrit toujours aux conversations par le compte, puis par le PC : une conversation du VPS écrite depuis le téléphone attend que le PC soit ouvert. L’accès direct au VPS quand le PC est éteint reste à construire dans le parcours VPS.
+- Le téléphone écrit aux conversations par le compte, puis par le PC. Une conversation du VPS fait exception quand le PC est fermé et que ce téléphone est relié au VPS (Plus › Serveurs) : le téléphone envoie lui-même au VPS et lit la réponse ; le PC range l’échange dans la conversation à sa réouverture (`src/lib/telephone/vps-direct.ts`). L’adresse https du VPS doit accepter l’origine de l’app web (CORS du serveur, déjà ouvert).
 - Le QR du terminal du VPS (`klyra://rejoindre`) ne s’ouvre toujours pas dans l’app web de l’iPhone.
 
 ## À vérifier sur l’iPhone de Corentin, après publication
