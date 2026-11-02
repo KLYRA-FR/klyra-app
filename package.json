@@ -50,6 +50,7 @@
     "test:convex": "vitest run convex",
     "test:selecteur": "node scripts/test-selecteur-serveur.mjs",
     "test:serveur": "vitest run src/lib/serveur-vps.test.ts && node scripts/horaires-serveur.mjs --verifier && node --test serveur/klyra-serveur.test.mjs serveur/routines.test.mjs serveur/qr.test.mjs && node --experimental-strip-types --test electron/lien-rejoindre.test.mts electron/appel-serveur.test.mts",
+    "test:binaire": "node --experimental-strip-types --test electron/claude-binaire.test.mts",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:identite": "vitest run src/lib/identite.test.ts",
     "test:collage": "vitest run src/lib/collage.test.ts",
