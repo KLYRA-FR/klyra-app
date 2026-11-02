@@ -18,8 +18,8 @@ import { RefusSuperagent, type Horloge, type StatutTravail, type TypeMetier } fr
 
 /**
  * Cycle d'un fil Klyra : un travail, une politique limitée à ce fil, une décision, une livraison.
- * Le routeur est l'assistant de l'app (`principal`). Cicco, côté OpenBot, n'est pas appelé (point 15).
- * L'autorité d'écriture est le fichier SQLite de ce PC. Convex ne reçoit rien de ce journal.
+ * Le routeur est l'assistant de l'app (`principal`).
+ * L'autorité d'écriture est le fichier SQLite de ce PC. L'écran lit la projection par IPC.
  */
 
 export const ROUTEUR_APP = "principal";
@@ -250,12 +250,6 @@ export interface Projection {
   couverture: "ok" | "journal_illisible";
 }
 
-export const BLOCAGES_PLATEFORME = [
-  { point: "15", texte: "Le lien automatique avec OpenBot n'existe pas. Un taskId OpenBot n'est pas un fil Klyra." },
-  { point: "32", texte: "Une seule autorité : le journal SQLite de ce PC. Pas de bascule vers le VPS ni vers Convex." },
-  { point: "33", texte: "La reprise d'un PC Windows hors ligne n'est pas établie. Ce journal ne la simule pas." },
-] as const;
-
 export function projection(db: DatabaseSync, projectId: string | null): Projection {
   const travaux = tous<LigneProjection>(
     db,
@@ -278,7 +272,7 @@ export function projection(db: DatabaseSync, projectId: string | null): Projecti
     projectId,
     projectId,
   );
-  return { travaux, alertes, blocages: [...BLOCAGES_PLATEFORME], couverture: "ok" };
+  return { travaux, alertes, blocages: [], couverture: "ok" };
 }
 
 /** Preuves lisibles par le watchdog (point 36) : identifiants et statuts, pas le texte des messages. */

@@ -1,8 +1,8 @@
 /**
  * Preuves du contrat super-agent sur un journal SQLite jetable.
- * T01 et T05 lancent de vrais process. T03 arrête ce composant par SIGKILL, pas le service OpenBot.
- * T04, T07 et T08 tournent sur ce fichier. T06 est une simulation d'état, pas un PC Windows.
- * Limite : un fichier, ce PC. Pas de T10 OpenBot, pas de Windows, pas de lien OpenBot.
+ * T01 et T05 lancent de vrais process. T03 arrête ce composant par SIGKILL, pas un service installé.
+ * T04, T07 et T08 tournent sur ce fichier. T06 simule une machine de l'app absente (`waiting_machine`).
+ * Limite : un fichier, ce PC. Le transport des agents distants ne marque pas le journal.
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- script Node en CommonJS, comme superagent-composant.cjs */
 const { spawn } = require("node:child_process");
@@ -524,7 +524,7 @@ async function t09() {
   const trouve = chercher(db, { requete: "Rapport hebdo", comptes_autorises: [CTX.compte], projets_autorises: [CTX.project_id] });
   ok(trouve.resultats.some((ligne) => ligne.identifiant === ouvert.travail) && trouve.non_recherche.length > 0, "T09 recherche sur les pointeurs, le reste est dit");
   const vue = projection(db, CTX.project_id);
-  ok(vue.blocages.map((b) => b.point).join(",") === "15,32,33" && vue.travaux.length === 1, "T09 la projection dit les trois blocages");
+  ok(vue.blocages.length === 0 && vue.travaux.length === 1, "T09 la projection n'affiche aucun blocage");
 
   const liste = await outil(db, registre, "lister_fils", {});
   const lu = await outil(db, registre, "lire_fil", { id: ouvert.fil });
@@ -613,7 +613,7 @@ async function t04() {
 async function t06() {
   const dir = tmp();
   const db = ouvrir(dir);
-  const { marquerTravailFil, projection, BLOCAGES_PLATEFORME } = dist("cycle.js");
+  const { marquerTravailFil, projection } = dist("cycle.js");
   const { demarrer, lireOperation } = dist("operations.js");
   const { lireTravail } = dist("travaux.js");
   const { un } = dist("stockage.js");
@@ -644,7 +644,7 @@ async function t06() {
   ok(uneFois.ok && uneFois.attempts === 1 && !seconde.ok && !partieAnnulee.ok, `T06 SIMULATION un seul départ (${seconde.motif}, annulé ${partieAnnulee.motif})`);
   ok(lireTravail(db, garder.travail).status === "active" && lireTravail(db, annuler.travail).status === "cancelled", "T06 SIMULATION un seul des deux cas est revenu");
   ok(lireOperation(db, prevuGarder.plan.operation_id).status === "inflight" && lireOperation(db, prevuAnnuler.plan.operation_id).status === "cancelled", "T06 SIMULATION l'opération annulée ne part pas");
-  ok(vue.blocages.map((b) => b.point).join(",") === "15,32,33" && BLOCAGES_PLATEFORME[2].texte.includes("ne la simule pas"), "T06 SIMULATION le point 33 reste non levé");
+  ok(vue.blocages.length === 0, "T06 SIMULATION l'écran ne reçoit aucun blocage");
   db.close();
 }
 
@@ -767,7 +767,7 @@ async function principal() {
   await t08();
   await t09();
   console.log(echecs === 0 ? "TOUT PASSE" : `${echecs} ECHEC(S)`);
-  console.log("Limite : fichier SQLite jetable, un PC. T04, T07 et T08 sont exécutés. T06 est une simulation waiting_machine, pas un PC Windows. T03 n'arrête pas OpenBot. T10 OpenBot, le PC Windows et le bus OpenBot ne sont pas exécutés. L'atomicité entre machines n'est pas acquise.");
+  console.log("Limite : fichier SQLite jetable, un PC. T04, T07 et T08 sont exécutés. T06 simule une machine de l'app absente : attente, aucun départ ailleurs, un seul départ après contrôle. T03 arrête ce composant de test, pas un service installé. electron/agents-distants.ts ne dit pas au journal qu'une machine est absente. L'atomicité entre machines n'est pas acquise.");
   process.exit(echecs === 0 ? 0 : 1);
 }
 

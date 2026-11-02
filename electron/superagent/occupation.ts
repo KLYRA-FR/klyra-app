@@ -8,8 +8,7 @@ import { BAIL_MS, CAPACITE_OCCUPATIONS, RefusSuperagent, iso, type Horloge } fro
  * même transaction que la réservation d'une des trois places (`occupation.slot` 1 à 3) et la mise à
  * jour des abonnements. Deux claims sur le même epoch : un gagnant, un refus. Bail de 10 minutes ;
  * expiré, le travail passe en `reconciliation_required` et rien ne repart avant `reconcilierTravail`.
- * Limite : le sémaphore compte les travaux de ce journal, sur ce PC ; ni les autres activités du
- * serveur ni une autre machine (point 33, bloqué).
+ * Limite : le sémaphore compte les travaux de ce journal, sur ce PC.
  */
 
 export type ResultatClaim =

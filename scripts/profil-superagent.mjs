@@ -149,8 +149,8 @@ try {
   const alertes = projection?.data?.alertes ?? [];
   const alerte = alertes.find((a) => a.work_id === travail && a.type === "W1");
   verifier(bloque?.data?.ok === true && Array.isArray(passage?.data) && !!alerte, `watchdog W1 (${alerte?.motif ?? "aucune"})`);
-  const points = (projection?.data?.blocages ?? []).map((b) => b.point).join(",");
-  verifier(points === "15,32,33", `blocages affichés par le journal (${points})`);
+  const blocages = projection?.data?.blocages ?? [];
+  verifier(blocages.length === 0, `aucun blocage affiché par le journal (${blocages.length})`);
   const travaux = projection?.data?.travaux?.length;
   verifier(travaux === 3, `trois travaux, le quatrième n'est pas créé (${travaux})`);
 
@@ -160,10 +160,11 @@ try {
   verifier(messages.length === 1 && brut.includes(TEXTE_FIL) && !brut.includes("Travail bloqué"), `le fil garde son message et pas l'alerte (${messages.length})`);
 
   await app.aller(`/projet?id=${PROJET}`);
-  const vu = await app.quand("document.querySelector('main')?.innerText?.includes('Point 15')");
+  const vu = await app.quand("document.querySelector('main')?.innerText?.includes('Bloqué') || document.querySelector('main')?.innerText?.includes('Fil jetable')");
   const texte = (await app.texte()) ?? "";
-  verifier(vu && texte.includes("Point 15") && texte.includes("Point 32") && texte.includes("Point 33"), "l'écran du projet montre les points 15, 32 et 33");
-  verifier(texte.includes("ne la simule pas") || texte.includes("n'est pas établie"), "l'écran dit que la reprise Windows n'est pas établie");
+  const mentions = ["lien automatique avec OpenBot", "Point 15", "Point 32", "Point 33", "bascule vers le VPS", "Windows hors ligne", "ne la simule pas"];
+  const reste = mentions.filter((m) => texte.includes(m));
+  verifier(vu && reste.length === 0, `l'écran du projet ne montre pas les mentions retirées (${reste.join(" | ") || "aucune"})`);
   verifier(texte.includes("W1") && texte.includes("Bloqué"), "l'écran montre l'alerte du watchdog");
   console.log("--- écran ---");
   console.log(texte.split("\n").filter((l) => /Point |W1|Bloqué|Fil jetable|aucun coût|En cours|Suspendu/.test(l)).join("\n"));

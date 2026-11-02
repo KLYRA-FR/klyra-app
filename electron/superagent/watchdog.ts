@@ -6,7 +6,7 @@ import { iso, type Horloge } from "./types";
 /**
  * Surveillance des travaux Klyra (point 35, annexe W). Lecture du journal, écriture d'alertes.
  * Ne relance pas, ne ferme pas, n'écrit pas dans le fil surveillé : ce module n'a pas de port vers les fils.
- * Ce n'est pas la routine OpenBot de Tempo, qui reste inactive.
+ * La routine Tempo reste inactive. Ce module ne la lance pas.
  */
 
 const QUINZE_MIN = 15 * 60_000;
