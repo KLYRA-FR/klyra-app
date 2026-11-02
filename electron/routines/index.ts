@@ -2,7 +2,8 @@ import { app, BrowserWindow, ipcMain, powerMonitor, type WebContents } from "ele
 import path from "node:path";
 import { constants, existsSync } from "node:fs";
 import { copyFile } from "node:fs/promises";
-import { cancelAgent, type AgentEvent } from "../claude";
+import { moteurs } from "../moteurs";
+import type { AgentEvent } from "../moteurs/types";
 import { readConversations } from "../conversations";
 import { dossierAgents, estActif } from "../mes-agents";
 import { brancherOutilsRoutines, type Appelant } from "../ia";
@@ -124,7 +125,7 @@ function suivreHote(contenu: WebContents) {
     const arretees = engine?.activeRuns().filter((r) => r.startedAt) ?? [];
     // Une reprise d'écriture ne doit pas englober les runs d'une nouvelle fenêtre.
     for (const run of arretees) enregistrer(`hote-perdu:${run.id}`, () => engine?.interruptRunning("La fenêtre de l’app a été fermée ou rechargée pendant l’exécution.", [run.id]));
-    for (const run of arretees) if (run.delivery?.messageId) cancelAgent(run.delivery.messageId);
+    for (const run of arretees) if (run.delivery?.messageId) moteurs.arreter(run.delivery.messageId);
   };
   const evenements = ["destroyed", "render-process-gone", "did-navigate"] as const;
   for (const nom of evenements) contenu.on(nom as "destroyed", perdu);
@@ -188,7 +189,7 @@ export async function demarrerRoutines(): Promise<void> {
           return true;
         },
         cancel: (run) => {
-          if (run.delivery?.messageId) cancelAgent(run.delivery.messageId);
+          if (run.delivery?.messageId) moteurs.arreter(run.delivery.messageId);
           if (hote && !hote.isDestroyed()) hote.send("routines:annuler", run);
         },
       },
