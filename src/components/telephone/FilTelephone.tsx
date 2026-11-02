@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -21,6 +21,8 @@ import { DetailsFil } from "./DetailsFil";
 import { FilsPuces } from "./FilsPuces";
 import { useMenuChat } from "./MenuChat";
 import { MessagesFil, type ContexteFil } from "./MessagesFil";
+import { EchangesVps } from "./EchangesVps";
+import { useEchangesDirects } from "@/lib/telephone/vps-direct";
 
 /** Les suggestions de l'accueil du bureau : chacune remplit le composeur, sans rien envoyer. */
 const SUGGESTIONS = [
@@ -85,6 +87,9 @@ export function FilTelephone() {
       ? `${nom(agent)}${carte(agent)?.roleCourt ? ` · ${carte(agent)?.roleCourt}` : ""}`
       : "Conversation";
   const enFile = (attente ?? []).filter((m) => m.conversationOrigine === id);
+  /* Envoyés au VPS ordinateur fermé : affichés ici jusqu'à ce que le compte les ait repris. */
+  const repris = useMemo(() => new Set((fil?.messages ?? []).map((m) => m.origine)), [fil?.messages]);
+  const echanges = useEchangesDirects(id, repris);
 
   /* Lue sur le téléphone : ses non-lus tombent dans le compte, et l'ordinateur la marque lue à son ouverture. */
   const nonLus = conversation?.nonLus ?? 0;
@@ -149,7 +154,7 @@ export function FilTelephone() {
         }
       />
       {agent && !equipe && conversations ? <FilsPuces agentId={agent} courant={id} conversations={conversations} onBandeau={montrer} /> : null}
-      <MessagesFil messages={fil?.messages} enFile={enFile} contexte={contexte} vide={vide} />
+      <MessagesFil messages={fil?.messages} enFile={enFile} contexte={contexte} vide={vide} apres={echanges.length ? <EchangesVps echanges={echanges} /> : null} />
       <ComposeurFil key={id} origine={id} conversation={conversation} equipe={equipe} nouveauProjet={nouveauProjet} agentId={equipe ? null : agent} activite={activiteVive} />
       {details ? (
         <DetailsFil origine={id} conversation={conversation} messages={fil?.messages ?? []} onExporter={() => void menu.exporter(id, conversation)} onFermer={() => setDetails(false)} />

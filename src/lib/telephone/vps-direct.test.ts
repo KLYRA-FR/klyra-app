@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { appliquerEvenement, voieEnvoi, type EchangeDirect } from "./vps-direct";
+import { appliquerEvenement, envoiSimple, voieEnvoi, type EchangeDirect } from "./vps-direct";
 
 const echange: EchangeDirect = {
   conversation: "dm-hugo",
@@ -33,6 +33,15 @@ describe("voie directe vers le VPS", () => {
     expect(e.autorisation).toBeNull();
     e = appliquerEvenement(e, { type: "fin", ok: true, texte: "Build lancé." });
     expect(e).toMatchObject({ statut: "fait", reponse: "Build lancé." });
+  });
+
+  test("seul un simple message part au VPS : ni pièce, ni réessai, ni branche, ni nouvelle conversation", () => {
+    expect(envoiSimple({}, 0)).toBe(true);
+    expect(envoiSimple({ modele: "sonnet" } as never, 0)).toBe(true);
+    expect(envoiSimple({}, 1)).toBe(false);
+    expect(envoiSimple({ reessayer: { messageId: "m" } }, 0)).toBe(false);
+    expect(envoiSimple({ brancher: { messageId: "m" } }, 0)).toBe(false);
+    expect(envoiSimple({ nouveau: { projetId: "p" } }, 0)).toBe(false);
   });
 
   test("une erreur de l'agent est dite en clair", () => {

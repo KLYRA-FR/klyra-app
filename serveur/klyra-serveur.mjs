@@ -177,13 +177,42 @@ export function contexteTelephone(brut) {
   };
 }
 
-export function creerJournal(maintenant = Date.now) {
+/** Ce qui identifie l'agent d'une conversation, pour retrouver sa session : « conversation|agent ». */
+export function cleConversation(conversation, agent) {
+  if (typeof conversation !== "string" || !/^[A-Za-z0-9_.:-]{1,120}$/.test(conversation)) return null;
+  return `${conversation}|${typeof agent === "string" && agent ? agent : "principal"}`;
+}
+
+/**
+ * `fichierSessions` : où garder la dernière session de chaque agent dans chaque conversation, pour
+ * que le téléphone (qui ne connaît pas les sessions : elles ne passent pas par le compte) y reprenne.
+ */
+export function creerJournal(maintenant = Date.now, fichierSessions = null) {
   const instance = randomBytes(8).toString("hex");
   let seq = 0;
   let entrees = [];
   const abonnes = new Set();
   /* Contexte d'un message du téléphone, le temps de sa réponse : chaque événement le porte. */
   const contextes = new Map();
+  /* Conversation de chaque réponse en cours, et dernière session de chaque agent par conversation. */
+  const conversations = new Map();
+  let sessions = {};
+  if (fichierSessions) {
+    try {
+      const lu = JSON.parse(readFileSync(fichierSessions, "utf8"));
+      if (lu && typeof lu === "object" && !Array.isArray(lu)) sessions = lu;
+    } catch {
+      /* Pas encore de fichier. */
+    }
+  }
+  const retenirSession = (requestId, sessionId) => {
+    const cle = conversations.get(requestId);
+    if (!cle || !sessionId || sessions[cle] === sessionId) return;
+    sessions[cle] = sessionId;
+    const cles = Object.keys(sessions);
+    if (cles.length > 2000) delete sessions[cles[0]];
+    if (fichierSessions) ecrireJson(fichierSessions, sessions);
+  };
   const ecrireA = (res, entree) => res.write(`id: ${entree.seq}\ndata: ${JSON.stringify(entree)}\n\n`);
   function ajouter(entree) {
     const complete = { seq: ++seq, t: maintenant(), ...entree };
@@ -198,8 +227,18 @@ export function creerJournal(maintenant = Date.now) {
     publier: (requestId, event, sessionId, contexte = null) => {
       const lie = contexte ?? contextes.get(requestId) ?? null;
       ajouter({ requestId, sessionId: sessionId ?? null, event, ...(lie ? { contexte: lie } : {}) });
-      if (event?.type === "fin") contextes.delete(requestId);
+      retenirSession(requestId, sessionId);
+      if (event?.type === "fin") {
+        contextes.delete(requestId);
+        conversations.delete(requestId);
+      }
     },
+    /** La réponse appartient à cette conversation (`cleConversation`) : sa session y sera retenue. */
+    lierConversation(requestId, cle) {
+      if (conversations.size >= 500) conversations.delete(conversations.keys().next().value);
+      conversations.set(requestId, cle);
+    },
+    sessionDe: (cle) => sessions[cle] ?? null,
     /** Le téléphone envoie lui-même (PC fermé) : la réponse portera sa conversation. */
     poserContexte(requestId, contexte) {
       if (contextes.size >= 500) contextes.delete(contextes.keys().next().value);
@@ -389,12 +428,20 @@ export function creerGestionnaire(options) {
       if (!requestId) return repondre(res, 400, { erreur: "requete" });
       if (action === "envoyer") {
         /* Venu du téléphone, PC fermé : la conversation où le PC rangera l'échange à sa réouverture. */
+        let contexte = null;
         if (corps.contexte !== undefined) {
-          const contexte = contexteTelephone(corps.contexte);
+          contexte = contexteTelephone(corps.contexte);
           if (!contexte) return repondre(res, 400, { erreur: "contexte" });
           journal?.poserContexte(requestId, contexte);
         }
-        agents.envoyer(requestId, corps.options);
+        /* La conversation (dite par le PC, ou par le contexte du téléphone) : sans session, l'agent reprend la sienne. */
+        const options = corps.options && typeof corps.options === "object" ? { ...corps.options } : corps.options;
+        const cle = options && typeof options === "object" ? cleConversation(options.conversation ?? contexte?.chatId, options.agent) : null;
+        if (cle && journal) {
+          journal.lierConversation(requestId, cle);
+          if (!options.sessionId) options.sessionId = journal.sessionDe(cle);
+        }
+        agents.envoyer(requestId, options);
         return repondre(res, 202, { requestId });
       }
       if (action === "autoriser") return repondre(res, 200, { ok: agents.autoriser(requestId, String(corps.demandeId ?? ""), String(corps.decision ?? "")) });
@@ -484,7 +531,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const nomServeur = (process.env.KLYRA_SERVEUR_NOM ?? "").trim() || "KLYRA";
   const home = process.env.HOME || path.dirname(dossier);
-  const journal = creerJournal();
+  /* La session de chaque agent par conversation : gardée entre deux redémarrages, le téléphone y reprend. */
+  const journal = creerJournal(Date.now, path.join(dossier, "sessions-conversations.json"));
   /* Les réponses de routine portent leur conversation ; le moteur des routines suit leur fin. */
   let routines = null;
   const publier = (requestId, event, sessionId) => {

@@ -28,6 +28,7 @@ import type * as model_rappels from "../model/rappels.js";
 import type * as model_valeurs from "../model/valeurs.js";
 import type * as notificationsPush from "../notificationsPush.js";
 import type * as notificationsPushEnvoi from "../notificationsPushEnvoi.js";
+import type * as operationsFile from "../operationsFile.js";
 import type * as postes from "../postes.js";
 import type * as presence from "../presence.js";
 import type * as rappels from "../rappels.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   "model/valeurs": typeof model_valeurs;
   notificationsPush: typeof notificationsPush;
   notificationsPushEnvoi: typeof notificationsPushEnvoi;
+  operationsFile: typeof operationsFile;
   postes: typeof postes;
   presence: typeof presence;
   rappels: typeof rappels;

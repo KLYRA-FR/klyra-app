@@ -24,6 +24,11 @@ export function voieEnvoi({ posteOuvert, lieu, jeton }: { posteOuvert: boolean; 
   return !posteOuvert && lieu && jeton ? "vps" : "file";
 }
 
+/** Ce qu'un VPS sait faire sans l'ordinateur : un simple message à un agent, sans pièce ni geste sur le fil. */
+export function envoiSimple(options: { a?: string; reessayer?: unknown; brancher?: unknown; nouveau?: unknown }, pieces: number): boolean {
+  return pieces === 0 && !options.reessayer && !options.brancher && !options.nouveau && !options.a;
+}
+
 export interface EchangeDirect {
   conversation: string;
   messageId: string;
@@ -142,7 +147,6 @@ export async function envoyerAuVps(p: {
   agentId: string;
   titre: string;
   texte: string;
-  sessionId: string | null;
   modele: string | null;
   effort: string | null;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
@@ -172,7 +176,8 @@ export async function envoyerAuVps(p: {
         options: {
           agent: p.agentId === "principal" ? null : p.agentId,
           prompt: p.texte,
-          sessionId: p.sessionId,
+          /* Le compte ne garde pas les sessions : le VPS reprend celle de cette conversation (`contexte.chatId`). */
+          sessionId: null,
           modele: p.modele,
           effort: p.effort,
           acces: "demander",

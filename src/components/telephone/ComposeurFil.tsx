@@ -10,6 +10,8 @@ import { messageErreur } from "@/lib/compte";
 import type { Activite } from "@/lib/copie-compte";
 import { useGestePoste } from "@/lib/poste/client";
 import { bandeauComposeur, majuscule, support } from "@/lib/poste-texte";
+import { nomLieu, useServeursRelies } from "@/lib/lieux";
+import { jetonAppareil } from "@/lib/serveur-vps";
 import { ASSISTANT, mentionDans, mentionEnCours, type ConversationLue } from "@/lib/telephone/chats";
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
@@ -169,7 +171,15 @@ export function ComposeurFil({
   const modeleActuel = choix ?? lireModele(conversation?.modele);
   const postesOuverts = [...(postes ?? [])].sort((a, b) => b.dernierSignal - a.dernierSignal);
   const posteVise = postesOuverts.find((p) => p.cle === posteChoisi) ?? postesOuverts[0];
-  const bandeau = ouvert ? null : bandeauComposeur(principal);
+  /* Conversation d'un VPS relié à ce téléphone : ordinateur fermé, le message part directement au VPS (`envoi.ts`). */
+  const serveurs = useServeursRelies();
+  const lieu = conversation?.lieu ?? null;
+  const directVps = !ouvert && !!lieu && origine.startsWith("dm-") && !!jetonAppareil(lieu);
+  const bandeau = ouvert
+    ? null
+    : directVps && principal
+      ? `${majuscule(support(principal))} est fermé : ton message part directement à ${nomLieu(lieu, serveurs)}.`
+      : bandeauComposeur(principal);
 
   const joindre = (liste: FileList | File[] | null) => {
     if (!liste?.length) return;

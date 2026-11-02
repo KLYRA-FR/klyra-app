@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback } from "react";
-import { useConvex } from "convex/react";
+import { useConvex, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { usePostes } from "@/components/telephone/poste";
+import { jetonAppareil } from "@/lib/serveur-vps";
 import { ecrireOptions, type OptionsMessage } from "./options";
+import { envoiSimple, envoyerAuVps, voieEnvoi } from "./vps-direct";
 
 export interface Envoi {
   conversationOrigine: string;
@@ -17,12 +20,33 @@ export interface Envoi {
 /**
  * La seule porte d'envoi du téléphone (spec mobile M-5, T-02) : les pièces partent dans le stockage
  * du compte, puis le message attend l'ordinateur dans la file (`messagesFile`), avec ses options.
- * Une conversation d'un VPS pourra y prendre la voie directe vers le serveur, ici et nulle part ailleurs.
+ * Exception : une conversation directe qui tourne sur un VPS, ordinateur fermé, avec un téléphone relié
+ * à ce VPS. Le message part alors au VPS lui-même (`vps-direct.ts`), et la fonction rend null.
  */
 export function useEnvoyerMessage() {
   const convex = useConvex();
+  const { ouvert } = usePostes();
+  const conversations = useQuery(api.conversationsCompte.liste, {});
   return useCallback(
-    async ({ conversationOrigine, texte, options = {}, pieces = [] }: Envoi): Promise<Id<"messagesFile">> => {
+    async ({ conversationOrigine, texte, options = {}, pieces = [] }: Envoi): Promise<Id<"messagesFile"> | null> => {
+      const conversation = conversations?.find((c) => c.origine === conversationOrigine);
+      const lieu = conversation?.lieu ?? null;
+      if (conversation && conversationOrigine.startsWith("dm-") && envoiSimple(options, pieces.length)) {
+        if (voieEnvoi({ posteOuvert: ouvert, lieu, jeton: lieu ? jetonAppareil(lieu) : null }) === "vps" && lieu) {
+          const agentId = conversationOrigine.slice(3);
+          const r = await envoyerAuVps({
+            adresse: lieu,
+            conversation: conversationOrigine,
+            agentId,
+            titre: conversation.titre,
+            texte,
+            modele: options.modele ?? null,
+            effort: options.effort ?? null,
+          });
+          if (!r.ok) throw new Error(r.message);
+          return null;
+        }
+      }
       const deposees: { fichier: Id<"_storage">; nom: string; type: string }[] = [];
       for (const piece of pieces) {
         const adresse = await convex.mutation(api.demandesPoste.adresseDepot, {});
@@ -40,6 +64,6 @@ export function useEnvoyerMessage() {
         ...(deposees.length ? { pieces: deposees } : {}),
       });
     },
-    [convex],
+    [convex, conversations, ouvert],
   );
 }

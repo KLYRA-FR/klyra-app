@@ -523,12 +523,15 @@ export function MessagesFil({
   enFile,
   contexte,
   vide,
+  apres,
 }: {
   messages: MessageLu[] | undefined;
   enFile: MessageEnAttente[];
   contexte: ContexteFil;
   /** Ce qui s'affiche dans une conversation encore vide (l'agent, les suggestions). */
   vide: ReactNode;
+  /** Après les messages et la file : les échanges envoyés au VPS, ordinateur fermé. */
+  apres?: ReactNode;
 }) {
   const zone = useRef<HTMLDivElement>(null);
   const enBas = useRef(true);
@@ -628,6 +631,7 @@ export function MessagesFil({
             {enFile.map((m) => (
               <MessageEnFile key={m._id} message={m} />
             ))}
+            {apres}
           </div>
         )}
       </div>
