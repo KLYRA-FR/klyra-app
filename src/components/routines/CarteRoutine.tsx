@@ -30,7 +30,7 @@ export interface CarteRoutineProps {
   onExecutions(): void;
 }
 
-function dateUneFoisPassee(routine: Routine): boolean {
+export function dateUneFoisPassee(routine: Routine): boolean {
   if (routine.schedule.kind !== "once") return false;
   const parties = new Intl.DateTimeFormat("fr-FR", { timeZone: routine.timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
   const partie = (type: Intl.DateTimeFormatPartTypes) => parties.find((p) => p.type === type)?.value ?? "";
