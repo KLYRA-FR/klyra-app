@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",
+    // Export préparé pour Vercel (scripts/sortie-vercel.mjs).
+    ".vercel/**",
     "build/**",
     "next-env.d.ts",
     // Site vitrine (même construction, dossier à part) :

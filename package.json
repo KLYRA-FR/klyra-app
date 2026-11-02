@@ -68,7 +68,8 @@
     "test:report": "vitest run src/lib/report.test.ts",
     "test:planning-telephone": "vitest run src/lib/telephone/planning.test.ts src/lib/telephone/saisie-planning.test.ts",
     "test:modeles": "vitest run src/lib/maj-modele.test.ts src/lib/modeles-klyra.test.ts",
-    "test:automatisations": "vitest run src/lib/telephone/routines-telephone.test.ts src/lib/telephone/workflow-etapes.test.ts"
+    "test:automatisations": "vitest run src/lib/telephone/routines-telephone.test.ts src/lib/telephone/workflow-etapes.test.ts",
+    "test:app-web": "node --test scripts/sortie-vercel.test.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",
