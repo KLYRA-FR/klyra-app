@@ -2331,25 +2331,28 @@ export function useProject(id: string | null): Project | undefined {
 /** Fichiers modifiés par les agents dans les chats d'un projet, en chemins relatifs à son dossier. */
 export function useModifiedFiles(projectId: string | null): Set<string> {
   const { chats, messages, projects } = useWorkspace().state;
-  return useMemo(() => {
-    const dossier = projects.find((p) => p.id === projectId)?.folder.replace(/\/$/, "") ?? null;
-    const chatIds = new Set(chats.filter((c) => c.projectId === projectId).map((c) => c.id));
-    const paths = new Set<string>();
-    for (const message of messages) {
-      if (!chatIds.has(message.chatId)) continue;
-      for (const part of message.parts) {
-        if (part.type === "worklog") part.files.forEach((f) => paths.add(f.path));
-        if (part.type === "etapes" && dossier) {
-          for (const e of part.etapes) {
-            if (e.chemin && e.statut === "fait" && /Write|Edit/.test(e.outil) && e.chemin.startsWith(`${dossier}/`)) {
-              paths.add(e.chemin.slice(dossier.length + 1));
-            }
+  return useMemo(() => fichiersModifies({ chats, messages, projects }, projectId), [chats, messages, projects, projectId]);
+}
+
+/** Le calcul de `useModifiedFiles`, aussi fait par l'ordinateur pour le téléphone (`fichiers.arbre`). */
+export function fichiersModifies({ chats, messages, projects }: Pick<WorkspaceState, "chats" | "messages" | "projects">, projectId: string | null): Set<string> {
+  const dossier = projects.find((p) => p.id === projectId)?.folder.replace(/\/$/, "") ?? null;
+  const chatIds = new Set(chats.filter((c) => c.projectId === projectId).map((c) => c.id));
+  const paths = new Set<string>();
+  for (const message of messages) {
+    if (!chatIds.has(message.chatId)) continue;
+    for (const part of message.parts) {
+      if (part.type === "worklog") part.files.forEach((f) => paths.add(f.path));
+      if (part.type === "etapes" && dossier) {
+        for (const e of part.etapes) {
+          if (e.chemin && e.statut === "fait" && /Write|Edit/.test(e.outil) && e.chemin.startsWith(`${dossier}/`)) {
+            paths.add(e.chemin.slice(dossier.length + 1));
           }
         }
       }
     }
-    return paths;
-  }, [chats, messages, projects, projectId]);
+  }
+  return paths;
 }
 
 /** Vrai si l'agent de cette conversation attend ton accord. */

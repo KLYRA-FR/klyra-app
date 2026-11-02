@@ -89,7 +89,7 @@ export type LecturePoste<T> =
  * sans rien envoyer (P-6). Relue quand il se rouvre, et par `relancer` (tirer vers le bas, Réessayer).
  * `args` à null : rien à lire pour l'instant.
  */
-export function useLecturePoste<T>(type: string, args: unknown | null): LecturePoste<T> & { relancer: () => void } {
+export function useLecturePoste<T>(type: string, args: unknown | null, options: { delai?: number } = {}): LecturePoste<T> & { relancer: () => void } {
   const demander = useDemandePoste();
   const { etat: compte } = useCompte();
   const { ouvert, charge } = usePostes();
@@ -98,13 +98,15 @@ export function useLecturePoste<T>(type: string, args: unknown | null): LectureP
   /* La lecture vaut pour une demande (type, arguments, tour) : une autre demande repart de « attente ». */
   const demande = `${type}|${cle}|${tour}`;
   const [lu, setLu] = useState<{ demande: string; lecture: LecturePoste<T> } | null>(null);
+  /* Une grande réponse (image d'un projet) peut demander plus que le délai de P-10. */
+  const delai = options.delai;
 
   useEffect(() => {
     if (cle === null || compte !== "connecte" || charge || !ouvert) return;
     let actuelle = true;
     /* Le squelette n'apparaît qu'après 300 ms (spec § 5). */
     const lent = setTimeout(() => setLu((avant) => (avant?.demande === demande ? avant : { demande, lecture: { etat: "attente", lent: true } })), 300);
-    void demander<T>(type, JSON.parse(cle)).then((r) => {
+    void demander<T>(type, JSON.parse(cle), { delai }).then((r) => {
       clearTimeout(lent);
       if (!actuelle) return;
       const lecture: LecturePoste<T> = r.ok
@@ -118,7 +120,7 @@ export function useLecturePoste<T>(type: string, args: unknown | null): LectureP
       actuelle = false;
       clearTimeout(lent);
     };
-  }, [type, cle, compte, ouvert, charge, demande, demander]);
+  }, [type, cle, compte, ouvert, charge, demande, demander, delai]);
 
   const relancer = useCallback(() => setTour((n) => n + 1), []);
   if (cle !== null && !charge && !ouvert) return { etat: "ferme", relancer };
