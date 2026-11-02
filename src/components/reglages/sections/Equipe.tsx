@@ -8,6 +8,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useConfirmation } from "@/components/ui/Modale";
+import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { formaterAttente, messageErreur, useCompte, useEquipe, useMonIdentite, type Membre, type Role } from "@/lib/compte";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
@@ -373,7 +374,8 @@ export function Equipe() {
           </Bouton>
         </Ligne>
       </Groupe>
-      <AccordProfils />
+      {/* Le profil d'un ordinateur face à celui du compte : sans app de bureau (téléphone), il n'y a rien à comparer. */}
+      {getBridge() ? <AccordProfils /> : null}
       <MonProfil key={`${moi.nom}|${moi.intitule}|${moi.couleur}`} moi={moi} />
       <Membres moi={moi} />
       {moi.role === "admin" && <Invitations />}

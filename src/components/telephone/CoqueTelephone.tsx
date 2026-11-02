@@ -3,7 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCompte } from "@/lib/compte";
-import { AgentsTelephone, EcranPoste, PlusTelephone, ReglagesTelephone } from "./ListesTelephone";
+import { AgentsTelephone } from "./AgentsTelephone";
+import { ArtefactsTelephone } from "./ArtefactsTelephone";
+import { EcranPoste, PlusTelephone } from "./ListesTelephone";
+import { ReglagesTelephone } from "./ReglagesTelephone";
 import { AutomatisationsTelephone } from "./EcransAutomatisations";
 import { ProjetsTelephone, ProjetTelephone } from "./EcransProjets";
 import { useRetenirPoste } from "./poste";
@@ -26,7 +29,7 @@ function ecran(pathname: string): ReactNode {
   if (pathname === "/reglages") return <ReglagesTelephone />;
   if (pathname === "/serveurs") return <ServeursTelephone />;
   if (pathname === "/routines") return <AutomatisationsTelephone />;
-  if (pathname === "/artefacts") return <EcranPoste titre="Artefacts" phrase={(sur) => `la liste est sur ${sur}.`} />;
+  if (pathname === "/artefacts") return <ArtefactsTelephone />;
   if (pathname === "/projet" || pathname === "/fichiers") return <ProjetTelephone />;
   return <EcranPoste titre="KLYRA" phrase={(sur) => `cet écran se lit sur ${sur}.`} />;
 }

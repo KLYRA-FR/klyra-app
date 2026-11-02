@@ -14,7 +14,7 @@ import { useWorkspace } from "@/lib/workspace";
  */
 export function SyncCompte({ actif }: { actif: boolean }) {
   const { state, sendMessage } = useWorkspace();
-  const { tous } = useAgents();
+  const { tous, roles } = useAgents();
   const importerConversations = useMutation(api.conversationsCompte.importerConversations);
   const alignerConversations = useMutation(api.conversationsCompte.alignerConversations);
   const importerMessages = useMutation(api.conversationsCompte.importerMessages);
@@ -45,7 +45,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
 
   useEffect(() => {
     if (!actif || !state.charge) return;
-    const empreinte = `${state.chats.length}:${state.messages.length}:${state.projects.length}:${tous.length}:${state.chats[0]?.updatedAt ?? ""}`;
+    const empreinte = `${state.chats.length}:${state.messages.length}:${state.projects.length}:${tous.length}:${state.chats[0]?.updatedAt ?? ""}:${roles[0].name}:${roles[0].teinte}:${tous.map((x) => `${x.role.id}=${x.statut}/${x.role.name}/${x.role.tag}/${x.role.teinte}`).join(",")}`;
     if (empreinte === signature.current) return;
     signature.current = empreinte;
     const minuteur = setTimeout(() => {
@@ -56,7 +56,8 @@ export function SyncCompte({ actif }: { actif: boolean }) {
           await alignerConversations({ origines: state.chats.map((chat) => chat.id).slice(0, 2000) });
           const messages = state.messages.map(messageCompte);
           for (const lot of decoupages(messages, 25)) await importerMessages({ lot });
-          const agents = tous.map((agent) => carteAgent(agent.role, agent.statut === "actif" || agent.role.id === "principal"));
+          /* L'assistant n'a pas de fiche : sa carte vient de `roles[0]` (nom et couleur choisis). */
+          const agents = [carteAgent(roles[0], true), ...tous.map((agent) => carteAgent(agent.role, agent.statut === "actif"))];
           for (const lot of decoupages(agents, 50)) await importerAgents({ lot });
           const projets = state.projects.map(carteProjet);
           for (const lot of decoupages(projets, 50)) await importerProjets({ lot });
@@ -66,7 +67,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
       })();
     }, 1500);
     return () => clearTimeout(minuteur);
-  }, [actif, alignerConversations, importerAgents, importerConversations, importerMessages, importerProjets, state, tous]);
+  }, [actif, alignerConversations, importerAgents, importerConversations, importerMessages, importerProjets, state, tous, roles]);
 
   return null;
 }
