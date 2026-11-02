@@ -1,15 +1,36 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useCompte } from "@/lib/compte";
 import { supportOuOrdinateur, type PosteLu } from "@/lib/poste-texte";
 
+/**
+ * Le seuil de `convex/postes.ts` (25 s), avec une marge pour l'horloge du téléphone. La requête du
+ * compte calcule `ouvert` quand un poste se signale, mais n'est pas relue quand le temps passe : un
+ * poste qui se ferme resterait « ouvert ». Le téléphone le referme lui-même, sans jamais l'ouvrir.
+ */
+const SILENCE_MS = 35_000;
+
+function useHorloge(pas: number): number {
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+  useEffect(() => {
+    const minuteur = setInterval(() => setMaintenant(Date.now()), pas);
+    return () => clearInterval(minuteur);
+  }, [pas]);
+  return maintenant;
+}
+
 /** Les ordinateurs du compte. Le téléphone ne s'y signale pas. */
 export function usePostes() {
   const { etat } = useCompte();
-  const postes = useQuery(api.postes.etat, etat === "connecte" ? {} : "skip");
+  const lus = useQuery(api.postes.etat, etat === "connecte" ? {} : "skip");
+  const maintenant = useHorloge(5000);
+  const postes = useMemo(
+    () => lus?.map((poste) => (poste.ouvert && maintenant - poste.dernierSignal > SILENCE_MS ? { ...poste, ouvert: false } : poste)),
+    [lus, maintenant],
+  );
   const principal = postes?.[0] ?? null;
   return {
     postes,
