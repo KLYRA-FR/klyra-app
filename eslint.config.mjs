@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Site vitrine (même construction, dossier à part) :
+    "site/.next/**",
+    "site/out/**",
+    "site/next-env.d.ts",
     // Process principal Electron compilé :
     "dist-electron/**",
     // Généré par Convex :

@@ -1,0 +1,685 @@
+@import "tailwindcss";
+/* Design system KLYRA, à la source : les mêmes tokens que l'app. */
+@import "../../src/styles/design-system.css";
+
+/* Le site et les composants de l'app qu'il emprunte (boutons, icônes). */
+@source "../app";
+@source "../components";
+@source "../../src/components/ui";
+@source "../../src/components/icons";
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 88px;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-texte-principal);
+  background: var(--color-fond-page);
+  /* Les halos décoratifs dépassent du conteneur : jamais de défilement horizontal. `clip` garde l'en-tête collant. */
+  overflow-x: clip;
+  letter-spacing: -0.0125em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Largeur et marges de toutes les sections du site. */
+.klyra-site-conteneur {
+  width: min(100%, 1280px);
+  margin-inline: auto;
+  /* Marges latérales seulement : hors couche Tailwind, un `padding` écraserait les `pt-…` des sections. */
+  padding-inline: clamp(16px, 4vw, 48px);
+}
+
+/* Écran de points du design system (celui du bouton Principal), en fond. */
+.klyra-site-points {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1.3px);
+  background-size: 6px 6px;
+}
+
+/* Le même écran de points, bleu, qui s'efface vers le bas (cartes claires). */
+.klyra-site-points-bleus {
+  background-image: radial-gradient(rgba(0, 63, 228, 0.14) 1px, transparent 1.3px);
+  background-size: 6px 6px;
+  -webkit-mask-image: radial-gradient(70% 90% at 50% 0%, #000 0%, transparent 75%);
+  mask-image: radial-gradient(70% 90% at 50% 0%, #000 0%, transparent 75%);
+}
+
+.klyra-site-titre-degrade {
+  background: var(--degrade-texte-bleu);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Rond bleu des icônes de fonctionnalités. */
+.klyra-site-orbe {
+  background: var(--color-bleu-k1-500);
+  color: var(--color-texte-inverse);
+}
+
+/* Entrée des blocs au défilement (data-revealed posé par Revelation.tsx). */
+[data-revealed="false"] {
+  opacity: 0;
+}
+
+[data-revealed="true"] {
+  animation: klyra-site-entree 720ms var(--ease-sortie) backwards;
+}
+
+@keyframes klyra-site-entree {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-revealed="false"] {
+    opacity: 1;
+  }
+  [data-revealed="true"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Changelog — même construction que openbot.run/changelog, aux tokens KLYRA :
+   en-tête à fond dégradé, dernière version, sommaire collant par mois à
+   gauche, versions groupées (Nouveau, Amélioré, Retiré, Corrigé) à droite.
+   Sous 960 px, le sommaire devient une rangée de puces collée en haut.
+   ========================================================================== */
+.klyra-cl {
+  --cl-trait: var(--color-bordure-defaut);
+  --cl-decalage: 88px;
+  --cl-courbe: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.klyra-cl-hero {
+  isolation: isolate;
+  position: relative;
+  display: grid;
+  align-items: end;
+  min-height: clamp(320px, 38vw, 460px);
+  margin-top: clamp(16px, 2.8vw, 34px);
+}
+
+.klyra-cl-hero-art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: var(--radius-2xl);
+  pointer-events: none;
+  background: var(--degrade-k1-k2);
+  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
+}
+
+.klyra-cl-hero-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 90% at 85% 10%, rgba(0, 221, 255, 0.45) 0%, transparent 70%);
+}
+
+.klyra-cl-hero-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--color-fond-page) 96%, transparent) 0%,
+    color-mix(in srgb, var(--color-fond-page) 72%, transparent) 50%,
+    transparent 82%
+  );
+}
+
+.klyra-cl-hero-copie {
+  max-width: 760px;
+  padding: clamp(40px, 6vw, 72px) clamp(24px, 4vw, 56px) clamp(40px, 5vw, 64px);
+}
+
+.klyra-cl-surtitre {
+  margin: 0;
+  color: var(--color-texte-accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.klyra-cl-titre {
+  margin: 12px 0 0;
+  color: var(--color-texte-principal);
+  font-size: clamp(38px, 5.6vw, 72px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
+}
+
+.klyra-cl-chapo {
+  max-width: 54ch;
+  margin: 18px 0 0;
+  color: var(--color-texte-secondaire);
+  font-size: clamp(15px, 1.4vw, 18px);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+/* ─── Dernière version ─────────────────────────────────────────────── */
+.klyra-cl-derniere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 0 clamp(24px, 4vw, 56px) 20px;
+  border-bottom: 1px solid var(--cl-trait);
+}
+
+.klyra-cl-derniere-texte {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-texte-secondaire);
+  font-size: 14px;
+}
+
+.klyra-cl-point {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bleu-k1-500);
+}
+
+.klyra-cl-point::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--color-bleu-k1-500);
+  animation: klyra-cl-pulsation 2.4s var(--ease-sortie) infinite;
+}
+
+@keyframes klyra-cl-pulsation {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
+
+.klyra-cl-derniere-version {
+  border-radius: var(--radius-2xs);
+  color: var(--color-texte-principal);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.klyra-cl-derniere-date {
+  color: var(--color-texte-tertiaire);
+}
+
+/* ─── Mise en page : sommaire et versions ──────────────────────────── */
+.klyra-cl-grille {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(40px, 6vw, 96px);
+  margin-top: clamp(36px, 4.5vw, 64px);
+  scroll-margin-top: var(--cl-decalage);
+}
+
+.klyra-cl-sommaire {
+  position: sticky;
+  top: var(--cl-decalage);
+}
+
+.klyra-cl-apps {
+  margin: 0 0 22px;
+}
+
+/* Rail d'onglets du design system (Onglets) : fond gris, onglet actif blanc. */
+.klyra-cl-apps-rail {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius-md-moins);
+  background: var(--color-fond-surface-grise);
+}
+
+.klyra-cl-app {
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-texte-secondaire);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--duration-med) ease, background-color var(--duration-med) ease;
+}
+
+.klyra-cl-app[aria-selected="true"] {
+  border-color: var(--color-bordure-subtile);
+  background: var(--color-fond-surface);
+  color: var(--color-texte-principal);
+  box-shadow: var(--shadow-ombre-xs);
+}
+
+.klyra-cl-app:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.klyra-cl-sommaire-titre {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 14px;
+  color: var(--color-texte-tertiaire);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.klyra-cl-sommaire-nombre {
+  color: var(--color-texte-secondaire);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.klyra-cl-sommaire-defile {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: calc(100dvh - var(--cl-decalage) * 2 - 40px);
+  padding: 4px 0 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 12px, #000 calc(100% - 32px), transparent);
+}
+
+.klyra-cl-sommaire-defile::-webkit-scrollbar {
+  display: none;
+}
+
+.klyra-cl-mois {
+  margin: 0 0 6px 14px;
+  color: var(--color-texte-tertiaire);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.klyra-cl-liste-versions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 1px solid var(--cl-trait);
+}
+
+.klyra-cl-lien {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px 6px 14px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--color-texte-tertiaire);
+  font-size: 13px;
+  text-decoration: none;
+  transition: color var(--duration-med) ease;
+}
+
+.klyra-cl-lien::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: -1px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bleu-k1-500);
+  opacity: 0;
+  transform: scaleY(0.3);
+  transition: opacity var(--duration-med) ease, transform 320ms var(--ease-sortie);
+}
+
+.klyra-cl-lien[aria-current="true"] {
+  color: var(--color-texte-principal);
+}
+
+.klyra-cl-lien[aria-current="true"]::before {
+  opacity: 1;
+  transform: none;
+}
+
+.klyra-cl-lien:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.klyra-cl-lien-version {
+  font-variant-numeric: tabular-nums;
+}
+
+.klyra-cl-lien-date {
+  color: var(--color-texte-tertiaire);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ─── Une version ──────────────────────────────────────────────────── */
+.klyra-cl-versions {
+  min-width: 0;
+  max-width: 780px;
+}
+
+.klyra-cl-version {
+  padding: clamp(36px, 4.5vw, 56px) 0;
+  border-top: 1px solid var(--cl-trait);
+  scroll-margin-top: var(--cl-decalage);
+}
+
+.klyra-cl-version:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.klyra-cl-version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-texte-tertiaire);
+  font-size: 13px;
+}
+
+.klyra-cl-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-fond-teinte-bleue);
+  color: var(--color-texte-accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.klyra-cl-version-titre {
+  margin: 8px 0 0;
+  font-size: clamp(24px, 2.4vw, 32px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: var(--tracking-title);
+}
+
+.klyra-cl-ancre {
+  border-radius: var(--radius-sm);
+  color: var(--color-texte-principal);
+  text-decoration: none;
+}
+
+.klyra-cl-ancre::after {
+  content: "#";
+  margin-left: 10px;
+  color: var(--color-texte-tertiaire);
+  font-weight: 400;
+  opacity: 0;
+  transition: opacity var(--duration-med) ease;
+}
+
+.klyra-cl-ancre:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 4px;
+}
+
+.klyra-cl-numero {
+  color: var(--color-texte-tertiaire);
+  font-weight: 500;
+  transition: color var(--duration-med) ease;
+}
+
+.klyra-cl-intro {
+  max-width: 68ch;
+  margin: 16px 0 0;
+  color: var(--color-texte-secondaire);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.klyra-cl-code {
+  padding: 1px 6px;
+  border-radius: var(--radius-2xs);
+  background: var(--color-fond-surface);
+  box-shadow: inset 0 0 0 1px var(--cl-trait);
+  color: var(--color-texte-principal);
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+.klyra-cl-gras {
+  color: var(--color-texte-principal);
+  font-weight: 600;
+}
+
+/* ─── Groupes : une teinte par type ─────────────────────────────────── */
+.klyra-cl-groupe {
+  --cl-teinte: var(--color-texte-secondaire);
+  margin-top: 28px;
+}
+
+.klyra-cl-groupe[data-type="nouveau"] {
+  --cl-teinte: var(--color-texte-accent);
+}
+
+.klyra-cl-groupe[data-type="ameliore"] {
+  --cl-teinte: var(--color-texte-accent-orange);
+}
+
+/* Vert de la palette étendue : seule teinte qui dit « réparé » sans crier. */
+.klyra-cl-groupe[data-type="corrige"] {
+  --cl-teinte: var(--color-vert-k1-400);
+}
+
+.klyra-cl-groupe[data-type="retire"] {
+  --cl-teinte: var(--color-texte-erreur);
+}
+
+.klyra-cl-groupe-titre {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--cl-teinte);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.klyra-cl-groupe-point {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--cl-teinte);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--cl-teinte) 60%, transparent);
+}
+
+.klyra-cl-groupe-nombre {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--cl-teinte) 10%, transparent);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.klyra-cl-liste {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.klyra-cl-item {
+  position: relative;
+  padding-left: 22px;
+  color: var(--color-texte-secondaire);
+  font-size: 15px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.klyra-cl-item::before {
+  content: "";
+  position: absolute;
+  top: 0.8em;
+  left: 4px;
+  width: 8px;
+  height: 1px;
+  background: color-mix(in srgb, var(--cl-teinte) 70%, transparent);
+}
+
+.klyra-cl-vide {
+  margin: 0;
+  padding: 32px;
+  border: 1px dashed var(--color-bordure-forte);
+  border-radius: var(--radius-xl);
+  color: var(--color-texte-secondaire);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .klyra-cl-lien:hover,
+  .klyra-cl-app:not([aria-selected="true"]):hover,
+  .klyra-cl-ancre:hover .klyra-cl-numero {
+    color: var(--color-texte-secondaire);
+  }
+
+  .klyra-cl-ancre:hover::after {
+    opacity: 1;
+  }
+}
+
+/* ─── Téléphone et tablette ────────────────────────────────────────── */
+@media (width <= 959px) {
+  .klyra-cl {
+    --cl-decalage: 136px;
+  }
+
+  .klyra-cl-grille {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+    margin-top: 0;
+    scroll-margin-top: 0;
+  }
+
+  .klyra-cl-apps {
+    margin: 0 0 12px;
+    padding: 0 clamp(16px, 4vw, 48px);
+  }
+
+  .klyra-cl-sommaire {
+    top: 64px;
+    z-index: 5;
+    margin: 0 calc(-1 * clamp(16px, 4vw, 48px));
+    padding: 12px 0;
+    border-bottom: 1px solid var(--cl-trait);
+    background: color-mix(in srgb, var(--color-fond-page) 86%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    backdrop-filter: blur(14px) saturate(1.4);
+  }
+
+  .klyra-cl-sommaire-titre,
+  .klyra-cl-mois,
+  .klyra-cl-lien-date,
+  .klyra-cl-lien::before {
+    display: none;
+  }
+
+  .klyra-cl-sommaire-defile {
+    flex-direction: row;
+    gap: 6px;
+    max-height: none;
+    padding: 0 clamp(16px, 4vw, 48px);
+    overflow: auto hidden;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 32px), transparent);
+  }
+
+  .klyra-cl-bloc-mois,
+  .klyra-cl-liste-versions {
+    display: contents;
+  }
+
+  .klyra-cl-liste-versions > li {
+    flex: none;
+  }
+
+  .klyra-cl-lien {
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    box-shadow: inset 0 0 0 1px var(--cl-trait);
+    transition: color var(--duration-med) ease, background-color var(--duration-med) ease;
+  }
+
+  .klyra-cl-lien[aria-current="true"] {
+    background: var(--color-fond-inverse);
+    color: var(--color-texte-inverse);
+    box-shadow: none;
+  }
+
+  .klyra-cl-derniere {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .klyra-cl-hero-copie {
+    padding-right: clamp(20px, 4vw, 32px);
+    padding-left: clamp(20px, 4vw, 32px);
+  }
+
+  .klyra-cl-hero-art {
+    border-radius: var(--radius-lg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-cl-point::after {
+    opacity: 0;
+    animation: none;
+  }
+
+  .klyra-cl-lien,
+  .klyra-cl-lien::before,
+  .klyra-cl-ancre::after,
+  .klyra-cl-numero,
+  .klyra-cl-app {
+    transition: none;
+  }
+}

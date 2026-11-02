@@ -11,8 +11,9 @@ import { cn } from "@/lib/cn";
  * - `discret` : action d'outil, sans fond au repos ;
  * - `ghost` : sur fond sombre.
  * Le Principal (noir à écran de points) est BoutonPrincipal, un seul par écran.
+ * Exporté pour les liens qui ont l'air d'un bouton (site vitrine).
  */
-const boutonVariants = cva(
+export const boutonVariants = cva(
   [
     "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xs border font-medium whitespace-nowrap",
     "tracking-[-0.0125em] no-underline",
