@@ -5,6 +5,7 @@ import { configMcp, OUTILS_APP } from "./ia";
 import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
+import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -27,21 +28,24 @@ const environnementClaude = () => Object.fromEntries(Object.entries({ ...process
 /** Sous Windows, le binaire natif de Claude Code (un .cmd de npm ne se lance pas sans shell). */
 const EXE_CLAUDE = process.platform === "win32" ? "claude.exe" : "claude";
 
-/** Le binaire de l'extension VS Code ou Cursor la plus récente. */
+/** Le binaire des extensions VS Code et Cursor, la plus récente d'abord, tous éditeurs confondus. */
 function fromEditorExtensions(): string[] {
   const found: string[] = [];
   for (const base of [".vscode/extensions", ".cursor/extensions"]) {
     const dir = path.join(HOME, base);
     if (!existsSync(dir)) continue;
-    const versions = readdirSync(dir)
-      .filter((d) => d.startsWith("anthropic.claude-code-"))
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    for (const v of versions) found.push(path.join(dir, v, "resources", "native-binary", EXE_CLAUDE));
+    for (const v of readdirSync(dir).filter((d) => d.startsWith("anthropic.claude-code-"))) {
+      found.push(path.join(dir, v, "resources", "native-binary", EXE_CLAUDE));
+    }
   }
-  return found;
+  return trierExtensions(found);
 }
 
-/** Une app lancée depuis le Finder n'hérite pas du PATH du terminal : on cherche aussi aux endroits habituels. */
+/**
+ * Une app lancée depuis le Finder n'hérite pas du PATH du terminal : on cherche aussi aux endroits habituels.
+ * Les extensions d'éditeur en dernier : leur Claude Code n'est mis à jour qu'avec l'extension, et reste
+ * sur le disque après la désinstallation de l'éditeur.
+ */
 export function findClaude(): string | null {
   const fromPath = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean).map((d) => path.join(d, EXE_CLAUDE));
   const candidates = [
@@ -52,6 +56,8 @@ export function findClaude(): string | null {
     path.join(HOME, ".local", "bin", EXE_CLAUDE),
     path.join(HOME, ".claude", "local", EXE_CLAUDE),
     path.join(HOME, ".npm-global", "bin", "claude"),
+    // npm sous Windows ne met qu'un claude.cmd dans le PATH : le binaire natif est dans le paquet.
+    process.env.APPDATA && path.join(process.env.APPDATA, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", EXE_CLAUDE),
     ...fromEditorExtensions(),
   ];
   return candidates.find((c): c is string => !!c && existsSync(c)) ?? null;
@@ -128,7 +134,7 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
         }
         resolve({ ok: true, text: json.result ?? "", costUsd: json.total_cost_usd });
       } catch {
-        resolve({ ok: false, text: "", error: stderr.trim() || stdout.trim() || `Claude Code a échoué (code ${code}).` });
+        resolve({ ok: false, text: "", error: expliquerLancement(stderr, bin) ?? (stderr.trim() || stdout.trim() || `Claude Code a échoué (code ${code}).`) });
       }
     });
 
@@ -654,7 +660,7 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
         ? "Arrêté par toi."
         : signal
           ? "Arrêté."
-          : stderr.trim().slice(0, 600) || `Claude Code s’est arrêté (code ${code}).`,
+          : expliquerLancement(stderr, bin) ?? (stderr.trim().slice(0, 600) || `Claude Code s’est arrêté (code ${code}).`),
     );
   });
   return proc;

@@ -184,7 +184,7 @@ function RoleMessage({
             attente={message.parts.some((p) => p.type === "autorisation" && p.statut === "attente")}
           />}
         {message.statut === "erreur" && (
-          <p role="alert" className="m-0 max-w-[680px] rounded-md border border-bordure-erreur bg-fond-surface px-3 py-2 text-ui-s text-texte-erreur">
+          <p role="alert" className="m-0 max-w-[680px] rounded-md border border-bordure-erreur bg-fond-surface px-3 py-2 text-ui-s text-texte-erreur [overflow-wrap:anywhere]">
             {message.erreur ?? "L’agent s’est arrêté sur une erreur."}
           </p>
         )}
