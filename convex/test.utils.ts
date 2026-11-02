@@ -3,6 +3,7 @@ import presence from "@convex-dev/presence/test";
 import { convexTest, type TestConvex } from "convex-test";
 import { vi } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { DELAI_ENTRE_LIENS_MS } from "./model/limites";
 import schema from "./schema";
 
@@ -73,6 +74,11 @@ export async function ouvrirLien(t: Essai, email: string, code: string) {
 
 /** Le parcours complet du lien magique (après le délai d'une éventuelle demande précédente). Renvoie un client avec la session obtenue. */
 export async function connecter(t: Essai, email: string) {
+  return (await connecterSession(t, email)).client;
+}
+
+/** Comme `connecter`, avec l'identifiant de la session ouverte (une session fictive par appel). */
+export async function connecterSession(t: Essai, email: string) {
   await patienter(t, DELAI_ENTRE_LIENS_MS);
   await demanderLien(t, email);
   const lien = await dernierLien(t, email);
@@ -80,7 +86,8 @@ export async function connecter(t: Essai, email: string) {
   const { tokens } = await ouvrirLien(t, email, lien.code);
   if (!tokens) throw new Error(`Le lien n’a pas ouvert de session pour ${email}`);
   const charge = JSON.parse(atob(tokens.token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { sub: string };
-  return t.withIdentity({ subject: charge.sub, issuer: "https://essai.convex.site" });
+  const sessionId = charge.sub.split("|")[1] as Id<"authSessions">;
+  return { client: t.withIdentity({ subject: charge.sub, issuer: "https://essai.convex.site" }), sessionId };
 }
 
 export async function initialiser(t: Essai, admins = EQUIPE_DE_DEPART) {

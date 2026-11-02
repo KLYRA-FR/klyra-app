@@ -7,7 +7,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { Dependance } from "../../convex/model/definitions";
 import { useAgents } from "@/lib/agents";
-import { messageErreur, useCompte } from "@/lib/compte";
+import { messageErreur, useCompte, useSocketOuvert } from "@/lib/compte";
 
 /**
  * La Bibliothèque KLYRA dans l'interface (cf. `convex/bibliotheque.ts`).
@@ -110,23 +110,6 @@ export function BibliothequeProvider({ children }: { children: ReactNode }) {
       {children}
     </BibliothequeContext.Provider>
   );
-}
-
-/**
- * Le socket avec le serveur est-il ouvert ? Un booléen, mis à jour seulement quand il change :
- * `useConvexConnectionState` rend un nouvel objet à chaque événement de connexion, et ses rendus
- * en continu empêchaient les navigations de l'app d'aboutir une fois connecté.
- */
-function useSocketOuvert(): boolean {
-  const convex = useConvex();
-  const [ouvert, setOuvert] = useState(() => convex.connectionState().isWebSocketConnected);
-  useEffect(() => {
-    const lire = () => setOuvert(convex.connectionState().isWebSocketConnected);
-    const arret = convex.subscribeToConnectionState(lire);
-    lire();
-    return arret;
-  }, [convex]);
-  return ouvert;
 }
 
 type Abonnement<T> = { valeur: T | undefined; erreur: unknown };

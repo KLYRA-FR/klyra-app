@@ -15,6 +15,29 @@ export function support(poste: Pick<PosteLu, "systeme" | "nom">): string {
   return poste.nom;
 }
 
+/** Sans poste connu (pas encore de signal) : « ton ordinateur », jamais un système deviné. */
+export function supportOuOrdinateur(poste: Pick<PosteLu, "systeme" | "nom"> | null): string {
+  return poste ? support(poste) : "ton ordinateur";
+}
+
+export const majuscule = (texte: string) => texte.charAt(0).toUpperCase() + texte.slice(1);
+
+/** Réglages › Ce téléphone (MO-T15). */
+export function cheminTelephone(poste: Pick<PosteLu, "systeme" | "nom"> | null): string {
+  return `Passe par ton compte, puis par ${supportOuOrdinateur(poste)}.`;
+}
+
+/** Plus › Automatisations (MO-T17) : une routine d'un VPS tourne même l'ordinateur fermé. */
+export function texteRoutines(poste: Pick<PosteLu, "systeme" | "nom"> | null): string {
+  const sur = supportOuOrdinateur(poste);
+  return `Les routines se gèrent sur ${sur}. Celles d’un VPS y tournent même ${sur} fermé.`;
+}
+
+/** Le téléphone après une déconnexion depuis Réglages › Mobile (MO-T14). */
+export function texteDeconnecte(poste: Pick<PosteLu, "systeme" | "nom"> | null): string {
+  return `Ce téléphone a été déconnecté depuis ${supportOuOrdinateur(poste)}. Reconnecte-toi pour retrouver tes conversations.`;
+}
+
 export function libellePastille(poste: PosteLu | null): string {
   if (!poste) return "Aucun ordinateur relié";
   if (poste.systeme === "mac") return poste.ouvert ? "Mac ouvert" : "Mac fermé";
@@ -36,11 +59,9 @@ export function texteFeuille(poste: PosteLu): string {
 
 export function bandeauComposeur(poste: PosteLu | null): string | null {
   if (!poste || poste.ouvert) return null;
-  const sur = support(poste);
-  const maj = sur.charAt(0).toUpperCase() + sur.slice(1);
-  return `${maj} est fermé : ton message partira à son ouverture.`;
+  return `${majuscule(support(poste))} est fermé : ton message partira à son ouverture.`;
 }
 
 export function attenteEnvoi(poste: PosteLu | null): string {
-  return `En attente de ${poste ? support(poste) : "ton Mac"}`;
+  return `En attente de ${supportOuOrdinateur(poste)}`;
 }

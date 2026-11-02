@@ -5,29 +5,11 @@ import { libellePastille, texteFeuille, type PosteLu } from "@/lib/poste-texte";
 import { cn } from "@/lib/cn";
 import { usePostes } from "./poste";
 
-const CLE_PREVENIR = "klyra:poste:prevenir";
-
-function lireSouhaits(): string[] {
-  try {
-    const brut = JSON.parse(localStorage.getItem(CLE_PREVENIR) ?? "[]") as unknown;
-    return Array.isArray(brut) ? brut.filter((id): id is string => typeof id === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Pastille d'en-tête. Ouvre la feuille des postes (T-23). Aucun réveil à distance. */
+/** Pastille d'en-tête. Ouvre la feuille des postes (T-23). Aucun réveil à distance, aucune notification promise. */
 export function PastillePoste() {
   const { postes, principal } = usePostes();
   const [ouverte, setOuverte] = useState(false);
-  const [souhaits, setSouhaits] = useState<string[]>(() => (typeof window === "undefined" ? [] : lireSouhaits()));
   if (!postes) return <span className="h-8 w-16 shrink-0 rounded-full bg-fond-surface-grise" />;
-
-  const vouloir = (cle: string) => {
-    const suite = souhaits.includes(cle) ? souhaits : [...souhaits, cle];
-    setSouhaits(suite);
-    localStorage.setItem(CLE_PREVENIR, JSON.stringify(suite));
-  };
 
   return (
     <>
@@ -60,11 +42,6 @@ export function PastillePoste() {
                   <li key={poste.cle}>
                     <p className="text-ui font-medium text-texte-principal">{poste.nom}</p>
                     <p className="mt-1 text-ui text-texte-secondaire">{texteFeuille(poste as PosteLu)}</p>
-                    {!poste.ouvert ? (
-                      <button type="button" className="mt-2 min-h-11 text-ui text-texte-principal" onClick={() => vouloir(poste.cle)}>
-                        {souhaits.includes(poste.cle) ? "On te prévient à l’ouverture" : "Me prévenir à l’ouverture"}
-                      </button>
-                    ) : null}
                   </li>
                 ))}
               </ul>

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
-import { autreAdminActif, erreur, exigerAdmin, exigerMembre, membreActuel } from "./model/acces";
+import { autreAdminActif, erreur, exigerAdmin, exigerMembre, membreActuel, statutSession as statutSessionLu } from "./model/acces";
 import { estEmail, estTeinte, nettoyerNom, normaliserEmail, vRole } from "./model/valeurs";
 
 const vMembre = v.object({
@@ -25,6 +25,16 @@ export const moi = query({
     const membre = await membreActuel(ctx);
     return membre ? vueMembre(membre) : null;
   },
+});
+
+/**
+ * Pourquoi `moi` est null : pas de session, session fermée (déconnectée depuis un autre appareil,
+ * Réglages › Mobile) ou compte retiré de l'équipe. L'app ne dit pas la même chose dans les deux cas.
+ */
+export const statutSession = query({
+  args: {},
+  returns: v.union(v.literal("anonyme"), v.literal("session_fermee"), v.literal("retire"), v.literal("membre")),
+  handler: async (ctx) => (await statutSessionLu(ctx)).statut,
 });
 
 /** L'équipe : les membres actifs, visibles par tous les membres. */

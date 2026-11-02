@@ -16,6 +16,13 @@ test("un lien tient dans le QR et se relit", () => {
   assert.doesNotMatch(qrSvg(lien), /tarif|prix/i);
 });
 
+test("l’adresse https de l’app (Réglages › Mobile) se relit, accents compris, sans Buffer", async () => {
+  for (const url of ["https://app.exemple.test", "https://klyra-app.exemple.test/?depuis=réglages"]) assert.equal(lireQr(qrMatrice(url)), url);
+  /* Le module est aussi chargé dans la fenêtre de l’app, où Buffer n’existe pas. */
+  const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("./qr.mjs", import.meta.url), "utf8"));
+  assert.doesNotMatch(source.replace(/\/\*[\s\S]*?\*\//g, ""), /\bBuffer\b/);
+});
+
 test("un lien long, de la taille d’une page https, se relit aussi", () => {
   const lien = `klyra://rejoindre?adresse=${encodeURIComponent("https://trailers-pensions-encouraging-brad.trycloudflare.com")}&invitation=${"a".repeat(24)}`;
   assert.equal(lireQr(qrMatrice(lien)), lien);

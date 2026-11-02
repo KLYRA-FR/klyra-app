@@ -1,7 +1,7 @@
 "use client";
 
 import { ConvexAuthProvider, useAuthActions, type TokenStorage } from "@convex-dev/auth/react";
-import { ConvexReactClient, useConvexAuth, useMutation, useQuery } from "convex/react";
+import { ConvexReactClient, useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -9,6 +9,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SignalPoste } from "@/components/compte/SignalPoste";
 import { SyncCompte } from "@/components/compte/SyncCompte";
+import { SignalTelephone } from "@/components/telephone/SignalTelephone";
 import { AgendaCompte } from "@/components/planning/AgendaCompte";
 import { PresenceKlyra } from "@/components/planning/PresenceKlyra";
 import { getBridge, type KlyraBridge } from "@/lib/bridge";
@@ -56,6 +57,11 @@ interface CompteApi {
   demandeRefusee: boolean;
   /** Une demande de lien ou une connexion est en cours. */
   occupe: boolean;
+  /**
+   * La session de cet appareil a été fermée depuis un autre (Réglages › Mobile), pas retirée de
+   * l'équipe : le téléphone le dit au-dessus du formulaire de connexion (MO-T14).
+   */
+  sessionFermee: boolean;
   erreur: string | null;
   demanderLien: (email: string) => Promise<boolean>;
   /** Le lien collé à la main (klyra://… ou la page relais), si l'app ne s'est pas ouverte. */
@@ -73,6 +79,7 @@ const INDISPONIBLE: CompteApi = {
   prochaineDemande: null,
   demandeRefusee: false,
   occupe: false,
+  sessionFermee: false,
   erreur: null,
   demanderLien: async () => false,
   ouvrirLienColle: async () => {},
@@ -91,6 +98,25 @@ export const normaliserEmail = (email: string) => email.trim().toLowerCase();
 /** Le lien vaut 15 minutes (`DUREE_LIEN_MINUTES`) : l'adresse est oubliée ensuite. */
 const DUREE_LIEN_MS = 15 * 60_000;
 const CLE_ADRESSE = "klyra:compte:adresse";
+/** Gardé jusqu'à la prochaine connexion : un rechargement de la page ne fait pas oublier pourquoi. */
+const CLE_SESSION_FERMEE = "klyra:compte:session-fermee";
+
+function lireSessionFermee(): boolean {
+  try {
+    return localStorage.getItem(CLE_SESSION_FERMEE) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function garderSessionFermee(fermee: boolean) {
+  try {
+    if (fermee) localStorage.setItem(CLE_SESSION_FERMEE, "1");
+    else localStorage.removeItem(CLE_SESSION_FERMEE);
+  } catch {
+    /* pas de stockage : l'indication reste en mémoire */
+  }
+}
 
 /** La dernière demande de lien : l'adresse, quand le lien est parti, quand en redemander un. Survit au redémarrage. */
 interface Demande {
@@ -150,6 +176,8 @@ const MESSAGES: Record<string, string> = {
   lot_trop_grand: "Trop de rappels d’un coup : 100 au plus.",
   conversation_invalide: "Cette conversation n’est pas valable.",
   poste_invalide: "Ce poste n’est pas valable.",
+  session_actuelle: "C’est la session de cet appareil : déconnecte-le depuis ses propres réglages.",
+  session_ordinateur: "C’est la session d’un ordinateur : déconnecte-le depuis Réglages › Équipe, sur cet ordinateur.",
   evenement_invalide: "Cet événement n’est pas valable : vérifie le titre, le jour et l’heure.",
   reserve_a_lorganisateur: "Seul l’organisateur peut changer cet événement.",
 };
@@ -193,7 +221,11 @@ const CONVEX_DEVELOPPEMENT = "https://coordinated-ox-134.eu-west-1.convex.cloud"
 function adresseNavigateur(): string {
   const forcee = process.env.NEXT_PUBLIC_CONVEX_URL;
   if (forcee && /^https:\/\/[a-z0-9.-]+\.convex\.cloud$/.test(forcee)) return forcee;
-  if (typeof window !== "undefined" && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) return CONVEX_DEVELOPPEMENT;
+  if (typeof window !== "undefined" && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    /* Tests seulement (scripts/test-mobile.mjs) : un backend Convex local et jetable, jamais un vrai déploiement. */
+    const local = localStorage.getItem("klyra:convex-local");
+    return local && /^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(local) ? local : CONVEX_DEVELOPPEMENT;
+  }
   return CONVEX_PRODUCTION;
 }
 
@@ -255,6 +287,13 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
     setDemande(null);
   }, []);
 
+  /* Session fermée depuis un autre appareil, gardée jusqu'à une nouvelle connexion ou une sortie voulue ici. */
+  const [fermeeGardee, setFermeeGardee] = useState(lireSessionFermee);
+  const oublierSessionFermee = useCallback(() => {
+    garderSessionFermee(false);
+    setFermeeGardee(false);
+  }, []);
+
   /* Le serveur répond de la même façon pour toute adresse (invitée, membre ou non) : acceptée ou
      non selon le délai, et l'attente avant la suivante. L'e-mail ne part que pour une adresse admise. */
   /* Un double clic ne fait qu'une demande (le serveur, lui, n'enverrait de toute façon qu'un lien). */
@@ -301,13 +340,14 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
       try {
         await signIn("postshiba", { email, code });
         oublierAdresse();
+        oublierSessionFermee();
       } catch (e) {
         setErreur(messageErreur(e));
       } finally {
         setOccupe(false);
       }
     },
-    [signIn, oublierAdresse],
+    [signIn, oublierAdresse, oublierSessionFermee],
   );
 
   /* Le lien de l'e-mail ouvre l'app (klyra://) : au lancement, puis à chaque lien. */
@@ -348,10 +388,34 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
 
   const seDeconnecter = useCallback(async () => {
     setErreur(null);
+    oublierSessionFermee();
     await signOut();
-  }, [signOut]);
+  }, [signOut, oublierSessionFermee]);
 
-  const etat: Etat = isLoading || (isAuthenticated && moi === undefined) ? "chargement" : !isAuthenticated ? "deconnecte" : moi ? "connecte" : "retire";
+  /* `moi` est null : retiré de l'équipe, ou session fermée depuis un autre appareil (le jeton
+     d'accès reste valable jusqu'à une heure, mais le serveur refuse déjà tout). Dans le second cas,
+     les jetons de cet appareil sont effacés et l'écran de connexion dit pourquoi. */
+  const statut = useQuery(api.equipe.statutSession, isAuthenticated && moi === null ? {} : "skip");
+  useEffect(() => {
+    if (statut !== "session_fermee") return;
+    garderSessionFermee(true);
+    void signOut().then(() => {
+      setFermeeGardee(true);
+      if (pont) setErreur("Cette session a été fermée depuis un autre appareil : reconnecte-toi.");
+    });
+  }, [statut, signOut, pont]);
+
+  const etat: Etat =
+    isLoading || (isAuthenticated && moi === undefined)
+      ? "chargement"
+      : !isAuthenticated
+        ? "deconnecte"
+        : moi
+          ? "connecte"
+          : statut === "retire"
+            ? "retire"
+            : "chargement";
+  const sessionFermee = etat !== "connecte" && (fermeeGardee || statut === "session_fermee");
 
   const envoyerProfil = useMutation(api.equipe.modifierMonProfil);
   const couleurActuelle = moi?.couleur;
@@ -381,6 +445,7 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
       prochaineDemande: demande?.prochaine ?? null,
       demandeRefusee: demande?.refusee ?? false,
       occupe,
+      sessionFermee,
       erreur,
       demanderLien,
       ouvrirLienColle,
@@ -388,7 +453,7 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
       seDeconnecter,
       modifierMonProfil,
     }),
-    [etat, moi, demande, occupe, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil],
+    [etat, moi, demande, occupe, sessionFermee, erreur, demanderLien, ouvrirLienColle, oublierAdresse, seDeconnecter, modifierMonProfil],
   );
   return (
     <CompteContext.Provider value={valeur}>
@@ -396,6 +461,8 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
       <PresenceKlyra actif={etat === "connecte" && pont !== null} />
       <SignalPoste actif={etat === "connecte" && pont !== null} />
       <SyncCompte actif={etat === "connecte" && pont !== null} />
+      {/* Hors de l'app de bureau (téléphone, navigateur) : la session se signale pour Réglages › Mobile. */}
+      <SignalTelephone actif={etat === "connecte" && pont === null} />
       <AgendaCompte actif={etat === "connecte"} />
       {children}
     </CompteContext.Provider>
@@ -404,6 +471,23 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
 
 export function useCompte(): CompteApi {
   return useContext(CompteContext);
+}
+
+/**
+ * Le socket avec le serveur est-il ouvert ? Un booléen, mis à jour seulement quand il change :
+ * `useConvexConnectionState` rend un nouvel objet à chaque événement de connexion, et ses rendus
+ * en continu empêchaient les navigations de l'app d'aboutir une fois connecté.
+ */
+export function useSocketOuvert(): boolean {
+  const convex = useConvex();
+  const [ouvert, setOuvert] = useState(() => convex.connectionState().isWebSocketConnected);
+  useEffect(() => {
+    const lire = () => setOuvert(convex.connectionState().isWebSocketConnected);
+    const arret = convex.subscribeToConnectionState(lire);
+    lire();
+    return arret;
+  }, [convex]);
+  return ouvert;
 }
 
 /**

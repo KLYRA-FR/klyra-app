@@ -170,7 +170,27 @@ export default defineSchema({
     systeme: v.union(v.literal("mac"), v.literal("windows"), v.literal("autre")),
     nom: v.string(),
     dernierSignal: v.number(),
-  }).index("by_membre_and_cle", ["membreId", "cle"]),
+    /** La session de cet ordinateur (Convex Auth), écrite à chaque signal. Absente : version d'avant. */
+    sessionId: v.optional(v.id("authSessions")),
+  })
+    .index("by_membre_and_cle", ["membreId", "cle"])
+    .index("by_sessionId", ["sessionId"]),
+
+  /**
+   * Un téléphone ou un navigateur connecté au compte (Réglages › Mobile) : une ligne par session,
+   * écrite par la session elle-même (`telephones:signaler`). La liste part des sessions
+   * (`authSessions`) : une session sans ligne s'affiche quand même, « appareil non identifié ».
+   */
+  telephones: defineTable({
+    membreId: v.id("membres"),
+    sessionId: v.id("authSessions"),
+    modele: v.union(v.literal("iphone"), v.literal("android"), v.literal("navigateur")),
+    cree: v.number(),
+    /** Dernier signal, écrit au plus une fois par minute. */
+    vu: v.number(),
+  })
+    .index("by_membre", ["membreId"])
+    .index("by_sessionId", ["sessionId"]),
 
   /**
    * Copie des conversations de l'ordinateur (spec mobile M-4). La copie locale

@@ -29,10 +29,10 @@ import {
   type Carnet,
   type Sonde,
 } from "@/lib/serveur-vps";
+import { useSupport } from "./poste";
 import { EnteteTelephone } from "./EnteteTelephone";
 
 const CHAMP = "h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
-
 
 /** Une commande à copier, sur une ligne qui peut se couper. */
 function Commande({ texte }: { texte: string }) {
@@ -228,6 +228,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   };
 
   const cadreTel = cadre === "telephone";
+  const sur = useSupport();
   return (
     <div className={cadreTel ? "flex min-h-0 flex-1 flex-col" : "mx-auto flex min-h-0 w-full max-w-[760px] flex-1 flex-col px-8 pt-8 pb-8"}>
       {cadreTel ? (
@@ -242,6 +243,8 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
       <p className={cadreTel ? "px-4 pb-2 text-ui text-texte-secondaire" : "pb-4 text-ui text-texte-secondaire"}>
         {carnet.liste.length === 0 ? "Relie l’app à un serveur KLYRA qui tourne sur ton VPS." : "Pour ajouter un VPS, lance la commande sur la machine et colle le lien qu’elle affiche."}
       </p>
+      {/* Le téléphone ne fait que sonder le VPS : ses messages passent par le compte et l'ordinateur (MO-T16). */}
+      {cadreTel && connecte ? <p className="px-4 pb-2 text-ui text-texte-secondaire">Ce téléphone vérifie seulement que le serveur répond. Tes messages passent par {sur}.</p> : null}
       {carnet.liste.length === 0 ? (
         <div className={cadreTel ? "min-h-0 flex-1 overflow-y-auto px-4" : "min-h-0 flex-1 overflow-y-auto"}>
           <Guide />

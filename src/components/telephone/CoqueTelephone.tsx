@@ -3,7 +3,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCompte } from "@/lib/compte";
-import { AgentsTelephone, EcranMac, PlusTelephone, ProjetsTelephone, ReglagesTelephone } from "./ListesTelephone";
+import { texteRoutines } from "@/lib/poste-texte";
+import { AgentsTelephone, EcranPoste, PlusTelephone, ProjetsTelephone, ReglagesTelephone } from "./ListesTelephone";
+import { usePostes, useRetenirPoste } from "./poste";
 import { BarreOnglets } from "./BarreOnglets";
 import { ChatsTelephone } from "./ChatsTelephone";
 import { ConnexionTelephone } from "./ConnexionTelephone";
@@ -22,10 +24,16 @@ function ecran(pathname: string): ReactNode {
   if (pathname === "/plus") return <PlusTelephone />;
   if (pathname === "/reglages") return <ReglagesTelephone />;
   if (pathname === "/serveurs") return <ServeursTelephone />;
-  if (pathname === "/routines") return <EcranMac titre="Automatisations" phrase="Les routines sont sur ton Mac. Elles ne partent que quand KLYRA y est ouverte." />;
-  if (pathname === "/artefacts") return <EcranMac titre="Artefacts" phrase="La liste est sur ton Mac." />;
-  if (pathname === "/projet" || pathname === "/fichiers") return <EcranMac titre="Projet" phrase="Les fichiers de ce projet sont sur ton Mac. Ils s’affichent quand KLYRA y est ouverte." />;
-  return <EcranMac titre="KLYRA" phrase="Cet écran se lit sur ton Mac." />;
+  if (pathname === "/routines") return <EcranRoutines />;
+  if (pathname === "/artefacts") return <EcranPoste titre="Artefacts" phrase={(sur) => `la liste est sur ${sur}.`} />;
+  if (pathname === "/projet" || pathname === "/fichiers") return <EcranPoste titre="Projet" phrase={(sur) => `les fichiers de ce projet sont sur ${sur}. Ils s’affichent quand KLYRA y est ouverte.`} />;
+  return <EcranPoste titre="KLYRA" phrase={(sur) => `cet écran se lit sur ${sur}.`} />;
+}
+
+/** MO-T17 : une routine d'un VPS tourne même l'ordinateur fermé. */
+function EcranRoutines() {
+  const { principal } = usePostes();
+  return <EcranPoste titre="Automatisations" phrase={() => texteRoutines(principal)} />;
 }
 
 /** Sous 760 px. L'ouverture est Chats. Le bureau (≥ 1100 px) ne passe pas ici. */
@@ -33,6 +41,7 @@ export function CoqueTelephone() {
   const pathname = usePathname();
   const router = useRouter();
   const compte = useCompte();
+  useRetenirPoste();
   const [installe, setInstalle] = useState(() => (typeof window === "undefined" ? true : localStorage.getItem(CLE_INSTALL) === "navigateur"));
   const [horsLigne, setHorsLigne] = useState(false);
 

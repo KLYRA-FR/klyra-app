@@ -374,7 +374,8 @@ function appliquerMasque(modules, reserves, masque) {
 }
 
 export function qrMatrice(texte) {
-  const octets = [...Buffer.from(texte, "utf8")];
+  /* TextEncoder plutôt que Buffer : le même module dessine le QR dans la fenêtre de l'app (Réglages › Mobile). */
+  const octets = [...new TextEncoder().encode(texte)];
   const version = choisirVersion(octets.length);
   if (!version) throw new Error("lien trop long pour le QR");
   const [, n1, d1, n2, d2] = BLOCS[version];
@@ -505,7 +506,7 @@ export function lireQr(modules) {
     }
     octets.push(octet);
   }
-  return Buffer.from(octets).toString("utf8");
+  return new TextDecoder().decode(Uint8Array.from(octets));
 }
 
 /** Le même QR pour un terminal, en demi-blocs : les modules clairs sont dessinés (terminal sombre), marge de 2. */

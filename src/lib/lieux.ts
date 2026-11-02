@@ -1,8 +1,8 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Chat } from "@/types/domain";
-import { CLE_CARNET, lireCarnet, type Carnet, type ServeurConnu } from "./serveur-vps";
+import { CLE_CARNET, interroger, lireCarnet, sondeDe, type Carnet, type ServeurConnu, type Sonde } from "./serveur-vps";
 
 /**
  * Où tourne une conversation : ce PC (null) ou un VPS relié (son origine https).
@@ -119,6 +119,22 @@ export function changerDeLieu(chat: Chat, lieu: string | null): Chat {
   const suivant: Chat = { ...chat, lieu, sessions: reprises, sessionsParLieu: laissees };
   if (!Object.keys(laissees).length) delete suivant.sessionsParLieu;
   return suivant;
+}
+
+/** La dernière sonde de chaque VPS relié, relue quand la liste change (Réglages › Mobile, Ce téléphone). */
+export function useSondes(serveurs: ServeurConnu[]): Record<string, { sonde: Sonde; agents?: string }> {
+  const [sondes, setSondes] = useState<Record<string, { sonde: Sonde; agents?: string }>>({});
+  useEffect(() => {
+    const controle = new AbortController();
+    for (const serveur of serveurs) {
+      void interroger(serveur.adresse, controle.signal).then((lecture) => {
+        if (controle.signal.aborted) return;
+        setSondes((etat) => ({ ...etat, [serveur.id]: { sonde: sondeDe(lecture), agents: lecture.ok ? lecture.agents : undefined } }));
+      });
+    }
+    return () => controle.abort();
+  }, [serveurs]);
+  return sondes;
 }
 
 /** Le nom à afficher pour un lieu. */

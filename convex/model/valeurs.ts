@@ -39,7 +39,10 @@ export type CodeErreur =
   | "reserve_a_lorganisateur"
   // Téléphone : conversations du compte, poste, messages en attente.
   | "conversation_invalide"
-  | "poste_invalide";
+  | "poste_invalide"
+  // Réglages › Mobile : sessions des téléphones (cf. `convex/telephones.ts`).
+  | "session_actuelle"
+  | "session_ordinateur";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

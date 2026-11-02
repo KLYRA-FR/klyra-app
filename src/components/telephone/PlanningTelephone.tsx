@@ -8,7 +8,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { messageErreur, useCompte } from "@/lib/compte";
 import { aujourdhui, cleJour, depuisCle, libelleJour } from "@/lib/dates";
 import { debutMsEvenement } from "@/components/planning/AgendaCompte";
-import { support } from "@/lib/poste-texte";
+import { supportOuOrdinateur } from "@/lib/poste-texte";
 import { cn } from "@/lib/cn";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { usePostes } from "./poste";
@@ -53,7 +53,7 @@ export function PlanningTelephone() {
   const evenements = useQuery(api.evenements.entre, compte.etat === "connecte" ? fenetre : "skip");
   const rappels = useQuery(api.rappels.mes, compte.etat === "connecte" ? {} : "skip");
   const jours = vue === "semaine" ? Array.from({ length: 7 }, (_, i) => ajouterJours(fenetre.debut, i)) : [jour];
-  const sur = principal ? support(principal) : "ton Mac";
+  const sur = supportOuOrdinateur(principal);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
