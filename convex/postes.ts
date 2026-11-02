@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { erreur, exigerMembre } from "./model/acces";
+import { erreur, exigerMembre, sessionActuelle } from "./model/acces";
 
 /** Sans signal pendant ce délai, le téléphone dit le poste fermé (2,5 × 10 s). */
 export const OUVERT_MS = 25_000;
@@ -20,8 +20,10 @@ export const signaler = mutation({
       .withIndex("by_membre_and_cle", (q) => q.eq("membreId", moi._id).eq("cle", args.cle))
       .unique();
     const dernierSignal = Date.now();
-    if (existant) await ctx.db.patch("postes", existant._id, { systeme: args.systeme, nom, dernierSignal });
-    else await ctx.db.insert("postes", { membreId: moi._id, cle: args.cle, systeme: args.systeme, nom, dernierSignal });
+    /* La session de cet ordinateur : Réglages › Mobile ne la compte pas parmi les téléphones. */
+    const sessionId = (await sessionActuelle(ctx))?._id;
+    if (existant) await ctx.db.patch("postes", existant._id, { systeme: args.systeme, nom, dernierSignal, sessionId });
+    else await ctx.db.insert("postes", { membreId: moi._id, cle: args.cle, systeme: args.systeme, nom, dernierSignal, sessionId });
     return null;
   },
 });

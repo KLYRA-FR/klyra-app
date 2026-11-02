@@ -27,6 +27,7 @@ import type * as model_valeurs from "../model/valeurs.js";
 import type * as postes from "../postes.js";
 import type * as presence from "../presence.js";
 import type * as rappels from "../rappels.js";
+import type * as telephones from "../telephones.js";
 
 import type {
   ApiFromModules,
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   postes: typeof postes;
   presence: typeof presence;
   rappels: typeof rappels;
+  telephones: typeof telephones;
 }>;
 
 /**
