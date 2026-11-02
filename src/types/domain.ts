@@ -195,6 +195,8 @@ export interface Fil {
   projetId?: string | null;
   /** Le rappel d'où vient ce fil (« Confier à un agent »). */
   rappel?: { source: "local" | "compte"; id: string } | null;
+  /** Fermé (archivé) le : pour la colonne Terminé. Absent sur les fils fermés avant les tickets. */
+  fermeLe?: string | null;
 }
 
 /** L'étape d'un fil vu comme un ticket. « En cours » vaut aussi tant qu'une réponse tourne. */

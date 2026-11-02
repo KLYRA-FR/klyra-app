@@ -9,7 +9,8 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
 import { raccourciDuSysteme } from "@/lib/plateforme";
 import { ouvrirRecherche, useRechercheOuverte } from "@/lib/recherche-session";
-import { useProjects } from "@/lib/workspace";
+import { colonneTicket } from "@/lib/tickets";
+import { useProjects, useWorkspace } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
 import { NAVIGATION } from "./navigation";
 import { PastilleMaj } from "./PastilleMaj";
@@ -60,6 +61,9 @@ export function AppRail({
   const currentId = useSearchParams().get("id");
   const pathname = usePathname();
   const rechercheOuverte = useRechercheOuverte();
+  /* Les tickets à valider : ils t'attendent, leur nombre se pose sur l'entrée Tickets. */
+  const { chats, travail } = useWorkspace().state;
+  const aValider = chats.filter((c) => c.fil && colonneTicket(c.fil, !!travail[c.id]) === "a-valider").length;
 
   return (
     <nav
@@ -91,8 +95,14 @@ export function AppRail({
         {NAVIGATION.map((item) => {
           const active = pathname === item.href || (item.href === "/chats" && (pathname === "/equipe" || (pathname === "/chat" && panneau === "conversations")));
           return (
-            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} title={item.label} className={entree(active)}>
+            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} title={item.label} className={cn(entree(active), "relative")}>
               <Entree icone={item.icon} nom={item.label} active={active} />
+              {item.href === "/tickets" && aValider > 0 && (
+                <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-pill bg-bleu-k1-500 px-1 text-ui-2xs leading-none font-semibold text-texte-inverse">
+                  {aValider}
+                  <span className="sr-only"> à valider</span>
+                </span>
+              )}
             </Link>
           );
         })}

@@ -98,9 +98,14 @@ export function poserEtape(fil: Fil, etape: EtapeTicket, raison?: string | null)
   return { ...fil, etape, raison: etape === "bloque" ? propre(raison ?? "") || null : null, etapePosee: true };
 }
 
+/** Le fil fermé : terminé (ou supprimé, retiré des archivés). */
+export function ferme(fil: Fil, supprime: boolean, maintenant: Date): Fil {
+  return { ...fil, statut: "archive", supprime, fermeLe: maintenant.toISOString() };
+}
+
 /** Le fil rouvert reprend où il en était. */
 export function rouvert(fil: Fil, aReponse: boolean): Fil {
-  return { ...fil, statut: "ouvert", supprime: false, etape: etapeDeReprise(aReponse), raison: null, etapePosee: false };
+  return { ...fil, statut: "ouvert", supprime: false, etape: etapeDeReprise(aReponse), raison: null, etapePosee: false, fermeLe: null };
 }
 
 export const peutMettreAJour = (fil: Fil, appelant: string) => fil.roleId === appelant || fil.lancePar?.roleId === appelant;
@@ -154,6 +159,51 @@ export function trierTickets<T extends FilChat>(fils: T[], travaille: (id: strin
       (a.fil.echeance ?? "9999").localeCompare(b.fil.echeance ?? "9999") ||
       a.fil.creeLe.localeCompare(b.fil.creeLe),
   );
+}
+
+/* ─── Le tableau ───────────────────────────────────────────────── */
+
+export interface FiltresTickets {
+  /** Un agent ; null : tous. */
+  agent: string | null;
+  /** Un projet ; null : tous. */
+  projet: string | null;
+  /** Qui l'a ouvert : toi, un agent, ou tous. */
+  origine: "tous" | "moi" | "agents";
+}
+
+export const FILTRES_PAR_DEFAUT: FiltresTickets = { agent: null, projet: null, origine: "tous" };
+
+/** Les fils fermés depuis moins de 7 jours restent dans Terminé ; les autres, sur demande. */
+export const JOURS_TERMINES = 7;
+
+const fermeLe = (c: FilChat) => c.fil.fermeLe ?? c.updatedAt;
+
+/** Les fils de chaque colonne, filtrés et triés. Terminé : du plus récent au plus ancien. */
+export function tableauTickets(
+  chats: Chat[],
+  travaille: (id: string) => boolean,
+  filtres: FiltresTickets,
+  maintenant: Date,
+  tousTermines = false,
+): { colonnes: Record<ColonneTicket, FilChat[]>; termines: number } {
+  const limite = new Date(maintenant.getTime() - JOURS_TERMINES * 86_400_000).toISOString();
+  const fils = chats.filter(
+    (c): c is FilChat =>
+      !!c.fil &&
+      (!filtres.agent || c.fil.roleId === filtres.agent) &&
+      (!filtres.projet || c.fil.projetId === filtres.projet) &&
+      (filtres.origine === "tous" || (filtres.origine === "moi") === !c.fil.lancePar),
+  );
+  const colonnes = Object.fromEntries(COLONNES.map((c) => [c, [] as FilChat[]])) as Record<ColonneTicket, FilChat[]>;
+  for (const c of trierTickets(fils, travaille)) {
+    const colonne = colonneTicket(c.fil, travaille(c.id));
+    if (colonne) colonnes[colonne].push(c);
+  }
+  colonnes.termine.sort((a, b) => fermeLe(b).localeCompare(fermeLe(a)));
+  const termines = colonnes.termine.length;
+  if (!tousTermines) colonnes.termine = colonnes.termine.filter((c) => fermeLe(c) >= limite);
+  return { colonnes, termines };
 }
 
 const PRIORITES = ["", "priorité basse", "priorité moyenne", "priorité haute"];

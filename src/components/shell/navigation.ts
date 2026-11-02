@@ -7,6 +7,7 @@ import type { IconName } from "@/components/icons/Icon";
 export const NAVIGATION: { href: string; label: string; icon: IconName }[] = [
   { href: "/", label: "Accueil", icon: "accueil-ronds" },
   { href: "/chats", label: "Chats", icon: "message-square" },
+  { href: "/tickets", label: "Tickets", icon: "list" },
   { href: "/planning", label: "Planning", icon: "calendar-01" },
   { href: "/routines", label: "Automatisations", icon: "lightning-01" },
   { href: "/artefacts", label: "Artefacts", icon: "artefacts-forme" },
