@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { getBridge } from "@/lib/bridge";
@@ -11,8 +11,7 @@ import {
   CLE_CARNET,
   CLE_LIEN_ATTENTE,
   COMMANDE_SERVEUR,
-  MESSAGE_INVITATION,
-  MESSAGE_VERSION,
+  EVENEMENT_AJOUTER,
   ajouterServeur,
   carnetVide,
   appairer,
@@ -24,33 +23,15 @@ import {
   quitterServeur,
   retirer,
   retirerServeur,
+  libelleServeur,
+  sondeDe,
   type Carnet,
-  type Lecture,
+  type Sonde,
 } from "@/lib/serveur-vps";
 import { EnteteTelephone } from "./EnteteTelephone";
 
 const CHAMP = "h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
 
-type Sonde = "attente" | "repond" | "silence" | "invitation" | "version";
-
-function sondeDe(lecture: Lecture): Sonde {
-  if (lecture.ok) return "repond";
-  if (lecture.message === MESSAGE_INVITATION) return "invitation";
-  if (lecture.message === MESSAGE_VERSION) return "version";
-  return "silence";
-}
-
-const AGENTS: Record<string, string> = {
-  pret: "agents prêts",
-  "non-connecte": "Claude Code à connecter (connecter-claude)",
-  absent: "Claude Code absent : relance la commande",
-};
-
-function libelle(etat: "joint" | "quitte", sonde: Sonde | undefined, agents: string | undefined): string {
-  if (etat === "quitte") return "Quitté";
-  const detail = sonde === "repond" ? "Répond" : sonde === "invitation" ? "Plus relié" : sonde === "version" ? "Autre version" : sonde === "silence" ? "Ne répond pas" : "Vérification…";
-  return sonde === "repond" && agents && AGENTS[agents] ? `${detail} · ${AGENTS[agents]}` : detail;
-}
 
 /** Écran vide : la commande à coller sur le VPS, puis le lien qu’elle affiche. */
 function Guide() {
@@ -95,7 +76,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const compte = useCompte();
   const [carnet, setCarnet] = useState<Carnet>(() => (typeof window === "undefined" ? carnetVide() : lireCarnet(localStorage.getItem(CLE_CARNET))));
   const [saisie, setSaisie] = useState("");
-  const [ajout, setAjout] = useState(false);
+  const [ajout, setAjout] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("ajouter"));
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
   const [sondes, setSondes] = useState<Record<string, Sonde>>({});
@@ -107,6 +88,30 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
     localStorage.setItem(CLE_CARNET, JSON.stringify(carnet));
     signalerCarnet();
   }, [carnet]);
+
+  // Le sélecteur du rail peut retirer un serveur pendant que l'écran est ouvert : on relit le carnet.
+  useEffect(() => {
+    const relire = () => {
+      const brut = localStorage.getItem(CLE_CARNET);
+      setCarnet((actuel) => (JSON.stringify(actuel) === brut ? actuel : lireCarnet(brut)));
+    };
+    window.addEventListener("klyra:carnet", relire);
+    return () => window.removeEventListener("klyra:carnet", relire);
+  }, []);
+
+  // « Ajouter un serveur » du sélecteur du rail : le formulaire s'ouvre (à l'arrivée par `?ajouter`, ou écran déjà ouvert).
+  const ajouter = useSearchParams().get("ajouter");
+  useEffect(() => {
+    if (ajouter) router.replace("/serveurs");
+  }, [ajouter, router]);
+  useEffect(() => {
+    const ouvrir = () => {
+      setErreur(null);
+      setAjout(true);
+    };
+    window.addEventListener(EVENEMENT_AJOUTER, ouvrir);
+    return () => window.removeEventListener(EVENEMENT_AJOUTER, ouvrir);
+  }, []);
 
   useEffect(() => {
     const controle = new AbortController();
@@ -229,11 +234,11 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
           {carnet.liste.map((serveur) => {
             return (
               <li key={serveur.id} className="border-b border-bordure-subtile py-3">
-                {/* Le choix de la machine se fait dans chaque conversation : ici, seulement l'état. */}
+                {/* La machine active se choisit dans le sélecteur du rail : ici, l'état et les gestes. */}
                 <div className="flex min-h-11 w-full flex-col justify-center text-left">
                   <span className="text-body-s text-texte-principal">{serveur.nom}</span>
                   <span className="text-ui-xs text-texte-secondaire">{serveur.adresse}</span>
-                  <span className="text-ui-xs text-texte-secondaire">{libelle(serveur.etat, sondes[serveur.id], agentsVps[serveur.id])}</span>
+                  <span className="text-ui-xs text-texte-secondaire">{libelleServeur(serveur.etat, sondes[serveur.id], agentsVps[serveur.id])}</span>
                 </div>
                 <span className="mt-1 flex gap-4">
                   {serveur.etat === "joint" ? (

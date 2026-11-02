@@ -9,7 +9,7 @@ import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
-import { nomLieu, useServeursRelies } from "@/lib/lieux";
+import { lieuParDefaut, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { quandRoutine } from "@/lib/routines-affichage";
 import { cn } from "@/lib/cn";
 import { useRole, useWorkspace } from "@/lib/workspace";
@@ -46,7 +46,8 @@ function normaliser(input?: RoutineInput | Routine | null): Valeurs {
     active: input?.active ?? true,
     missedPolicy: input?.schedule.kind === "once" ? "run-once" : input?.missedPolicy ?? "skip",
     projectId: input?.projectId ?? null,
-    lieu: input?.lieu ?? null,
+    // Une routine existante garde sa machine ; une nouvelle part sur la machine active (sélecteur du rail).
+    lieu: input && "id" in input ? (input.lieu ?? null) : (input?.lieu ?? lieuParDefaut()),
   };
 }
 

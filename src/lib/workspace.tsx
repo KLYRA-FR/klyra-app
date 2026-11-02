@@ -1,6 +1,6 @@
 "use client";
 
-import { lieuParDefaut, retenirLieu } from "./lieux";
+import { changerDeLieu, lieuParDefaut, retenirLieu, useLieuActif } from "./lieux";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
 import { Bouton } from "@/components/ui/Bouton";
@@ -529,8 +529,10 @@ interface WorkspaceApi {
   sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[]) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
-  /** Ce PC (null) ou un VPS relié. Les agents repartent d'une session neuve sur l'autre machine. */
+  /** Ce PC (null) ou un VPS relié, pour cette conversation seulement. Les agents y reprennent la session qu'ils y avaient, sinon une neuve. */
   choisirLieu: (chatId: string, lieu: string | null) => void;
+  /** Le sélecteur du rail : la machine active, et les conversations directes au repos y passent. */
+  basculerMachine: (lieu: string | null) => void;
   /** Repart de zéro avec l'agent : les messages et sa mémoire de cette conversation sont effacés. */
   nouvelleConversation: (chatId: string) => void;
   /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id. */
@@ -1300,15 +1302,21 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const choisirLieu = useCallback(
     (chatId: string, lieu: string | null) => {
       if (!assurerChat(chatId)) return;
-      retenirLieu(lieu);
-      dispatch({
-        type: "chat/update",
-        id: chatId,
-        patch: (c) => ((c.lieu ?? null) === lieu ? c : { ...c, lieu, sessions: {} }),
-      });
+      dispatch({ type: "chat/update", id: chatId, patch: (c) => changerDeLieu(c, lieu) });
     },
     [assurerChat],
   );
+
+  /* Comme le sélecteur de serveur d'OpenBot : les conversations directes avec les agents suivent la machine
+     active. Les fils restent où ils sont (leurs outils sont ceux de ce PC), les projets aussi (leurs dossiers). */
+  const basculerMachine = useCallback((lieu: string | null) => {
+    retenirLieu(lieu);
+    const { chats, travail } = stateRef.current;
+    for (const chat of chats) {
+      if (chat.kind !== "direct" || chat.fil || travail[chat.id] || (chat.lieu ?? null) === lieu) continue;
+      dispatch({ type: "chat/update", id: chat.id, patch: (c) => changerDeLieu(c, lieu) });
+    }
+  }, []);
 
   /** Sous une réponse : la refaire, plus détaillée, plus concise, en cherchant sur le web, ou avec un autre modèle. */
   const reessayer = useCallback(
@@ -2069,6 +2077,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       sendMessage,
       choisirModele,
       choisirLieu,
+      basculerMachine,
       nouvelleConversation,
       creerFil,
       renommerChat,
@@ -2119,6 +2128,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       sendMessage,
       choisirModele,
       choisirLieu,
+      basculerMachine,
       nouvelleConversation,
       creerFil,
       renommerChat,
@@ -2208,6 +2218,7 @@ export function useProjects(): Project[] {
 export function useChat(id: string | null): Chat | undefined {
   const { chats } = useWorkspace().state;
   const { roles, tous } = useAgents();
+  const lieuActif = useLieuActif();
   return useMemo(() => {
     const chat = chats.find((c) => c.id === id);
     if (chat || !id?.startsWith(DIRECT)) return chat;
@@ -2223,8 +2234,9 @@ export function useChat(id: string | null): Chat | undefined {
       updatedAt: new Date(0).toISOString(),
       sessions: {},
       luJusqua: null,
+      lieu: lieuActif,
     };
-  }, [chats, roles, tous, id]);
+  }, [chats, roles, tous, id, lieuActif]);
 }
 
 export function useChatMessages(chatId: string): Message[] {

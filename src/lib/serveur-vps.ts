@@ -12,6 +12,7 @@ import {
   CHEMIN_SERVEUR,
   MESSAGE_INVITATION,
   MESSAGE_SILENCE,
+  MESSAGE_VERSION,
   lireAppairage,
   lireCorps,
   lireSaisie,
@@ -34,6 +35,8 @@ export type { Lecture, Saisie } from "../../electron/lecture-serveur";
 export const CLE_CARNET = "klyra:serveurs";
 /** Lien `klyra://rejoindre` reçu par Electron, en attendant l’écran Serveurs. */
 export const CLE_LIEN_ATTENTE = "klyra:lien-attente";
+/** « Ajouter un serveur » demandé d'ailleurs (sélecteur du rail) quand l'écran Serveurs est déjà ouvert. */
+export const EVENEMENT_AJOUTER = "klyra:ajouter-serveur";
 /** Hors Electron seulement : les jetons d’appareil, par origine. */
 const CLE_JETONS = "klyra:jetons-serveurs";
 
@@ -53,6 +56,28 @@ export interface ServeurConnu {
 export interface Carnet {
   actif: string | null;
   liste: ServeurConnu[];
+}
+
+/** Ce qu'on sait d'un serveur relié, d'après sa dernière réponse. */
+export type Sonde = "attente" | "repond" | "silence" | "invitation" | "version";
+
+export function sondeDe(lecture: Lecture): Sonde {
+  if (lecture.ok) return "repond";
+  if (lecture.message === MESSAGE_INVITATION) return "invitation";
+  if (lecture.message === MESSAGE_VERSION) return "version";
+  return "silence";
+}
+
+const AGENTS: Record<string, string> = {
+  pret: "agents prêts",
+  "non-connecte": "Claude Code à connecter (connecter-claude)",
+  absent: "Claude Code absent : relance la commande",
+};
+
+export function libelleServeur(etat: EtatServeur, sonde: Sonde | undefined, agents: string | undefined): string {
+  if (etat === "quitte") return "Quitté";
+  const detail = sonde === "repond" ? "Répond" : sonde === "invitation" ? "Plus relié" : sonde === "version" ? "Autre version" : sonde === "silence" ? "Ne répond pas" : "Vérification…";
+  return sonde === "repond" && agents && AGENTS[agents] ? `${detail} · ${AGENTS[agents]}` : detail;
 }
 
 export function carnetVide(): Carnet {
