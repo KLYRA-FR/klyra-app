@@ -137,6 +137,10 @@ function Detail({ utilisation, disponible, enCours }: { utilisation: Utilisation
         <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
           {enCours ? "Lecture…" : "Elle s’affiche à la première réponse d’un agent. Clic pour la lire maintenant."}
         </p>
+      ) : !utilisation.session && !utilisation.semaine ? (
+        <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
+          {enCours ? "Lecture…" : "Claude Code n’a pas encore donné le détail des limites. Clic pour réessayer."}
+        </p>
       ) : (
         <>
           {utilisation.statut === "rejected" && (
