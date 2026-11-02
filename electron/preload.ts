@@ -194,6 +194,17 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("apercu:adresse", listener);
     },
   },
+  superagent: {
+    peutOuvrir: () => ipcRenderer.invoke("superagent:peut-ouvrir"),
+    ouvrir: (fait: unknown) => ipcRenderer.invoke("superagent:ouvrir", fait),
+    message: (fait: unknown) => ipcRenderer.invoke("superagent:message", fait),
+    etat: (filId: string) => ipcRenderer.invoke("superagent:etat", filId),
+    marquer: (filId: string, status: string, controle: string | null) => ipcRenderer.invoke("superagent:marquer", filId, status, controle),
+    projection: (projectId: string | null) => ipcRenderer.invoke("superagent:projection", projectId),
+    preuves: (workId: string) => ipcRenderer.invoke("superagent:preuves", workId),
+    chercher: (requete: string, compte: string, projectId: string | null) => ipcRenderer.invoke("superagent:chercher", requete, compte, projectId),
+    preparer: (filId: string) => ipcRenderer.invoke("superagent:preparer", filId),
+  },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */
     avantFermeture: (callback: () => void) => {

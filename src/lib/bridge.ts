@@ -413,6 +413,23 @@ export interface KlyraBridge {
   apercu?: {
     onAdresse: (callback: (url: string) => void) => () => void;
   };
+  /** Journal des travaux sur les fils. Absent tant que l'app n'a pas été relancée. */
+  superagent?: {
+    peutOuvrir: () => Promise<Reponse<{ ok: boolean; places: number }>>;
+    ouvrir: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; work_id?: string }>>;
+    message: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; disposition?: string }>>;
+    etat: (filId: string) => Promise<Reponse<{ status: string; work_id: string } | null>>;
+    marquer: (filId: string, status: string, controle: string | null) => Promise<Reponse<{ ok: boolean; motif?: string }>>;
+    projection: (projectId: string | null) => Promise<Reponse<{
+      travaux: { work_id: string; fil_id: string | null; titre: string; owner_agent_id: string | null; status: string; state_ref: string; deadline_at: string | null; mesures_cout: string | null }[];
+      alertes: { work_id: string; type: string; motif: string; prochain_geste: string }[];
+      blocages: { point: string; texte: string }[];
+      couverture: string;
+    }>>;
+    preuves: (workId: string) => Promise<Reponse<unknown>>;
+    chercher: (requete: string, compte: string, projectId: string | null) => Promise<Reponse<{ resultats: { identifiant: string; extrait: string; chemin: string }[]; non_recherche: string[] }>>;
+    preparer: (filId: string) => Promise<Reponse<{ ok: boolean; motif?: string }>>;
+  };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;
     read: () => Promise<Reponse<unknown>>;

@@ -36,6 +36,19 @@ import {
 } from "./mes-agents";
 import { readFile, writeFile } from "node:fs/promises";
 import {
+  chercherTravaux,
+  etatFil,
+  lirePreuves,
+  lireProjection,
+  marquerFil,
+  noterMessage,
+  noterOuverture,
+  ouvrirJournal,
+  passageWatchdog,
+  peutOuvrir,
+  preparerFil,
+} from "./superagent/session";
+import {
   actualiserUtilisation,
   compteClaude,
   connecterClaude,
@@ -678,6 +691,29 @@ function registerBridge() {
     await oublierJetonServeur(origine);
     return confirme;
   }));
+  ouvrirJournal(app.getPath("userData"));
+  const veilleTravaux = setInterval(() => {
+    try {
+      passageWatchdog();
+    } catch {
+      // Couverture dégradée : le passage suivant le dira. On n'écrit pas dans les fils.
+    }
+  }, 15 * 60_000);
+  veilleTravaux.unref();
+  handle("superagent:peut-ouvrir", () => peutOuvrir());
+  handle("superagent:ouvrir", (brut: unknown) => noterOuverture(brut));
+  handle("superagent:message", (brut: unknown) => noterMessage(brut));
+  handle("superagent:etat", (filId: unknown) => etatFil(typeof filId === "string" ? filId : ""));
+  handle("superagent:marquer", (filId: unknown, status: unknown, controle: unknown) => {
+    const statut = status === "active" || status === "suspended" || status === "blocked" || status === "done" || status === "cancelled" || status === "waiting" ? status : "blocked";
+    return marquerFil(typeof filId === "string" ? filId : "", statut, typeof controle === "string" ? controle : null);
+  });
+  handle("superagent:projection", (projectId: unknown) => lireProjection(typeof projectId === "string" && projectId ? projectId : null));
+  handle("superagent:preuves", (workId: unknown) => lirePreuves(typeof workId === "string" ? workId : ""));
+  handle("superagent:chercher", (requete: unknown, compte: unknown, projectId: unknown) =>
+    chercherTravaux(typeof requete === "string" ? requete : "", typeof compte === "string" ? compte : "local", typeof projectId === "string" && projectId ? projectId : null),
+  );
+  handle("superagent:preparer", (filId: unknown) => preparerFil(typeof filId === "string" ? filId : ""));
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
   ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {

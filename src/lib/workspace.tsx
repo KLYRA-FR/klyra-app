@@ -862,7 +862,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /** `lancer`, pour ce qui est déclaré avant lui (retours des fils). */
   const lancerTot = useRef<(chatId: string, roleId: RoleId, message: Message) => void>(() => {});
   const envoyerRef = useRef<
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean, routineRun?: string) => void
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean, routineRun?: string, idImpose?: string) => void
   >(() => {});
 
   /** La suite de la file d'attente, quand l'agent a fini. */
@@ -1062,6 +1062,23 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           // Le ticket du fil : à valider, ou bloqué sur l'erreur.
           dispatch({ type: "chat/update", id: chatId, patch: (c) => (c.fil ? { ...c, fil: apresReponse(c.fil, { ok: event.ok, erreur: event.erreur }) } : c) });
           rapporterFil(chatId, messageId, event.ok);
+          if (stateRef.current.chats.some((c) => c.id === chatId && c.fil)) {
+            const pont = getBridge()?.superagent;
+            if (pont) {
+              void pont.message({
+                filId: chatId,
+                messageId,
+                texte: "texte" in event && typeof event.texte === "string" ? event.texte : "",
+                auteur: "role",
+                roleId,
+                ok: event.ok,
+                erreur: event.erreur ?? null,
+                projectId: stateRef.current.chats.find((c) => c.id === chatId)?.fil?.projetId ?? "hors-projet",
+                compte: stateRef.current.currentUser.id || "local",
+              });
+              if (!event.ok) void pont.marquer(chatId, "blocked", null);
+            }
+          }
           break;
       }
     });
@@ -1266,19 +1283,20 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /** `horsFile` : le message sort de la file, l'agent vient de finir (l'état n'est peut-être pas encore à jour). */
   const envoyer = useCallback(
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false, routineRun?: string) => {
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false, routineRun?: string, idImpose?: string) => {
       const chat = assurerChat(chatId);
       if (!chat) return;
 
       // Une routine attend aussi si son agent travaille dans une autre conversation.
       const agentOccupe = routineRun && Object.values(stateRef.current.travail).some((t) => t.roleId === to);
       if ((stateRef.current.travail[chatId] && !horsFile) || agentOccupe) {
+        const idFile = idImpose ?? crypto.randomUUID();
         dispatch({
           type: "file/ajouter",
           chatId,
-          message: { id: crypto.randomUUID(), text, to, fichiers, ...(routineRun ? { routineRun } : {}) },
+          message: { id: idFile, text, to, fichiers, ...(routineRun ? { routineRun } : {}) },
         });
-        return;
+        return idFile;
       }
 
       // Un fil sans titre prend le début de son premier message.
@@ -1287,7 +1305,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       }
 
       const message: Message = {
-        id: routineRun ? `routine-user-${routineRun}` : crypto.randomUUID(),
+        id: idImpose ?? (routineRun ? `routine-user-${routineRun}` : crypto.randomUUID()),
         chatId,
         author: { kind: "user" },
         createdAt: new Date().toISOString(),
@@ -1304,6 +1322,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       const roleId = chat.kind === "direct" ? chat.roleIds[0] : (to ?? parDefaut);
       // Le message est dans l'état au prochain rendu : l'agent part juste après.
       timers.current.push(setTimeout(() => lancerRef.current(chatId, roleId, message), 0));
+      return message.id;
     },
     [assurerChat],
   );
@@ -1545,7 +1564,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   useEffect(() => {
     const outils = bridge?.outils;
     if (!outils) return;
-    const executer = (nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }): string => {
+    const executer = async (nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }): Promise<string> => {
       const { chats, messages, travail, projects } = stateRef.current;
       const roles = rolesRef.current;
       const nomDe = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
@@ -1576,12 +1595,36 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             throw new Error(`Aucun projet « ${projetId} ». Projets : ${projects.map((p) => `${p.id} (${p.name})`).join(", ") || "aucun"}.`);
           }
           const ticket: ChampsTicket = { priorite: lirePriorite(args.priorite) ?? 0, echeance: lireEcheance(args.echeance) ?? null, projetId };
+          if (bridge?.superagent) {
+            const garde = await bridge.superagent.peutOuvrir();
+            if (garde.ok && !garde.data.ok) throw new Error("En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère.");
+          }
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
           const id = creerFil(agent, titre || brief, lanceur, ticket);
           if (lanceur) {
             dispatch({ type: "chat/update", id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: true } } : c) });
           }
-          timers.current.push(setTimeout(() => envoyerRef.current(id, brief, null, []), 0));
+          const messageId = crypto.randomUUID();
+          timers.current.push(setTimeout(() => envoyerRef.current(id, brief, null, [], false, undefined, messageId), 0));
+          if (bridge?.superagent) {
+            const note = await bridge.superagent.ouvrir({
+              filId: id,
+              roleId: agent,
+              messageId,
+              brief,
+              titre: titre || brief.slice(0, 80),
+              projectId: projetId ?? "hors-projet",
+              compte: stateRef.current.currentUser.id || "local",
+              priorite: ticket.priorite ?? 0,
+              echeance: ticket.echeance,
+            });
+            if (note.ok && note.data.ok === false) {
+              archiverFil(id);
+              throw new Error(note.data.motif === "capacite_atteinte"
+                ? "En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère."
+                : `Travail non ouvert : ${note.data.motif ?? "refus"}.`);
+            }
+          }
           return `Fil ouvert : ${titre || "sans titre"} (${id}). ${nomDe(agent)} y travaille, dans un onglet de son chat.${lanceur ? " Sa réponse te reviendra automatiquement dans cette conversation : inutile de la surveiller." : ""}`;
         }
         case "lister_fils": {
@@ -1604,10 +1647,27 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           const message = String(args.message ?? "").trim();
           if (!message) throw new Error("Le message est vide.");
           if (fil.fil.statut === "archive") throw new Error("Ce fil est fermé : demande à la personne de le rouvrir, ou ouvre-en un autre.");
+          if (bridge?.superagent) {
+            const etat = await bridge.superagent.etat(fil.id);
+            if (etat.ok && etat.data && (etat.data.status === "suspended" || etat.data.status === "cancelled" || etat.data.status === "done")) {
+              throw new Error("Ce travail est suspendu ou clos : aucun nouveau départ.");
+            }
+          }
           if (fil.fil.lancePar?.chatId === appelant.chatId) {
             dispatch({ type: "chat/update", id: fil.id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: true } } : c) });
           }
-          envoyerRef.current(fil.id, message, null, []);
+          const messageId = crypto.randomUUID();
+          envoyerRef.current(fil.id, message, null, [], false, undefined, messageId);
+          if (bridge?.superagent) {
+            void bridge.superagent.message({
+              filId: fil.id,
+              messageId,
+              texte: message,
+              auteur: "user",
+              projectId: fil.fil.projetId ?? "hors-projet",
+              compte: stateRef.current.currentUser.id || "local",
+            });
+          }
           return travail[fil.id] ? "Ajouté : il le lira après sa réponse en cours." : "Envoyé : il s’y met.";
         }
         case "mettre_a_jour_fil": {
@@ -1619,20 +1679,48 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           if (etape === "bloque" && !raison) throw new Error("Dis pourquoi c’est bloqué (raison) : c’est ce que la personne lira.");
           const suite = { ...fil, fil: poserEtape(fil.fil, etape, raison) };
           dispatch({ type: "chat/update", id: fil.id, patch: (c) => (c.fil ? { ...c, fil: poserEtape(c.fil, etape, raison) } : c) });
+          if (etape === "bloque") void bridge?.superagent?.marquer(fil.id, "blocked", null);
           // L'étape posée, même si la réponse en cours la montre encore « en cours ».
           return `À jour : ${resume(suite, false)}`;
         }
         case "arreter_fil": {
           const fil = filDe(args.id);
-          if (!travail[fil.id]) return "Il ne travaillait pas.";
-          arreter(fil.id);
-          return "Arrêté. Le fil reste ouvert.";
+          const tournait = !!travail[fil.id];
+          if (tournait) arreter(fil.id);
+          if (bridge?.superagent) {
+            void bridge.superagent.marquer(fil.id, "suspended", null);
+            return "Arrêté. Le fil reste ouvert. Aucun nouveau départ tant qu’il n’est pas repris après contrôle.";
+          }
+          if (!tournait) return "Il ne travaillait pas.";
+          return "Arrêté. Le fil reste ouvert. Aucun nouveau départ tant qu’il n’est pas repris après contrôle.";
+        }
+        case "reprendre_fil": {
+          const fil = filDe(args.id);
+          const controle = typeof args.controle === "string" ? args.controle.trim() : "";
+          if (!controle) throw new Error("La reprise demande la référence du contrôle.");
+          if (!bridge?.superagent) throw new Error("Le journal des travaux est dans l’app de bureau.");
+          const marque = await bridge.superagent.marquer(fil.id, "active", controle);
+          if (!marque.ok) throw new Error(marque.message);
+          if (marque.data.ok === false) {
+            throw new Error(marque.data.motif === "travail_clos"
+              ? "Ce travail est terminé ou annulé : il ne reprend pas."
+              : `Reprise refusée : ${marque.data.motif ?? "refus"}.`);
+          }
+          return `Repris : ${resume(fil)}`;
         }
         case "fermer_fil": {
           const fil = filDe(args.id);
           if (!peutFermer(fil.fil, appelant.roleId)) {
             const par = fil.fil.lancePar ? nomDe(fil.fil.lancePar.roleId) : "la personne";
             throw new Error(`Ce fil a été ouvert par ${par} : c’est à ${par} de le valider et de le fermer. Mets-le « à valider » avec mettre_a_jour_fil.`);
+          }
+          if (bridge?.superagent) {
+            const cloture = await bridge.superagent.marquer(fil.id, "done", null);
+            if (cloture.ok && cloture.data.ok === false && cloture.data.motif !== undefined) {
+              throw new Error(cloture.data.motif === "operations_a_verifier"
+                ? "Des opérations sont encore à vérifier : le fil reste ouvert."
+                : `Fermeture refusée : ${cloture.data.motif}.`);
+            }
           }
           archiverFil(fil.id);
           return `Fil fermé et archivé : ${fil.title} (${fil.id}). Il peut être rouvert.`;
@@ -1648,11 +1736,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       }
     };
     return outils.onAppel((id, nom, args, appelant) => {
-      try {
-        outils.repondre(id, true, executer(nom, args, appelant));
-      } catch (e) {
-        outils.repondre(id, false, e instanceof Error ? e.message : String(e));
-      }
+      void (async () => {
+        try {
+          outils.repondre(id, true, await executer(nom, args, appelant));
+        } catch (e) {
+          outils.repondre(id, false, e instanceof Error ? e.message : String(e));
+        }
+      })();
     });
   }, [bridge, creerFil, archiverFil, arreter]);
 
