@@ -796,16 +796,31 @@ function fenetre(brut: unknown): FenetreUtilisation | null {
   return { utilise: f.utilization, reinitialiseA: typeof f.resetsAt === "number" ? f.resetsAt * 1000 : null };
 }
 
-function noterUtilisation(info: unknown): void {
-  const i = info as { status?: unknown; unifiedWindows?: Record<string, unknown> } | undefined;
-  if (!i) return;
-  derniere = {
-    session: fenetre(i.unifiedWindows?.five_hour),
-    semaine: fenetre(i.unifiedWindows?.seven_day),
-    statut: typeof i.status === "string" ? i.status : "allowed",
-    misAJour: Date.now(),
+/**
+ * Lit un `rate_limit_info` de Claude Code. Deux formes : `unifiedWindows`
+ * (les deux fenêtres d'un coup, champ interne que toutes les versions
+ * n'envoient pas) et la forme publique, une seule fenêtre nommée par
+ * `rateLimitType`. Une fenêtre absente de l'événement garde sa dernière
+ * valeur connue : un événement sans chiffre n'efface rien.
+ */
+export function lireUtilisation(info: unknown, precedente: Utilisation | null, maintenant = Date.now()): Utilisation | null {
+  const i = info as { status?: unknown; rateLimitType?: unknown; unifiedWindows?: Record<string, unknown> } | undefined;
+  if (!i || typeof i !== "object") return precedente;
+  const seule = fenetre(i);
+  const lue = (type: string) => fenetre(i.unifiedWindows?.[type]) ?? (i.rateLimitType === type ? seule : null);
+  return {
+    session: lue("five_hour") ?? precedente?.session ?? null,
+    semaine: lue("seven_day") ?? precedente?.semaine ?? null,
+    statut: typeof i.status === "string" ? i.status : (precedente?.statut ?? "allowed"),
+    misAJour: maintenant,
   };
-  abonnes.forEach((cb) => cb(derniere!));
+}
+
+function noterUtilisation(info: unknown): void {
+  const u = lireUtilisation(info, derniere);
+  if (!u || u === derniere) return;
+  derniere = u;
+  abonnes.forEach((cb) => cb(u));
 }
 
 /**
