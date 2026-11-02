@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useCompte } from "@/lib/compte";
+import { supportOuOrdinateur, type PosteLu } from "@/lib/poste-texte";
 
 /** Les ordinateurs du compte. Le téléphone ne s'y signale pas. */
 export function usePostes() {
@@ -15,4 +17,38 @@ export function usePostes() {
     ouvert: postes?.some((poste) => poste.ouvert) ?? false,
     charge: etat === "connecte" && postes === undefined,
   };
+}
+
+const CLE_POSTE_RETENU = "klyra:telephone:poste";
+
+/**
+ * Le système et le nom du poste principal, gardés sur ce téléphone : après une déconnexion
+ * depuis l'ordinateur, le compte ne se lit plus, mais l'écran de connexion sait encore le nommer.
+ */
+export function useRetenirPoste() {
+  const { principal } = usePostes();
+  const [systeme, nom] = [principal?.systeme ?? null, principal?.nom ?? null];
+  useEffect(() => {
+    if (systeme === null || nom === null) return;
+    try {
+      localStorage.setItem(CLE_POSTE_RETENU, JSON.stringify({ systeme, nom }));
+    } catch {
+      /* sans stockage : « ton ordinateur » */
+    }
+  }, [systeme, nom]);
+}
+
+export function posteRetenu(): Pick<PosteLu, "systeme" | "nom"> | null {
+  try {
+    const brut = JSON.parse(localStorage.getItem(CLE_POSTE_RETENU) ?? "null") as Partial<PosteLu> | null;
+    if (!brut || typeof brut.nom !== "string" || !["mac", "windows", "autre"].includes(brut.systeme as string)) return null;
+    return { systeme: brut.systeme as PosteLu["systeme"], nom: brut.nom };
+  } catch {
+    return null;
+  }
+}
+
+/** « ton PC », « ton Mac », le nom du poste, ou « ton ordinateur » tant qu'aucun ne s'est signalé. */
+export function useSupport(): string {
+  return supportOuOrdinateur(usePostes().principal);
 }

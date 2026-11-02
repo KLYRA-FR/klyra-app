@@ -8,6 +8,16 @@ import { PLATEFORME } from "@/lib/plateforme";
 
 const CLE = "klyra:poste:cle";
 
+/** La clé de cet ordinateur, si `SignalPoste` l'a déjà créée (Réglages › Mobile retrouve sa ligne). */
+export function lireClePoste(): string | null {
+  try {
+    const gardee = localStorage.getItem(CLE);
+    return gardee && /^[\w-]{8,80}$/.test(gardee) ? gardee : null;
+  } catch {
+    return null;
+  }
+}
+
 function clePoste(): string {
   const gardee = localStorage.getItem(CLE);
   if (gardee && /^[\w-]{8,80}$/.test(gardee)) return gardee;

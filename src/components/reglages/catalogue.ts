@@ -6,7 +6,7 @@ import type { IconName } from "@/components/icons/Icon";
  * est l'ancre d'une `Ligne` de la section (cf. ui.tsx).
  */
 
-export type IdSection = "general" | "profil" | "equipe" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
+export type IdSection = "general" | "profil" | "equipe" | "mobile" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
 
 export interface EntreeReglage {
   id: string;
@@ -67,6 +67,18 @@ export const SECTIONS: SectionReglages[] = [
       { id: "membres", titre: "Membres de l’équipe", mots: "equipe role admin retirer personnes membres" },
       { id: "inviter", titre: "Inviter quelqu’un", mots: "invitation ajouter adresse admin membre" },
       { id: "invitations", titre: "Invitations en attente", mots: "annuler invitation" },
+    ],
+  },
+  {
+    id: "mobile",
+    titre: "Mobile",
+    icone: "iphone-02",
+    description: "Ton téléphone : par où il passe, comment le relier, et les téléphones connectés à ton compte.",
+    entrees: [
+      { id: "mobile-chemin", titre: "Par où passe ton téléphone", mots: "iphone android telephone chemin relais pc mac ouvert ferme postes ordinateurs presence vps hote" },
+      { id: "mobile-telephones", titre: "Téléphones connectés", mots: "appareils sessions deconnecter revoquer perdu vole navigateur" },
+      { id: "mobile-relier", titre: "Relier un téléphone", mots: "qr code scanner installer ecran d accueil adresse lien connexion ajouter" },
+      { id: "mobile-vps", titre: "Le VPS et ton téléphone", mots: "serveur klyra-vps tailscale routines agents" },
     ],
   },
   {

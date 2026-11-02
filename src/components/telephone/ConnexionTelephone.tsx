@@ -5,6 +5,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { formaterAttente, useCompte } from "@/lib/compte";
+import { texteDeconnecte } from "@/lib/poste-texte";
+import { posteRetenu } from "./poste";
 
 const CHAMP = "h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
 
@@ -53,6 +55,12 @@ export function ConnexionTelephone() {
     <div className="m-auto flex w-full max-w-sm flex-col gap-6 px-6 py-10">
       <Image src="/brand/logotype-generic.svg" alt="KLYRA" width={125} height={32} priority />
       <h1 className="text-h3 font-medium text-texte-principal">Connecte-toi à KLYRA</h1>
+      {/* Déconnecté depuis Réglages › Mobile : pas « retiré de l'équipe » (MO-T14). */}
+      {compte.sessionFermee ? (
+        <p role="status" className="text-body-s text-texte-principal">
+          {texteDeconnecte(posteRetenu())}
+        </p>
+      ) : null}
       <form onSubmit={demander} className="flex flex-col gap-3">
         <label className="flex flex-col gap-2 text-ui text-texte-principal">
           Ton adresse e-mail

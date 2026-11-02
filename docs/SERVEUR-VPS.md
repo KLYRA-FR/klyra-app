@@ -63,4 +63,6 @@ La fenêtre appelle le https du lien depuis le processus principal, et seulement
 
 Le téléphone scanne le QR affiché dans le terminal du VPS. Chaque appareil a son propre lien : relancer la commande en donne un nouveau.
 
+Le QR du terminal porte `klyra://rejoindre` : l’app web d’un iPhone ne reçoit pas ce schéma (aucune app installée ne le déclare). Sur le téléphone, copier le lien et le coller dans Plus › Serveurs. Relier le téléphone au VPS ne sert aujourd’hui qu’à voir s’il répond : les conversations du téléphone passent par le compte, puis par le PC (Réglages › Mobile). Un appareil perdu se retire avec `revoquer-tout`, qui délie aussi le PC ; une route de liste et de retrait par appareil reste à faire dans le parcours VPS.
+
 Arrêter seulement ce programme : le processus `node serveur/klyra-serveur.mjs`. Le service OpenBot ne s’arrête pas.

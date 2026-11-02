@@ -1,14 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { Icon } from "@/components/icons/Icon";
 import { useCompte } from "@/lib/compte";
+import { useServeursRelies, useSondes } from "@/lib/lieux";
+import { cheminTelephone, majuscule, texteFeuille, texteRoutines, type PosteLu } from "@/lib/poste-texte";
+import { libelleServeur } from "@/lib/serveur-vps";
 import { EnteteTelephone } from "./EnteteTelephone";
+import { usePostes, useSupport } from "./poste";
 
 /** T-08. Cartes d'identité du compte. La fiche reste sur l'ordinateur. */
 export function AgentsTelephone() {
   const agents = useQuery(api.conversationsCompte.agents, {});
+  const sur = useSupport();
   const liste = agents ?? [];
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -24,7 +31,7 @@ export function AgentsTelephone() {
             </Link>
           </li>
         ))}
-        <li className="py-4 text-ui text-texte-secondaire">Sur ton Mac : la fiche d’un agent est sur l’ordinateur.</li>
+        <li className="py-4 text-ui text-texte-secondaire">Sur {sur} : la fiche d’un agent est sur l’ordinateur.</li>
       </ul>
     </div>
   );
@@ -33,6 +40,7 @@ export function AgentsTelephone() {
 /** T-10. Cartes de projets, sans leur dossier. */
 export function ProjetsTelephone() {
   const projets = useQuery(api.conversationsCompte.projets, {});
+  const sur = useSupport();
   const liste = [...(projets ?? [])].sort((a, b) => Number(b.epingle) - Number(a.epingle));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -44,51 +52,95 @@ export function ProjetsTelephone() {
             <span className="text-ui-xs text-texte-secondaire">{projet.accroche}</span>
           </li>
         ))}
-        <li className="py-4 text-ui text-texte-secondaire">Sur ton Mac : le dossier d’un projet se choisit sur l’ordinateur.</li>
+        <li className="py-4 text-ui text-texte-secondaire">Sur {sur} : le dossier d’un projet se choisit sur l’ordinateur.</li>
       </ul>
     </div>
   );
 }
 
-/** T-21 et le minimum de T-22 : se déconnecter de ce téléphone. */
+/** T-21. */
 export function PlusTelephone() {
+  const { principal } = usePostes();
+  const sur = useSupport();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone titre="Plus" />
       <ul className="px-4">
-        <Ligne href="/serveurs" titre="Serveurs" detail="Rejoindre avec le QR ou le lien du serveur." />
-        <Ligne href="/routines" titre="Automatisations" detail="Sur ton Mac : les routines ne partent que quand KLYRA y est ouverte." />
-        <Ligne href="/artefacts" titre="Artefacts" detail="Sur ton Mac : la liste est sur l’ordinateur." />
-        <Ligne href="/reglages" titre="Réglages" detail="Se déconnecter de ce téléphone." />
+        <Ligne href="/serveurs" titre="Serveurs" detail={`Voir si ton VPS répond. Tes messages passent par ${sur}.`} />
+        <Ligne href="/routines" titre="Automatisations" detail={texteRoutines(principal)} />
+        <Ligne href="/artefacts" titre="Artefacts" detail={`Sur ${sur} : la liste est sur l’ordinateur.`} />
+        <Ligne href="/reglages" titre="Réglages" detail="Ce téléphone : son chemin, ses ordinateurs, sa déconnexion." />
       </ul>
     </div>
   );
 }
 
+/** « Ce téléphone » (brief Réglages › Mobile, § 6) : le pendant de la page Mobile du PC, à 375 px. */
 export function ReglagesTelephone() {
+  const router = useRouter();
   const { seDeconnecter, moi } = useCompte();
+  const { postes, principal } = usePostes();
+  const sur = useSupport();
+  const serveurs = useServeursRelies();
+  const sondes = useSondes(serveurs);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Réglages" />
-      <div className="px-4">
-        <h2 className="mt-2 text-ui text-texte-secondaire">Ce téléphone</h2>
+      <EnteteTelephone titre="Réglages" retour={() => router.push("/plus")} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+        <h2 className="mt-2 text-body-s font-medium text-texte-principal">Ce téléphone</h2>
         <p className="mt-2 text-body-s text-texte-principal">{moi?.email}</p>
+        <p className="mt-1 text-ui text-texte-secondaire">{cheminTelephone(principal)}</p>
         <button type="button" className="mt-3 min-h-11 text-ui text-texte-principal" onClick={() => void seDeconnecter()}>
           Se déconnecter de ce téléphone
         </button>
-        <p className="mt-6 text-ui text-texte-secondaire">Sur ton Mac : réglage de cet ordinateur.</p>
+
+        <h2 className="mt-6 text-ui text-texte-secondaire">Ordinateurs</h2>
+        {postes === undefined ? <p className="mt-2 h-11 rounded-md bg-fond-surface-grise" /> : null}
+        {postes?.length === 0 ? <p className="mt-2 text-ui text-texte-secondaire">Aucun ordinateur ne s’est encore signalé sur ton compte.</p> : null}
+        <ul className="mt-1">
+          {postes?.map((poste) => (
+            <li key={poste.cle} className="border-b border-bordure-subtile py-3">
+              <p className="text-ui font-medium text-texte-principal">{poste.nom}</p>
+              <p className="mt-0.5 text-ui-xs text-texte-secondaire">{texteFeuille(poste as PosteLu)}</p>
+            </li>
+          ))}
+        </ul>
+
+        {serveurs.length ? (
+          <>
+            <h2 className="mt-6 text-ui text-texte-secondaire">Serveurs reliés à ce téléphone</h2>
+            <ul className="mt-1">
+              {serveurs.map((s) => (
+                <li key={s.id} className="border-b border-bordure-subtile">
+                  <Link href="/serveurs" className="flex min-h-11 items-center justify-between gap-3 py-2">
+                    <span className="min-w-0">
+                      <span className="block truncate text-ui text-texte-principal">{s.nom}</span>
+                      <span className="block text-ui-xs text-texte-secondaire">{libelleServeur(s.etat, sondes[s.id]?.sonde, sondes[s.id]?.agents)}</span>
+                    </span>
+                    <Icon name="chevron-right" size={16} className="shrink-0 text-icone-secondaire" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-ui-xs text-texte-secondaire">Ce téléphone vérifie seulement qu’il répond. Tes messages passent par {sur}.</p>
+          </>
+        ) : null}
+
+        <p className="mt-6 text-ui text-texte-secondaire">Sur {sur} : les autres réglages sont sur l’ordinateur.</p>
       </div>
     </div>
   );
 }
 
-export function EcranMac({ titre, phrase }: { titre: string; phrase: string }) {
+/** Un écran dont le contenu reste sur l'ordinateur : « Sur ton PC », « Sur ton Mac », jamais deviné. */
+export function EcranPoste({ titre, phrase }: { titre: string; phrase: (sur: string) => string }) {
+  const sur = useSupport();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone titre={titre} />
       <div className="px-4 pt-6">
-        <h2 className="text-body-s font-medium text-texte-principal">Sur ton Mac</h2>
-        <p className="mt-2 text-ui text-texte-secondaire">{phrase}</p>
+        <h2 className="text-body-s font-medium text-texte-principal">Sur {sur}</h2>
+        <p className="mt-2 text-ui text-texte-secondaire">{majuscule(phrase(sur))}</p>
       </div>
     </div>
   );

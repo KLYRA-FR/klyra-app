@@ -13,6 +13,7 @@ import { ComputerUse } from "./sections/ComputerUse";
 import { Equipe } from "./sections/Equipe";
 import { General } from "./sections/General";
 import { MisesAJour } from "./sections/MisesAJour";
+import { Mobile } from "./sections/Mobile";
 import { Notifications } from "./sections/Notifications";
 import { Profil } from "./sections/Profil";
 import { Voix } from "./sections/Voix";
@@ -25,6 +26,7 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
   general: () => <General />,
   profil: () => <Profil />,
   equipe: () => <Equipe />,
+  mobile: () => <Mobile />,
   claude: () => <Claude />,
   agents: () => <Agents />,
   "autres-ia": () => (
