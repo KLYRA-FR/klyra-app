@@ -209,7 +209,7 @@ export function ProjetsScreen() {
               <span className="font-normal">{aModifier ? "· modifier" : `sur ${poste.ce}`}</span>
             </h1>
             <p className="m-0 text-ui-s text-texte-secondaire">
-              Chaque projet est un dossier de {poste.ton}. Les agents y travaillent quand tu leur écris depuis le projet.
+              Ouvre un dossier de {poste.ton} pour parcourir ton code et laisser les agents y travailler.
             </p>
           </div>
           {!formulaire && <BoutonPrincipal href="/projets?nouveau=1">Nouveau projet</BoutonPrincipal>}
@@ -248,8 +248,26 @@ export function ProjetsScreen() {
               </ul>
             ) : (
               !formulaire && (
-                <div className="flex flex-col items-start gap-3 p-4">
-                  <p className="m-0 text-ui-s text-texte-secondaire">Pas encore de projet. Ajoute le dossier d’un site ou d’une app sur lequel tu travailles.</p>
+                <div className="flex flex-col items-start gap-4 p-4">
+                  <div className="flex flex-col gap-1">
+                    <p className="m-0 text-ui font-semibold text-texte-principal">Ajoute ton premier projet</p>
+                    <p className="m-0 text-ui-s text-texte-secondaire">Choisis le dossier d’un site ou d’une app : celui qui contient ton code.</p>
+                  </div>
+                  <ul className="m-0 flex list-none flex-col gap-2 p-0 text-ui-s text-texte-secondaire">
+                    <li className="flex items-center gap-2">
+                      <Icon name="folder-open-01" size={16} className="text-texte-principal" />
+                      <span>
+                        <span className="font-semibold text-texte-principal">Parcours tes fichiers</span>, comme dans un éditeur de code
+                      </span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Icon name="message-square" size={16} className="text-texte-principal" />
+                      <span>
+                        <span className="font-semibold text-texte-principal">Écris à un agent</span> depuis le projet : il lit et modifie ton code pour toi
+                      </span>
+                    </li>
+                  </ul>
+                  <p className="m-0 text-ui-xs text-texte-tertiaire">Tes fichiers restent sur {poste.ton}. Rien n’est déplacé ni copié.</p>
                   <BoutonPrincipal href="/projets?nouveau=1">Ajouter un projet</BoutonPrincipal>
                 </div>
               )
