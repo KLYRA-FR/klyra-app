@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent, StreamOptions } from "./moteurs/types";
+import { contexteDe, type ContexteReponse } from "./contexte-distant";
 
 /**
  * Les agents d'un VPS relié (serveur/agents.mjs), vus par l'app comme ceux du PC :
@@ -29,13 +30,6 @@ interface Liaison {
   fenetre: () => Fenetre | null;
   equipe: () => Equipe;
   jeton: (origine: string) => string | null;
-}
-
-/** Une réponse de routine : la conversation où l'ouvrir (serveur/routines.mjs). */
-export interface ContexteReponse {
-  chatId: string;
-  agentId: string;
-  titre: string;
 }
 
 interface Entree {
@@ -107,12 +101,6 @@ async function requete(origine: string, chemin: string, methode: "POST" | "PUT",
   }
 }
 
-function contexteDe(origine: string, entree: Entree): (ContexteReponse & { lieu: string }) | null {
-  const c = entree.contexte;
-  if (!c || typeof c.chatId !== "string" || !/^routine-[A-Za-z0-9_-]{1,80}$/.test(c.chatId) || typeof c.agentId !== "string") return null;
-  return { chatId: c.chatId, agentId: c.agentId, titre: typeof c.titre === "string" ? c.titre.slice(0, 200) : "Routine", lieu: origine };
-}
-
 function distribuer(origine: string, entree: Entree) {
   const fenetre = liaison?.fenetre();
   if (!fenetre || typeof entree.requestId !== "string") return;
@@ -120,7 +108,7 @@ function distribuer(origine: string, entree: Entree) {
     if (!entree.sessionId || connues.has(entree.requestId)) return;
     connues.add(entree.requestId);
     enCours.set(entree.requestId, origine);
-    fenetre.spontane(entree.requestId, entree.sessionId, contexteDe(origine, entree));
+    fenetre.spontane(entree.requestId, entree.sessionId, contexteDe(origine, entree.contexte));
     return;
   }
   if (!entree.event) return;
@@ -129,7 +117,7 @@ function distribuer(origine: string, entree: Entree) {
     if (!entree.sessionId) return;
     connues.add(entree.requestId);
     enCours.set(entree.requestId, origine);
-    fenetre.spontane(entree.requestId, entree.sessionId, contexteDe(origine, entree));
+    fenetre.spontane(entree.requestId, entree.sessionId, contexteDe(origine, entree.contexte));
   }
   fenetre.evenement(entree.requestId, entree.event);
   if (entree.event.type === "fin") enCours.delete(entree.requestId);
@@ -258,6 +246,8 @@ export async function streamDistant(origine: string, requestId: string, options:
         effort: options.effort ?? null,
         acces: options.acces ?? "projet",
         dossier: options.dossierVps ?? null,
+        /* Le VPS retient la session de cette conversation : le téléphone, PC fermé, y reprend. */
+        conversation: options.chatId ?? null,
       },
     });
     if (recu.status === 401) throw new Error("Ce PC n’est plus relié à ce VPS. Relance la commande sur le VPS et colle le nouveau lien dans Serveurs.");

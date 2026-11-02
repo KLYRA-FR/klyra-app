@@ -1,0 +1,44 @@
+# À chaque push sur main : construit l'app web du téléphone (export statique
+# `out/`, le même que charge Electron) et la garde en artefact. Ne met rien en
+# ligne : l'hébergement et son adresse restent à choisir par Corentin
+# (docs/APP-WEB.md). Le jour où ils le sont, l'étape de mise en ligne
+# s'ajoute ici, après « Construire ».
+name: App web
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-web
+  cancel-in-progress: true
+
+jobs:
+  construire:
+    name: Export statique de l'app web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Construire
+        run: pnpm build
+      - name: L'export contient la coque, le manifeste et chaque écran
+        run: |
+          for f in index.html chats.html chat.html planning.html equipe.html projets.html projet.html plus.html reglages.html routines.html artefacts.html serveurs.html manifest.webmanifest; do
+            test -f "out/$f" || { echo "Manque out/$f"; exit 1; }
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-web
+          path: out/
+          retention-days: 14

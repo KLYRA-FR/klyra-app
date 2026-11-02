@@ -174,12 +174,13 @@ export type ContenuFichier =
   | { type: "document"; blocs: BlocDocument[]; taille: number }
   | { type: "autre"; taille: number; raison: string };
 
-/** Une réponse de routine tenue par un VPS (electron/agents-distants.ts). */
+/** Une réponse d'un VPS ouverte dans sa conversation : routine, ou message écrit sur le téléphone PC fermé (electron/agents-distants.ts). */
 export interface ContexteReponse {
   chatId: string;
   agentId: string;
   titre: string;
   lieu: string;
+  telephone?: { messageId: string; texte: string; creeLe: string };
 }
 
 export interface StreamOptions {
@@ -399,6 +400,8 @@ export interface KlyraBridge {
     ecrire?: (chemin: string, texte: string) => Promise<Reponse<string>>;
     /** Écrit une image collée dans le dossier de l'app (`collages/`) ; renvoie son chemin. Absent avant la relance de l'app. */
     enregistrerCollage?: (octets: Uint8Array, type: string) => Promise<Reponse<string>>;
+    /** Écrit une pièce jointe venue du téléphone dans le dossier de l'app (`telephone/`) ; renvoie son chemin. Absent avant la relance de l'app. */
+    recevoirPiece?: (octets: Uint8Array, nom: string) => Promise<Reponse<string>>;
   };
   /** Les webhooks locaux des workflows. Absent avant la relance de l'app. */
   webhooks?: {

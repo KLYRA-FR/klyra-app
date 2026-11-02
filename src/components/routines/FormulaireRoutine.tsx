@@ -17,9 +17,9 @@ import type { Routine, RoutineInput, RoutineSchedule } from "@/types/routines";
 import { PlanningRoutine } from "./PlanningRoutine";
 
 type Valeurs = Required<RoutineInput>;
-type ChampErreur = "name" | "agentId" | "instruction" | "schedule" | "timezone" | "projectId" | "formulaire";
-type Erreurs = Partial<Record<ChampErreur, string>>;
-const ORDRE: ChampErreur[] = ["name", "agentId", "instruction", "schedule", "timezone", "projectId", "formulaire"];
+export type ChampErreur = "name" | "agentId" | "instruction" | "schedule" | "timezone" | "projectId" | "formulaire";
+export type Erreurs = Partial<Record<ChampErreur, string>>;
+export const ORDRE: ChampErreur[] = ["name", "agentId", "instruction", "schedule", "timezone", "projectId", "formulaire"];
 const AIDE = "m-0 text-ui-xs leading-relaxed text-texte-secondaire";
 
 export interface FormulaireRoutineProps {
@@ -56,7 +56,7 @@ function ville(timezone: string): string {
 }
 
 /** Ces contrôles expliquent la saisie ; la date future et le calcul IANA restent validés par le moteur. */
-function erreursSaisie(input: Valeurs, agentActif: boolean, agentNom: string, projetPresent: boolean): Erreurs {
+export function erreursSaisie(input: Valeurs, agentActif: boolean, agentNom: string, projetPresent: boolean): Erreurs {
   const erreurs: Erreurs = {};
   if (!input.name.trim()) erreurs.name = "Donne-lui un nom.";
   else if (input.name.trim().length > 80) erreurs.name = "Le nom peut contenir 80 caractères au maximum.";
@@ -80,7 +80,7 @@ function erreursSaisie(input: Valeurs, agentActif: boolean, agentNom: string, pr
   return erreurs;
 }
 
-function erreurDuMoteur(error: unknown): { champ: ChampErreur; message: string } {
+export function erreurDuMoteur(error: unknown): { champ: ChampErreur; message: string } {
   const message = error instanceof Error ? error.message : "L’enregistrement n’a pas abouti. Réessaie.";
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
   const champ = code === "programmation" || code === "date-passee" ? "schedule"

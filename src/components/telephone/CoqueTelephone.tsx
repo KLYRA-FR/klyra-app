@@ -2,16 +2,28 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useCompte } from "@/lib/compte";
-import { texteRoutines } from "@/lib/poste-texte";
-import { AgentsTelephone, EcranPoste, PlusTelephone, ProjetsTelephone, ReglagesTelephone } from "./ListesTelephone";
-import { usePostes, useRetenirPoste } from "./poste";
+import { useCompte, useSocketOuvert } from "@/lib/compte";
+import { AgentsTelephone } from "./AgentsTelephone";
+import { ArtefactsTelephone } from "./ArtefactsTelephone";
+import { EcranPoste, PlusTelephone } from "./ListesTelephone";
+import { ReglagesTelephone } from "./ReglagesTelephone";
+import { AutomatisationsTelephone } from "./EcransAutomatisations";
+import { ProjetsTelephone, ProjetTelephone } from "./EcransProjets";
+import { useRetenirPoste } from "./poste";
 import { BarreOnglets } from "./BarreOnglets";
 import { ChatsTelephone } from "./ChatsTelephone";
 import { ConnexionTelephone } from "./ConnexionTelephone";
 import { FilTelephone } from "./FilTelephone";
 import { PlanningTelephone } from "./PlanningTelephone";
 import { ServeursTelephone } from "./ServeursTelephone";
+import Image from "next/image";
+import { lienValable } from "../../../convex/model/push";
+import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
+import { getBridge } from "@/lib/bridge";
+import { cn } from "@/lib/cn";
+import { composition, lireDerniereDonnee, retenirDerniereDonnee, texteHorsLigne, type Composition } from "@/lib/coque";
+import { estIphone, lireNavigateur } from "@/lib/push";
+import { SERVICE_WORKER, useSynchroPush } from "./push";
 
 const CLE_INSTALL = "klyra:installer";
 
@@ -24,34 +36,69 @@ function ecran(pathname: string): ReactNode {
   if (pathname === "/plus") return <PlusTelephone />;
   if (pathname === "/reglages") return <ReglagesTelephone />;
   if (pathname === "/serveurs") return <ServeursTelephone />;
-  if (pathname === "/routines") return <EcranRoutines />;
-  if (pathname === "/artefacts") return <EcranPoste titre="Artefacts" phrase={(sur) => `la liste est sur ${sur}.`} />;
-  if (pathname === "/projet" || pathname === "/fichiers") return <EcranPoste titre="Projet" phrase={(sur) => `les fichiers de ce projet sont sur ${sur}. Ils s’affichent quand KLYRA y est ouverte.`} />;
+  if (pathname === "/routines") return <AutomatisationsTelephone />;
+  if (pathname === "/artefacts") return <ArtefactsTelephone />;
+  if (pathname === "/projet" || pathname === "/fichiers") return <ProjetTelephone />;
   return <EcranPoste titre="KLYRA" phrase={(sur) => `cet écran se lit sur ${sur}.`} />;
 }
 
-/** MO-T17 : une routine d'un VPS tourne même l'ordinateur fermé. */
-function EcranRoutines() {
-  const { principal } = usePostes();
-  return <EcranPoste titre="Automatisations" phrase={() => texteRoutines(principal)} />;
+/* ─── Composition ────────────────────────────────────────────────── */
+
+type Disposition = Exclude<Composition, "bureau">;
+
+const dispositionActuelle = (): Disposition =>
+  composition({ largeur: window.innerWidth, hauteur: window.innerHeight, electron: false }) === "tablette" ? "tablette" : "telephone";
+
+/** Téléphone ou tablette, selon la fenêtre (spec mobile M-2 et § 9). Relue à chaque redimensionnement. */
+function useComposition(): Disposition {
+  const [valeur, setValeur] = useState<Disposition>(dispositionActuelle);
+  useEffect(() => {
+    const suivre = () => setValeur(dispositionActuelle());
+    window.addEventListener("resize", suivre);
+    return () => window.removeEventListener("resize", suivre);
+  }, []);
+  /* Sur la racine : les feuilles (montées dans le body) deviennent des fenêtres centrées à la tablette. */
+  useEffect(() => {
+    document.documentElement.dataset.composition = valeur;
+    return () => {
+      delete document.documentElement.dataset.composition;
+    };
+  }, [valeur]);
+  return valeur;
 }
 
-/** Sous 760 px. L'ouverture est Chats. Le bureau (≥ 1100 px) ne passe pas ici. */
-export function CoqueTelephone() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const compte = useCompte();
-  useRetenirPoste();
-  const [installe, setInstalle] = useState(() => (typeof window === "undefined" ? true : localStorage.getItem(CLE_INSTALL) === "navigateur"));
-  const [horsLigne, setHorsLigne] = useState(false);
+/** Tablette (§ 9) : Chats en liste et fil côte à côte ; ailleurs, le contenu centré à une largeur lisible. */
+function EcranTablette({ pathname }: { pathname: string }) {
+  if (pathname === "/chats" || pathname === "/chat" || pathname === "/") {
+    return (
+      <div className="flex min-h-0 flex-1">
+        <div className="flex w-[320px] shrink-0 flex-col border-r border-bordure-subtile">{ecran("/chats")}</div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {pathname === "/chat" ? (
+            ecran("/chat")
+          ) : (
+            <p className="m-auto px-6 text-center text-ui text-texte-secondaire">Choisis une conversation dans la liste.</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">{ecran(pathname)}</div>;
+}
+
+/* ─── Hors ligne (P-12) ──────────────────────────────────────────── */
+
+/** Sans socket pendant ce délai, l'app se dit hors ligne (une reconnexion brève ne fait pas clignoter le bandeau). */
+const COUPURE_MS = 5000;
+
+/** « Hors ligne · données du 31/10 à 18:42 », ou null en ligne. L'heure est celle de la dernière donnée reçue. */
+function useHorsLigne(): string | null {
+  const socket = useSocketOuvert();
+  const [reseau, setReseau] = useState(() => navigator.onLine);
+  const [coupe, setCoupe] = useState(false);
 
   useEffect(() => {
-    if (pathname === "/") router.replace("/chats");
-  }, [pathname, router]);
-
-  useEffect(() => {
-    const lire = () => setHorsLigne(typeof navigator !== "undefined" && !navigator.onLine);
-    lire();
+    const lire = () => setReseau(navigator.onLine);
     window.addEventListener("online", lire);
     window.addEventListener("offline", lire);
     return () => {
@@ -60,34 +107,196 @@ export function CoqueTelephone() {
     };
   }, []);
 
-  const fil = pathname === "/chat";
-  const serveurs = pathname === "/serveurs";
+  /* En ligne, les données arrivent en continu : l'heure gardée avance avec elles, jusqu'à la coupure. */
+  useEffect(() => {
+    if (!socket) {
+      const minuteur = setTimeout(() => setCoupe(true), COUPURE_MS);
+      return () => {
+        clearTimeout(minuteur);
+        setCoupe(false);
+      };
+    }
+    const retenir = () => retenirDerniereDonnee(Date.now());
+    retenir();
+    const minuteur = setInterval(retenir, 30_000);
+    return () => {
+      clearInterval(minuteur);
+      retenir();
+    };
+  }, [socket]);
+
+  return !reseau || (!socket && coupe) ? texteHorsLigne(lireDerniereDonnee()) : null;
+}
+
+/* ─── Service worker et notifications touchées ───────────────────── */
+
+/**
+ * Le service worker (M-1) : la coque s'ouvre sans réseau, les notifications arrivent. Jamais dans
+ * l'app de bureau ; en développement non plus (il garderait des fichiers qui changent sans cesse).
+ * Une notification touchée, app ouverte : l'écran visé.
+ */
+function useServiceWorker() {
+  const router = useRouter();
+  useEffect(() => {
+    if (getBridge() || !("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV === "production") {
+      void navigator.serviceWorker.register(SERVICE_WORKER, { scope: "/", updateViaCache: "none" }).catch(() => {
+        /* Sans service worker : l'app marche, sans copie hors ligne ni notifications. */
+      });
+    }
+    const recevoir = (e: MessageEvent) => {
+      const lien = (e.data as { type?: unknown; lien?: unknown } | null)?.lien;
+      if ((e.data as { type?: unknown } | null)?.type === "klyra:ouvrir" && typeof lien === "string" && lienValable(lien)) router.push(lien);
+    };
+    navigator.serviceWorker.addEventListener("message", recevoir);
+    return () => navigator.serviceWorker.removeEventListener("message", recevoir);
+  }, [router]);
+}
+
+/* ─── Installation (M-1, T-00) ───────────────────────────────────── */
+
+/** L'invite d'installation de Chrome (Android), gardée pour le bouton « Installer KLYRA ». */
+interface InviteInstallation extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+function useInstallation() {
+  const [navigateur] = useState(lireNavigateur);
+  const mobile = estIphone(navigateur) || /Android/i.test(navigateur.userAgent);
+  const [choixNavigateur, setChoixNavigateur] = useState(() => {
+    try {
+      return localStorage.getItem(CLE_INSTALL) === "navigateur";
+    } catch {
+      return true;
+    }
+  });
+  const [installee, setInstallee] = useState(navigateur.installee);
+  const [invite, setInvite] = useState<InviteInstallation | null>(null);
+
+  useEffect(() => {
+    const garder = (e: Event) => {
+      e.preventDefault();
+      setInvite(e as InviteInstallation);
+    };
+    const fini = () => {
+      setInstallee(true);
+      setInvite(null);
+    };
+    window.addEventListener("beforeinstallprompt", garder);
+    window.addEventListener("appinstalled", fini);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", garder);
+      window.removeEventListener("appinstalled", fini);
+    };
+  }, []);
+
   const continuer = () => {
-    localStorage.setItem(CLE_INSTALL, "navigateur");
-    setInstalle(true);
+    try {
+      localStorage.setItem(CLE_INSTALL, "navigateur");
+    } catch {
+      /* Sans stockage : la page reviendra à la prochaine ouverture. */
+    }
+    setChoixNavigateur(true);
   };
 
+  const installer = async () => {
+    if (!invite) return;
+    await invite.prompt();
+    if ((await invite.userChoice).outcome === "accepted") setInstallee(true);
+    setInvite(null);
+  };
+
+  /* La page ne s'affiche que dans le navigateur d'un téléphone ou d'une tablette, jamais dans l'app posée sur l'écran d'accueil. */
+  const aProposer = mobile && !navigateur.installee && !choixNavigateur;
+  return { aProposer, iphone: estIphone(navigateur), installee, invite, installer, continuer };
+}
+
+function PageInstallation({ installation, tablette }: { installation: ReturnType<typeof useInstallation>; tablette: boolean }) {
+  const { iphone, installee, invite } = installation;
+  const etapes = iphone
+    ? ["Ouvre cette page dans Safari.", "Touche le bouton Partager de Safari.", "Choisis d’ajouter KLYRA à l’écran d’accueil, puis confirme.", "Ouvre KLYRA depuis l’écran d’accueil."]
+    : ["Ouvre le menu du navigateur.", "Choisis d’installer KLYRA ou de l’ajouter à l’écran d’accueil.", "Ouvre KLYRA depuis l’écran d’accueil."];
+
   return (
-    <div className="flex h-full flex-col bg-fond-page">
-      {horsLigne ? <p className="bg-fond-surface-grise px-4 py-2 text-ui-xs text-texte-secondaire">Hors ligne</p> : null}
-      {!installe ? (
-        <div className="m-auto flex max-w-sm flex-col gap-4 px-6">
-          <h1 className="text-h3 font-medium text-texte-principal">Installer KLYRA sur ce téléphone</h1>
-          <p className="text-ui text-texte-secondaire">
-            Sur iPhone, le menu Partager de Safari permet d’ajouter KLYRA à l’écran d’accueil. Sur Android, le menu de Chrome le permet aussi. Les libellés exacts de ces menus se vérifient sur l’appareil.
+    <div className="flex min-h-0 flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <div className="m-auto flex w-full max-w-sm flex-col gap-4 px-6 py-8">
+        <Image src="/brand/logo-icone.svg" alt="" width={56} height={56} />
+        <h1 className="text-h4 font-medium text-texte-principal">Installer KLYRA sur {tablette ? "cette tablette" : "ce téléphone"}</h1>
+        <p className="text-ui text-texte-secondaire">
+          Posée sur l’écran d’accueil, KLYRA s’ouvre comme une app, même sans réseau, et peut te prévenir quand un agent attend ton accord.
+        </p>
+        {installee ? (
+          <p role="status" className="text-body-s text-texte-principal">
+            KLYRA est installée : ouvre-la depuis l’écran d’accueil.
           </p>
-          <button type="button" className="min-h-11 text-left text-ui text-texte-principal" onClick={continuer}>
-            Continuer dans le navigateur
-          </button>
-        </div>
-      ) : compte.etat === "connecte" || serveurs ? (
-        <>
-          {ecran(pathname)}
-          {fil || compte.etat !== "connecte" ? null : <BarreOnglets />}
-        </>
-      ) : (
-        <ConnexionTelephone />
-      )}
+        ) : invite ? (
+          <BoutonPrincipal onClick={() => void installation.installer()}>Installer KLYRA</BoutonPrincipal>
+        ) : (
+          <ol className="flex list-decimal flex-col gap-2 pl-5 text-body-s text-texte-principal">
+            {etapes.map((etape) => (
+              <li key={etape}>{etape}</li>
+            ))}
+          </ol>
+        )}
+        <button type="button" className="min-h-11 self-start text-ui text-texte-principal underline underline-offset-4" onClick={installation.continuer}>
+          Continuer dans le navigateur
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── La coque ───────────────────────────────────────────────────── */
+
+/**
+ * L'app web, hors Electron. Sous 760 px (et téléphone couché), une colonne et la barre du bas ;
+ * au-delà, la tablette : le rail à gauche, Chats en deux panneaux, le reste centré. L'ouverture est Chats.
+ */
+export function CoqueTelephone() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const compte = useCompte();
+  useRetenirPoste();
+  useServiceWorker();
+  useSynchroPush();
+  const disposition = useComposition();
+  const horsLigne = useHorsLigne();
+  const installation = useInstallation();
+
+  useEffect(() => {
+    if (pathname === "/") router.replace("/chats");
+  }, [pathname, router]);
+
+  const fil = pathname === "/chat";
+  const serveurs = pathname === "/serveurs";
+  const tablette = disposition === "tablette";
+  const connecte = compte.etat === "connecte";
+  const navigation = connecte && !installation.aProposer;
+
+  return (
+    <div className="flex h-full bg-fond-page">
+      {tablette && navigation ? <BarreOnglets vertical /> : null}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {installation.aProposer ? (
+          <PageInstallation installation={installation} tablette={tablette} />
+        ) : connecte || serveurs ? (
+          tablette ? (
+            <EcranTablette pathname={pathname} />
+          ) : (
+            ecran(pathname)
+          )
+        ) : (
+          <ConnexionTelephone />
+        )}
+        {/* P-12, sous le contenu : en haut, il passerait sous l'encoche avec l'en-tête. */}
+        {horsLigne ? (
+          <p role="status" className={cn("shrink-0 bg-fond-surface-grise px-4 py-2 text-ui-xs text-texte-secondaire", !(navigation && !tablette && !fil) && "pb-[calc(8px+env(safe-area-inset-bottom))]")}>
+            {horsLigne}
+          </p>
+        ) : null}
+        {navigation && !tablette && !fil ? <BarreOnglets /> : null}
+      </div>
     </div>
   );
 }

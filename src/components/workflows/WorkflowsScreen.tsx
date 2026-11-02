@@ -243,6 +243,14 @@ function Editeur({ wf }: { wf: Workflow }) {
     return () => clearTimeout(t);
   }, [graphe, enregistrerWorkflow]);
 
+  /* Une étape modifiée ailleurs (le téléphone) : l'éditeur reprend le graphe enregistré, s'il n'a rien en attente. */
+  const grapheVu = useRef(wf.graphe);
+  useEffect(() => {
+    const avant = grapheVu.current;
+    grapheVu.current = wf.graphe;
+    if (wf.graphe !== avant && grapheRef.current === avant) poser(wf.graphe);
+  }, [wf.graphe]);
+
   /* Les adresses des webhooks déjà créés. */
   useEffect(() => {
     const ws = getBridge()?.webhooks;

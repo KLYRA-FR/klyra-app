@@ -53,15 +53,20 @@
     "test:selecteur": "node scripts/test-selecteur-serveur.mjs",
     "test:mobile": "vitest run src/lib/mobile.test.ts src/lib/poste-texte.test.ts convex/telephone.test.ts && node --test serveur/qr.test.mjs",
     "test:reglages-mobile": "node scripts/test-mobile.mjs",
-    "test:serveur": "vitest run src/lib/serveur-vps.test.ts && node scripts/horaires-serveur.mjs --verifier && node --test serveur/klyra-serveur.test.mjs serveur/routines.test.mjs serveur/qr.test.mjs && node --experimental-strip-types --test electron/lien-rejoindre.test.mts electron/appel-serveur.test.mts",
+    "test:telephone-agents": "vitest run src/lib/telephone",
+    "test:coque": "vitest run src/lib/coque.test.ts src/lib/push.test.ts convex/notificationsPush.test.ts",
+    "test:serveur": "vitest run src/lib/serveur-vps.test.ts && node scripts/horaires-serveur.mjs --verifier && node --test serveur/klyra-serveur.test.mjs serveur/routines.test.mjs serveur/qr.test.mjs && node --experimental-strip-types --test electron/lien-rejoindre.test.mts electron/appel-serveur.test.mts electron/contexte-distant.test.mts",
     "test:binaire": "node --experimental-strip-types --test electron/claude-binaire.test.mts",
     "test:moteurs": "node --experimental-strip-types --test electron/moteurs/registre.test.mts",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
+    "test:projets-telephone": "vitest run src/lib/telephone/dossiers.test.ts src/lib/telephone/gestes-fichiers.test.ts src/lib/telephone/ecrans.test.tsx",
     "test:identite": "vitest run src/lib/identite.test.ts",
     "test:collage": "vitest run src/lib/collage.test.ts",
     "test:recherche": "vitest run src/lib/recherche.test.ts",
     "test:report": "vitest run src/lib/report.test.ts",
-    "test:modeles": "vitest run src/lib/maj-modele.test.ts src/lib/modeles-klyra.test.ts"
+    "test:planning-telephone": "vitest run src/lib/telephone/planning.test.ts src/lib/telephone/saisie-planning.test.ts",
+    "test:modeles": "vitest run src/lib/maj-modele.test.ts src/lib/modeles-klyra.test.ts",
+    "test:automatisations": "vitest run src/lib/telephone/routines-telephone.test.ts src/lib/telephone/workflow-etapes.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",
@@ -76,7 +81,8 @@
     "next": "16.4.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
@@ -84,6 +90,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "concurrently": "^10.0.5",
     "convex-test": "^0.0.66",
     "electron": "^44.9.1",

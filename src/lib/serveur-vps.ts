@@ -201,6 +201,12 @@ function lireJetons(): Record<string, string> {
   }
 }
 
+/** Le jeton de ce téléphone pour ce VPS (hors Electron), ou null s'il n'y est pas relié. */
+export function jetonAppareil(adresse: string): string | null {
+  const jeton = lireJetons()[adresse];
+  return typeof jeton === "string" && jeton ? jeton : null;
+}
+
 function ecrireJeton(adresse: string, jeton: string | null) {
   try {
     const jetons = lireJetons();

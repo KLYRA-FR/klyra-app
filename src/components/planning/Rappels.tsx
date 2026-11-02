@@ -26,7 +26,7 @@ const AnnonceRappels = createContext<(texte: string) => void>(() => {});
  */
 
 /** Les icônes qu'on peut donner à une catégorie (set officiel). */
-const ICONES: IconName[] = [
+export const ICONES: IconName[] = [
   "home-01",
   "users-profiles-01",
   "file-01",

@@ -12,6 +12,7 @@ import { identiteAffichee, type Identite, type ProfilCompte } from "@/lib/identi
 import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
+import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { lireProposition } from "@/lib/proposition-agent";
 import { reglagesActuels } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
@@ -542,14 +543,14 @@ interface WorkspaceApi {
   basculerMachine: (lieu: string | null) => void;
   /** Repart de zéro avec l'agent : les messages et sa mémoire de cette conversation sont effacés. */
   nouvelleConversation: (chatId: string) => void;
-  /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id. */
-  startChat: (projectId: string, text: string, to: RoleId | null, fichiers?: string[]) => string;
+  /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id (`id` : celui choisi sur le téléphone). */
+  startChat: (projectId: string, text: string, to: RoleId | null, fichiers?: string[], id?: string) => string;
   reessayer: (chatId: string, messageId: string, facon: FaconReessai, modele?: string) => void;
   brancher: (chatId: string, messageId: string) => string | null;
   /** Arrête l'agent qui travaille dans cette conversation. */
   arreter: (chatId: string) => void;
-  /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id. */
-  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket) => string;
+  /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id (`id` : celui choisi sur le téléphone). */
+  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, id?: string) => string;
   /** Confie un rappel à un agent : un fil s'ouvre avec le rappel pour brief ; renvoie son id. */
   confierRappel: (rappel: RappelAConfier, roleId: RoleId) => string;
   /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
@@ -926,12 +927,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const nom = rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent";
     const message = stateRef.current.messages.find((m) => m.id === messageId);
     const extrait = message ? texteDe(message).replace(/[*`#>_]/g, "").replace(/\s+/g, " ").trim() : "";
-    void notifier(
-      ok ? `${nom} a fini` : `${nom} s’est arrêté sur une erreur`,
-      extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? "")),
-      chatId,
-      ok ? "agentFini" : "agentErreur",
-    );
+    const titre = ok ? `${nom} a fini` : `${nom} s’est arrêté sur une erreur`;
+    const corps = extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? ""));
+    void notifier(titre, corps, chatId, ok ? "agentFini" : "agentErreur");
+    /* Le téléphone aussi, si la fenêtre n'a pas le focus (spec mobile § 8). */
+    pousserAuTelephone({ evenement: ok ? "agentFini" : "agentErreur", titre, corps, lien: lienMessage(chatId, messageId) });
     return true;
   };
 
@@ -999,6 +999,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "autorisation": {
           const e = event.entree;
           const detail = [e.command, e.file_path, e.notebook_path, e.url, e.pattern].find((v) => typeof v === "string");
+          const libelle = libelleEtape(event.outil, event.entree, rolesRef.current);
+          /* « Hugo demande ton accord » sur le téléphone, si la fenêtre n'a pas le focus (spec mobile § 8). */
+          pousserAuTelephone({
+            evenement: "accord",
+            titre: `${rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent"} demande ton accord`,
+            corps: libelle,
+            lien: lienMessage(chatId, messageId),
+          });
           maj((m) => ({
             ...m,
             parts: [
@@ -1007,7 +1015,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
                 type: "autorisation",
                 id: event.id,
                 outil: event.outil,
-                libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
+                libelle,
                 detail: typeof detail === "string" ? detail : "",
                 description: event.description,
                 statut: "attente",
@@ -1088,11 +1096,25 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
         }
       }
+      // Écrit sur le téléphone pendant que ce PC était fermé, envoyé au VPS : le message, puis sa réponse.
+      const telephone = contexte?.telephone;
+      if (telephone) {
+        chat = stateRef.current.chats.find((c) => c.id === contexte.chatId) ?? chat;
+        roleId = contexte.agentId;
+        if (chat && !stateRef.current.messages.some((m) => m.id === telephone.messageId)) {
+          dispatch({
+            type: "message/add",
+            message: { id: telephone.messageId, chatId: chat.id, author: { kind: "user" }, createdAt: telephone.creeLe, parts: [{ type: "text", text: telephone.texte }] },
+          });
+        }
+      }
       if (!chat || !roleId) return;
-      dispatch({
-        type: "message/add",
-        message: { id: requestId, chatId: chat.id, author: { kind: "role", roleId }, createdAt: new Date().toISOString(), parts: [], statut: "en-cours" },
-      });
+      if (!stateRef.current.messages.some((m) => m.id === requestId)) {
+        dispatch({
+          type: "message/add",
+          message: { id: requestId, chatId: chat.id, author: { kind: "role", roleId }, createdAt: new Date().toISOString(), parts: [], statut: "en-cours" },
+        });
+      }
       if (!stateRef.current.travail[chat.id]) {
         dispatch({ type: "travail/debut", chatId: chat.id, travail: { roleId, messageId: requestId, debut: Date.now() } });
       }
@@ -1404,8 +1426,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     return id;
   }, []);
 
-  const startChat = useCallback((projectId: string, text: string, to: RoleId | null, fichiers: string[] = []) => {
-    const id = crypto.randomUUID();
+  const startChat = useCallback((projectId: string, text: string, to: RoleId | null, fichiers: string[] = [], idImpose?: string) => {
+    const id = idImpose ?? crypto.randomUUID();
     const roleIds: RoleId[] = to && to !== "principal" ? ["principal", to] : ["principal"];
     const chat: Chat = {
       id,
@@ -1436,10 +1458,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [bridge],
   );
 
-  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket) => {
+  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, idImpose?: string) => {
     const maintenant = new Date().toISOString();
     const chat: Chat = {
-      id: `${FIL}${crypto.randomUUID().slice(0, 8)}`,
+      id: idImpose ?? `${FIL}${crypto.randomUUID().slice(0, 8)}`,
       kind: "direct",
       projectId: null,
       title: titre?.trim() ? chatTitle(titre) : FIL_SANS_TITRE,
@@ -1974,6 +1996,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }),
         llm: appelLibre,
         notifier: (titre, texte) => {
+          pousserAuTelephone({ evenement: "workflow", titre, corps: texte, lien: lienWorkflow(wf.id) });
           // Les Réglages peuvent couper les notifications des workflows, ou leur son : alors celui de KLYRA.
           void reglagesActuels().then(({ notifications: n }) => {
             if (!n.actives || !n.workflow) return;
@@ -2009,6 +2032,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             approbations.current.set(etapeId, resoudre);
             signal.addEventListener("abort", () => resoudre(false));
             notifierRappel(`${wf.titre} attend ton accord`, "Ouvre le workflow pour approuver ou refuser.");
+            pousserAuTelephone({ evenement: "accord", titre: `${wf.titre} attend ton accord`, corps: "Ouvre le workflow pour approuver ou refuser.", lien: lienWorkflow(wf.id) });
           }),
       };
     },
@@ -2391,25 +2415,28 @@ export function useProject(id: string | null): Project | undefined {
 /** Fichiers modifiés par les agents dans les chats d'un projet, en chemins relatifs à son dossier. */
 export function useModifiedFiles(projectId: string | null): Set<string> {
   const { chats, messages, projects } = useWorkspace().state;
-  return useMemo(() => {
-    const dossier = projects.find((p) => p.id === projectId)?.folder.replace(/\/$/, "") ?? null;
-    const chatIds = new Set(chats.filter((c) => c.projectId === projectId).map((c) => c.id));
-    const paths = new Set<string>();
-    for (const message of messages) {
-      if (!chatIds.has(message.chatId)) continue;
-      for (const part of message.parts) {
-        if (part.type === "worklog") part.files.forEach((f) => paths.add(f.path));
-        if (part.type === "etapes" && dossier) {
-          for (const e of part.etapes) {
-            if (e.chemin && e.statut === "fait" && /Write|Edit/.test(e.outil) && e.chemin.startsWith(`${dossier}/`)) {
-              paths.add(e.chemin.slice(dossier.length + 1));
-            }
+  return useMemo(() => fichiersModifies({ chats, messages, projects }, projectId), [chats, messages, projects, projectId]);
+}
+
+/** Le calcul de `useModifiedFiles`, aussi fait par l'ordinateur pour le téléphone (`fichiers.arbre`). */
+export function fichiersModifies({ chats, messages, projects }: Pick<WorkspaceState, "chats" | "messages" | "projects">, projectId: string | null): Set<string> {
+  const dossier = projects.find((p) => p.id === projectId)?.folder.replace(/\/$/, "") ?? null;
+  const chatIds = new Set(chats.filter((c) => c.projectId === projectId).map((c) => c.id));
+  const paths = new Set<string>();
+  for (const message of messages) {
+    if (!chatIds.has(message.chatId)) continue;
+    for (const part of message.parts) {
+      if (part.type === "worklog") part.files.forEach((f) => paths.add(f.path));
+      if (part.type === "etapes" && dossier) {
+        for (const e of part.etapes) {
+          if (e.chemin && e.statut === "fait" && /Write|Edit/.test(e.outil) && e.chemin.startsWith(`${dossier}/`)) {
+            paths.add(e.chemin.slice(dossier.length + 1));
           }
         }
       }
     }
-    return paths;
-  }, [chats, messages, projects, projectId]);
+  }
+  return paths;
 }
 
 /** Vrai si l'agent de cette conversation attend ton accord. */

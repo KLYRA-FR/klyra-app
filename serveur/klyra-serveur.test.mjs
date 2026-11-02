@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { creerAgents } from "./agents.mjs";
-import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, DUREE_CODE_MS, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
+import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, DUREE_CODE_MS, cleConversation, contexteTelephone, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
 function dossierJetable() {
   return mkdtempSync(path.join(tmpdir(), "klyra-serveur-"));
@@ -177,12 +177,12 @@ process.stdin.on("data", (d) => {
 });
 `;
 
-function lireFlux(port, jeton, depuis, instance, jusqua) {
+function lireFlux(port, jeton, depuis, instance, jusqua, requete = null) {
   return new Promise((resolve, reject) => {
     const controle = new AbortController();
     const recus = [];
     let instanceRecue = null;
-    fetch(`http://127.0.0.1:${port}${CHEMIN_AGENT}/evenements?depuis=${depuis}&instance=${instance}`, { headers: { Authorization: `Bearer ${jeton}` }, signal: controle.signal })
+    fetch(`http://127.0.0.1:${port}${CHEMIN_AGENT}/evenements?depuis=${depuis}&instance=${instance}${requete ? `&requete=${requete}` : ""}`, { headers: { Authorization: `Bearer ${jeton}` }, signal: controle.signal })
       .then(async (reponse) => {
         const lecteur = reponse.body.getReader();
         let tampon = "";
@@ -239,7 +239,7 @@ test("un agent répond sur le VPS, en flux, avec rattrapage et autorisation", as
     assert.equal((await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [{ id: "../x", contenu: "" }] } })).statut, 400);
 
     const options = { agent: null, prompt: "toi", sessionId: null, acces: "projet" };
-    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r1", options } })).statut, 202);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r1", options: { ...options, conversation: "dm-lou" } } })).statut, 202);
     const premier = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.event?.type === "fin"));
     const types = premier.recus.map((e) => e.event.type).filter((t) => t !== "jetons");
     assert.deepEqual(types, ["session", "texte", "fin"]);
@@ -262,6 +262,19 @@ test("un agent répond sur le VPS, en flux, avec rattrapage et autorisation", as
     // Une autre instance du journal (serveur redémarré) : tout est renvoyé depuis le début.
     const autre = await lireFlux(ecoute.port, jeton, 9999, "ancienne", (recus) => recus.length >= 3);
     assert.equal(autre.recus[0].seq, 1);
+
+    // Le téléphone écrit, PC fermé : chaque événement de la réponse porte sa conversation et son message.
+    const contexte = { chatId: "dm-lou", agentId: "lou", titre: "Lou", telephone: { messageId: "tel-1", texte: "toi", creeLe: "2026-11-02T10:00:00.000Z" } };
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r4", options, contexte } })).statut, 202);
+    const duTelephone = await lireFlux(ecoute.port, jeton, 0, premier.instance, (recus) => recus.some((e) => e.requestId === "r4" && e.event?.type === "fin"));
+    const r4 = duTelephone.recus.filter((e) => e.requestId === "r4");
+    assert.equal(r4.length > 0 && r4.every((e) => e.contexte?.telephone?.messageId === "tel-1" && e.contexte.chatId === "dm-lou"), true);
+    // Sans session (le compte n'en garde pas), le téléphone reprend celle que le PC avait dans cette conversation.
+    assert.equal(journal.sessionDe(cleConversation("dm-lou", null)), "11111111-2222-3333-4444-555555555555");
+    // Le téléphone ne suit que sa réponse.
+    const filtre = await lireFlux(ecoute.port, jeton, 0, premier.instance, (recus) => recus.some((e) => e.event?.type === "fin"), "r4");
+    assert.equal(filtre.recus.every((e) => e.requestId === "r4"), true);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r5", options, contexte: { ...contexte, chatId: "../x" } } })).statut, 400);
 
     const inconnu = await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r3", options: { ...options, agent: "absent" } } });
     assert.equal(inconnu.statut, 202);
@@ -309,5 +322,33 @@ test("les projets du VPS : arbre, lecture et création sous le dossier de klyra 
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("contexte d'un message du téléphone : seulement une conversation et un texte lisibles", () => {
+  const bon = { chatId: "c-1", agentId: "hugo", titre: "Refonte", telephone: { messageId: "m1", texte: "Relance le build", creeLe: "2026-11-02T10:00:00Z" } };
+  assert.deepEqual(contexteTelephone(bon), { ...bon, telephone: { ...bon.telephone, creeLe: "2026-11-02T10:00:00.000Z" } });
+  assert.equal(contexteTelephone({ ...bon, chatId: "routine-x" }), null);
+  assert.equal(contexteTelephone({ ...bon, agentId: "../hugo" }), null);
+  assert.equal(contexteTelephone({ ...bon, telephone: { ...bon.telephone, texte: " " } }), null);
+  assert.equal(contexteTelephone({ ...bon, telephone: { ...bon.telephone, creeLe: "hier" } }), null);
+  assert.equal(contexteTelephone(null), null);
+});
+
+test("la session de chaque agent par conversation est retenue, et gardée entre deux redémarrages", () => {
+  const dossier = mkdtempSync(path.join(tmpdir(), "klyra-sessions-"));
+  try {
+    const fichier = path.join(dossier, "sessions-conversations.json");
+    const journal = creerJournal(Date.now, fichier);
+    const cle = cleConversation("dm-hugo", "hugo");
+    journal.lierConversation("r1", cle);
+    journal.publier("r1", { type: "session" }, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    journal.publier("r1", { type: "fin", ok: true, texte: "" }, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    assert.equal(journal.sessionDe(cle), "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    assert.equal(creerJournal(Date.now, fichier).sessionDe(cle), "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    assert.equal(journal.sessionDe(cleConversation("dm-hugo", null)), null);
+    assert.equal(cleConversation("../x", "hugo"), null);
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
   }
 });

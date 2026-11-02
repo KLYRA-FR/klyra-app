@@ -9,6 +9,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SignalPoste } from "@/components/compte/SignalPoste";
 import { SyncCompte } from "@/components/compte/SyncCompte";
+import { ServicePoste } from "@/components/compte/ServicePoste";
 import { SignalTelephone } from "@/components/telephone/SignalTelephone";
 import { AgendaCompte } from "@/components/planning/AgendaCompte";
 import { PresenceKlyra } from "@/components/planning/PresenceKlyra";
@@ -461,6 +462,8 @@ function CompteConnecte({ pont, children }: { pont: NonNullable<KlyraBridge["com
       <PresenceKlyra actif={etat === "connecte" && pont !== null} />
       <SignalPoste actif={etat === "connecte" && pont !== null} />
       <SyncCompte actif={etat === "connecte" && pont !== null} />
+      {/* Les demandes du téléphone (dossier, fichier, routines…) : l'ordinateur ouvert y répond. */}
+      <ServicePoste actif={etat === "connecte" && pont !== null} />
       {/* Hors de l'app de bureau (téléphone, navigateur) : la session se signale pour Réglages › Mobile. */}
       <SignalTelephone actif={etat === "connecte" && pont === null} />
       <AgendaCompte actif={etat === "connecte"} />

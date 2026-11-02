@@ -35,6 +35,9 @@ type Env = {
   readonly POSTSHIBA_API_KEY: string | undefined;
   readonly POSTSHIBA_CLUSTER_ID: string | undefined;
   readonly POSTSHIBA_TEAM_ID: string | undefined;
+  readonly VAPID_PRIVATE_KEY: string | undefined;
+  readonly VAPID_PUBLIC_KEY: string | undefined;
+  readonly VAPID_SUJET: string | undefined;
 };
 
 /**
