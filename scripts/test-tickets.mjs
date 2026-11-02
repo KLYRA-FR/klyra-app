@@ -8,6 +8,8 @@
  * - Terminé : les 7 derniers jours, puis tous sur demande ;
  * - « Valider et fermer » range le fil dans Terminé et l'écrit sur le disque, avec sa date ;
  * - « Remettre à faire », dans les réglages d'une carte, la ramène dans À faire ;
+ * - « Confier à un agent » ouvre un fil avec le rappel pour brief, marque le rappel
+ *   « Confié à … », met une pastille sur l'onglet du fil bloqué, et fermer le fil coche le rappel ;
  * - le planning des agents liste les tickets ouverts.
  * Prérequis : pnpm build && pnpm build:electron.
  *   xvfb-run -a node scripts/test-tickets.mjs          (sous Linux sans bac à sable : -- --no-sandbox)
@@ -136,6 +138,33 @@ try {
   verifier(!!ecrit?.fermeLe && Date.now() - Date.parse(ecrit.fermeLe) < 60_000, "fermé sur le disque, avec sa date de fermeture");
   const surDisque = JSON.parse(readFileSync(FICHIER, "utf8")).chats.find((c) => c.id === "klyra-fil-ancien01")?.fil;
   verifier(surDisque?.etape === "a-valider", "l’étape donnée au chargement est écrite");
+
+  /* Confier le rappel : Claude est hors d'atteinte, la réponse finit en erreur et le fil passe bloqué. */
+  verifier(await app.ev(`(() => { const b = document.querySelector('section[aria-label="À moi"] [data-confier="rappel-1"]'); if (!b) return false; b.click(); return true; })()`), "le bouton « Confier à un agent » du rappel");
+  verifier(await app.quand(`document.querySelector('[role="menu"][aria-label^="Confier"] [role="menuitem"]')`), "le menu liste Mes agents");
+  verifier(await app.cliquer("Principal", `document.querySelector('[role="menu"][aria-label^="Confier"]')`), "confié à Principal");
+  let filConfie = null;
+  for (let i = 0; i < 20 && !filConfie; i++) {
+    await attendre(250);
+    filConfie = JSON.parse(readFileSync(FICHIER, "utf8")).chats.find((c) => c.fil?.rappel?.id === "rappel-1") ?? null;
+  }
+  verifier(filConfie?.title === "Relancer le devis" && filConfie.fil.rappel.source === "local" && filConfie.fil.priorite === 1 && !filConfie.fil.lancePar, "un fil s’ouvre, au titre et à la priorité du rappel, lancé par toi");
+  const brief = JSON.parse(readFileSync(FICHIER, "utf8")).messages.find((m) => m.chatId === filConfie?.id && m.author.kind === "user");
+  verifier(!!brief && JSON.stringify(brief.parts).includes("Je te confie ce rappel : « Relancer le devis »"), "le brief du fil reprend le rappel");
+  verifier(await app.quand(`document.querySelector('section[aria-label="À moi"] [data-confie="rappel-1"]')?.innerText === "Confié à Principal"`), "le rappel est marqué « Confié à Principal »");
+  verifier(await app.quand(`!document.querySelector('section[aria-label="À moi"] [data-confier="rappel-1"]')`), "un rappel confié n’a plus le bouton");
+  verifier(await app.quand(`[...document.querySelectorAll('section[aria-label="Bloqué"] [data-ticket]')].some((c) => c.innerText.includes("Relancer le devis"))`, 20000), "sans Claude, le fil du rappel passe bloqué");
+
+  await app.aller(`/chat?id=${filConfie.id}`);
+  verifier(await app.quand(`document.querySelector('[role="tablist"][aria-label="Chat et fils"] [aria-label="Bloqué"]')`), "l’onglet du fil bloqué porte sa pastille");
+  verifier(await app.quand(`document.querySelector('[role="tablist"][aria-label="Chat et fils"] [aria-label="À valider"]')`), "l’onglet d’un fil à valider porte la sienne");
+  verifier(await app.ev(`(() => { const b = document.querySelector('[aria-label="Fermer le fil Relancer le devis"]'); if (!b) return false; b.click(); return true; })()`), "fermer l’onglet du fil");
+  let coche = false;
+  for (let i = 0; i < 20 && !coche; i++) {
+    await attendre(250);
+    coche = JSON.parse(readFileSync(FICHIER, "utf8")).taches.find((r) => r.id === "rappel-1")?.faite === true;
+  }
+  verifier(coche, "fermer le fil coche le rappel");
 
   // Le planning se réécrit une seconde après le dernier changement.
   let planning = "";

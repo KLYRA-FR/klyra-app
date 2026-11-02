@@ -7,6 +7,8 @@ import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
 import { idDirect, useTravail, useWorkspace } from "@/lib/workspace";
+import { colonneTicket } from "@/lib/tickets";
+import { useFermerTicket } from "@/components/tickets/useFermerTicket";
 import type { Chat, RoleId } from "@/types/domain";
 
 const MENU =
@@ -53,6 +55,7 @@ function Onglet({
   onRenommer: (titre: string | null) => void;
 }) {
   const travail = useTravail(chat.id);
+  const etape = chat.fil ? colonneTicket(chat.fil, false) : null;
   const [titre, setTitre] = useState(libelle);
   return (
     <div
@@ -65,6 +68,11 @@ function Onglet({
     >
       {/* Un agent y travaille : le point respire, comme dans la barre latérale. */}
       {travail && <span aria-label="En cours" className="klyra-respire size-1.5 shrink-0 rounded-full bg-bleu-k1-500" />}
+      {/* Le ticket du fil attend quelqu'un : bloqué (orange) ou à valider (vert). */}
+      {!travail && etape === "bloque" && (
+        <span role="img" aria-label="Bloqué" title={chat.fil?.raison ? `Bloqué : ${chat.fil.raison}` : "Bloqué"} className="size-1.5 shrink-0 rounded-full bg-orange-k1-500" />
+      )}
+      {!travail && etape === "a-valider" && <span role="img" aria-label="À valider" title="À valider" className="size-1.5 shrink-0 rounded-full bg-vert-k1-400" />}
       {enEdition ? (
         <input
           autoFocus
@@ -119,7 +127,8 @@ function Onglet({
  */
 export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string }) {
   const router = useRouter();
-  const { state, creerFil, renommerChat, archiverFil, rouvrirFil } = useWorkspace();
+  const { state, creerFil, renommerChat, rouvrirFil } = useWorkspace();
+  const fermerTicket = useFermerTicket();
   const principal = idDirect(roleId);
   const fils = state.chats.filter((c) => c.fil?.roleId === roleId).sort((a, b) => a.fil!.creeLe.localeCompare(b.fil!.creeLe));
   const ouverts = fils.filter((c) => c.fil!.statut === "ouvert");
@@ -156,7 +165,8 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
 
   /** Ferme (archive) des fils ; si l'onglet affiché en fait partie, on revient au chat principal. */
   const clore = (ids: string[], supprime = false) => {
-    for (const id of ids) archiverFil(id, supprime);
+    // Fermer, c'est valider : le rappel confié se coche (sauf « Supprimer »).
+    for (const id of ids) fermerTicket(id, supprime);
     setMenu(null);
     if (ids.includes(chatId)) aller(principal);
   };

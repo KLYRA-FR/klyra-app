@@ -11,6 +11,7 @@ import { enRetard, libelleEcheance } from "@/lib/dates";
 import type { ColonneTicket } from "@/lib/tickets";
 import { useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Fil } from "@/types/domain";
+import { useFermerTicket } from "./useFermerTicket";
 
 const PUCE = "flex h-7 items-center gap-1.5 rounded-sm border border-bordure-subtile bg-fond-surface px-2 text-ui-xs text-texte-secondaire";
 
@@ -33,7 +34,8 @@ function Progression({ chat }: { chat: Chat }) {
 
 /** Priorité, échéance, projet, et ce qu'on fait du ticket : les réglages dépliés sous la carte. */
 function Reglages({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: ColonneTicket }) {
-  const { state, majTicket, archiverFil, rouvrirFil } = useWorkspace();
+  const { state, majTicket, rouvrirFil } = useWorkspace();
+  const fermer = useFermerTicket();
   const fil = chat.fil;
   const priorite = fil.priorite ?? 0;
   const projets = [{ value: "", label: "Aucun projet" }, ...state.projects.map((p) => ({ value: p.id, label: p.name }))];
@@ -82,7 +84,7 @@ function Reglages({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: Colon
                 Remettre à faire
               </Bouton>
             )}
-            <Bouton variant="discret" taille="mini" iconeGauche={<Icon name="x-01" size={14} />} onClick={() => archiverFil(chat.id)}>
+            <Bouton variant="discret" taille="mini" iconeGauche={<Icon name="x-01" size={14} />} onClick={() => fermer(chat.id)}>
               Fermer
             </Bouton>
           </>
@@ -98,7 +100,8 @@ function Reglages({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: Colon
  * déplie les réglages, comme une ligne de rappel.
  */
 export function CarteTicket({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: ColonneTicket }) {
-  const { state, archiverFil } = useWorkspace();
+  const { state } = useWorkspace();
+  const fermer = useFermerTicket();
   const fil = chat.fil;
   const role = useRole(fil.roleId);
   const lanceur = useRole(fil.lancePar?.roleId ?? fil.roleId);
@@ -160,7 +163,7 @@ export function CarteTicket({ chat, colonne }: { chat: Chat & { fil: Fil }; colo
       )}
 
       {colonne === "a-valider" && !ouverte && (
-        <Bouton variant="gris" taille="mini" iconeGauche={<Icon name="check-01" size={14} />} onClick={() => archiverFil(chat.id)} className="self-start">
+        <Bouton variant="gris" taille="mini" iconeGauche={<Icon name="check-01" size={14} />} onClick={() => fermer(chat.id)} className="self-start">
           Valider et fermer
         </Bouton>
       )}

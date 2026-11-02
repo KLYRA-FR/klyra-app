@@ -19,7 +19,7 @@ import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
-import { apresReponse, auDebut, avecEtapes, ferme, ligneTicket, type ChampsTicket, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
+import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
@@ -550,6 +550,8 @@ interface WorkspaceApi {
   arreter: (chatId: string) => void;
   /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id. */
   creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket) => string;
+  /** Confie un rappel à un agent : un fil s'ouvre avec le rappel pour brief ; renvoie son id. */
+  confierRappel: (rappel: RappelAConfier, roleId: RoleId) => string;
   /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
   majTicket: (chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => void;
   renommerChat: (chatId: string, titre: string) => void;
@@ -1495,6 +1497,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const confierRappel = useCallback(
+    (rappel: RappelAConfier, roleId: RoleId) => {
+      const id = creerFil(roleId, rappel.titre, null, { priorite: rappel.priorite, echeance: rappel.echeance, rappel: { source: rappel.source, id: rappel.id } });
+      timers.current.push(setTimeout(() => envoyerRef.current(id, briefDuRappel(rappel), null, []), 0));
+      return id;
+    },
+    [creerFil],
+  );
+
   const majTicket = useCallback((chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => {
     const { etape, raison, ...champs } = patch;
     dispatch({
@@ -2140,6 +2151,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       nouvelleConversation,
       creerFil,
       majTicket,
+      confierRappel,
       renommerChat,
       epinglerChat,
       archiverFil,
@@ -2192,6 +2204,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       nouvelleConversation,
       creerFil,
       majTicket,
+      confierRappel,
       renommerChat,
       epinglerChat,
       archiverFil,
