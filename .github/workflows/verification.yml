@@ -88,6 +88,8 @@ jobs:
         run: pnpm test:routines
       - name: Transport du parcours routines (preload et moteur réels, hôte et agent fictifs)
         run: node scripts/routines-browser-fixture.cjs --self-test
+      - name: Moteurs des agents (registre, traduction de Codex) et changement de fournisseur
+        run: pnpm test:moteurs && pnpm test:fournisseurs
       - name: Computer Use, interrupteur et capture
         run: timeout 120 xvfb-run -a -s "-screen 0 1600x1000x24" env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-ordinateur.cjs
 

@@ -35,6 +35,14 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("agents:changed", listener);
     },
   },
+  moteurs: {
+    liste: () => ipcRenderer.invoke("moteurs:liste"),
+    compte: (id: string) => ipcRenderer.invoke("moteurs:compte", id),
+    connecter: (id: string) => ipcRenderer.invoke("moteurs:connecter", id),
+    connecterAvecCle: (id: string, cle: string) => ipcRenderer.invoke("moteurs:connecter-cle", id, cle),
+    deconnecter: (id: string) => ipcRenderer.invoke("moteurs:deconnecter", id),
+    modeles: (id: string) => ipcRenderer.invoke("moteurs:modeles", id),
+  },
   claude: {
     status: () => ipcRenderer.invoke("claude:status"),
     run: (requestId: string, agent: string, prompt: string) => ipcRenderer.invoke("claude:run", requestId, agent, prompt),

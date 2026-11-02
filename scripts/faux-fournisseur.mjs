@@ -30,6 +30,7 @@ export async function demarrerFournisseur(agentsSurveilles) {
     const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste) /m.test(texteDe(m.content)));
     const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste) ([a-z0-9-]+)/m) : null;
     requetes.push({
+      message: texteDe(dernier?.content ?? ""),
       sousAgent,
       principal: !!outilAgent && !sousAgent,
       systeme,

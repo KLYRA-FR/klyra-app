@@ -24,5 +24,8 @@ export function creerRegistre(liste: Moteur[], parDefaut: IdMoteur) {
     autoriser(requestId: string, demandeId: string, decision: Decision): boolean {
       return liste.some((m) => m.autoriser(requestId, demandeId, decision));
     },
+    fermer(): void {
+      for (const m of liste) m.fermer?.();
+    },
   };
 }

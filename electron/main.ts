@@ -421,6 +421,22 @@ function registerBridge() {
     }
     return null;
   });
+  /* Les moteurs des agents (Claude Code, Codex pour ChatGPT) : présence, compte, modèles. */
+  const moteurConnu = (id: string) => {
+    const m = moteurs.moteur(id);
+    if (!m || !id) throw new Error(`Fournisseur inconnu : ${id}.`);
+    return m;
+  };
+  handle("moteurs:liste", () => moteurs.liste().map((m) => ({ id: m.id, nom: m.nom, fournisseur: m.fournisseur, chemin: m.trouver() })));
+  handle("moteurs:compte", (id: string) => moteurConnu(id).compte());
+  handle("moteurs:connecter", (id: string) => moteurConnu(id).connecter());
+  handle("moteurs:connecter-cle", (id: string, cle: string) => {
+    const m = moteurConnu(id);
+    if (!m.connecterAvecCle || typeof cle !== "string") throw new Error("Ce fournisseur ne se connecte pas avec une clé ici.");
+    return m.connecterAvecCle(cle);
+  });
+  handle("moteurs:deconnecter", (id: string) => moteurConnu(id).deconnecter());
+  handle("moteurs:modeles", (id: string) => moteurConnu(id).modeles?.() ?? []);
   handle("projets:dossier-existe", (dossier: string) => dossierExiste(dossier));
   handle("projets:choisir-dossier", async () => {
     // Tests seulement (jamais dans l'app installée) : le dossier « choisi » sans fenêtre du système.
@@ -822,6 +838,7 @@ app.on("before-quit", (event) => {
 app.on("will-quit", () => {
   arreterDictee();
   arreterRoutines();
+  moteurs.fermer();
 });
 process.on("exit", () => arreterDictee());
 

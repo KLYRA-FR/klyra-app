@@ -8,6 +8,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { formatDaySeparator, formatJourHeure, formatTime, isSameDay } from "@/lib/format";
+import { fournisseur, moteurDuMessage } from "@/lib/fournisseurs";
 import { requeteRetenue } from "@/lib/recherche-session";
 import { DEPART_ROUTINE } from "@/lib/message-routine";
 import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
@@ -21,7 +22,8 @@ const GROUPE_MS = 5 * 60 * 1000;
 
 function memeAuteur(a: Message, b: Message): boolean {
   if (a.author.kind !== b.author.kind) return false;
-  return a.author.kind === "user" || (b.author.kind === "role" && a.author.roleId === b.author.roleId);
+  // Le même agent avec un autre fournisseur : son nom revient, avec le fournisseur.
+  return a.author.kind === "user" || (b.author.kind === "role" && a.author.roleId === b.author.roleId && moteurDuMessage(a) === moteurDuMessage(b));
 }
 
 function DaySeparator({ iso }: { iso: string }) {
@@ -162,6 +164,8 @@ function RoleMessage({
               {role.name}
             </span>
             <span className="text-ui-2xs text-texte-tertiaire">{role.tag}</span>
+            {/* Écrite avec un autre fournisseur que Claude : on le dit, sans plus. */}
+            {message.moteur && <span className="text-ui-2xs text-texte-tertiaire">· avec {fournisseur(message.moteur).nom}</span>}
           </div>
         )}
         {visibles.map((part, i) => (

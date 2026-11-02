@@ -122,6 +122,26 @@ export interface CompteClaude {
   verifieLe: number;
 }
 
+/** Un moteur d'agents sur ce poste (cf. electron/moteurs). */
+export interface MoteurPoste {
+  id: string;
+  /** Le programme : « Codex ». */
+  nom: string;
+  /** Ce que tu choisis : « ChatGPT ». */
+  fournisseur: string;
+  /** Où il est installé ; null s'il ne l'est pas. */
+  chemin: string | null;
+}
+
+/** Un modèle annoncé par un moteur, avec ses efforts de réflexion. */
+export interface ModeleMoteur {
+  id: string;
+  nom: string;
+  efforts: string[];
+  effortParDefaut: string | null;
+  parDefaut: boolean;
+}
+
 export interface EtatGit {
   depot: boolean;
   branche: string | null;
@@ -184,6 +204,8 @@ export interface ContexteReponse {
 }
 
 export interface StreamOptions {
+  /** Le moteur qui fait travailler l'agent (« codex » pour ChatGPT) ; absent : Claude Code. */
+  moteur?: string | null;
   agent: string | null;
   prompt: string;
   dossier: string | null;
@@ -270,6 +292,15 @@ export interface KlyraBridge {
     writeMeta: (meta: AgentsMeta) => Promise<Reponse<void>>;
     reveal: (name: string) => Promise<Reponse<void>>;
     onChange: (callback: () => void) => () => void;
+  };
+  /** Les moteurs des agents : Claude Code, Codex pour ChatGPT. Le compte a la forme de celui de Claude. */
+  moteurs?: {
+    liste: () => Promise<Reponse<MoteurPoste[]>>;
+    compte: (id: string) => Promise<Reponse<CompteClaude>>;
+    connecter: (id: string) => Promise<Reponse<CompteClaude>>;
+    connecterAvecCle: (id: string, cle: string) => Promise<Reponse<CompteClaude>>;
+    deconnecter: (id: string) => Promise<Reponse<CompteClaude>>;
+    modeles: (id: string) => Promise<Reponse<ModeleMoteur[]>>;
   };
   claude: {
     status: () => Promise<Reponse<{ path: string | null }>>;

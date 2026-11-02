@@ -24,7 +24,7 @@ const OUTILS_INTERDITS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"];
 const DELAI_MAX_MS = 10 * 60 * 1000;
 
 /** Les clés Composio restent dans main, même si le terminal parent en a exporté une. */
-const environnementClaude = () => Object.fromEntries(Object.entries({ ...process.env, ELECTRON_RUN_AS_NODE: undefined }).filter(([nom]) => !/^(COMPOSIO|KLYRA_COMPOSIO)_/.test(nom)));
+export const environnementAgent = () => Object.fromEntries(Object.entries({ ...process.env, ELECTRON_RUN_AS_NODE: undefined }).filter(([nom]) => !/^(COMPOSIO|KLYRA_COMPOSIO)_/.test(nom)));
 
 /** Sous Windows, le binaire natif de Claude Code (un .cmd de npm ne se lance pas sans shell). */
 const EXE_CLAUDE = process.platform === "win32" ? "claude.exe" : "claude";
@@ -86,7 +86,7 @@ const running = new Map<string, ChildProcess>();
 const refusAgents = (cwd: string) => agentsARefuser(cwd).map((nom) => `Agent(${nom})`);
 const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent", "mcp__klyra__composio_executer"] } });
 
-const pasDansMesAgents = (agent: string) => `« ${agent} » n’est pas dans Mes agents : ajoute-le ou réactive-le dans Équipe pour lui écrire.`;
+export const pasDansMesAgents = (agent: string) => `« ${agent} » n’est pas dans Mes agents : ajoute-le ou réactive-le dans Équipe pour lui écrire.`;
 
 export function runAgent(requestId: string, agent: string, prompt: string): Promise<ClaudeResult> {
   const bin = findClaude();
@@ -103,7 +103,7 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
     const args = ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
     const child = spawn(bin, args, {
       cwd: HOME,
-      env: environnementClaude(),
+      env: environnementAgent(),
       windowsHide: true,
     });
     running.set(requestId, child);
@@ -332,6 +332,18 @@ export function autoriser(requestId: string, demandeId: string, decision: Decisi
   return true;
 }
 
+/**
+ * Ce que l'app dit à l'agent, quel que soit le moteur : l'agenda, les rappels et les routines de la personne,
+ * que l'app tient à jour, les fils et Composio quand ses outils sont là, et qui il est.
+ */
+export function consignesApp(options: StreamOptions, mcp: string | null): string[] {
+  const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS,
+    composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
+  ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
+  if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
+  return consignes;
+}
+
 /** Commandes qu'un agent peut lancer sans demander : construire, vérifier, lire l'état git. */
 const COMMANDES_AUTORISEES = [
   "Bash(pnpm:*)",
@@ -354,7 +366,7 @@ const COMMANDES_AUTORISEES = [
 const ATELIER = path.join(HOME, ".klyra", "atelier");
 
 /** `~/…` → chemin absolu. null si le dossier du projet n'existe pas. */
-function dossierDeTravail(dossier: string | null): string | null {
+export function dossierDeTravail(dossier: string | null): string | null {
   if (!dossier) {
     mkdirSync(ATELIER, { recursive: true });
     return ATELIER;
@@ -568,7 +580,7 @@ function lireLigne(proc: Processus, ligne: string) {
 }
 
 function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
-  const child = spawn(bin, args, { cwd, env: environnementClaude(), windowsHide: true });
+  const child = spawn(bin, args, { cwd, env: environnementAgent(), windowsHide: true });
   const proc: Processus = {
     routineRun: options.routineRun,
     child,
@@ -693,12 +705,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (options.modele) args.push("--model", options.modele);
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
-    // L'agenda, les rappels et les routines de la personne, que l'app tient à jour.
-    const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS,
-      composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
-    ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
-    if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
-    args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignes.join("\n\n"));
+    args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignesApp(options, mcp).join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);
   }
@@ -790,7 +797,7 @@ export function actualiserUtilisation(): Promise<Utilisation | null> {
     const child = spawn(
       bin,
       ["-p", "--model", "haiku", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--disallowedTools", ...OUTILS_INTERDITS, "WebFetch", "WebSearch", "Read", "Glob", "Grep"],
-      { cwd: ATELIER, env: environnementClaude(), windowsHide: true },
+      { cwd: ATELIER, env: environnementAgent(), windowsHide: true },
     );
     let tampon = "";
     child.stdout.on("data", (d: Buffer) => {
@@ -824,7 +831,7 @@ export function actualiserUtilisation(): Promise<Utilisation | null> {
 /** Lance une commande de Claude Code et rend sa sortie. */
 function commandeClaude(bin: string, args: string[], delai: number): Promise<{ code: number | null; sortie: string }> {
   return new Promise((resolve) => {
-    const child = spawn(bin, args, { cwd: HOME, env: environnementClaude(), windowsHide: true });
+    const child = spawn(bin, args, { cwd: HOME, env: environnementAgent(), windowsHide: true });
     let sortie = "";
     child.stdout.on("data", (d: Buffer) => (sortie += d.toString()));
     child.stderr.on("data", (d: Buffer) => (sortie += d.toString()));
