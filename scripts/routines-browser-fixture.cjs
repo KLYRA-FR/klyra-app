@@ -105,7 +105,7 @@ function chargerAdaptateur() {
   Module._load = function (name, parent, ...args) {
     if (name === "electron") return electron;
     if (parent?.filename === modulePath) {
-      if (name === "../claude") return { cancelAgent };
+      if (name === "../moteurs") return { moteurs: { arreter: cancelAgent } };
       if (name === "../mes-agents") return { dossierAgents: () => agentsDir, estActif: (id) => mes.agents[id]?.actif === true };
       if (name === "../ia") return { brancherOutilsRoutines: (value) => { signals = value; } };
     }

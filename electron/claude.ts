@@ -6,6 +6,7 @@ import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
+import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -170,56 +171,6 @@ export function cancelAgent(requestId: string): void {
 
 /* ─── Conversation en direct ───────────────────────────────────── */
 
-/** Ce que l'interface reçoit pendant qu'un agent travaille (cf. src/lib/bridge.ts). */
-export type AgentEvent =
-  | { type: "session"; sessionId: string }
-  /** Un morceau du texte de la réponse. `nouveauBloc` : il suit des étapes, on passe à la ligne. */
-  | { type: "texte"; delta: string; nouveauBloc: boolean }
-  /** Une étape : lire un fichier, lancer une commande, confier à un agent… */
-  | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
-  | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
-  /** Les tokens écrits depuis le début (réflexion, texte, outils, sous-agents compris), estimés en direct. */
-  | { type: "jetons"; total: number }
-  /** L'agent demande ton accord avant d'utiliser un outil hors de son accès. */
-  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
-  /** La demande a reçu sa réponse (de toi, ou d'office en accès complet). */
-  | { type: "autorisation-fin"; id: string; accepte: boolean }
-  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean };
-
-export interface StreamOptions {
-  /** Le sous-agent qui répond (`~/.claude/agents/<nom>.md`), ou null pour la session principale. */
-  agent: string | null;
-  prompt: string;
-  /** Dossier du projet : l'agent y travaille. */
-  dossier: string | null;
-  /** Session à reprendre : l'agent se souvient de la conversation. */
-  sessionId: string | null;
-  /** Modèle choisi dans la conversation (« opus », « sonnet », « haiku »), ou null : celui de la fiche. */
-  modele?: string | null;
-  /** Effort de réflexion : low, medium, high, xhigh, max ; null : celui par défaut. */
-  effort?: string | null;
-  /** Fichiers joints au message : leurs dossiers sont ouverts en lecture à l'agent. */
-  fichiers?: string[];
-  /**
-   * Ce que l'agent peut faire sans demander :
-   * - « demander » : il lit seul, et demande pour tout le reste ;
-   * - « projet » : fichiers du dossier et commandes de travail seul, il demande pour le reste ;
-   * - « tout » : tout lui est accordé, sans demander.
-   */
-  acces?: "demander" | "projet" | "tout";
-  /** La conversation de l'app : les outils des fils savent d'où vient l'agent. */
-  chatId?: string;
-  /** Réservé par le moteur avant de lancer ce tour. */
-  routineRun?: string;
-  /** Le VPS où tourne la conversation (son origine https) ; absent : ce PC (cf. agents-distants.ts). */
-  lieu?: string | null;
-  /** Sur le VPS : le dossier du projet sur cette machine. */
-  dossierVps?: string | null;
-}
-
-/** Réponse à une demande d'autorisation. « toujours » : accordé pour le reste de la session. */
-export type Decision = "oui" | "toujours" | "non";
-
 /** Demandes en attente de réponse, par réponse d'agent. */
 const demandes = new Map<string, Map<string, { entree: Record<string, unknown>; suggestions: unknown[] }>>();
 
@@ -266,9 +217,6 @@ interface Processus {
   /** Jetons et coût cumulés par modèle depuis le lancement (cf. consommation.ts). */
   cumul: ReturnType<typeof enregistrerTourClaude>;
 }
-
-/** Ouvre une réponse spontanée dans l'interface ; null si elle n'est plus là. */
-export type Spontane = (sessionId: string) => { requestId: string; emit: (event: AgentEvent) => void } | null;
 
 /** Les fils : comment l'agent confie une tâche à un coéquipier (outils du serveur MCP de l'app). */
 /** Composio Connect : le serveur MCP « composio », rejoint avec le compte de la personne. */
@@ -873,22 +821,6 @@ export function actualiserUtilisation(): Promise<Utilisation | null> {
 
 /* ─── Compte Claude ────────────────────────────────────────────── */
 
-/** Le compte Claude du poste, tel que Claude Code le voit (`claude auth status`). */
-export interface CompteClaude {
-  /** Claude Code est trouvé sur le poste. */
-  installe: boolean;
-  chemin: string | null;
-  version: string | null;
-  connecte: boolean;
-  /** « claude.ai » (abonnement) ou « console » (facturation à l'usage). */
-  methode: string | null;
-  email: string | null;
-  organisation: string | null;
-  /** « max », « pro », « team »… */
-  abonnement: string | null;
-  verifieLe: number;
-}
-
 /** Lance une commande de Claude Code et rend sa sortie. */
 function commandeClaude(bin: string, args: string[], delai: number): Promise<{ code: number | null; sortie: string }> {
   return new Promise((resolve) => {
@@ -909,9 +841,10 @@ function commandeClaude(bin: string, args: string[], delai: number): Promise<{ c
   });
 }
 
-export async function compteClaude(): Promise<CompteClaude> {
+/** Le compte Claude du poste, tel que Claude Code le voit (`claude auth status`). */
+export async function compteClaude(): Promise<CompteMoteur> {
   const bin = findClaude();
-  const vide: CompteClaude = {
+  const vide: CompteMoteur = {
     installe: !!bin,
     chemin: bin,
     version: null,
@@ -948,13 +881,13 @@ export async function compteClaude(): Promise<CompteClaude> {
  * Connexion au compte : Claude Code ouvre la page de connexion d'Anthropic
  * dans le navigateur et attend qu'elle soit validée (5 min au plus).
  */
-export async function connecterClaude(): Promise<CompteClaude> {
+export async function connecterClaude(): Promise<CompteMoteur> {
   const bin = findClaude();
   if (bin) await commandeClaude(bin, ["auth", "login", "--claudeai"], 5 * 60_000);
   return compteClaude();
 }
 
-export async function deconnecterClaude(): Promise<CompteClaude> {
+export async function deconnecterClaude(): Promise<CompteMoteur> {
   const bin = findClaude();
   if (bin) await commandeClaude(bin, ["auth", "logout"], 30_000);
   return compteClaude();

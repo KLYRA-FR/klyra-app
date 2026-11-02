@@ -39,7 +39,7 @@ async function fixture(initial, dossierExistant) {
   Module._load = function (name, parent, ...rest) {
     if (name === "electron") return electron;
     if (parent?.filename === modulePath) {
-      if (name === "../claude") return { cancelAgent: (id) => cancels.push(id) };
+      if (name === "../moteurs") return { moteurs: { arreter: (id) => cancels.push(id) } };
       if (name === "../mes-agents") return { dossierAgents: () => fiches, estActif: (id) => active.has(id) };
       if (name === "../ia") return { brancherOutilsRoutines: (value) => { signals = value; } };
     }
