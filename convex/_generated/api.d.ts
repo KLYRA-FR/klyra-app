@@ -25,6 +25,7 @@ import type * as model_evenements from "../model/evenements.js";
 import type * as model_limites from "../model/limites.js";
 import type * as model_rappels from "../model/rappels.js";
 import type * as model_valeurs from "../model/valeurs.js";
+import type * as operationsFile from "../operationsFile.js";
 import type * as postes from "../postes.js";
 import type * as presence from "../presence.js";
 import type * as rappels from "../rappels.js";
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   "model/limites": typeof model_limites;
   "model/rappels": typeof model_rappels;
   "model/valeurs": typeof model_valeurs;
+  operationsFile: typeof operationsFile;
   postes: typeof postes;
   presence: typeof presence;
   rappels: typeof rappels;

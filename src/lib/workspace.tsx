@@ -535,14 +535,14 @@ interface WorkspaceApi {
   basculerMachine: (lieu: string | null) => void;
   /** Repart de zéro avec l'agent : les messages et sa mémoire de cette conversation sont effacés. */
   nouvelleConversation: (chatId: string) => void;
-  /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id. */
-  startChat: (projectId: string, text: string, to: RoleId | null, fichiers?: string[]) => string;
+  /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id (`id` : celui choisi sur le téléphone). */
+  startChat: (projectId: string, text: string, to: RoleId | null, fichiers?: string[], id?: string) => string;
   reessayer: (chatId: string, messageId: string, facon: FaconReessai, modele?: string) => void;
   brancher: (chatId: string, messageId: string) => string | null;
   /** Arrête l'agent qui travaille dans cette conversation. */
   arreter: (chatId: string) => void;
-  /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id. */
-  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null) => string;
+  /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id (`id` : celui choisi sur le téléphone). */
+  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, id?: string) => string;
   renommerChat: (chatId: string, titre: string) => void;
   epinglerChat: (chatId: string, epingler: boolean) => void;
   /** Ferme un fil : il s'arrête et part dans les archivés (« supprimé » : caché des archivés). Rien n'est effacé. */
@@ -1387,8 +1387,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     return id;
   }, []);
 
-  const startChat = useCallback((projectId: string, text: string, to: RoleId | null, fichiers: string[] = []) => {
-    const id = crypto.randomUUID();
+  const startChat = useCallback((projectId: string, text: string, to: RoleId | null, fichiers: string[] = [], idImpose?: string) => {
+    const id = idImpose ?? crypto.randomUUID();
     const roleIds: RoleId[] = to && to !== "principal" ? ["principal", to] : ["principal"];
     const chat: Chat = {
       id,
@@ -1419,10 +1419,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [bridge],
   );
 
-  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null) => {
+  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, idImpose?: string) => {
     const maintenant = new Date().toISOString();
     const chat: Chat = {
-      id: `${FIL}${crypto.randomUUID().slice(0, 8)}`,
+      id: idImpose ?? `${FIL}${crypto.randomUUID().slice(0, 8)}`,
       kind: "direct",
       projectId: null,
       title: titre?.trim() ? chatTitle(titre) : FIL_SANS_TITRE,

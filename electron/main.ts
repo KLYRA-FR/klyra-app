@@ -116,6 +116,7 @@ import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeu
 import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
+import { recevoirPiece } from "./pieces-telephone";
 
 /**
  * Process principal Electron.
@@ -553,6 +554,7 @@ function registerBridge() {
   });
   handle("fichiers:ecrire", (chemin: string, texte: string) => ecrireFichierTexte(chemin, texte));
   handle("fichiers:coller", (octets: unknown, type: unknown) => enregistrerCollage(octets, type));
+  handle("fichiers:recevoir", (octets: unknown, nom: unknown) => recevoirPiece(octets, nom));
   handle("webhooks:adresse", (secret: string) => adresseWebhook(secret));
   demarrerWebhooks();
   /* Les outils des fils (ouvrir, lire, écrire, arrêter, fermer) : l'interface les exécute, elle tient les conversations. */

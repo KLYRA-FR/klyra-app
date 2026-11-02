@@ -1,96 +1,161 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { Bouton } from "@/components/ui/Bouton";
+import { Icon } from "@/components/icons/Icon";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { ajouterAuBrouillon } from "@/lib/brouillons";
 import { messageErreur } from "@/lib/compte";
-import { attenteEnvoi, bandeauComposeur } from "@/lib/poste-texte";
+import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
+import { activiteDe, agentDe, ASSISTANT } from "@/lib/telephone/chats";
+import { useEnvoyerMessage } from "@/lib/telephone/envoi";
+import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
 import { EnteteTelephone } from "./EnteteTelephone";
+import { useBandeau } from "./etats";
 import { usePostes } from "./poste";
+import { RondAgent, useCartes } from "./AgentsChat";
+import { ComposeurFil } from "./ComposeurFil";
+import { DetailsFil } from "./DetailsFil";
+import { FilsPuces } from "./FilsPuces";
+import { useMenuChat } from "./MenuChat";
+import { MessagesFil, type ContexteFil } from "./MessagesFil";
 
-/** T-02. L'envoi passe par le compte. La barre du bas est cachée par la coque. */
+/** Les suggestions de l'accueil du bureau : chacune remplit le composeur, sans rien envoyer. */
+const SUGGESTIONS = [
+  { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine" },
+  { libelle: "Résume ce document", texte: "Résume ce document" },
+  { libelle: "Crée-moi un agent pour…", texte: DEBUT_DEMANDE_AGENT },
+];
+
+/**
+ * Le composeur suit le clavier : quand il s'ouvre, le fil prend la hauteur visible de l'écran
+ * (`visualViewport`), sinon la page entière glisserait sous le clavier.
+ */
+function useCadreVisible(): CSSProperties | undefined {
+  const [cadre, setCadre] = useState<CSSProperties | undefined>(undefined);
+  useEffect(() => {
+    const vue = window.visualViewport;
+    if (!vue) return;
+    const suivre = () => {
+      const clavier = window.innerHeight - vue.height > 120;
+      setCadre(clavier ? { position: "fixed", left: 0, right: 0, top: vue.offsetTop, height: vue.height } : undefined);
+    };
+    suivre();
+    vue.addEventListener("resize", suivre);
+    vue.addEventListener("scroll", suivre);
+    return () => {
+      vue.removeEventListener("resize", suivre);
+      vue.removeEventListener("scroll", suivre);
+    };
+  }, []);
+  return cadre;
+}
+
+/** T-02. Le fil se lit dans le compte ; l'envoi passe par la file. La barre du bas est cachée par la coque. */
 export function FilTelephone() {
-  const id = useSearchParams().get("id") ?? "";
+  const params = useSearchParams();
+  const id = params.get("id") ?? "";
+  const nouveauProjet = params.get("nouveau");
   const router = useRouter();
-  const fil = useQuery(api.conversationsCompte.messages, id ? { origine: id } : "skip");
   const conversations = useQuery(api.conversationsCompte.liste, {});
+  const fil = useQuery(api.conversationsCompte.messages, id ? { origine: id } : "skip");
   const attente = useQuery(api.conversationsCompte.enAttente, {});
-  const laisser = useMutation(api.conversationsCompte.laisser);
-  const annuler = useMutation(api.conversationsCompte.annuler);
-  const { principal, ouvert } = usePostes();
-  const [texte, setTexte] = useState("");
-  const [erreur, setErreur] = useState<string | null>(null);
-  const [occupe, setOccupe] = useState(false);
-  const titre = conversations?.find((c) => c.origine === id)?.titre ?? "Conversation";
-  const bandeau = ouvert ? null : bandeauComposeur(principal);
-  const enAttente = (attente ?? []).filter((m) => m.conversationOrigine === id);
+  const projets = useQuery(api.conversationsCompte.projets, nouveauProjet ? {} : "skip");
+  const marquerLu = useMutation(api.operationsFile.marquerLu);
+  const envoyerMessage = useEnvoyerMessage();
+  const { nom, carte } = useCartes();
+  const { ouvert } = usePostes();
+  const [details, setDetails] = useState(false);
+  const [bandeau, montrer] = useBandeau();
+  const menu = useMenuChat({ onDetails: () => setDetails(true), onBandeau: montrer });
+  const cadre = useCadreVisible();
 
-  const envoyer = async (e: FormEvent) => {
-    e.preventDefault();
-    const propre = texte.trim();
-    if (!propre || !id) return;
-    setOccupe(true);
-    setErreur(null);
-    try {
-      await laisser({ conversationOrigine: id, texte: propre });
-      setTexte("");
-    } catch (err) {
-      setErreur(messageErreur(err));
-    } finally {
-      setOccupe(false);
-    }
+  const conversation = conversations?.find((c) => c.origine === id);
+  const agent = agentDe(id, conversation);
+  const equipe = conversation ? conversation.kind === "equipe" : !!nouveauProjet;
+  const activite = activiteDe(conversation);
+  /* Ordinateur fermé, plus rien ne s'écrit : l'activité copiée avant la fermeture ne vaut plus (sauf la question). */
+  const activiteVive = activite && (ouvert || activite.etat === "question") ? activite : null;
+  const projetNouveau = projets?.find((p) => p.origine === nouveauProjet);
+  const titre = equipe
+    ? (conversation?.titre ?? (projetNouveau ? `Nouvelle conversation · ${projetNouveau.nom}` : "Nouvelle conversation"))
+    : agent
+      ? `${nom(agent)}${carte(agent)?.roleCourt ? ` · ${carte(agent)?.roleCourt}` : ""}`
+      : "Conversation";
+  const enFile = (attente ?? []).filter((m) => m.conversationOrigine === id);
+
+  /* Lue sur le téléphone : ses non-lus tombent dans le compte, et l'ordinateur la marque lue à son ouverture. */
+  const nonLus = conversation?.nonLus ?? 0;
+  const question = activite?.etat === "question";
+  useEffect(() => {
+    if (id && (nonLus > 0 || question)) void marquerLu({ conversationOrigine: id }).catch(() => undefined);
+  }, [id, nonLus, question, marquerLu]);
+
+  const envoyer = (texte: string, options: Record<string, unknown>) => {
+    void envoyerMessage({ conversationOrigine: id, texte, options: options as OptionsMessage }).catch((err: unknown) => montrer(messageErreur(err)));
+  };
+  const contexte: ContexteFil = {
+    origine: id,
+    projetId: conversation?.projetId ?? null,
+    activite: activiteVive,
+    modele: lireModele(conversation?.modele)?.modele ?? null,
+    envoyer,
+    onBandeau: montrer,
   };
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre={titre} retour={() => router.push("/chats")} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {fil === undefined ? (
-          <div className="h-16 rounded-md bg-fond-surface-grise" />
+  /* Conversation vide : qui est l'agent, et les suggestions de l'accueil du bureau (avec l'assistant, ou dans un projet). */
+  const vide = (
+    <div className="flex flex-col items-center gap-3 py-10 text-center">
+      {agent ? <RondAgent id={agent} taille={56} /> : null}
+      <h2 className="text-h4 leading-[1.1] text-texte-principal">
+        {agent ? (
+          <>
+            <span className="font-semibold">{nom(agent)}</span> <span className="font-normal">{carte(agent)?.roleCourt}</span>
+          </>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {fil.messages.map((message) => (
-              <li key={message.origine} className={message.auteurKind === "user" ? "self-end" : "self-start"}>
-                <p className="max-w-[85vw] rounded-md bg-fond-surface px-3 py-2 text-body-s whitespace-pre-wrap text-texte-principal">{message.texte}</p>
-              </li>
-            ))}
-            {enAttente.map((message) => (
-              <li key={message._id} className="self-end">
-                <p className="max-w-[85vw] rounded-md bg-fond-surface px-3 py-2 text-body-s text-texte-principal">{message.texte}</p>
-                <div className="mt-1 text-ui-xs text-texte-secondaire">
-                  {attenteEnvoi(principal)}
-                  {" · "}
-                  <button type="button" className="min-h-11 text-texte-principal" onClick={() => void annuler({ id: message._id })}>
-                    Annuler l’envoi
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <span className="font-semibold">Écris à l’équipe</span>
         )}
-      </div>
-      <form onSubmit={(e) => void envoyer(e)} className="shrink-0 border-t border-bordure-subtile bg-fond-surface px-3 py-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
-        {bandeau ? <p className="mb-2 text-ui-xs text-texte-secondaire">{bandeau}</p> : null}
-        {erreur ? (
-          <p role="alert" className="mb-2 text-ui text-texte-principal">
-            {erreur}
-          </p>
-        ) : null}
-        <div className="flex items-end gap-2">
-          <textarea
-            value={texte}
-            onChange={(e) => setTexte(e.target.value)}
-            aria-label="Message"
-            rows={1}
-            className="max-h-40 min-h-12 flex-1 resize-none rounded-md border border-bordure-champ bg-fond-page px-3 py-3 text-body-s text-texte-principal"
+      </h2>
+      {agent === ASSISTANT || equipe ? (
+        <ul aria-label="Suggestions" className="mt-2 flex w-full flex-col gap-2">
+          {SUGGESTIONS.map((s) => (
+            <li key={s.libelle}>
+              <Bouton variant="blanc" className="h-11 w-full justify-start text-ui" onClick={() => ajouterAuBrouillon(id, s.texte)}>
+                {s.libelle}
+              </Bouton>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-fond-page" style={cadre}>
+      <EnteteTelephone
+        titre={titre}
+        retour={() => router.push("/chats")}
+        droite={
+          <BoutonIcone
+            variant="discret"
+            className="size-11"
+            libelle="Options de la conversation"
+            aria-haspopup="dialog"
+            icone={<Icon name="dot-horizontal" size={22} />}
+            onClick={() => menu.ouvrir(id, conversation, true)}
           />
-          <Bouton type="submit" variant="sombre" disabled={occupe || !texte.trim()} className="h-12">
-            Envoyer
-          </Bouton>
-        </div>
-      </form>
+        }
+      />
+      {agent && !equipe && conversations ? <FilsPuces agentId={agent} courant={id} conversations={conversations} onBandeau={montrer} /> : null}
+      <MessagesFil messages={fil?.messages} enFile={enFile} contexte={contexte} vide={vide} />
+      <ComposeurFil key={id} origine={id} conversation={conversation} equipe={equipe} nouveauProjet={nouveauProjet} agentId={equipe ? null : agent} activite={activiteVive} />
+      {details ? (
+        <DetailsFil origine={id} conversation={conversation} messages={fil?.messages ?? []} onExporter={() => void menu.exporter(id, conversation)} onFermer={() => setDetails(false)} />
+      ) : null}
+      {menu.rendu}
+      {bandeau}
     </div>
   );
 }
