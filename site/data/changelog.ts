@@ -31,7 +31,36 @@ export const LIBELLES_GROUPES: Record<TypeGroupe, string> = {
 export const DEPOT_VERSIONS = "https://github.com/KLYRA-FR/klyra-app-versions";
 export const LIEN_TELECHARGER = `${DEPOT_VERSIONS}/releases/latest`;
 
+/** L’annonce en tête de la landing : une version marquante, pas forcément la dernière. */
+export const ANNONCE = { version: "0.1.65", texte: "Les tickets arrivent dans KLYRA" };
+
 export const VERSIONS: Version[] = [
+  {
+    version: "0.1.67",
+    publiee: "2026-11-02T15:12:27Z",
+    groupes: {
+      nouveau: [
+        "L’app pour téléphone, en entier : chats et fil, recherche, planning et rappels, agents et leur fiche, projets et visionneuse, routines et workflows, artefacts et réglages. Elle s’installe depuis le navigateur et marche aussi sur tablette.",
+        "Le téléphone demande à ton ordinateur ouvert de faire un geste (ouvrir un fichier, renommer, épingler…) et reçoit la réponse. Les pièces jointes passent par ton compte et sont effacées une fois écrites sur l’ordinateur.",
+        "Quand ton ordinateur est fermé, une conversation qui tourne sur ton VPS part directement au VPS, en accès « demander ». À sa réouverture, l’ordinateur range l’échange dans la conversation.",
+        "Les notifications sur le téléphone, et **Me prévenir à l’ouverture** quand ton ordinateur est fermé.",
+      ],
+      corrige: [
+        "Un ordinateur qui ne répond plus passe « fermé » sur le téléphone au bout de 35 secondes. Avant, il pouvait rester affiché « ouvert ».",
+      ],
+    },
+  },
+  {
+    version: "0.1.66",
+    publiee: "2026-11-02T15:03:45Z",
+    groupes: {
+      nouveau: [
+        "**Confier à un agent** depuis une ligne de rappel : un fil s’ouvre avec le rappel pour brief, son titre, sa priorité et son échéance. Le rappel affiche « Confié à … », avec un lien vers le fil.",
+        "Fermer le fil coche le rappel. Supprimer le fil ne coche rien.",
+        "Les onglets des fils portent une pastille : orange quand le ticket est bloqué, verte quand il attend ta validation.",
+      ],
+    },
+  },
   {
     version: "0.1.65",
     publiee: "2026-11-02T14:37:42Z",

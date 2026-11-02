@@ -213,8 +213,8 @@ export function Changelog({ versions }: { versions: Version[] }) {
       ) : (
         <div id="changelog-mobile" role="tabpanel" className="klyra-cl-versions">
           <p className="klyra-cl-vide">
-            L’app mobile n’a pas encore de version publiée. Elle arrive bientôt : tes conversations, tes tickets et ton
-            planning, sur ton téléphone.
+            L’app pour téléphone est prête depuis la version 0.1.67, mais pas encore en ligne. Ses notes de version
+            apparaîtront ici dès sa mise en ligne ; d’ici là, elles sont dans celles de l’app de bureau.
           </p>
         </div>
       )}

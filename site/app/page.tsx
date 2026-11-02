@@ -8,7 +8,7 @@ import { EnTete } from "../components/EnTete";
 import { PiedDePage } from "../components/PiedDePage";
 import { Revelation } from "../components/Revelation";
 import { Texte } from "../components/Texte";
-import { LIBELLES_GROUPES, LIEN_TELECHARGER, ORDRE_GROUPES, VERSIONS } from "../data/changelog";
+import { ANNONCE, LIBELLES_GROUPES, LIEN_TELECHARGER, ORDRE_GROUPES, VERSIONS } from "../data/changelog";
 import { ancre, dateLongue } from "../lib/changelog";
 
 const FONCTIONNALITES: { icone: IconName; titre: string; texte: string }[] = [
@@ -52,7 +52,6 @@ const GARANTIES: { icone: IconName; titre: string; texte: string }[] = [
 
 export default function Accueil() {
   const recentes = VERSIONS.slice(0, 3);
-  const derniere = VERSIONS[0];
   return (
     <>
       <EnTete />
@@ -60,11 +59,11 @@ export default function Accueil() {
         {/* ─── Hero ─────────────────────────────────────────────────── */}
         <section className="klyra-site-conteneur pt-[clamp(48px,8vw,104px)] text-center">
           <Link
-            href={`/changelog/#${ancre(derniere.version)}`}
+            href={`/changelog/#${ancre(ANNONCE.version)}`}
             className="inline-flex items-center gap-2 rounded-pill border border-bordure-defaut bg-fond-surface py-1 pr-3 pl-1 text-ui-s text-texte-secondaire no-underline shadow-ombre-xs transition-colors duration-[220ms] hover:border-bordure-forte"
           >
-            <span className="rounded-pill bg-fond-teinte-bleue px-2 py-0.5 text-ui-xs font-medium text-texte-accent">{derniere.version}</span>
-            Les tickets arrivent dans KLYRA
+            <span className="rounded-pill bg-fond-teinte-bleue px-2 py-0.5 text-ui-xs font-medium text-texte-accent">{ANNONCE.version}</span>
+            {ANNONCE.texte}
             <Icon name="chevron-right" size={16} />
           </Link>
           <h1 className="mx-auto mt-6 max-w-[14ch] text-[clamp(44px,7.4vw,92px)] leading-[0.95] font-semibold tracking-[-0.05em] text-balance">
