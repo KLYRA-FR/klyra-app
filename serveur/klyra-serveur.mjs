@@ -155,38 +155,74 @@ function lireCorpsRequete(req, max = CORPS_MAX) {
  * (`GET /klyra/v1/agent/evenements`, flux SSE) et rattrape, en se reconnectant, ce qu'elle a manqué.
  * `instance` change à chaque démarrage : l'app sait alors que la numérotation repart de zéro.
  */
+/**
+ * Un message écrit sur le téléphone, envoyé ici pendant que le PC est fermé : sa conversation et son
+ * texte, pour que le PC l'y range à sa réouverture (avec la réponse). Renvoie null si c'est illisible.
+ */
+export function contexteTelephone(brut) {
+  if (!brut || typeof brut !== "object") return null;
+  const { chatId, agentId, titre, telephone } = brut;
+  if (typeof chatId !== "string" || !/^[A-Za-z0-9_.:-]{1,120}$/.test(chatId) || /^routine-/.test(chatId)) return null;
+  if (typeof agentId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(agentId)) return null;
+  if (!telephone || typeof telephone !== "object") return null;
+  const { messageId, texte, creeLe } = telephone;
+  if (typeof messageId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(messageId)) return null;
+  if (typeof texte !== "string" || !texte.trim() || texte.length > 8000) return null;
+  if (typeof creeLe !== "string" || Number.isNaN(Date.parse(creeLe))) return null;
+  return {
+    chatId,
+    agentId,
+    titre: typeof titre === "string" ? titre.slice(0, 200) : "Conversation",
+    telephone: { messageId, texte, creeLe: new Date(creeLe).toISOString() },
+  };
+}
+
 export function creerJournal(maintenant = Date.now) {
   const instance = randomBytes(8).toString("hex");
   let seq = 0;
   let entrees = [];
   const abonnes = new Set();
+  /* Contexte d'un message du téléphone, le temps de sa réponse : chaque événement le porte. */
+  const contextes = new Map();
   const ecrireA = (res, entree) => res.write(`id: ${entree.seq}\ndata: ${JSON.stringify(entree)}\n\n`);
   function ajouter(entree) {
     const complete = { seq: ++seq, t: maintenant(), ...entree };
     entrees.push(complete);
     const limite = maintenant() - JOURNAL_DUREE_MS;
     if (entrees.length > JOURNAL_MAX || entrees[0].t < limite) entrees = entrees.filter((e) => e.t >= limite).slice(-JOURNAL_MAX);
-    for (const res of abonnes) ecrireA(res, complete);
+    for (const abonne of abonnes) if (abonne.garder(complete)) ecrireA(abonne, complete);
   }
   return {
     instance,
     /** `contexte` : une réponse de routine, à ouvrir dans la conversation de la routine. */
-    publier: (requestId, event, sessionId, contexte = null) => ajouter({ requestId, sessionId: sessionId ?? null, event, ...(contexte ? { contexte } : {}) }),
+    publier: (requestId, event, sessionId, contexte = null) => {
+      const lie = contexte ?? contextes.get(requestId) ?? null;
+      ajouter({ requestId, sessionId: sessionId ?? null, event, ...(lie ? { contexte: lie } : {}) });
+      if (event?.type === "fin") contextes.delete(requestId);
+    },
+    /** Le téléphone envoie lui-même (PC fermé) : la réponse portera sa conversation. */
+    poserContexte(requestId, contexte) {
+      if (contextes.size >= 500) contextes.delete(contextes.keys().next().value);
+      contextes.set(requestId, contexte);
+    },
     /** Une tâche de fond fait reparler l'agent : l'app ouvre une réponse sous ce numéro. */
     spontane: (sessionId) => {
       const requestId = randomUUID();
       ajouter({ requestId, sessionId, spontane: true });
       return requestId;
     },
-    abonner(res, depuis, instanceConnue) {
+    /** `requete` : seulement les événements de cette réponse (le téléphone suit le message qu'il a envoyé). */
+    abonner(res, depuis, instanceConnue, requete = null) {
       res.write(`event: instance\ndata: ${JSON.stringify({ instance })}\n\n`);
       const debut = instanceConnue === instance ? depuis : 0;
-      for (const entree of entrees) if (entree.seq > debut) ecrireA(res, entree);
-      abonnes.add(res);
+      const garder = (entree) => entree.seq > debut && (requete === null || entree.requestId === requete);
+      for (const entree of entrees) if (garder(entree)) ecrireA(res, entree);
+      const abonne = { write: (texte) => res.write(texte), end: () => res.end(), garder };
+      abonnes.add(abonne);
       const battement = setInterval(() => res.write(": battement\n\n"), 20_000);
       res.on("close", () => {
         clearInterval(battement);
-        abonnes.delete(res);
+        abonnes.delete(abonne);
       });
     },
     fermerTout() {
@@ -333,7 +369,8 @@ export function creerGestionnaire(options) {
         if (req.method !== "GET") return repondre(res, 405, { erreur: "methode" });
         res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store", Connection: "keep-alive", ...ENTETES_CORS });
         const depuis = Number(url.searchParams.get("depuis") ?? "0");
-        journal.abonner(res, Number.isFinite(depuis) ? depuis : 0, url.searchParams.get("instance") ?? "");
+        const requete = url.searchParams.get("requete");
+        journal.abonner(res, Number.isFinite(depuis) ? depuis : 0, url.searchParams.get("instance") ?? "", requete && /^[A-Za-z0-9_-]{1,100}$/.test(requete) ? requete : null);
         return;
       }
       if (action === "fiches") {
@@ -351,6 +388,12 @@ export function creerGestionnaire(options) {
       const requestId = typeof corps?.requestId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(corps.requestId) ? corps.requestId : null;
       if (!requestId) return repondre(res, 400, { erreur: "requete" });
       if (action === "envoyer") {
+        /* Venu du téléphone, PC fermé : la conversation où le PC rangera l'échange à sa réouverture. */
+        if (corps.contexte !== undefined) {
+          const contexte = contexteTelephone(corps.contexte);
+          if (!contexte) return repondre(res, 400, { erreur: "contexte" });
+          journal?.poserContexte(requestId, contexte);
+        }
         agents.envoyer(requestId, corps.options);
         return repondre(res, 202, { requestId });
       }

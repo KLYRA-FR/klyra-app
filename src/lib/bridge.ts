@@ -174,12 +174,13 @@ export type ContenuFichier =
   | { type: "document"; blocs: BlocDocument[]; taille: number }
   | { type: "autre"; taille: number; raison: string };
 
-/** Une réponse de routine tenue par un VPS (electron/agents-distants.ts). */
+/** Une réponse d'un VPS ouverte dans sa conversation : routine, ou message écrit sur le téléphone PC fermé (electron/agents-distants.ts). */
 export interface ContexteReponse {
   chatId: string;
   agentId: string;
   titre: string;
   lieu: string;
+  telephone?: { messageId: string; texte: string; creeLe: string };
 }
 
 export interface StreamOptions {

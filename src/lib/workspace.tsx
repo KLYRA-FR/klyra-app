@@ -1071,11 +1071,25 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
         }
       }
+      // Écrit sur le téléphone pendant que ce PC était fermé, envoyé au VPS : le message, puis sa réponse.
+      const telephone = contexte?.telephone;
+      if (telephone) {
+        chat = stateRef.current.chats.find((c) => c.id === contexte.chatId) ?? chat;
+        roleId = contexte.agentId;
+        if (chat && !stateRef.current.messages.some((m) => m.id === telephone.messageId)) {
+          dispatch({
+            type: "message/add",
+            message: { id: telephone.messageId, chatId: chat.id, author: { kind: "user" }, createdAt: telephone.creeLe, parts: [{ type: "text", text: telephone.texte }] },
+          });
+        }
+      }
       if (!chat || !roleId) return;
-      dispatch({
-        type: "message/add",
-        message: { id: requestId, chatId: chat.id, author: { kind: "role", roleId }, createdAt: new Date().toISOString(), parts: [], statut: "en-cours" },
-      });
+      if (!stateRef.current.messages.some((m) => m.id === requestId)) {
+        dispatch({
+          type: "message/add",
+          message: { id: requestId, chatId: chat.id, author: { kind: "role", roleId }, createdAt: new Date().toISOString(), parts: [], statut: "en-cours" },
+        });
+      }
       if (!stateRef.current.travail[chat.id]) {
         dispatch({ type: "travail/debut", chatId: chat.id, travail: { roleId, messageId: requestId, debut: Date.now() } });
       }

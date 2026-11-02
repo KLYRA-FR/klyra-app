@@ -1,0 +1,47 @@
+import { describe, expect, test } from "vitest";
+import { appliquerEvenement, voieEnvoi, type EchangeDirect } from "./vps-direct";
+
+const echange: EchangeDirect = {
+  conversation: "dm-hugo",
+  messageId: "tel-1",
+  texte: "Relance le build",
+  creeLe: "2026-11-02T10:00:00.000Z",
+  adresse: "https://vps.exemple.test",
+  requestId: "r1",
+  agentId: "hugo",
+  reponse: "",
+  statut: "en-cours",
+  erreur: null,
+  autorisation: null,
+};
+
+describe("voie directe vers le VPS", () => {
+  test("ordinateur ouvert : il relaie ; fermé : le VPS, seulement si ce téléphone y est relié", () => {
+    expect(voieEnvoi({ posteOuvert: true, lieu: "https://vps.exemple.test", jeton: "j" })).toBe("file");
+    expect(voieEnvoi({ posteOuvert: false, lieu: "https://vps.exemple.test", jeton: "j" })).toBe("vps");
+    expect(voieEnvoi({ posteOuvert: false, lieu: "https://vps.exemple.test", jeton: null })).toBe("file");
+    expect(voieEnvoi({ posteOuvert: false, lieu: null, jeton: "j" })).toBe("file");
+  });
+
+  test("le texte s'écrit, l'accord s'affiche puis se retire, la fin garde le texte complet", () => {
+    let e = appliquerEvenement(echange, { type: "texte", delta: "Je " });
+    e = appliquerEvenement(e, { type: "texte", delta: "lance." });
+    expect(e.reponse).toBe("Je lance.");
+    e = appliquerEvenement(e, { type: "autorisation", id: "d1", outil: "Bash", description: "pnpm build" });
+    expect(e.autorisation).toEqual({ id: "d1", outil: "Bash", description: "pnpm build" });
+    e = appliquerEvenement(e, { type: "autorisation-fin", id: "d1" });
+    expect(e.autorisation).toBeNull();
+    e = appliquerEvenement(e, { type: "fin", ok: true, texte: "Build lancé." });
+    expect(e).toMatchObject({ statut: "fait", reponse: "Build lancé." });
+  });
+
+  test("une erreur de l'agent est dite en clair", () => {
+    const e = appliquerEvenement(echange, { type: "fin", ok: false, texte: "", erreur: "Claude Code n’est pas connecté sur le VPS." });
+    expect(e).toMatchObject({ statut: "erreur", erreur: "Claude Code n’est pas connecté sur le VPS." });
+  });
+
+  test("un nouveau bloc de texte est séparé du précédent", () => {
+    const e = appliquerEvenement({ ...echange, reponse: "Avant." }, { type: "texte", delta: "Après.", nouveauBloc: true });
+    expect(e.reponse).toBe("Avant.\n\nAprès.");
+  });
+});
