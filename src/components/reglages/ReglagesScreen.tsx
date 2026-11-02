@@ -6,7 +6,8 @@ import { Icon } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
 import { avecCommande, estMac } from "@/lib/raccourcis";
 import { AutresIa } from "./AutresIa";
-import { chercher, estSection, SECTIONS, type IdSection, type Resultat } from "./catalogue";
+import { cheminDeplace, cheminServeur, DEPLACEES, SECTIONS_SERVEUR } from "@/components/serveur/catalogue";
+import { chercherDans, estSection, SECTIONS, type EntreeReglage, type IdSection } from "./catalogue";
 import { Agents } from "./sections/Agents";
 import { Claude } from "./sections/Claude";
 import { ComputerUse } from "./sections/ComputerUse";
@@ -43,14 +44,14 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
 function sectionMemorisee(): IdSection {
   try {
     const s = localStorage.getItem(CLE_SECTION);
-    return estSection(s) ? s : "general";
+    return estSection(s) && !DEPLACEES[s] ? s : "general";
   } catch {
     return "general";
   }
 }
 
 /** Mène au réglage cherché : il défile à l'écran, s'éclaire un instant et prend le focus. */
-function allerAuReglage(id: string) {
+export function allerAuReglage(id: string) {
   const el = document.getElementById(ancreReglage(id));
   if (!el) return;
   el.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -63,7 +64,7 @@ function allerAuReglage(id: string) {
 }
 
 /** Une ligne de la barre latérale : une section, ou un résultat de recherche. */
-function Entree({
+export function Entree({
   actif,
   icone,
   children,
@@ -106,15 +107,60 @@ function Entree({
  * section) et la section ouverte. `/reglages?section=voix` ouvre une section ;
  * sans paramètre, la dernière ouverte. ⌘ , les ouvre de partout, ⌘ F cherche.
  */
+/** Les sections affichées ici : celles qui ne sont pas parties dans les Réglages du serveur. */
+const ICI = SECTIONS.filter((s) => !DEPLACEES[s.id]);
+
+/** Un résultat de recherche : un réglage d'ici, ou des Réglages du serveur (`vers`). */
+interface Resultat {
+  cle: string;
+  titre: string;
+  icone: Parameters<typeof Icon>[0]["name"];
+  sous?: string;
+  section?: IdSection;
+  entree?: EntreeReglage | null;
+  vers?: string;
+}
+
+/** La recherche couvre aussi les Réglages du serveur, marqués comme tels. */
+function chercherPartout(requete: string): (Resultat & { note: number })[] {
+  const ici = chercherDans(ICI, requete).map((r) => ({
+    note: r.note,
+    cle: `${r.section.id}-${r.entree?.id ?? ""}`,
+    titre: r.entree?.titre ?? r.section.titre,
+    icone: r.section.icone,
+    sous: r.entree ? r.section.titre : undefined,
+    section: r.section.id,
+    entree: r.entree,
+  }));
+  const serveur = chercherDans(SECTIONS_SERVEUR, requete).map((r) => {
+    const claude = !!r.entree && SECTIONS.find((s) => s.id === "claude")!.entrees.some((e) => e.id === r.entree!.id);
+    return {
+      note: r.note,
+      cle: `serveur-${r.section.id}-${r.entree?.id ?? ""}`,
+      titre: r.entree?.titre ?? r.section.titre,
+      icone: r.section.icone,
+      sous: `Réglages du serveur · ${r.section.titre}`,
+      vers: cheminServeur(r.section.id, { fournisseur: claude ? "claude" : null, reglage: r.entree?.id ?? null }),
+    };
+  });
+  return [...ici, ...serveur].sort((a, b) => b.note - a.note);
+}
+
 export function ReglagesScreen() {
   const router = useRouter();
   const params = useSearchParams();
   const demandee = params.get("section");
-  const section: IdSection = estSection(demandee) ? demandee : sectionMemorisee();
+  const section: IdSection = estSection(demandee) && !DEPLACEES[demandee] ? demandee : sectionMemorisee();
   const courante = SECTIONS.find((s) => s.id === section)!;
 
+  /* Un ancien lien vers une section partie (Claude, Agents…) : on y mène, dans les Réglages du serveur. */
+  useEffect(() => {
+    const ailleurs = estSection(demandee) ? cheminDeplace(demandee, params.get("reglage")) : null;
+    if (ailleurs) router.replace(ailleurs);
+  }, [demandee, params, router]);
+
   const [requete, setRequete] = useState("");
-  const resultats = useMemo(() => chercher(requete), [requete]);
+  const resultats = useMemo(() => chercherPartout(requete), [requete]);
   const champ = useRef<HTMLInputElement>(null);
   const nav = useRef<HTMLElement>(null);
   const contenu = useRef<HTMLDivElement>(null);
@@ -163,7 +209,8 @@ export function ReglagesScreen() {
   };
 
   const choisir = (r: Resultat) => {
-    ouvrir(r.section.id, r.entree?.id ?? null);
+    if (r.vers) router.push(r.vers);
+    else if (r.section) ouvrir(r.section, r.entree?.id ?? null);
     setRequete("");
   };
 
@@ -227,15 +274,15 @@ export function ReglagesScreen() {
             resultats.length ? (
               resultats.map((r, i) => (
                 <Entree
-                  key={`${r.section.id}-${r.entree?.id ?? ""}`}
+                  key={r.cle}
                   /* Le premier résultat : celui qu'Entrée ouvre depuis le champ. */
                   actif={i === 0}
-                  icone={r.section.icone}
-                  sous={r.entree ? r.section.titre : undefined}
+                  icone={r.icone}
+                  sous={r.sous}
                   onClick={() => choisir(r)}
                   onKeyDown={(e) => deplacer(e)}
                 >
-                  {r.entree?.titre ?? r.section.titre}
+                  {r.titre}
                 </Entree>
               ))
             ) : (
@@ -244,7 +291,7 @@ export function ReglagesScreen() {
               </p>
             )
           ) : (
-            SECTIONS.map((s) => (
+            ICI.map((s) => (
               <Entree
                 key={s.id}
                 icone={s.icone}
@@ -254,7 +301,7 @@ export function ReglagesScreen() {
                 onKeyDown={(e) =>
                   deplacer(
                     e,
-                    SECTIONS.map((x) => x.id),
+                    ICI.map((x) => x.id),
                   )
                 }
               >

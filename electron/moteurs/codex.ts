@@ -8,8 +8,8 @@ import { espaceComposio } from "../composio";
 import { configMcp } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
-import { binaireGere } from "./installation";
-import type { AgentEvent, CompteMoteur, Decision, ModeleMoteur, Moteur, StreamOptions } from "./types";
+import { binaireGere, commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation";
+import type { AgentEvent, CompteMoteur, Decision, ModeleMoteur, Moteur, Progression, StreamOptions } from "./types";
 
 /**
  * ChatGPT, par Codex : un `codex app-server` pour tout le poste, gardé ouvert, et un fil de Codex
@@ -404,6 +404,24 @@ async function modeles(): Promise<ModeleMoteur[]> {
   return liste;
 }
 
+/** Installe le Codex d'OpenAI publié sur npm, pour ce système, dans ~/.klyra/moteurs/codex. */
+async function installer(progression: (p: Progression) => void): Promise<CompteMoteur> {
+  await installerDepuisNpm({ moteur: "codex", paquet: "@openai/codex", executable: EXE, progression });
+  // Le serveur ouvert garde l'ancien programme : le prochain appel lance le nouveau.
+  if (estGere(trouverCodex())) serveur.fermer();
+  return compte();
+}
+
+async function mettreAJour(progression: (p: Progression) => void): Promise<CompteMoteur> {
+  const bin = trouverCodex();
+  if (!bin || estGere(bin)) return installer(progression);
+  progression({ etape: "mise-a-jour", recu: 0, total: null });
+  serveur.fermer();
+  const r = await commande(bin, ["update"], 10 * 60_000);
+  if (r.code !== 0) throw new Error(r.sortie.trim().split("\n").filter((l) => !/^WARNING/.test(l)).slice(-3).join(" ").slice(0, 400) || "La mise à jour de Codex a échoué.");
+  return compte();
+}
+
 export const codex: Moteur = {
   id: "codex",
   nom: "Codex",
@@ -414,6 +432,9 @@ export const codex: Moteur = {
   connecterAvecCle,
   deconnecter,
   modeles,
+  versionDisponible: () => derniereVersionNpm("@openai/codex"),
+  installer,
+  mettreAJour,
   lancer,
   arreter,
   autoriser,

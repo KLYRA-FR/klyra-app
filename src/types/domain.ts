@@ -82,6 +82,8 @@ export interface Role {
   pitch: string;
   sections: RoleSection[];
   model: string;
+  /** Le fournisseur de ses nouvelles conversations et de ses fils (« codex ») ; absent : Claude. */
+  fournisseur?: string;
   memory: string;
   /** null pour le Principal, et pour les fiches d'exemple hors app de bureau. */
   file: RoleFile | null;
