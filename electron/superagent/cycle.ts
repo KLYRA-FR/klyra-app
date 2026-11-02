@@ -187,7 +187,8 @@ export function marquerTravailFil(
   if (!workId) return { ok: true };
   const travail = lireTravail(db, workId);
   if (!travail) return { ok: false, motif: "travail_inconnu" };
-  if ((c.status === "active" || c.status === "waiting") && travail.status === "suspended" && !c.controle_ref) {
+  // Reprendre un travail suspendu, ou une attente de machine, exige un contrôle. Aucune machine n'est contactée.
+  if ((c.status === "active" || c.status === "waiting") && (travail.status === "suspended" || travail.status === "waiting_machine") && !c.controle_ref) {
     return { ok: false, motif: "controle_requis" };
   }
   if ((c.status === "active" || c.status === "waiting") && (travail.status === "cancelled" || travail.status === "done")) {

@@ -204,6 +204,8 @@ contextBridge.exposeInMainWorld("klyra", {
     preuves: (workId: string) => ipcRenderer.invoke("superagent:preuves", workId),
     chercher: (requete: string, compte: string, projectId: string | null) => ipcRenderer.invoke("superagent:chercher", requete, compte, projectId),
     preparer: (filId: string) => ipcRenderer.invoke("superagent:preparer", filId),
+    /** Un passage du watchdog de l'app. Le minuteur de 15 minutes appelle la même fonction. */
+    passage: () => ipcRenderer.invoke("superagent:passage"),
   },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */

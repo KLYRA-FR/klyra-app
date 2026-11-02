@@ -1,7 +1,8 @@
 /**
  * Preuves du contrat super-agent sur un journal SQLite jetable.
  * T01 et T05 lancent de vrais process. T03 arrête ce composant par SIGKILL, pas le service OpenBot.
- * Limite : un fichier, ce PC. Pas de T10, pas de Windows, pas de lien OpenBot.
+ * T04, T07 et T08 tournent sur ce fichier. T06 est une simulation d'état, pas un PC Windows.
+ * Limite : un fichier, ce PC. Pas de T10 OpenBot, pas de Windows, pas de lien OpenBot.
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- script Node en CommonJS, comme superagent-composant.cjs */
 const { spawn } = require("node:child_process");
@@ -546,14 +547,227 @@ async function t09() {
   migre.close();
 }
 
+async function poserOperation(db, travail, fil, cle, partir) {
+  const { planifier, demarrer } = dist("operations.js");
+  const { lireTravail } = dist("travaux.js");
+  const plan = planifier(db, {
+    work_id: travail,
+    idempotency_key: cle,
+    kind: "livraison_klyra",
+    target_ref: `klyra-chat:${fil}`,
+    desired_effect: cle,
+    authorization_ref: CTX.authorization_ref,
+  });
+  const agent = lireTravail(db, travail).owner_agent_id;
+  const depart = partir && plan.ok ? demarrer(db, { operation_id: plan.operation_id, agent_id: agent }) : null;
+  return { plan, depart, agent };
+}
+
+async function t04() {
+  const dir = tmp();
+  const db = ouvrir(dir);
+  const { admettre } = dist("filtre.js");
+  const { ouvrirLot, fermerLot } = dist("lots.js");
+  const { lirePolitique } = dist("politique.js");
+  const { lireTravail } = dist("travaux.js");
+  const { demarrer, lireOperation } = dist("operations.js");
+  const { tous, un } = dist("stockage.js");
+  const registre = dist("outils-fils.js").creerRegistre();
+  const ouvert = await ouvrirFil(db, registre, "Consigne");
+  const politique = lirePolitique(db, CTX.project_id);
+  const travaux = un(db, "SELECT count(*) AS n FROM work").n;
+  const enVol = await poserOperation(db, ouvert.travail, ouvert.fil, "effet-parti", true);
+  const prevu = await poserOperation(db, ouvert.travail, ouvert.fil, "effet-prevu", false);
+  ok(enVol.depart?.ok === true && prevu.plan.ok === true, "T04 une opération est déjà partie, une autre est seulement prévue");
+  const essaisAvant = lireOperation(db, enVol.plan.operation_id).attempts;
+
+  admettre(db, entreeDe(ouvert.fil, ouvert.travail, "gel"), politique);
+  const lot = ouvrirLot(db, { router_id: "principal", project_id: CTX.project_id, policy_version: politique.version });
+  ok(lot.etat === "ouvert" && lot.evenements.length === 1, "T04 un lot est ouvert");
+  admettre(db, entreeDe(ouvert.fil, ouvert.travail, "prec-t04", { type: "precision", payload: "précise le même travail" }), politique);
+  admettre(db, entreeDe(ouvert.fil, ouvert.travail, "prio-t04", { type: "priorite", resume: "priorité: 4", payload: "priorité: 4" }), politique);
+  admettre(db, entreeDe(ouvert.fil, ouvert.travail, "obj-t04", { type: "changement_objectif", revision: 2, payload: "nouvel objectif" }), politique);
+  const figes = tous(db, "SELECT source_message_id FROM event WHERE status = 'pending' ORDER BY ingest_seq").map((ligne) => ligne.source_message_id);
+  ok(figes.join(",") === "prec-t04,prio-t04,obj-t04", `T04 pendant le lot, la précision, la priorité et l'objectif attendent (${figes.join(",")})`);
+  fermerLot(db, { decision_id: lot.decision_id, decisions: decisionsDe(db, lot.evenements), authorization_ref: CTX.authorization_ref });
+
+  const revisionAvant = lireTravail(db, ouvert.travail).objective_revision;
+  const suivant = ouvrirLot(db, { router_id: "principal", project_id: CTX.project_id, policy_version: politique.version });
+  ok(suivant.etat === "ouvert" && suivant.evenements.map((e) => e.source_message_id).join(",") === "prec-t04,prio-t04,obj-t04", "T04 le lot suivant porte les trois événements du même travail");
+  fermerLot(db, { decision_id: suivant.decision_id, decisions: decisionsDe(db, suivant.evenements), authorization_ref: CTX.authorization_ref });
+
+  const travail = lireTravail(db, ouvert.travail);
+  const parti = lireOperation(db, enVol.plan.operation_id);
+  const obsolete = lireOperation(db, prevu.plan.operation_id);
+  const reprise = demarrer(db, { operation_id: prevu.plan.operation_id, agent_id: enVol.agent });
+  const encore = demarrer(db, { operation_id: enVol.plan.operation_id, agent_id: enVol.agent });
+  ok(un(db, "SELECT work_id FROM event WHERE source_message_id = ?", "prec-t04").work_id === ouvert.travail, "T04 la précision reste sur le même travail");
+  ok(un(db, "SELECT count(*) AS n FROM work").n === travaux, "T04 aucun second travail");
+  ok(travail.objective_revision === revisionAvant + 1, `T04 révision ${revisionAvant} → ${travail.objective_revision}`);
+  ok(travail.priority === 4, `T04 priorité ${travail.priority}`);
+  ok(obsolete.status === "cancelled" && obsolete.status_motif === "objectif_revise" && !reprise.ok, `T04 l'intention obsolète ne part pas (${reprise.motif})`);
+  ok(parti.status === "inflight" && parti.status_motif === "effet_deja_parti:controler" && parti.attempts === essaisAvant && !encore.ok, "T04 l'effet déjà parti est signalé, pas rejoué");
+  db.close();
+}
+
+async function t06() {
+  const dir = tmp();
+  const db = ouvrir(dir);
+  const { marquerTravailFil, projection, BLOCAGES_PLATEFORME } = dist("cycle.js");
+  const { demarrer, lireOperation } = dist("operations.js");
+  const { lireTravail } = dist("travaux.js");
+  const { un } = dist("stockage.js");
+  const registre = dist("outils-fils.js").creerRegistre();
+  const garder = await ouvrirFil(db, registre, "Machine gardée");
+  const annuler = await ouvrirFil(db, registre, "Machine annulée", "designer");
+  const prevuGarder = await poserOperation(db, garder.travail, garder.fil, "sim-garder", false);
+  const prevuAnnuler = await poserOperation(db, annuler.travail, annuler.fil, "sim-annuler", false);
+  const avant = un(db, "SELECT count(*) AS n FROM operation").n;
+  const attenteGarder = marquerTravailFil(db, { fil_id: garder.fil, status: "waiting_machine" });
+  const attenteAnnuler = marquerTravailFil(db, { fil_id: annuler.fil, status: "waiting_machine" });
+  const apres = un(db, "SELECT count(*) AS n FROM operation").n;
+  const departGarder = demarrer(db, { operation_id: prevuGarder.plan.operation_id, agent_id: prevuGarder.agent });
+  const departAnnuler = demarrer(db, { operation_id: prevuAnnuler.plan.operation_id, agent_id: prevuAnnuler.agent });
+  ok(attenteGarder.ok && attenteAnnuler.ok && apres === avant, "T06 SIMULATION waiting_machine : aucune opération nouvelle");
+  ok(!departGarder.ok && departGarder.motif === "travail_inactif" && !departAnnuler.ok, "T06 SIMULATION aucun départ, et pas d'action de substitution");
+
+  const clos = marquerTravailFil(db, { fil_id: annuler.fil, status: "cancelled" });
+  const repriseClose = marquerTravailFil(db, { fil_id: annuler.fil, status: "active", controle_ref: "controle-simulation" });
+  const sans = marquerTravailFil(db, { fil_id: garder.fil, status: "active" });
+  const avec = marquerTravailFil(db, { fil_id: garder.fil, status: "active", controle_ref: "controle-simulation" });
+  const uneFois = demarrer(db, { operation_id: prevuGarder.plan.operation_id, agent_id: prevuGarder.agent });
+  const seconde = demarrer(db, { operation_id: prevuGarder.plan.operation_id, agent_id: prevuGarder.agent });
+  const partieAnnulee = demarrer(db, { operation_id: prevuAnnuler.plan.operation_id, agent_id: prevuAnnuler.agent });
+  const vue = projection(db, CTX.project_id);
+  ok(clos.ok && !repriseClose.ok && repriseClose.motif === "travail_clos", "T06 SIMULATION le cas annulé pendant l'attente ne reprend pas");
+  ok(!sans.ok && sans.motif === "controle_requis" && avec.ok, "T06 SIMULATION le cas encore autorisé reprend seulement après contrôle");
+  ok(uneFois.ok && uneFois.attempts === 1 && !seconde.ok && !partieAnnulee.ok, `T06 SIMULATION un seul départ (${seconde.motif}, annulé ${partieAnnulee.motif})`);
+  ok(lireTravail(db, garder.travail).status === "active" && lireTravail(db, annuler.travail).status === "cancelled", "T06 SIMULATION un seul des deux cas est revenu");
+  ok(lireOperation(db, prevuGarder.plan.operation_id).status === "inflight" && lireOperation(db, prevuAnnuler.plan.operation_id).status === "cancelled", "T06 SIMULATION l'opération annulée ne part pas");
+  ok(vue.blocages.map((b) => b.point).join(",") === "15,32,33" && BLOCAGES_PLATEFORME[2].texte.includes("ne la simule pas"), "T06 SIMULATION le point 33 reste non levé");
+  db.close();
+}
+
+async function t07() {
+  const dir = tmp();
+  const db = ouvrir(dir);
+  const { lireTravail } = dist("travaux.js");
+  const { lireOperation } = dist("operations.js");
+  const { preuvesTravail } = dist("cycle.js");
+  const { un } = dist("stockage.js");
+  const registre = dist("outils-fils.js").creerRegistre();
+  const cours = await ouvrirFil(db, registre, "En cours");
+  const clos = await ouvrirFil(db, registre, "À annuler", "designer");
+  const parti = await poserOperation(db, cours.travail, cours.fil, "fictif-en-vol", true);
+  ok(parti.depart?.ok === true, "T07 une opération fictive est en vol");
+  const essais = lireOperation(db, parti.plan.operation_id).attempts;
+
+  await outil(db, registre, "arreter_fil", { id: cours.fil });
+  let ecriture = false;
+  try { await outil(db, registre, "ecrire_dans_fil", { id: cours.fil, message: "nouveau départ" }); } catch { ecriture = true; }
+  const encore = await poserOperation(db, cours.travail, cours.fil, "depart-suspendu", false);
+  const suspendu = lireOperation(db, parti.plan.operation_id);
+  ok(lireTravail(db, cours.travail).status === "suspended" && ecriture && !encore.plan.ok, "T07 suspendu : plus de nouveau départ");
+  ok(suspendu.status === "inflight" && suspendu.attempts === essais, "T07 l'arrêt du tour ne stoppe pas l'opération en vol");
+
+  const annulation = dist("cycle.js").marquerTravailFil(db, { fil_id: cours.fil, status: "cancelled" });
+  const liste = preuvesTravail(db, cours.travail).operations.filter((op) => op.status === "inflight").map((op) => op.operation_id);
+  ok(!annulation.ok && annulation.motif === "operations_a_verifier" && liste.includes(parti.plan.operation_id), `T07 l'opération qui continue est listée (${liste.join(",")})`);
+
+  const ferme = dist("cycle.js").marquerTravailFil(db, { fil_id: clos.fil, status: "cancelled" });
+  let repriseClose = "";
+  try { await outil(db, registre, "reprendre_fil", { id: clos.fil, controle: "controle-lu" }); } catch (error) { repriseClose = error.message; }
+  ok(ferme.ok && repriseClose.includes("travail_clos") && un(db, "SELECT count(*) AS n FROM work WHERE work_id = ? AND status = 'cancelled'", clos.travail).n === 1, "T07 un travail annulé ne reprend pas");
+
+  let sans = "";
+  try { await outil(db, registre, "reprendre_fil", { id: cours.fil }); } catch (error) { sans = error.message; }
+  const repris = await outil(db, registre, "reprendre_fil", { id: cours.fil, controle: "controle-lu" });
+  const apres = lireOperation(db, parti.plan.operation_id);
+  const rejoue = dist("operations.js").demarrer(db, { operation_id: parti.plan.operation_id, agent_id: parti.agent });
+  ok(sans.includes("controle_requis") && repris.startsWith("Repris"), "T07 la reprise du suspendu exige un contrôle");
+  ok(apres.status === "inflight" && apres.attempts === essais && !rejoue.ok, "T07 l'opération déjà partie n'est pas rejouée");
+  db.close();
+}
+
+async function t08() {
+  const dir = tmp();
+  const db = ouvrir(dir);
+  const { planifier, demarrer, echouer, reconcilier, lireOperation } = dist("operations.js");
+  const { surveiller } = dist("watchdog.js");
+  const { mesurer } = dist("mesures.js");
+  const { preparer, marquerTravailFil } = dist("cycle.js");
+  const { lirePolitique, enregistrerPolitique } = dist("politique.js");
+  const { lireTravail, changerStatut } = dist("travaux.js");
+  const { ecrire, un } = dist("stockage.js");
+  const registre = dist("outils-fils.js").creerRegistre();
+  const defaut = await ouvrirFil(db, registre, "Même défaut");
+  const bloque = await ouvrirFil(db, registre, "Bloqué", "designer");
+  const attente = await ouvrirFil(db, registre, "Attente légitime", "qa");
+  const base = Date.now();
+
+  const agent = lireTravail(db, defaut.travail).owner_agent_id;
+  const plan = planifier(db, {
+    work_id: defaut.travail,
+    idempotency_key: "meme-defaut",
+    kind: "livraison_klyra",
+    target_ref: `klyra-chat:${defaut.fil}`,
+    desired_effect: "meme-defaut",
+    authorization_ref: CTX.authorization_ref,
+  });
+  const premier = demarrer(db, { operation_id: plan.operation_id, agent_id: agent });
+  const echec1 = echouer(db, { operation_id: plan.operation_id, motif: "meme_defaut", effet_absent: true });
+  const reprise = reconcilier(db, { operation_id: plan.operation_id, constat: "absent", preuve_ref: "absent-1" });
+  const second = demarrer(db, { operation_id: plan.operation_id, agent_id: agent });
+  const echec2 = echouer(db, { operation_id: plan.operation_id, motif: "meme_defaut", effet_absent: true });
+  const troisieme = demarrer(db, { operation_id: plan.operation_id, agent_id: agent });
+  const operation = lireOperation(db, plan.operation_id);
+  ok(premier.ok && echec1 === "failed" && reprise === "planned" && second.ok && second.attempts === 2 && echec2 === "blocked", "T08 deux échecs du même défaut");
+  ok(!troisieme.ok && troisieme.motif === "statut_blocked" && operation.attempts === 2 && operation.status === "blocked", `T08 le troisième essai est refusé (${troisieme.motif})`);
+
+  marquerTravailFil(db, { fil_id: bloque.fil, status: "blocked" });
+  ecrire(db, "UPDATE work SET deadline_at = ? WHERE work_id = ?", "2020-01-01T00:00:00.000Z", defaut.travail);
+  changerStatut(db, { work_id: attente.travail, status: "waiting", owner_epoch_attendu: lireTravail(db, attente.travail).owner_epoch });
+  ecrire(db, "UPDATE work SET deadline_at = ? WHERE work_id = ?", "2099-01-01T00:00:00.000Z", attente.travail);
+  const politique = lirePolitique(db, CTX.project_id);
+  enregistrerPolitique(db, { ...politique, spend_cap: 10 });
+  ok(preparer(db, bloque.fil, () => base).ok === true, "T08 préparation avec un plafond, sans appel");
+
+  const compte = (workId, type) => un(db, "SELECT count(*) AS n FROM alerte WHERE work_id = ? AND type = ?", workId, type).n;
+  const alerter = (quand) => surveiller(db, () => quand);
+  alerter(base + 11 * MIN);
+  const w1 = compte(bloque.travail, "W1");
+  const w4 = compte(defaut.travail, "W4");
+  const w5 = compte(bloque.travail, "W5");
+  const w3 = compte(defaut.travail, "W3");
+  alerter(base + 11 * MIN);
+  ok(w1 === 1 && compte(bloque.travail, "W1") === 1, "T08 W1, et l'épisode répété reste silencieux");
+  ok(w3 === 1 && w4 === 1 && w5 === 1, `T08 W3 ${w3}, W4 ${w4}, W5 ${w5}`);
+  alerter(base + 16 * MIN);
+  ok(compte(defaut.travail, "W2") === 0, "T08 W2 pas encore : une seule lecture du blocage");
+  alerter(base + 31 * MIN);
+  const w2 = compte(defaut.travail, "W2");
+  const total = un(db, "SELECT count(*) AS n FROM alerte").n;
+  alerter(base + 31 * MIN);
+  const attenteAlertes = un(db, "SELECT count(*) AS n FROM alerte WHERE work_id = ? AND type IN ('W2', 'W3')", attente.travail).n;
+  const cout = mesurer(db, defaut.travail).cout;
+  ok(w2 === 1 && un(db, "SELECT count(*) AS n FROM alerte").n === total, "T08 W2 à la seconde lecture, sans seconde alerte");
+  ok(attenteAlertes === 0, "T08 l'attente avec échéance n'est pas alertée");
+  ok(cout.motif === "aucun_cout_attribuable_recu" && cout.par_unite.length === 0, "T08 coût absent : inconnu, pas un zéro");
+  db.close();
+}
+
 async function principal() {
   await t01();
   await t02();
   await t03();
+  await t04();
   await t05();
+  await t06();
+  await t07();
+  await t08();
   await t09();
   console.log(echecs === 0 ? "TOUT PASSE" : `${echecs} ECHEC(S)`);
-  console.log("Limite : fichier SQLite jetable, un PC. T03 n'arrête pas OpenBot. T10, Windows et le bus OpenBot ne sont pas exécutés. L'atomicité entre machines n'est pas acquise.");
+  console.log("Limite : fichier SQLite jetable, un PC. T04, T07 et T08 sont exécutés. T06 est une simulation waiting_machine, pas un PC Windows. T03 n'arrête pas OpenBot. T10 OpenBot, le PC Windows et le bus OpenBot ne sont pas exécutés. L'atomicité entre machines n'est pas acquise.");
   process.exit(echecs === 0 ? 0 : 1);
 }
 

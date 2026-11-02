@@ -429,6 +429,8 @@ export interface KlyraBridge {
     preuves: (workId: string) => Promise<Reponse<unknown>>;
     chercher: (requete: string, compte: string, projectId: string | null) => Promise<Reponse<{ resultats: { identifiant: string; extrait: string; chemin: string }[]; non_recherche: string[] }>>;
     preparer: (filId: string) => Promise<Reponse<{ ok: boolean; motif?: string }>>;
+    /** Un passage du watchdog. Absent avant la relance de l'app. */
+    passage?: () => Promise<Reponse<{ work_id: string; type: string; motif: string }[]>>;
   };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;

@@ -21,6 +21,7 @@ interface EvenementRoute {
   status: string;
   decision_id: string | null;
   revision_depassee: number;
+  resume: string;
 }
 
 /** À appeler dans la transaction du lot : lien + éventuelle révision d'objectif + intention, ou rien. */
@@ -49,7 +50,8 @@ export function router(
       if (travail.owner_epoch !== r.owner_epoch_attendu) throw new RefusSuperagent("epoch_perime");
     }
     let revision = travail.objective_revision;
-    // Une nouvelle consigne invalide les intentions obsolètes avant leurs effets. Une révision source dépassée ne change rien.
+    // Une nouvelle consigne invalide les intentions qui n'ont pas encore commencé. Une révision source dépassée ne change rien.
+    // Une opération déjà en vol n'est ni annulée ni rejouée : elle est signalée, et on la contrôle avant toute suite.
     if (e.type === "changement_objectif" && r.disposition === "agir" && e.revision_depassee === 0) {
       revision += 1;
       ecrire(db, "UPDATE work SET objective_revision = ?, last_progress_at = ? WHERE work_id = ?", revision, t, r.work_id);
@@ -61,6 +63,21 @@ export function router(
         r.work_id,
         revision,
       );
+      ecrire(
+        db,
+        `UPDATE operation SET status_motif = 'effet_deja_parti:controler', updated_at = ?
+         WHERE work_id = ? AND status = 'inflight'`,
+        t,
+        r.work_id,
+      );
+    }
+    // La priorité est une donnée du travail, lue dans « priorité : N ». Ce n'est pas un outil, ni un appel.
+    if (e.type === "priorite" && r.disposition === "agir" && e.revision_depassee === 0) {
+      const lu = /priorit[eé]\s*:\s*(\d+)/i.exec(e.resume ?? "");
+      const priority = lu ? Number(lu[1]) : Number.NaN;
+      if (Number.isInteger(priority) && priority >= 0 && priority <= 99) {
+        ecrire(db, "UPDATE work SET priority = ?, last_progress_at = ? WHERE work_id = ?", priority, t, r.work_id);
+      }
     }
     ecrire(
       db,
