@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
@@ -11,6 +11,7 @@ import {
   CLE_CARNET,
   CLE_LIEN_ATTENTE,
   COMMANDE_SERVEUR,
+  COMMANDE_SSH,
   EVENEMENT_AJOUTER,
   ajouterServeur,
   carnetVide,
@@ -33,39 +34,55 @@ import { EnteteTelephone } from "./EnteteTelephone";
 const CHAMP = "h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
 
 
-/** Écran vide : la commande à coller sur le VPS, puis le lien qu’elle affiche. */
-function Guide() {
+/** Une commande à copier, sur une ligne qui peut se couper. */
+function Commande({ texte }: { texte: string }) {
   const [copie, setCopie] = useState(false);
   const copier = () => {
-    void navigator.clipboard?.writeText(COMMANDE_SERVEUR).then(() => {
+    void navigator.clipboard?.writeText(texte).then(() => {
       setCopie(true);
       setTimeout(() => setCopie(false), 2000);
     });
   };
   return (
+    <div className="flex items-start gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
+      <code className="min-w-0 flex-1 text-ui-xs leading-[1.6] [overflow-wrap:anywhere] text-texte-principal">{texte}</code>
+      <Bouton variant="blanc" taille="mini" onClick={copier}>
+        {copie ? "Copiée" : "Copier"}
+      </Bouton>
+    </div>
+  );
+}
+
+function Etape({ numero, titre, children }: { numero: number; titre: string; children: ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">{numero}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <p className="text-body-s text-texte-principal">{titre}</p>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/** Écran vide : se connecter au VPS, y coller la commande, puis coller ici le lien qu’elle affiche. */
+function Guide() {
+  return (
     <ol className="flex flex-col gap-6 py-2">
-      <li className="flex gap-3">
-        <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">1</span>
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <p className="text-body-s text-texte-principal">Colle cette commande sur ton VPS</p>
-          <p className="text-ui text-texte-secondaire">Dans le terminal du VPS. Elle installe et lance tout. Avec Tailscale sur le VPS et ici, l’adresse ne change jamais.</p>
-          <div className="flex items-start gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
-            <code className="min-w-0 flex-1 text-ui-xs leading-[1.6] [overflow-wrap:anywhere] text-texte-principal">{COMMANDE_SERVEUR}</code>
-            <Bouton variant="blanc" taille="mini" onClick={copier}>
-              {copie ? "Copiée" : "Copier"}
-            </Bouton>
-          </div>
-        </div>
-      </li>
-      <li className="flex gap-3">
-        <span className="klyra-mono w-5 shrink-0 pt-px text-ui font-medium text-texte-accent">2</span>
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <p className="text-body-s text-texte-principal">Colle ici le lien qu’elle affiche</p>
-          <p className="text-ui text-texte-secondaire">
-            {getBridge() ? "Il commence par klyra://rejoindre et sert une seule fois, 10 minutes. S’il est déjà copié, l’app le reprend toute seule." : "Il commence par klyra://rejoindre et sert une seule fois, 10 minutes."}
-          </p>
-        </div>
-      </li>
+      <Etape numero={1} titre="Connecte-toi à ton VPS">
+        <p className="text-ui text-texte-secondaire">Ouvre un terminal sur ton ordinateur (PowerShell sous Windows, Terminal sur Mac) et tape cette commande, en remplaçant ADRESSE_DU_VPS par l’adresse IP donnée par ton hébergeur.</p>
+        <Commande texte={COMMANDE_SSH} />
+        <p className="text-ui text-texte-secondaire">Réponds yes à la première question, puis tape le mot de passe du VPS : rien ne s’affiche pendant la frappe, c’est normal.</p>
+      </Etape>
+      <Etape numero={2} titre="Colle cette commande sur ton VPS">
+        <p className="text-ui text-texte-secondaire">Dans ce même terminal, une fois connecté. Elle installe et lance tout. Avec Tailscale sur le VPS et ici, l’adresse ne change jamais.</p>
+        <Commande texte={COMMANDE_SERVEUR} />
+      </Etape>
+      <Etape numero={3} titre="Colle ici le lien qu’elle affiche">
+        <p className="text-ui text-texte-secondaire">
+          {getBridge() ? "Il commence par klyra://rejoindre et sert une seule fois, 10 minutes. S’il est déjà copié, l’app le reprend toute seule." : "Il commence par klyra://rejoindre et sert une seule fois, 10 minutes."}
+        </p>
+      </Etape>
     </ol>
   );
 }

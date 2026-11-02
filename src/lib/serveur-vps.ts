@@ -84,6 +84,9 @@ export function carnetVide(): Carnet {
   return { actif: null, liste: [] };
 }
 
+/** Première commande de l’écran vide : ouvrir un terminal sur le VPS. L’adresse est à remplacer. */
+export const COMMANDE_SSH = "ssh root@ADRESSE_DU_VPS";
+
 /** Commande montrée sur l’écran vide : `serveur/lancer.sh`, lu sur main (dépôt public). */
 export const COMMANDE_SERVEUR = "curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lancer.sh | sudo sh";
 
