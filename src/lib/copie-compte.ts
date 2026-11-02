@@ -1,25 +1,290 @@
-import type { Chat, Message, MessagePart, Project, Role } from "@/types/domain";
+import type { Chat, Etape, Message, MessagePart, Project, Role } from "@/types/domain";
 
 const TEXTE_MAX = 8000;
 const PARTIES_MAX = 20_000;
+const FICHIERS_MAX = 60;
 
-/** Parties gardées dans le compte : le texte, le nombre d'étapes, les tâches. Pas les chemins ni les secrets. */
-export function partiesReduites(parts: MessagePart[]): string {
-  const reduites = parts.map((part) => {
-    if (part.type === "text") return { type: "text" as const, text: part.text.slice(0, TEXTE_MAX) };
-    if (part.type === "etapes") return { type: "etapes" as const, n: part.etapes.length };
-    if (part.type === "tasks") {
+/* ─── Ni chemin absolu, ni secret ──────────────────────────────── */
+
+/** Clés, jetons et mots de passe reconnaissables (mêmes motifs que la Bibliothèque), masqués. */
+const SECRETS: RegExp[] = [
+  /sk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}/g,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /\bAIza[0-9A-Za-z_-]{30,}/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
+];
+const SECRET_NOMME = /\b((?:api[_-]?key|access[_-]?token|secret|password|passwd|mot de passe)\s*[:=]\s*["']?)[^\s"']{8,}/gi;
+
+/** Chemins absolus d'un ordinateur (Mac, Linux, Windows). Les adresses web n'en sont pas. */
+const CHEMIN =
+  /(?<![\w.:/\\-])(?:\/(?:Users|home|var|opt|srv|mnt|Volumes|private|tmp|etc|root|data|Library|Applications)\/[^\s`"'()<>\]|,;]+|[A-Za-z]:\\[^\s`"'()<>\]|,;]+)/g;
+const DOSSIER_PERSO = /^(?:\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:\\Users\\[^\\]+)(?=[\\/]|$)/;
+
+const unix = (chemin: string) => chemin.replace(/\\/g, "/");
+
+function nomDe(chemin: string): string {
+  return chemin.split(/[\\/]/).filter(Boolean).at(-1) ?? chemin;
+}
+
+/** Un chemin du disque tel qu'il part dans le compte : relatif au projet, `~/…` chez soi, sinon son seul nom. */
+export function cheminPartage(chemin: string, dossier: string | null): string {
+  const propre = chemin.replace(/[\\/]+$/, "");
+  if (dossier) {
+    const racine = unix(dossier).replace(/\/+$/, "");
+    const relatif = unix(propre);
+    if (relatif === racine) return ".";
+    if (racine && relatif.startsWith(`${racine}/`)) return relatif.slice(racine.length + 1);
+  }
+  const perso = DOSSIER_PERSO.exec(propre);
+  if (perso) return `~${unix(propre.slice(perso[0].length))}`;
+  return `…/${nomDe(propre)}`;
+}
+
+/** Un fichier du projet (chemin relatif) que le téléphone peut ouvrir, ou null s'il est ailleurs sur le disque. */
+function relatifAuProjet(chemin: string, dossier: string | null): string | null {
+  const partage = cheminPartage(chemin, dossier);
+  return partage.startsWith("~") || partage.startsWith("…/") || partage === "." ? null : partage;
+}
+
+/** Le texte tel qu'il part dans le compte : chemins absolus rendus relatifs ou réduits, secrets masqués. */
+export function sansCheminNiSecret(texte: string, dossier: string | null = null): string {
+  let propre = texte.replace(CHEMIN, (chemin) => {
+    const fin = /[.)]+$/.exec(chemin)?.[0] ?? "";
+    return cheminPartage(chemin.slice(0, chemin.length - fin.length), dossier) + fin;
+  });
+  for (const motif of SECRETS) propre = propre.replace(motif, "•••");
+  return propre.replace(SECRET_NOMME, "$1•••");
+}
+
+/* ─── Les parties d'un message ─────────────────────────────────── */
+
+export type SourceFichier = "joint" | "cree" | "modifie" | "lu";
+
+/** Un fichier cité par le fil : son nom, et son chemin dans le projet s'il y est (sinon null). */
+export interface FichierCompte {
+  nom: string;
+  chemin: string | null;
+}
+
+/** Ce que le compte garde d'une partie de message : la forme du bureau, sans chemin absolu ni secret. */
+export type PartieCompte =
+  | { type: "text"; text: string }
+  | { type: "fichiers"; fichiers?: FichierCompte[] }
+  | {
+      type: "etapes";
+      n: number;
+      modifies?: number;
+      erreurs?: number;
+      /** L'étape en cours (« Lit src/app.tsx »), pendant que l'agent travaille. */
+      enCours?: string | null;
+      fichiers?: (FichierCompte & { source: Exclude<SourceFichier, "joint"> })[];
+    }
+  | {
+      type: "autorisation";
+      id: string;
+      outil: string;
+      libelle: string;
+      detail: string;
+      description: string;
+      statut: "attente" | "acceptee" | "refusee";
+    }
+  | { type: "passation"; roleId: string; statut: "en-cours" | "fait" | "erreur"; consigne?: string; etapes?: number }
+  | { type: "proposition-agent"; etapeId: string; nom: string; role: string; description: string }
+  | { type: "tasks"; tasks: { label: string; status: "fait" | "en-cours" | "a-venir"; roleId?: string }[] }
+  | { type: "options"; options: { label: string; layout: "texte" | "texte-media"; selected: boolean }[] }
+  | { type: "worklog"; durationMin: number; files: { path: string; added: number; removed: number }[] }
+  | { type: "actions"; actions: { label: string; primary: boolean }[] };
+
+function source(etape: Etape): Exclude<SourceFichier, "joint"> {
+  return etape.outil === "Write" ? "cree" : etape.outil === "Read" ? "lu" : "modifie";
+}
+
+function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null, avecFichiers: boolean): PartieCompte {
+  const net = (texte: string, max: number) => sansCheminNiSecret(texte, dossier).slice(0, max);
+  switch (part.type) {
+    case "text":
+      return { type: "text", text: net(part.text, TEXTE_MAX) };
+    case "fichiers":
+      return avecFichiers
+        ? { type: "fichiers", fichiers: part.chemins.slice(0, 10).map((c) => ({ nom: nomDe(c).slice(0, 160), chemin: relatifAuProjet(c, dossier) })) }
+        : { type: "fichiers" };
+    case "etapes": {
+      const propres = part.etapes.filter((e) => e.parent === null);
+      const derniere = propres.at(-1);
+      const fichiers = avecFichiers
+        ? part.etapes
+            .filter((e) => e.chemin && e.statut !== "erreur")
+            .slice(-FICHIERS_MAX)
+            .map((e) => ({ nom: nomDe(e.chemin!).slice(0, 160), chemin: relatifAuProjet(e.chemin!, dossier), source: source(e) }))
+        : undefined;
       return {
-        type: "tasks" as const,
-        tasks: part.tasks.slice(0, 40).map((tache) => ({ label: tache.label.slice(0, 120), status: tache.status })),
+        type: "etapes",
+        n: propres.length,
+        modifies: new Set(propres.filter((e) => /Write|Edit/.test(e.outil)).map((e) => e.libelle)).size,
+        erreurs: propres.filter((e) => e.statut === "erreur").length,
+        enCours: derniere?.statut === "en-cours" ? net(derniere.libelle, 160) : null,
+        ...(fichiers ? { fichiers } : {}),
       };
     }
-    if (part.type === "passation") return { type: "passation" as const, roleId: part.roleId, statut: part.statut };
-    return { type: part.type };
-  });
-  const json = JSON.stringify(reduites);
-  return json.length <= PARTIES_MAX ? json : JSON.stringify([{ type: "text", text: "" }]);
+    case "autorisation":
+      return {
+        type: "autorisation",
+        id: part.id.slice(0, 200),
+        outil: part.outil.slice(0, 80),
+        libelle: net(part.libelle, 200),
+        detail: net(part.detail, 1000),
+        description: net(part.description, 400),
+        statut: part.statut,
+      };
+    case "passation": {
+      const etapes = tout.find((p) => p.type === "etapes");
+      return {
+        type: "passation",
+        roleId: part.roleId,
+        statut: part.statut,
+        consigne: net(part.consigne, 200),
+        etapes: etapes?.type === "etapes" ? etapes.etapes.filter((e) => e.parent === part.etapeId).length : 0,
+      };
+    }
+    case "proposition-agent":
+      return {
+        type: "proposition-agent",
+        etapeId: part.etapeId.slice(0, 200),
+        nom: part.proposition.nom.slice(0, 80),
+        role: part.proposition.role.slice(0, 120),
+        description: net(part.proposition.description, 400),
+      };
+    case "tasks":
+      return {
+        type: "tasks",
+        tasks: part.tasks.slice(0, 40).map((t) => ({ label: net(t.label, 120), status: t.status, roleId: t.roleId })),
+      };
+    case "options":
+      return { type: "options", options: part.options.slice(0, 12).map((o) => ({ label: o.label.slice(0, 120), layout: o.layout, selected: o.selected })) };
+    case "worklog":
+      return {
+        type: "worklog",
+        durationMin: part.durationMin,
+        files: avecFichiers ? part.files.slice(0, FICHIERS_MAX).map((f) => ({ path: cheminPartage(f.path, dossier), added: f.added, removed: f.removed })) : [],
+      };
+    case "actions":
+      return { type: "actions", actions: part.actions.slice(0, 8).map((a) => ({ label: a.label.slice(0, 80), primary: a.primary })) };
+  }
 }
+
+/**
+ * Parties gardées dans le compte : la forme de chaque bloc (texte, étapes repliées, accord, passation,
+ * tâches, options…), sans chemin absolu ni secret ni session. Trop long : d'abord sans les listes de
+ * fichiers, puis le texte seul.
+ */
+export function partiesReduites(parts: MessagePart[], dossier: string | null = null): string {
+  const json = JSON.stringify(parts.map((p) => reduire(p, parts, dossier, true)));
+  if (json.length <= PARTIES_MAX) return json;
+  const sansListes = JSON.stringify(parts.map((p) => reduire(p, parts, dossier, false)));
+  if (sansListes.length <= PARTIES_MAX) return sansListes;
+  const texte = parts
+    .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
+    .map((p) => p.text)
+    .join("\n\n");
+  return JSON.stringify([{ type: "text", text: sansCheminNiSecret(texte, dossier).slice(0, TEXTE_MAX) }]);
+}
+
+/** Les parties lues dans le compte. Une copie abîmée ou d'une autre version ne casse pas le fil. */
+export function lireParties(json: string): PartieCompte[] {
+  try {
+    const brut = JSON.parse(json) as unknown;
+    return Array.isArray(brut)
+      ? brut.filter((p): p is PartieCompte => !!p && typeof p === "object" && typeof (p as { type?: unknown }).type === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/* ─── Ce que fait l'agent ──────────────────────────────────────── */
+
+/**
+ * Ce que le téléphone montre d'une conversation où un agent travaille ou attend : « Attend ton accord »
+ * (avec la demande, pour répondre depuis la liste), « Écrit sa réponse », « Attend un collègue »,
+ * l'étape en cours, « Réfléchit » ; ou « Attend ta réponse » quand sa dernière réponse, pas encore lue,
+ * finit sur une question ou propose des choix.
+ */
+export type Activite =
+  | {
+      etat: "accord";
+      roleId: string;
+      messageId: string;
+      depuis: string;
+      accord: { id: string; libelle: string; detail: string; description: string };
+    }
+  | { etat: "ecrit" | "collegue" | "reflechit" | "question"; roleId: string; messageId: string; depuis: string }
+  | { etat: "etape"; roleId: string; messageId: string; depuis: string; libelle: string };
+
+/** Le travail en cours d'une conversation, tel que `useWorkspace().state.travail` le tient. */
+export interface TravailCopie {
+  roleId: string;
+  messageId: string;
+  debut: number;
+}
+
+function poseUneQuestion(message: Message): boolean {
+  if (message.parts.some((p) => (p.type === "options" && p.options.length > 0) || (p.type === "actions" && p.actions.length > 0))) return true;
+  const texte = message.parts
+    .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
+    .map((p) => p.text)
+    .join("\n")
+    .trim();
+  return /\?\s*[)»"*_]*$/.test(texte);
+}
+
+export function activiteDe(duFil: Message[], travail: TravailCopie | null, nonLus: number, dossier: string | null = null): Activite | null {
+  if (travail) {
+    const message = duFil.find((m) => m.id === travail.messageId);
+    const base = { roleId: travail.roleId, messageId: travail.messageId, depuis: new Date(travail.debut).toISOString() };
+    const accord = message?.parts.find((p) => p.type === "autorisation" && p.statut === "attente");
+    if (accord?.type === "autorisation") {
+      return {
+        ...base,
+        etat: "accord",
+        accord: {
+          id: accord.id.slice(0, 200),
+          libelle: sansCheminNiSecret(accord.libelle, dossier).slice(0, 200),
+          detail: sansCheminNiSecret(accord.detail, dossier).slice(0, 600),
+          description: sansCheminNiSecret(accord.description, dossier).slice(0, 300),
+        },
+      };
+    }
+    for (const part of [...(message?.parts ?? [])].reverse()) {
+      if (part.type === "text" && part.text.trim()) return { ...base, etat: "ecrit" };
+      if (part.type === "passation" && part.statut === "en-cours") return { ...base, etat: "collegue" };
+      if (part.type === "etapes") {
+        const etape = part.etapes.findLast((e) => e.statut === "en-cours" && e.parent === null);
+        if (etape) return { ...base, etat: "etape", libelle: sansCheminNiSecret(etape.libelle, dossier).slice(0, 160) };
+      }
+    }
+    return { ...base, etat: "reflechit" };
+  }
+  const dernier = duFil.at(-1);
+  if (!dernier || nonLus === 0 || dernier.author.kind !== "role" || dernier.statut === "en-cours" || dernier.statut === "erreur") return null;
+  return poseUneQuestion(dernier) ? { etat: "question", roleId: dernier.author.roleId, messageId: dernier.id, depuis: dernier.createdAt } : null;
+}
+
+/** L'activité lue dans le compte, ou null. */
+export function lireActivite(json: string | null | undefined): Activite | null {
+  if (!json) return null;
+  try {
+    const brut = JSON.parse(json) as Partial<Activite> | null;
+    return brut && typeof brut.etat === "string" && typeof brut.roleId === "string" && typeof brut.messageId === "string" ? (brut as Activite) : null;
+  } catch {
+    return null;
+  }
+}
+
+/* ─── Conversations, messages, cartes ──────────────────────────── */
 
 export function nonLusDe(chat: Chat, messages: Message[]): number {
   const seuil = chat.luJusqua;
@@ -27,10 +292,23 @@ export function nonLusDe(chat: Chat, messages: Message[]): number {
   return Math.min(9999, n);
 }
 
-export function conversationCompte(chat: Chat, messages: Message[], projets: Project[]) {
-  const duFil = messages.filter((m) => m.chatId === chat.id);
+/** Le dossier d'une conversation, pour rendre ses chemins relatifs : celui de son projet (sinon aucun). */
+export function dossierDe(chat: Pick<Chat, "projectId">, projets: Project[]): string | null {
+  return projets.find((p) => p.id === chat.projectId)?.folder || null;
+}
+
+/**
+ * La conversation telle que le compte la garde. Un fil supprimé (retiré des archivés) n'y va pas : null.
+ * `duFil` : ses messages seulement, dans l'ordre.
+ */
+export function conversationCompte(chat: Chat, duFil: Message[], projets: Project[], travail: TravailCopie | null = null) {
+  if (chat.fil?.supprime) return null;
   const dernier = duFil.at(-1);
   const projet = projets.find((p) => p.id === chat.projectId);
+  const dossier = projet?.folder || null;
+  const nonLus = nonLusDe(chat, duFil);
+  const activite = activiteDe(duFil, travail, nonLus, dossier);
+  const extrait = dernier ? dernier.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : "";
   return {
     origine: chat.id,
     kind: chat.kind,
@@ -40,19 +318,26 @@ export function conversationCompte(chat: Chat, messages: Message[], projets: Pro
     roleIds: chat.roleIds.slice(0, 20),
     misAJour: chat.updatedAt,
     epingleLe: chat.epingleLe ?? null,
-    extrait: (dernier ? dernier.parts.filter((p) => p.type === "text").map((p) => (p.type === "text" ? p.text : "")).join(" ") : "").slice(0, 240),
+    extrait: sansCheminNiSecret(extrait, dossier).replace(/\s+/g, " ").trim().slice(0, 240),
     extraitLe: dernier?.createdAt ?? null,
-    nonLus: nonLusDe(chat, messages),
-    taches: JSON.stringify((chat.taches ?? []).slice(0, 40).map((t) => ({ texte: t.texte.slice(0, 120), statut: t.statut }))).slice(0, 4000),
+    nonLus,
+    taches: JSON.stringify((chat.taches ?? []).slice(0, 40).map((t) => ({ texte: sansCheminNiSecret(t.texte, dossier).slice(0, 120), statut: t.statut }))).slice(0, 4000),
+    lieu: chat.lieu ?? null,
+    parent: chat.fil ? `dm-${chat.fil.roleId}` : null,
+    archiveLe: chat.fil?.statut === "archive" ? chat.updatedAt : null,
+    activite: activite ? JSON.stringify(activite) : null,
+    modele: chat.modele || chat.effort ? JSON.stringify({ modele: chat.modele ?? null, effort: chat.effort ?? null }) : null,
   };
 }
 
-export function messageCompte(message: Message) {
-  const texte = message.parts
-    .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join("\n\n")
-    .slice(0, TEXTE_MAX);
+export function messageCompte(message: Message, dossier: string | null = null) {
+  const texte = sansCheminNiSecret(
+    message.parts
+      .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
+      .map((p) => p.text)
+      .join("\n\n"),
+    dossier,
+  ).slice(0, TEXTE_MAX);
   return {
     conversationOrigine: message.chatId,
     origine: message.id,
@@ -60,7 +345,7 @@ export function messageCompte(message: Message) {
     auteurId: message.author.kind === "role" ? message.author.roleId : null,
     creeLe: message.createdAt,
     texte,
-    parties: partiesReduites(message.parts),
+    parties: partiesReduites(message.parts, dossier),
     statut: message.statut ?? null,
   };
 }
@@ -89,4 +374,21 @@ export function decoupages<T>(liste: T[], taille: number): T[][] {
   const lots: T[][] = [];
   for (let i = 0; i < liste.length; i += taille) lots.push(liste.slice(i, i + taille));
   return lots;
+}
+
+/**
+ * Ce qui a changé depuis la dernière copie : chaque élément est comparé à sa copie déjà envoyée
+ * (par sa clé). Seuls les changés repartent ; l'appelant retient leurs empreintes une fois envoyés.
+ */
+export function changements<T>(elements: T[], cle: (e: T) => string, envoyes: ReadonlyMap<string, string>): { lot: T[]; empreintes: [string, string][] } {
+  const lot: T[] = [];
+  const empreintes: [string, string][] = [];
+  for (const element of elements) {
+    const empreinte = JSON.stringify(element);
+    const id = cle(element);
+    if (envoyes.get(id) === empreinte) continue;
+    lot.push(element);
+    empreintes.push([id, empreinte]);
+  }
+  return { lot, empreintes };
 }

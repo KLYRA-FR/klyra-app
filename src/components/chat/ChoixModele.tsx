@@ -16,7 +16,7 @@ export const MODELES = [
 ] as const;
 
 /** Niveaux d'effort de réflexion. Haiku n'en a qu'un : la ligne est masquée. */
-const EFFORTS = [
+export const EFFORTS = [
   { id: "low", nom: "Bas" },
   { id: "medium", nom: "Moyen" },
   { id: "high", nom: "Élevé" },

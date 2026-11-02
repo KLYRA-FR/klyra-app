@@ -216,6 +216,10 @@ export default defineSchema({
     /** Fil d'un agent : l'id de sa conversation directe. Archivé : la date. Absents : version d'avant. */
     parent: v.optional(v.union(v.string(), v.null())),
     archiveLe: v.optional(v.union(v.string(), v.null())),
+    /** Ce que fait l'agent en ce moment (accord, étape, réponse qui s'écrit), JSON court. Absent ou null : rien. */
+    activite: v.optional(v.union(v.string(), v.null())),
+    /** Modèle et effort choisis pour la conversation, JSON court. Absent ou null : ceux de la fiche. */
+    modele: v.optional(v.union(v.string(), v.null())),
   })
     .index("by_membre_and_origine", ["membreId", "origine"])
     .index("by_membre_and_misAJour", ["membreId", "misAJour"]),
@@ -233,7 +237,9 @@ export default defineSchema({
     statut: v.union(v.literal("en-cours"), v.literal("fait"), v.literal("erreur"), v.null()),
   })
     .index("by_membre_and_conversation_and_creeLe", ["membreId", "conversationOrigine", "creeLe"])
-    .index("by_membre_and_origine", ["membreId", "origine"]),
+    .index("by_membre_and_origine", ["membreId", "origine"])
+    /** Recherche du téléphone (T-04). */
+    .searchIndex("search_texte", { searchField: "texte", filterFields: ["membreId", "conversationOrigine"] }),
 
   /** Carte d'identité d'un agent, pour lire un fil sans la fiche (M-4). */
   cartesAgents: defineTable({

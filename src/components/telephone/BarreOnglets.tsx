@@ -8,6 +8,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { api } from "../../../convex/_generated/api";
 import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
+import { nombreATraiter } from "@/lib/telephone/chats";
 
 const ONGLETS: { href: string; label: string; icon: IconName }[] = [
   { href: "/chats", label: "Chats", icon: "message-square" },
@@ -31,7 +32,7 @@ export function BarreOnglets({ vertical = false }: { vertical?: boolean }) {
   const pathname = usePathname();
   const { etat } = useCompte();
   const conversations = useQuery(api.conversationsCompte.liste, etat === "connecte" ? {} : "skip");
-  const attente = (conversations ?? []).reduce((n, conversation) => n + (conversation.nonLus > 0 ? 1 : 0), 0);
+  const attente = nombreATraiter(conversations ?? []);
 
   return (
     <nav
