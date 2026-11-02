@@ -36,9 +36,7 @@ import {
 } from "./mes-agents";
 import { readFile, writeFile } from "node:fs/promises";
 import {
-  autoriser,
   actualiserUtilisation,
-  cancelAgent,
   compteClaude,
   connecterClaude,
   deconnecterClaude,
@@ -47,13 +45,11 @@ import {
   findClaude,
   restaurerUtilisation,
   runAgent,
-  streamAgent,
   surUtilisation,
-  type Decision,
-  type AgentEvent,
-  type StreamOptions,
   type Utilisation,
 } from "./claude";
+import { moteurs } from "./moteurs";
+import type { AgentEvent, Decision, StreamOptions } from "./moteurs/types";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
 import { echecExport, exporterConversation, verifierFenetreExport } from "./export-conversation";
 import { arreterRoutines, brancherRoutines, commencerRoutine, demarrerRoutines, synchroniserToutesRoutinesVps } from "./routines";
@@ -391,10 +387,10 @@ function registerBridge() {
   });
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
-  handle("claude:cancel", (requestId: string) => (annulerDistant(requestId) ? undefined : cancelAgent(requestId)));
+  handle("claude:cancel", (requestId: string) => (annulerDistant(requestId) ? undefined : moteurs.arreter(requestId)));
   handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision) => {
     if (!["oui", "toujours", "non"].includes(decision)) throw new Error("Réponse invalide.");
-    return autoriserDistant(requestId, demandeId, decision) ?? autoriser(requestId, demandeId, decision);
+    return autoriserDistant(requestId, demandeId, decision) ?? moteurs.autoriser(requestId, demandeId, decision);
   });
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
@@ -413,7 +409,7 @@ function registerBridge() {
     };
     // Quand une tâche de fond se termine, l'agent reprend la parole : une nouvelle réponse s'ouvre.
     try {
-      streamAgent(requestId, options, envoyer(requestId), (sessionId) => {
+      moteurs.lancer(requestId, options, envoyer(requestId), (sessionId) => {
         if (!sender || sender.isDestroyed()) return null;
         const id = randomUUID();
         sender.send("claude:spontane", id, sessionId);

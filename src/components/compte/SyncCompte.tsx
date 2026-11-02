@@ -151,7 +151,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
           return;
         case "creerFil":
           if (!chat && ID_FIL.test(chatId) && a.roles.some((r) => r.id === valeur.roleId)) {
-            w.creerFil(valeur.roleId as string, undefined, null, chatId);
+            w.creerFil(valeur.roleId as string, undefined, null, undefined, chatId);
             crees.current.add(chatId);
           }
           return;

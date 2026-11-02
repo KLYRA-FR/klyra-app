@@ -186,21 +186,31 @@ const OUTILS_FILS = [
   {
     name: "ouvrir_fil",
     description:
-      "Confie une tâche à un agent de l'équipe (ou à toi-même) dans un nouveau fil : un onglet de son chat, qui travaille à part sans bloquer. Seulement pour un travail qui ne se règle pas tout de suite. Le fil ne voit pas cette conversation : le brief doit être complet (contexte, fichiers, attendu, critères de fin). Regarde d'abord avec lister_fils s'il n'en existe pas déjà un ouvert sur le même sujet. Quand l'agent a fini, sa réponse te revient automatiquement dans cette conversation.",
+      "Confie une tâche à un agent de l'équipe (ou à toi-même) dans un nouveau fil : un onglet de son chat, qui travaille à part sans bloquer. Seulement pour un travail qui ne se règle pas tout de suite. Le fil ne voit pas cette conversation : le brief doit être complet (contexte, fichiers, attendu, critères de fin). Regarde d'abord avec lister_fils s'il n'en existe pas déjà un ouvert sur le même sujet. Quand l'agent a fini, sa réponse te revient automatiquement dans cette conversation. Le fil est un ticket, visible par la personne avec son état, sa priorité et son échéance.",
     inputSchema: {
       type: "object",
       properties: {
         agent: { type: "string", description: "L'identifiant de l'agent qui fait la tâche (ex. dev, designer), ou principal." },
         titre: { type: "string", description: "Un titre court : « Rapport hebdo »." },
         brief: { type: "string", description: "La consigne complète." },
+        priorite: { type: "integer", minimum: 0, maximum: 3, description: "Facultatif : 0 aucune, 1 basse, 2 moyenne, 3 haute." },
+        echeance: { type: "string", description: "Facultatif : le jour attendu, « 2026-11-05 »." },
+        projet: { type: "string", description: "Facultatif : l'identifiant du projet concerné." },
       },
       required: ["agent", "titre", "brief"],
     },
   },
   {
     name: "lister_fils",
-    description: "Liste les fils ouverts (tâches en cours ou finies, pas encore fermées), avec leur agent, leur état et leur identifiant.",
-    inputSchema: { type: "object", properties: { agent: { type: "string", description: "Facultatif : seulement les fils de cet agent." } } },
+    description:
+      "Liste les fils ouverts (les tickets pas encore fermés), avec leur agent, leur état (à faire, en cours, bloqué et pourquoi, à valider), leur priorité, leur échéance, leur projet et leur identifiant. Ce qui attend quelqu'un vient d'abord : bloqués, en cours, à valider, à faire.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent: { type: "string", description: "Facultatif : seulement les fils de cet agent." },
+        etat: { type: "string", enum: ["bloque", "en-cours", "a-valider"], description: "Facultatif : seulement les fils dans cet état." },
+      },
+    },
   },
   {
     name: "lire_fil",
@@ -213,13 +223,28 @@ const OUTILS_FILS = [
     inputSchema: { type: "object", properties: { id, message: { type: "string" } }, required: ["id", "message"] },
   },
   {
+    name: "mettre_a_jour_fil",
+    description:
+      "Met à jour l'état d'un ticket (un fil) : bloque (tu attends une réponse, un accès ou une décision : dis pourquoi dans raison), a-valider (le travail est fait, à relire), en-cours (tu continues, par exemple après une tâche de fond). Réservé à l'agent du fil et à celui qui l'a lancé. Sans cet outil, une réponse finie passe le fil « à valider ».",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id,
+        etat: { type: "string", enum: ["bloque", "a-valider", "en-cours"] },
+        raison: { type: "string", description: "Pourquoi c'est bloqué, en une ligne. Obligatoire pour bloque." },
+      },
+      required: ["id", "etat"],
+    },
+  },
+  {
     name: "arreter_fil",
     description: "Arrête le travail en cours d'un fil, sans le fermer.",
     inputSchema: { type: "object", properties: { id }, required: ["id"] },
   },
   {
     name: "fermer_fil",
-    description: "Ferme un fil une fois le travail fait et vérifié : il est archivé (rien n'est effacé) et peut être rouvert. Vérifie d'abord que le travail est fini.",
+    description:
+      "Ferme un fil que tu as lancé, une fois le travail fait et vérifié : il est archivé (rien n'est effacé) et peut être rouvert. Vérifie d'abord que le travail est fini. Un fil ouvert par la personne ou par un autre agent, c'est lui qui le ferme : mets-le « à valider » avec mettre_a_jour_fil.",
     inputSchema: { type: "object", properties: { id }, required: ["id"] },
   },
 ];

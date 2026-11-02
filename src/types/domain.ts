@@ -181,7 +181,26 @@ export interface Fil {
   lancePar?: { roleId: RoleId; chatId: string } | null;
   /** Celui qui l'a lancé attend la prochaine réponse : elle lui sera rapportée. */
   retourAttendu?: boolean;
+  /** L'étape du ticket (src/lib/tickets.ts) ; « terminé », c'est `statut === "archive"`. */
+  etape?: EtapeTicket;
+  /** Pourquoi c'est bloqué, en une ligne. */
+  raison?: string | null;
+  /** L'étape a été posée exprès (outil mettre_a_jour_fil, tableau) depuis le début de la réponse : la fin ne la remplace pas. */
+  etapePosee?: boolean;
+  /** Comme un rappel : 0 aucune, 1 basse, 2 moyenne, 3 haute. */
+  priorite?: 0 | 1 | 2 | 3;
+  /** Jour « 2026-11-05 », ou null. */
+  echeance?: string | null;
+  /** Le projet concerné, pour filtrer. Pas `Chat.projectId` : le fil apparaîtrait dans les onglets des conversations du projet. */
+  projetId?: string | null;
+  /** Le rappel d'où vient ce fil (« Confier à un agent »). */
+  rappel?: { source: "local" | "compte"; id: string } | null;
+  /** Fermé (archivé) le : pour la colonne Terminé. Absent sur les fils fermés avant les tickets. */
+  fermeLe?: string | null;
 }
+
+/** L'étape d'un fil vu comme un ticket. « En cours » vaut aussi tant qu'une réponse tourne. */
+export type EtapeTicket = "a-faire" | "en-cours" | "bloque" | "a-valider";
 
 /** Une tâche de la liste de l'agent. */
 export interface TacheAgent {

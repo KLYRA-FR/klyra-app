@@ -2,7 +2,7 @@ import { app, net } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AgentEvent, StreamOptions } from "./claude";
+import type { AgentEvent, StreamOptions } from "./moteurs/types";
 import { contexteDe, type ContexteReponse } from "./contexte-distant";
 
 /**
