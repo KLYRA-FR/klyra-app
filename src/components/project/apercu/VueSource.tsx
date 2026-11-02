@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { colorer, type Jeton, type Langage } from "@/lib/apercu/coloration";
 
 /** Les couleurs du design system pour chaque sorte de mot (thème clair, contraste lisible). */
-const COULEURS: Record<Jeton, string> = {
+export const COULEURS: Record<Jeton, string> = {
   motcle: "text-bleu-k1-500",
   chaine: "text-vert-k1-400",
   nombre: "text-violet-500",
