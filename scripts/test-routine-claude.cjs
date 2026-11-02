@@ -76,6 +76,8 @@ function fixture() {
       readdirSync: () => assert.fail("Aucun répertoire réel ne doit être consulté."),
       readFileSync: () => assert.fail("Aucun profil ni fichier utilisateur ne doit être lu."),
     },
+    // Fonctions pures (tri des binaires, message de lancement) : le vrai module compilé.
+    "./claude-binaire": require(path.join(path.dirname(filename), "claude-binaire.js")),
     "./consommation": { enregistrerTourClaude: () => ({}) },
     "./ia": {
       configMcp: (contexte, composio) => JSON.stringify({ contexte, composio }),
