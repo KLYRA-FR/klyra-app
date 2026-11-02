@@ -1,8 +1,8 @@
 # À chaque push sur main : construit l'app web du téléphone (export statique
-# `out/`, le même que charge Electron) et la garde en artefact. Ne met rien en
-# ligne : l'hébergement et son adresse restent à choisir par Corentin
-# (docs/APP-WEB.md). Le jour où ils le sont, l'étape de mise en ligne
-# s'ajoute ici, après « Construire ».
+# `out/`, le même que charge Electron), la garde en artefact et la met en
+# ligne sur Vercel (projet `klyra-app`, adresse dans docs/APP-WEB.md).
+# Sans les secrets VERCEL_TOKEN, VERCEL_ORG_ID et VERCEL_PROJECT_ID, la mise
+# en ligne est sautée : seul l'artefact reste.
 name: App web
 
 on:
@@ -22,6 +22,10 @@ jobs:
     name: Export statique de l'app web
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -42,3 +46,9 @@ jobs:
           name: app-web
           path: out/
           retention-days: 14
+      # L'export est déjà construit : Vercel le sert tel quel (`--prebuilt`), sans rien reconstruire.
+      - name: Mettre en ligne sur Vercel
+        if: env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != ''
+        run: |
+          node scripts/sortie-vercel.mjs
+          npx --yes vercel@64.5.0 deploy --prebuilt --prod --token "$VERCEL_TOKEN"
