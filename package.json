@@ -59,6 +59,7 @@
     "test:collage": "vitest run src/lib/collage.test.ts",
     "test:recherche": "vitest run src/lib/recherche.test.ts",
     "test:report": "vitest run src/lib/report.test.ts",
+    "test:planning-telephone": "vitest run src/lib/telephone/planning.test.ts src/lib/telephone/saisie-planning.test.ts",
     "test:modeles": "vitest run src/lib/maj-modele.test.ts src/lib/modeles-klyra.test.ts"
   },
   "dependencies": {
