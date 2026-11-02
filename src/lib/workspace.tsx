@@ -19,12 +19,14 @@ import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
+import { apresReponse, auDebut, avecEtapes, ligneTicket, type ChampsTicket, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
   Artefact,
   Chat,
   Etape,
+  EtapeTicket,
   Message,
   MessagePart,
   Project,
@@ -186,7 +188,8 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case "charger":
       return {
         ...state,
-        chats: action.chats,
+        // Les fils d'avant les tickets reçoivent leur étape (src/lib/tickets.ts).
+        chats: avecEtapes(action.chats, action.messages),
         messages: action.messages,
         routines: action.routines,
         artefacts: action.artefacts,
@@ -355,6 +358,10 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       return {
         ...state,
         travail: { ...state.travail, [action.chatId]: action.travail },
+        // Une réponse commence dans un fil : son ticket passe « en cours ».
+        chats: state.chats.some((c) => c.id === action.chatId && c.fil)
+          ? state.chats.map((c) => (c.id === action.chatId && c.fil ? { ...c, fil: auDebut(c.fil) } : c))
+          : state.chats,
       };
     case "travail/jetons": {
       const t = state.travail[action.chatId];
@@ -542,7 +549,9 @@ interface WorkspaceApi {
   /** Arrête l'agent qui travaille dans cette conversation. */
   arreter: (chatId: string) => void;
   /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id. */
-  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null) => string;
+  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket) => string;
+  /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
+  majTicket: (chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => void;
   renommerChat: (chatId: string, titre: string) => void;
   epinglerChat: (chatId: string, epingler: boolean) => void;
   /** Ferme un fil : il s'arrête et part dans les archivés (« supprimé » : caché des archivés). Rien n'est effacé. */
@@ -825,8 +834,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       } else if (chat.fil) {
         const par = chat.fil.lancePar ? nom(chat.fil.lancePar.roleId) : personne.name;
         lignes.push(
-          `Tu travailles dans un fil, une tâche à part : « ${chat.title} » (${chat.id}), ouvert par ${par}. Ce fil ne voit pas les autres conversations : tout ce qu’il faut est dans le brief. Quand tu as fini, termine par le résultat, clairement${chat.fil.lancePar ? ` : ta réponse revient à ${par}` : ""}.`,
+          `Tu travailles dans un fil, une tâche à part : « ${chat.title} » (${chat.id}), ouvert par ${par}. Ce fil ne voit pas les autres conversations : tout ce qu’il faut est dans le brief. Quand tu as fini, termine par le résultat, clairement${chat.fil.lancePar ? ` : ta réponse revient à ${par}` : ""}.` +
+            ` Ce fil est un ticket : ta réponse finie le passe « à valider ». Si tu attends quelque chose (une réponse, un accès, une décision), dis-le avec mettre_a_jour_fil (bloque et la raison).`,
         );
+        const projetFil = chat.fil.projetId ? projects.find((p) => p.id === chat.fil!.projetId) : null;
+        if (projetFil) lignes.push(`Projet du ticket : ${projetFil.name} (${projetFil.subtitle}), dossier ${projetFil.folder}.`);
+        if (chat.fil.echeance) lignes.push(`Échéance du ticket : ${chat.fil.echeance}.`);
       } else {
         lignes.push("Conversation en tête-à-tête, hors projet.");
       }
@@ -1036,6 +1049,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             // Le son de l'app, sauf si la notification du système sonne déjà.
             if (!(notifiee && notificationSonore(event.ok ? "agentFini" : "agentErreur"))) jouer(event.ok ? "fin-de-tache" : "erreur");
           }
+          // Le ticket du fil : à valider, ou bloqué sur l'erreur.
+          dispatch({ type: "chat/update", id: chatId, patch: (c) => (c.fil ? { ...c, fil: apresReponse(c.fil, { ok: event.ok, erreur: event.erreur }) } : c) });
           rapporterFil(chatId, messageId, event.ok);
           break;
       }
@@ -1419,7 +1434,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [bridge],
   );
 
-  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null) => {
+  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket) => {
     const maintenant = new Date().toISOString();
     const chat: Chat = {
       id: `${FIL}${crypto.randomUUID().slice(0, 8)}`,
@@ -1430,7 +1445,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       updatedAt: maintenant,
       sessions: {},
       luJusqua: null,
-      fil: { roleId, statut: "ouvert", creeLe: maintenant, lancePar: lancePar ?? null },
+      fil: { roleId, statut: "ouvert", creeLe: maintenant, lancePar: lancePar ?? null, etape: "a-faire", ...ticket },
     };
     dispatch({ type: "chat/add", chat });
     stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
@@ -1472,10 +1487,24 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   );
 
   const rouvrirFil = useCallback((chatId: string) => {
+    const aReponse = stateRef.current.messages.some((m) => m.chatId === chatId && m.author.kind === "role" && m.statut !== "en-cours");
     dispatch({
       type: "chat/update",
       id: chatId,
-      patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, statut: "ouvert", supprime: false } } : c),
+      patch: (c) => (c.fil ? { ...c, fil: rouvert(c.fil, aReponse) } : c),
+    });
+  }, []);
+
+  const majTicket = useCallback((chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => {
+    const { etape, raison, ...champs } = patch;
+    dispatch({
+      type: "chat/update",
+      id: chatId,
+      patch: (c) => {
+        if (!c.fil) return c;
+        const fil = { ...c.fil, ...champs };
+        return { ...c, fil: etape ? poserEtape(fil, etape, raison) : fil };
+      },
     });
   }, []);
 
@@ -1484,7 +1513,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const outils = bridge?.outils;
     if (!outils) return;
     const executer = (nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }): string => {
-      const { chats, messages, travail } = stateRef.current;
+      const { chats, messages, travail, projects } = stateRef.current;
       const roles = rolesRef.current;
       const nomDe = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
       const filDe = (id: unknown) => {
@@ -1492,8 +1521,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         if (!fil?.fil) throw new Error(`Aucun fil « ${String(id)} ».`);
         return fil as Chat & { fil: NonNullable<Chat["fil"]> };
       };
-      const etat = (c: Chat) => (travail[c.id] ? "en cours" : c.fil?.statut === "archive" ? "fermé" : "fini, en attente");
-      const resume = (c: Chat & { fil: NonNullable<Chat["fil"]> }) => `${c.title} (${c.id}) · ${nomDe(c.fil.roleId)} · ${etat(c)}`;
+      const resume = (c: Chat & { fil: NonNullable<Chat["fil"]> }, travaille = !!travail[c.id]) =>
+        ligneTicket(c, {
+          travaille,
+          agent: nomDe(c.fil.roleId),
+          projet: c.fil.projetId ? (projects.find((p) => p.id === c.fil.projetId)?.name ?? c.fil.projetId) : null,
+          lancePar: c.fil.lancePar ? nomDe(c.fil.lancePar.roleId) : null,
+        });
 
       switch (nom) {
         case "ouvrir_fil": {
@@ -1504,8 +1538,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             throw new Error(`« ${agent} » n’est pas dans Mes agents : il ne peut pas recevoir de fil. Agents disponibles : ${roles.map((r) => `${r.id} (${r.name})`).join(", ")}.`);
           }
           if (!brief) throw new Error("Le brief est vide : le fil ne voit pas ta conversation, il lui faut tout.");
+          const projetId = typeof args.projet === "string" && args.projet.trim() ? args.projet.trim() : null;
+          if (projetId && !projects.some((p) => p.id === projetId)) {
+            throw new Error(`Aucun projet « ${projetId} ». Projets : ${projects.map((p) => `${p.id} (${p.name})`).join(", ") || "aucun"}.`);
+          }
+          const ticket: ChampsTicket = { priorite: lirePriorite(args.priorite) ?? 0, echeance: lireEcheance(args.echeance) ?? null, projetId };
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
-          const id = creerFil(agent, titre || brief, lanceur);
+          const id = creerFil(agent, titre || brief, lanceur, ticket);
           if (lanceur) {
             dispatch({ type: "chat/update", id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: true } } : c) });
           }
@@ -1514,8 +1553,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         }
         case "lister_fils": {
           const agent = typeof args.agent === "string" && args.agent ? args.agent : null;
+          const etatVoulu = args.etat === undefined || args.etat === null || args.etat === "" ? null : lireEtatOutil(args.etat);
           const ouverts = chats.filter((c): c is Chat & { fil: NonNullable<Chat["fil"]> } => !!c.fil && c.fil.statut === "ouvert" && (!agent || c.fil.roleId === agent));
-          return ouverts.length ? ouverts.map((c) => `- ${resume(c)}`).join("\n") : "Aucun fil ouvert.";
+          const choisis = trierTickets(ouverts, (id) => !!travail[id]).filter(
+            (c) => !etatVoulu || (travail[c.id] ? "en-cours" : (c.fil.etape ?? "a-faire")) === etatVoulu,
+          );
+          return choisis.length ? choisis.map((c) => `- ${resume(c)}`).join("\n") : "Aucun fil ouvert.";
         }
         case "lire_fil": {
           const fil = filDe(args.id);
@@ -1534,6 +1577,18 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           envoyerRef.current(fil.id, message, null, []);
           return travail[fil.id] ? "Ajouté : il le lira après sa réponse en cours." : "Envoyé : il s’y met.";
         }
+        case "mettre_a_jour_fil": {
+          const fil = filDe(args.id);
+          if (fil.fil.statut === "archive") throw new Error("Ce fil est fermé : demande à la personne de le rouvrir.");
+          if (!peutMettreAJour(fil.fil, appelant.roleId)) throw new Error("Seuls l’agent du fil et celui qui l’a lancé mettent son état à jour.");
+          const etape = lireEtatOutil(args.etat);
+          const raison = typeof args.raison === "string" ? args.raison.trim() : "";
+          if (etape === "bloque" && !raison) throw new Error("Dis pourquoi c’est bloqué (raison) : c’est ce que la personne lira.");
+          const suite = { ...fil, fil: poserEtape(fil.fil, etape, raison) };
+          dispatch({ type: "chat/update", id: fil.id, patch: (c) => (c.fil ? { ...c, fil: poserEtape(c.fil, etape, raison) } : c) });
+          // L'étape posée, même si la réponse en cours la montre encore « en cours ».
+          return `À jour : ${resume(suite, false)}`;
+        }
         case "arreter_fil": {
           const fil = filDe(args.id);
           if (!travail[fil.id]) return "Il ne travaillait pas.";
@@ -1542,6 +1597,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         }
         case "fermer_fil": {
           const fil = filDe(args.id);
+          if (!peutFermer(fil.fil, appelant.roleId)) {
+            const par = fil.fil.lancePar ? nomDe(fil.fil.lancePar.roleId) : "la personne";
+            throw new Error(`Ce fil a été ouvert par ${par} : c’est à ${par} de le valider et de le fermer. Mets-le « à valider » avec mettre_a_jour_fil.`);
+          }
           archiverFil(fil.id);
           return `Fil fermé et archivé : ${fil.title} (${fil.id}). Il peut être rouvert.`;
         }
@@ -2080,6 +2139,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       basculerMachine,
       nouvelleConversation,
       creerFil,
+      majTicket,
       renommerChat,
       epinglerChat,
       archiverFil,
@@ -2131,6 +2191,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       basculerMachine,
       nouvelleConversation,
       creerFil,
+      majTicket,
       renommerChat,
       epinglerChat,
       archiverFil,

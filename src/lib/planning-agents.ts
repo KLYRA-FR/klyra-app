@@ -1,6 +1,7 @@
 import { evenementsEquipeEntre } from "@/lib/agenda-equipe";
 import { cleJour, depuisCle, libelleJour } from "@/lib/dates";
 import { libellePlanning, quandRoutine } from "@/lib/routines-affichage";
+import { ligneTicket, trierTickets } from "@/lib/tickets";
 import type { Routine } from "@/types/routines";
 import type { Artefact, Categorie, Chat, Evenement, Project, Role, Tache } from "@/types/domain";
 import type { Workflow } from "@/types/workflows";
@@ -111,6 +112,17 @@ export function planningPourAgents(donnees: {
         `dernier échange le ${c.updatedAt.slice(0, 16).replace("T", " à ")}`,
       )}`,
     );
+  /* Les tickets : les fils ouverts des agents, ce qui attend quelqu'un d'abord. */
+  const fils = chats.filter((c): c is Chat & { fil: NonNullable<Chat["fil"]> } => !!c.fil && c.fil.statut === "ouvert");
+  const lignesTickets = trierTickets(fils, () => false).map(
+    (c) =>
+      `- ${ligneTicket(c, {
+        travaille: false,
+        agent: agent(c.fil.roleId),
+        projet: projet(c.fil.projetId ?? null),
+        lancePar: c.fil.lancePar ? agent(c.fil.lancePar.roleId) : null,
+      })}`,
+  );
   const lignesArtefacts = artefacts.map((a) => `- ${ligne(`**${a.titre}**`, a.url, projet(a.projectId) && `projet ${projet(a.projectId)}`)}${note(a.description)}`);
   const lignesWorkflows = workflows.map((w) => `- ${ligne(`**${w.titre}**`, projet(w.projectId) && `projet ${projet(w.projectId)}`, `modifié le ${w.majLe.slice(0, 10)}`)}`);
 
@@ -124,6 +136,9 @@ export function planningPourAgents(donnees: {
     "",
     "## Rappels",
     parCategorie.filter(Boolean).join("\n\n") || "Aucun rappel.",
+    "",
+    "## Tickets ouverts (les fils des agents)",
+    lignesTickets.join("\n") || "Aucun ticket ouvert.",
     "",
     "## Routines (tâches planifiées des agents)",
     lignesRoutines.length ? lignesRoutines.join("\n") : "Aucune routine.",
