@@ -10,6 +10,7 @@ import { aujourdhui, echeance, enRetard, libellePeriode } from "@/lib/dates";
 import { jouer } from "@/lib/sons/sons";
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte, type Tache } from "@/types/domain";
+import { ConfieA, MenuConfier } from "@/components/tickets/MenuConfier";
 import { MenuReporter } from "./MenuReporter";
 import { LignesCompte, RappelsCompte, rappelsDansColonne } from "./RappelsCompte";
 
@@ -219,6 +220,9 @@ export function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeint
             )}
           />
           {!tache.faite && (
+            <MenuConfier rappel={{ source: "local", id: tache.id, titre: tache.titre, notes: tache.notes, echeance: tache.date, heure: tache.heure, priorite: tache.priorite }} />
+          )}
+          {!tache.faite && (
             <MenuReporter
               tache={tache}
               onReporte={({ annonce }) => {
@@ -273,6 +277,7 @@ export function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeint
             {libellePeriode(tache.date, tache.heure, tache.fin)}
           </span>
         )}
+        <ConfieA source="local" id={tache.id} />
         {ouverte && (
           <Reglages date={tache.date} fin={tache.fin ?? null} heure={tache.heure} priorite={tache.priorite} onChange={(patch) => maj({ ...patch, notifiee: false })} />
         )}

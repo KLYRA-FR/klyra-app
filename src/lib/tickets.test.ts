@@ -3,6 +3,8 @@ import type { Chat, Fil, Message } from "@/types/domain";
 import {
   apresReponse,
   auDebut,
+  briefDuRappel,
+  filDuRappel,
   avecEtapes,
   colonneTicket,
   ERREUR_ARRET,
@@ -230,5 +232,29 @@ describe("tableau", () => {
     const f = ferme(fil({ etape: "a-valider" }), false, maintenant);
     expect(f).toMatchObject({ statut: "archive", supprime: false, fermeLe: "2026-11-10T12:00:00.000Z" });
     expect(rouvert(f, true).fermeLe).toBeNull();
+  });
+});
+
+describe("confier un rappel", () => {
+  const rappel = { source: "local" as const, id: "r1", titre: "  Relancer le devis ", notes: "Appeler avant midi", echeance: "2026-11-05", heure: "14:00", priorite: 2 as const };
+
+  test("le brief reprend le rappel en entier", () => {
+    expect(briefDuRappel(rappel)).toBe(
+      "Je te confie ce rappel : « Relancer le devis ».\n\nNotes : Appeler avant midi\n\nÉchéance : 2026-11-05 à 14:00.\n\nFais-le, puis termine par le résultat, clairement : je le validerai, et le rappel sera coché.",
+    );
+    expect(briefDuRappel({ ...rappel, notes: " ", echeance: null })).not.toMatch(/Notes|Échéance/);
+  });
+
+  test("le fil d'un rappel : le plus récent, jamais un supprimé, jamais celui d'une autre source", () => {
+    const chats = [
+      chat("ancien", { rappel: { source: "local", id: "r1" }, statut: "archive", creeLe: "2026-11-01T09:00:00.000Z" }),
+      chat("recent", { rappel: { source: "local", id: "r1" }, creeLe: "2026-11-03T09:00:00.000Z" }),
+      chat("supprime", { rappel: { source: "local", id: "r1" }, statut: "archive", supprime: true, creeLe: "2026-11-04T09:00:00.000Z" }),
+      chat("compte", { rappel: { source: "compte", id: "r1" }, creeLe: "2026-11-05T09:00:00.000Z" }),
+      chat("autre", { creeLe: "2026-11-06T09:00:00.000Z" }),
+    ];
+    expect(filDuRappel(chats, "local", "r1")?.id).toBe("recent");
+    expect(filDuRappel(chats, "compte", "r1")?.id).toBe("compte");
+    expect(filDuRappel(chats, "local", "r2")).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
+import { ConfieA, MenuConfier } from "@/components/tickets/MenuConfier";
 import { ListeDeroulante, type OptionListe } from "@/components/ui/ListeDeroulante";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -554,6 +555,9 @@ function LigneCompte({
           ) : (
             <p className={cn("m-0 min-w-0 flex-1 text-ui-s leading-5", faite ? "text-texte-tertiaire line-through" : "text-texte-principal")}>{rappel.titre}</p>
           )}
+          {!faite && assignee && (
+            <MenuConfier rappel={{ source: "compte", id: rappel._id, titre: rappel.titre, notes: rappel.notes, echeance: rappel.jour, heure: rappel.heure, priorite: rappel.priorite }} />
+          )}
           <button
             type="button"
             onClick={() => setOuverte((o) => !o)}
@@ -582,6 +586,7 @@ function LigneCompte({
         {nomAutre && (
           <span className="text-ui-xs text-texte-tertiaire">{createur ? `Assigné à ${nomAutre}` : `Par ${nomAutre}`}</span>
         )}
+        <ConfieA source="compte" id={rappel._id} />
         {ouverte && (
           <div className="flex flex-col gap-1.5 pt-1">
             <textarea

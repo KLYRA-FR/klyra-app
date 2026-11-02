@@ -206,6 +206,42 @@ export function tableauTickets(
   return { colonnes, termines };
 }
 
+/* ─── Confier un rappel à un agent ─────────────────────────────── */
+
+/** Ce qu'il faut d'un rappel (de ce poste ou du compte) pour le confier. */
+export interface RappelAConfier {
+  source: "local" | "compte";
+  id: string;
+  titre: string;
+  notes: string;
+  /** Jour « 2026-11-05 », ou null. */
+  echeance: string | null;
+  heure: string | null;
+  priorite: 0 | 1 | 2 | 3;
+}
+
+/** Le brief du fil : le rappel tel quel, puisque le fil ne voit rien d'autre. */
+export function briefDuRappel(rappel: RappelAConfier): string {
+  return [
+    `Je te confie ce rappel : « ${rappel.titre.trim()} ».`,
+    rappel.notes.trim() && `Notes : ${rappel.notes.trim()}`,
+    rappel.echeance && `Échéance : ${rappel.echeance}${rappel.heure ? ` à ${rappel.heure}` : ""}.`,
+    "Fais-le, puis termine par le résultat, clairement : je le validerai, et le rappel sera coché.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Le fil d'un rappel confié : le plus récent qui n'a pas été supprimé. */
+export function filDuRappel(chats: Chat[], source: RappelAConfier["source"], id: string): FilChat | null {
+  let trouve: FilChat | null = null;
+  for (const c of chats) {
+    if (!c.fil || c.fil.supprime || c.fil.rappel?.source !== source || c.fil.rappel.id !== id) continue;
+    if (!trouve || c.fil.creeLe > trouve.fil.creeLe) trouve = c as FilChat;
+  }
+  return trouve;
+}
+
 const PRIORITES = ["", "priorité basse", "priorité moyenne", "priorité haute"];
 
 /** Une ligne de ticket, pour les agents : « Rapport hebdo (klyra-fil-…) · Hugo · bloqué : attend l'accès · priorité moyenne · échéance 2026-11-05 · projet Klyra.fr ». */
