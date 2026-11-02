@@ -18,6 +18,7 @@ export interface PolitiqueEnregistree extends PolitiqueProjet {
 }
 
 const KINDS_LIVRAISON = ["livraison_klyra"];
+const TYPES_GITHUB: TypeMetier[] = ["commentaire_pr", "fin_verification"];
 
 export function politiqueVide(project_id: string, maintenant: Horloge = Date.now): PolitiqueEnregistree {
   return {
@@ -91,6 +92,45 @@ export function autoriserFil(
               source_account: c.compte,
               source_conversation_id: c.fil_id,
               types: [...TYPES_METIER] as TypeMetier[],
+            },
+          ],
+    };
+    enregistrerPolitique(db, suivante);
+    return suivante;
+  });
+}
+
+/**
+ * Lier une pull request autorise cette conversation GitHub précise, pour un commentaire ou une fin
+ * de vérification. Aucune autre source n'est ajoutée. La référence d'autorisation déjà écrite reste.
+ */
+export function autoriserPull(
+  db: DatabaseSync,
+  c: { project_id: string; depot: string; conversation: string; approval_ref: string },
+  maintenant: Horloge = Date.now,
+): PolitiqueProjet {
+  return enTransaction(db, () => {
+    const actuelle = lirePolitique(db, c.project_id) ?? politiqueVide(c.project_id, maintenant);
+    const deja = actuelle.source_allowlist.some(
+      (s) => s.source_app === "github" && s.source_account === c.depot && s.source_conversation_id === c.conversation,
+    );
+    if (deja && actuelle.enabled) return actuelle;
+    const suivante: PolitiqueEnregistree = {
+      ...actuelle,
+      version: actuelle.version + 1,
+      enabled: true,
+      allowed_kinds: actuelle.allowed_kinds.length > 0 ? actuelle.allowed_kinds : KINDS_LIVRAISON,
+      approval_ref: actuelle.approval_ref ?? c.approval_ref,
+      effective_at: iso(maintenant()),
+      source_allowlist: deja
+        ? actuelle.source_allowlist
+        : [
+            ...actuelle.source_allowlist,
+            {
+              source_app: "github",
+              source_account: c.depot,
+              source_conversation_id: c.conversation,
+              types: TYPES_GITHUB,
             },
           ],
     };

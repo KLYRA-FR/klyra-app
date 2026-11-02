@@ -14,7 +14,7 @@ import { DatabaseSync } from "node:sqlite";
  * Détail, sauvegarde et retour arrière : `docs/SUPERAGENT.md`.
  */
 
-export const VERSION_SCHEMA = 2;
+export const VERSION_SCHEMA = 3;
 const ATTENTE_VERROU_MS = 10_000;
 
 const SCHEMA_V1 = `
@@ -189,7 +189,7 @@ CREATE TABLE occupation (
 CREATE TABLE lien_externe (
   work_id TEXT NOT NULL REFERENCES work (work_id),
   kind TEXT NOT NULL CHECK (kind IN ('klyra_chat', 'klyra_message', 'klyra_request', 'klyra_session',
-    'openbot_task', 'digital_os_state', 'digital_os_project')),
+    'openbot_task', 'digital_os_state', 'digital_os_project', 'github_pr')),
   ref TEXT NOT NULL,
   PRIMARY KEY (kind, ref, work_id)
 );
@@ -356,6 +356,24 @@ export function ouvrirStockage(chemin: string, options: { sauvegardes?: string }
   }
 }
 
+/** Un journal déjà créé reçoit le type `github_pr`. Les lignes existantes sont copiées. */
+function elargirLienGithub(db: DatabaseSync): void {
+  const ligne = un<{ sql: string }>(db, "SELECT sql AS sql FROM sqlite_master WHERE type = 'table' AND name = 'lien_externe'");
+  if (!ligne || ligne.sql.includes("'github_pr'")) return;
+  db.exec(`
+    CREATE TABLE lien_externe_v3 (
+      work_id TEXT NOT NULL REFERENCES work (work_id),
+      kind TEXT NOT NULL CHECK (kind IN ('klyra_chat', 'klyra_message', 'klyra_request', 'klyra_session',
+        'openbot_task', 'digital_os_state', 'digital_os_project', 'github_pr')),
+      ref TEXT NOT NULL,
+      PRIMARY KEY (kind, ref, work_id)
+    );
+    INSERT INTO lien_externe_v3 (work_id, kind, ref) SELECT work_id, kind, ref FROM lien_externe;
+    DROP TABLE lien_externe;
+    ALTER TABLE lien_externe_v3 RENAME TO lien_externe;
+  `);
+}
+
 function versionDe(db: DatabaseSync): number {
   return Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
 }
@@ -375,7 +393,10 @@ function migrer(db: DatabaseSync, chemin: string, dossierSauvegardes?: string) {
     const actuelle = versionDe(db);
     if (actuelle === VERSION_SCHEMA) return;
     if (actuelle === 0) db.exec(SCHEMA_V1);
-    else if (actuelle === 1) db.exec(TABLES_V2);
+    else if (actuelle === 1) {
+      db.exec(TABLES_V2);
+      elargirLienGithub(db);
+    } else if (actuelle === 2) elargirLienGithub(db);
     else throw new Error(`Journal super-agent en version ${actuelle} : migration non prévue.`);
     db.exec(`PRAGMA user_version = ${VERSION_SCHEMA}`);
   });

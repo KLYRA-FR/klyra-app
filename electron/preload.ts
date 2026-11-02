@@ -206,6 +206,8 @@ contextBridge.exposeInMainWorld("klyra", {
     preparer: (filId: string) => ipcRenderer.invoke("superagent:preparer", filId),
     /** Un passage du watchdog de l'app. Le minuteur de 15 minutes appelle la même fonction. */
     passage: () => ipcRenderer.invoke("superagent:passage"),
+    /** Relie une pull request ou enregistre un fait déjà lu. N'écrit rien sur GitHub. */
+    github: (fait: unknown) => ipcRenderer.invoke("superagent:github", fait),
   },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */

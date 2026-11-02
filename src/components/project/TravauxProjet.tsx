@@ -31,6 +31,7 @@ interface Projection {
   travaux: LigneTravail[];
   alertes: Alerte[];
   blocages: { point: string; texte: string }[];
+  evenements?: { event_id: string; work_id: string; type: string; resume: string }[];
   couverture: string;
 }
 
@@ -165,6 +166,13 @@ export function TravauxProjet({ projectId }: { projectId: string }) {
                   Preuves
                 </Bouton>
               </span>
+              {(projection.evenements ?? [])
+                .filter((evenement) => evenement.work_id === travail.work_id)
+                .map((evenement) => (
+                  <p key={evenement.event_id} className="m-0 text-ui-s text-texte-secondaire">
+                    {evenement.type === "fin_verification" ? "Vérification" : "Commentaire"} · {evenement.resume}
+                  </p>
+                ))}
               {projection.alertes
                 .filter((a) => a.work_id === travail.work_id)
                 .map((alerte) => (

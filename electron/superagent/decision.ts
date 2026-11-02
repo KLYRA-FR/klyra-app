@@ -43,11 +43,16 @@ export function classerEvenement(db: DatabaseSync, eventId: string): Classement 
   if (evenement.revision_depassee === 1) {
     return { ...base, disposition: "ne_rien_faire", motif: "revision_depassee" };
   }
-  if (evenement.type === "commentaire_pr") {
-    return { ...base, disposition: "ne_rien_faire", motif: "ingestion_commentaire_inactive" };
+  if (evenement.type === "commentaire_pr" || evenement.type === "fin_verification") {
+    if (!travail) return { ...base, disposition: "ne_rien_faire", motif: "travail_non_resolu" };
+    return {
+      ...base,
+      disposition: "attendre",
+      motif: evenement.type === "commentaire_pr" ? "commentaire_joint" : "verification_jointe",
+    };
   }
   if (evenement.type === "erreur") return { ...base, disposition: "attendre", motif: "erreur_metier" };
-  if (evenement.type === "resultat" || evenement.type === "fin_verification") {
+  if (evenement.type === "resultat") {
     return { ...base, disposition: "repondre", motif: evenement.type };
   }
   if (!travail) return { ...base, disposition: "ne_rien_faire", motif: "travail_non_resolu" };

@@ -41,6 +41,7 @@ import {
   lirePreuves,
   lireProjection,
   marquerFil,
+  noterGithub,
   noterMessage,
   noterOuverture,
   ouvrirJournal,
@@ -716,6 +717,7 @@ function registerBridge() {
   handle("superagent:preparer", (filId: unknown) => preparerFil(typeof filId === "string" ? filId : ""));
   // Le même passage que le minuteur de 15 minutes. Il écrit une alerte, jamais dans le fil.
   handle("superagent:passage", () => passageWatchdog());
+  handle("superagent:github", (brut: unknown) => noterGithub(brut));
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
   ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {

@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { ingererMessageFil, marquerTravailFil, ouvrirTravailFil, placesLibres, preparer, projection, preuvesTravail, travailDuFil, type ContexteCycle } from "./cycle";
+import { ingererFaitGithub, lierPull, type FaitGithub } from "./github";
 import { chercher } from "./recherche";
 import { ouvrirStockage } from "./stockage";
 import { surveiller } from "./watchdog";
@@ -124,7 +125,7 @@ export function marquerFil(filId: string, status: "active" | "suspended" | "bloc
 }
 
 export function lireProjection(projectId: string | null) {
-  if (!journal) return { travaux: [], alertes: [], blocages: [], couverture: "journal_illisible" as const };
+  if (!journal) return { travaux: [], alertes: [], blocages: [], evenements: [], couverture: "journal_illisible" as const };
   return projection(journal, projectId);
 }
 
@@ -145,6 +146,34 @@ export function chercherTravaux(requete: string, compte: string, projectId: stri
 export function preparerFil(filId: string) {
   if (!journal) return { ok: false as const, motif: "journal_indisponible" };
   return preparer(journal, filId);
+}
+
+/** Relie une pull request, ou enregistre un commentaire / une fin de vérification déjà lus. N'appelle pas GitHub. */
+export async function noterGithub(brut: unknown) {
+  if (!journal) throw new Error("Journal indisponible.");
+  const ligne = (brut ?? {}) as Record<string, unknown>;
+  const kind = texte(ligne.kind, 20);
+  const depot = texte(ligne.depot, 120);
+  const numero = typeof ligne.numero === "number" ? ligne.numero : Number(texte(ligne.numero, 12));
+  if (kind === "lier") {
+    const filId = texte(ligne.filId, 80);
+    const workId = texte(ligne.workId, 80) || (filId ? travailDuFil(journal, filId) ?? "" : "");
+    if (!workId) return { ok: false as const, motif: "travail_inconnu" };
+    return lierPull(journal, workId, depot, numero);
+  }
+  if (kind !== "commentaire" && kind !== "verification") return { ok: false as const, motif: "fait_illisible" };
+  const fait: FaitGithub = {
+    depot,
+    numero,
+    kind,
+    id: texte(ligne.id, 500),
+    texte: typeof ligne.texte === "string" ? ligne.texte.slice(0, 8_000) : undefined,
+    nom: typeof ligne.nom === "string" ? ligne.nom.slice(0, 120) : undefined,
+    conclusion: typeof ligne.conclusion === "string" ? ligne.conclusion.slice(0, 40) : undefined,
+    url: typeof ligne.url === "string" ? ligne.url.slice(0, 500) : null,
+    mode: ligne.mode === "natif" ? "natif" : "fixture",
+  };
+  return ingererFaitGithub(journal, fait);
 }
 
 export function passageWatchdog() {

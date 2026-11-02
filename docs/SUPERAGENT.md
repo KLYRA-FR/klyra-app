@@ -12,13 +12,15 @@ La décision est du code, sans appel de modèle. Le routeur de l'app est `princi
 
 `waiting_machine` est un état du journal. Une machine de l'app absente attend : le travail ne part pas sur une autre machine. Au retour, un seul départ, après un contrôle de la consigne. Le transport déjà là est `electron/agents-distants.ts`, le VPS de la personne. Une coupure de son flux est réessayée de 1 s à 30 s. Sans jeton, l'envoi refuse. Ce transport ne dit pas au journal qu'une machine est absente. T06 simule l'état `waiting_machine`. Aucun accès nouveau, aucune prise de contrôle d'un PC.
 
+Une pull request liée au travail reçoit ses commentaires et la fin de ses vérifications (verte ou rouge) comme événements de ce travail. Le même identifiant une seconde fois ne crée rien. Une pull non liée ne crée pas de travail. Cette lecture n'écrit pas de commentaire, ne fusionne pas, ne pousse pas `main` et n'envoie pas de mail. `gh` déjà connecté peut fournir les faits ; sans réponse, le classement se prouve sur une fixture.
+
 Le watchdog tourne dans l'app toutes les 15 minutes. `superagent:passage` appelle la même fonction, pour un contrôle qui ne peut pas attendre. Il écrit une alerte. Il ne relance pas, ne ferme pas, n'écrit pas dans le fil. La routine Tempo reste inactive.
 
-L'écran d'un projet (`TravauxProjet`) lit les travaux et leurs preuves. La liste des blocages est vide. L'ouvrir ne lance rien.
+L'écran d'un projet (`TravauxProjet`) lit les travaux, leurs preuves et les événements GitHub du travail. La liste des blocages est vide. L'ouvrir ne lance rien.
 
 ## Sauvegarde et retour arrière
 
-`sauvegarder` fait un `VACUUM INTO` vers un fichier qui n'existe pas. `restaurerVersNouveauFichier` copie cette sauvegarde vers un fichier neuf, jamais par-dessus le journal ouvert, puis `PRAGMA integrity_check` et `foreign_key_check`. Un journal en version 1 est copié avant de recevoir les tables de la version 2. Une version plus récente que le code est refusée, le fichier reste tel quel.
+`sauvegarder` fait un `VACUUM INTO` vers un fichier qui n'existe pas. `restaurerVersNouveauFichier` copie cette sauvegarde vers un fichier neuf, jamais par-dessus le journal ouvert, puis `PRAGMA integrity_check` et `foreign_key_check`. Un journal en version 1 est copié avant de recevoir les tables de la version 2. Un journal en version 2 est copié avant d'accepter le lien `github_pr` (version 3). Une version plus récente que le code est refusée, le fichier reste tel quel.
 
 ## Autorité et limites
 
@@ -26,4 +28,4 @@ L'atomicité prouvée est celle d'un fichier SQLite sur ce PC (`BEGIN IMMEDIATE`
 
 Aucun contenu de conversation, fichier, clé ou routine n'est envoyé à Convex. `convex/evenements.ts` n'est pas utilisé. L'écriture de ce SQLite reste sur ce PC. Le VPS sert aux agents distants déjà dans l'app.
 
-Les preuves T01, T02, T03, T04, T05, T07, T08 et T09 : `pnpm test:superagent`, sur un fichier jetable. T06 y est une simulation d'une machine de l'app absente (`waiting_machine`), chaque ligne est étiquetée SIMULATION. Le scénario d'un profil jetable de l'app : `xvfb-run -a node scripts/profil-superagent.mjs --no-sandbox`. Il ouvre un fil par le pont de l'app, pas par le composeur, et vérifie que l'écran du projet ne montre plus les trois mentions retirées. Ces preuves couvrent un fichier sur ce PC. L'atomicité entre machines n'est pas acquise. Pas de fusion : merger `main` publie une version.
+Les preuves T01, T02, T03, T04, T05, T07, T08, T09 et le cas GitHub (commentaire, vérification verte, vérification rouge) : `pnpm test:superagent`, sur un fichier jetable. La vérification rouge et le texte de l'écran jetable sont des fixtures. Quand `gh` répond, la même fonction joint le commentaire et les vérifications terminées de la pull request liée, sans livraison. T06 y est une simulation d'une machine de l'app absente (`waiting_machine`), chaque ligne est étiquetée SIMULATION. Le scénario d'un profil jetable de l'app : `xvfb-run -a node scripts/profil-superagent.mjs --no-sandbox`. Il ouvre un fil par le pont de l'app, pas par le composeur, et vérifie que l'écran du projet ne montre plus les trois mentions retirées. Ces preuves couvrent un fichier sur ce PC. L'atomicité entre machines n'est pas acquise. Pas de fusion : merger `main` publie une version.

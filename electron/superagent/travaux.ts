@@ -17,7 +17,8 @@ export type TypeReference =
   | "klyra_session"
   | "openbot_task"
   | "digital_os_state"
-  | "digital_os_project";
+  | "digital_os_project"
+  | "github_pr";
 
 export function lireTravail(db: DatabaseSync, workId: string): Travail | undefined {
   return un<Travail>(db, "SELECT * FROM work WHERE work_id = ?", workId);

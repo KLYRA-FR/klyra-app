@@ -159,6 +159,19 @@ try {
   const brut = JSON.stringify(messages);
   verifier(messages.length === 1 && brut.includes(TEXTE_FIL) && !brut.includes("Travail bloqué"), `le fil garde son message et pas l'alerte (${messages.length})`);
 
+  const fait = (extra) => `github(${JSON.stringify({ depot: "exemple/depot", numero: 7, ...extra })})`;
+  const lie = await appeler(`github(${JSON.stringify({ kind: "lier", filId: FIL, depot: "exemple/depot", numero: 7 })})`);
+  const commentaire = await appeler(fait({ kind: "commentaire", id: "c-jetable", texte: "Commentaire sur la pull request du travail." }));
+  const bis = await appeler(fait({ kind: "commentaire", id: "c-jetable", texte: "Commentaire sur la pull request du travail." }));
+  const verif = await appeler(fait({ kind: "verification", id: "v-jetable", nom: "contrôle", conclusion: "failure" }));
+  verifier(lie?.data?.ok === true && commentaire?.data?.work_id === travail && commentaire?.data?.motif === "commentaire_joint", `commentaire joint au travail (${commentaire?.data?.motif})`);
+  verifier(bis?.data?.disposition === "doublon", `le même commentaire ne crée rien (${bis?.data?.disposition})`);
+  verifier(verif?.data?.work_id === travail && verif?.data?.motif === "verification_jointe" && (verif?.data?.operations ?? []).length === 0, `vérification rouge jointe, sans livraison (${verif?.data?.motif})`);
+  const apres = await appeler(`projection(${JSON.stringify(PROJET)})`);
+  const evenements = apres?.data?.evenements ?? [];
+  verifier(evenements.some((e) => e.work_id === travail && e.type === "commentaire_pr") && evenements.some((e) => e.work_id === travail && e.type === "fin_verification"), `la projection porte les deux événements (${evenements.length})`);
+  verifier((apres?.data?.travaux ?? []).length === 3, "les événements GitHub ne créent pas de travail");
+
   await app.aller(`/projet?id=${PROJET}`);
   const vu = await app.quand("document.querySelector('main')?.innerText?.includes('Bloqué') || document.querySelector('main')?.innerText?.includes('Fil jetable')");
   const texte = (await app.texte()) ?? "";
@@ -166,8 +179,10 @@ try {
   const reste = mentions.filter((m) => texte.includes(m));
   verifier(vu && reste.length === 0, `l'écran du projet ne montre pas les mentions retirées (${reste.join(" | ") || "aucune"})`);
   verifier(texte.includes("W1") && texte.includes("Bloqué"), "l'écran montre l'alerte du watchdog");
+  verifier(texte.includes("Commentaire sur la pull request du travail."), "l'écran montre le commentaire sur le travail");
+  verifier(texte.includes("Vérification") && texte.includes("rouge"), "l'écran montre la vérification sur le travail");
   console.log("--- écran ---");
-  console.log(texte.split("\n").filter((l) => /Point |W1|Bloqué|Fil jetable|aucun coût|En cours|Suspendu/.test(l)).join("\n"));
+  console.log(texte.split("\n").filter((l) => /Point |W1|Bloqué|Fil jetable|aucun coût|En cours|Suspendu|Commentaire|Vérification/.test(l)).join("\n"));
 } catch (erreur) {
   console.error(erreur.stack || erreur);
   echecs.push(String(erreur));

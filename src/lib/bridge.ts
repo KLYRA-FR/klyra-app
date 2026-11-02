@@ -424,6 +424,7 @@ export interface KlyraBridge {
       travaux: { work_id: string; fil_id: string | null; titre: string; owner_agent_id: string | null; status: string; state_ref: string; deadline_at: string | null; mesures_cout: string | null }[];
       alertes: { work_id: string; type: string; motif: string; prochain_geste: string }[];
       blocages: { point: string; texte: string }[];
+      evenements?: { event_id: string; work_id: string; type: string; resume: string }[];
       couverture: string;
     }>>;
     preuves: (workId: string) => Promise<Reponse<unknown>>;
@@ -431,6 +432,8 @@ export interface KlyraBridge {
     preparer: (filId: string) => Promise<Reponse<{ ok: boolean; motif?: string }>>;
     /** Un passage du watchdog. Absent avant la relance de l'app. */
     passage?: () => Promise<Reponse<{ work_id: string; type: string; motif: string }[]>>;
+    /** Relie une pull request ou enregistre un fait déjà lu. Absent avant la relance de l'app. */
+    github?: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; work_id?: string | null; disposition?: string; operations?: string[] }>>;
   };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;

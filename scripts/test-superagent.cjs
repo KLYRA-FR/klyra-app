@@ -2,6 +2,7 @@
  * Preuves du contrat super-agent sur un journal SQLite jetable.
  * T01 et T05 lancent de vrais process. T03 arrête ce composant par SIGKILL, pas un service installé.
  * T04, T07 et T08 tournent sur ce fichier. T06 simule une machine de l'app absente (`waiting_machine`).
+ * GitHub : fixture locale, puis lecture `gh` de la pull request si elle répond. Aucune écriture.
  * Limite : un fichier, ce PC. Le transport des agents distants ne marque pas le journal.
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- script Node en CommonJS, comme superagent-composant.cjs */
@@ -756,6 +757,60 @@ async function t08() {
   db.close();
 }
 
+async function tGh() {
+  const dir = tmp();
+  const db = ouvrir(dir);
+  const { un } = dist("stockage.js");
+  const { lierPull, ingererFaitGithub, lirePull } = dist("github.js");
+  const { projection } = dist("cycle.js");
+  const registre = dist("outils-fils.js").creerRegistre();
+  const ouvert = await ouvrirFil(db, registre, "Pull");
+  const lie = lierPull(db, ouvert.travail, "exemple/depot", 7);
+  const avantOps = un(db, "SELECT count(*) AS n FROM operation").n;
+  const avantTravaux = un(db, "SELECT count(*) AS n FROM work").n;
+  const fait = (extra) => ({ depot: "exemple/depot", numero: 7, ...extra });
+  const commentaire = await ingererFaitGithub(db, fait({ kind: "commentaire", id: "c-fixture", texte: "Commentaire sur la pull request du travail." }));
+  const bis = await ingererFaitGithub(db, fait({ kind: "commentaire", id: "c-fixture", texte: "Commentaire sur la pull request du travail." }));
+  const rouge = await ingererFaitGithub(db, fait({ kind: "verification", id: "v-rouge", nom: "contrôle", conclusion: "failure" }));
+  const verte = await ingererFaitGithub(db, fait({ kind: "verification", id: "v-verte", nom: "contrôle", conclusion: "success" }));
+  const encoreRouge = await ingererFaitGithub(db, fait({ kind: "verification", id: "v-rouge", nom: "contrôle", conclusion: "failure" }));
+  const ailleurs = await ingererFaitGithub(db, { depot: "exemple/depot", numero: 8, kind: "commentaire", id: "c-autre", texte: "Autre pull." });
+  const enCours = await ingererFaitGithub(db, fait({ kind: "verification", id: "v-cours", nom: "contrôle", conclusion: "pending" }));
+  const vue = projection(db, CTX.project_id);
+  ok(lie.ok && commentaire.work_id === ouvert.travail && commentaire.motif === "commentaire_joint" && commentaire.operations.length === 0, "GitHub le commentaire rejoint le travail");
+  ok(bis.disposition === "doublon" && un(db, "SELECT count(*) AS n FROM event WHERE type = 'commentaire_pr' AND source_account = 'exemple/depot'").n === 1, "GitHub le même commentaire ne crée rien");
+  ok(rouge.motif === "verification_jointe" && rouge.work_id === ouvert.travail && verte.motif === "verification_jointe" && verte.work_id === ouvert.travail, "GitHub vérification verte et rouge, même travail");
+  ok(encoreRouge.disposition === "doublon", "GitHub la même vérification ne crée rien");
+  ok(ailleurs.motif === "pull_non_liee" && enCours.motif === "verification_non_terminee", "GitHub une pull non liée et une vérification non finie ne créent rien");
+  ok(un(db, "SELECT count(*) AS n FROM work").n === avantTravaux && un(db, "SELECT count(*) AS n FROM operation").n === avantOps, "GitHub aucun second travail, aucune livraison");
+  ok(vue.evenements.some((e) => e.work_id === ouvert.travail && e.type === "commentaire_pr" && e.resume.includes("Commentaire sur la pull request")), "GitHub la projection montre le commentaire");
+  ok(vue.evenements.some((e) => e.work_id === ouvert.travail && e.type === "fin_verification" && e.resume.includes("rouge")), "GitHub la projection montre la vérification");
+
+  const second = await ouvrirFil(db, registre, "Autre", "designer");
+  lierPull(db, ouvert.travail, "exemple/partage", 9);
+  lierPull(db, second.travail, "exemple/partage", 9);
+  const avantAmbigu = un(db, "SELECT count(*) AS n FROM event").n;
+  const ambigu = await ingererFaitGithub(db, { depot: "exemple/partage", numero: 9, kind: "commentaire", id: "c-ambigu", texte: "Pour qui ?" });
+  ok(ambigu.motif === "pull_ambigu" && un(db, "SELECT count(*) AS n FROM event").n === avantAmbigu, "GitHub une pull liée à deux travaux ne crée pas d'événement");
+
+  const reel = lirePull("KLYRA-FR/klyra-app", 71);
+  if (reel.faits.length === 0) {
+    console.log("GitHub lecture réelle absente. Le classement ci-dessus est une fixture.");
+  } else {
+    lierPull(db, ouvert.travail, "KLYRA-FR/klyra-app", 71);
+    const travauxAvant = un(db, "SELECT count(*) AS n FROM work").n;
+    const premiers = [];
+    for (const evenement of reel.faits) premiers.push(await ingererFaitGithub(db, evenement));
+    const seconds = [];
+    for (const evenement of reel.faits) seconds.push(await ingererFaitGithub(db, evenement));
+    ok(premiers.every((r) => r.work_id === ouvert.travail && r.operations.length === 0), "GitHub lecture réelle : même travail, aucune livraison");
+    ok(seconds.every((r) => r.disposition === "doublon" || r.disposition === "conflit"), "GitHub lecture réelle : la seconde passe ne crée rien");
+    ok(un(db, "SELECT count(*) AS n FROM work").n === travauxAvant, "GitHub lecture réelle : aucun second travail");
+    console.log(`GitHub lecture réelle : ${reel.faits.map((f) => (f.kind === "commentaire" ? `commentaire ${f.id}` : `vérification ${f.conclusion} ${f.nom}`)).join(" ; ")}`);
+  }
+  db.close();
+}
+
 async function principal() {
   await t01();
   await t02();
@@ -766,6 +821,7 @@ async function principal() {
   await t07();
   await t08();
   await t09();
+  await tGh();
   console.log(echecs === 0 ? "TOUT PASSE" : `${echecs} ECHEC(S)`);
   console.log("Limite : fichier SQLite jetable, un PC. T04, T07 et T08 sont exécutés. T06 simule une machine de l'app absente : attente, aucun départ ailleurs, un seul départ après contrôle. T03 arrête ce composant de test, pas un service installé. electron/agents-distants.ts ne dit pas au journal qu'une machine est absente. L'atomicité entre machines n'est pas acquise.");
   process.exit(echecs === 0 ? 0 : 1);

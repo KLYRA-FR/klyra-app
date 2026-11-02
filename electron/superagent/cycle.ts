@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { abonner } from "./abonnements";
 import { classerEvenement } from "./decision";
 import { admettre } from "./filtre";
+import { tronquerOctets } from "./enveloppe";
 import { depuisMessageKlyra, type MessageNatif } from "./ingestion";
 import { livrer } from "./livraison";
 import { fermerLot, ouvrirLot } from "./lots";
@@ -247,6 +248,7 @@ export interface Projection {
   travaux: LigneProjection[];
   alertes: { work_id: string; type: string; motif: string; prochain_geste: string }[];
   blocages: { point: string; texte: string }[];
+  evenements: { event_id: string; work_id: string; type: string; resume: string }[];
   couverture: "ok" | "journal_illisible";
 }
 
@@ -272,7 +274,16 @@ export function projection(db: DatabaseSync, projectId: string | null): Projecti
     projectId,
     projectId,
   );
-  return { travaux, alertes, blocages: [], couverture: "ok" };
+  const evenements = tous<{ event_id: string; work_id: string; type: string; resume: string }>(
+    db,
+    `SELECT event_id, work_id, type, resume FROM event
+     WHERE work_id IS NOT NULL AND type IN ('commentaire_pr', 'fin_verification')
+       AND (? IS NULL OR project_id = ?)
+     ORDER BY ingest_seq`,
+    projectId,
+    projectId,
+  ).map((e) => ({ ...e, resume: tronquerOctets(e.resume, 180).texte }));
+  return { travaux, alertes, blocages: [], evenements, couverture: "ok" };
 }
 
 /** Preuves lisibles par le watchdog (point 36) : identifiants et statuts, pas le texte des messages. */
