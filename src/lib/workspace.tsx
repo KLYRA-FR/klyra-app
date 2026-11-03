@@ -13,7 +13,7 @@ import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
-import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier } from "@/lib/atelier-agent";
+import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCours } from "@/lib/atelier-agent";
 import { lirePublication, nomDuFichier, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
@@ -54,7 +54,7 @@ import type {
 
 /** Une carte de l'atelier, et ce que l'écran peut y noter. */
 type PartAtelier = Extract<MessagePart, { type: "atelier-agent" }>;
-type PatchAtelier = Partial<Pick<PartAtelier, "teinte" | "cree" | "resultats" | "ajouts">>;
+type PatchAtelier = Partial<Pick<PartAtelier, "teinte" | "cree" | "resultats" | "ajouts" | "essais">>;
 
 /** Les catégories de rappels à la première ouverture. */
 const CATEGORIES_DE_DEPART: Categorie[] = [
@@ -758,14 +758,16 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       const valide = data?.version === VERSION_STOCKAGE;
       if (data !== null && !valide) { setErreurChargement("Le format des conversations n’est pas reconnu. Les données existantes sont conservées."); return; }
       const messages = (valide ? (data.messages ?? []) : []).map((m) =>
-        // Une réponse coupée par la fermeture de l'app ne reprendra pas.
-        m.statut === "en-cours"
-          ? {
-              ...m,
-              statut: "erreur" as const,
-              erreur: "Interrompu : l’app a été fermée.",
-            }
-          : m,
+        // Une réponse coupée par la fermeture de l'app ne reprendra pas, ni un essai de l'épreuve d'un agent.
+        sansEssaisEnCours(
+          m.statut === "en-cours"
+            ? {
+                ...m,
+                statut: "erreur" as const,
+                erreur: "Interrompu : l’app a été fermée.",
+              }
+            : m,
+        ),
       );
       const artefactsCharges = valide ? (data.artefacts ?? []).filter((a) => a.id !== ANCIEN_ARTEFACT_DE_DEPART) : [];
       dispatch({

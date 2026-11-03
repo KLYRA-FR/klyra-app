@@ -1,5 +1,5 @@
 import type { AjoutFiche, MajAtelier } from "../../electron/atelier-agent";
-import type { ResultatCas } from "../../electron/epreuve";
+import type { ResultatCas, TypeCas } from "../../electron/epreuve";
 
 export type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, RoutineProposee, VoisinAgent } from "../../electron/atelier-agent";
 
@@ -308,6 +308,11 @@ export type MessagePart =
       resultats?: ResultatCas[];
       /** Les phrases que la personne a ajoutées à la fiche (corrections de l'épreuve). */
       ajouts?: AjoutFiche[];
+      /**
+       * Les essais de l'épreuve en train de tourner (lancés du bureau ou du téléphone), pour que les
+       * deux le voient. Retirés au chargement : un essai coupé par la fermeture de l'app ne reprend pas.
+       */
+      essais?: TypeCas[];
     }
   /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
   | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }
