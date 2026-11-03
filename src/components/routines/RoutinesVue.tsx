@@ -10,6 +10,7 @@ import { useConfirmation } from "@/components/ui/Modale";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { useAgents } from "@/lib/agents";
 import { apparition } from "@/lib/mouvement";
+import { lireCreneau } from "@/lib/planning-routines";
 import { useRoutines } from "@/lib/routines";
 import { libellePlanning, libelleRun, runActif } from "@/lib/routines-affichage";
 import type { Routine, RoutineInput, RoutinePatch, RoutineRun } from "@/types/routines";
@@ -164,6 +165,17 @@ export function RoutinesVue({ onglets, garderSortie }: { onglets: ReactNode; gar
     await agir(r, () => api.modifier(r.id, { relais: [], active: true }), "Routine reprise avec un seul agent.");
   };
   const suggestion = (i: number): RoutineInput => ({ ...nouvelle(agentId), name: ["Point de la semaine", "Revue des mails", "Contrôle de klyra.fr"][i], instruction: ["Fais le point sur mes tâches de la semaine. Signale les échéances proches, les blocages et les décisions qui m’attendent.", "Relis les mails accessibles avec mes connexions et propose les réponses utiles en brouillon. Si une connexion manque, signale-le. N’envoie aucun message.", "Vérifie les pages publiques de klyra.fr. Signale les liens cassés et les erreurs visibles ; ne modifie pas le site."][i], schedule: i === 0 ? { kind: "weekly", weekday: 1, time: "09:00" } : { kind: "weekdays", time: "09:00" } });
+  /* Depuis un créneau du Planning (`&creneau=2-09:30`) : le formulaire s'ouvre sur ce jour et cette heure, chaque semaine. Lu une fois, avant que l'adresse se range. */
+  const creneau = useRef(lireCreneau(recherche.get("creneau")));
+  useEffect(() => {
+    const c = creneau.current;
+    if (!c || !api.charge || indisponible || !agent.actif) return;
+    creneau.current = null;
+    void (async () => {
+      if (brouillon && !(await demander({ titre: "Remplacer le brouillon ?", texte: "Une routine non enregistrée attend. Le créneau choisi dans le Planning la remplacera.", confirmer: "Remplacer", annuler: "Garder le brouillon" }))) return;
+      await commencer(null, { ...nouvelle(agentId), schedule: { kind: "weekly", ...c } });
+    })();
+  }, [api.charge, indisponible, agent.actif]); // eslint-disable-line react-hooks/exhaustive-deps
   const actifChoisi = api.enCours.find((r) => r.routineId === routine?.id && runActif(r));
   const dernierStatut = useRef<string | null>(null);
   useEffect(() => {

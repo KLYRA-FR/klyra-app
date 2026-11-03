@@ -135,6 +135,7 @@ export function planningPourAgents(donnees: {
     `Tout ce qu’il y a dans son app, mis à jour le ${maintenant.toLocaleString("fr-FR", { dateStyle: "full", timeStyle: "short" })}. Lecture seule : pour changer quelque chose, dis-lui quoi faire dans l’app.`,
     "",
     `## Calendrier (du ${cleJour(debut)} au ${cleJour(fin)})`,
+    "Les rendez-vous notés dans son Planning, pour que tu en tiennes compte (son agenda complet est ailleurs).",
     calendrier.length ? calendrier.join("\n") : "Aucun rendez-vous.",
     "",
     "## Rappels",
