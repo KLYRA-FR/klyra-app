@@ -17,7 +17,7 @@ ${base}
 
 Demande : ${demande}
 
-Réécris la fiche pour répondre à la demande, sans rien changer d’autre. Garde l’en-tête (le champ name reste « ${role.id} ») et le bloc « Parler en équipe » tel quel, sauf si la demande les vise. N’écris aucun fichier : l’app montre ta proposition, et c’est l’utilisateur qui l’applique.
+Réécris la fiche pour répondre à la demande, sans rien changer d’autre. Ne la rallonge pas au-delà de ce que la demande exige : chaque ligne est relue à chaque appel de l’agent. Garde l’en-tête (le champ name reste « ${role.id} ») et le bloc « Parler en équipe » tel quel, sauf si la demande les vise. N’écris aucun fichier : l’app montre ta proposition, et c’est l’utilisateur qui l’applique.
 
 Réponds uniquement avec ces deux blocs, dans cet ordre :
 <resume>les changements majeurs et leur raison, trois lignes au plus</resume>

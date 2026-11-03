@@ -252,7 +252,7 @@ const OUTILS_FILS = [
 const OUTIL_PROPOSER = {
   name: "proposer_agent",
   description:
-    "Propose à la personne une fiche d'agent à créer, d'après un besoin qu'elle a exprimé et qu'aucun de ses agents ne couvre. L'app lui montre la proposition : elle l'ouvre dans l'éditeur, l'ajuste et l'enregistre elle-même. Rien n'est créé par cet outil. Une seule proposition par besoin ; demande-lui d'abord ce qui manque si le besoin est flou.",
+    "Propose à la personne une fiche d'agent à créer, d'après un besoin qu'elle a exprimé et qu'aucun de ses agents ne couvre. L'app lui montre la proposition : elle l'ouvre dans l'éditeur, l'ajuste et l'enregistre elle-même. Rien n'est créé par cet outil. Une seule proposition par besoin ; demande-lui d'abord ce qui manque si le besoin est flou. Garde la fiche courte (3 000 caractères au plus suffisent souvent) : chaque ligne est relue à chaque appel de l'agent. N'y répète pas ce que l'app donne déjà à chaque agent (agents actifs, fils, QA sur demande, accès qui n'est pas un accord, livrables en fichiers).",
   inputSchema: {
     type: "object",
     properties: {
