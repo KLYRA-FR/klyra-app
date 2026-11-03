@@ -3,11 +3,7 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
-import { AutresIa } from "@/components/reglages/AutresIa";
 import { allerAuReglage, Entree } from "@/components/reglages/ReglagesScreen";
-import { Agents } from "@/components/reglages/sections/Agents";
-import { ComputerUse } from "@/components/reglages/sections/ComputerUse";
-import { ancreReglage } from "@/components/reglages/ui";
 import { nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
 import type { ServeurConnu } from "@/lib/serveur-vps";
 import { cheminServeur, SECTIONS_SERVEUR, type IdSectionServeur } from "./catalogue";
@@ -17,13 +13,6 @@ import { GeneralServeur } from "./GeneralServeur";
 const CONTENU: Record<IdSectionServeur, (lieu: string | null, serveur: ServeurConnu | null) => ReactNode> = {
   general: (_lieu, serveur) => <GeneralServeur serveur={serveur} />,
   fournisseurs: (lieu) => <Fournisseurs lieu={lieu} />,
-  agents: () => <Agents />,
-  "autres-ia": () => (
-    <div id={ancreReglage("autres-ia")} className="klyra-reglage scroll-mt-6 rounded-lg">
-      <AutresIa />
-    </div>
-  ),
-  "computer-use": () => <ComputerUse />,
 };
 
 /**
@@ -40,7 +29,7 @@ export function ReglagesServeurScreen() {
   const demande = params.get("serveur");
   const lieu = demande && serveurs.some((s) => s.adresse === demande) ? demande : actif;
   const serveur = serveurs.find((s) => s.adresse === lieu) ?? null;
-  const sections = SECTIONS_SERVEUR.filter((s) => !serveur || !s.pcSeulement);
+  const sections = SECTIONS_SERVEUR;
   const courante = sections.find((s) => s.id === params.get("section")) ?? sections[0];
   const reglage = params.get("reglage");
   const nav = useRef<HTMLElement>(null);
