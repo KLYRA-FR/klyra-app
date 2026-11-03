@@ -14,6 +14,7 @@ import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { lireProposition } from "@/lib/proposition-agent";
+import { lirePublication, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
@@ -26,6 +27,7 @@ import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
   Artefact,
+  Rendu,
   Chat,
   Etape,
   EtapeTicket,
@@ -95,6 +97,10 @@ interface WorkspaceState extends MockWorkspace {
   file: Record<string, EnAttente[]>;
   routines: Routine[];
   artefacts: Artefact[];
+  /** Les fichiers publiés par les agents (outil `publier_artefact`, cf. `src/lib/rendus.ts`). */
+  rendus: Rendu[];
+  /** Les artefacts claude.ai dans l'écran Artefacts : une source facultative, pour qui s'en sert. */
+  artefactsClaude: boolean;
   /** Ce que les agents peuvent faire sans demander (réglage de ce poste). */
   acces: Acces;
   taches: Tache[];
@@ -116,7 +122,7 @@ interface WorkspaceState extends MockWorkspace {
 function conversationsAEnregistrer(etat: WorkspaceState) {
   return {
     version: VERSION_STOCKAGE, chats: etat.chats, messages: etat.messages,
-    routines: etat.routines, artefacts: etat.artefacts, projects: etat.projects,
+    routines: etat.routines, artefacts: etat.artefacts, rendus: etat.rendus, artefactsClaude: etat.artefactsClaude, projects: etat.projects,
     currentUser: etat.currentUser, acces: etat.acces, taches: etat.taches,
     evenements: etat.evenements, categories: etat.categories,
     workflows: etat.workflows, executions: etat.executions,
@@ -130,6 +136,8 @@ type WorkspaceAction =
       messages: Message[];
       routines: Routine[];
       artefacts: Artefact[];
+      rendus: Rendu[];
+      artefactsClaude: boolean;
       projects: Project[];
       currentUser: User | null;
       acces: Acces | null;
@@ -160,6 +168,9 @@ type WorkspaceAction =
   | { type: "artefact/supprimer"; id: string }
   | { type: "artefact/modifier"; id: string; patch: Partial<Artefact> }
   | { type: "artefact/synchroniser"; liste: { titre: string; url: string; misAJour: string | null }[] }
+  | { type: "artefacts-claude/choisir"; actif: boolean }
+  | { type: "rendu/publier"; rendu: Rendu }
+  | { type: "rendu/retirer"; id: string }
   | { type: "chat/add"; chat: Chat }
   | { type: "chat/update"; id: string; patch: (chat: Chat) => Chat }
   | { type: "chat/vider"; id: string }
@@ -187,6 +198,8 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
         messages: action.messages,
         routines: action.routines,
         artefacts: action.artefacts,
+        rendus: action.rendus,
+        artefactsClaude: action.artefactsClaude,
         projects: action.projects,
         currentUser: action.currentUser ?? state.currentUser,
         acces: action.acces ?? state.acces,
@@ -283,6 +296,12 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     }
     case "routine/supprimer":
       return { ...state, routines: state.routines.filter((r) => r.id !== action.id) };
+    case "artefacts-claude/choisir":
+      return { ...state, artefactsClaude: action.actif };
+    case "rendu/publier":
+      return { ...state, rendus: publierRendu(state.rendus, action.rendu) };
+    case "rendu/retirer":
+      return { ...state, rendus: state.rendus.filter((r) => r.id !== action.id) };
     case "artefact/ajouter":
       return { ...state, artefacts: [action.artefact, ...state.artefacts] };
     case "artefact/supprimer":
@@ -589,6 +608,10 @@ interface WorkspaceApi {
   /** Ta réponse à une demande d'autorisation d'un agent. */
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
   supprimerArtefact: (id: string) => void;
+  /** Retire un rendu d'agent de la liste et supprime la copie de l'app ; l'original reste où il est. */
+  retirerRendu: (id: string) => void;
+  /** Montrer (ou non) les artefacts claude.ai dans l'écran Artefacts. */
+  choisirArtefactsClaude: (actif: boolean) => void;
   /** Crée ou modifie un workflow ; une version auto est gardée toutes les 5 min d'édition. */
   enregistrerWorkflow: (workflow: Workflow) => void;
   supprimerWorkflow: (id: string) => void;
@@ -625,6 +648,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           file: {},
           routines: [],
           artefacts: [],
+          rendus: [],
+          artefactsClaude: false,
           acces: "projet",
           taches: [],
           rappelsSupprimes: [],
@@ -642,6 +667,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           file: {},
           routines: [],
           artefacts: [],
+          rendus: [],
+          artefactsClaude: false,
           acces: "projet",
           taches: [],
           rappelsSupprimes: [],
@@ -683,6 +710,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             messages?: Message[];
             routines?: Routine[];
             artefacts?: Artefact[];
+            rendus?: Rendu[];
+            artefactsClaude?: boolean;
             projects?: Project[];
             currentUser?: User;
             acces?: Acces;
@@ -706,12 +735,16 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             }
           : m,
       );
+      const artefactsCharges = valide ? (data.artefacts ?? []).filter((a) => a.id !== ANCIEN_ARTEFACT_DE_DEPART) : [];
       dispatch({
         type: "charger",
         chats: valide ? (data.chats ?? []) : [],
         messages,
         routines: valide ? (data.routines ?? []) : [],
-        artefacts: valide ? (data.artefacts ?? []).filter((a) => a.id !== ANCIEN_ARTEFACT_DE_DEPART) : [],
+        artefacts: artefactsCharges,
+        rendus: valide ? (data.rendus ?? []) : [],
+        // Avant ce choix : activés pour qui avait déjà des artefacts claude.ai.
+        artefactsClaude: valide ? (data.artefactsClaude ?? artefactsCharges.length > 0) : false,
         projects: valide ? (data.projects ?? []) : [],
         currentUser: valide ? (data.currentUser ?? null) : null,
         acces: valide ? (data.acces ?? null) : null,
@@ -749,7 +782,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     }, 400);
     ecritureRegroupee.current = timer;
     return () => clearTimeout(timer);
-  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
+  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.rendus, state.artefactsClaude, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
 
   /* Le planning, en clair pour les agents (~/.klyra/planning/planning.md), à chaque changement. */
   useEffect(() => {
@@ -767,6 +800,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           roles,
           chats: state.chats,
           artefacts: state.artefacts,
+          rendus: state.rendus,
           workflows: state.workflows,
           personne: moi.name,
           sansEquipe: comptePret,
@@ -774,7 +808,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       );
     }, 1000);
     return () => clearTimeout(timer);
-  }, [bridge, state.charge, state.evenements, state.evenementsCompte, state.profilCompte, state.taches, state.categories, routinesLocales, state.projects, roles, state.chats, state.artefacts, state.workflows, moi.name]);
+  }, [bridge, state.charge, state.evenements, state.evenementsCompte, state.profilCompte, state.taches, state.categories, routinesLocales, state.projects, roles, state.chats, state.artefacts, state.rendus, state.workflows, moi.name]);
 
   /* Fermeture de l'app : le dernier état part tout de suite, sans attendre le regroupement. */
   useEffect(() => {
@@ -1747,6 +1781,34 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           archiverFil(fil.id);
           return `Fil fermé et archivé : ${fil.title} (${fil.id}). Il peut être rouvert.`;
         }
+        case "publier_artefact": {
+          const publication = lirePublication(args);
+          if (!bridge) throw new Error("La publication marche dans l’app de bureau.");
+          const avant = renduDeLOrigine(stateRef.current.rendus, publication.chemin);
+          // L'app garde sa copie dans l'espace de l'agent : le livrable survit au ménage de son dossier.
+          const copie = await bridge.rendus.copier(publication.chemin, appelant.roleId, avant?.chemin ?? null);
+          if (!copie.ok) throw new Error(copie.message);
+          const chat = chats.find((c) => c.id === appelant.chatId);
+          const maintenant = new Date().toISOString();
+          dispatch({
+            type: "rendu/publier",
+            rendu: {
+              id: crypto.randomUUID(),
+              chemin: copie.data.chemin,
+              origine: publication.chemin,
+              taille: copie.data.taille,
+              titre: publication.titre,
+              description: publication.description,
+              type: copie.data.dossier ? "page" : typeDeRendu(publication.chemin),
+              roleId: appelant.roleId,
+              chatId: chat?.id ?? null,
+              projectId: chat?.projectId ?? null,
+              ajouteLe: maintenant,
+              misAJour: maintenant,
+            },
+          });
+          return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans ton espace de livrables ; republier le même fichier remplace cette copie.`;
+        }
         case "proposer_agent": {
           const proposition = lireProposition(args);
           if (!proposition) throw new Error("Il manque le prénom ou les consignes de l’agent proposé.");
@@ -1873,6 +1935,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     });
   }, []);
   const supprimerArtefact = useCallback((id: string) => dispatch({ type: "artefact/supprimer", id }), []);
+  /* Retirer un livrable supprime la copie de l'app ; l'original de l'agent reste où il était. */
+  const retirerRendu = useCallback((id: string) => {
+    const rendu = stateRef.current.rendus.find((r) => r.id === id);
+    if (rendu) void bridge?.rendus.supprimer(rendu.chemin);
+    dispatch({ type: "rendu/retirer", id });
+  }, [bridge]);
+  const choisirArtefactsClaude = useCallback((actif: boolean) => dispatch({ type: "artefacts-claude/choisir", actif }), []);
   const modifierArtefact = useCallback(
     (id: string, patch: Partial<Artefact>) => dispatch({ type: "artefact/modifier", id, patch }),
     [],
@@ -2304,6 +2373,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       lancerRoutine,
       ajouterArtefact,
       supprimerArtefact,
+      retirerRendu,
+      choisirArtefactsClaude,
       modifierArtefact,
       synchroniserArtefacts,
       enregistrerProjet,
@@ -2358,6 +2429,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       lancerRoutine,
       ajouterArtefact,
       supprimerArtefact,
+      retirerRendu,
+      choisirArtefactsClaude,
       modifierArtefact,
       synchroniserArtefacts,
       enregistrerProjet,

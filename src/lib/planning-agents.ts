@@ -3,7 +3,7 @@ import { cleJour, depuisCle, libelleJour } from "@/lib/dates";
 import { libellePlanning, quandRoutine } from "@/lib/routines-affichage";
 import { ligneTicket, trierTickets } from "@/lib/tickets";
 import type { Routine } from "@/types/routines";
-import type { Artefact, Categorie, Chat, Evenement, Project, Role, Tache } from "@/types/domain";
+import type { Artefact, Categorie, Chat, Evenement, Project, Rendu, Role, Tache } from "@/types/domain";
 import type { Workflow } from "@/types/workflows";
 
 /** Le calendrier donné aux agents : de la semaine passée aux deux mois qui viennent. */
@@ -31,13 +31,15 @@ export function planningPourAgents(donnees: {
   roles: Role[];
   chats: Chat[];
   artefacts: Artefact[];
+  /** Les rendus publiés par les agents (`publier_artefact`). */
+  rendus?: Rendu[];
   workflows: Workflow[];
   /** Le prénom de la personne, pour le titre. */
   personne?: string;
   /** Connecté : les rendez-vous du compte sont déjà dans `evenements`. On ne rajoute pas le Weekly codé en dur. */
   sansEquipe?: boolean;
 }): string {
-  const { evenements, taches, categories, routines, projects, roles, chats, artefacts, workflows, personne, sansEquipe } = donnees;
+  const { evenements, taches, categories, routines, projects, roles, chats, artefacts, rendus = [], workflows, personne, sansEquipe } = donnees;
   const maintenant = new Date();
   const debut = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate() - JOURS_AVANT);
   const fin = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate() + JOURS_APRES);
@@ -123,6 +125,7 @@ export function planningPourAgents(donnees: {
         lancePar: c.fil.lancePar ? agent(c.fil.lancePar.roleId) : null,
       })}`,
   );
+  const lignesRendus = rendus.map((r) => `- ${ligne(`**${r.titre}**`, r.chemin, `par ${agent(r.roleId)}`, projet(r.projectId) && `projet ${projet(r.projectId)}`)}${note(r.description)}`);
   const lignesArtefacts = artefacts.map((a) => `- ${ligne(`**${a.titre}**`, a.url, projet(a.projectId) && `projet ${projet(a.projectId)}`)}${note(a.description)}`);
   const lignesWorkflows = workflows.map((w) => `- ${ligne(`**${w.titre}**`, projet(w.projectId) && `projet ${projet(w.projectId)}`, `modifié le ${w.majLe.slice(0, 10)}`)}`);
 
@@ -149,6 +152,9 @@ export function planningPourAgents(donnees: {
     "",
     "## Conversations (les 40 plus récentes)",
     lignesChats.join("\n") || "Aucune conversation.",
+    "",
+    "## Rendus des agents (écran Artefacts)",
+    lignesRendus.join("\n") || "Aucun rendu publié.",
     "",
     "## Artefacts (pages publiées sur claude.ai)",
     lignesArtefacts.join("\n") || "Aucun artefact.",

@@ -102,6 +102,15 @@ contextBridge.exposeInMainWorld("klyra", {
     connecter: () => ipcRenderer.invoke("claude-ai:connexion"),
     deconnecter: () => ipcRenderer.invoke("claude-ai:deconnexion"),
   },
+  rendus: {
+    vignette: (chemin: string, forcer: boolean) => ipcRenderer.invoke("rendus:vignette", chemin, forcer),
+    ouvrir: (chemin: string) => ipcRenderer.invoke("rendus:ouvrir", chemin),
+    montrer: (chemin: string) => ipcRenderer.invoke("rendus:montrer", chemin),
+    copier: (origine: string, agent: string, remplace: string | null) => ipcRenderer.invoke("rendus:copier", origine, agent, remplace),
+    supprimer: (chemin: string) => ipcRenderer.invoke("rendus:supprimer", chemin),
+    enregistrer: (chemin: string, dossier: string | null) => ipcRenderer.invoke("rendus:enregistrer", chemin, dossier),
+    dossierAgent: (agent: string, quoi: "rendus" | "atelier") => ipcRenderer.invoke("rendus:dossier-agent", agent, quoi),
+  },
   fenetres: {
     ouvrir: (url: string) => ipcRenderer.invoke("fenetres:ouvrir", url),
   },

@@ -4,16 +4,21 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
+import type { IconName } from "@/components/icons/icon-data";
+import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { Onglets } from "@/components/ui/Onglets";
 import { ArtefactsEquipeProvider, useArtefactsEquipe, type ArtefactEquipe } from "@/lib/artefacts-equipe";
+import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
-import { idDirect, useProjects, useWorkspace } from "@/lib/workspace";
-import type { Artefact } from "@/types/domain";
+import { poste } from "@/lib/plateforme";
+import { nomDuFichier } from "@/lib/rendus";
+import { idDirect, useProjects, useRole, useWorkspace } from "@/lib/workspace";
+import type { Artefact, Rendu, TypeRendu } from "@/types/domain";
 import { DESCRIPTION_MAX, lienArtefact } from "../../../convex/model/artefacts";
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" });
@@ -30,38 +35,50 @@ const INTERVALLE_SYNCHRO_MS = 10 * 60_000;
 /** Les vignettes déjà lues pendant cette session de l'app. */
 const vignettes = new Map<string, string | null>();
 
-/** La vignette d'un artefact, demandée quand la carte arrive à l'écran. */
-function useVignette(url: string, session: boolean, version: number) {
+/** D'où vient une vignette : la page claude.ai (session de l'app) ou le fichier d'un rendu d'agent. */
+type SourceVignette = { type: "claude"; url: string } | { type: "rendu"; chemin: string };
+
+/** La vignette d'un artefact, demandée quand la carte arrive à l'écran (`actif` : on peut la demander). */
+function useVignette(source: SourceVignette, actif: boolean, version: number) {
   const bridge = getBridge();
-  const [image, setImage] = useState<string | null | undefined>(() => vignettes.get(url));
+  const cle = source.type === "claude" ? source.url : `fichier:${source.chemin}`;
+  const [image, setImage] = useState<string | null | undefined>(() => vignettes.get(cle));
   const carte = useRef<HTMLLIElement>(null);
 
   useEffect(() => {
-    if (!bridge || !session) return;
+    if (!bridge || !actif) return;
     const el = carte.current;
     if (!el) return;
-    let actif = true;
+    let vivant = true;
     const observer = new IntersectionObserver(([e]) => {
       if (!e?.isIntersecting) return;
       observer.disconnect();
-      void bridge.artefacts.vignette(url, version > 0).then((r) => {
+      const valeur = cle.startsWith("fichier:") ? bridge.rendus.vignette(cle.slice(8), version > 0) : bridge.artefacts.vignette(cle, version > 0);
+      void valeur.then((r) => {
         const v = r.ok ? r.data : null;
-        vignettes.set(url, v);
-        if (actif) setImage(v);
+        vignettes.set(cle, v);
+        if (vivant) setImage(v);
       });
     });
     observer.observe(el);
     return () => {
-      actif = false;
+      vivant = false;
       observer.disconnect();
     };
-  }, [bridge, url, session, version]);
+  }, [bridge, cle, actif, version]);
 
   return { image, carte };
 }
 
 /** La vignette : un clic ouvre l'artefact en grand. */
-function Apercu({ titre, image, session, onOuvrir }: { titre: string; image: string | null | undefined; session: boolean; onOuvrir: () => void }) {
+function Apercu({ titre, image, sansImage, icone = "layers-01", onOuvrir }: {
+  titre: string;
+  image: string | null | undefined;
+  /** Ce que dit la carte sans vignette (sinon « Aperçu… » puis « Aperçu indisponible »). */
+  sansImage?: string;
+  icone?: IconName;
+  onOuvrir: () => void;
+}) {
   return (
     <button
       type="button"
@@ -79,11 +96,9 @@ function Apercu({ titre, image, session, onOuvrir }: { titre: string; image: str
       ) : (
         <span className="flex size-full flex-col items-center justify-center gap-2 text-texte-tertiaire">
           <span className="klyra-orbe flex size-10 items-center justify-center rounded-full">
-            <Icon name="layers-01" size={20} />
+            <Icon name={icone} size={20} />
           </span>
-          <span className="text-ui-2xs">
-            {!session ? "Connecte claude.ai pour voir l’aperçu" : image === null ? "Aperçu indisponible" : "Aperçu…"}
-          </span>
+          <span className="text-ui-2xs">{sansImage ?? (image === null ? "Aperçu indisponible" : "Aperçu…")}</span>
         </span>
       )}
     </button>
@@ -127,7 +142,7 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
   const projects = useProjects();
   const projet = projects.find((p) => p.id === artefact.projectId);
   const { modifierArtefact, supprimerArtefact } = useWorkspace();
-  const { image, carte } = useVignette(artefact.url, session, version);
+  const { image, carte } = useVignette({ type: "claude", url: artefact.url }, session, version);
   const [edition, setEdition] = useState(false);
   const [titre, setTitre] = useState(artefact.titre);
   const [description, setDescription] = useState(artefact.description);
@@ -159,7 +174,7 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
       ref={carte}
       className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2 transition-[box-shadow,translate] duration-[300ms] ease-sortie hover:-translate-y-0.5 hover:shadow-ombre-ambiante"
     >
-      <Apercu titre={artefact.titre} image={image} session={session} onOuvrir={ouvrir} />
+      <Apercu titre={artefact.titre} image={image} sansImage={session ? undefined : "Connecte claude.ai pour voir l’aperçu"} onOuvrir={ouvrir} />
 
       {edition ? (
         <form
@@ -247,12 +262,103 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
   );
 }
 
+/* ─── Un rendu d'agent ─────────────────────────────────────────── */
+
+const RENDUS: Record<TypeRendu, { libelle: string; icone: IconName }> = {
+  page: { libelle: "Page", icone: "globe-01" },
+  image: { libelle: "Image", icone: "image-01" },
+  video: { libelle: "Vidéo", icone: "play-01" },
+  pdf: { libelle: "PDF", icone: "file-01" },
+  document: { libelle: "Document", icone: "file-01" },
+};
+
+/** Un fichier publié par un agent (`publier_artefact`) : son aperçu, qui l'a fait, où ; un clic l'ouvre. */
+function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
+  const bridge = getBridge();
+  const projects = useProjects();
+  const projet = projects.find((p) => p.id === rendu.projectId);
+  const agent = useRole(rendu.roleId);
+  const { retirerRendu } = useWorkspace();
+  const { image, carte } = useVignette({ type: "rendu", chemin: rendu.chemin }, true, version);
+  const [retirer, setRetirer] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [enregistre, setEnregistre] = useState<string | null>(null);
+  const type = RENDUS[rendu.type];
+
+  const agir = (action: "ouvrir" | "montrer", chemin = rendu.chemin) => {
+    if (!bridge) return;
+    setErreur(null);
+    void bridge.rendus[action](chemin).then((r) => !r.ok && setErreur(r.message));
+  };
+  /* « Enregistrer dans… » : une copie dans le dossier choisi, celui du projet proposé d'abord. */
+  const enregistrer = () => {
+    if (!bridge) return;
+    setErreur(null);
+    void bridge.rendus.enregistrer(rendu.chemin, projet?.folder ?? null).then((r) => {
+      if (!r.ok) setErreur(r.message);
+      else if (r.data) setEnregistre(r.data);
+    });
+  };
+
+  return (
+    <li
+      ref={carte}
+      className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2 transition-[box-shadow,translate] duration-[300ms] ease-sortie hover:-translate-y-0.5 hover:shadow-ombre-ambiante"
+    >
+      <Apercu
+        titre={rendu.titre}
+        image={image}
+        icone={type.icone}
+        sansImage={rendu.type === "page" || rendu.type === "image" ? undefined : type.libelle}
+        onOuvrir={() => agir("ouvrir")}
+      />
+      <div className="flex flex-1 flex-col gap-1.5 rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm">
+        <div className="flex items-start gap-2">
+          <span className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{rendu.titre}</span>
+          <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover/artefact:opacity-100 focus-within:opacity-100">
+            <BoutonIcone taille="mini" icone={<Icon name="download-02" size={16} />} libelle="Enregistrer dans un dossier…" onClick={enregistrer} className="text-icone-secondaire" />
+            <BoutonIcone taille="mini" icone={<Icon name="folder-open-01" size={16} />} libelle={`Montrer ${poste.dansExplorateur}`} onClick={() => agir("montrer")} className="text-icone-secondaire" />
+            <BoutonIcone taille="mini" icone={<Icon name="trash-01" size={16} />} libelle="Retirer de la liste" onClick={() => setRetirer(true)} className="text-icone-secondaire" />
+          </span>
+        </div>
+        {rendu.description && <p className="m-0 line-clamp-2 text-ui-s leading-[1.45] text-texte-secondaire">{rendu.description}</p>}
+        <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-ui-2xs text-texte-tertiaire">
+          <span className="flex items-center gap-1.5 font-medium text-texte-secondaire">
+            <AgentRond roleId={rendu.roleId} taille={16} fondPastille="surface" />
+            {agent.name}
+          </span>
+          {projet && <span className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">{projet.name}</span>}
+          <span className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">{type.libelle}</span>
+          <span className="ml-auto">{date.format(new Date(rendu.misAJour))}</span>
+        </div>
+        {erreur && <p className="m-0 text-ui-xs text-texte-erreur">{erreur}</p>}
+        {enregistre && (
+          <p className="m-0 flex flex-wrap items-center gap-x-2 text-ui-xs text-texte-secondaire">
+            <span className="min-w-0 truncate">Enregistré : {nomDuFichier(enregistre)}</span>
+            <button type="button" onClick={() => agir("montrer", enregistre)} className="cursor-pointer border-0 bg-transparent p-0 text-ui-xs text-texte-secondaire underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
+              Montrer
+            </button>
+          </p>
+        )}
+        {retirer && (
+          <Confirmation
+            texte="Retirer de la liste ? La copie gardée par KLYRA est supprimée ; l’original de l’agent et ce que tu as enregistré ailleurs restent."
+            action="Retirer"
+            onConfirmer={() => retirerRendu(rendu.id)}
+            onAnnuler={() => setRetirer(false)}
+          />
+        )}
+      </div>
+    </li>
+  );
+}
+
 /* ─── Une carte de l'équipe ────────────────────────────────────── */
 
 /** Un artefact partagé par un membre : qui l'a partagé le modifie ou le retire, les autres l'ouvrent. */
 function CarteEquipe({ artefact, session, version }: { artefact: ArtefactEquipe; session: boolean; version: number }) {
   const equipe = useArtefactsEquipe();
-  const { image, carte } = useVignette(artefact.url, session, version);
+  const { image, carte } = useVignette({ type: "claude", url: artefact.url }, session, version);
   const [edition, setEdition] = useState(false);
   const [titre, setTitre] = useState(artefact.titre);
   const [description, setDescription] = useState(artefact.description);
@@ -275,7 +381,7 @@ function CarteEquipe({ artefact, session, version }: { artefact: ArtefactEquipe;
       ref={carte}
       className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2 transition-[box-shadow,translate] duration-[300ms] ease-sortie hover:-translate-y-0.5 hover:shadow-ombre-ambiante"
     >
-      <Apercu titre={artefact.titre} image={image} session={session} onOuvrir={() => ouvrirArtefact(artefact.url, artefact.titre)} />
+      <Apercu titre={artefact.titre} image={image} sansImage={session ? undefined : "Connecte claude.ai pour voir l’aperçu"} onOuvrir={() => ouvrirArtefact(artefact.url, artefact.titre)} />
 
       {edition ? (
         <form
@@ -422,37 +528,42 @@ export function ArtefactsScreen() {
   );
 }
 
+/** Une carte de Mes artefacts : un rendu d'agent ou un artefact claude.ai. */
+type Element = { type: "rendu"; rendu: Rendu; date: string } | { type: "claude"; artefact: Artefact; date: string };
+
 function Ecran() {
   const bridge = getBridge();
   const equipe = useArtefactsEquipe();
   const [vue, setVue] = useState<"miens" | "equipe">("miens");
-  const { state, synchroniserArtefacts } = useWorkspace();
+  const { state, synchroniserArtefacts, choisirArtefactsClaude } = useWorkspace();
+  const { roles, tous } = useAgents();
   const projects = useProjects();
+  const claude = state.artefactsClaude;
   const [ajout, setAjout] = useState(false);
-  const [autoSynchro] = useState(() => !!bridge && Date.now() - derniereSynchro > INTERVALLE_SYNCHRO_MS);
-  const [sync, setSync] = useState<{ enCours: boolean; message: string | null; erreur: boolean }>({ enCours: autoSynchro, message: null, erreur: false });
+  const [sync, setSync] = useState<{ enCours: boolean; message: string | null; erreur: boolean }>({ enCours: false, message: null, erreur: false });
   const [session, setSession] = useState(false);
   const [version, setVersion] = useState(0);
   const [recherche, setRecherche] = useState("");
   const [filtreProjet, setFiltreProjet] = useState("");
+  const [filtreAgent, setFiltreAgent] = useState("");
 
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !claude) return;
     let actif = true;
     void bridge.artefacts.etatSession().then((r) => actif && r.ok && setSession(r.data));
     return () => {
       actif = false;
     };
-  }, [bridge]);
+  }, [bridge, claude]);
 
-  /** Lit le compte et rend ce que l'écran doit en dire. `auto` : la lecture faite à l'ouverture de l'écran,
-   *  qui ne dit rien quand rien n'est arrivé. */
+  /** Lit le compte claude.ai et rend ce que l'écran doit en dire. `auto` : la lecture faite à l'ouverture
+   *  de l'écran, qui ne dit rien quand rien n'est arrivé. */
   const lire = (auto: boolean) => {
     derniereSynchro = Date.now();
     return synchroniserArtefacts().then(
       ({ total, nouveaux }) => ({
         enCours: false,
-        message: auto && !nouveaux ? null : `${total} artefact${total > 1 ? "s" : ""} sur ton compte · ${nouveaux} nouveau${nouveaux > 1 ? "x" : ""}.`,
+        message: auto && !nouveaux ? null : `${total} artefact${total > 1 ? "s" : ""} sur ton compte claude.ai · ${nouveaux} nouveau${nouveaux > 1 ? "x" : ""}.`,
         erreur: false,
       }),
       (e: unknown) => ({ enCours: false, message: e instanceof Error ? e.message : String(e), erreur: true }),
@@ -464,11 +575,23 @@ function Ecran() {
     void lire(false).then(setSync);
   };
 
+  /* À l'ouverture de l'écran (ou dès que l'app a lu ses données, si l'écran s'ouvre avant), au plus toutes les 10 minutes. */
   useEffect(() => {
-    if (autoSynchro) void lire(true).then(setSync);
-    // Une seule fois à l'ouverture de l'écran.
+    if (!bridge || !claude || !state.charge || Date.now() - derniereSynchro <= INTERVALLE_SYNCHRO_MS) return;
+    derniereSynchro = Date.now();
+    void Promise.resolve()
+      .then(() => setSync({ enCours: true, message: null, erreur: false }))
+      .then(() => lire(true))
+      .then(setSync);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bridge, claude, state.charge]);
+
+  const activerClaude = (actif: boolean) => {
+    choisirArtefactsClaude(actif);
+    setAjout(false);
+    setSync({ enCours: false, message: null, erreur: false });
+    if (actif && bridge) synchroniser();
+  };
 
   const connecter = async () => {
     if (!bridge) return;
@@ -479,19 +602,31 @@ function Ecran() {
     }
   };
 
-  const visibles = useMemo(() => {
+  const nomAgent = (id: string) => (roles.find((r) => r.id === id) ?? tous.find((a) => a.role.id === id)?.role)?.name ?? id;
+  const elements = useMemo<Element[]>(() => {
     const q = recherche.trim().toLowerCase();
-    return state.artefacts
-      .filter((a) => !filtreProjet || a.projectId === filtreProjet)
-      .filter((a) => !q || `${a.titre} ${a.description}`.toLowerCase().includes(q))
-      .sort((a, b) => (b.misAJour ?? b.ajouteLe).localeCompare(a.misAJour ?? a.ajouteLe));
-  }, [state.artefacts, recherche, filtreProjet]);
+    const rendus = state.rendus
+      .filter((r) => !filtreAgent || r.roleId === filtreAgent)
+      .map((r): Element => ({ type: "rendu", rendu: r, date: r.misAJour }));
+    const liens = claude && !filtreAgent ? state.artefacts.map((a): Element => ({ type: "claude", artefact: a, date: a.misAJour ?? a.ajouteLe })) : [];
+    return [...rendus, ...liens]
+      .filter((e) => !filtreProjet || (e.type === "rendu" ? e.rendu.projectId : e.artefact.projectId) === filtreProjet)
+      .filter((e) => {
+        if (!q) return true;
+        const texte = e.type === "rendu" ? `${e.rendu.titre} ${e.rendu.description} ${nomAgent(e.rendu.roleId)}` : `${e.artefact.titre} ${e.artefact.description} claude.ai`;
+        return texte.toLowerCase().includes(q);
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.rendus, state.artefacts, claude, recherche, filtreProjet, filtreAgent, roles, tous]);
+  const totalMiens = state.rendus.length + (claude ? state.artefacts.length : 0);
+  const agentsDesRendus = [...new Set(state.rendus.map((r) => r.roleId))];
 
   const visiblesEquipe = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     return equipe.artefacts.filter((a) => !q || `${a.titre} ${a.description} ${a.auteur.nom}`.toLowerCase().includes(q));
   }, [equipe.artefacts, recherche]);
-  const nombre = vue === "miens" ? visibles.length : visiblesEquipe.length;
+  const nombre = vue === "miens" ? elements.length : visiblesEquipe.length;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -502,25 +637,27 @@ function Ecran() {
               <span className="font-semibold">Artefacts</span> <span className="font-normal">du studio</span>
             </h1>
             <p className="m-0 text-ui-s text-texte-secondaire">
-              {vue === "miens" ? "Tes pages publiées par Claude : design system, propales, présentations, outils." : "Les pages que l’équipe partage : chacun y ajoute les siennes depuis Mes artefacts."}
+              {vue === "miens" ? "Ce que tes agents ont produit : pages, maquettes, captures, vidéos, documents." : "Les liens que l’équipe partage : chacun y ajoute les siens depuis Mes artefacts."}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Bouton variant="blanc" taille="md" onClick={() => setAjout(true)} disabled={ajout}>
-              Ajouter un lien
-            </Bouton>
-            <BoutonPrincipal onClick={synchroniser} disabled={sync.enCours || !bridge}>
-              {sync.enCours ? "Lecture du compte…" : "Synchroniser avec Claude"}
-            </BoutonPrincipal>
-          </div>
+          {claude && vue === "miens" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Bouton variant="blanc" taille="md" onClick={() => setAjout(true)} disabled={ajout}>
+                Ajouter un lien
+              </Bouton>
+              <BoutonPrincipal onClick={synchroniser} disabled={sync.enCours || !bridge}>
+                {sync.enCours ? "Lecture de claude.ai…" : "Relire claude.ai"}
+              </BoutonPrincipal>
+            </div>
+          )}
         </header>
 
-        {(sync.message || (bridge && !session)) && (
+        {claude && vue === "miens" && (sync.message || (bridge && !session)) && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-bordure-subtile bg-fond-page px-4 py-3">
             {sync.message && <span className={cn("text-ui-s", sync.erreur ? "text-texte-erreur" : "text-texte-principal")}>{sync.message}</span>}
             {bridge && !session && (
               <>
-                <span className="flex-1 text-ui-s text-texte-secondaire">Pour voir l’aperçu de chaque artefact, connecte claude.ai une fois dans l’app.</span>
+                <span className="flex-1 text-ui-s text-texte-secondaire">Pour voir l’aperçu des artefacts claude.ai, connecte claude.ai une fois dans l’app.</span>
                 <Bouton variant="sombre" taille="compact" onClick={() => void connecter()}>
                   Connecter claude.ai
                 </Bouton>
@@ -538,22 +675,25 @@ function Ecran() {
               valeur={vue}
               onChange={setVue}
               onglets={[
-                { id: "miens", label: "Mes artefacts", icone: <Icon name="user-profile-01" size={16} />, nombre: state.artefacts.length },
+                { id: "miens", label: "Mes artefacts", icone: <Icon name="user-profile-01" size={16} />, nombre: totalMiens },
                 { id: "equipe", label: "Équipe", icone: <Icon name="users-profiles-01" size={16} />, nombre: equipe.etat === "pret" ? equipe.artefacts.length : undefined },
               ]}
             />
             <div className="w-[260px] max-w-full">
               <Input size="sm" placeholder="Chercher un artefact…" value={recherche} onChange={(e) => setRecherche(e.target.value)} className={CHAMP} />
             </div>
+            {vue === "miens" && agentsDesRendus.length > 1 && (
+              <div className="w-[200px]">
+                <ListeDeroulante libelle="Filtrer par agent" value={filtreAgent} options={[{ value: "", label: "Tous les agents" }, ...agentsDesRendus.map((id) => ({ value: id, label: nomAgent(id), icone: <AgentRond roleId={id} taille={20} /> }))]} onChange={setFiltreAgent} />
+              </div>
+            )}
             {vue === "miens" && projects.length > 0 && (
               <div className="w-[200px]">
                 <ListeDeroulante libelle="Filtrer par projet" value={filtreProjet} options={[{ value: "", label: "Tous les projets" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} onChange={setFiltreProjet} />
               </div>
             )}
             <span className="ml-auto text-ui-xs text-texte-tertiaire">{nombre} artefact{nombre > 1 ? "s" : ""}</span>
-            {session && (
-              <BoutonIcone taille="compact" icone={<Icon name="refresh-01" size={16} />} libelle="Refaire les aperçus" onClick={() => { vignettes.clear(); setVersion((v) => v + 1); }} className="text-icone-secondaire" />
-            )}
+            <BoutonIcone taille="compact" icone={<Icon name="refresh-01" size={16} />} libelle="Refaire les aperçus" onClick={() => { vignettes.clear(); setVersion((v) => v + 1); }} className="text-icone-secondaire" />
           </div>
           {vue === "equipe" ? (
             equipe.etat !== "pret" ? (
@@ -566,19 +706,35 @@ function Ecran() {
               </ul>
             ) : (
               <p className="m-0 p-4 text-ui-s text-texte-secondaire">
-                {equipe.artefacts.length ? "Aucun artefact ne correspond." : "Rien de partagé pour l’instant : dans Mes artefacts, partage une page avec l’équipe."}
+                {equipe.artefacts.length ? "Aucun artefact ne correspond." : "Rien de partagé pour l’instant : dans Mes artefacts, partage un lien claude.ai avec l’équipe."}
               </p>
             )
-          ) : visibles.length ? (
+          ) : elements.length ? (
             <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 p-0">
-              {visibles.map((a) => (
-                <CarteArtefact key={`${a.id}-${version}`} artefact={a} session={session} version={version} />
-              ))}
+              {elements.map((e) =>
+                e.type === "rendu" ? (
+                  <CarteRendu key={`${e.rendu.id}-${version}`} rendu={e.rendu} version={version} />
+                ) : (
+                  <CarteArtefact key={`${e.artefact.id}-${version}`} artefact={e.artefact} session={session} version={version} />
+                ),
+              )}
             </ul>
           ) : (
             <p className="m-0 p-4 text-ui-s text-texte-secondaire">
-              {state.artefacts.length ? "Aucun artefact ne correspond." : "Aucun artefact pour l’instant : synchronise avec ton compte Claude."}
+              {totalMiens ? "Aucun artefact ne correspond." : "Rien pour l’instant : quand un agent livre une page, une maquette, une capture ou une vidéo, elle arrive ici."}
             </p>
+          )}
+
+          {vue === "miens" && bridge && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-fond-surface-grise px-4 py-3">
+              <Icon name="link" size={16} className="text-icone-secondaire" />
+              <span className="flex-1 text-ui-s text-texte-secondaire">
+                {claude ? "Tes artefacts claude.ai sont dans cette liste." : "Tu publies aussi des artefacts sur claude.ai ? Ajoute-les à cette liste."}
+              </span>
+              <Bouton variant={claude ? "blanc" : "sombre"} taille="compact" onClick={() => activerClaude(!claude)}>
+                {claude ? "Ne plus les montrer" : "Ajouter mes artefacts claude.ai"}
+              </Bouton>
+            </div>
           )}
         </section>
       </div>

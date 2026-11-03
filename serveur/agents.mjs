@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { dossierHorsProjet } from "./atelier.mjs";
 import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
@@ -382,6 +383,11 @@ export function creerAgents(options) {
     } else mkdirSync(atelier, { recursive: true });
 
     if (demande.moteur === "codex") return codex.envoyer(requestId, demande, cwd);
+    // Claude Code hors projet : le dossier de l'agent dans l'atelier (cf. electron/atelier.ts).
+    if (!demande.dossier) {
+      cwd = dossierHorsProjet(atelier, demande.agent ?? null, demande.sessionId ?? null, path.join(home, ".claude"), existsSync);
+      mkdirSync(cwd, { recursive: true });
+    }
     const bin = trouverClaude();
     if (!bin) return echec("Claude Code n’est pas installé sur le VPS. Relance la commande d’installation.");
     if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");

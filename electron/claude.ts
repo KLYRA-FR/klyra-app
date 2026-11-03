@@ -5,6 +5,7 @@ import { configMcp, OUTILS_APP } from "./ia";
 import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
+import { dossierHorsProjet } from "./atelier";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -336,8 +337,11 @@ export function autoriser(requestId: string, demandeId: string, decision: Decisi
  * Ce que l'app dit à l'agent, quel que soit le moteur : l'agenda, les rappels et les routines de la personne,
  * que l'app tient à jour, les fils et Composio quand ses outils sont là, et qui il est.
  */
+/** Les rendus à montrer rejoignent l'écran Artefacts ; hors projet, chacun range les siens dans son dossier (cf. `atelier.ts`). */
+const CONSIGNE_ARTEFACTS = "Où ranger : le code et les sources d'un projet vont dans le dossier du projet (son dépôt Git) ; tes essais hors projet, dans ton dossier de travail. Quand tu livres un rendu que la personne doit voir (page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app), appelle publier_artefact avec le chemin complet du fichier (ou du dossier d'une page avec index.html), un titre court et à quoi il sert : l'app en garde une copie et la personne le retrouve dans l'écran Artefacts. Pas pour un fichier de travail intermédiaire ni pour du code source. N'ajoute pas de captures ou de vidéos au dépôt d'un projet sans qu'elle le demande : elle les y enregistre elle-même depuis Artefacts.";
+
 export function consignesApp(options: StreamOptions, mcp: string | null): string[] {
-  const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS,
+  const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS, CONSIGNE_ARTEFACTS,
     composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
   ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
   if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
@@ -362,14 +366,19 @@ const COMMANDES_AUTORISEES = [
   "Bash(wc:*)",
 ];
 
-/** Hors projet (message direct), l'agent travaille dans un dossier à lui, jamais dans tout le dossier personnel. */
+/** Hors projet (message direct), l'agent travaille dans l'atelier, jamais dans tout le dossier personnel. */
 const ATELIER = path.join(HOME, ".klyra", "atelier");
+const CONFIG_CLAUDE = () => process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude");
 
-/** `~/…` → chemin absolu. null si le dossier du projet n'existe pas. */
-export function dossierDeTravail(dossier: string | null): string | null {
+/**
+ * `~/…` → chemin absolu. null si le dossier du projet n'existe pas. Hors projet : le dossier de l'agent
+ * dans l'atelier (`agent` donné, cf. `electron/atelier.ts`), ou l'atelier commun (sans agent : Codex).
+ */
+export function dossierDeTravail(dossier: string | null, horsProjet?: { agent: string | null; sessionId: string | null }): string | null {
   if (!dossier) {
-    mkdirSync(ATELIER, { recursive: true });
-    return ATELIER;
+    const cwd = horsProjet ? dossierHorsProjet(ATELIER, horsProjet.agent, horsProjet.sessionId, CONFIG_CLAUDE(), existsSync) : ATELIER;
+    mkdirSync(cwd, { recursive: true });
+    return cwd;
   }
   const absolu = dossier.startsWith("~") ? path.join(HOME, dossier.slice(1)) : dossier;
   return existsSync(absolu) ? absolu : null;
@@ -642,7 +651,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   // Fils, routines, workflows ou conversation directe : un agent hors de Mes agents ne répond pas.
   if (options.agent !== null && !estActif(options.agent)) return echec(pasDansMesAgents(options.agent));
 
-  const cwd = dossierDeTravail(options.dossier);
+  const cwd = dossierDeTravail(options.dossier, { agent: options.agent, sessionId: options.sessionId });
   if (!cwd) return echec(`Le dossier du projet est introuvable : ${options.dossier}`);
 
   const acces = options.acces ?? "projet";

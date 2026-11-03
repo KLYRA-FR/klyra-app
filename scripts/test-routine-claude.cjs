@@ -49,6 +49,20 @@ class FauxProcessus extends EventEmitter {
   }
 }
 
+/** Un module compilé pur, avec les chemins simulés du test (posix), même sous Windows. */
+function chargerAvecCheminsPosix(fichier) {
+  const charge = { exports: {} };
+  vm.runInNewContext(readFileSync(fichier, "utf8"), {
+    exports: charge.exports,
+    module: charge,
+    require: (nom) => {
+      assert.ok(nom === "node:path", `Dépendance non simulée interdite : ${nom}`);
+      return path.posix;
+    },
+  }, { filename: fichier });
+  return charge.exports;
+}
+
 function fixture() {
   const processus = [];
   const minuteurs = new Map();
@@ -60,7 +74,8 @@ function fixture() {
       spawn: (bin, args, options) => {
         assert.equal(bin, BIN);
         assert.equal(args[args.indexOf("--input-format") + 1], "stream-json");
-        assert.equal(options.cwd, `${PROFILE}/.klyra/atelier`);
+        // Hors projet, l'assistant travaille dans son dossier de l'atelier (electron/atelier.ts).
+        assert.equal(options.cwd, `${PROFILE}/.klyra/atelier/principal`);
         assert.deepEqual(Object.keys(options.env).sort(), ["ELECTRON_RUN_AS_NODE", "KLYRA_CLAUDE_PATH", "PATH"]);
         const child = new FauxProcessus(args, options);
         processus.push(child);
@@ -72,12 +87,13 @@ function fixture() {
     "node:os": { homedir: () => PROFILE },
     "node:fs": {
       existsSync: (nom) => nom === BIN,
-      mkdirSync: (nom) => assert.equal(nom, `${PROFILE}/.klyra/atelier`),
+      mkdirSync: (nom) => assert.equal(nom, `${PROFILE}/.klyra/atelier/principal`),
       readdirSync: () => assert.fail("Aucun répertoire réel ne doit être consulté."),
       readFileSync: () => assert.fail("Aucun profil ni fichier utilisateur ne doit être lu."),
     },
     // Fonctions pures (tri des binaires, message de lancement) : le vrai module compilé.
     "./claude-binaire": require(path.join(path.dirname(filename), "claude-binaire.js")),
+    "./atelier": chargerAvecCheminsPosix(path.join(path.dirname(filename), "atelier.js")),
     "./consommation": { enregistrerTourClaude: () => ({}) },
     "./ia": {
       configMcp: (contexte, composio) => JSON.stringify({ contexte, composio }),

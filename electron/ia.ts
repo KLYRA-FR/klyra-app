@@ -268,6 +268,22 @@ const OUTIL_PROPOSER = {
   },
 };
 
+/** Un agent montre ce qu'il a produit : le fichier rejoint l'écran Artefacts (cf. `src/lib/rendus.ts`). */
+const OUTIL_PUBLIER = {
+  name: "publier_artefact",
+  description:
+    "Publie dans l'écran Artefacts de la personne un livrable que tu as produit et qu'elle doit voir : page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app. L'app en garde une copie dans ton espace de livrables, montre un aperçu et l'ouvre d'un clic ; l'original reste où il est. Une page qui a des ressources (images, CSS, JS) se publie par son dossier, qui doit contenir index.html (300 Mo au plus, sans node_modules ni .git). Pas pour un fichier de travail intermédiaire ni pour du code source. Republier le même fichier remplace sa copie.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      chemin: { type: "string", description: "Le chemin complet du fichier (ou du dossier d'une page avec index.html), sur ce poste." },
+      titre: { type: "string", description: "Un titre court (80 caractères au plus), ex. « Maquette de la page d'accueil »." },
+      description: { type: "string", description: "À quoi il sert, en une phrase (500 caractères au plus)." },
+    },
+    required: ["chemin", "titre"],
+  },
+};
+
 function repondre(res: ServerResponse, statut: number, corps?: unknown) {
   res.writeHead(statut, corps === undefined ? {} : { "Content-Type": "application/json" });
   res.end(corps === undefined ? undefined : JSON.stringify(corps));
@@ -325,7 +341,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
@@ -350,7 +366,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
         } catch (e) { return texte(e instanceof Error ? e.message : String(e), true); }
       }
       if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
-      if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name) {
+      if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name || nom === OUTIL_PUBLIER.name) {
         if (!relaisFils) return texte("L'app n'est pas prête, réessaie dans un instant.", true);
         try {
           return texte(await relaisFils(nom, args, appelant));
@@ -409,6 +425,6 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
 /** Les outils de l'app qu'un agent peut utiliser sans demander, en accès « projet ». */
 export const OUTILS_APP = () => [
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
-  ...[...OUTILS_FILS, OUTIL_PROPOSER].map((o) => `mcp__klyra__${o.name}`),
+  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_PUBLIER].map((o) => `mcp__klyra__${o.name}`),
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
 ];

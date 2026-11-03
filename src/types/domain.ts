@@ -389,6 +389,33 @@ export interface Artefact {
   titrePerso?: boolean;
 }
 
+/** Ce que montre un rendu : sa vignette et la façon de l'ouvrir en dépendent. */
+export type TypeRendu = "page" | "image" | "video" | "pdf" | "document";
+
+/**
+ * Un rendu d'agent : un fichier qu'il a produit et publié pour la personne (outil `publier_artefact`),
+ * sur ce PC. Le fichier reste où l'agent l'a mis ; retirer le rendu de la liste ne l'efface pas.
+ */
+export interface Rendu {
+  id: string;
+  /** La copie gardée par l'app (`~/.klyra/rendus/<agent>/…`) : fichier, ou dossier d'une page avec ses ressources. */
+  chemin: string;
+  /** Le fichier publié par l'agent, là où il l'a mis. */
+  origine: string;
+  /** Octets de la copie. */
+  taille: number;
+  titre: string;
+  description: string;
+  type: TypeRendu;
+  /** L'agent qui l'a publié. */
+  roleId: RoleId;
+  chatId: string | null;
+  projectId: string | null;
+  ajouteLe: string;
+  /** Dernière publication du même fichier. */
+  misAJour: string;
+}
+
 /* ─── Tâches et calendrier ─────────────────────────────────────── */
 
 /** Une tâche, façon Rappels : à cocher, avec une échéance, une priorité et des notes. */
