@@ -7,6 +7,7 @@ import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, ge
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { dossierHorsProjet } from "./atelier";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
+import { consigneTitre, nettoyerTitre } from "./titre";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
@@ -832,6 +833,42 @@ export function actualiserUtilisation(): Promise<Utilisation | null> {
       resolve(derniere);
     });
     child.stdin.end("Réponds seulement : ok");
+  });
+}
+
+/**
+ * Le titre court d'une demande (ticket, onglet d'un fil, conversation) : un
+ * tour du modèle le plus léger, sans outil, sans MCP, sans garder de session.
+ * null si Claude Code manque ou échoue : le titre provisoire reste.
+ */
+export function titrerDemande(texte: string): Promise<string | null> {
+  const bin = findClaude();
+  if (!bin || !texte.trim()) return Promise.resolve(null);
+  mkdirSync(ATELIER, { recursive: true });
+  return new Promise((resolve) => {
+    const child = spawn(
+      bin,
+      ["-p", "--model", "haiku", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--disallowedTools", ...OUTILS_INTERDITS, "Agent", "WebFetch", "WebSearch", "Read", "Glob", "Grep"],
+      { cwd: ATELIER, env: environnementAgent(), windowsHide: true },
+    );
+    let stdout = "";
+    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+    const timeout = setTimeout(() => child.kill("SIGTERM"), 60_000);
+    child.on("error", () => {
+      clearTimeout(timeout);
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      try {
+        const json = JSON.parse(stdout) as { result?: string; is_error?: boolean; modelUsage?: unknown };
+        enregistrerTourClaude(json.modelUsage, {}, null);
+        resolve(json.is_error || code !== 0 ? null : nettoyerTitre(json.result ?? ""));
+      } catch {
+        resolve(null);
+      }
+    });
+    child.stdin.end(consigneTitre(texte));
   });
 }
 

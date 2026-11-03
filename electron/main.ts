@@ -60,6 +60,7 @@ import {
   restaurerUtilisation,
   runAgent,
   surUtilisation,
+  titrerDemande,
   type Utilisation,
 } from "./claude";
 import { moteurs } from "./moteurs";
@@ -418,6 +419,7 @@ function registerBridge() {
   });
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
+  handle("claude:titre", (texte: string) => titrerDemande(String(texte ?? "")));
   handle("claude:cancel", (requestId: string) => (annulerDistant(requestId) ? undefined : moteurs.arreter(requestId)));
   handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision) => {
     if (!["oui", "toujours", "non"].includes(decision)) throw new Error("Réponse invalide.");

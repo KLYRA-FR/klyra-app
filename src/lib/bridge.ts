@@ -323,6 +323,8 @@ export interface KlyraBridge {
   claude: {
     status: () => Promise<Reponse<{ path: string | null }>>;
     run: (requestId: string, agent: string, prompt: string) => Promise<Reponse<ClaudeResult>>;
+    /** Un titre de quelques mots pour une demande (null : Claude Code absent ou en échec). */
+    titre?: (texte: string) => Promise<Reponse<string | null>>;
     cancel: (requestId: string) => Promise<Reponse<void>>;
     /** Ta réponse à une demande d'autorisation d'un agent. */
     autoriser: (requestId: string, demandeId: string, decision: "oui" | "toujours" | "non") => Promise<Reponse<boolean>>;
