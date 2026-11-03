@@ -6,7 +6,8 @@
  * - « Adopter » : réglages enregistrés, carte partie ; au message suivant, les consignes KLYRA sont dans la
  *   requête et la mémoire de l'agent n'est plus chargée (CLAUDE_CODE_DISABLE_AUTO_MEMORY), sans que sa
  *   fiche change.
- * - Réglages › Agents : « Adoptée », et l'interrupteur de la mémoire la rallume.
+ * - Réglages › Agents : « Adoptée », le diagnostic du poste (CLAUDE.md personnel, skill), et l'interrupteur
+ *   de la mémoire la rallume.
  * Profil et dossier personnel temporaires. Prérequis : `pnpm build && pnpm build:electron`.
  *   pnpm test:configuration          (sous Linux sans bac à sable : -- --no-sandbox)
  */
@@ -35,6 +36,10 @@ mkdirSync(DONNEES, { recursive: true });
 
 const FICHE = `---\nname: alpha\ndisplayName: Alma\ndescription: "Essai — Alma. Appelle Alma pour l’essai."\nmemory: project\n---\n\n# Alma — Essai\n\nSOUS-AGENT-TEST-alpha\n`;
 writeFileSync(path.join(AGENTS, "alpha.md"), FICHE);
+// La configuration personnelle du poste, pour le diagnostic : un gros CLAUDE.md et une skill.
+writeFileSync(path.join(HOME, ".claude", "CLAUDE.md"), `# Mes règles\n${"Une règle personnelle, valable partout.\n".repeat(150)}`);
+mkdirSync(path.join(HOME, ".claude", "skills", "rangement"), { recursive: true });
+writeFileSync(path.join(HOME, ".claude", "skills", "rangement", "SKILL.md"), "---\nname: rangement\ndescription: Range les fichiers par type.\n---\nRange.\n");
 writeFileSync(path.join(DONNEES, "conversations.json"), JSON.stringify({ version: 1, chats: [], messages: [] }));
 writeFileSync(
   path.join(DONNEES, "mes-agents.json"),
@@ -98,6 +103,12 @@ try {
   await app.aller("/reglages?section=agents");
   await app.quand(`!!document.getElementById("reglage-configuration-klyra")`, 15000).catch(() => {});
   verifier(await app.ev(`document.getElementById("reglage-configuration-klyra")?.innerText.includes("Adoptée") ?? false`), "Réglages › Agents : la configuration recommandée est dite adoptée");
+  await app.quand(`!!document.querySelector("[data-diagnostic-poste]")`, 15000).catch(() => {});
+  const diagnostic = await app.ev(`document.getElementById("reglage-diagnostic-poste")?.innerText ?? ""`);
+  verifier(
+    /CLAUDE\.md personnel · environ [\d\s\u202f]+ jetons/.test(diagnostic) && /AGENTS\.md/.test(diagnostic) && /rangement/.test(diagnostic),
+    `Réglages › Agents : le diagnostic du poste montre le CLAUDE.md personnel (avec son conseil) et la skill (${diagnostic.replace(/\s+/g, " ").slice(0, 160)})`,
+  );
   await cliquer(`document.querySelector('#reglage-memoire-agents [role="switch"]')`);
   verifier(reglagesSurDisque()?.configuration?.memoireAgents === true, "Réglages › Agents : l’interrupteur rallume la mémoire des agents");
   verifier(app.erreurs.length === 0, `aucune erreur dans la page (${app.erreurs.join(" | ") || "aucune"})`);

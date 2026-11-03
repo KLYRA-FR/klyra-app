@@ -83,6 +83,7 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "memoire-agents": P,
   "consignes-klyra": sur(RAISONS.ordinateur),
   "resume-auto": P,
+  "diagnostic-poste": sur(RAISONS.ordinateur),
   acces: { type: "poste", elevation: RAISONS.toutAccepter },
   assistant: P,
   modeles: P,

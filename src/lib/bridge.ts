@@ -8,6 +8,7 @@ import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
 import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
+import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
 export type { EtatConnect };
 
 /** Un MCP direct branché dans la Marketplace : tout, sauf le jeton. */
@@ -546,6 +547,9 @@ export interface KlyraBridge {
     changerLancement: (actif: boolean) => Promise<Reponse<Lancement>>;
     infos: () => Promise<Reponse<InfosApp>>;
     ouvrirDossier: (nom: DossierApp) => Promise<Reponse<void>>;
+    /** Ce que le poste ajoute à chaque appel (electron/diagnostic-poste.ts). Absent avant la relance de l'app. */
+    diagnosticPoste?: () => Promise<Reponse<DiagnosticPoste>>;
+    montrerDiagnostic?: (chemin: string) => Promise<Reponse<void>>;
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;
     ouvrirAutorisation: (type: "accessibilite" | "ecran") => Promise<Reponse<void>>;
