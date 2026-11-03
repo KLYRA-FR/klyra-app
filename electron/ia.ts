@@ -8,6 +8,7 @@ import { enregistrerAppelIa } from "./consommation";
 import { composioConnect, espaceComposio, OUTILS_COMPOSIO } from "./composio";
 import { serveursMcpDirects } from "./mcp-direct";
 import { serveurOrdinateur } from "./ordinateur/pilote";
+import { estOutilNavigateur, executerOutilNavigateur, navigateurActif, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur/outils";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -342,11 +343,13 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+      /* Le navigateur de KLYRA : seulement les onglets de la conversation de l'agent (cf. navigateur/). */
+      if (estOutilNavigateur(nom)) return resultat(await executerOutilNavigateur(nom, args, appelant));
       if (OUTILS_COMPOSIO.some((o) => o.name === nom)) {
         try {
           const donnees = nom === "composio_etat" ? await espaceComposio.comptesChoisis(composio) : nom === "composio_rechercher"
@@ -431,4 +434,6 @@ export const OUTILS_APP = () => [
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
   ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_PUBLIER].map((o) => `mcp__klyra__${o.name}`),
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
+  // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme Computer Use).
+  ...(navigateurActif() ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
 ];

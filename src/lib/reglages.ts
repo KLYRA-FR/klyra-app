@@ -13,6 +13,7 @@ import { CONFIGURATION_PAR_DEFAUT, validerConfiguration, type ConfigurationKlyra
 export const REGLAGES_PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
   computerUse: { actif: false },
+  navigateur: { agents: true },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
 };
@@ -26,6 +27,7 @@ function completer(brut: Partial<Reglages> | null | undefined): Reglages {
   return {
     notifications: { ...REGLAGES_PAR_DEFAUT.notifications, ...brut?.notifications },
     computerUse: { actif: brut?.computerUse?.actif === true },
+    navigateur: { agents: brut?.navigateur?.agents !== false },
     sons: { ...REGLAGES_PAR_DEFAUT.sons, ...brut?.sons },
     configuration: validerConfiguration(brut?.configuration),
   };
@@ -93,6 +95,16 @@ export function useReglages() {
     }
   }, []);
 
+  const changerNavigateur = useCallback(async (agents: boolean) => {
+    const actuels = await reglagesActuels();
+    setErreur(null);
+    try {
+      await enregistrer({ ...actuels, navigateur: { agents } });
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
   const changerSons = useCallback(async (patch: Partial<PreferencesSons>) => {
     const actuels = await reglagesActuels();
     setErreur(null);
@@ -114,5 +126,5 @@ export function useReglages() {
     }
   }, []);
 
-  return { reglages, erreur, changerNotification, changerComputerUse, changerSons, changerConfiguration, systeme: !!getBridge()?.reglages };
+  return { reglages, erreur, changerNotification, changerComputerUse, changerNavigateur, changerSons, changerConfiguration, systeme: !!getBridge()?.reglages };
 }

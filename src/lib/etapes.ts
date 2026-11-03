@@ -19,6 +19,28 @@ function court(texte: unknown, max = 60): string {
   return propre.length > max ? `${propre.slice(0, max - 1).trimEnd()}…` : propre;
 }
 
+/** Ce que fait un agent dans une page du navigateur de KLYRA. */
+const ACTIONS_NAVIGATEUR: Record<string, string> = {
+  cliquer: "clique dans la page",
+  double_clic: "double-clique dans la page",
+  clic_droit: "clic droit dans la page",
+  survoler: "survole un élément",
+  taper: "écrit dans la page",
+  touche: "appuie sur",
+  defiler: "fait défiler la page",
+  choisir: "choisit",
+  passer_la_main: "te passe la main",
+};
+
+/** Le site d'une adresse, ou les mots cherchés. */
+function siteOuMots(saisie: string): string {
+  try {
+    return new URL(/^[a-z]+:\/\//i.test(saisie) ? saisie : `https://${saisie}`).host.replace(/^www\./, "") || saisie;
+  } catch {
+    return saisie;
+  }
+}
+
 export function libelleEtape(outil: string, entree: Record<string, unknown>, roles: Role[]): string {
   switch (outil) {
     case "Read":
@@ -55,6 +77,17 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return `Propose un agent : ${court(entree.nom, 40) || "sans nom"}`;
     case "mcp__klyra__publier_artefact":
       return `Publie dans Artefacts : ${court(entree.titre, 50) || "un rendu"}`;
+    case "mcp__klyra__navigateur_aller":
+      if (typeof entree.url === "string" && entree.url.trim()) return `Navigateur : ouvre ${court(siteOuMots(entree.url), 50)}`;
+      return entree.historique === "retour" ? "Navigateur : page précédente" : entree.historique === "suivant" ? "Navigateur : page suivante" : "Navigateur : recharge la page";
+    case "mcp__klyra__navigateur_lire":
+      return entree.attendre_texte ? `Navigateur : attend « ${court(entree.attendre_texte, 40)} »` : entree.requete ? `Navigateur : cherche « ${court(entree.requete, 40)} »` : "Navigateur : lit la page";
+    case "mcp__klyra__navigateur_capture":
+      return "Navigateur : regarde la page";
+    case "mcp__klyra__navigateur_onglets":
+      return entree.fermer ? "Navigateur : ferme un onglet" : "Navigateur : regarde ses onglets";
+    case "mcp__klyra__navigateur_agir":
+      return `Navigateur : ${ACTIONS_NAVIGATEUR[String(entree.action)] ?? "agit dans la page"}${entree.action === "choisir" && entree.valeur ? ` « ${court(entree.valeur, 30)} »` : ""}${entree.action === "touche" && entree.touche ? ` ${court(entree.touche, 20)}` : ""}`;
     default:
       return outil.startsWith("mcp__") ? `Utilise ${outil.split("__").slice(1).join(" · ")}` : `Utilise ${outil}`;
   }
@@ -86,6 +119,13 @@ export function iconeEtape(outil: string): IconName {
     case "mcp__klyra__publier_artefact":
     case "Skill":
       return "layers-01";
+    case "mcp__klyra__navigateur_agir":
+      return "cursor-01";
+    case "mcp__klyra__navigateur_aller":
+    case "mcp__klyra__navigateur_lire":
+    case "mcp__klyra__navigateur_capture":
+    case "mcp__klyra__navigateur_onglets":
+      return "computer";
     default:
       return "settings";
   }

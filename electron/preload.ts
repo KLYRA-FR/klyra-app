@@ -314,6 +314,23 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("computer-use:etat", listener);
     },
   },
+  navigateur: {
+    etat: () => ipcRenderer.invoke("navigateur:etat"),
+    ouvrir: (chatId: string, url?: string) => ipcRenderer.invoke("navigateur:ouvrir", chatId, url),
+    aller: (id: string, saisie: string) => ipcRenderer.invoke("navigateur:aller", id, saisie),
+    historique: (id: string, geste: string) => ipcRenderer.invoke("navigateur:historique", id, geste),
+    fermer: (id: string) => ipcRenderer.invoke("navigateur:fermer", id),
+    afficher: (id: string | null, cadre: unknown) => ipcRenderer.invoke("navigateur:afficher", id, cadre),
+    main: (id: string, prise: boolean) => ipcRenderer.invoke("navigateur:main", id, prise),
+    ailleurs: (id: string) => ipcRenderer.invoke("navigateur:ailleurs", id),
+    montrerTelechargement: (chemin: string) => ipcRenderer.invoke("navigateur:telechargement", chemin),
+    effacer: () => ipcRenderer.invoke("navigateur:effacer"),
+    onEtat: (callback: (etat: unknown) => void) => {
+      const listener = (_e: unknown, etat: unknown) => callback(etat);
+      ipcRenderer.on("navigateur:etat", listener);
+      return () => ipcRenderer.removeListener("navigateur:etat", listener);
+    },
+  },
   consommation: {
     lire: () => ipcRenderer.invoke("consommation:lire"),
   },

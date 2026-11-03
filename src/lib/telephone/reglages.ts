@@ -110,6 +110,10 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "computer-use-actif": { type: "poste", elevation: RAISONS.computerUse },
   "autorisation-accessibilite": { type: "lecture", elevation: RAISONS.computerUse },
   "autorisation-ecran": { type: "lecture", elevation: RAISONS.computerUse },
+  /* Navigateur : le couper, oui ; l'allumer élargit ce que font les agents, devant l'ordinateur. Ses données sont sur l'ordinateur. */
+  "navigateur-agents": { type: "poste", elevation: RAISONS.computerUse },
+  "navigateur-donnees": sur(RAISONS.ordinateur),
+  "navigateur-telechargements": L,
   /* Mises à jour : l'état se lit, l'installation reste devant l'ordinateur. */
   "version-installee": L,
   "version-disponible": L,

@@ -6,7 +6,7 @@ import type { IconName } from "@/components/icons/Icon";
  * est l'ancre d'une `Ligne` de la section (cf. ui.tsx).
  */
 
-export type IdSection = "general" | "profil" | "equipe" | "mobile" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "marketplace" | "mises-a-jour";
+export type IdSection = "general" | "profil" | "equipe" | "mobile" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "navigateur" | "marketplace" | "mises-a-jour";
 
 export interface EntreeReglage {
   id: string;
@@ -155,6 +155,17 @@ export const SECTIONS: SectionReglages[] = [
       { id: "computer-use-actif", titre: "Laisser les agents piloter l’ordinateur", mots: "activer desactiver interrupteur ecran souris clavier" },
       { id: "autorisation-accessibilite", titre: "Autorisation Accessibilité", mots: "macos permission systeme clic clavier" },
       { id: "autorisation-ecran", titre: "Autorisation Enregistrement de l’écran", mots: "macos permission capture" },
+    ],
+  },
+  {
+    id: "navigateur",
+    titre: "Navigateur",
+    icone: "computer",
+    description: "Le navigateur de KLYRA : les pages que tes agents utilisent pour toi, sous tes yeux, dans le panneau de chaque conversation.",
+    entrees: [
+      { id: "navigateur-agents", titre: "Laisser les agents utiliser le navigateur", mots: "web site page onglets computer use pilotage formulaire clic internet chrome" },
+      { id: "navigateur-donnees", titre: "Connexions et cookies", mots: "effacer donnees navigation session cache vider deconnecter" },
+      { id: "navigateur-telechargements", titre: "Téléchargements", mots: "fichiers telecharges dossier downloads" },
     ],
   },
   {
