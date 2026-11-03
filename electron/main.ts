@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import os, { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
 import { diagnostiquerPoste, existe } from "./diagnostic-poste";
 import {
   AgentError,
@@ -112,7 +113,7 @@ import {
   type EvenementNotification,
 } from "./reglages";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
-import { arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
+import { absolu, arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
 import {
@@ -614,6 +615,9 @@ function registerBridge() {
     if (erreur) throw new Error(erreur);
   });
   handle("projets:montrer-fichier", (dossier: string, relatif: string) => shell.showItemInFolder(cheminDansProjet(dossier, relatif)));
+  /* Les consignes du projet pour ses agents (AGENTS.md, import dans CLAUDE.md) : rien n'est écrasé. */
+  handle("projets:consignes", (dossier: string, nom: string) => etatConsignesProjet(absolu(dossier), String(nom)));
+  handle("projets:consignes:ecrire", (dossier: string, nom: string) => appliquerConsignesProjet(absolu(dossier), String(nom)));
   handle("git:etat", (dossier: string) => etatGit(dossier));
   /* Un lien local (serveur de dev d'un projet) cliqué dans une conversation : une fenêtre de l'app. */
   handle("fenetres:ouvrir", (url: string) => {

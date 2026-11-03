@@ -94,6 +94,8 @@ contextBridge.exposeInMainWorld("klyra", {
     lireFichier: (dossier: string, relatif: string, lieu?: string | null) => ipcRenderer.invoke("projets:lire-fichier", dossier, relatif, lieu),
     ouvrirFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:ouvrir-fichier", dossier, relatif),
     montrerFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:montrer-fichier", dossier, relatif),
+    consignes: (dossier: string, nom: string) => ipcRenderer.invoke("projets:consignes", dossier, nom),
+    ecrireConsignes: (dossier: string, nom: string) => ipcRenderer.invoke("projets:consignes:ecrire", dossier, nom),
   },
   artefacts: {
     lister: () => ipcRenderer.invoke("artefacts:lister"),
