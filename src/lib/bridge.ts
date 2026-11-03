@@ -9,6 +9,7 @@ export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../
 import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
 import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
+import type { RenduVps } from "../../electron/agents-distants";
 import type { EtatConsignesProjet } from "../../electron/consignes-projet";
 import type { Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
 export type { Competence, Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
@@ -388,8 +389,8 @@ export interface KlyraBridge {
     ouvrirFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
     montrerFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
     /** Les consignes du projet pour ses agents (electron/consignes-projet.ts). Absent avant la relance de l'app. */
-    consignes?: (dossier: string, nom: string) => Promise<Reponse<EtatConsignesProjet>>;
-    ecrireConsignes?: (dossier: string, nom: string) => Promise<Reponse<EtatConsignesProjet>>;
+    consignes?: (dossier: string, nom: string, lieu?: string | null) => Promise<Reponse<EtatConsignesProjet>>;
+    ecrireConsignes?: (dossier: string, nom: string, lieu?: string | null) => Promise<Reponse<EtatConsignesProjet>>;
   };
   artefacts: {
     /** Les artefacts claude.ai de la personne, lus dans sa galerie par la session claude.ai de l'app. */
@@ -412,6 +413,10 @@ export interface KlyraBridge {
     montrer: (chemin: string) => Promise<Reponse<void>>;
     /** Copie un livrable dans l'espace de l'agent (`~/.klyra/rendus/<agent>/`) ; `remplace` : sa copie précédente. */
     copier: (origine: string, agent: string, remplace: string | null) => Promise<Reponse<{ chemin: string; taille: number; dossier: boolean }>>;
+    /** Recopie le livrable d'un agent du VPS `lieu` (annoncé par `onVps`) dans l'espace de l'agent sur ce PC. */
+    copierVps?: (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) => Promise<Reponse<{ chemin: string; taille: number; dossier: boolean }>>;
+    /** Un agent du VPS `lieu` a publié un livrable (cf. serveur/rendus.mjs). */
+    onVps?: (callback: (lieu: string, rendu: RenduVps) => void) => () => void;
     /** Supprime la copie d'un livrable (jamais hors de l'espace des rendus). */
     supprimer: (chemin: string) => Promise<Reponse<void>>;
     /** Copie le livrable dans un dossier choisi ; null si la personne annule. */
@@ -576,7 +581,8 @@ export interface KlyraBridge {
     infos: () => Promise<Reponse<InfosApp>>;
     ouvrirDossier: (nom: DossierApp) => Promise<Reponse<void>>;
     /** Ce que le poste ajoute à chaque appel (electron/diagnostic-poste.ts). Absent avant la relance de l'app. */
-    diagnosticPoste?: () => Promise<Reponse<DiagnosticPoste>>;
+    /** Ce que la configuration de Claude Code ajoute à chaque appel : de ce poste, ou du VPS `lieu`. */
+    diagnosticPoste?: (lieu?: string | null) => Promise<Reponse<DiagnosticPoste>>;
     montrerDiagnostic?: (chemin: string) => Promise<Reponse<void>>;
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;

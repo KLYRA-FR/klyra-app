@@ -14,7 +14,7 @@ import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { lireProposition } from "@/lib/proposition-agent";
-import { lirePublication, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
+import { lirePublication, nomDuFichier, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
@@ -1152,6 +1152,43 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [suivant],
   );
 
+  /* Un agent d'un VPS a publié un livrable (publier_artefact, cf. serveur/rendus.mjs) : l'app le recopie dans
+     l'espace de l'agent sur ce PC et l'ajoute à Artefacts, comme un livrable local. Son origine garde le
+     serveur, pour qu'une nouvelle publication du même fichier remplace sa copie. */
+  useEffect(() => {
+    // Un pont partiel (tests de l'interface, ancienne app) n'a pas forcément les livrables : rien à écouter.
+    const onVps = bridge?.rendus?.onVps;
+    const copierVps = bridge?.rendus?.copierVps;
+    if (!onVps || !copierVps) return;
+    return onVps((lieu, r) => {
+      void (async () => {
+        const origine = `${lieu}#${r.chemin}`;
+        const avant = renduDeLOrigine(stateRef.current.rendus, origine);
+        const copie = await copierVps(lieu, r.id, r.agent, nomDuFichier(r.chemin), r.dossier, avant?.chemin ?? null);
+        if (!copie.ok) return;
+        const chat = stateRef.current.chats.find((c) => c.id === r.conversation);
+        const maintenant = new Date().toISOString();
+        dispatch({
+          type: "rendu/publier",
+          rendu: {
+            id: crypto.randomUUID(),
+            chemin: copie.data.chemin,
+            origine,
+            taille: copie.data.taille,
+            titre: r.titre || nomDuFichier(r.chemin),
+            description: r.description,
+            type: copie.data.dossier ? "page" : typeDeRendu(r.chemin),
+            roleId: r.agent,
+            chatId: chat?.id ?? null,
+            projectId: chat?.projectId ?? null,
+            ajouteLe: maintenant,
+            misAJour: maintenant,
+          },
+        });
+      })();
+    });
+  }, [bridge]);
+
   /* L'agent reprend la parole de lui-même (un agent d'arrière-plan a fini, un serveur s'est arrêté) :
      sa réponse s'ouvre dans la conversation de cette session. */
   useEffect(() => {
@@ -1292,8 +1329,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           ...(moteur !== PAR_DEFAUT ? { moteur } : {}),
           agent: roleId === "principal" ? null : roleId,
           prompt: construirePrompt(chat, roleId, messageUtilisateur),
-          // `/<skill>` en tête du message de la personne : Claude Code la charge si elle existe (cf. src/lib/skills.ts).
-          ...(moteur === PAR_DEFAUT && messageUtilisateur.author.kind === "user" && skillEnTete(texteDe(messageUtilisateur))
+          // `/<skill>` en tête du message de la personne : chargée par Claude Code, ou à lire d'abord pour Codex (cf. src/lib/skills.ts).
+          ...(messageUtilisateur.author.kind === "user" && skillEnTete(texteDe(messageUtilisateur))
             ? { skill: skillEnTete(texteDe(messageUtilisateur)) }
             : {}),
           // Sur un VPS, le dossier du PC n'existe pas : l'agent travaille dans son atelier là-bas.

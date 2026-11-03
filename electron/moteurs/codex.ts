@@ -6,6 +6,7 @@ import { app, shell } from "electron";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { signatureOrdinateur } from "../ordinateur/pilote";
 import { espaceComposio } from "../composio";
+import { consigneSkillsCodex, promptAvecSkillCodex } from "../connaissances-agent";
 import { configMcp } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
@@ -49,6 +50,12 @@ export function trouverCodex(): string | null {
 
 /** La fiche de l'agent (`~/.claude/agents/<nom>.md`, sous-dossiers compris), sans son en-tête. */
 function ficheDe(agent: string): string | null {
+  const brute = ficheBrute(agent);
+  return brute ? corpsDeFiche(brute) : null;
+}
+
+/** La fiche entière, en-tête compris (ses `skills`). */
+function ficheBrute(agent: string): string | null {
   const chercher = (dossier: string, profondeur: number): string | null => {
     const direct = path.join(dossier, `${agent}.md`);
     if (existsSync(direct)) return direct;
@@ -63,16 +70,18 @@ function ficheDe(agent: string): string | null {
     return null;
   };
   const fichier = chercher(dossierAgents(), 3);
-  return fichier ? corpsDeFiche(readFileSync(fichier, "utf8")) : null;
+  return fichier ? readFileSync(fichier, "utf8") : null;
 }
+
+const CONFIG_CLAUDE = () => process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude");
 
 /** Ce qui change avec Codex : il n'appelle pas un collègue directement, il passe par les fils. */
 const CONSIGNE_CODEX = "Dans cette session, tu travailles avec ChatGPT (Codex) : tu ne peux pas appeler un agent directement. Pour confier un travail, ouvre un fil avec ouvrir_fil.";
 const CONSIGNE_CODEX_SEUL = "Dans cette session, tu travailles avec ChatGPT (Codex) et tu ne peux confier aucun travail : fais ta part seul et dis ce qui reste.";
 
-function consigne(options: StreamOptions, mcp: string | null): string {
+function consigne(options: StreamOptions, mcp: string | null, skills: string | null): string {
   const fiche = options.agent ? ficheDe(options.agent) : null;
-  return [fiche, ...consignesApp(options, mcp), mcp ? CONSIGNE_CODEX : CONSIGNE_CODEX_SEUL].filter(Boolean).join("\n\n");
+  return [fiche, ...consignesApp(options, mcp), skills, mcp ? CONSIGNE_CODEX : CONSIGNE_CODEX_SEUL].filter(Boolean).join("\n\n");
 }
 
 /* ─── Le serveur de Codex ──────────────────────────────────────── */
@@ -249,15 +258,18 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
 async function demarrerTour(requestId: string, options: StreamOptions, emit: (event: AgentEvent) => void, bin: string, cwd: string) {
   await serveur.demarrer(bin);
   const acces = accesCodex(options.acces ?? "projet");
-  // Mes agents ou Composio ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur()]);
+  /* Les skills de Claude, que Codex ne lit pas de lui-même (cf. connaissances-agent.ts) : présentées par leur
+     fichier, celles que la fiche précharge avec leur texte, et `/<skill>` demandé en tête du message. */
+  const skills = consigneSkillsCodex(options.agent ? ficheBrute(options.agent) : null, CONFIG_CLAUDE(), cwd);
+  // Mes agents, Composio ou les skills ont changé : le fil est rechargé avec les consignes et les outils à jour.
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {
       cwd,
       approvalPolicy: acces.approvalPolicy,
       sandbox: acces.sandbox,
-      developerInstructions: consigne(options, mcp),
+      developerInstructions: consigne(options, mcp, skills.texte),
       config: { mcp_servers: mcpPourCodex(mcp) },
       ...(options.modele ? { model: options.modele } : {}),
     };
@@ -282,7 +294,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   try {
     const r = await serveur.requete<{ turn: { id: string } }>("turn/start", {
       threadId,
-      input: [{ type: "text", text: options.prompt, text_elements: [] }],
+      input: [{ type: "text", text: promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd), text_elements: [] }],
       cwd,
       approvalPolicy: acces.approvalPolicy,
       sandboxPolicy: acces.sandboxPolicy,

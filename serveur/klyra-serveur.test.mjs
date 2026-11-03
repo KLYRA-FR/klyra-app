@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { creerAgents } from "./agents.mjs";
-import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, DUREE_CODE_MS, cleConversation, contexteTelephone, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
+import { creerIa } from "./ia.mjs";
+import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, CHEMIN_RENDUS, DUREE_CODE_MS, cleConversation, contexteTelephone, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
 function dossierJetable() {
   return mkdtempSync(path.join(tmpdir(), "klyra-serveur-"));
@@ -322,6 +323,12 @@ test("les compétences d'un agent du VPS : lues sur le serveur, préchargées, e
     // L'assistant n'a pas de fiche ; sans projet, pas de skills de projet.
     const assistant = (await competences(jeton, "principal")).json.competences;
     assert.deepEqual([assistant.fiche, assistant.projet, assistant.poste.map((c) => c.nom)], [[], [], ["rangement"]]);
+    // Réglages du serveur › Général : ce que la configuration de Claude Code du VPS ajoute, ses agents actifs compris.
+    const diagnostic = (await appel(ecoute.port, `${CHEMIN_AGENT}/diagnostic`, { jeton })).json.diagnostic;
+    assert.deepEqual(diagnostic.elements.map((e) => e.cle), ["claude-md", "skills", "agents", "plugins", "mcp"]);
+    assert.match(diagnostic.elements.find((e) => e.cle === "skills").detail, /rangement/);
+    assert.ok(diagnostic.elements.find((e) => e.cle === "agents").jetons > 0);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/diagnostic`, {})).statut, 401);
     // Hors du dossier de klyra, ou un nom d'agent qui sort de son dossier : refusé.
     assert.equal((await competences(jeton, "lou", "/etc")).statut, 400);
     assert.equal((await competences(jeton, "../x")).statut, 400);
@@ -427,6 +434,70 @@ test("la mémoire d'un agent du VPS, la configuration KLYRA reçue avec l'équip
   }
 });
 
+test("les livrables des agents du VPS : publiés par l'outil MCP, annoncés à l'app, servis seuls", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const journal = creerJournal();
+  const ia = creerIa({ donnees: dossier, version: "1" });
+  await ia.demarrer();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, ia, claude: null });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents, ia });
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    // La configuration MCP d'une session porte son agent et sa conversation.
+    const config = JSON.parse(ia.configMcp({ agent: "hugo", conversation: "dm-hugo" })).mcpServers.klyra;
+    assert.equal(config.headers["X-Klyra-Agent"], "hugo");
+    assert.equal(config.headers["X-Klyra-Conversation"], "dm-hugo");
+    const mcp = async (method, params = {}) => (await (await fetch(config.url, { method: "POST", headers: config.headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json()).result;
+    assert.ok((await mcp("tools/list")).tools.some((t) => t.name === "publier_artefact"), "publier_artefact n’est pas proposé sans IA ajoutée");
+
+    mkdirSync(path.join(home, "livrables"), { recursive: true });
+    writeFileSync(path.join(home, "livrables", "rapport.md"), "# Rapport\n");
+    mkdirSync(path.join(home, "site", "img"), { recursive: true });
+    mkdirSync(path.join(home, "site", "node_modules"), { recursive: true });
+    writeFileSync(path.join(home, "site", "index.html"), "<h1>Site</h1>");
+    writeFileSync(path.join(home, "site", "img", "a.png"), "PNG");
+    writeFileSync(path.join(home, "site", "node_modules", "x.js"), "lourd");
+    const publier = (args) => mcp("tools/call", { name: "publier_artefact", arguments: args });
+
+    const r1 = await publier({ chemin: path.join(home, "livrables", "rapport.md"), titre: "Rapport", description: "Le point." });
+    assert.match(r1.content[0].text, /Publié dans Artefacts : « Rapport »/);
+    assert.equal(r1.isError, undefined);
+    const flux = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.event?.type === "rendu"));
+    const annonce = flux.recus.find((e) => e.event?.type === "rendu").event;
+    assert.deepEqual([annonce.titre, annonce.agent, annonce.conversation, annonce.dossier, annonce.taille], ["Rapport", "hugo", "dm-hugo", false, 10]);
+    // Republier le même fichier garde son identifiant.
+    await publier({ chemin: "~/livrables/rapport.md", titre: "Rapport v2" });
+    assert.equal(agents.rendus.lire().length, 1);
+    assert.equal(agents.rendus.lire()[0].id, annonce.id);
+    assert.equal(agents.rendus.lire()[0].titre, "Rapport v2");
+
+    // Ses octets, à l'appareil relié seulement.
+    assert.equal((await appel(ecoute.port, `${CHEMIN_RENDUS}/${annonce.id}/fichiers`, {})).statut, 401);
+    assert.deepEqual((await appel(ecoute.port, `${CHEMIN_RENDUS}/${annonce.id}/fichiers`, { jeton })).json.fichiers, [{ relatif: "rapport.md", taille: 10 }]);
+    const octets = await fetch(`http://127.0.0.1:${ecoute.port}${CHEMIN_RENDUS}/${annonce.id}/fichier`, { headers: { Authorization: `Bearer ${jeton}` } });
+    assert.equal(await octets.text(), "# Rapport\n");
+
+    // Une page : son dossier, sans node_modules ; rien hors du livrable.
+    await publier({ chemin: path.join(home, "site"), titre: "Site" });
+    const page = agents.rendus.lire().find((r) => r.titre === "Site");
+    assert.deepEqual((await appel(ecoute.port, `${CHEMIN_RENDUS}/${page.id}/fichiers`, { jeton })).json.fichiers.map((f) => f.relatif).sort(), ["img/a.png", "index.html"]);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_RENDUS}/${page.id}/fichier?relatif=${encodeURIComponent("../livrables/rapport.md")}`, { jeton })).statut, 400);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_RENDUS}/${page.id}/fichier?relatif=${encodeURIComponent("node_modules/x.js")}`, { jeton })).statut, 400);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_RENDUS}/00000000-0000-4000-8000-000000000000/fichiers`, { jeton })).statut, 400);
+
+    // Refusés, avec ce qu'il faut corriger.
+    assert.match((await publier({ chemin: "/etc/hostname", titre: "x" })).content[0].text, /Seuls les fichiers sous/);
+    mkdirSync(path.join(home, "vrac"), { recursive: true });
+    assert.match((await publier({ chemin: path.join(home, "vrac"), titre: "x" })).content[0].text, /index\.html/);
+    assert.match((await publier({ chemin: "rapport.md", titre: "x" })).content[0].text, /chemin complet/);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("les projets du VPS : arbre, lecture et création sous le dossier de klyra seulement", async () => {
   const dossier = dossierJetable();
   const home = dossierJetable();
@@ -458,6 +529,19 @@ test("les projets du VPS : arbre, lecture et création sous le dossier de klyra 
     assert.equal(ailleurs.statut, 400);
     assert.match(ailleurs.json.message, /sous/);
     assert.equal((await appel(ecoute.port, `/klyra/v1/fichiers/dossier?dossier=${encodeURIComponent("/tmp/x")}`, { methode: "POST", jeton })).statut, 400);
+
+    // Les consignes KLYRA d'un projet du VPS : ce qui serait écrit, l'écriture, jamais d'écrasement.
+    const consignes = (methode) => appel(ecoute.port, `/klyra/v1/fichiers/consignes?dossier=${encodeURIComponent(projet)}&nom=Site`, { methode, jeton });
+    const avant = (await consignes("GET")).json.consignes;
+    assert.deepEqual(avant.propositions.map((p) => [p.nom, p.action]), [["AGENTS.md", "creer"], ["CLAUDE.md", "creer"]]);
+    const apres = (await consignes("POST")).json.consignes;
+    assert.deepEqual(apres.propositions, []);
+    assert.match(readFileSync(path.join(projet, "AGENTS.md"), "utf8"), /Site/);
+    assert.equal(readFileSync(path.join(projet, "CLAUDE.md"), "utf8").trim(), "@AGENTS.md");
+    writeFileSync(path.join(projet, "AGENTS.md"), "Mes consignes.\n");
+    assert.deepEqual((await consignes("POST")).json.consignes.propositions, []);
+    assert.equal(readFileSync(path.join(projet, "AGENTS.md"), "utf8"), "Mes consignes.\n");
+    assert.equal((await appel(ecoute.port, `/klyra/v1/fichiers/consignes?dossier=${encodeURIComponent("/etc")}&nom=x`, { jeton })).statut, 400);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

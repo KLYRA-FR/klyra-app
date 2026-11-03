@@ -6,6 +6,7 @@
  */
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet.mjs";
 
 const IGNORES = new Set(["node_modules", ".git", ".next", "dist", "dist-electron", "out", "build", ".turbo", ".vercel", ".cache", "coverage", ".DS_Store"]);
 const IMAGES = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp"]);
@@ -66,5 +67,21 @@ export function creerFichiers(home) {
     return resolu;
   }
 
-  return { arbre, lire, creerDossier, racine: racineKlyra };
+  /**
+   * Les consignes KLYRA d'un projet du VPS (cf. electron/consignes-projet.ts, le même module) : ce qui
+   * serait écrit, puis l'écriture, sans jamais écraser un fichier.
+   */
+  function consignes(dossier, nom) {
+    return etatConsignesProjet(dossierProjet(dossier), String(nom ?? "").slice(0, 120));
+  }
+  function ecrireConsignes(dossier, nom) {
+    try {
+      return appliquerConsignesProjet(dossierProjet(dossier), String(nom ?? "").slice(0, 120));
+    } catch (erreur) {
+      if (erreur instanceof ErreurFichier) throw erreur;
+      throw new ErreurFichier(erreur instanceof Error ? erreur.message : "Écriture impossible sur le VPS.");
+    }
+  }
+
+  return { arbre, lire, creerDossier, consignes, ecrireConsignes, racine: racineKlyra };
 }

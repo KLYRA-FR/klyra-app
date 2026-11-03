@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { DiagnosticDuPoste } from "@/components/reglages/ConfigurationKlyra";
 import { Groupe, Ligne, Valeur } from "@/components/reglages/ui";
 import { fournisseur } from "@/lib/fournisseurs";
 import { useSondes } from "@/lib/lieux";
@@ -65,6 +66,9 @@ export function GeneralServeur({ serveur }: { serveur: ServeurConnu | null }) {
         </Ligne>
       </Groupe>
       <Moteurs lieu={serveur.adresse} />
+      <Groupe titre="Configuration de Claude Code" description="Ce que ce serveur ajoute à chaque appel de tes agents, comme le diagnostic de ton poste dans Réglages › Agents.">
+        <DiagnosticDuPoste lieu={serveur.adresse} />
+      </Groupe>
     </>
   );
 }
