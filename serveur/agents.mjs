@@ -254,6 +254,13 @@ export function creerAgents(options) {
       courant?.compter(msg.estimated_tokens_delta);
       return;
     }
+    /* La conversation résumée : son résultat arrive vide, mais c'est bien la réponse à « /compact » (cf. electron/claude.ts). */
+    if (msg.type === "system" && msg.subtype === "compact_boundary") {
+      if (!courant) return;
+      courant.activite = true;
+      courant.emit({ type: "compacte", avant: msg.compact_metadata?.pre_tokens ?? 0, apres: msg.compact_metadata?.post_tokens ?? 0 });
+      return;
+    }
     if (msg.type === "stream_event") {
       const ev = msg.event ?? {};
       const morceau = ev.delta?.text ?? ev.delta?.partial_json ?? "";
@@ -272,7 +279,12 @@ export function creerAgents(options) {
       const outils = contenu.filter((b) => b.type === "tool_use" && b.id && b.name);
       const tour = parent === null && outils.length ? tourOuSpontane(proc) : courant;
       if (!tour) return;
-      if (parent === null) tour.activite = true;
+      if (parent === null) {
+        tour.activite = true;
+        const u = msg.message?.usage;
+        const jetons = u ? (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) : 0;
+        if (jetons > 0) tour.emit({ type: "contexte", jetons });
+      }
       for (const bloc of outils) {
         if (bloc.input?.run_in_background === true) proc.fond += 1;
         tour.emit({ type: "etape", id: bloc.id, outil: bloc.name, entree: bloc.input ?? {}, parent });

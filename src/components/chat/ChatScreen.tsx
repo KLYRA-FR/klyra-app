@@ -15,6 +15,7 @@ import { texteDe, useChat, useChatMessages, useProjects, useRoles, useWorkspace 
 import { AgentsEnCours } from "./AgentsEnCours";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
+import { ConseilContexte } from "./ConseilContexte";
 import { MessageThread } from "./MessageThread";
 import { MessageExport } from "./MessageExport";
 import { useExporterConversation } from "./useExporterConversation";
@@ -197,7 +198,10 @@ export function ChatScreen() {
         {horsDeMesAgents ? (
           <BarreHorsDeMesAgents key={`hors-${chat.id}`} agent={horsDeMesAgents} chatId={chat.id} />
         ) : (
-          <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
+          <>
+            <ConseilContexte chat={chat} />
+            <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
+          </>
         )}
       </section>
       {/* Conversation directe : pas de projet, donc pas d'aperçu. */}

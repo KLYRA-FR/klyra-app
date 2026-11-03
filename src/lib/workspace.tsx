@@ -22,6 +22,7 @@ import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSup
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
 import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, moteurDuMessage, PAR_DEFAUT } from "@/lib/fournisseurs";
+import { estCommandeCompacter, formaterJetons, nouvelleMesure } from "@/lib/contexte";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -549,6 +550,8 @@ interface WorkspaceApi {
   sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[]) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
+  /** « Plus tard » sur le conseil de résumer : il revient quand la conversation dépasse `jusqua` jetons. */
+  masquerConseilContexte: (chatId: string, jusqua: number) => void;
   choisirFournisseur: (chatId: string, moteur: string, modele: string | null, effort: string | null) => void;
   /** Ce PC (null) ou un VPS relié, pour cette conversation seulement. Les agents y reprennent la session qu'ils y avaient, sinon une neuve. */
   choisirLieu: (chatId: string, lieu: string | null) => void;
@@ -837,13 +840,16 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const personne = identiteAffichee(stateRef.current.currentUser, stateRef.current.profilCompte);
     const allRoles = rolesRef.current;
     const nom = (id: RoleId) => allRoles.find((r) => r.id === id)?.name ?? id;
+    // « /compact » part tel quel : c'est une commande de Claude Code, pas un message à lui expliquer.
+    if (estCommandeCompacter(texteDe(messageUtilisateur))) return texteDe(messageUtilisateur).trim();
     const fil = messages.filter((m) => m.chatId === chat.id && m.id !== messageUtilisateur.id);
     // Ce que l'agent n'a pas vu avec ce moteur : depuis sa dernière réponse écrite avec lui (cf. fournisseurs.ts).
     const moteur = moteurDe(chat);
     const aVoir = aReprendre(fil, roleId, moteur);
     const jamaisRepondu = aVoir.length === fil.length;
     const lus = aVoir
-      .filter((m) => m.statut !== "en-cours")
+      // Les résumés et leurs commandes ne sont pas des messages de la conversation.
+      .filter((m) => m.statut !== "en-cours" && !m.compaction && !(m.author.kind === "user" && estCommandeCompacter(texteDe(m))))
       .map((m) => {
         const texte = texteDe(m);
         if (!texte) return null;
@@ -1028,6 +1034,25 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "jetons":
           dispatch({ type: "travail/jetons", chatId, total: event.total });
           break;
+        case "contexte":
+        case "compacte": {
+          const mesure = event.type === "contexte" ? { jetons: event.jetons } : { resume: event.apres };
+          const le = new Date().toISOString();
+          dispatch({
+            type: "chat/update",
+            id: chatId,
+            patch: (c) => ({
+              ...c,
+              contexte: { ...c.contexte, [roleId]: nouvelleMesure(c.contexte?.[roleId], c.sessions[roleId] ?? null, mesure, le) },
+            }),
+          });
+          if (event.type === "compacte") {
+            // `apres` ne compte que le résumé (sans consignes ni outils) : la mesure exacte revient au message suivant.
+            const note = `_Conversation résumée : elle relisait ${formaterJetons(event.avant)} jetons à chaque message, le résumé en garde ${formaterJetons(event.apres)}._`;
+            maj((m) => ({ ...m, parts: ajouterTexte(m.parts, note, true) }));
+          }
+          break;
+        }
         case "etape-fin":
           maj((m) => ({
             ...m,
@@ -1193,6 +1218,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         statut: "en-cours",
         ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
         ...(moteur !== PAR_DEFAUT ? { moteur } : {}),
+        ...(estCommandeCompacter(texteDe(messageUtilisateur)) ? { compaction: true } : {}),
       };
       dispatch({ type: "message/add", message: reponse });
       dispatch({
@@ -1418,6 +1444,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [assurerChat],
   );
+  const masquerConseilContexte = useCallback((chatId: string, jusqua: number) => {
+    dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, contexteMasqueJusqua: jusqua }) });
+  }, []);
 
   /** La conversation passe sur un autre fournisseur, avec le modèle et l'effort choisis chez lui. */
   const choisirFournisseur = useCallback(
@@ -2372,6 +2401,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       state,
       sendMessage,
       choisirModele,
+      masquerConseilContexte,
       choisirFournisseur,
       choisirLieu,
       basculerMachine,
@@ -2428,6 +2458,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       poserEvenementsCompte,
       sendMessage,
       choisirModele,
+      masquerConseilContexte,
       choisirFournisseur,
       choisirLieu,
       basculerMachine,
