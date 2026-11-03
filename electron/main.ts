@@ -1,11 +1,24 @@
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import os, { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
+import { dossierHorsProjet } from "./atelier";
+import {
+  creerSouvenir,
+  dossierMemoire,
+  ecrireSouvenir,
+  ErreurConnaissances,
+  lireCompetences,
+  lireMemoire,
+  lireSouvenir,
+  cheminSouvenir,
+  porteeDeLaFiche,
+  type PorteeMemoire,
+} from "./connaissances-agent";
 import { diagnostiquerPoste, existe } from "./diagnostic-poste";
 import {
   AgentError,
@@ -319,7 +332,7 @@ async function repondre<T>(fn: () => Promise<T> | T): Promise<Reponse<T>> {
   try {
     return { ok: true, data: await fn() };
   } catch (error) {
-    if (error instanceof AgentError || error instanceof ErreurDictee) return { ok: false, code: error.code, message: error.message };
+    if (error instanceof AgentError || error instanceof ErreurDictee || error instanceof ErreurConnaissances) return { ok: false, code: error.code, message: error.message };
     return { ok: false, code: "erreur", message: error instanceof Error ? error.message : String(error) };
   }
 }
@@ -419,6 +432,67 @@ function registerBridge() {
   handle("agents:reveal", (name: string) => {
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(name)) throw new AgentError("nom-invalide", "Nom d’agent invalide.");
     shell.showItemInFolder(path.join(agentsDir(), `${name}.md`));
+  });
+  /*
+   * Ce que sait un agent (cf. connaissances-agent.ts) : sa mémoire dans le dossier de la conversation, ses
+   * compétences. L'écran donne l'agent et la conversation (dossier du projet, session) ; la portée vient de
+   * sa fiche et le chemin est calculé ici. Rien n'est supprimé.
+   */
+  const configClaude = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  const dossierConversation = (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
+    const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? contexte.dossier : null;
+    if (dossier) return dossier.startsWith("~") ? path.join(os.homedir(), dossier.slice(1)) : dossier;
+    const sessionId = typeof contexte?.sessionId === "string" ? contexte.sessionId : null;
+    return dossierHorsProjet(path.join(os.homedir(), ".klyra", "atelier"), agent === "principal" ? null : agent, sessionId, configClaude(), existsSync);
+  };
+  const porteeDe = async (agent: string): Promise<PorteeMemoire | null> => (agent === "principal" ? "auto" : porteeDeLaFiche((await lireFiche(agent))?.content ?? ""));
+  const memoireDe = async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
+    const portee = await porteeDe(String(agent));
+    return portee ? { portee, dossier: dossierMemoire(String(agent), portee, dossierConversation(String(agent), contexte), configClaude()) } : null;
+  };
+  const exigerMemoire = async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
+    const m = await memoireDe(agent, contexte);
+    if (!m) throw new ErreurConnaissances("introuvable", "Cet agent n’a pas de mémoire.");
+    return m;
+  };
+  handle("agents:memoire", async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
+    const m = await memoireDe(agent, contexte);
+    return m ? lireMemoire(m.portee, m.dossier) : null;
+  });
+  handle("agents:souvenir", async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null, id: string) =>
+    lireSouvenir((await exigerMemoire(agent, contexte)).dossier, String(id)),
+  );
+  handle("agents:souvenir:ecrire", async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null, id: string, contenu: string, attendu: number | null) =>
+    ecrireSouvenir((await exigerMemoire(agent, contexte)).dossier, String(id), String(contenu ?? ""), typeof attendu === "number" ? attendu : null),
+  );
+  handle("agents:souvenir:creer", async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null, titre: string, contenu: string) =>
+    creerSouvenir((await exigerMemoire(agent, contexte)).dossier, String(titre ?? ""), String(contenu ?? "")),
+  );
+  handle("agents:souvenir:montrer", async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null, id: string | null) => {
+    const { dossier } = await exigerMemoire(agent, contexte);
+    if (id) {
+      const fichier = cheminSouvenir(dossier, String(id));
+      if (!existsSync(fichier)) throw new ErreurConnaissances("introuvable", "Ce souvenir n’existe plus.");
+      shell.showItemInFolder(fichier);
+    } else {
+      if (!existsSync(dossier)) throw new ErreurConnaissances("introuvable", "Sa mémoire est encore vide : le dossier n’existe pas.");
+      const erreur = await shell.openPath(dossier);
+      if (erreur) throw new Error(erreur);
+    }
+  });
+  handle("agents:competences", async (agent: string, contexte: { dossier?: string | null } | null) => {
+    const fiche = agent === "principal" ? null : await lireFiche(String(agent));
+    const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? dossierConversation(String(agent), contexte) : null;
+    return lireCompetences(fiche?.content ?? null, configClaude(), dossier);
+  });
+  handle("agents:competence:montrer", async (agent: string, contexte: { dossier?: string | null } | null, nom: string) => {
+    const fiche = agent === "principal" ? null : await lireFiche(String(agent));
+    const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? dossierConversation(String(agent), contexte) : null;
+    const c = lireCompetences(fiche?.content ?? null, configClaude(), dossier);
+    // Seulement le dossier d'une skill que la lecture vient de trouver.
+    const trouvee = [...c.fiche, ...c.projet, ...c.poste].find((s) => s.nom === nom && s.dossier);
+    if (!trouvee?.dossier) throw new ErreurConnaissances("introuvable", "Cette compétence n’est pas sur ce poste.");
+    shell.showItemInFolder(path.join(trouvee.dossier, "SKILL.md"));
   });
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));

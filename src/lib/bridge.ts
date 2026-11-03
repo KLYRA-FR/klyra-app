@@ -10,6 +10,14 @@ import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
 import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
 import type { EtatConsignesProjet } from "../../electron/consignes-projet";
+import type { Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
+export type { Competence, Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
+
+/** La conversation dont on lit ce que sait l'agent : le dossier de son projet (null : son atelier) et sa session. */
+export interface ContexteConnaissances {
+  dossier: string | null;
+  sessionId: string | null;
+}
 export type { EtatConnect };
 
 /** Un MCP direct branché dans la Marketplace : tout, sauf le jeton. */
@@ -308,6 +316,17 @@ export interface KlyraBridge {
     readMeta: () => Promise<Reponse<AgentsMeta>>;
     writeMeta: (meta: AgentsMeta) => Promise<Reponse<void>>;
     reveal: (name: string) => Promise<Reponse<void>>;
+    /*
+     * Ce que sait l'agent (cf. electron/connaissances-agent.ts), dans le dossier de la conversation
+     * (`dossier` : celui du projet ; null : son atelier, retrouvé avec la session). Absents avant la relance de l'app.
+     */
+    memoire?: (agent: string, contexte: ContexteConnaissances) => Promise<Reponse<MemoireAgent | null>>;
+    souvenir?: (agent: string, contexte: ContexteConnaissances, id: string) => Promise<Reponse<{ contenu: string; modifieLe: number }>>;
+    ecrireSouvenir?: (agent: string, contexte: ContexteConnaissances, id: string, contenu: string, attendu: number | null) => Promise<Reponse<{ modifieLe: number }>>;
+    creerSouvenir?: (agent: string, contexte: ContexteConnaissances, titre: string, contenu: string) => Promise<Reponse<Souvenir>>;
+    montrerSouvenir?: (agent: string, contexte: ContexteConnaissances, id: string | null) => Promise<Reponse<void>>;
+    competences?: (agent: string, contexte: { dossier: string | null }) => Promise<Reponse<CompetencesAgent>>;
+    montrerCompetence?: (agent: string, contexte: { dossier: string | null }, nom: string) => Promise<Reponse<void>>;
     onChange: (callback: () => void) => () => void;
   };
   /** Les moteurs des agents : Claude Code, Codex pour ChatGPT. Le compte a la forme de celui de Claude. */
