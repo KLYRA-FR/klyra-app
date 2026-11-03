@@ -202,7 +202,7 @@ export function RappelsCompte({
 
   return (
     <ContexteEquipeRappels.Provider value={equipe}>
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       {aImporter.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-bordure-subtile bg-fond-surface px-3 py-2">
           <p className="m-0 min-w-0 flex-1 text-ui-s text-texte-secondaire">
@@ -255,7 +255,7 @@ export function RappelsCompte({
       {vue === "assignes" ? (
         <ListeRappels rappels={assignes ?? []} moiId={moiId} categories={categories} voirFaits={voirFaits} libelle="Ceux que j’ai assignés" />
       ) : (
-        <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-2">
+        <div className="-mx-1 flex min-w-0 items-start gap-3 overflow-x-auto px-1 pb-3">
           <ColonneRecus rappels={recus} moiId={moiId} categories={categories} voirFaits={voirFaits} />
           {children(mes ?? [])}
         </div>

@@ -350,7 +350,7 @@ function ReglageCategorie({ categorie, onFermer }: { categorie: Categorie; onFer
   };
 
   return (
-    <div ref={zone} className="absolute top-12 right-3 left-3 z-30 flex flex-col gap-3 rounded-lg border border-bordure-subtile bg-fond-surface p-3 shadow-ombre-flottante">
+    <div ref={zone} className="relative z-30 -mx-1 mt-1 flex flex-col gap-3 rounded-lg border border-bordure-subtile bg-fond-surface p-3 shadow-ombre-flottante">
       <input
         autoFocus
         value={nom}
@@ -563,7 +563,7 @@ export function Rappels() {
   );
 
   return (
-    <section aria-label="Rappels" className="flex flex-col gap-3">
+    <section aria-label="Rappels" className="flex min-w-0 flex-col gap-3">
       <header className="flex items-baseline gap-3">
         <h2 className="m-0 text-h4 leading-[1.1] font-semibold tracking-[-0.03em] text-texte-principal">Rappels</h2>
         {!connecte && <span className="text-ui-s text-texte-tertiaire">{taches.filter((t) => !t.faite).length} à faire</span>}
@@ -596,7 +596,7 @@ export function Rappels() {
           ))}
         </RappelsCompte>
       ) : (
-        <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-2">{colonnes()}</div>
+        <div className="-mx-1 flex min-w-0 items-start gap-3 overflow-x-auto px-1 pb-3">{colonnes()}</div>
       )}
       <p aria-live="polite" className="sr-only">
         {annonce}

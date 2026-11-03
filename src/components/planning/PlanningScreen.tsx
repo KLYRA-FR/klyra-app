@@ -15,8 +15,8 @@ export function PlanningScreen() {
   }, [vue, router]);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="@container flex flex-col gap-5 px-5 pt-5 pb-6">
+    <div className="h-full min-w-0 overflow-y-auto">
+      <div className="@container flex min-w-0 flex-col gap-5 px-5 pt-5 pb-6">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="m-0 text-h3 leading-[1] tracking-[-0.04em] text-texte-principal">
             <span className="font-semibold">Planning</span> <span className="font-normal">des agents</span>
