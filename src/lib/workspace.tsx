@@ -15,14 +15,15 @@ import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { lireProposition } from "@/lib/proposition-agent";
 import { lirePublication, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
-import { reglagesActuels } from "@/lib/reglages";
+import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
 import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, moteurDuMessage, PAR_DEFAUT } from "@/lib/fournisseurs";
-import { estCommandeCompacter, formaterJetons, nouvelleMesure } from "@/lib/contexte";
+import { COMMANDE_RESUME_AUTO, estCommandeCompacter, formaterJetons, nouvelleMesure, resumeAvantEnvoi, resumePause } from "@/lib/contexte";
+import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -1041,7 +1042,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           });
           if (event.type === "compacte") {
             // `apres` ne compte que le résumé (sans consignes ni outils) : la mesure exacte revient au message suivant.
-            const note = `_Conversation résumée : elle relisait ${formaterJetons(event.avant)} jetons à chaque message, le résumé en garde ${formaterJetons(event.apres)}._`;
+            const auto = stateRef.current.messages.find((m) => m.id === messageId)?.compactionAuto;
+            const qui = auto === "pause" ? "Conversation résumée automatiquement pendant la pause, avant que le cache n’expire" : auto === "envoi" ? "Conversation résumée automatiquement avant ton message" : "Conversation résumée";
+            const note = `_${qui} : elle relisait ${formaterJetons(event.avant)} jetons à chaque message, le résumé en garde ${formaterJetons(event.apres)}._`;
             maj((m) => ({ ...m, parts: ajouterTexte(m.parts, note, true) }));
           }
           break;
@@ -1110,6 +1113,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             });
           }
           terminer();
+          // Un résumé n'est pas une réponse : ni notification, ni ticket, ni retour de fil.
+          if (stateRef.current.messages.find((m) => m.id === messageId)?.compaction) break;
           if (event.erreur !== "Arrêté par toi." && !event.silencieux) {
             const notifiee = prevenir(chatId, roleId, messageId, event.ok);
             // Le son de l'app, sauf si la notification du système sonne déjà.
@@ -1212,6 +1217,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
         ...(moteur !== PAR_DEFAUT ? { moteur } : {}),
         ...(estCommandeCompacter(texteDe(messageUtilisateur)) ? { compaction: true } : {}),
+        ...(messageUtilisateur.compactionAuto ? { compactionAuto: messageUtilisateur.compactionAuto } : {}),
       };
       dispatch({ type: "message/add", message: reponse });
       dispatch({
@@ -1314,6 +1320,52 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     lancerTot.current = lancer;
   });
 
+  /* La configuration KLYRA (résumé automatique), lue hors des rendus. */
+  const configurationRef = useRef(CONFIGURATION_PAR_DEFAUT);
+  useEffect(() => {
+    void reglagesActuels().then((r) => (configurationRef.current = r.configuration));
+    return surReglages((r) => (configurationRef.current = r.configuration));
+  }, []);
+
+  /** Un résumé lancé par l'app : sa commande reste hors du fil, seule la réponse « résumé » y paraît. */
+  const compacterAuto = useCallback((chatId: string, roleId: RoleId, raison: "envoi" | "pause") => {
+    const commande: Message = {
+      id: `resume-auto-${crypto.randomUUID()}`,
+      chatId,
+      author: { kind: "user" },
+      createdAt: new Date().toISOString(),
+      parts: [{ type: "text", text: COMMANDE_RESUME_AUTO }],
+      compactionAuto: raison,
+    };
+    lancerRef.current(chatId, roleId, commande);
+  }, []);
+
+  /* Résumé automatique pendant une pause (lib/contexte.ts) : une seule tentative par mesure, un à la fois,
+     tant que la session et son cache sont chauds. Vérifié peu après l'ouverture, puis chaque minute. */
+  const resumesTentes = useRef(new Set<string>());
+  useEffect(() => {
+    const verifier = () => {
+      if (!configurationRef.current.resumeAuto) return;
+      const { chats, travail, file } = stateRef.current;
+      for (const chat of chats) {
+        if (travail[chat.id] || file[chat.id]?.length) continue;
+        const roleId = resumePause(chat, Date.now());
+        if (!roleId) continue;
+        const cle = `${chat.id}:${roleId}:${chat.contexte?.[roleId]?.le}`;
+        if (resumesTentes.current.has(cle)) continue;
+        resumesTentes.current.add(cle);
+        compacterAuto(chat.id, roleId, "pause");
+        return;
+      }
+    };
+    const premiere = setTimeout(verifier, 5_000);
+    const minuterie = setInterval(verifier, 60_000);
+    return () => {
+      clearTimeout(premiere);
+      clearInterval(minuterie);
+    };
+  }, [compacterAuto]);
+
   /**
    * Le titre provisoire (début du texte) remplacé par la demande comprise, en
    * quelques mots, par l'IA. Un titre changé entre-temps (renommé) est gardé.
@@ -1381,6 +1433,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         return idFile;
       }
 
+      // Résumé automatique avant un message à une conversation très lourde : le résumé d'abord, le message attend son tour.
+      const cible = chat.kind === "direct" ? chat.roleIds[0] : (to ?? (chat.roleIds.includes("principal") ? "principal" : chat.roleIds[0]));
+      if (!horsFile && !routineRun && configurationRef.current.resumeAuto && !estCommandeCompacter(text) && resumeAvantEnvoi(chat, cible)) {
+        const idFile = idImpose ?? crypto.randomUUID();
+        dispatch({ type: "file/ajouter", chatId, message: { id: idFile, text, to, fichiers } });
+        compacterAuto(chatId, cible, "envoi");
+        return idFile;
+      }
+
       // Un fil sans titre prend le début de son premier message, puis le titre que l'IA en tire.
       if (chat.fil && chat.title === FIL_SANS_TITRE && text.trim()) {
         dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, title: chatTitle(text) }) });
@@ -1407,7 +1468,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       timers.current.push(setTimeout(() => lancerRef.current(chatId, roleId, message), 0));
       return message.id;
     },
-    [assurerChat, titrer],
+    [assurerChat, titrer, compacterAuto],
   );
   useEffect(() => {
     envoyerRef.current = envoyer;

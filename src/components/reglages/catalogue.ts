@@ -101,6 +101,7 @@ export const SECTIONS: SectionReglages[] = [
       { id: "configuration-klyra", titre: "Configuration KLYRA recommandée", mots: "jetons economie consommation cout tokens sobriete" },
       { id: "memoire-agents", titre: "Mémoire des agents", mots: "memory souvenirs jetons economie" },
       { id: "consignes-klyra", titre: "Consignes KLYRA", mots: "instructions claude.md agents.md jetons economie regles" },
+      { id: "resume-auto", titre: "Résumé automatique des conversations", mots: "compact compacter resumer contexte jetons economie" },
       { id: "acces", titre: "Accès des agents", mots: "permissions autorisations autonomie demander tout accepter" },
       { id: "assistant", titre: "Ton assistant", mots: "assistant principal nom renommer couleur" },
       { id: "modeles", titre: "Modèle de chaque agent", mots: "opus sonnet haiku role equipe fiche fournisseur chatgpt claude codex par defaut" },

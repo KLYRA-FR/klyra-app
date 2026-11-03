@@ -16,6 +16,7 @@ import { Erreur, Groupe, Interrupteur, Ligne, Pastille } from "./ui";
 
 /** Ce que la carte adopte : les consignes déjà modifiées par la personne restent les siennes. */
 export const adopter = (actuelle: ConfigurationKlyra): ConfigurationKlyra => ({
+  ...actuelle,
   ...CONFIGURATION_RECOMMANDEE,
   consignes: actuelle.consignes?.texte.trim() ? actuelle.consignes : { ...MODELE_CONSIGNES },
 });
@@ -124,6 +125,13 @@ export function GroupeConfigurationKlyra() {
         <Interrupteur libelle="Mémoire des agents" actif={configuration.memoireAgents} onChange={(actif) => void changerConfiguration({ memoireAgents: actif })} />
       </Ligne>
       <Consignes configuration={configuration} changer={changerConfiguration} />
+      <Ligne
+        id="resume-auto"
+        libelle="Résumé automatique"
+        description="Une conversation lourde est résumée sans que tu le demandes : avant ton message quand elle pèse plus de 80 000 jetons d’échanges, ou après 25 minutes de pause, tant que c’est encore bon marché. Jamais pendant qu’un agent travaille ; une note le dit dans la conversation. Pas encore mesuré : hors de la configuration recommandée."
+      >
+        <Interrupteur libelle="Résumé automatique" actif={configuration.resumeAuto} onChange={(actif) => void changerConfiguration({ resumeAuto: actif })} />
+      </Ligne>
       {erreur && <Erreur>{erreur}</Erreur>}
     </Groupe>
   );

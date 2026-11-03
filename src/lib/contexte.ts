@@ -105,3 +105,39 @@ export function conseilContexte(chat: Chat, maintenant: number): ConseilContexte
 export function formaterJetons(n: number): string {
   return n >= 1000 ? `${Math.round(n / 1000)} k` : String(n);
 }
+
+/* ─── Résumé automatique (configuration KLYRA, `resumeAuto`) ───────────── */
+
+/**
+ * La commande envoyée pour un résumé automatique : `/compact` et ce qu'il doit garder.
+ * Jamais pendant qu'un agent travaille : avant un message, ou pendant une pause.
+ */
+export const COMMANDE_RESUME_AUTO = `${COMMANDE_COMPACTER} Garde les décisions prises, les chemins des fichiers, les tâches en cours et les accords donnés par la personne.`;
+/** Pendant une pause : autant d'échanges, résumés tant que le cache est chaud, épargnent une relecture au prix fort au retour. */
+export const SEUIL_RESUME_PAUSE = 40_000;
+/** Avant un message : au-delà, le résumé passe d'abord (chaque étape de la réponse relira bien moins). */
+export const SEUIL_RESUME_ENVOI = 80_000;
+/** La pause qui déclenche le résumé : avant que l'app ne ferme la session (30 min) et que le cache n'expire (1 h). */
+export const PAUSE_AVANT_RESUME_MS = 25 * 60 * 1000;
+/** Au-delà, le cache a sans doute expiré (poste en veille…) : le résumé coûterait autant que la relecture. */
+export const PAUSE_MAX_RESUME_MS = 55 * 60 * 1000;
+
+/** L'agent dont la conversation, en pause, est à résumer maintenant ; null sinon. */
+export function resumePause(chat: Chat, maintenant: number): RoleId | null {
+  if (chat.fil?.statut === "archive") return null;
+  let choisi: { roleId: RoleId; echanges: number } | null = null;
+  for (const roleId of chat.roleIds) {
+    const mesure = mesureActuelle(chat, roleId);
+    if (!mesure) continue;
+    const pause = maintenant - Date.parse(mesure.le);
+    if (pause < PAUSE_AVANT_RESUME_MS || pause > PAUSE_MAX_RESUME_MS || echanges(mesure) < SEUIL_RESUME_PAUSE) continue;
+    if (!choisi || echanges(mesure) > choisi.echanges) choisi = { roleId, echanges: echanges(mesure) };
+  }
+  return choisi?.roleId ?? null;
+}
+
+/** Résumer avant d'envoyer ce message à cet agent ? */
+export function resumeAvantEnvoi(chat: Chat, roleId: RoleId): boolean {
+  const mesure = mesureActuelle(chat, roleId);
+  return !!mesure && echanges(mesure) >= SEUIL_RESUME_ENVOI;
+}

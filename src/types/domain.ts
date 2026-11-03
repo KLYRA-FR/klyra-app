@@ -313,6 +313,8 @@ export interface Message {
   moteur?: string;
   /** Réponse à « /compact » : la conversation résumée, pas une réponse de l'agent (cf. aReprendre). */
   compaction?: boolean;
+  /** Résumé lancé par l'app (configuration KLYRA) : avant un message, ou pendant une pause. Sans notification. */
+  compactionAuto?: "envoi" | "pause";
 }
 
 /* ─── Planning ─────────────────────────────────────────────────── */
