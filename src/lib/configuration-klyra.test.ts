@@ -68,7 +68,7 @@ describe("ce qui part aux agents", () => {
 describe("adopter la configuration recommandée", () => {
   it("consignes du modèle et mémoire coupée ; des consignes déjà modifiées restent les siennes", () => {
     const adoptee = adopter(CONFIGURATION_PAR_DEFAUT);
-    expect(adoptee).toEqual({ consignes: MODELE_CONSIGNES, memoireAgents: false, proposition: "adoptee" });
+    expect(adoptee).toEqual({ consignes: MODELE_CONSIGNES, memoireAgents: false, proposition: "adoptee", resumeAuto: false });
     expect(estRecommandee(adoptee)).toBe(true);
     const miennes = { texte: "Mes consignes.", version: 1 };
     expect(adopter({ ...CONFIGURATION_PAR_DEFAUT, consignes: miennes }).consignes).toEqual(miennes);

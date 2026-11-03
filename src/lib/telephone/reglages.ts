@@ -82,6 +82,7 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "configuration-klyra": P,
   "memoire-agents": P,
   "consignes-klyra": sur(RAISONS.ordinateur),
+  "resume-auto": P,
   acces: { type: "poste", elevation: RAISONS.toutAccepter },
   assistant: P,
   modeles: P,

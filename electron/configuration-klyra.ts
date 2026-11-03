@@ -22,6 +22,11 @@ export interface ConfigurationKlyra {
   memoireAgents: boolean;
   /** La carte « Configuration recommandée » : à proposer, adoptée, ou écartée par la personne. */
   proposition: "a-proposer" | "adoptee" | "ecartee";
+  /**
+   * Résumé automatique des conversations lourdes, par l'app (src/lib/contexte.ts) : avant un message, ou
+   * pendant une pause tant que le cache est chaud. Hors de la configuration recommandée tant qu'il n'est pas mesuré.
+   */
+  resumeAuto: boolean;
 }
 
 export const TAILLE_MAX_CONSIGNES = 6000;
@@ -52,10 +57,10 @@ export const MODELES_PRECEDENTS: Record<number, string> = {
 - S'il te manque une information pour avancer, demande-la en une ligne plutôt que de la chercher longtemps ou de la deviner.`,
 };
 
-export const CONFIGURATION_PAR_DEFAUT: ConfigurationKlyra = { consignes: null, memoireAgents: true, proposition: "a-proposer" };
+export const CONFIGURATION_PAR_DEFAUT: ConfigurationKlyra = { consignes: null, memoireAgents: true, proposition: "a-proposer", resumeAuto: false };
 
 /** Ce que la carte « Configuration recommandée » adopte en un clic. */
-export const CONFIGURATION_RECOMMANDEE: ConfigurationKlyra = { consignes: { ...MODELE_CONSIGNES }, memoireAgents: false, proposition: "adoptee" };
+export const CONFIGURATION_RECOMMANDEE: Omit<ConfigurationKlyra, "resumeAuto"> = { consignes: { ...MODELE_CONSIGNES }, memoireAgents: false, proposition: "adoptee" };
 
 /** Les consignes adoptées, une fois le modèle mis à jour si la personne n'y a pas touché. */
 export function consignesAJour(consignes: ConsignesAdoptees | null): ConsignesAdoptees | null {
@@ -68,7 +73,7 @@ export const nouveauModeleDisponible = (consignes: ConsignesAdoptees | null): bo
 
 /** Garde seulement ce qui est valide ; le reste reprend la valeur par défaut. */
 export function validerConfiguration(brut: unknown): ConfigurationKlyra {
-  const b = (brut ?? {}) as { consignes?: { texte?: unknown; version?: unknown } | null; memoireAgents?: unknown; proposition?: unknown };
+  const b = (brut ?? {}) as { consignes?: { texte?: unknown; version?: unknown } | null; memoireAgents?: unknown; proposition?: unknown; resumeAuto?: unknown };
   const c = b.consignes;
   const consignes =
     c && typeof c.texte === "string" && typeof c.version === "number" && Number.isInteger(c.version) && c.version > 0
@@ -78,6 +83,7 @@ export function validerConfiguration(brut: unknown): ConfigurationKlyra {
     consignes: consignesAJour(consignes),
     memoireAgents: typeof b.memoireAgents === "boolean" ? b.memoireAgents : CONFIGURATION_PAR_DEFAUT.memoireAgents,
     proposition: b.proposition === "adoptee" || b.proposition === "ecartee" ? b.proposition : "a-proposer",
+    resumeAuto: b.resumeAuto === true,
   };
 }
 

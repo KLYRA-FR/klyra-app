@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { conseilContexte, DUREE_CACHE_MS, estCommandeCompacter, formaterJetons, nouvelleMesure, SEUIL_LOURD, SEUIL_REPRISE } from "./contexte";
+import {
+  COMMANDE_RESUME_AUTO,
+  conseilContexte,
+  DUREE_CACHE_MS,
+  estCommandeCompacter,
+  formaterJetons,
+  nouvelleMesure,
+  resumeAvantEnvoi,
+  resumePause,
+  SEUIL_LOURD,
+  SEUIL_REPRISE,
+  SEUIL_RESUME_ENVOI,
+  SEUIL_RESUME_PAUSE,
+} from "./contexte";
 import { aReprendre } from "./fournisseurs";
 import type { Chat, Message } from "@/types/domain";
 
@@ -132,5 +145,35 @@ describe("aReprendre après un résumé", () => {
       msg("resume", { kind: "role", roleId: "dev" }, { compaction: true }),
     ];
     expect(aReprendre(fil, "dev", "claude").map((m) => m.id)).toEqual(["message-iris", "/compact", "resume"]);
+  });
+});
+
+describe("résumé automatique", () => {
+  const socle = 15_000;
+  const mesure = (echanges: number, minutes: number) => ({ dev: { jetons: socle + echanges, base: socle, le: ilYa(minutes * 60_000), session: "s1" } });
+
+  it("pendant une pause : entre 25 et 55 minutes, pour une conversation d'au moins 40 k jetons d'échanges", () => {
+    expect(resumePause(chat(mesure(SEUIL_RESUME_PAUSE, 26)), MAINTENANT)).toBe("dev");
+    expect(resumePause(chat(mesure(SEUIL_RESUME_PAUSE - 1, 26)), MAINTENANT)).toBeNull();
+    expect(resumePause(chat(mesure(SEUIL_RESUME_PAUSE, 10)), MAINTENANT)).toBeNull();
+    // Poste en veille : le cache a sans doute expiré, le résumé coûterait autant que la relecture.
+    expect(resumePause(chat(mesure(SEUIL_RESUME_PAUSE, 70)), MAINTENANT)).toBeNull();
+  });
+
+  it("pas pour un fil archivé, ni pour la mesure d'une ancienne session", () => {
+    const fil = { roleId: "dev", statut: "archive" } as unknown as Chat["fil"];
+    expect(resumePause(chat(mesure(60_000, 30), { fil }), MAINTENANT)).toBeNull();
+    expect(resumePause(chat(mesure(60_000, 30), { sessions: { dev: "autre" } }), MAINTENANT)).toBeNull();
+  });
+
+  it("avant un message : seulement au-delà de 80 k jetons d'échanges", () => {
+    expect(resumeAvantEnvoi(chat(mesure(SEUIL_RESUME_ENVOI, 0)), "dev")).toBe(true);
+    expect(resumeAvantEnvoi(chat(mesure(SEUIL_RESUME_ENVOI - 1, 0)), "dev")).toBe(false);
+    expect(resumeAvantEnvoi(chat(mesure(SEUIL_RESUME_ENVOI, 0)), "designer")).toBe(false);
+  });
+
+  it("la commande est un /compact avec ce qu'il faut garder", () => {
+    expect(estCommandeCompacter(COMMANDE_RESUME_AUTO)).toBe(true);
+    expect(COMMANDE_RESUME_AUTO).toMatch(/décisions.*chemins.*tâches en cours.*accords/);
   });
 });
