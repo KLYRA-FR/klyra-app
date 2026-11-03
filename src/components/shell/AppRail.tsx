@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
+import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
 import { colonneTicket } from "@/lib/tickets";
 import { useProjects, useWorkspace } from "@/lib/workspace";
@@ -33,9 +34,9 @@ function Entree({ icone, nom }: { icone: IconName; nom: string; active?: boolean
 
 /** Ce que le bouton du rail ouvre à côté de lui. */
 const PANNEAUX = {
-  fichiers: { icone: "layout-left", nom: "Fichiers", titre: "Fichiers du projet", cible: "les fichiers du projet" },
-  conversations: { icone: "layout-left", nom: "Liste", titre: "Agents et conversations", cible: "les conversations" },
-} as const satisfies Record<string, { icone: IconName; nom: string; titre: string; cible: string }>;
+  fichiers: { icone: "layout-left", nom: "Fichiers", cible: "les fichiers du projet" },
+  conversations: { icone: "layout-left", nom: "Liste", cible: "les conversations" },
+} as const satisfies Record<string, { icone: IconName; nom: string; cible: string }>;
 
 const SEPARATEUR = <span aria-hidden="true" className="my-1.5 h-px w-8 shrink-0 bg-white/12" />;
 
@@ -82,16 +83,19 @@ export function AppRail({
       className="my-2 ml-2 flex w-[72px] shrink-0 flex-col items-center rounded-xl bg-fond-inverse-fort pt-4 pb-3 in-data-[shell=desktop]:pt-9"
     >
       {/* Le logo-icône KLYRA (carré K1, signe blanc) ; la zone sert aussi à déplacer la fenêtre. */}
-      <Link href="/" aria-label="KLYRA, accueil" className="mb-3 flex h-10 shrink-0 items-center [-webkit-app-region:drag]">
-        <Image src="/brand/logo-icone.svg" alt="" width={36} height={36} priority />
-      </Link>
+      <Infobulle texte="Accueil" cote="droite" className="mb-3">
+        <Link href="/" aria-label="KLYRA, accueil" className="flex h-10 shrink-0 items-center [-webkit-app-region:drag]">
+          <Image src="/brand/logo-icone.svg" alt="" width={36} height={36} priority />
+        </Link>
+      </Infobulle>
 
       {/* Le milieu défile si la fenêtre est basse : le bas du rail reste visible. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto [scrollbar-width:none]">
         {NAVIGATION.map((item) => {
           const active = pathname === item.href || (item.href === "/chats" && (pathname === "/equipe" || (pathname === "/chat" && panneau === "conversations")));
           return (
-            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} title={item.label} className={cn(entree(active), "relative")}>
+            <Infobulle key={item.href} texte={item.label} cote="droite">
+            <Link href={item.href} aria-current={active ? "page" : undefined} className={cn(entree(active), "relative")}>
               <Entree icone={item.icon} nom={item.label} active={active} />
               {item.href === "/tickets" && aValider > 0 && (
                 <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-pill bg-bleu-k1-500 px-1 text-ui-2xs leading-none font-semibold text-texte-inverse">
@@ -100,23 +104,25 @@ export function AppRail({
                 </span>
               )}
             </Link>
+            </Infobulle>
           );
         })}
 
         {SEPARATEUR}
         {/* Les projets : une tuile par projet du rail, ses deux lettres ; la liste complète est dans Projets. */}
-        <Link href="/projets" title="Projets" className={entree(pathname === "/projets")}>
-          <Entree icone="projets-dossier" nom="Projets" active={pathname === "/projets"} />
-        </Link>
+        <Infobulle texte="Projets" cote="droite">
+          <Link href="/projets" className={entree(pathname === "/projets")}>
+            <Entree icone="projets-dossier" nom="Projets" active={pathname === "/projets"} />
+          </Link>
+        </Infobulle>
         <div className="flex flex-col items-center gap-1.5 py-1">
           {projetsRail.map((p) => {
             const actif = pathname === "/projet" && currentId === p.id;
             return (
+              <Infobulle key={p.id} texte={p.name} cote="droite">
               <Link
-                key={p.id}
                 href={`/projet?id=${p.id}`}
                 aria-label={p.name}
-                title={p.name}
                 aria-current={actif ? "page" : undefined}
                 className={cn(
                   "flex size-10 items-center justify-center rounded-md text-ui-s font-semibold no-underline transition-[background-color,box-shadow] duration-[120ms] ease-sortie",
@@ -126,6 +132,7 @@ export function AppRail({
               >
                 {sigle(p.name)}
               </Link>
+              </Infobulle>
             );
           })}
         </div>
@@ -133,17 +140,18 @@ export function AppRail({
         {bouton && onToggleFiles && (
           <>
             {SEPARATEUR}
+            <Infobulle texte={filesOpen ? `Masquer ${bouton.cible}` : `Afficher ${bouton.cible}`} cote="droite">
             <button
               type="button"
               onClick={onToggleFiles}
               aria-pressed={filesOpen}
               data-son="panneau"
               aria-label={filesOpen ? `Masquer ${bouton.cible}` : `Afficher ${bouton.cible}`}
-              title={bouton.titre}
               className={entree(filesOpen)}
             >
               <Entree icone={bouton.icone} nom={bouton.nom} active={filesOpen} />
             </button>
+            </Infobulle>
           </>
         )}
       </div>
