@@ -7,6 +7,7 @@ import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { chercher, estSection, SECTIONS, type IdSection } from "@/components/reglages/catalogue";
 import { Equipe } from "@/components/reglages/sections/Equipe";
+import { CHANGELOG } from "@/components/reglages/sections/MisesAJour";
 import { ancreReglage } from "@/components/reglages/ui";
 import { RondApercu } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
@@ -737,6 +738,16 @@ function MisesAJour() {
       </VueLecture>
       <SurOrdinateur section="mises-a-jour" />
       <div className="px-4">
+        <a
+          id={ancreReglage("changelog")}
+          href={CHANGELOG}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex min-h-12 scroll-mt-4 items-center justify-between border-b border-bordure-subtile text-body-s text-texte-principal"
+        >
+          Nouveautés
+          <Icon name="link-external" size={20} className="text-icone-secondaire" />
+        </a>
         <a
           id={ancreReglage("depot-versions")}
           href={DEPOT}

@@ -110,12 +110,16 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "computer-use-actif": { type: "poste", elevation: RAISONS.computerUse },
   "autorisation-accessibilite": { type: "lecture", elevation: RAISONS.computerUse },
   "autorisation-ecran": { type: "lecture", elevation: RAISONS.computerUse },
-  /* Mises à jour : l'état se lit, l'installation reste devant l'ordinateur. */
+  /* Marketplace : les connexions et les clés des apps restent sur l'ordinateur. */
+  composio: sur(RAISONS.composio),
+  "apps-directes": sur(RAISONS.cles),
+  /* Mises à jour : l'état se lit, l'installation reste devant l'ordinateur ; les liens publics s'ouvrent d'ici. */
   "version-installee": L,
   "version-disponible": L,
   "derniere-verification": L,
   "rechercher-maj": P,
   "installer-maj": sur(RAISONS.maj),
+  changelog: T,
   "depot-versions": T,
 };
 
