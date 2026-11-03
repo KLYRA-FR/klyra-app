@@ -3,11 +3,12 @@ import { SECTIONS, type EntreeReglage, type IdSection } from "@/components/regla
 
 /**
  * Les Réglages du serveur : ce qui appartient à la machine où tournent les agents (Ce PC ou un VPS),
- * à part des Réglages de l'app, comme dans OpenBot. Sur le bureau, les sections Claude, Agents,
- * Autres IA et Computer Use des Réglages de l'app vivent ici ; le téléphone garde les siennes.
+ * à part des Réglages de l'app, comme dans OpenBot. Sur le bureau, les sections Claude et Autres IA
+ * des Réglages de l'app vivent ici, dans Fournisseurs ; le téléphone garde les siennes. Agents et
+ * Computer Use restent dans les Réglages de l'app : ils règlent cet ordinateur, pas un serveur.
  */
 
-export type IdSectionServeur = "general" | "fournisseurs" | "agents" | "autres-ia" | "computer-use";
+export type IdSectionServeur = "general" | "fournisseurs";
 
 export interface SectionServeur {
   id: IdSectionServeur;
@@ -15,8 +16,6 @@ export interface SectionServeur {
   icone: IconName;
   description: string;
   entrees: EntreeReglage[];
-  /** Seulement pour Ce PC : un VPS n'a pas (encore) ces réglages. */
-  pcSeulement?: boolean;
 }
 
 const reprise = (id: IdSection) => SECTIONS.find((s) => s.id === id)!;
@@ -37,26 +36,22 @@ export const SECTIONS_SERVEUR: SectionServeur[] = [
     id: "fournisseurs",
     titre: "Fournisseurs",
     icone: "stars",
-    description: "Les IA qui font travailler les agents sur ce serveur : leurs comptes, leurs clés et leurs versions.",
+    description: "Les IA de ce serveur : celles qui font travailler les agents, et celles qu’ils peuvent consulter.",
     entrees: [
       { id: "fournisseurs-liste", titre: "Fournisseurs connectés", mots: "claude chatgpt openai codex ia changer" },
+      { id: "autres-ia", titre: "IA à consulter et leurs clés", mots: "autres ia chatgpt openai gemini mistral deepseek grok xai openrouter cle api trousseau deuxieme avis" },
       { id: "compte-chatgpt", titre: "Compte ChatGPT", mots: "openai codex connexion deconnexion abonnement plus pro" },
       { id: "cle-api-chatgpt", titre: "Clé API d’OpenAI", mots: "chatgpt codex cle trousseau" },
       { id: "moteur-version", titre: "Version et mise à jour des moteurs", mots: "claude code codex installer mettre a jour disponible" },
       ...reprise("claude").entrees,
     ],
   },
-  { ...reprise("agents"), id: "agents", pcSeulement: true, entrees: [...reprise("agents").entrees, { id: "fournisseur-agent", titre: "Fournisseur de chaque agent", mots: "chatgpt claude codex ia par defaut" }] },
-  { ...reprise("autres-ia"), id: "autres-ia", pcSeulement: true },
-  { ...reprise("computer-use"), id: "computer-use", pcSeulement: true },
 ];
 
 /** Les sections des Réglages de l'app qui sont maintenant ici (sur le bureau), et où les ouvrir. */
 export const DEPLACEES: Partial<Record<IdSection, { section: IdSectionServeur; fournisseur?: string }>> = {
   claude: { section: "fournisseurs", fournisseur: "claude" },
-  agents: { section: "agents" },
-  "autres-ia": { section: "autres-ia" },
-  "computer-use": { section: "computer-use" },
+  "autres-ia": { section: "fournisseurs" },
 };
 
 /** Le chemin d'une section des Réglages du serveur, et d'un réglage où mener. */
