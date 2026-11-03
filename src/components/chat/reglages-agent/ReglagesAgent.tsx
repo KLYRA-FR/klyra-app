@@ -52,7 +52,12 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
   const coupee = reglages ? !reglages.configuration.memoireAgents : false;
   const fiche = assistant ? "/equipe?agent=principal" : role.file ? `/equipe?agent=${role.id}&mode=modifier` : `/equipe?agent=${role.id}`;
   const nbRoutines = routines.routines.filter((r) => r.agentId === role.id).length;
-  const dossier = chat.lieu ? "Sur le serveur" : chat.kind === "equipe" && project ? project.folder : `~/.klyra/atelier/${role.id}`;
+  // Le même dossier que celui où l'agent travaille : sur ce PC, ou sur le VPS (son atelier y est `~/atelier/<agent>`).
+  const dossier = chat.lieu
+    ? `${contexte.dossier ?? `~/atelier/${role.id}`} · serveur`
+    : chat.kind === "equipe" && project
+      ? project.folder
+      : `~/.klyra/atelier/${role.id}`;
   const retour = () => setVue("accueil");
 
   /** Ajoute ou retire une compétence préchargée par sa fiche (`skills`, en liste), par `save`. */
@@ -92,7 +97,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
 
   const resumeMemoire = (() => {
     const l = memoire.lecture;
-    if (l.etat === "indisponible") return chat.lieu ? "Sur le serveur" : undefined;
+    if (l.etat === "indisponible") return undefined;
     if (l.etat !== "pret") return undefined;
     if (!l.valeur) return "Sans mémoire";
     const n = l.valeur.souvenirs.filter((s) => !s.toujours).length;

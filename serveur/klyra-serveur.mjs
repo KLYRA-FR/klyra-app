@@ -481,6 +481,28 @@ export function creerGestionnaire(options) {
           return repondre(res, 400, { erreur: "competences", message: erreur instanceof Error ? erreur.message : "Lecture impossible sur le VPS." });
         }
       }
+      /*
+       * La mémoire d'un agent de ce VPS, pour le panneau Souvenirs de l'app (comme sur le PC) :
+       * GET memoire et souvenir (`?agent=…&dossier=…&session=…&id=…`), POST souvenir-ecrire et souvenir-creer.
+       */
+      if (action === "memoire" || action === "souvenir" || action === "souvenir-ecrire" || action === "souvenir-creer") {
+        const lecture = action === "memoire" || action === "souvenir";
+        if (req.method !== (lecture ? "GET" : "POST")) return repondre(res, 405, { erreur: "methode" });
+        try {
+          if (lecture) {
+            const agent = url.searchParams.get("agent");
+            const contexte = { dossier: url.searchParams.get("dossier"), sessionId: url.searchParams.get("session") };
+            return repondre(res, 200, action === "memoire" ? { memoire: agents.memoire.lire(agent, contexte) } : { souvenir: agents.memoire.souvenir(agent, contexte, url.searchParams.get("id")) });
+          }
+          const c = (await lireCorpsRequete(req, CORPS_AGENT_MAX)) ?? {};
+          const contexte = { dossier: c.dossier ?? null, sessionId: c.sessionId ?? null };
+          if (action === "souvenir-ecrire") return repondre(res, 200, { ecrit: agents.memoire.ecrire(c.agent, contexte, c.id, c.contenu, c.attendu) });
+          return repondre(res, 200, { souvenir: agents.memoire.creer(c.agent, contexte, c.titre, c.contenu) });
+        } catch (erreur) {
+          const code = erreur && typeof erreur === "object" && typeof erreur.code === "string" ? erreur.code : "memoire";
+          return repondre(res, code === "conflit" ? 409 : 400, { erreur: code, message: erreur instanceof Error ? erreur.message : "Lecture impossible sur le VPS." });
+        }
+      }
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
       const corps = await lireCorpsRequete(req, CORPS_AGENT_MAX);
       const requestId = typeof corps?.requestId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(corps.requestId) ? corps.requestId : null;

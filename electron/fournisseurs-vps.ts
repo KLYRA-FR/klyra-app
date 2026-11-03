@@ -1,6 +1,5 @@
 import { net, shell } from "electron";
 import { createServer } from "node:http";
-import type { Competence, Competences } from "./connaissances-agent";
 import type { CompteMoteur, ModeleMoteur, Progression } from "./moteurs/types";
 
 /**
@@ -15,11 +14,11 @@ const ATTENTE_MS = 20_000;
 const ATTENTE_TEST_MS = 130_000;
 const TRAVAIL_MAX_MS = 15 * 60_000;
 const CONNEXION_MAX_MS = 15 * 60_000;
-const VIEUX_SERVEUR = "Ce VPS ne connaît pas encore les fournisseurs : relance la commande d’installation sur le VPS pour le mettre à jour.";
+export const VIEUX_SERVEUR = "Ce VPS ne connaît pas encore les fournisseurs : relance la commande d’installation sur le VPS pour le mettre à jour.";
 
 type Json = Record<string, unknown>;
 
-async function appel(origine: string, jeton: string | null, chemin: string, methode: "GET" | "POST" = "GET", corps?: unknown, delai = ATTENTE_MS): Promise<Json> {
+export async function appel(origine: string, jeton: string | null, chemin: string, methode: "GET" | "POST" = "GET", corps?: unknown, delai = ATTENTE_MS): Promise<Json> {
   if (!jeton) throw new Error("Ce PC n’est plus relié à ce VPS. Relance la commande sur le VPS et colle le nouveau lien dans Serveurs.");
   const controle = new AbortController();
   const minuterie = setTimeout(() => controle.abort(), delai);
@@ -198,38 +197,4 @@ export async function retirerIaVps(origine: string, jeton: string | null, id: st
 
 export async function testerIaVps(origine: string, jeton: string | null, id: string) {
   return String((await appel(origine, jeton, "/klyra/v1/ia/tester", "POST", { id }, ATTENTE_TEST_MS)).texte ?? "");
-}
-
-/** Une compétence telle que le VPS la renvoie, vérifiée champ par champ. */
-function competenceVps(c: unknown): Competence | null {
-  if (!c || typeof c !== "object") return null;
-  const x = c as Json;
-  if (typeof x.nom !== "string" || !x.nom) return null;
-  return {
-    nom: x.nom,
-    description: typeof x.description === "string" ? x.description : "",
-    version: typeof x.version === "string" ? x.version : null,
-    dossier: typeof x.dossier === "string" ? x.dossier : null,
-  };
-}
-
-/**
- * Les compétences d'un agent sur le VPS (serveur/agents.mjs, `competences`), dans la forme de
- * `agents:competences` : celles que sa fiche précharge, du projet et de l'utilisateur klyra.
- */
-export async function competencesVps(origine: string, jeton: string | null, agent: string, dossier: string | null): Promise<Competences> {
-  if (agent !== "principal" && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(agent)) throw new Error("Nom d’agent invalide.");
-  const requete = `/klyra/v1/agent/competences?agent=${encodeURIComponent(agent)}${dossier ? `&dossier=${encodeURIComponent(dossier)}` : ""}`;
-  let json: Json;
-  try {
-    json = await appel(origine, jeton, requete);
-  } catch (e) {
-    // Un serveur d'avant cette version répond « introuvable » à cette route.
-    if (e instanceof Error && e.message === VIEUX_SERVEUR) throw new Error("Ce VPS ne sait pas encore lire les compétences : relance la commande d’installation sur le VPS pour le mettre à jour.");
-    throw e;
-  }
-  const brut = json.competences as Json | undefined;
-  const liste = (v: unknown) => (Array.isArray(v) ? v.map(competenceVps).filter((c): c is Competence => c !== null) : []);
-  if (!brut || typeof brut !== "object") throw new Error("Le VPS n’a pas répondu comme prévu.");
-  return { fiche: liste(brut.fiche), poste: liste(brut.poste), projet: liste(brut.projet) };
 }

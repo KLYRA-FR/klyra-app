@@ -2,6 +2,8 @@ import { app, net } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { enregistrerConsommation } from "./consommation";
+import { ligneValide } from "./consommation-ecart";
 import type { AgentEvent, StreamOptions } from "./moteurs/types";
 import { contexteDe, type ContexteReponse } from "./contexte-distant";
 
@@ -23,6 +25,11 @@ export interface Fenetre {
 export interface Equipe {
   fiches: { id: string; nom: string; contenu: string }[];
   assistant: string | null;
+  /**
+   * La configuration KLYRA adoptée sur ce PC (mémoire coupée, consignes), appliquée par le VPS à toutes
+   * ses sessions : messages du PC, du téléphone PC fermé, routines du serveur.
+   */
+  configuration: { memoireAgents: boolean; consignes: string | null };
   empreinte: string;
 }
 
@@ -101,7 +108,27 @@ async function requete(origine: string, chemin: string, methode: "POST" | "PUT",
   }
 }
 
+/** Les réponses du VPS dont la consommation est déjà inscrite : un événement relu n'est pas compté deux fois. */
+const comptees = new Set<string>();
+
+/**
+ * Ce qu'une réponse du VPS a consommé (sa fin porte l'écart du `modelUsage`, calculé là-bas comme ici par
+ * consommation-ecart.ts) : inscrit dans le journal de ce PC, comme une réponse locale, pour l'Utilisation
+ * de l'agent et le Profil.
+ */
+function compterConsommation(requestId: string, event: unknown) {
+  const c = (event as { type?: string; consommation?: { agent?: unknown; lignes?: unknown } }) ?? {};
+  if (c.type !== "fin" || !c.consommation || comptees.has(requestId)) return;
+  comptees.add(requestId);
+  const agent = typeof c.consommation.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(c.consommation.agent) ? c.consommation.agent : "principal";
+  for (const brut of Array.isArray(c.consommation.lignes) ? c.consommation.lignes.slice(0, 20) : []) {
+    const ligne = ligneValide(brut);
+    if (ligne) enregistrerConsommation({ fournisseur: "Claude Code", modele: ligne.modele, agent, jetons: ligne.jetons, coutUsd: ligne.coutUsd });
+  }
+}
+
 function distribuer(origine: string, entree: Entree) {
+  if (typeof entree.requestId === "string" && entree.event) compterConsommation(entree.requestId, entree.event);
   const fenetre = liaison?.fenetre();
   if (!fenetre || typeof entree.requestId !== "string") return;
   if (entree.spontane) {

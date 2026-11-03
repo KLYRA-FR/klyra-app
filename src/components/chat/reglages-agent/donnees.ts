@@ -21,13 +21,13 @@ export function contexteDe(chat: Chat, projet: Project | undefined, agentId: str
 
 type Lecture<T> = { etat: "chargement" } | { etat: "pret"; valeur: T } | { etat: "erreur"; message: string } | { etat: "indisponible" };
 
-/** La mémoire de l'agent (null : il n'en a pas), relue à la demande et quand `cle` change (fin d'un travail…). */
+/** La mémoire de l'agent (null : il n'en a pas), sur ce PC ou sur le VPS de la conversation ; relue à la demande et quand `cle` change (fin d'un travail…). */
 export function useMemoireAgent(agentId: string, contexte: ContexteConnaissances | null, cle: unknown) {
   const [lecture, setLecture] = useState<Lecture<MemoireAgent | null>>({ etat: "chargement" });
   const dossier = contexte?.dossier ?? null;
   const sessionId = contexte?.sessionId ?? null;
-  // La mémoire d'un agent sur un VPS ne se lit pas encore d'ici.
-  const disponible = contexte !== null && !contexte.lieu;
+  const lieu = contexte?.lieu ?? null;
+  const disponible = contexte !== null;
   const [tour, setTour] = useState(0);
   const actualiser = useCallback(() => setTour((t) => t + 1), []);
 
@@ -40,14 +40,14 @@ export function useMemoireAgent(agentId: string, contexte: ContexteConnaissances
         actif = false;
       };
     }
-    void lire(agentId, { dossier, sessionId }).then((r) => {
+    void lire(agentId, lieu ? { dossier, sessionId, lieu } : { dossier, sessionId }).then((r) => {
       if (!actif) return;
       setLecture(r.ok ? { etat: "pret", valeur: r.data } : { etat: "erreur", message: r.message });
     });
     return () => {
       actif = false;
     };
-  }, [agentId, dossier, sessionId, disponible, cle, tour]);
+  }, [agentId, dossier, sessionId, lieu, disponible, cle, tour]);
 
   return { lecture, actualiser };
 }

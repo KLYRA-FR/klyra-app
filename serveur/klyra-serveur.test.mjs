@@ -147,6 +147,9 @@ test("la page publique ne montre ni lien ni code, le reste est fermé", async ()
 const FAUX_CLAUDE = `#!/usr/bin/env node
 const args = process.argv.slice(2);
 require("node:fs").appendFileSync(process.env.HOME + "/args.log", JSON.stringify(args) + "\\n");
+require("node:fs").appendFileSync(process.env.HOME + "/env.log", JSON.stringify({ memoireCoupee: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === "1" }) + "\\n");
+let tours = 0;
+const usage = () => ({ "claude-opus-5-5": { inputTokens: 10 * tours, outputTokens: 5 * tours, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0.01 * tours } });
 const ecrire = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
 const session = "11111111-2222-3333-4444-555555555555";
 let attente = null;
@@ -166,7 +169,8 @@ process.stdin.on("data", (d) => {
         continue;
       }
       ecrire({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Bonjour " + m.message.content } } });
-      ecrire({ type: "result", subtype: "success", is_error: false, result: "Bonjour " + m.message.content, session_id: session });
+      tours += 1;
+      ecrire({ type: "result", subtype: "success", is_error: false, result: "Bonjour " + m.message.content, session_id: session, modelUsage: usage() });
     }
     if (m.type === "control_response" && attente) {
       const ok = m.response.response.behavior === "allow";
@@ -335,6 +339,87 @@ test("les compétences d'un agent du VPS : lues sur le serveur, préchargées, e
     assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "s2", options: { ...options, skill: "../x" } } })).statut, 202);
     const refus = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "s2"));
     assert.match(refus.recus.find((e) => e.requestId === "s2").event.erreur, /Compétence invalide/);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("la mémoire d'un agent du VPS, la configuration KLYRA reçue avec l'équipe et la consommation, comme sur le PC", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const claude = path.join(home, "faux-claude");
+  writeFileSync(claude, FAUX_CLAUDE);
+  chmodSync(claude, 0o755);
+  writeFileSync(path.join(dossier, "claude-token"), "jeton-claude");
+  const projet = path.join(home, "projets", "site");
+  mkdirSync(projet, { recursive: true });
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, claude });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  const lire = (jeton, action, params) => appel(ecoute.port, `${CHEMIN_AGENT}/${action}?${new URLSearchParams(params)}`, { jeton });
+  try {
+    assert.equal((await lire(undefined, "memoire", { agent: "hugo" })).statut, 401);
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const fiches = [
+      { id: "hugo", nom: "Hugo", contenu: "---\nname: hugo\nmemory: user\n---\nPrompt." },
+      { id: "iris", nom: "Iris", contenu: "---\nname: iris\nmemory: project\n---\nPrompt." },
+      { id: "lou", nom: "Lou", contenu: "---\nname: lou\n---\nPrompt." },
+    ];
+    // La configuration KLYRA du PC arrive avec l'équipe : mémoire coupée, consignes.
+    const equipe = (configuration, empreinte) => appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches, assistant: "Cicco", configuration, empreinte } });
+    assert.equal((await equipe({ memoireAgents: false, consignes: "CONSIGNES-KLYRA-ESSAI" }, "e1")).statut, 200);
+
+    // Sans mémoire dans sa fiche : null ; avec : vide tant qu'il n'a rien retenu.
+    assert.equal((await lire(jeton, "memoire", { agent: "lou" })).json.memoire, null);
+    const vide = (await lire(jeton, "memoire", { agent: "hugo" })).json.memoire;
+    assert.equal(vide.portee, "user");
+    assert.equal(vide.dossier, path.join(home, ".claude", "agent-memory", "hugo"));
+    assert.deepEqual(vide.souvenirs, []);
+
+    // Un souvenir ajouté depuis l'app : son fichier, sa ligne dans l'index, relus par l'agent.
+    const cree = await appel(ecoute.port, `${CHEMIN_AGENT}/souvenir-creer`, { methode: "POST", jeton, corps: { agent: "hugo", titre: "Ton de Corentin", contenu: "Tutoiement, phrases courtes." } });
+    assert.equal(cree.statut, 200);
+    assert.equal(cree.json.souvenir.id, "ton-de-corentin.md");
+    const liste = (await lire(jeton, "memoire", { agent: "hugo" })).json.memoire.souvenirs;
+    assert.deepEqual(liste.map((x) => [x.id, x.toujours]), [["MEMORY.md", true], ["ton-de-corentin.md", false]]);
+    const lu = (await lire(jeton, "souvenir", { agent: "hugo", id: "ton-de-corentin.md" })).json.souvenir;
+    assert.match(lu.contenu, /Tutoiement, phrases courtes\./);
+    const ecrit = await appel(ecoute.port, `${CHEMIN_AGENT}/souvenir-ecrire`, { methode: "POST", jeton, corps: { agent: "hugo", id: "ton-de-corentin.md", contenu: `${lu.contenu}Vouvoiement jamais.`, attendu: lu.modifieLe } });
+    assert.equal(ecrit.statut, 200);
+    assert.match(readFileSync(path.join(home, ".claude", "agent-memory", "hugo", "ton-de-corentin.md"), "utf8"), /Vouvoiement jamais\./);
+    // Changé entre-temps : refusé, rien d'écrasé ; hors de la mémoire : refusé.
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/souvenir-ecrire`, { methode: "POST", jeton, corps: { agent: "hugo", id: "ton-de-corentin.md", contenu: "écrasé", attendu: lu.modifieLe - 60_000 } })).statut, 409);
+    assert.equal((await lire(jeton, "souvenir", { agent: "hugo", id: "../../agents/hugo.md" })).statut, 400);
+    assert.equal((await lire(jeton, "memoire", { agent: "../x" })).statut, 400);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/memoire?agent=hugo`, { methode: "POST", jeton, corps: {} })).statut, 405);
+    // Portée « project » : dans le projet ; un projet hors du dossier de klyra est refusé.
+    assert.equal((await lire(jeton, "memoire", { agent: "iris", dossier: projet })).json.memoire.dossier, path.join(projet, ".claude", "agent-memory", "iris"));
+    assert.equal((await lire(jeton, "memoire", { agent: "iris", dossier: "/etc" })).statut, 400);
+    // L'assistant : la mémoire automatique de son atelier sur le VPS.
+    const auto = (await lire(jeton, "memoire", { agent: "principal" })).json.memoire;
+    assert.equal(auto.portee, "auto");
+    assert.equal(auto.dossier, path.join(home, ".claude", "projects", path.join(home, "atelier", "principal").replace(/[^a-zA-Z0-9]/g, "-"), "memory"));
+
+    // Une session du VPS reçoit cette configuration, comme une session de l'app.
+    const options = { agent: "hugo", prompt: "toi", sessionId: null, acces: "projet" };
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "m1", options } })).statut, 202);
+    const fin1 = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "m1" && e.event?.type === "fin"));
+    assert.match(readFileSync(path.join(home, "args.log"), "utf8"), /CONSIGNES-KLYRA-ESSAI/);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(home, "env.log"), "utf8").trim().split("\n").at(-1)), { memoireCoupee: true });
+    // Ce que la réponse a consommé revient avec sa fin, en écart du cumul : 10 puis 10 de plus.
+    const c1 = fin1.recus.find((e) => e.requestId === "m1" && e.event.type === "fin").event.consommation;
+    assert.deepEqual(c1, { agent: "hugo", lignes: [{ modele: "claude-opus-5-5", jetons: { entree: 10, sortie: 5, cacheLu: 0, cacheEcrit: 0 }, coutUsd: 0.01 }] });
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "m2", options: { ...options, sessionId: "11111111-2222-3333-4444-555555555555" } } });
+    const fin2 = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "m2" && e.event?.type === "fin"));
+    assert.equal(fin2.recus.find((e) => e.requestId === "m2" && e.event.type === "fin").event.consommation.lignes[0].jetons.entree, 10);
+    // La configuration change sur le PC (mémoire gardée) : Claude Code est relancé sur la même session, sans la variable.
+    assert.equal((await equipe({ memoireAgents: true, consignes: null }, "e2")).statut, 200);
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "m3", options: { ...options, sessionId: "11111111-2222-3333-4444-555555555555" } } });
+    await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "m3" && e.event?.type === "fin"));
+    assert.deepEqual(JSON.parse(readFileSync(path.join(home, "env.log"), "utf8").trim().split("\n").at(-1)), { memoireCoupee: false });
+    assert.doesNotMatch(readFileSync(path.join(home, "args.log"), "utf8").trim().split("\n").at(-1), /CONSIGNES-KLYRA-ESSAI/);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

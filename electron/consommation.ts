@@ -1,6 +1,7 @@
 import { app } from "electron";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { ecartModelUsage, type CumulUsage } from "./consommation-ecart";
 import { lireHistorique, rattraperHistorique } from "./historique";
 
 /**
@@ -98,46 +99,15 @@ export async function lireConsommation() {
 
 /* ─── Claude Code ─────────────────────────────────────────────── */
 
-/** `modelUsage` d'un message `result` de Claude Code : cumulé depuis le début du processus. */
-export type UsageModeles = Record<string, { inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; costUSD?: number }>;
-
-type Cumul = Record<string, Jetons & { cout: number }>;
+type Cumul = CumulUsage;
 
 /**
- * Enregistre ce qu'un tour a consommé. Claude Code donne des totaux cumulés
- * pour tout le processus (vérifié : le 2e résultat d'une session contient le
- * 1er) : on garde le cumul précédent et on enregistre l'écart, modèle par modèle.
- * Rend le nouveau cumul.
+ * Enregistre ce qu'un tour a consommé : l'écart de son `modelUsage` avec le cumul précédent
+ * (cf. consommation-ecart.ts, le même calcul que sur un VPS). Rend le nouveau cumul.
  */
 export function enregistrerTourClaude(usage: unknown, precedent: Cumul, agent: string | null): Cumul {
-  if (!usage || typeof usage !== "object") return precedent;
-  const cumul: Cumul = { ...precedent };
-  for (const [modele, u] of Object.entries(usage as UsageModeles)) {
-    const maintenant = {
-      entree: nombre(u?.inputTokens),
-      sortie: nombre(u?.outputTokens),
-      cacheLu: nombre(u?.cacheReadInputTokens),
-      cacheEcrit: nombre(u?.cacheCreationInputTokens),
-      cout: nombre(u?.costUSD),
-    };
-    const avant = precedent[modele] ?? { entree: 0, sortie: 0, cacheLu: 0, cacheEcrit: 0, cout: 0 };
-    // Un compteur qui recule : nouveau processus, on repart de zéro.
-    const recul = maintenant.entree < avant.entree || maintenant.sortie < avant.sortie;
-    const base = recul ? { entree: 0, sortie: 0, cacheLu: 0, cacheEcrit: 0, cout: 0 } : avant;
-    enregistrerConsommation({
-      fournisseur: "Claude Code",
-      modele,
-      agent: agent ?? "principal",
-      jetons: {
-        entree: maintenant.entree - base.entree,
-        sortie: maintenant.sortie - base.sortie,
-        cacheLu: Math.max(0, maintenant.cacheLu - base.cacheLu),
-        cacheEcrit: Math.max(0, maintenant.cacheEcrit - base.cacheEcrit),
-      },
-      coutUsd: maintenant.cout - base.cout > 0 ? maintenant.cout - base.cout : null,
-    });
-    cumul[modele] = maintenant;
-  }
+  const { cumul, lignes } = ecartModelUsage(usage, precedent);
+  for (const l of lignes) enregistrerConsommation({ fournisseur: "Claude Code", modele: l.modele, agent: agent ?? "principal", jetons: l.jetons, coutUsd: l.coutUsd });
   return cumul;
 }
 

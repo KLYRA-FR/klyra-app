@@ -4,7 +4,8 @@
  * - `serveur/codex-protocole.mjs` : ce que l'app dit à Codex et lit de lui (electron/moteurs/codex-protocole.ts) ;
  * - `serveur/ia-catalogue.mjs` : les IA à consulter proposées (electron/ia-catalogue.ts) ;
  * - `serveur/atelier.mjs` : le dossier de chaque agent hors projet (electron/atelier.ts) ;
- * - `serveur/connaissances-agent.mjs` : les skills d'une session, commande en tête et préchargement (electron/connaissances-agent.ts).
+ * - `serveur/connaissances-agent.mjs` : les skills et la mémoire d'un agent (electron/connaissances-agent.ts) ;
+ * - `serveur/consommation-ecart.mjs` : ce qu'un tour de Claude Code a consommé (electron/consommation-ecart.ts).
  *   node scripts/serveur-genere.mjs           → écrit les fichiers
  *   node scripts/serveur-genere.mjs --verifier → échoue si l'un n'est plus à jour (test:serveur)
  */
@@ -17,6 +18,7 @@ const FICHIERS = [
   ["electron/ia-catalogue.ts", "serveur/ia-catalogue.mjs"],
   ["electron/atelier.ts", "serveur/atelier.mjs"],
   ["electron/connaissances-agent.ts", "serveur/connaissances-agent.mjs"],
+  ["electron/consommation-ecart.ts", "serveur/consommation-ecart.mjs"],
 ];
 
 let perime = false;

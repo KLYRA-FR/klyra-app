@@ -20,6 +20,9 @@ const PORTEES: Record<MemoireAgent["portee"], string> = {
   auto: "Sa mémoire dans le dossier de cette conversation",
 };
 
+/** Un dossier sur ce poste s'ouvre ; sur un VPS, il reste là-bas. */
+const ouvrable = (contexte: ContexteConnaissances | null) => !!contexte && !contexte.lieu;
+
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** Le texte d'un souvenir sans son en-tête YAML. */
@@ -98,13 +101,13 @@ export function VueSouvenirs({
         titre="Souvenirs"
         onRetour={onRetour}
         action={
-          memoire && contexte && bridge?.montrerSouvenir ? (
+          memoire && ouvrable(contexte) && bridge?.montrerSouvenir ? (
             <BoutonIcone
               variant="discret"
               taille="compact"
               libelle={`Ouvrir le dossier de sa mémoire ${poste.dansExplorateur}`}
               icone={<Icon name="folder-open-01" size={16} />}
-              onClick={() => void bridge.montrerSouvenir!(role.id, contexte, null).then((r) => !r.ok && annoncer(r.message))}
+              onClick={() => void bridge.montrerSouvenir!(role.id, contexte!, null).then((r) => !r.ok && annoncer(r.message))}
             />
           ) : undefined
         }
@@ -121,7 +124,7 @@ export function VueSouvenirs({
 
       {lecture.etat === "chargement" && <Note>Lecture de sa mémoire…</Note>}
       {lecture.etat === "erreur" && <Note erreur>{lecture.message}</Note>}
-      {lecture.etat === "indisponible" && <Note>La mémoire d’un agent sur un serveur ne se lit pas encore d’ici.</Note>}
+      {lecture.etat === "indisponible" && <Note>La mémoire d’un agent se lit dans l’app de bureau.</Note>}
       {lecture.etat === "pret" && !memoire && (
         <div className="flex flex-col gap-2">
           <Note>
@@ -179,7 +182,10 @@ export function VueSouvenirs({
           {!memoire.souvenirs.length && <Note>Aucun souvenir pour l’instant : {role.name} en écrit quand il apprend quelque chose qui servira plus tard. Tu peux aussi en ajouter un.</Note>}
           {memoire.souvenirs.length > 0 && !filtres.length && <Note>Aucun souvenir ne correspond.</Note>}
           {memoire.coupee && <Note>Liste coupée aux 500 premiers fichiers.</Note>}
-          <Note>{PORTEES[memoire.portee]}.</Note>
+          <Note>
+            {PORTEES[memoire.portee]}
+            {contexte?.lieu ? ", sur le serveur" : ""}.
+          </Note>
         </>
       )}
     </div>
@@ -208,11 +214,11 @@ function DetailSouvenir({
   const [edition, setEdition] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [tour, setTour] = useState(0);
-  const { dossier, sessionId } = contexte;
+  const { dossier, sessionId, lieu } = contexte;
 
   useEffect(() => {
     let actif = true;
-    void bridge?.souvenir?.(role.id, { dossier, sessionId }, id).then((r) => {
+    void bridge?.souvenir?.(role.id, lieu ? { dossier, sessionId, lieu } : { dossier, sessionId }, id).then((r) => {
       if (!actif) return;
       if (r.ok) {
         setFichier(r.data);
@@ -222,7 +228,7 @@ function DetailSouvenir({
     return () => {
       actif = false;
     };
-  }, [bridge, role.id, dossier, sessionId, id, tour]);
+  }, [bridge, role.id, dossier, sessionId, lieu, id, tour]);
 
   const enregistrer = async () => {
     if (edition === null || !fichier || !bridge?.ecrireSouvenir) return;
@@ -244,7 +250,7 @@ function DetailSouvenir({
         titre={titre}
         onRetour={onRetour}
         action={
-          bridge?.montrerSouvenir ? (
+          ouvrable(contexte) && bridge?.montrerSouvenir ? (
             <BoutonIcone
               variant="discret"
               taille="compact"
