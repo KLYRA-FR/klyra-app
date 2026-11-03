@@ -22,7 +22,9 @@ import { attendre, lancerApp, verificateur } from "./pilote-app.mjs";
 const APP = path.resolve(import.meta.dirname, "..");
 const MODELES = path.join(APP, "agents-equipe");
 const v1 = (nom) => readFileSync(path.join(MODELES, "versions-precedentes", `${nom}.v1.md`), "utf8");
-const v2 = (nom) => readFileSync(path.join(MODELES, `${nom}.md`), "utf8");
+/** La version actuelle des modèles (agents-equipe/<nom>.md). */
+const ACTUELLE = 3;
+const actuelle = (nom) => readFileSync(path.join(MODELES, `${nom}.md`), "utf8");
 const { echecs, verifier } = verificateur();
 const TMP = mkdtempSync(path.join(os.tmpdir(), "klyra-maj-modeles-"));
 const empreinte = (texte) => createHash("sha256").update(texte.replace(/\r\n/g, "\n")).digest("hex");
@@ -104,17 +106,17 @@ try {
 
   /* ─── Modèle non modifié : « Mettre à jour » ─── */
   await app.aller("/equipe?agent=val");
-  verifier(await dans(app, "Le modèle KLYRA de Valérie a une nouvelle version (version 2)."), "fiche de Valérie : le bandeau de la nouvelle version");
+  verifier(await dans(app, `Le modèle KLYRA de Valérie a une nouvelle version (version ${ACTUELLE}).`), "fiche de Valérie : le bandeau de la nouvelle version");
   await app.cliquer("Voir les changements");
-  verifier(await dans(app, "Version 2 du modèle KLYRA"), "« Voir les changements » ouvre la comparaison");
+  verifier(await dans(app, `Version ${ACTUELLE} du modèle KLYRA`), "« Voir les changements » ouvre la comparaison");
   let texte = await app.texte();
   verifier(texte.includes("Ta fiche est la version 1 du modèle, sans modification.") && texte.includes("son modèle (Sonnet)"), "comparaison : fiche non modifiée, modèle d’IA gardé annoncé");
   verifier(!texte.includes("Copier en privé"), "fiche non modifiée : « Plus tard » ou « Mettre à jour », sans autre choix");
   await app.cliquer("Mettre à jour");
   verifier(await surFiche(app), "« Mettre à jour » ramène à la fiche");
   const val = lire("val");
-  verifier(corps(val) === corps(v2("val")), "val.md : la consigne de la version 2");
-  verifier(enTete(val).includes("model: sonnet") && ligneDescription(val) === ligneDescription(v2("val")), "val.md : son modèle d’IA gardé, la description du modèle reprise");
+  verifier(corps(val) === corps(actuelle("val")), "val.md : la consigne de la version actuelle");
+  verifier(enTete(val).includes("model: sonnet") && ligneDescription(val) === ligneDescription(actuelle("val")), "val.md : son modèle d’IA gardé, la description du modèle reprise");
   verifier(JSON.stringify(enTete(val).filter((l) => !l.startsWith("description:"))) === JSON.stringify(enTete(fiches.val).filter((l) => !l.startsWith("description:"))), "val.md : le reste de l’en-tête ligne pour ligne");
   verifier(JSON.stringify(historique("val")) === JSON.stringify([fiches.val]), "l’ancienne version de Valérie est dans l’historique");
   verifier(JSON.stringify(lireJson(path.join(DONNEES, "agents-meta.json"))) === JSON.stringify(reglages), "réglages (nom Valérie, couleur, rôle court) intacts");
@@ -167,7 +169,7 @@ try {
 
   /* ─── Fiche modifiée : fusion et choix ─── */
   await app.aller("/equipe?agent=dev");
-  verifier(await dans(app, "a une nouvelle version (version 2)"), "fiche modifiée de Hugo : la nouvelle version est proposée aussi");
+  verifier(await dans(app, `a une nouvelle version (version ${ACTUELLE})`), "fiche modifiée de Hugo : la nouvelle version est proposée aussi");
   await app.cliquer("Voir les changements");
   verifier(await dans(app, "Ta fiche a été modifiée depuis la version 1 du modèle."), "comparaison : fiche modifiée reconnue");
   texte = await app.texte();
@@ -189,7 +191,7 @@ try {
   await dans(app, "Garder ma version");
   await app.cliquer("Garder ma version");
   await surFiche(app);
-  verifier(lireJson(path.join(DONNEES, "mes-agents.json")).agents.redacteur.origine.ignoree === 2, "« Garder ma version » : la version 2 est écartée");
+  verifier(lireJson(path.join(DONNEES, "mes-agents.json")).agents.redacteur.origine.ignoree === ACTUELLE, "« Garder ma version » : la version actuelle est écartée");
   verifier(empreinte(lire("redacteur")) === avant.redacteur && historique("redacteur").length === 0, "redacteur.md inchangé");
   texte = await app.texte();
   verifier(!texte.includes("nouvelle version") && !texte.includes("Ta version diffère"), "plus de bandeau pour Olivier");
