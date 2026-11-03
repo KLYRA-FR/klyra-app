@@ -582,7 +582,7 @@ interface WorkspaceApi {
   lancerRoutine: (id: string) => void;
   ajouterArtefact: (artefact: Omit<Artefact, "id" | "ajouteLe">) => void;
   modifierArtefact: (id: string, patch: Partial<Artefact>) => void;
-  /** Lit les artefacts du compte Claude et met la liste à jour ; renvoie combien sont arrivés. */
+  /** Lit la galerie claude.ai et met la liste à jour ; renvoie combien sont arrivés. */
   synchroniserArtefacts: () => Promise<{ total: number; nouveaux: number }>;
   /** Crée ou modifie un projet (le dossier reste où il est sur le disque). */
   enregistrerProjet: (project: Project) => void;

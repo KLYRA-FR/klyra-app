@@ -18,7 +18,7 @@ export function PlusTelephone() {
       <EnteteTelephone titre="Plus" />
       <ul className="min-h-0 flex-1 overflow-y-auto px-4">
         <Ligne href="/routines" icone="lightning-01" titre="Automatisations" detail={texteRoutines(principal)} />
-        <Ligne href="/artefacts" icone="artefacts-forme" titre="Artefacts" detail={`Les pages publiées par Claude. La liste est sur ${sur}.`} />
+        <Ligne href="/artefacts" icone="artefacts-forme" titre="Artefacts" detail={`Les pages et liens d’artefacts. La liste est sur ${sur}.`} />
         <Ligne href="/chats?vue=recherche" icone="search-01" titre="Rechercher" detail="Dans tes conversations et leurs messages." />
         <Ligne href="/reglages" icone="reglages-engrenage" titre="Réglages" detail={`Ce téléphone, ton compte, et les réglages de ${sur}.`} />
         <Ligne href="/serveurs" icone="computer" titre="Serveurs" detail={`Voir si ton VPS répond. Tes messages passent par ${sur}.`} />

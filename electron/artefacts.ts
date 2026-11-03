@@ -1,69 +1,109 @@
 import { app, BrowserWindow, session, shell } from "electron";
-import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { lireListeArtefacts, LIEN_ARTEFACT as LIEN, type ArtefactClaude } from "./artefacts-liste";
-import { findClaude } from "./claude";
-import { expliquerLancement } from "./claude-binaire";
+import { artefactsDuJson, fusionnerGalerie, LIEN_ARTEFACT as LIEN, type ArtefactClaude } from "./artefacts-liste";
 
 export type { ArtefactClaude };
 
 /**
- * Les artefacts claude.ai de la personne connectée :
- * - la liste, lue par Claude Code (outil Artifact de son compte) ;
- * - une session claude.ai dans l'app (connexion une fois), pour voir les pages
- *   privées : vignettes et ouverture en grand dans une fenêtre de l'app.
+ * Les artefacts claude.ai de la personne, par la session claude.ai de l'app (connexion une fois) :
+ * - la liste, lue dans sa galerie claude.ai (Claude Code ne le peut pas : l'outil Artifact n'existe pas
+ *   dans le Claude Code installé sur un poste) ;
+ * - les pages privées : vignettes et ouverture en grand dans une fenêtre de l'app.
  */
 
 const PARTITION = "persist:claude-ai";
-const ATELIER = path.join(os.homedir(), ".klyra", "atelier");
-const DELAI_LISTE_MS = 180_000;
+const GALERIE = "https://claude.ai/code/artifacts";
+const DELAI_GALERIE_MS = 25_000;
+
+/** Les liens d'artefacts de la page, après avoir fait défiler tout ce qui défile (listes chargées au fil du défilement). */
+const RELEVER_LIENS = `(() => {
+  for (const el of [document.scrollingElement, ...document.querySelectorAll("*")]) {
+    if (el && el.scrollHeight > el.clientHeight + 20) el.scrollTop = el.scrollHeight;
+  }
+  return [...document.querySelectorAll('a[href*="/artifact/"]')].map((a) => ({
+    url: a.href,
+    titre: (a.getAttribute("aria-label") || a.getAttribute("title") || a.innerText || "").trim().slice(0, 300),
+  }));
+})()`;
 
 /**
- * La liste des artefacts du compte, demandée à Claude Code (outil Artifact seul, et ToolSearch s'il
- * faut d'abord le charger : Sonnet, car Haiku ne sait pas chercher un outil différé). En cas d'échec,
- * l'erreur dit ce que Claude Code a répondu (cf. `lireListeArtefacts`).
+ * Ouvre la galerie claude.ai hors écran, avec la session de l'app, et relève ses artefacts : les liens de la
+ * page et les réponses JSON de claude.ai qui parlent d'artefacts (cf. `fusionnerGalerie`).
  */
-export function listerArtefacts(): Promise<ArtefactClaude[]> {
-  const bin = findClaude();
-  if (!bin) return Promise.reject(new Error("Claude Code est introuvable sur ce poste."));
-  mkdirSync(ATELIER, { recursive: true });
-  const consigne =
-    'Appelle l’outil Artifact avec action "list", scope "mine" et limit 200. Réponds UNIQUEMENT avec un tableau JSON, ' +
-    'sans texte autour ni bloc de code : [{"titre": "...", "url": "...", "misAJour": "date ISO"}]. ' +
-    "Si l’outil Artifact n’existe pas ou échoue, réponds en une phrase pourquoi, sans tableau.";
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      bin,
-      ["-p", "--model", "sonnet", "--output-format", "json", "--no-session-persistence", "--allowedTools", "Artifact", "ToolSearch", "--disallowedTools", "Bash", "Write", "Edit", "Read"],
-      { cwd: ATELIER, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true },
-    );
-    let sortie = "";
-    let erreurs = "";
-    let expire = false;
-    child.stdout.on("data", (d: Buffer) => (sortie += d.toString()));
-    child.stderr.on("data", (d: Buffer) => (erreurs += d.toString()));
-    const timeout = setTimeout(() => {
-      expire = true;
-      child.kill("SIGTERM");
-    }, DELAI_LISTE_MS);
-    child.on("error", (e) => {
-      clearTimeout(timeout);
-      reject(e);
+export async function listerArtefacts(): Promise<ArtefactClaude[]> {
+  // Tests seulement (jamais dans l'app installée) : une fausse galerie, sans compte claude.ai.
+  const galerieTest = process.env.KLYRA_TEST_GALERIE && !app.isPackaged ? process.env.KLYRA_TEST_GALERIE : null;
+  if (!galerieTest && !(await etatClaudeAi())) {
+    throw new Error("Connecte claude.ai dans l’app (bouton « Connecter claude.ai ») : la liste se lit dans ta galerie claude.ai.");
+  }
+  return aTour(async () => {
+    const win = new BrowserWindow({
+      show: false,
+      width: 1280,
+      height: 900,
+      webPreferences: { session: sessionClaude(), contextIsolation: true, nodeIntegration: false, sandbox: true, offscreen: true },
     });
-    child.on("close", () => {
-      clearTimeout(timeout);
-      if (expire) return reject(new Error("Claude Code n’a pas répondu en 3 minutes. Réessaie dans un instant."));
-      try {
-        resolve(lireListeArtefacts(sortie));
-      } catch (e) {
-        const lancement = sortie.trim() ? null : (expliquerLancement(erreurs, bin) ?? (erreurs.trim() ? `Claude Code n’a pas démarré : « ${erreurs.trim().slice(0, 220)} »` : null));
-        reject(lancement ? new Error(lancement) : e);
+    win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    const depuisJson: ArtefactClaude[] = [];
+    const reponses = new Map<string, string>();
+    const outil = win.webContents.debugger;
+    // L'écoute du réseau ne démarre que sur une page chargée : une page vide d'abord, puis la galerie.
+    await win.loadURL("about:blank");
+    try {
+      outil.attach("1.3");
+      outil.on("message", (_e, methode: string, params: Record<string, unknown>) => {
+        if (methode === "Network.responseReceived") {
+          const r = params.response as { url: string; mimeType: string };
+          if (/json/i.test(r.mimeType) && /^https:\/\/claude\.ai\/.*artifact/i.test(r.url)) reponses.set(params.requestId as string, r.url);
+        } else if (methode === "Network.loadingFinished" && reponses.has(params.requestId as string)) {
+          const adresse = reponses.get(params.requestId as string)!;
+          void outil
+            .sendCommand("Network.getResponseBody", { requestId: params.requestId })
+            .then((corps: { body: string; base64Encoded: boolean }) => {
+              const brut = corps.base64Encoded ? Buffer.from(corps.body, "base64").toString("utf8") : corps.body;
+              depuisJson.push(...artefactsDuJson(adresse, JSON.parse(brut)));
+            })
+            .catch(() => {});
+        }
+      });
+      await Promise.race([
+        outil.sendCommand("Network.enable"),
+        new Promise((_, refus) => setTimeout(() => refus(new Error("délai")), 3000)),
+      ]);
+    } catch {
+      // Sans les réponses JSON, les liens de la page suffisent.
+    }
+    try {
+      await win.loadURL(galerieTest ?? GALERIE);
+      if (/\/login|\/logout/.test(win.webContents.getURL())) {
+        throw new Error("La session claude.ai de l’app a expiré : reconnecte claude.ai, puis relis la liste.");
       }
-    });
-    child.stdin.end(consigne);
+      // La galerie se remplit après le chargement, et au fil du défilement : on relève jusqu'à ce que ça ne bouge plus.
+      let liens: { url: string; titre: string }[] = [];
+      let stable = 0;
+      const fin = Date.now() + DELAI_GALERIE_MS;
+      while (Date.now() < fin && stable < 4) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const releves = (await win.webContents.executeJavaScript(RELEVER_LIENS)) as { url: string; titre: string }[];
+        const avant = liens.length + depuisJson.length;
+        liens = releves;
+        stable = liens.length + depuisJson.length === avant && avant > 0 ? stable + 1 : 0;
+      }
+      const liste = fusionnerGalerie(liens, depuisJson);
+      if (!liste.length) {
+        throw new Error("Aucun artefact trouvé dans ta galerie claude.ai (claude.ai/code/artifacts). Si tu en vois là-bas, la page a sans doute changé : signale-le.");
+      }
+      return liste;
+    } finally {
+      try {
+        outil.detach();
+      } catch {
+        // déjà détaché
+      }
+      win.destroy();
+    }
   });
 }
 

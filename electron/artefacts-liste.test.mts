@@ -1,33 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lireListeArtefacts } from "./artefacts-liste.ts";
+import { artefactsDuJson, fusionnerGalerie } from "./artefacts-liste.ts";
 
-const reponse = (champs: Record<string, unknown>) => JSON.stringify({ type: "result", subtype: "success", is_error: false, permission_denials: [], ...champs });
+const UUID = "596c8de5-3c54-4c76-8df1-3ade3cceafbf";
 
-test("lit le tableau, même entouré de texte, et écarte ce qui n’est pas un lien d’artefact", () => {
-  const result = 'Voici : [{"titre": "Propale", "url": "https://claude.ai/artifact/abc-1", "misAJour": "2026-11-01T10:00:00Z"}, {"url": "https://claude.ai/code/artifact/def"}, {"titre": "X", "url": "https://exemple.fr"}]';
-  assert.deepEqual(lireListeArtefacts(reponse({ result })), [
-    { titre: "Propale", url: "https://claude.ai/artifact/abc-1", misAJour: "2026-11-01T10:00:00Z" },
-    { titre: "Sans titre", url: "https://claude.ai/code/artifact/def", misAJour: null },
+test("réponses JSON : les objets d'artefact (uuid ou id court, titre), seulement pour une adresse d'artefacts", () => {
+  const json = { data: [{ uuid: UUID, title: "  Design   system ", updated_at: "2026-11-01T10:00:00Z", owner: { uuid: "11111111-2222-4333-8444-555555555555", name: "Alice" } }, { id: "C3Tqnor89ed3qjk6n1Wben", name: "Propale" }, { id: "x", title: "trop court" }] };
+  assert.deepEqual(artefactsDuJson("https://claude.ai/api/organizations/o/artifacts?limit=50", json), [
+    { titre: "Design system", url: `https://claude.ai/code/artifact/${UUID}`, misAJour: "2026-11-01T10:00:00Z" },
+    { titre: "Propale", url: "https://claude.ai/artifact/C3Tqnor89ed3qjk6n1Wben", misAJour: null },
   ]);
-  assert.deepEqual(lireListeArtefacts(reponse({ result: "[]" })), []);
+  assert.deepEqual(artefactsDuJson("https://claude.ai/api/organizations/o/chat_conversations", json), []);
 });
 
-test("Claude Code pas connecté : dit comment se connecter", () => {
-  assert.throws(() => lireListeArtefacts(reponse({ is_error: true, result: "Not logged in · Please run /login" })), /lance claude puis \/login/);
+test("les liens de la page font foi ; le JSON complète les titres et les dates", () => {
+  const liens = [
+    { url: `https://claude.ai/code/artifact/${UUID}?x=1`, titre: "Ouvrir" },
+    { url: `https://claude.ai/code/artifact/${UUID}`, titre: "doublon" },
+    { url: "https://claude.ai/artifact/abc123/", titre: " Ma page " },
+    { url: "https://claude.ai/settings", titre: "Réglages" },
+  ];
+  const json = [{ titre: "Design system", url: `https://claude.ai/code/artifact/${UUID}`, misAJour: "2026-11-01T10:00:00Z" }];
+  assert.deepEqual(fusionnerGalerie(liens, json), [
+    { url: `https://claude.ai/code/artifact/${UUID}`, titre: "Design system", misAJour: "2026-11-01T10:00:00Z" },
+    { url: "https://claude.ai/artifact/abc123", titre: "Ma page", misAJour: null },
+  ]);
 });
 
-test("pas de tableau : redit la réponse de Claude Code au lieu d’un message vague", () => {
-  assert.throws(
-    () => lireListeArtefacts(reponse({ result: "Je n’ai pas accès à un outil Artifact dans cette session." })),
-    /n’a pas pu lire tes artefacts : « Je n’ai pas accès à un outil Artifact dans cette session\. »/,
-  );
-  assert.throws(() => lireListeArtefacts(reponse({ result: "[pas du json]" })), /« \[pas du json\] »/);
-});
-
-test("autres échecs : erreur de l’API, outil refusé, sortie vide ou illisible", () => {
-  assert.throws(() => lireListeArtefacts(reponse({ is_error: true, result: "API Error: 529 Overloaded" })), /a échoué : « API Error: 529 Overloaded »/);
-  assert.throws(() => lireListeArtefacts(reponse({ result: "", permission_denials: [{ tool_name: "Artifact" }] })), /outil Artifact/);
-  assert.throws(() => lireListeArtefacts(""), /n’a rien répondu/);
-  assert.throws(() => lireListeArtefacts("error: something"), /autre chose que prévu : « error: something »/);
+test("sans lien lisible sur la page, les réponses JSON suffisent ; rien du tout : liste vide", () => {
+  const json = [{ titre: "Propale", url: "https://claude.ai/artifact/C3Tqnor89ed3qjk6n1Wben", misAJour: null }];
+  assert.deepEqual(fusionnerGalerie([], json), json);
+  assert.deepEqual(fusionnerGalerie([], []), []);
 });

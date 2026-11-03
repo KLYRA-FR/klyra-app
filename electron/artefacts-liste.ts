@@ -1,7 +1,8 @@
 /**
- * La réponse de Claude Code (`claude -p --output-format json`) à « liste mes artefacts », lue sans
- * Electron pour être testée (`artefacts-liste.test.mts`). Un échec dit pourquoi, pour la personne :
- * jamais un message vague qui cache la réponse de Claude Code.
+ * La liste des artefacts claude.ai de la personne, lue dans sa galerie (`claude.ai/code/artifacts`) par la
+ * session claude.ai de l'app : les liens d'artefacts de la page, et les réponses JSON que la page reçoit
+ * de claude.ai. Lu sans Electron pour être testé (`artefacts-liste.test.mts`).
+ * Claude Code ne peut pas la lire : l'outil Artifact n'existe pas dans le Claude Code installé sur un poste.
  */
 
 export const LIEN_ARTEFACT = /^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+\/?$/;
@@ -12,47 +13,60 @@ export interface ArtefactClaude {
   misAJour: string | null;
 }
 
-/** Ce que Claude Code a répondu, coupé pour tenir dans une ligne de l'écran. */
-const extrait = (texte: string) => {
-  const ligne = texte.replace(/\s+/g, " ").trim();
-  return ligne.length > 220 ? `${ligne.slice(0, 220)}…` : ligne;
-};
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ID_COURT = /^[A-Za-z0-9]{16,40}$/;
 
-/** Le tableau d'artefacts, ou une erreur dont le message dit pourquoi il manque. */
-export function lireListeArtefacts(sortie: string): ArtefactClaude[] {
-  let json: { result?: unknown; is_error?: unknown; permission_denials?: unknown };
-  try {
-    json = JSON.parse(sortie);
-  } catch {
-    throw new Error(sortie.trim() ? `Claude Code a répondu autre chose que prévu : « ${extrait(sortie)} »` : "Claude Code n’a rien répondu.");
-  }
-  const resultat = typeof json.result === "string" ? json.result : "";
-  if (json.is_error) {
-    if (/not logged in|\/login|invalid api key|authentication/i.test(resultat)) {
-      throw new Error("Claude Code n’est pas connecté à ton compte Claude sur ce poste : ouvre un terminal, lance claude puis /login, et réessaie.");
+/** L'identifiant d'un lien d'artefact (le dernier segment), pour rapprocher liens et réponses JSON. */
+export function idDuLien(url: string): string {
+  return url.replace(/\/$/, "").split("/").pop() ?? url;
+}
+
+const texte = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().replace(/\s+/g, " ") : null);
+
+/**
+ * Les artefacts trouvés dans une réponse JSON de claude.ai dont l'adresse parle d'artefacts : tout objet
+ * qui a un identifiant d'artefact (uuid → claude.ai/code/artifact/…, id court → claude.ai/artifact/…)
+ * et un titre. Le reste de la réponse est ignoré.
+ */
+export function artefactsDuJson(adresse: string, json: unknown): ArtefactClaude[] {
+  if (!/artifact/i.test(adresse)) return [];
+  const trouves: ArtefactClaude[] = [];
+  const visiter = (v: unknown, profondeur: number) => {
+    if (profondeur > 8 || v === null || typeof v !== "object") return;
+    if (Array.isArray(v)) return v.slice(0, 1000).forEach((x) => visiter(x, profondeur + 1));
+    const o = v as Record<string, unknown>;
+    const id = [o.artifact_id, o.uuid, o.id].map(texte).find((x) => x && (UUID.test(x) || ID_COURT.test(x)));
+    const titre = texte(o.title) ?? texte(o.name);
+    if (id && titre) {
+      trouves.push({
+        titre: titre.slice(0, 200),
+        url: UUID.test(id) ? `https://claude.ai/code/artifact/${id}` : `https://claude.ai/artifact/${id}`,
+        misAJour: texte(o.updated_at) ?? texte(o.updatedAt) ?? texte(o.created_at) ?? null,
+      });
+      return;
     }
-    throw new Error(resultat ? `Claude Code a échoué : « ${extrait(resultat)} »` : "Claude Code a échoué sans dire pourquoi.");
+    for (const x of Object.values(o)) visiter(x, profondeur + 1);
+  };
+  visiter(json, 0);
+  return trouves;
+}
+
+/**
+ * La liste finale : les liens de la page font foi pour les adresses ; les réponses JSON donnent les titres
+ * et les dates qui manquent, et suffisent si la page n'a pas de liens lisibles. Un artefact par identifiant.
+ */
+export function fusionnerGalerie(liens: { url: string; titre: string }[], depuisJson: ArtefactClaude[]): ArtefactClaude[] {
+  const parId = new Map<string, ArtefactClaude>();
+  for (const a of depuisJson) if (LIEN_ARTEFACT.test(a.url)) parId.set(idDuLien(a.url), a);
+  const resultat = new Map<string, ArtefactClaude>();
+  for (const l of liens) {
+    const url = l.url.split(/[?#]/)[0].replace(/\/$/, "");
+    if (!LIEN_ARTEFACT.test(url)) continue;
+    const id = idDuLien(url);
+    if (resultat.has(id)) continue;
+    const json = parId.get(id);
+    resultat.set(id, { url, titre: json?.titre ?? (texte(l.titre)?.slice(0, 200) || "Sans titre"), misAJour: json?.misAJour ?? null });
   }
-  if (Array.isArray(json.permission_denials) && json.permission_denials.length) {
-    throw new Error("Claude Code n’a pas pu utiliser l’outil Artifact sur ce poste.");
-  }
-  const debut = resultat.indexOf("[");
-  const fin = resultat.lastIndexOf("]");
-  let liste: unknown;
-  try {
-    liste = debut >= 0 && fin > debut ? JSON.parse(resultat.slice(debut, fin + 1)) : undefined;
-  } catch {
-    liste = undefined;
-  }
-  if (!Array.isArray(liste)) {
-    // Le plus souvent : l'outil Artifact n'existe pas pour ce compte (connexion par clé d'API, plan sans artefacts).
-    throw new Error(resultat ? `Claude Code n’a pas pu lire tes artefacts : « ${extrait(resultat)} »` : "Claude Code n’a pas renvoyé de liste.");
-  }
-  return (liste as { titre?: unknown; url?: unknown; misAJour?: unknown }[])
-    .filter((a) => a && typeof a.url === "string" && LIEN_ARTEFACT.test(a.url))
-    .map((a) => ({
-      titre: typeof a.titre === "string" && a.titre ? a.titre : "Sans titre",
-      url: a.url as string,
-      misAJour: typeof a.misAJour === "string" ? a.misAJour : null,
-    }));
+  if (!resultat.size) for (const [id, a] of parId) resultat.set(id, a);
+  return [...resultat.values()];
 }

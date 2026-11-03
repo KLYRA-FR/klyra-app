@@ -163,8 +163,9 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
         />
         {puces}
         <BoutonDictee dictee={dictee} />
-        {/* Pendant que l'agent travaille : le Stop reste là, même si tu as commencé à écrire. */}
-        {peutArreter && (
+        {/* Pendant que l'agent travaille : le Stop reste là, même si tu as commencé à écrire.
+            Pendant une dictée, il s'efface : un seul carré, celui qui arrête la dictée. */}
+        {peutArreter && !enDictee && (
           <BoutonIcone
             variant="blanc"
             taille="compact"
