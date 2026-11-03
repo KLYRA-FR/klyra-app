@@ -26,10 +26,12 @@ describe("modèles KLYRA embarqués", () => {
     const blocs = new Set(AGENT_TEMPLATES.map((t) => section(t.content, /^Parler en équipe$/)));
     expect(blocs.size).toBe(1);
     const bloc = [...blocs][0]!;
-    // Les vrais outils de l'app, la liste des agents actifs, la restitution de fin.
-    for (const outil of ["lister_fils", "ouvrir_fil", "ecrire_dans_fil", "arreter_fil", "fermer_fil"]) expect(bloc).toContain(outil);
-    expect(bloc).toContain("l’app te dit lesquels sont actifs");
+    // Ce que l'app n'injecte pas : les agents actifs viennent d'elle, la restitution de fin, l'honnêteté sur les outils.
+    expect(bloc).toContain("L’app te dit à chaque session quels agents sont actifs");
     expect(bloc).toContain("**Ta réponse de fin**");
+    // Ce que l'app injecte déjà à chaque session (fils, règles communes) n'est pas répété : chaque ligne est relue à chaque appel.
+    for (const repete of ["ouvrir_fil", "lister_fils", "fermer_fil", "agent de contrôle (QA)", "n’est pas un accord"]) expect(bloc).not.toContain(repete);
+    expect(bloc.length).toBeLessThan(1000);
   });
 
   it("plus aucune ancienne injonction : validation QA obligatoire, équipe fixe, outils d’un autre système, comptes supposés", () => {

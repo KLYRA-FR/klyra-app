@@ -6,6 +6,9 @@ import { consigne } from "@/lib/lien-bibliotheque";
 import { comparerAuModele, fusionnerAvecModele, remplacerParModele } from "@/lib/maj-modele";
 
 const v1 = (nom: string) => AGENT_TEMPLATES_PRECEDENTS[nom][0].content;
+const v2 = (nom: string) => AGENT_TEMPLATES_PRECEDENTS[nom].find((v) => v.version === 2)!.content;
+/** La version actuelle des modèles (3 : bloc « Parler en équipe » réduit à ce que l'app n'injecte pas). */
+const ACTUELLE = 3;
 const actuel = (nom: string) => AGENT_TEMPLATES.find((t) => t.name === nom)!.content;
 const NOMS = AGENT_TEMPLATES.map((t) => t.name);
 /** Les préférences qu'une personne a pu poser dans l'en-tête : modèle d'IA, prénom, outils. */
@@ -14,12 +17,21 @@ const personnaliserEnTete = (contenu: string) =>
 const enTete = (contenu: string) => contenu.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---/)![1];
 
 describe("versions des modèles", () => {
-  it("chaque modèle a sa version actuelle et sa version 1", () => {
+  it("chaque modèle a sa version actuelle et ses versions 1 et 2", () => {
     expect(NOMS).toHaveLength(11);
     for (const nom of NOMS) {
-      expect(AGENT_TEMPLATES.find((t) => t.name === nom)!.version).toBe(2);
-      expect(comparerAuModele(nom, actuel(nom))).toEqual({ version: 2, identiqueA: 2, base: 2 });
-      expect(comparerAuModele(nom, v1(nom))).toEqual({ version: 2, identiqueA: 1, base: 1 });
+      expect(AGENT_TEMPLATES.find((t) => t.name === nom)!.version).toBe(ACTUELLE);
+      expect(comparerAuModele(nom, actuel(nom))).toEqual({ version: ACTUELLE, identiqueA: ACTUELLE, base: ACTUELLE });
+      expect(comparerAuModele(nom, v1(nom))).toEqual({ version: ACTUELLE, identiqueA: 1, base: 1 });
+      expect(comparerAuModele(nom, v2(nom))).toEqual({ version: ACTUELLE, identiqueA: 2, base: 2 });
+    }
+  });
+
+  it("version 2 installée telle quelle : la mise à jour donne la version 3, sans conflit", () => {
+    for (const nom of NOMS) {
+      const fusion = fusionnerAvecModele(nom, nom, v2(nom))!;
+      expect(fusion.conflits, nom).toEqual([]);
+      expect(comparerAuModele(nom, fusion.contenu)?.identiqueA, nom).toBe(ACTUELLE);
     }
   });
 
@@ -51,14 +63,14 @@ describe("mise à jour d’une fiche installée", () => {
       const autres = (t: string) => enTete(t).split("\n").filter((l) => !l.startsWith("description:"));
       expect(autres(fusion.contenu)).toEqual(autres(local));
       // Le résultat est à jour : plus rien à proposer.
-      expect(comparerAuModele(nom, fusion.contenu)?.identiqueA).toBe(2);
+      expect(comparerAuModele(nom, fusion.contenu)?.identiqueA).toBe(ACTUELLE);
     }
   });
 
   it("version 1 modifiée : ses ajouts gardés, les corrections reprises là où rien n’a été touché", () => {
     const description = "Dev maison — mon code. Appelle Hugo pour mon code.";
     const local = `${v1("dev").replace(/^description: .*$/m, `description: "${description}"`)}\n## Ajout local\n\nUne règle à moi.\n`;
-    expect(comparerAuModele("dev", local)).toEqual({ version: 2, identiqueA: null, base: 1 });
+    expect(comparerAuModele("dev", local)).toEqual({ version: ACTUELLE, identiqueA: null, base: 1 });
     const fusion = fusionnerAvecModele("dev", "dev", local)!;
     expect(fusion.conflits).toEqual([]);
     expect(fusion.gardees).toEqual([
