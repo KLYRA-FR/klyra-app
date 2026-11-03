@@ -1286,7 +1286,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         sessions: {},
         luJusqua: null,
         lieu: lieuParDefaut(),
-        // Le fournisseur choisi pour l'agent dans Réglages du serveur › Agents.
+        // Le fournisseur choisi pour l'agent dans Réglages › Agents.
         ...(role.fournisseur ? { fournisseur: role.fournisseur } : {}),
       };
       dispatch({ type: "chat/add", chat });

@@ -5,15 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Claude } from "@/components/reglages/sections/Claude";
-import { Erreur, Groupe, Ligne, Pastille, Valeur } from "@/components/reglages/ui";
-import { Bouton } from "@/components/ui/Bouton";
+import { ancreReglage, Erreur, Groupe, Ligne, Pastille, Valeur } from "@/components/reglages/ui";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { CHAMP } from "@/components/ui/Champ";
 import { useAgents } from "@/lib/agents";
-import { getBridge, type ProgressionMoteur } from "@/lib/bridge";
+import { getBridge, type AutreIa, type ProgressionMoteur } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { nomAbonnement } from "@/lib/compte-claude";
 import { fournisseur, FOURNISSEURS, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { actualiserMoteurs, pret, useMoteurs, type EtatMoteur } from "@/lib/moteurs";
+import { FormulaireIa, useAutresIa, type TestIa } from "./AutresIa";
 import { cheminServeur } from "./catalogue";
 
 /* ─── Versions publiées ────────────────────────────────────────── */
@@ -49,8 +50,8 @@ function aJour(installee: string | null | undefined, publiee: string | null | un
 
 /* ─── Petits morceaux ──────────────────────────────────────────── */
 
-/** Le carré du fournisseur (même que dans le choix rapide de la conversation). */
-export function Marque({ id, taille = 32 }: { id: string; taille?: number }) {
+/** Le carré du fournisseur (même que dans le choix rapide de la conversation). `initiale` : une IA à consulter. */
+export function Marque({ id, taille = 32, initiale }: { id: string; taille?: number; initiale?: string }) {
   return (
     <span
       aria-hidden="true"
@@ -60,7 +61,7 @@ export function Marque({ id, taille = 32 }: { id: string; taille?: number }) {
         id === PAR_DEFAUT ? "bg-bleu-k1-500" : "bg-fond-inverse-fort",
       )}
     >
-      {fournisseur(id).initiale}
+      {initiale ?? fournisseur(id).initiale}
     </span>
   );
 }
@@ -106,14 +107,76 @@ function Ligne1({ m, id, publiee, onClick }: { m: EtatMoteur | undefined; id: st
   );
 }
 
+/** Une IA à consulter, ajoutée avec sa clé : la tester ou la retirer. */
+function LigneIa({ ia, test, tester, retirer }: { ia: AutreIa; test: TestIa | undefined; tester: () => void; retirer: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-3">
+      <Marque id={ia.fournisseur} initiale={ia.nom.charAt(0).toUpperCase()} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-ui-s font-medium text-texte-principal">{ia.nom}</span>
+        <span className="klyra-mono truncate text-ui-xs text-texte-tertiaire">{ia.modele}</span>
+      </span>
+      {test?.etat === "ok" && <span className="text-ui-xs text-texte-secondaire">Répond bien</span>}
+      {test?.etat === "erreur" && (
+        <span role="alert" title={test.message} className="max-w-[240px] truncate text-ui-xs text-texte-erreur">
+          {test.message}
+        </span>
+      )}
+      <Pastille texte="À consulter" ton="neutre" />
+      <Bouton variant="blanc" taille="compact" disabled={test?.etat === "en-cours"} onClick={tester}>
+        {test?.etat === "en-cours" ? "Test…" : "Tester"}
+      </Bouton>
+      <BoutonIcone taille="compact" icone={<Icon name="trash-01" size={16} />} libelle={`Retirer ${ia.nom}`} onClick={retirer} />
+    </div>
+  );
+}
+
+/** Une IA qu'on peut ajouter avec sa clé API (Gemini, DeepSeek, Grok…). */
+function LigneIaProposee({ id, nom, ouverte, onClick }: { id: string; nom: string; ouverte: boolean; onClick: () => void }) {
+  const autre = id === "autre";
+  return (
+    <button type="button" aria-expanded={ouverte} onClick={onClick} className="flex w-full cursor-pointer items-center gap-3 border-0 bg-transparent py-3 text-left hover:opacity-90">
+      {autre ? (
+        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-fond-surface-grise text-icone-secondaire">
+          <Icon name="plus-01" size={16} />
+        </span>
+      ) : (
+        <Marque id={id} initiale={nom.charAt(0).toUpperCase()} />
+      )}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-ui-s font-medium text-texte-principal">{autre ? "Autre IA" : nom}</span>
+        <span className="truncate text-ui-xs text-texte-tertiaire">{autre ? "Toute API compatible OpenAI, avec sa clé" : "Avec sa clé API"}</span>
+      </span>
+      <Pastille texte="À consulter" ton="neutre" />
+      <Icon name={ouverte ? "chevron-down" : "chevron-right"} size={16} className="shrink-0 text-icone-secondaire" />
+    </button>
+  );
+}
+
+const correspond = (requete: string, ...textes: string[]) => {
+  const r = requete.trim().toLowerCase();
+  return !r || textes.some((t) => t.toLowerCase().includes(r));
+};
+
+/**
+ * Tous les fournisseurs du serveur en une liste : ceux qui font travailler les agents (Claude, ChatGPT
+ * par Codex) et ceux qu'ils peuvent consulter avec une clé API (Gemini, DeepSeek, Grok…, cf. electron/ia.ts).
+ */
 function Liste({ ouvrir }: { ouvrir: (id: string) => void }) {
   const { moteurs } = useMoteurs();
+  const ias = useAutresIa();
   const [recherche, setRecherche] = useState("");
+  const [ajout, setAjout] = useState<string | null>(null);
   const publiees = useVersionsDisponibles((moteurs ?? []).filter((m) => m.moteur.chemin).map((m) => m.moteur.id));
   const etat = (id: string) => moteurs?.find((m) => m.moteur.id === id);
-  const visibles = FOURNISSEURS.filter((f) => f.nom.toLowerCase().includes(recherche.trim().toLowerCase()) || f.moteur.toLowerCase().includes(recherche.trim().toLowerCase()));
+  const visibles = FOURNISSEURS.filter((f) => correspond(recherche, f.nom, f.moteur));
   const connectes = visibles.filter((f) => { const m = etat(f.id); return m && pret(m); });
   const autres = visibles.filter((f) => !connectes.includes(f));
+  const iasAjoutees = ias.liste.filter((ia) => correspond(recherche, ia.nom, ia.modele, ias.catalogue?.[ia.fournisseur]?.nom ?? ""));
+  /* Celles du catalogue pas encore ajoutées ; « Autre » reste toujours proposée, en dernier. */
+  const iasProposees = Object.entries(ias.catalogue ?? {})
+    .filter(([id, f]) => (id === "autre" || !ias.liste.some((ia) => ia.fournisseur === id)) && correspond(recherche, f.nom, id === "autre" ? "autre compatible openai" : ""))
+    .sort(([a], [b]) => Number(a === "autre") - Number(b === "autre"));
 
   if (!moteurs) return <p className="m-0 text-ui-s text-texte-tertiaire">Lecture des fournisseurs…</p>;
   return (
@@ -129,21 +192,47 @@ function Liste({ ouvrir }: { ouvrir: (id: string) => void }) {
           className="h-9 w-full rounded-md border border-bordure-champ bg-fond-surface pr-2.5 pl-8 text-ui-s text-texte-principal outline-none placeholder:text-texte-placeholder focus:border-focus"
         />
       </label>
-      {connectes.length > 0 && (
-        <Groupe titre="Connectés">
+      {(connectes.length > 0 || iasAjoutees.length > 0) && (
+        <Groupe titre="Connectés" description={iasAjoutees.length ? "« À consulter » : tes agents leur demandent un deuxième avis ; elles répondent en texte et ne touchent à aucun fichier." : undefined}>
           {connectes.map((f) => (
             <Ligne1 key={f.id} id={f.id} m={etat(f.id)} publiee={publiees[f.id]} onClick={() => ouvrir(f.id)} />
           ))}
-        </Groupe>
-      )}
-      {autres.length > 0 && (
-        <Groupe titre="Autres fournisseurs" description="Installés ou connectés depuis leur page.">
-          {autres.map((f) => (
-            <Ligne1 key={f.id} id={f.id} m={etat(f.id)} publiee={publiees[f.id]} onClick={() => ouvrir(f.id)} />
+          {iasAjoutees.map((ia) => (
+            <LigneIa key={ia.id} ia={ia} test={ias.tests[ia.id]} tester={() => void ias.tester(ia.id)} retirer={() => void ias.retirer(ia.id)} />
           ))}
         </Groupe>
       )}
-      {!visibles.length && <p className="m-0 text-ui-s text-texte-tertiaire">Aucun fournisseur ne correspond à « {recherche} ».</p>}
+      {(autres.length > 0 || iasProposees.length > 0) && (
+        <Groupe
+          titre="Autres fournisseurs"
+          description="Claude et ChatGPT font travailler les agents : ils s’installent et se connectent depuis leur page. Les IA « À consulter » s’ajoutent avec leur clé API, chiffrée dans le trousseau de ce poste."
+        >
+          {autres.map((f) => (
+            <Ligne1 key={f.id} id={f.id} m={etat(f.id)} publiee={publiees[f.id]} onClick={() => ouvrir(f.id)} />
+          ))}
+          {ias.catalogue &&
+            iasProposees.map(([id, f]) => (
+              <div key={id} id={id === "autre" ? ancreReglage("autres-ia") : undefined} className="klyra-reglage flex scroll-mt-6 flex-col">
+                <LigneIaProposee id={id} nom={f.nom} ouverte={ajout === id} onClick={() => setAjout((a) => (a === id ? null : id))} />
+                {ajout === id && (
+                  <div className="pb-4">
+                    <FormulaireIa
+                      key={id}
+                      fournisseurs={ias.catalogue!}
+                      initial={id}
+                      onAjoutee={(l) => {
+                        ias.setListe(l);
+                        setAjout(null);
+                      }}
+                      onAnnuler={() => setAjout(null)}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+        </Groupe>
+      )}
+      {!visibles.length && !iasAjoutees.length && !iasProposees.length && <p className="m-0 text-ui-s text-texte-tertiaire">Aucun fournisseur ne correspond à « {recherche} ».</p>}
     </div>
   );
 }
@@ -306,7 +395,7 @@ function Detail({ id, retour }: { id: string; retour: () => void }) {
             <Pastille texte={etat.texte} ton={etat.ton} />
           </div>
           <span className="text-ui-xs text-texte-tertiaire">
-            {agents.length ? `${agents.length === 1 ? "1 agent l’utilise" : `${agents.length} agents l’utilisent`} : ${listeNoms(agents)}` : "Aucun agent ne l’utilise par défaut. Choisis-le dans une conversation, ou pour un agent dans Agents."}
+            {agents.length ? `${agents.length === 1 ? "1 agent l’utilise" : `${agents.length} agents l’utilisent`} : ${listeNoms(agents)}` : "Aucun agent ne l’utilise par défaut. Choisis-le dans une conversation, ou pour un agent dans Réglages › Agents."}
           </span>
         </div>
       </div>
@@ -321,7 +410,7 @@ function Detail({ id, retour }: { id: string; retour: () => void }) {
 /** Sur un VPS : Claude Code seul pour l'instant. */
 function SurUnVps() {
   return (
-    <Groupe titre="Sur ce serveur" description="Les autres fournisseurs (ChatGPT, et ensuite Grok et OpenCode) arriveront plus tard sur les serveurs distants. Sur Ce PC, ils se règlent dans ses Réglages du serveur.">
+    <Groupe titre="Sur ce serveur" description="Les autres fournisseurs (ChatGPT, et les IA à consulter comme Gemini, DeepSeek ou Grok) arriveront plus tard sur les serveurs distants. Sur Ce PC, ils se règlent dans ses Réglages du serveur.">
       <div className="flex items-center gap-3 py-3">
         <Marque id={PAR_DEFAUT} />
         <span className="flex flex-col">

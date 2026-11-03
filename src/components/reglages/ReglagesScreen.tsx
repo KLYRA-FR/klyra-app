@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
 import { avecCommande, estMac } from "@/lib/raccourcis";
-import { AutresIa } from "./AutresIa";
 import { cheminDeplace, cheminServeur, DEPLACEES, SECTIONS_SERVEUR } from "@/components/serveur/catalogue";
 import { chercherDans, estSection, SECTIONS, type EntreeReglage, type IdSection } from "./catalogue";
 import { Agents } from "./sections/Agents";
@@ -30,11 +29,8 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
   mobile: () => <Mobile />,
   claude: () => <Claude />,
   agents: () => <Agents />,
-  "autres-ia": () => (
-    <div id={ancreReglage("autres-ia")} className="klyra-reglage scroll-mt-6 rounded-lg">
-      <AutresIa />
-    </div>
-  ),
+  /* Partie dans Réglages du serveur › Fournisseurs (cf. DEPLACEES) ; jamais affichée ici. */
+  "autres-ia": () => null,
   notifications: () => <Notifications />,
   voix: () => <Voix />,
   "computer-use": () => <ComputerUse />,
@@ -153,7 +149,7 @@ export function ReglagesScreen() {
   const section: IdSection = estSection(demandee) && !DEPLACEES[demandee] ? demandee : sectionMemorisee();
   const courante = SECTIONS.find((s) => s.id === section)!;
 
-  /* Un ancien lien vers une section partie (Claude, Agents…) : on y mène, dans les Réglages du serveur. */
+  /* Un ancien lien vers une section partie (Claude, Autres IA) : on y mène, dans les Réglages du serveur. */
   useEffect(() => {
     const ailleurs = estSection(demandee) ? cheminDeplace(demandee, params.get("reglage")) : null;
     if (ailleurs) router.replace(ailleurs);
