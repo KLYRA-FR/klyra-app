@@ -284,6 +284,14 @@ export type MessagePart =
   | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur" }
   /** L'assistant propose la fiche d'un nouvel agent : la personne l'ouvre, l'ajuste et l'enregistre (ou non). */
   | { type: "proposition-agent"; etapeId: string; proposition: PropositionAgent }
+  /**
+   * L'atelier d'un agent (outil `proposer_agent`) : ce que cet appel a appris. La carte plie tous
+   * les appels de la conversation (`src/lib/atelier-agent.ts`). `teinte` : la couleur choisie par la
+   * personne sur la carte ; `cree` : l'id de l'agent créé depuis cette carte.
+   */
+  | { type: "atelier-agent"; etapeId: string; maj: MajAtelier; teinte?: RoleTeinte; cree?: string }
+  /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
+  | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }
   | { type: "tasks"; tasks: Task[] }
   | { type: "options"; options: DeliverableOption[] }
   | { type: "worklog"; durationMin: number; files: ChangedFile[] }
@@ -296,6 +304,43 @@ export interface PropositionAgent {
   role: string;
   description: string;
   consignes: string;
+}
+
+/**
+ * Ce qu'un appel à `proposer_agent` apprend de l'agent en préparation. Chaque champ donné remplace
+ * le précédent ; `nouveau` repart d'une carte vide. `consignes` : le corps complet de la fiche,
+ * écrit par l'assistant (sinon l'app le compose avec les piliers).
+ */
+export interface MajAtelier {
+  nouveau?: boolean;
+  id?: string;
+  nom?: string;
+  role?: string;
+  mission?: string;
+  description?: string;
+  declencheurs?: string[];
+  livrables?: string[];
+  methode?: string[];
+  limites?: string[];
+  verification?: string[];
+  consignes?: string;
+  modele?: "opus" | "sonnet" | "haiku";
+}
+
+/** L'agent en préparation, tel que la carte de l'atelier le montre : tous les appels pliés. */
+export interface BrouillonAgent {
+  id: string;
+  nom: string;
+  role: string;
+  mission: string;
+  description: string;
+  declencheurs: string[];
+  livrables: string[];
+  methode: string[];
+  limites: string[];
+  verification: string[];
+  consignes: string;
+  modele: "opus" | "sonnet" | "haiku" | "";
 }
 
 export interface Message {

@@ -29,7 +29,11 @@ export type EvenementSonore =
   | "maj-prete"
   | "active"
   | "desactive"
-  | "validation";
+  | "validation"
+  /** Un pilier de la carte d'un agent s'allume, dans l'atelier. */
+  | "atelier-etoile"
+  /** Un agent créé depuis l'atelier : il rejoint l'équipe. */
+  | "agent-ne";
 
 export const THEMES: { id: ThemeSons; titre: string; matiere: string }[] = [
   { id: "silence", titre: "Désactivé", matiere: "Silence" },
@@ -281,6 +285,11 @@ const CHALEUREUX: Jeu = {
   active: { piece: 0.1, niveau: 0.45, voix: bois(0, SI5, 0.7, 0.06) },
   desactive: { piece: 0.1, niveau: 0.45, voix: bois(0, FA5_DIESE, 0.7, 0.06) },
   validation: { piece: 0.16, niveau: 0.75, voix: [...bois(0, SOL5, 0.7, 0.1), ...verre(0.03, SOL6, 0.5, 0.6)] },
+  "atelier-etoile": { piece: 0.2, niveau: 0.7, voix: [...verre(0, MI6, 0.55, 0.55, -0.15), ...verre(0.06, LA6, 0.5, 0.7, 0.15)] },
+  "agent-ne": {
+    piece: 0.24,
+    voix: [...bois(0, SOL4, 0.4, 0.2), ...[SOL5, SI5, RE6, SOL6].flatMap((f, i) => verre(i * 0.075, f, 0.6, 0.9 + i * 0.15, -0.3 + i * 0.2)), ...verre(0.34, RE6, 0.35, 1.5)],
+  },
 };
 
 const MECANIQUE: Jeu = {
@@ -305,6 +314,12 @@ const MECANIQUE: Jeu = {
   active: { niveau: 0.45, voix: clic(0, 4200) },
   desactive: { niveau: 0.45, voix: clic(0, 2700) },
   validation: { piece: 0.08, niveau: 0.75, voix: [...sourd(0, 0.5), ...loquet(0.012, 2300, 2900, 0.9)] },
+  "atelier-etoile": { piece: 0.06, niveau: 0.6, voix: [...clic(0, 3600, 0.6), anneau(0.01, 4200, 0.35, 0.18)] },
+  "agent-ne": {
+    piece: 0.1,
+    niveau: 0.85,
+    voix: [...[2200, 2600, 3000, 3400].flatMap((f, i) => clic(i * 0.06, f, 0.6, -0.3 + i * 0.2)), ...loquet(0.27, 2300, 3500, 1, 0.4), anneau(0.28, 4700, 0.3, 0.5)],
+  },
 };
 
 const PETILLANT: Jeu = {
@@ -329,6 +344,11 @@ const PETILLANT: Jeu = {
   active: { piece: 0.12, niveau: 0.45, voix: bulle(0, 1300, 1, 1.8, 0.04) },
   desactive: { piece: 0.12, niveau: 0.45, voix: bulle(0, 820, 1, 1.6, 0.04) },
   validation: { piece: 0.2, niveau: 0.75, voix: [...bulle(0, SOL5, 0.8, 1.8, 0.07), ...bulle(0.065, 1175, 0.8, 1.8, 0.08)] },
+  "atelier-etoile": { piece: 0.15, niveau: 0.65, voix: [...goutte(0, MI6, 0.7, -0.15), ...goutte(0.06, LA6, 0.6, 0.15, 0.2)] },
+  "agent-ne": {
+    piece: 0.24,
+    voix: [...[700, 880, 1050, 1320].flatMap((f, i) => bulle(i * 0.065, f, 0.75, 1.9, 0.08, -0.3 + i * 0.2)), ...goutte(0.3, SOL6, 0.8), ...goutte(0.37, DO7, 0.5, 0.2)],
+  },
 };
 
 const CLAVIER: Jeu = {
@@ -360,6 +380,11 @@ const CLAVIER: Jeu = {
     piece: 0.06,
     niveau: 0.75,
     voix: [...touche(0, 150), { type: "bruit", t: 0.011, declin: 0.01, gain: 0.3, filtres: [{ type: "bandpass", f: 2200, q: 3 }] }, ...relache(0.09)],
+  },
+  "atelier-etoile": { piece: 0.06, niveau: 0.6, voix: [...touchePlate(0, 420, 0.8), ...clochette(0.02, 3100, 0.35, 0.35)] },
+  "agent-ne": {
+    piece: 0.1,
+    voix: [...[230, 250, 240].flatMap((corps, i) => frappe(i * 0.06, corps, 0.6, -0.2 + i * 0.2)), ...clochette(0.24, 2350, 0.7, 1.1), ...clochette(0.34, 3130, 0.45, 0.9)],
   },
 };
 

@@ -7,6 +7,7 @@ import { useMenuContextuel } from "@/components/ui/MenuContextuel";
 import { plagesDans, SURLIGNAGE } from "@/components/recherche/surligner";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
+import { plierAteliers, type EtatAtelier } from "@/lib/atelier-agent";
 import { cn } from "@/lib/cn";
 import { formatDaySeparator, formatJourHeure, formatTime, isSameDay } from "@/lib/format";
 import { fournisseur, moteurDuMessage } from "@/lib/fournisseurs";
@@ -135,6 +136,8 @@ function RoleMessage({
   derniere,
   travail,
   propositionCourante,
+  ateliers,
+  repondu,
   onAction,
 }: {
   chat: Chat;
@@ -145,6 +148,10 @@ function RoleMessage({
   travail: Travail | null;
   /** La dernière proposition d'agent de la conversation : les précédentes sont remplacées. */
   propositionCourante: string | null;
+  /** L'atelier d'un agent, plié sur toute la conversation. */
+  ateliers: Map<string, EtatAtelier>;
+  /** Ce que la personne a écrit après ce message, s'il y a lieu (réponses toutes prêtes). */
+  repondu: string | null;
   onAction: (label: string, roleId: RoleId) => void;
 }) {
   const role = useRole(roleId);
@@ -179,6 +186,9 @@ function RoleMessage({
             etapesDe={etapesDe}
             nomAgent={role.name}
             remplacee={part.type === "proposition-agent" && part.etapeId !== propositionCourante}
+            messageId={message.id}
+            etatAtelier={(id) => ateliers.get(id)}
+            choix={{ actif: derniere && repondu === null && !enCours, repondu, onRepondre: (texte) => onAction(texte, roleId) }}
             onAutorisation={(demandeId, decision) => repondreAutorisation(message.id, demandeId, decision)}
             onAction={(label) => onAction(label, roleId)}
           />
@@ -341,6 +351,21 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
     return null;
   }, [messages]);
 
+  /* L'atelier d'un agent : tous ses appels pliés dans l'ordre (cf. atelier-agent.ts). */
+  const ateliers = useMemo(() => plierAteliers(messages), [messages]);
+
+  /* Pour les réponses toutes prêtes : le premier message de la personne après chaque réponse. */
+  const reponses = useMemo(() => {
+    const apres = new Map<string, string>();
+    let suivante: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.author.kind === "user") suivante = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("\n");
+      else if (suivante !== null) apres.set(m.id, suivante);
+    }
+    return apres;
+  }, [messages]);
+
   if (!chat) return null;
   const derniereReponse = messages.findLast((m) => m.author.kind === "role")?.id;
 
@@ -394,6 +419,8 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
                       suite={suite}
                       travail={travail?.messageId === message.id ? travail : null}
                       propositionCourante={propositionCourante}
+                      ateliers={ateliers}
+                      repondu={reponses.get(message.id) ?? null}
                       onAction={(label, roleId) => sendMessage(chatId, label, roleId)}
                     />
                   )}

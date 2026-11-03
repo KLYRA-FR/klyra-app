@@ -19,6 +19,8 @@ import { identifiantDe } from "@/lib/noms-agents";
 import { poste } from "@/lib/plateforme";
 import { confierAEditeur } from "@/lib/proposition-agent";
 import { useIdDirect, useRole } from "@/lib/workspace";
+import type { EtatAtelier } from "@/lib/atelier-agent";
+import { CarteAtelier, ChoixReponses } from "./CarteAtelier";
 import { PastilleExtension } from "./PastilleExtension";
 import type {
   ChangedFile,
@@ -444,6 +446,9 @@ export function MessagePartView({
   nomAgent = "L’agent",
   onAutorisation,
   remplacee = false,
+  messageId = "",
+  etatAtelier,
+  choix,
 }: {
   part: MessagePart;
   tone: "user" | "role";
@@ -457,6 +462,11 @@ export function MessagePartView({
   onAutorisation?: (demandeId: string, decision: "oui" | "toujours" | "non") => void;
   /** Une proposition d'agent suivie d'une autre dans la même conversation. */
   remplacee?: boolean;
+  messageId?: string;
+  /** L'atelier d'un agent plié sur toute la conversation (cf. plierAteliers). */
+  etatAtelier?: (etapeId: string) => EtatAtelier | undefined;
+  /** Les réponses toutes prêtes : encore ouvertes, ou ce que la personne a répondu. */
+  choix?: { actif: boolean; repondu: string | null; onRepondre: (texte: string) => void };
 }) {
   switch (part.type) {
     case "text":
@@ -471,6 +481,10 @@ export function MessagePartView({
       return <PassationView roleId={part.roleId} consigne={part.consigne} statut={part.statut} etapes={etapesDe(part.etapeId)} />;
     case "proposition-agent":
       return <CartePropositionAgent part={part} remplacee={remplacee} />;
+    case "atelier-agent":
+      return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} enDirect={enCours} />;
+    case "choix":
+      return <ChoixReponses part={part} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onRepondre={(t) => choix?.onRepondre(t)} />;
     case "tasks":
       return <TaskList tasks={part.tasks} />;
     case "options":

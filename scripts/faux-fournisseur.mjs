@@ -4,6 +4,8 @@
  * - « appelle <agent> » : l'assistant appelle l'outil Agent avec ce type de sous-agent ;
  * - « fil <agent> » : il ouvre un fil (outil `ouvrir_fil` de l'app) pour cet agent ;
  * - « liste <agent> » : il liste les fils ouverts de cet agent (outil `lister_fils`) ;
+ * - « atelier <prénom> » : il complète la carte d'un agent à créer (outil `proposer_agent`) ;
+ * - « choix <mot> » : il propose des réponses toutes prêtes (outil `proposer_choix`) ;
  * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> ».
  * Les fiches d'essai portent `SOUS-AGENT-TEST-<nom>` dans leur consigne pour être reconnues.
  * Chaque requête est notée : sous-agent, agents listés au modèle, résultats d'outils.
@@ -12,6 +14,15 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 const texteDe = (contenu) => (typeof contenu === "string" ? contenu : (contenu ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n"));
+
+/** Les outils de l'app appelés par un ordre, et ce qu'ils reçoivent. */
+const OUTILS_ORDRES = { fil: "mcp__klyra__ouvrir_fil", liste: "mcp__klyra__lister_fils", atelier: "mcp__klyra__proposer_agent", choix: "mcp__klyra__proposer_choix" };
+function entreeOrdre(verbe, cible) {
+  if (verbe === "fil") return { agent: cible, titre: "Essai", brief: "Brief d’essai." };
+  if (verbe === "atelier") return { nom: cible.charAt(0).toUpperCase() + cible.slice(1), role: "Veille", mission: "Suit les concurrents et rend une note sourcée.", declencheurs: ["Chaque vendredi matin"] };
+  if (verbe === "choix") return { question: "Quand l’appeler ?", options: ["Chaque vendredi", "Avant un rendez-vous", "Quand je cite un concurrent"], multiple: true };
+  return { agent: cible };
+}
 
 export async function demarrerFournisseur(agentsSurveilles) {
   const requetes = [];
@@ -27,8 +38,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
     const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix) ([a-z0-9-]+)/m) : null;
     requetes.push({
       message: texteDe(dernier?.content ?? ""),
       sousAgent,
@@ -41,12 +52,10 @@ export async function demarrerFournisseur(agentsSurveilles) {
       corps,
     });
     if (sousAgent) return [{ type: "text", text: `bonjour de ${sousAgent}` }];
-    // Les outils de l'app : « fil » ouvre un fil, « liste » liste ceux de l'agent.
-    const nomOutil = ordre?.[1] === "fil" ? "mcp__klyra__ouvrir_fil" : ordre?.[1] === "liste" ? "mcp__klyra__lister_fils" : null;
+    // Les outils de l'app : « fil » ouvre un fil, « liste » liste ceux de l'agent ; « atelier » et « choix » pour créer un agent.
+    const nomOutil = ordre ? (OUTILS_ORDRES[ordre[1]] ?? null) : null;
     const outilFil = !!nomOutil && (corps.tools ?? []).some((t) => t.name === nomOutil);
-    const filDemande = () => [
-      { type: "tool_use", id: `toolu_${randomUUID().slice(0, 8)}`, name: nomOutil, input: ordre[1] === "fil" ? { agent: ordre[2], titre: "Essai", brief: "Brief d’essai." } : { agent: ordre[2] } },
-    ];
+    const filDemande = () => [{ type: "tool_use", id: `toolu_${randomUUID().slice(0, 8)}`, name: nomOutil, input: entreeOrdre(ordre[1], ordre[2]) }];
     // Les outils de l'app sont chargés à la demande (ToolSearch) : une fois trouvés, on s'en sert.
     if (resultats.some((r) => recherches.has(r.tool_use_id)) && nomOutil && outilFil) return filDemande();
     if (resultats.length) {

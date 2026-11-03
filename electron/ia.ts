@@ -248,24 +248,48 @@ const OUTILS_FILS = [
   },
 ];
 
-/** L'assistant aide à créer un agent : il propose la fiche, la personne l'ajuste et l'enregistre (ou non). */
+/**
+ * L'atelier d'un agent, dans la conversation (cf. src/lib/atelier-agent.ts) : l'assistant complète la
+ * carte à chaque réponse, la personne la crée d'un clic ou l'ajuste dans l'éditeur (ou non).
+ */
+const liste = (description: string) => ({ type: "array", items: { type: "string" }, description });
 const OUTIL_PROPOSER = {
   name: "proposer_agent",
   description:
-    "Propose à la personne une fiche d'agent à créer, d'après un besoin qu'elle a exprimé et qu'aucun de ses agents ne couvre. L'app lui montre la proposition : elle l'ouvre dans l'éditeur, l'ajuste et l'enregistre elle-même. Rien n'est créé par cet outil. Une seule proposition par besoin ; demande-lui d'abord ce qui manque si le besoin est flou. Garde la fiche courte (3 000 caractères au plus suffisent souvent) : chaque ligne est relue à chaque appel de l'agent. N'y répète pas ce que l'app donne déjà à chaque agent (agents actifs, fils, QA sur demande, accès qui n'est pas un accord, livrables en fichiers).",
+    "Montre et complète, dans la conversation, la carte d'un agent à créer avec la personne. Appelle-le après chaque réponse utile, avec seulement ce que tu viens d'apprendre : chaque champ donné remplace le précédent, les autres restent. La carte montre ses cinq piliers (mission, quand l'appeler, ce qu'il livre, ses limites, comment il vérifie) et le poids de sa fiche. C'est la personne qui le crée d'un clic sur la carte, ou l'ajuste dans l'éditeur : rien n'est créé par cet outil. Phrases courtes, écrites comme la fiche les dira (« Envoyer au client : jamais sans ton accord. »). N'y répète pas ce que l'app donne déjà à chaque agent (agents actifs, fils, QA sur demande, accès qui n'est pas un accord, livrables en fichiers).",
   inputSchema: {
     type: "object",
     properties: {
-      id: { type: "string", description: "Identifiant proposé : minuscules, chiffres et tirets (ex. juriste)." },
-      nom: { type: "string", description: "Le prénom de l'agent (ex. Nina)." },
-      role: { type: "string", description: "Son rôle court (ex. Juridique)." },
-      description: {
-        type: "string",
-        description: "Une phrase : « Rôle — ce qu'il couvre, séparé par des virgules. Appelle <prénom> dès qu'il faut… »",
-      },
-      consignes: { type: "string", description: "Le corps de la fiche en Markdown : présentation, « ## Comment je travaille », « ## Ce que je ne fais pas », « ## Critères de sortie »." },
+      nouveau: { type: "boolean", description: "true pour commencer la carte d'un autre agent." },
+      nom: { type: "string", description: "Son prénom (ex. Nina)." },
+      role: { type: "string", description: "Son rôle court (ex. Commercial)." },
+      id: { type: "string", description: "Identifiant voulu : minuscules, chiffres et tirets. Sinon tiré du prénom." },
+      mission: { type: "string", description: "Sa mission, en une phrase." },
+      declencheurs: liste("Quand l'appeler : une situation par élément."),
+      livrables: liste("Ce qu'il rend : un livrable par élément."),
+      methode: liste("Comment il travaille : 3 à 5 règles."),
+      limites: liste("Ce qu'il ne fait pas, ou seulement avec l'accord de la personne : une phrase par élément."),
+      verification: liste("Comment il vérifie son travail avant de le rendre."),
+      modele: { type: "string", enum: ["opus", "sonnet", "haiku"], description: "Seulement si la personne l'a choisi." },
+      description: { type: "string", description: "La description de l'en-tête, si tu l'écris toi-même ; sinon l'app la compose." },
+      consignes: { type: "string", description: "Le corps complet de la fiche en Markdown, seulement si tu l'écris d'un bloc ; sinon l'app le compose avec les champs." },
     },
-    required: ["id", "nom", "role", "description", "consignes"],
+  },
+};
+
+/** Des réponses toutes prêtes sous la question de l'assistant : un clic répond. */
+const OUTIL_CHOIX = {
+  name: "proposer_choix",
+  description:
+    "Montre sous ta réponse des réponses toutes prêtes à la question que tu viens de poser : la personne clique pour répondre, ou écrit la sienne. 2 à 6 réponses courtes, tirées de ce qu'elle t'a dit. Termine ta réponse juste après : sa réponse arrivera dans son prochain message.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      question: { type: "string", description: "La question, en quelques mots (déjà posée dans ton texte)." },
+      options: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 6, description: "Les réponses proposées." },
+      multiple: { type: "boolean", description: "true si plusieurs réponses vont ensemble : elle coche, puis envoie." },
+    },
+    required: ["options"],
   },
 };
 
@@ -342,7 +366,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
@@ -367,7 +391,8 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
         } catch (e) { return texte(e instanceof Error ? e.message : String(e), true); }
       }
       if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
-      if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name || nom === OUTIL_PUBLIER.name) {
+      if (nom === OUTIL_CHOIX.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des réponses toutes prêtes.", true);
+      if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name || nom === OUTIL_CHOIX.name || nom === OUTIL_PUBLIER.name) {
         if (!relaisFils) return texte("L'app n'est pas prête, réessaie dans un instant.", true);
         try {
           return texte(await relaisFils(nom, args, appelant));
@@ -429,6 +454,6 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
 /** Les outils de l'app qu'un agent peut utiliser sans demander, en accès « projet ». */
 export const OUTILS_APP = () => [
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
-  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_PUBLIER].map((o) => `mcp__klyra__${o.name}`),
+  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_CHOIX, OUTIL_PUBLIER].map((o) => `mcp__klyra__${o.name}`),
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
 ];
