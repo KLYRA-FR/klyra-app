@@ -1,0 +1,210 @@
+/**
+ * Les IA à consulter sur le VPS (ChatGPT, Gemini, Mistral, DeepSeek, Grok…), comme dans l'app (electron/ia.ts) :
+ * la personne les ajoute avec leur clé API depuis Réglages du serveur › Fournisseurs, et les agents du VPS
+ * (Claude Code et Codex) les interrogent par l'outil `demander_ia` d'un petit serveur MCP local.
+ *
+ * Les clés sont dans `donnees/ia.json` (fichier 600 de l'utilisateur klyra, comme `claude-token`) : le VPS
+ * n'a pas de trousseau. Elles ne reviennent jamais à l'app et ne partent qu'à l'IA concernée.
+ * Le serveur MCP n'écoute que sur 127.0.0.1, avec un jeton tiré au hasard à chaque démarrage.
+ */
+import { randomBytes, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import path from "node:path";
+import { FOURNISSEURS } from "./ia-catalogue.mjs";
+
+export { FOURNISSEURS };
+
+const OUTIL_DEMANDER = {
+  name: "demander_ia",
+  description:
+    "Pose une question à une autre IA, ajoutée par la personne dans les Réglages du serveur KLYRA (ChatGPT, Gemini, Mistral, DeepSeek, Grok…). Pour un deuxième avis, une autre plume, une comparaison. L'IA ne voit que la consigne : mets-y tout le contexte utile (texte, extrait de code). Elle répond en texte et ne touche à aucun fichier.",
+};
+
+/** @param {{ donnees: string, version: string, fetch?: typeof fetch }} options */
+export function creerIa(options) {
+  const fichier = path.join(options.donnees, "ia.json");
+  const appeler = options.fetch ?? fetch;
+  let generation = 0;
+
+  function lire() {
+    try {
+      const v = JSON.parse(readFileSync(fichier, "utf8"));
+      return Array.isArray(v) ? v.filter((i) => i && typeof i.id === "string" && typeof i.cle === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function ecrire(liste) {
+    mkdirSync(path.dirname(fichier), { recursive: true, mode: 0o700 });
+    const temporaire = `${fichier}.tmp`;
+    writeFileSync(temporaire, JSON.stringify(liste), { mode: 0o600 });
+    renameSync(temporaire, fichier);
+    generation += 1;
+  }
+
+  const sansCle = (ia) => ({ id: ia.id, nom: ia.nom, fournisseur: ia.fournisseur, url: ia.url, modele: ia.modele });
+  const lister = () => lire().map(sansCle);
+
+  function verifierUrl(url) {
+    const u = new URL(String(url).trim());
+    if (u.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(u.hostname)) throw new Error("L’adresse doit commencer par https://.");
+    return u.toString().replace(/\/+$/, "");
+  }
+
+  function ajouter(entree) {
+    if (!entree || typeof entree !== "object" || !Object.hasOwn(FOURNISSEURS, entree.fournisseur)) throw new Error("Fournisseur inconnu.");
+    const nom = String(entree.nom ?? "").trim().slice(0, 40);
+    const modele = String(entree.modele ?? "").trim().slice(0, 120);
+    const cle = String(entree.cle ?? "").trim();
+    if (!nom || !modele || !cle) throw new Error("Il manque le nom, le modèle ou la clé.");
+    if (cle.length > 400 || /\s/.test(cle)) throw new Error("Cette clé ne ressemble pas à une clé API.");
+    const liste = lire();
+    if (liste.length >= 50) throw new Error("Trop d’IA ajoutées sur ce serveur.");
+    if (liste.some((i) => i.nom.toLowerCase() === nom.toLowerCase())) throw new Error(`Une IA s’appelle déjà « ${nom} ».`);
+    liste.push({ id: randomUUID(), nom, fournisseur: entree.fournisseur, url: verifierUrl(entree.url || FOURNISSEURS[entree.fournisseur].url), modele, cle });
+    ecrire(liste);
+    return liste.map(sansCle);
+  }
+
+  function retirer(id) {
+    const liste = lire().filter((i) => i.id !== id);
+    ecrire(liste);
+    return liste.map(sansCle);
+  }
+
+  /** Pose une question à une IA ; rend sa réponse en texte. */
+  async function demander(ia, consigne) {
+    const reponse = await appeler(`${ia.url}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${ia.cle}` },
+      body: JSON.stringify({ model: ia.modele, messages: [{ role: "user", content: consigne }] }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    const corps = await reponse.json().catch(() => null);
+    if (!reponse.ok) {
+      const erreur = typeof corps?.error === "string" ? corps.error : corps?.error?.message;
+      throw new Error(`${ia.nom} a refusé la demande (${reponse.status})${erreur ? ` : ${erreur}` : ""}.`);
+    }
+    const contenu = corps?.choices?.[0]?.message?.content;
+    const texte = typeof contenu === "string" ? contenu : Array.isArray(contenu) ? contenu.map((c) => c?.text ?? "").join("") : "";
+    if (!texte.trim()) throw new Error(`${ia.nom} n’a rien répondu.`);
+    return texte.trim();
+  }
+
+  async function tester(id) {
+    const ia = lire().find((i) => i.id === id);
+    if (!ia) throw new Error("Cette IA n’existe plus.");
+    return demander(ia, "Réponds seulement : ok");
+  }
+
+  /* ─── Serveur MCP local, pour les agents du VPS ──────────────────── */
+
+  let serveur = null;
+  let http = null;
+
+  async function traiter(req, res) {
+    const finir = (statut, corps) => {
+      res.writeHead(statut, corps === undefined ? {} : { "Content-Type": "application/json" });
+      res.end(corps === undefined ? undefined : JSON.stringify(corps));
+    };
+    if (req.headers.authorization !== `Bearer ${serveur?.jeton}`) return finir(401);
+    if (req.method !== "POST" || req.url !== "/mcp") return finir(405);
+    let brut = "";
+    for await (const morceau of req) {
+      brut += morceau;
+      if (brut.length > 2 * 1024 * 1024) return finir(413);
+    }
+    let msg;
+    try {
+      msg = JSON.parse(brut);
+    } catch {
+      return finir(400);
+    }
+    if (msg.id === undefined) return finir(202);
+    const resultat = (result) => finir(200, { jsonrpc: "2.0", id: msg.id, result });
+    const texte = (t, isError = false) => resultat({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
+    switch (msg.method) {
+      case "initialize":
+        return resultat({
+          protocolVersion: typeof msg.params?.protocolVersion === "string" ? msg.params.protocolVersion : "2025-06-18",
+          capabilities: { tools: {} },
+          serverInfo: { name: "klyra", version: options.version },
+        });
+      case "ping":
+        return resultat({});
+      case "tools/list": {
+        const noms = lire().map((i) => i.nom);
+        const outils = noms.length
+          ? [
+              {
+                ...OUTIL_DEMANDER,
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    ia: { type: "string", enum: noms, description: "Le nom de l'IA, tel qu'il est dans les Réglages du serveur." },
+                    consigne: { type: "string", description: "La question, avec tout le contexte nécessaire." },
+                  },
+                  required: ["ia", "consigne"],
+                },
+              },
+            ]
+          : [];
+        return resultat({ tools: outils });
+      }
+      case "tools/call": {
+        if (String(msg.params?.name ?? "") !== OUTIL_DEMANDER.name) return texte("Outil inconnu.", true);
+        const args = msg.params?.arguments ?? {};
+        const liste = lire();
+        const ia = liste.find((i) => i.nom.toLowerCase() === String(args.ia ?? "").toLowerCase());
+        if (!ia) return texte(`Aucune IA « ${String(args.ia)} ». Disponibles : ${liste.map((i) => i.nom).join(", ") || "aucune"}.`, true);
+        const consigne = String(args.consigne ?? "");
+        if (!consigne.trim()) return texte("La consigne est vide.", true);
+        try {
+          return texte(`Réponse de ${ia.nom} (${ia.modele}) :\n\n${await demander(ia, consigne)}`);
+        } catch (e) {
+          return texte(e instanceof Error ? e.message : String(e), true);
+        }
+      }
+      default:
+        return finir(200, { jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "Méthode inconnue." } });
+    }
+  }
+
+  /** Démarre le serveur MCP local (une fois, au lancement du serveur KLYRA). */
+  function demarrer() {
+    return new Promise((resolve) => {
+      const jeton = randomBytes(24).toString("hex");
+      http = createServer((req, res) => {
+        traiter(req, res).catch(() => {
+          if (!res.headersSent) res.writeHead(500);
+          res.end();
+        });
+      });
+      http.listen(0, "127.0.0.1", () => {
+        serveur = { url: `http://127.0.0.1:${http.address().port}/mcp`, jeton };
+        resolve();
+      });
+    });
+  }
+
+  /** La configuration MCP des agents (format `--mcp-config` de Claude Code) ; null sans IA ajoutée. */
+  function configMcp() {
+    if (!serveur || !lire().length) return null;
+    return JSON.stringify({ mcpServers: { klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}` } } } });
+  }
+
+  return {
+    catalogue: () => FOURNISSEURS,
+    lister,
+    ajouter,
+    retirer,
+    tester,
+    demarrer,
+    configMcp,
+    /** Change à chaque ajout ou retrait : un agent ouvert est relancé avec la liste à jour. */
+    generation: () => generation,
+    fermer: () => http?.close(),
+  };
+}

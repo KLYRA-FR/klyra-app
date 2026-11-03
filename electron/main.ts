@@ -123,6 +123,21 @@ import {
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { arbreVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
+import {
+  ajouterIaVps,
+  catalogueIaVps,
+  compteVps,
+  connecterCleVps,
+  connecterVps,
+  deconnecterVps,
+  listerIaVps,
+  modelesVps,
+  moteursVps,
+  retirerIaVps,
+  testerIaVps,
+  travailVps,
+  versionDisponibleVps,
+} from "./fournisseurs-vps";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
@@ -436,42 +451,73 @@ function registerBridge() {
     }
     return null;
   });
-  /* Les moteurs des agents (Claude Code, Codex pour ChatGPT) : présence, compte, modèles. */
+  /* Les moteurs des agents (Claude Code, Codex pour ChatGPT) : présence, compte, modèles.
+     `lieu` : ceux d'un VPS relié (electron/fournisseurs-vps.ts) ; absent : ceux de ce PC. */
   const moteurConnu = (id: string) => {
     const m = moteurs.moteur(id);
     if (!m || !id) throw new Error(`Fournisseur inconnu : ${id}.`);
     return m;
   };
-  handle("moteurs:liste", () =>
-    moteurs.liste().map((m) => {
+  const vps = (lieu: unknown): string | null => (typeof lieu === "string" && lieu ? lieu : null);
+  handle("moteurs:liste", (lieu?: string | null) => {
+    const origine = vps(lieu);
+    if (origine) return moteursVps(origine, jetonServeur(origine));
+    return moteurs.liste().map((m) => {
       const chemin = m.trouver();
       return { id: m.id, nom: m.nom, fournisseur: m.fournisseur, chemin, gere: estGere(chemin), installable: !!m.installer };
-    }),
-  );
-  handle("moteurs:compte", (id: string) => moteurConnu(id).compte());
-  handle("moteurs:connecter", (id: string) => moteurConnu(id).connecter());
-  handle("moteurs:connecter-cle", (id: string, cle: string) => {
+    });
+  });
+  handle("moteurs:compte", (id: string, lieu?: string | null) => {
+    const origine = vps(lieu);
+    return origine ? compteVps(origine, jetonServeur(origine), id) : moteurConnu(id).compte();
+  });
+  handle("moteurs:connecter", (id: string, lieu?: string | null) => {
+    const origine = vps(lieu);
+    if (!origine) return moteurConnu(id).connecter();
+    /* Sur le VPS, par code d'appareil : l'écran montre le code pendant qu'on attend la connexion. */
+    return connecterVps(origine, jetonServeur(origine), id, (code) => {
+      const sender = BrowserWindow.getAllWindows()[0]?.webContents;
+      if (sender && !sender.isDestroyed()) sender.send("moteurs:code", id, origine, code);
+    });
+  });
+  handle("moteurs:connecter-cle", (id: string, cle: string, lieu?: string | null) => {
+    if (typeof cle !== "string") throw new Error("Clé invalide.");
+    const origine = vps(lieu);
+    if (origine) return connecterCleVps(origine, jetonServeur(origine), id, cle);
     const m = moteurConnu(id);
-    if (!m.connecterAvecCle || typeof cle !== "string") throw new Error("Ce fournisseur ne se connecte pas avec une clé ici.");
+    if (!m.connecterAvecCle) throw new Error("Ce fournisseur ne se connecte pas avec une clé ici.");
     return m.connecterAvecCle(cle);
   });
-  handle("moteurs:deconnecter", (id: string) => moteurConnu(id).deconnecter());
-  handle("moteurs:modeles", (id: string) => moteurConnu(id).modeles?.() ?? []);
-  handle("moteurs:version-disponible", (id: string) => moteurConnu(id).versionDisponible?.() ?? null);
+  handle("moteurs:deconnecter", (id: string, lieu?: string | null) => {
+    const origine = vps(lieu);
+    return origine ? deconnecterVps(origine, jetonServeur(origine), id) : moteurConnu(id).deconnecter();
+  });
+  handle("moteurs:modeles", (id: string, lieu?: string | null) => {
+    const origine = vps(lieu);
+    return origine ? modelesVps(origine, jetonServeur(origine), id) : (moteurConnu(id).modeles?.() ?? []);
+  });
+  handle("moteurs:version-disponible", (id: string, lieu?: string | null) => {
+    const origine = vps(lieu);
+    return origine ? versionDisponibleVps(origine, jetonServeur(origine), id) : (moteurConnu(id).versionDisponible?.() ?? null);
+  });
   /* Installer ou mettre à jour : l'avancée arrive sur `moteurs:progression`, jusqu'à la réponse. */
-  const progression = (id: string) => (p: Progression) => {
+  const progression = (id: string, lieu: string | null) => (p: Progression) => {
     const sender = BrowserWindow.getAllWindows()[0]?.webContents;
-    if (sender && !sender.isDestroyed()) sender.send("moteurs:progression", id, p);
+    if (sender && !sender.isDestroyed()) sender.send("moteurs:progression", id, p, lieu);
   };
-  handle("moteurs:installer", (id: string) => {
+  handle("moteurs:installer", (id: string, lieu?: string | null) => {
+    const origine = vps(lieu);
+    if (origine) return travailVps(origine, jetonServeur(origine), id, "installer", progression(id, origine));
     const m = moteurConnu(id);
     if (!m.installer) throw new Error(`L’app ne sait pas installer ${m.nom}.`);
-    return m.installer(progression(id));
+    return m.installer(progression(id, null));
   });
-  handle("moteurs:mettre-a-jour", (id: string) => {
+  handle("moteurs:mettre-a-jour", (id: string, lieu?: string | null) => {
+    const origine = vps(lieu);
+    if (origine) return travailVps(origine, jetonServeur(origine), id, "mettre-a-jour", progression(id, origine));
     const m = moteurConnu(id);
     if (!m.mettreAJour) throw new Error(`L’app ne sait pas mettre à jour ${m.nom}.`);
-    return m.mettreAJour(progression(id));
+    return m.mettreAJour(progression(id, null));
   });
   handle("projets:dossier-existe", (dossier: string) => dossierExiste(dossier));
   handle("projets:choisir-dossier", async () => {
@@ -629,11 +675,17 @@ function registerBridge() {
         win.webContents.send("outils:appel", id, nom, args, appelant);
       }),
   );
-  handle("ia:fournisseurs", () => FOURNISSEURS);
-  handle("ia:lister", () => listerIa());
-  handle("ia:ajouter", (entree: { nom: string; fournisseur: Fournisseur; url: string; modele: string; cle: string }) => ajouterIa(entree));
-  handle("ia:retirer", (id: string) => retirerIa(String(id)));
-  handle("ia:tester", (id: string) => testerIa(String(id)));
+  /* Les IA à consulter de ce PC, ou d'un VPS relié (`lieu`) : la clé reste là où elle est ajoutée. */
+  handle("ia:fournisseurs", (lieu?: string | null) => {
+    const origine = typeof lieu === "string" && lieu ? lieu : null;
+    return origine ? catalogueIaVps(origine, jetonServeur(origine)) : FOURNISSEURS;
+  });
+  handle("ia:lister", (lieu?: string | null) => (typeof lieu === "string" && lieu ? listerIaVps(lieu, jetonServeur(lieu)) : listerIa()));
+  handle("ia:ajouter", (entree: { nom: string; fournisseur: Fournisseur; url: string; modele: string; cle: string }, lieu?: string | null) =>
+    typeof lieu === "string" && lieu ? ajouterIaVps(lieu, jetonServeur(lieu), entree) : ajouterIa(entree),
+  );
+  handle("ia:retirer", (id: string, lieu?: string | null) => (typeof lieu === "string" && lieu ? retirerIaVps(lieu, jetonServeur(lieu), String(id)) : retirerIa(String(id))));
+  handle("ia:tester", (id: string, lieu?: string | null) => (typeof lieu === "string" && lieu ? testerIaVps(lieu, jetonServeur(lieu), String(id)) : testerIa(String(id))));
   /* Les MCP directs de la Marketplace (electron/mcp-direct.ts) : le jeton ne revient jamais vers l'écran. */
   handle("mcp:apps", () => APPS_MCP);
   handle("mcp:lister", () => listerMcpDirects());

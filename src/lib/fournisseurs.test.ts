@@ -29,8 +29,8 @@ describe("moteurDe", () => {
     expect(moteurDe(chat())).toBe("claude");
     expect(moteurDe(chat({ fournisseur: "codex" }))).toBe("codex");
   });
-  it("sur un VPS, Claude Code seul pour l'instant", () => {
-    expect(moteurDe(chat({ fournisseur: "codex", lieu: "https://vps.exemple" }))).toBe("claude");
+  it("sur un VPS aussi, celui que la conversation a choisi", () => {
+    expect(moteurDe(chat({ fournisseur: "codex", lieu: "https://vps.exemple" }))).toBe("codex");
   });
 });
 

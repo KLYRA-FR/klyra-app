@@ -9,11 +9,12 @@ import { useMaj } from "@/lib/maj";
 import { useMoteurs } from "@/lib/moteurs";
 import { libelleServeur, type ServeurConnu } from "@/lib/serveur-vps";
 
-/** Les moteurs de Ce PC et leur version. */
-function MoteursDuPoste() {
-  const { moteurs } = useMoteurs();
+/** Les moteurs de la machine (Ce PC, ou le VPS `lieu`) et leur version. */
+function Moteurs({ lieu }: { lieu: string | null }) {
+  const { moteurs, erreur } = useMoteurs(lieu);
   return (
-    <Groupe titre="Moteurs" description="Les programmes qui font travailler les agents sur ce PC. Leurs comptes et leurs mises à jour sont dans Fournisseurs.">
+    <Groupe titre="Moteurs" description={`Les programmes qui font travailler les agents sur ${lieu ? "ce serveur" : "ce PC"}. Leurs comptes et leurs mises à jour sont dans Fournisseurs.`}>
+      {erreur && <Ligne libelle="Illisible" description={erreur} />}
       {!moteurs && <Ligne libelle="Lecture…" />}
       {moteurs?.map((m) => (
         <Ligne key={m.moteur.id} id={m.moteur.id === "claude" ? "serveur-moteurs" : undefined} libelle={`${m.moteur.nom} · ${fournisseur(m.moteur.id).nom}`}>
@@ -39,28 +40,31 @@ export function GeneralServeur({ serveur }: { serveur: ServeurConnu | null }) {
             <Valeur>{etat ? `KLYRA ${etat.version}` : "Version de développement"}</Valeur>
           </Ligne>
         </Groupe>
-        <MoteursDuPoste />
+        <Moteurs lieu={null} />
       </>
     );
   }
   const sonde = sondes[serveur.id];
   return (
-    <Groupe>
-      <Ligne id="serveur-nom" libelle={serveur.nom} description="Un VPS relié : ses agents tournent même quand ce PC est éteint." />
-      <Ligne libelle="Adresse">
-        <Valeur mono>{serveur.adresse}</Valeur>
-      </Ligne>
-      <Ligne id="serveur-version" libelle="Version de KLYRA sur ce serveur">
-        <Valeur>{serveur.version || "—"}</Valeur>
-      </Ligne>
-      <Ligne libelle="État">
-        <Valeur>{libelleServeur(serveur.etat, sonde?.sonde, sonde?.agents)}</Valeur>
-      </Ligne>
-      <Ligne libelle="Tous les serveurs" description="Ajouter, relier ou retirer un serveur.">
-        <Link href="/serveurs" className="text-ui-s font-medium text-texte-principal underline underline-offset-2">
-          Ouvrir
-        </Link>
-      </Ligne>
-    </Groupe>
+    <>
+      <Groupe>
+        <Ligne id="serveur-nom" libelle={serveur.nom} description="Un VPS relié : ses agents tournent même quand ce PC est éteint." />
+        <Ligne libelle="Adresse">
+          <Valeur mono>{serveur.adresse}</Valeur>
+        </Ligne>
+        <Ligne id="serveur-version" libelle="Version de KLYRA sur ce serveur">
+          <Valeur>{serveur.version || "—"}</Valeur>
+        </Ligne>
+        <Ligne libelle="État">
+          <Valeur>{libelleServeur(serveur.etat, sonde?.sonde, sonde?.agents)}</Valeur>
+        </Ligne>
+        <Ligne libelle="Tous les serveurs" description="Ajouter, relier ou retirer un serveur.">
+          <Link href="/serveurs" className="text-ui-s font-medium text-texte-principal underline underline-offset-2">
+            Ouvrir
+          </Link>
+        </Ligne>
+      </Groupe>
+      <Moteurs lieu={serveur.adresse} />
+    </>
   );
 }

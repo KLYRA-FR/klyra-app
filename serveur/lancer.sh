@@ -125,6 +125,12 @@ curl -fsSL "$SOURCE/agents.mjs" -o "$CODE_DIR/agents.mjs"
 curl -fsSL "$SOURCE/fichiers.mjs" -o "$CODE_DIR/fichiers.mjs"
 curl -fsSL "$SOURCE/routines.mjs" -o "$CODE_DIR/routines.mjs"
 curl -fsSL "$SOURCE/horaires.mjs" -o "$CODE_DIR/horaires.mjs"
+curl -fsSL "$SOURCE/codex.mjs" -o "$CODE_DIR/codex.mjs"
+curl -fsSL "$SOURCE/codex-protocole.mjs" -o "$CODE_DIR/codex-protocole.mjs"
+curl -fsSL "$SOURCE/installation.mjs" -o "$CODE_DIR/installation.mjs"
+curl -fsSL "$SOURCE/moteurs.mjs" -o "$CODE_DIR/moteurs.mjs"
+curl -fsSL "$SOURCE/ia.mjs" -o "$CODE_DIR/ia.mjs"
+curl -fsSL "$SOURCE/ia-catalogue.mjs" -o "$CODE_DIR/ia-catalogue.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────

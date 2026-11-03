@@ -64,6 +64,7 @@ function sousTitre(m: EtatMoteur | undefined): string {
   if (compte.email) return compte.email;
   if (compte.methode === "cle-api") return "Clé API";
   if (compte.methode === "config") return "Réglé dans la configuration de Codex";
+  if (compte.methode === "jeton") return "Jeton longue durée";
   return "Connecté";
 }
 
@@ -152,9 +153,9 @@ const correspond = (requete: string, ...textes: string[]) => {
  * Tous les fournisseurs du serveur en une liste : ceux qui font travailler les agents (Claude, ChatGPT
  * par Codex) et ceux qu'ils peuvent consulter avec une clé API (Gemini, DeepSeek, Grok…, cf. electron/ia.ts).
  */
-function Liste({ ouvrir }: { ouvrir: (id: string) => void }) {
-  const { moteurs } = useMoteurs();
-  const ias = useAutresIa();
+function Liste({ ouvrir, lieu }: { ouvrir: (id: string) => void; lieu: string | null }) {
+  const { moteurs, erreur } = useMoteurs(lieu);
+  const ias = useAutresIa(lieu);
   const [recherche, setRecherche] = useState("");
   const [ajout, setAjout] = useState<string | null>(null);
   const publiees = useVersionsDisponibles((moteurs ?? []).filter((m) => m.moteur.chemin).map((m) => m.moteur.id));
@@ -168,6 +169,7 @@ function Liste({ ouvrir }: { ouvrir: (id: string) => void }) {
     .filter(([id, f]) => (id === "autre" || !ias.liste.some((ia) => ia.fournisseur === id)) && correspond(recherche, f.nom, id === "autre" ? "autre compatible openai" : ""))
     .sort(([a], [b]) => Number(a === "autre") - Number(b === "autre"));
 
+  if (erreur) return <Erreur>{erreur}</Erreur>;
   if (!moteurs) return <p className="m-0 text-ui-s text-texte-tertiaire">Lecture des fournisseurs…</p>;
   return (
     <div id="reglage-fournisseurs-liste" className="klyra-reglage flex scroll-mt-6 flex-col gap-6 rounded-lg">
@@ -195,7 +197,7 @@ function Liste({ ouvrir }: { ouvrir: (id: string) => void }) {
       {(autres.length > 0 || iasProposees.length > 0) && (
         <Groupe
           titre="Autres fournisseurs"
-          description="Claude et ChatGPT font travailler les agents : ils s’installent et se connectent depuis leur page. Les IA « À consulter » s’ajoutent avec leur clé API, chiffrée dans le trousseau de ce poste."
+          description={`Claude et ChatGPT font travailler les agents : ils s’installent et se connectent depuis leur page. Les IA « À consulter » s’ajoutent avec leur clé API, ${lieu ? "gardée sur ce serveur" : "chiffrée dans le trousseau de ce poste"}.`}
         >
           {autres.map((f) => (
             <Ligne1 key={f.id} id={f.id} m={etat(f.id)} publiee={publiees[f.id]} onClick={() => ouvrir(f.id)} />
@@ -210,6 +212,7 @@ function Liste({ ouvrir }: { ouvrir: (id: string) => void }) {
                       key={id}
                       fournisseurs={ias.catalogue!}
                       initial={id}
+                      lieu={lieu}
                       onAjoutee={(l) => {
                         ias.setListe(l);
                         setAjout(null);
@@ -229,7 +232,8 @@ function Liste({ ouvrir }: { ouvrir: (id: string) => void }) {
 
 /* ─── Une action longue (connexion, installation) ──────────────── */
 
-type Action = { nom: string; progression: ProgressionMoteur | null } | null;
+/** `code` : sur un VPS, le code à saisir sur la page d'OpenAI pendant la connexion. */
+type Action = { nom: string; progression: ProgressionMoteur | null; code?: { url: string; code: string } } | null;
 
 function texteProgression(p: ProgressionMoteur | null): string {
   if (!p) return "En cours…";
@@ -239,40 +243,52 @@ function texteProgression(p: ProgressionMoteur | null): string {
   return "Mise à jour…";
 }
 
-function useAction(id: string) {
+function useAction(id: string, lieu: string | null) {
   const [action, setAction] = useState<Action>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const enCours = !!action;
   useEffect(() => {
     const bridge = getBridge()?.moteurs;
-    if (!action || !bridge) return;
-    return bridge.onProgression((qui, p) => qui === id && setAction((a) => (a ? { ...a, progression: p } : a)));
-  }, [action, id]);
-  const lancer = useCallback(async (nom: string, faire: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
-    setErreur(null);
-    setAction({ nom, progression: null });
-    const r = await faire();
-    await actualiserMoteurs();
-    setAction(null);
-    if (!r.ok) setErreur(r.message);
-  }, []);
+    if (!enCours || !bridge) return;
+    const sansProgression = bridge.onProgression((qui, p, ou) => qui === id && (ou ?? null) === lieu && setAction((a) => (a ? { ...a, progression: p } : a)));
+    const sansCode = bridge.onCode?.((qui, ou, code) => qui === id && ou === lieu && setAction((a) => (a ? { ...a, code } : a)));
+    return () => {
+      sansProgression();
+      sansCode?.();
+    };
+  }, [enCours, id, lieu]);
+  const lancer = useCallback(
+    async (nom: string, faire: () => Promise<{ ok: true } | { ok: false; message: string }>) => {
+      setErreur(null);
+      setAction({ nom, progression: null });
+      const r = await faire();
+      await actualiserMoteurs(lieu);
+      setAction(null);
+      if (!r.ok) setErreur(r.message);
+    },
+    [lieu],
+  );
   return { action, erreur, lancer };
 }
 
 /* ─── La page d'un fournisseur ─────────────────────────────────── */
 
-function Moteur({ id, m }: { id: string; m: EtatMoteur | undefined }) {
+function Moteur({ id, m, lieu }: { id: string; m: EtatMoteur | undefined; lieu: string | null }) {
   const bridge = getBridge()?.moteurs;
   const publiees = useVersionsDisponibles(m?.moteur.chemin || m?.moteur.installable ? [id] : []);
   const publiee = publiees[id];
-  const { action, erreur, lancer } = useAction(id);
+  const { action, erreur, lancer } = useAction(id, lieu);
   const installe = !!m?.moteur.chemin;
   const version = m?.compte?.version;
   const nom = m?.moteur.nom ?? fournisseur(id).moteur;
+  const ici = lieu ? "ce serveur" : "ce poste";
   const description = !installe
-    ? `${fournisseur(id).nom} passe par ${nom}. L’app le télécharge depuis sa source officielle (npm), vérifie son empreinte et le range dans ~/.klyra/moteurs.`
+    ? m?.moteur.installable
+      ? `${fournisseur(id).nom} passe par ${nom}. ${lieu ? "Le serveur le télécharge" : "L’app le télécharge"} depuis sa source officielle (npm), vérifie son empreinte et le range dans ~/.klyra/moteurs.`
+      : `${nom} s’installe sur ${ici} avec la commande d’installation de KLYRA.`
     : m?.moteur.gere
-      ? "Installé par KLYRA dans ~/.klyra/moteurs : c’est l’app qui le met à jour."
-      : "Installé sur ce poste : la mise à jour passe par sa propre commande.";
+      ? `Installé par KLYRA dans ~/.klyra/moteurs de ${ici} : c’est KLYRA qui le met à jour.`
+      : `Installé sur ${ici} : la mise à jour passe par sa propre commande.`;
 
   return (
     <Groupe titre="Moteur">
@@ -280,12 +296,12 @@ function Moteur({ id, m }: { id: string; m: EtatMoteur | undefined }) {
         {installe && publiee && !aJour(version, publiee) && <Pastille texte={`${publiee} disponible`} ton="attente" />}
         {installe && publiee && aJour(version, publiee) && <Valeur>À jour</Valeur>}
         {bridge && !installe && m?.moteur.installable && (
-          <Bouton variant="sombre" taille="compact" disabled={!!action} onClick={() => void lancer("installer", () => bridge.installer(id))}>
+          <Bouton variant="sombre" taille="compact" disabled={!!action} onClick={() => void lancer("installer", () => bridge.installer(id, lieu))}>
             {action ? texteProgression(action.progression) : "Installer"}
           </Bouton>
         )}
         {bridge && installe && publiee && !aJour(version, publiee) && (
-          <Bouton variant="blanc" taille="compact" disabled={!!action} onClick={() => void lancer("mettre-a-jour", () => bridge.mettreAJour(id))}>
+          <Bouton variant="blanc" taille="compact" disabled={!!action} onClick={() => void lancer("mettre-a-jour", () => bridge.mettreAJour(id, lieu))}>
             {action ? texteProgression(action.progression) : "Mettre à jour"}
           </Bouton>
         )}
@@ -306,9 +322,9 @@ function Moteur({ id, m }: { id: string; m: EtatMoteur | undefined }) {
   );
 }
 
-function CompteChatGpt({ m }: { m: EtatMoteur | undefined }) {
+function CompteChatGpt({ m, lieu }: { m: EtatMoteur | undefined; lieu: string | null }) {
   const bridge = getBridge()?.moteurs;
-  const { action, erreur, lancer } = useAction("codex");
+  const { action, erreur, lancer } = useAction("codex", lieu);
   const [cle, setCle] = useState("");
   const compte = m?.compte;
   const installe = !!m?.moteur.chemin;
@@ -323,31 +339,38 @@ function CompteChatGpt({ m }: { m: EtatMoteur | undefined }) {
           description={
             compte?.connecte
               ? [compte.abonnement && `Abonnement ${nomAbonnement(compte.abonnement)}`, "Les agents réglés sur ChatGPT travaillent avec ce compte."].filter(Boolean).join(" · ")
-              : "La page d’OpenAI s’ouvre dans ton navigateur ; reviens ici une fois connecté."
+              : lieu
+                ? "La page d’OpenAI s’ouvre dans ton navigateur ; reviens ici une fois connecté. Le compte est relié à ce serveur."
+                : "La page d’OpenAI s’ouvre dans ton navigateur ; reviens ici une fois connecté."
           }
         >
           {bridge && !compte?.connecte && (
-            <Bouton variant="sombre" taille="compact" disabled={!!action} onClick={() => void lancer("connecter", () => bridge.connecter("codex"))}>
+            <Bouton variant="sombre" taille="compact" disabled={!!action} onClick={() => void lancer("connecter", () => bridge.connecter("codex", lieu))}>
               {action?.nom === "connecter" ? "Connexion dans le navigateur…" : "Se connecter"}
             </Bouton>
           )}
           {bridge && compte?.connecte && compte.methode !== "config" && (
-            <Bouton variant="blanc" taille="compact" disabled={!!action} onClick={() => void lancer("deconnecter", () => bridge.deconnecter("codex"))}>
+            <Bouton variant="blanc" taille="compact" disabled={!!action} onClick={() => void lancer("deconnecter", () => bridge.deconnecter("codex", lieu))}>
               Se déconnecter
             </Bouton>
           )}
         </Ligne>
+        {action?.code && (
+          <Ligne id="code-chatgpt" libelle="Code à saisir sur la page d’OpenAI" description={<>L’adresse de retour est déjà prise sur ce poste : la connexion passe par ce code. La page ne s’est pas ouverte ? Va sur {action.code.url}.</>}>
+            <span className="klyra-mono rounded-sm bg-fond-surface-grise px-3 py-1.5 text-ui font-semibold tracking-[0.08em] text-texte-principal select-all">{action.code.code}</span>
+          </Ligne>
+        )}
       </Groupe>
 
       {!compte?.connecte && (
-        <Groupe titre="Clé API" description="Plutôt qu’un abonnement : une clé de platform.openai.com/api-keys. Codex la garde sur ce poste ; elle ne revient jamais à l’interface.">
+        <Groupe titre="Clé API" description={`Plutôt qu’un abonnement : une clé de platform.openai.com/api-keys. Codex la garde sur ${lieu ? "ce serveur" : "ce poste"} ; elle ne revient jamais à l’interface.`}>
           <Ligne id="cle-api-chatgpt" libelle="Clé API d’OpenAI" pile>
             <form
               className="flex w-full items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!bridge || !cle.trim()) return;
-                void lancer("cle", () => bridge.connecterAvecCle("codex", cle.trim())).then(() => setCle(""));
+                void lancer("cle", () => bridge.connecterAvecCle("codex", cle.trim(), lieu)).then(() => setCle(""));
               }}
             >
               <Input size="sm" type="password" value={cle} onChange={(e) => setCle(e.target.value)} autoComplete="off" spellCheck={false} placeholder="sk-…" className={cn(CHAMP, "klyra-mono flex-1")} />
@@ -363,8 +386,31 @@ function CompteChatGpt({ m }: { m: EtatMoteur | undefined }) {
   );
 }
 
-function Detail({ id, retour }: { id: string; retour: () => void }) {
-  const { moteurs } = useMoteurs();
+/** Claude Code sur un VPS : posé et connecté par la commande d'installation de KLYRA, lancée sur le VPS. */
+function CompteClaudeVps({ m }: { m: EtatMoteur | undefined }) {
+  const compte = m?.compte;
+  if (!m?.moteur.chemin) return null;
+  return (
+    <Groupe titre="Compte" description="Ton abonnement Claude : les agents de ce serveur travaillent avec lui.">
+      <Ligne
+        id="compte-claude-vps"
+        libelle={compte?.connecte ? (compte.methode === "jeton" ? "Connecté par un jeton longue durée" : "Connecté") : "Claude Code n’est pas connecté sur ce serveur"}
+        description={
+          compte?.connecte ? (
+            "Pour changer de compte, relance « connecter-claude » sur le VPS."
+          ) : (
+            <>
+              Sur le VPS, lance : <span className="klyra-mono select-all">curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lancer.sh | sudo sh -s -- connecter-claude</span>
+            </>
+          )
+        }
+      />
+    </Groupe>
+  );
+}
+
+function Detail({ id, retour, lieu }: { id: string; retour: () => void; lieu: string | null }) {
+  const { moteurs } = useMoteurs(lieu);
   const m = moteurs?.find((x) => x.moteur.id === id);
   const agents = useAgentsDe(id);
   const etat = etatDe(m);
@@ -389,28 +435,13 @@ function Detail({ id, retour }: { id: string; retour: () => void }) {
           </span>
         </div>
       </div>
-      {id === PAR_DEFAUT ? <Claude /> : <CompteChatGpt m={m} />}
-      <Moteur id={id} m={m} />
+      {id === PAR_DEFAUT ? lieu ? <CompteClaudeVps m={m} /> : <Claude /> : <CompteChatGpt m={m} lieu={lieu} />}
+      <Moteur id={id} m={m} lieu={lieu} />
     </div>
   );
 }
 
 /* ─── La section ───────────────────────────────────────────────── */
-
-/** Sur un VPS : Claude Code seul pour l'instant. */
-function SurUnVps() {
-  return (
-    <Groupe titre="Sur ce serveur" description="Les autres fournisseurs (ChatGPT, et les IA à consulter comme Gemini, DeepSeek ou Grok) arriveront plus tard sur les serveurs distants. Sur Ce PC, ils se règlent dans ses Réglages du serveur.">
-      <div className="flex items-center gap-3 py-3">
-        <Marque id={PAR_DEFAUT} />
-        <span className="flex flex-col">
-          <span className="text-ui-s font-medium text-texte-principal">Claude</span>
-          <span className="text-ui-xs text-texte-tertiaire">Claude Code, sur ce serveur</span>
-        </span>
-      </div>
-    </Groupe>
-  );
-}
 
 export function Fournisseurs({ lieu }: { lieu: string | null }): ReactNode {
   const router = useRouter();
@@ -418,7 +449,6 @@ export function Fournisseurs({ lieu }: { lieu: string | null }): ReactNode {
   const detail = params.get("fournisseur");
   const serveur = params.get("serveur");
   const connu = useMemo(() => FOURNISSEURS.some((f) => f.id === detail), [detail]);
-  if (lieu) return <SurUnVps />;
   const aller = (fournisseurId: string | null) => router.replace(cheminServeur("fournisseurs", { fournisseur: fournisseurId, serveur }), { scroll: false });
-  return detail && connu ? <Detail id={detail} retour={() => aller(null)} /> : <Liste ouvrir={(id) => aller(id)} />;
+  return detail && connu ? <Detail id={detail} retour={() => aller(null)} lieu={lieu} /> : <Liste ouvrir={(id) => aller(id)} lieu={lieu} />;
 }

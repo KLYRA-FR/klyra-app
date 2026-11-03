@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { LogoFournisseur } from "@/components/ui/LogoFournisseur";
+import { cheminServeur } from "@/components/serveur/catalogue";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { fournisseur, FOURNISSEURS, moteurDe, nomEffort, PAR_DEFAUT } from "@/lib/fournisseurs";
@@ -45,9 +46,9 @@ interface Choix {
   parDefaut: boolean;
 }
 
-/** Les modèles d'un fournisseur : les alias de Claude Code, ou ceux que le moteur annonce (Codex). */
-export function useModelesDe(moteur: string): Choix[] {
-  const { moteurs } = useMoteurs();
+/** Les modèles d'un fournisseur : les alias de Claude Code, ou ceux que le moteur annonce (Codex) sur cette machine. */
+export function useModelesDe(moteur: string, lieu: string | null = null): Choix[] {
+  const { moteurs } = useMoteurs(lieu);
   if (moteur === PAR_DEFAUT) {
     return MODELES.map((m) => ({ id: m.id, nom: m.nom, efforts: m.id === "haiku" ? [] : EFFORTS.map((e) => e.id), effortParDefaut: m.id === "haiku" ? null : "high", parDefaut: m.id === "opus" }));
   }
@@ -58,7 +59,7 @@ export function useModelesDe(moteur: string): Choix[] {
 export function useModeleEffectif(chat: Chat) {
   const role = useRole(chat.roleIds[0] ?? "principal");
   const moteur = moteurDe(chat);
-  const modeles = useModelesDe(moteur);
+  const modeles = useModelesDe(moteur, chat.lieu ?? null);
   if (moteur === PAR_DEFAUT) {
     const modeleFiche = MODELES.find((m) => role.model && role.model.includes(m.id))?.id ?? "opus";
     return { moteur, modele: chat.modele ?? modeleFiche, effort: chat.effort ?? "high", modeleFiche };
@@ -76,23 +77,24 @@ function Pastille({ id, taille = "sm" }: { id: string; taille?: "sm" | "md" }) {
 
 /**
  * Choix du fournisseur, du modèle et de l'effort pour une conversation, dans l'en-tête (ou en champ
- * dans le panneau latéral), comme le choix rapide d'OpenBot : à gauche les fournisseurs prêts sur
- * ce poste, à droite leurs modèles. Changer de fournisseur ne change que cette conversation.
+ * dans le panneau latéral), comme le choix rapide d'OpenBot : à gauche les fournisseurs installés sur
+ * la machine de la conversation (ce poste ou son VPS), à droite leurs modèles. Changer de fournisseur ne change que cette conversation.
  * Bloqué pendant que l'agent travaille.
  */
 export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variante?: "entete" | "champ" }) {
   const router = useRouter();
   const { choisirModele, choisirFournisseur } = useWorkspace();
   const travail = useTravail(chat.id);
-  const { moteurs, actualiser } = useMoteurs();
+  const lieu = chat.lieu ?? null;
+  const { moteurs, actualiser } = useMoteurs(lieu);
   const { moteur, modele, effort, modeleFiche } = useModeleEffectif(chat);
   const [ouvert, setOuvert] = useState(false);
   const [vue, setVue] = useState(moteur);
   const [recherche, setRecherche] = useState("");
   const [connexion, setConnexion] = useState<{ etat: "en-cours" } | { etat: "erreur"; message: string } | null>(null);
   const zone = useRef<HTMLDivElement>(null);
-  const modelesVue = useModelesDe(vue);
-  const modelesActuels = useModelesDe(moteur);
+  const modelesVue = useModelesDe(vue, lieu);
+  const modelesActuels = useModelesDe(moteur, lieu);
 
   useEffect(() => {
     if (!ouvert) return;
@@ -109,8 +111,8 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
   }, [ouvert]);
 
   const bloque = !!travail;
-  // Sur un VPS, les agents travaillent avec Claude Code seul pour l'instant.
-  const disponibles = FOURNISSEURS.filter((f) => f.id === PAR_DEFAUT || (!chat.lieu && moteurs?.some((m) => m.moteur.id === f.id && m.moteur.chemin)));
+  // Ceux qui sont installés sur la machine de la conversation (Claude Code toujours proposé).
+  const disponibles = FOURNISSEURS.filter((f) => f.id === PAR_DEFAUT || moteurs?.some((m) => m.moteur.id === f.id && m.moteur.chemin));
   const etatVue = moteurs?.find((m) => m.moteur.id === vue);
   const actuel = modelesActuels.find((m) => m.id === modele);
   const nomCourt = actuel?.nom.replace(/^Claude /, "") ?? modele ?? fournisseur(moteur).nom;
@@ -141,6 +143,12 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
   const seConnecter = async () => {
     const bridge = getBridge()?.moteurs;
     if (!bridge) return;
+    // Sur un VPS, la connexion passe par un code à saisir : la page du fournisseur le montre.
+    if (lieu) {
+      setOuvert(false);
+      router.push(cheminServeur("fournisseurs", { fournisseur: vue, serveur: lieu }));
+      return;
+    }
     setConnexion({ etat: "en-cours" });
     const r = await bridge.connecter(vue);
     await actualiser();
@@ -210,7 +218,7 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
               aria-label="Ajouter un fournisseur"
               onClick={() => {
                 setOuvert(false);
-                router.push("/serveur/reglages?section=fournisseurs");
+                router.push(cheminServeur("fournisseurs", { serveur: lieu }));
               }}
               className="mt-auto flex size-10 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent text-icone-secondaire hover:bg-fond-survol hover:text-texte-principal"
             >
@@ -279,14 +287,14 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
               </>
             ) : (
               <div className="flex flex-col items-start gap-2 px-3 pb-3">
-                <p className="m-0 text-ui-xs text-texte-secondaire">{fournisseur(vue).nom} n’est pas connecté sur ce poste.</p>
+                <p className="m-0 text-ui-xs text-texte-secondaire">{fournisseur(vue).nom} n’est pas connecté sur {lieu ? "ce serveur" : "ce poste"}.</p>
                 <button
                   type="button"
                   onClick={() => void seConnecter()}
                   disabled={connexion?.etat === "en-cours"}
                   className="h-8 cursor-pointer rounded-xs border border-bordure-subtile bg-fond-surface px-3 text-ui-s font-medium text-texte-principal hover:border-bordure-forte disabled:cursor-wait disabled:opacity-60"
                 >
-                  {connexion?.etat === "en-cours" ? "Connexion dans le navigateur…" : "Se connecter"}
+                  {connexion?.etat === "en-cours" ? "Connexion dans le navigateur…" : lieu ? "Se connecter sur le serveur" : "Se connecter"}
                 </button>
                 {connexion?.etat === "erreur" && (
                   <p role="alert" className="m-0 text-ui-xs text-texte-erreur">
@@ -326,9 +334,6 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
                   })}
                 </div>
               </div>
-            )}
-            {chat.lieu && disponibles.length === 1 && moteurs?.some((m) => m.moteur.id !== PAR_DEFAUT && m.moteur.chemin) && (
-              <p className="m-0 border-t border-bordure-subtile px-3 py-2 text-ui-xs text-texte-tertiaire">Sur un serveur distant, les agents travaillent avec Claude pour l’instant.</p>
             )}
           </div>
         </div>
