@@ -152,9 +152,10 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
+import { copierRenduVps } from "./rendus-vps";
 import { copierRendu, enregistrerRenduDans, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { arbreVps, creerDossierVps, lireFichierVps } from "./projets-vps";
+import { arbreVps, consignesVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
   ajouterIaVps,
@@ -171,7 +172,7 @@ import {
   travailVps,
   versionDisponibleVps,
 } from "./fournisseurs-vps";
-import { competencesVps, creerSouvenirVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
+import { competencesVps, creerSouvenirVps, diagnosticVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
@@ -737,8 +738,13 @@ function registerBridge() {
   });
   handle("projets:montrer-fichier", (dossier: string, relatif: string) => shell.showItemInFolder(cheminDansProjet(dossier, relatif)));
   /* Les consignes du projet pour ses agents (AGENTS.md, import dans CLAUDE.md) : rien n'est écrasé. */
-  handle("projets:consignes", (dossier: string, nom: string) => etatConsignesProjet(absolu(dossier), String(nom)));
-  handle("projets:consignes:ecrire", (dossier: string, nom: string) => appliquerConsignesProjet(absolu(dossier), String(nom)));
+  /* Un projet d'un VPS : ses consignes se lisent et s'écrivent là-bas, avec le même module. */
+  handle("projets:consignes", (dossier: string, nom: string, lieu?: string | null) =>
+    typeof lieu === "string" && lieu ? consignesVps(lieu, jetonServeur(lieu), String(dossier), String(nom)) : etatConsignesProjet(absolu(dossier), String(nom)),
+  );
+  handle("projets:consignes:ecrire", (dossier: string, nom: string, lieu?: string | null) =>
+    typeof lieu === "string" && lieu ? consignesVps(lieu, jetonServeur(lieu), String(dossier), String(nom), true) : appliquerConsignesProjet(absolu(dossier), String(nom)),
+  );
   handle("git:etat", (dossier: string) => etatGit(dossier));
   /* Un lien local (serveur de dev d'un projet) cliqué dans une conversation : une fenêtre de l'app. */
   handle("fenetres:ouvrir", (url: string) => {
@@ -765,6 +771,10 @@ function registerBridge() {
   handle("rendus:ouvrir", (chemin: string) => ouvrirRendu(chemin));
   handle("rendus:montrer", (chemin: string) => montrerRendu(chemin));
   handle("rendus:copier", (origine: string, agent: string, remplace: string | null) => copierRendu(origine, agent, remplace));
+  /* Un livrable d'un agent du VPS : recopié depuis le serveur dans l'espace de l'agent, comme un livrable local. */
+  handle("rendus:copier-vps", (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) =>
+    copierRenduVps(String(lieu), jetonServeur(String(lieu)), id, agent, nom, dossier === true, remplace),
+  );
   handle("rendus:supprimer", (chemin: string) => supprimerCopieRendu(chemin));
   handle("rendus:enregistrer", (chemin: string, dossier: string | null) => enregistrerRenduDans(chemin, dossier));
   handle("rendus:dossier-agent", (agent: string, quoi: string) => ouvrirDossierAgent(agent, quoi));
@@ -938,6 +948,7 @@ function registerBridge() {
           return {
             evenement: (id, agentEvent) => sender.send("claude:event", id, agentEvent),
             spontane: (id, sessionId, contexte) => sender.send("claude:spontane", id, sessionId, contexte),
+            rendu: (origine, rendu) => sender.send("rendus:vps", origine, rendu),
           };
         },
         equipe: equipePourVps,
@@ -1024,7 +1035,14 @@ function registerBridge() {
   handle("reglages:ouvrir-dossier", (nom: DossierApp) => ouvrirDossier(nom));
   /* Ce que le poste ajoute à chaque appel (configuration KLYRA), et le fichier à ouvrir pour agir. */
   const diagnostic = () => diagnostiquerPoste(os.homedir(), presentationActifs().map((a) => a.id), process.env.CLAUDE_CONFIG_DIR || undefined);
-  handle("reglages:diagnostic-poste", () => diagnostic());
+  handle("reglages:diagnostic-poste", async (lieu?: string | null) => {
+    // Un VPS relié : la configuration de Claude Code de ce serveur, avec ses agents actifs (l'équipe envoyée d'abord).
+    if (typeof lieu === "string" && lieu) {
+      await synchroniserEquipe(lieu).catch(() => undefined);
+      return diagnosticVps(lieu, jetonServeur(lieu));
+    }
+    return diagnostic();
+  });
   handle("reglages:diagnostic-poste:montrer", (chemin: string) => {
     // Seulement un chemin que le diagnostic vient de trouver.
     if (!diagnostic().elements.some((e) => e.chemin === chemin) || !existe(chemin)) throw new Error("Ce fichier n’est plus là.");

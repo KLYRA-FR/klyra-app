@@ -225,12 +225,51 @@ function lireSkills(dossier) {
     }
     return liste.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
 }
-/** Ce que l'agent sait faire : les skills de sa fiche (retrouvées sur le poste ou le projet), puis celles du poste et du projet. */
+const lireJson = (fichier) => {
+    try {
+        const v = JSON.parse(readFileSync(fichier, "utf8"));
+        return v && typeof v === "object" ? v : null;
+    }
+    catch {
+        return null;
+    }
+};
+/**
+ * Les skills des plugins de Claude Code activés, comme Claude Code les trouve (vérifié avec Claude Code
+ * 2.1.317 et `claude plugin install`, le 03/11/2026) : les plugins dont `enabledPlugins` vaut vrai dans
+ * les réglages de la personne (et du projet), installés d'après `plugins/installed_plugins.json` (v2,
+ * `installPath`), leurs skills dans `<installPath>/skills/<nom>/SKILL.md`, appelées `<plugin>:<nom>`.
+ */
+export function lireSkillsPlugins(configClaude, dossierProjet) {
+    const actives = new Set();
+    for (const reglages of [path.join(configClaude, "settings.json"), ...(dossierProjet ? [path.join(dossierProjet, ".claude", "settings.json")] : [])]) {
+        const enabled = lireJson(reglages)?.enabledPlugins;
+        if (enabled && typeof enabled === "object")
+            for (const [id, actif] of Object.entries(enabled))
+                if (actif === true)
+                    actives.add(id);
+    }
+    const installes = (lireJson(path.join(configClaude, "plugins", "installed_plugins.json"))?.plugins ?? {});
+    const liste = [];
+    for (const id of actives) {
+        const entrees = Array.isArray(installes[id]) ? installes[id] : [];
+        const dossier = entrees.map((e) => e?.installPath).find((p) => typeof p === "string" && !!p);
+        if (!dossier)
+            continue;
+        const plugin = id.split("@")[0];
+        for (const s of lireSkills(path.join(dossier, "skills")))
+            liste.push({ ...s, nom: `${plugin}:${s.nom}` });
+    }
+    return liste.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+}
+/** Ce que l'agent sait faire : les skills de sa fiche (retrouvées dans le projet, le poste ou un plugin), puis celles du poste, du projet et des plugins. */
 export function lireCompetences(contenuFiche, configClaude, dossierProjet) {
     const poste = lireSkills(path.join(configClaude, "skills"));
     const projet = dossierProjet ? lireSkills(path.join(dossierProjet, ".claude", "skills")) : [];
-    const fiche = skillsDeLaFiche(contenuFiche ?? "").map((nom) => projet.find((s) => s.nom === nom || path.basename(s.dossier ?? "") === nom) ?? poste.find((s) => s.nom === nom || path.basename(s.dossier ?? "") === nom) ?? { nom, description: "", version: null, dossier: null });
-    return { fiche, poste, projet };
+    const plugins = lireSkillsPlugins(configClaude, dossierProjet);
+    const trouver = (liste, nom) => liste.find((s) => s.nom === nom || path.basename(s.dossier ?? "") === nom);
+    const fiche = skillsDeLaFiche(contenuFiche ?? "").map((nom) => trouver(projet, nom) ?? trouver(poste, nom) ?? plugins.find((s) => s.nom === nom) ?? { nom, description: "", version: null, dossier: null });
+    return { fiche, poste, projet, plugins };
 }
 /* ─── Skills dans une session ─────────────────────────────────── */
 /*
@@ -256,6 +295,9 @@ export function skillsConnues(configClaude, dossier) {
         if (s.dossier)
             noms.add(path.basename(s.dossier));
     }
+    // Celles des plugins activés, par leur nom complet (`<plugin>:<skill>`).
+    for (const s of lireSkillsPlugins(configClaude, dossier))
+        noms.add(s.nom);
     return noms;
 }
 /**
@@ -306,4 +348,48 @@ export function competencesPrechargees(contenuFiche, configClaude, dossier) {
     if (absentes.length)
         lignes.push(`Introuvables sur ce poste, donc absentes : ${absentes.join(", ")}. Ne fais pas comme si tu les avais.`);
     return { noms: fiche.map((s) => s.nom), texte: blocs.length || absentes.length ? lignes.join("\n\n") : null };
+}
+/* ─── Skills pour Codex ───────────────────────────────────────── */
+/*
+ * Codex a ses propres skills (vérifié avec Codex 0.166, le 03/11/2026) : il lit `.codex/skills` et
+ * `.agents/skills` du projet et du dossier personnel, mais pas `.claude/skills`, et `[[skills.config]]`
+ * n'ajoute pas de dossier. Il présente chaque skill au modèle par son nom, sa description et son fichier,
+ * que le modèle lit quand la tâche s'y prête. L'app présente donc les skills de Claude de la même façon,
+ * sans rien écrire dans les dossiers de la personne.
+ */
+/** Les skills de Claude (poste, puis projet) que l'app présente à un agent qui travaille avec Codex. */
+function skillsDeClaude(configClaude, dossier) {
+    const vues = new Set();
+    return [...(dossier ? lireSkills(path.join(dossier, ".claude", "skills")) : []), ...lireSkills(path.join(configClaude, "skills")), ...lireSkillsPlugins(configClaude, dossier)].filter((s) => {
+        if (vues.has(s.nom))
+            return false;
+        vues.add(s.nom);
+        return true;
+    });
+}
+/** La consigne qui donne à Codex les skills de Claude, et le texte de celles que la fiche précharge ; null sans skill. */
+export function consigneSkillsCodex(contenuFiche, configClaude, dossier) {
+    const skills = skillsDeClaude(configClaude, dossier);
+    const precharge = competencesPrechargees(contenuFiche, configClaude, dossier);
+    if (!skills.length && !precharge.texte)
+        return { noms: [], texte: null };
+    const liste = skills.map((s) => `- ${s.nom}: ${s.description || "sans description"} (fichier : ${path.join(s.dossier, "SKILL.md")})`);
+    const texte = [
+        ...(skills.length
+            ? [
+                `Compétences de la personne (ses skills de Claude Code) : chacune est un SKILL.md à lire puis suivre quand la tâche s'y prête, comme tes propres skills. Lis le fichier avant d'appliquer la compétence ; n'en invente pas le contenu.\n${liste.join("\n")}`,
+            ]
+            : []),
+        ...(precharge.texte ? [precharge.texte] : []),
+    ].join("\n\n");
+    return { noms: [...skills.map((s) => s.nom), ...precharge.noms.map((n) => `fiche:${n}`)], texte };
+}
+/** Le message pour Codex quand la personne a tapé `/<skill>` : la compétence à lire d'abord, puis le message de l'app. */
+export function promptAvecSkillCodex(prompt, skill, configClaude, dossier) {
+    if (!skill || skillEnTete(`/${skill}`) !== skill)
+        return prompt;
+    const trouvee = skillsDeClaude(configClaude, dossier).find((s) => s.nom === skill || path.basename(s.dossier ?? "") === skill);
+    if (!trouvee?.dossier)
+        return prompt;
+    return `[La personne demande la compétence « ${trouvee.nom} » : lis ${path.join(trouvee.dossier, "SKILL.md")} avant de répondre, et suis-la.]\n\n${prompt}`;
 }

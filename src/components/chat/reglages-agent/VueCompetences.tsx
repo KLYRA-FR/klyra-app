@@ -14,9 +14,9 @@ import { EnteteVue, messageErreur, Note, TitreGroupe } from "./elements";
 /** Le nombre à montrer sur la ligne : celles de sa fiche, sinon celles qu'il peut utiliser. */
 export function resumeCompetences(lecture: Lecture<CompetencesAgent>): string | undefined {
   if (lecture.etat !== "pret") return undefined;
-  const { fiche, poste: duPoste, projet } = lecture.valeur;
+  const { fiche, poste: duPoste, projet, plugins = [] } = lecture.valeur;
   if (fiche.length) return `${fiche.length} dans sa fiche`;
-  const n = duPoste.length + projet.length;
+  const n = duPoste.length + projet.length + plugins.length;
   return n ? `${n} disponible${n > 1 ? "s" : ""}` : "Aucune";
 }
 
@@ -185,7 +185,13 @@ export function VueCompetences({
             c.poste.filter((s) => !dansLaFiche(s)),
             false,
           )}
-          {!c.fiche.length && !c.projet.length && !c.poste.length && (
+          {liste(
+            "Des plugins",
+            "Apportées par les plugins de Claude Code activés : comme les autres, présentées à chaque appel et lues au besoin.",
+            (c.plugins ?? []).filter((s) => !dansLaFiche(s)),
+            false,
+          )}
+          {!c.fiche.length && !c.projet.length && !c.poste.length && !(c.plugins ?? []).length && (
             <Note>
               {surServeur
                 ? "Aucune compétence sur le serveur pour l’instant. Une skill de Claude Code rangée dans le dossier .claude/skills de l’utilisateur klyra du VPS apparaîtra ici."

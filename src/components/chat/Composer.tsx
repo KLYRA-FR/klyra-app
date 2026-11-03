@@ -314,15 +314,17 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
     if (r.ok) ajouter(r.data);
   };
 
-  /* Compétences : « / » en tête du message, avec Claude (Codex n'a pas les skills de Claude Code). Celles du
-     poste et du projet, que tout agent peut suivre, et celles que la fiche de l'agent précharge. */
+  /* Compétences : « / » en tête du message, avec Claude comme avec ChatGPT (l'app donne à Codex les skills de
+     Claude). Celles du poste et du projet, que tout agent peut suivre, et celles que sa fiche précharge.
+     Le résumé de la conversation est une commande de Claude Code seulement. */
   const competences = useCompetencesAgent(agent.id, contexteDe(chat, project, agent.id));
-  const commande = fermee || moteurDe(chat) !== PAR_DEFAUT ? null : commandeEnCours(text, curseur);
+  const avecClaude = moteurDe(chat) === PAR_DEFAUT;
+  const commande = fermee ? null : commandeEnCours(text, curseur);
   const skillsAProposer = useMemo(() => {
     if (commande === null) return [];
-    const dispo = competences.etat === "pret" ? [...competences.valeur.fiche.filter((s) => s.dossier), ...competences.valeur.projet, ...competences.valeur.poste] : [];
-    return skillsProposees([...dispo.map((s) => ({ nom: s.nom, description: s.description })), COMPACTER], commande);
-  }, [commande, competences]);
+    const dispo = competences.etat === "pret" ? [...competences.valeur.fiche.filter((s) => s.dossier), ...competences.valeur.projet, ...competences.valeur.poste, ...(competences.valeur.plugins ?? [])] : [];
+    return skillsProposees([...dispo.map((s) => ({ nom: s.nom, description: s.description })), ...(avecClaude ? [COMPACTER] : [])], commande);
+  }, [commande, competences, avecClaude]);
 
   const choisirSkill = (skill: SkillProposee) => {
     const insere = `/${skill.nom} `;

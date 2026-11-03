@@ -5,7 +5,9 @@
  * - `serveur/ia-catalogue.mjs` : les IA à consulter proposées (electron/ia-catalogue.ts) ;
  * - `serveur/atelier.mjs` : le dossier de chaque agent hors projet (electron/atelier.ts) ;
  * - `serveur/connaissances-agent.mjs` : les skills et la mémoire d'un agent (electron/connaissances-agent.ts) ;
- * - `serveur/consommation-ecart.mjs` : ce qu'un tour de Claude Code a consommé (electron/consommation-ecart.ts).
+ * - `serveur/consommation-ecart.mjs` : ce qu'un tour de Claude Code a consommé (electron/consommation-ecart.ts) ;
+ * - `serveur/diagnostic-poste.mjs` : ce que la configuration de Claude Code ajoute à chaque appel (electron/diagnostic-poste.ts) ;
+ * - `serveur/consignes-projet.mjs` : les consignes KLYRA d'un projet, AGENTS.md et CLAUDE.md (electron/consignes-projet.ts).
  *   node scripts/serveur-genere.mjs           → écrit les fichiers
  *   node scripts/serveur-genere.mjs --verifier → échoue si l'un n'est plus à jour (test:serveur)
  */
@@ -19,6 +21,8 @@ const FICHIERS = [
   ["electron/atelier.ts", "serveur/atelier.mjs"],
   ["electron/connaissances-agent.ts", "serveur/connaissances-agent.mjs"],
   ["electron/consommation-ecart.ts", "serveur/consommation-ecart.mjs"],
+  ["electron/diagnostic-poste.ts", "serveur/diagnostic-poste.mjs"],
+  ["electron/consignes-projet.ts", "serveur/consignes-projet.mjs"],
 ];
 
 let perime = false;
