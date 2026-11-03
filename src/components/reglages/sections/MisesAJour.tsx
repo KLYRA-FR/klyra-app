@@ -11,6 +11,8 @@ import { useMaj } from "@/lib/maj";
 import { Erreur, Groupe, Ligne, SeulementBureau, Valeur } from "../ui";
 
 const DEPOT = "https://github.com/KLYRA-FR/klyra-app-versions/releases";
+/** Le changelog du site vitrine (`site/`), publié par le projet Vercel `klyra-app`. */
+const CHANGELOG = "https://klyra-app.vercel.app/changelog/";
 const date = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 const mo = (octets: number) => `${(octets / 1024 / 1024).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
 
@@ -129,6 +131,11 @@ export function MisesAJour() {
       </Groupe>
 
       <Groupe>
+        <Ligne id="changelog" libelle="Nouveautés" description="Ce que chaque version a changé, sur le site de KLYRA.">
+          <Bouton variant="blanc" taille="compact" iconeDroite={<Icon name="link-external" size={16} />} onClick={() => ouvrirLien(CHANGELOG)}>
+            Voir le changelog
+          </Bouton>
+        </Ligne>
         <Ligne
           id="depot-versions"
           libelle="Toutes les versions"
