@@ -32,7 +32,7 @@ export function useMemoireAgent(agentId: string, contexte: ContexteConnaissances
   const actualiser = useCallback(() => setTour((t) => t + 1), []);
 
   useEffect(() => {
-    const lire = getBridge()?.agents.memoire;
+    const lire = getBridge()?.agents?.memoire;
     let actif = true;
     if (!disponible || !lire) {
       queueMicrotask(() => actif && setLecture({ etat: "indisponible" }));
@@ -62,7 +62,7 @@ export function useCompetencesAgent(agentId: string, contexte: ContexteConnaissa
   const lieu = contexte?.lieu ?? null;
   const disponible = contexte !== null;
   useEffect(() => {
-    const lire = getBridge()?.agents.competences;
+    const lire = getBridge()?.agents?.competences;
     let actif = true;
     if (!disponible || !lire) {
       queueMicrotask(() => actif && setLecture({ etat: "indisponible" }));

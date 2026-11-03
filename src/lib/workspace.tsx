@@ -1156,9 +1156,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
      l'espace de l'agent sur ce PC et l'ajoute à Artefacts, comme un livrable local. Son origine garde le
      serveur, pour qu'une nouvelle publication du même fichier remplace sa copie. */
   useEffect(() => {
-    if (!bridge?.rendus.onVps || !bridge.rendus.copierVps) return;
-    const copierVps = bridge.rendus.copierVps;
-    return bridge.rendus.onVps((lieu, r) => {
+    // Un pont partiel (tests de l'interface, ancienne app) n'a pas forcément les livrables : rien à écouter.
+    const onVps = bridge?.rendus?.onVps;
+    const copierVps = bridge?.rendus?.copierVps;
+    if (!onVps || !copierVps) return;
+    return onVps((lieu, r) => {
       void (async () => {
         const origine = `${lieu}#${r.chemin}`;
         const avant = renduDeLOrigine(stateRef.current.rendus, origine);
