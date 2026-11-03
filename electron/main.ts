@@ -144,6 +144,7 @@ import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs
 import {
   ajouterIaVps,
   catalogueIaVps,
+  competencesVps,
   compteVps,
   connecterCleVps,
   connecterVps,
@@ -480,7 +481,14 @@ function registerBridge() {
       if (erreur) throw new Error(erreur);
     }
   });
-  handle("agents:competences", async (agent: string, contexte: { dossier?: string | null } | null) => {
+  handle("agents:competences", async (agent: string, contexte: { dossier?: string | null; lieu?: string | null } | null) => {
+    /* Un agent d'une conversation sur un VPS : ses compétences sont celles du serveur, lues là-bas, avec sa
+       fiche copiée depuis ce PC (envoyée d'abord, pour qu'une compétence cochée à l'instant y soit). */
+    const lieu = typeof contexte?.lieu === "string" && contexte.lieu ? contexte.lieu : null;
+    if (lieu) {
+      await synchroniserEquipe(lieu).catch(() => undefined);
+      return competencesVps(lieu, jetonServeur(lieu), String(agent), typeof contexte?.dossier === "string" && contexte.dossier ? contexte.dossier : null);
+    }
     const fiche = agent === "principal" ? null : await lireFiche(String(agent));
     const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? dossierConversation(String(agent), contexte) : null;
     return lireCompetences(fiche?.content ?? null, configClaude(), dossier);

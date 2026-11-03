@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dossierHorsProjet } from "./atelier.mjs";
-import { competencesPrechargees, promptAvecSkill, skillsConnues } from "./connaissances-agent.mjs";
+import { competencesPrechargees, lireCompetences, promptAvecSkill, skillsConnues } from "./connaissances-agent.mjs";
 import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
@@ -123,6 +123,31 @@ export function creerAgents(options) {
     const actifs = valides.map((f) => ({ id: f.id, nom: typeof f.nom === "string" && f.nom.trim() ? f.nom.trim().slice(0, 80) : f.id }));
     const assistant = typeof corps.assistant === "string" ? corps.assistant.trim().slice(0, 80) || null : null;
     writeFileSync(fichierEquipe, JSON.stringify({ assistant, actifs, empreinte: String(corps.empreinte ?? "").slice(0, 80) }), { mode: 0o600 });
+  }
+
+  /**
+   * Les compétences d'un agent sur ce VPS, pour le panneau de l'app (cf. electron/connaissances-agent.ts) :
+   * celles que sa fiche précharge (la fiche copiée depuis le PC), celles du projet et de l'utilisateur
+   * klyra. Mêmes gardes que pour un message : un agent valide, un projet sous le dossier personnel.
+   */
+  function competences(agent, dossier) {
+    if (agent !== "principal" && (typeof agent !== "string" || !ID_AGENT.test(agent))) throw new Error("Nom d’agent invalide.");
+    let projet = null;
+    if (typeof dossier === "string" && dossier) {
+      const rel = path.relative(path.resolve(home), path.resolve(dossier));
+      if (!path.isAbsolute(dossier) || rel.startsWith("..") || path.isAbsolute(rel)) throw new Error(`Un projet du VPS doit être sous ${home}.`);
+      if (!existsSync(dossier)) throw new Error(`Le dossier du projet est introuvable sur le VPS : ${dossier}`);
+      projet = dossier;
+    }
+    let fiche = null;
+    if (agent !== "principal") {
+      try {
+        fiche = readFileSync(path.join(dossierAgents, `${agent}.md`), "utf8");
+      } catch {
+        fiche = null;
+      }
+    }
+    return lireCompetences(fiche, path.join(home, ".claude"), projet);
   }
 
   /* ─── Consignes ─────────────────────────────────────────────────── */
@@ -512,5 +537,5 @@ export function creerAgents(options) {
     env: environnement,
   };
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
 }

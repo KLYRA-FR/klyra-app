@@ -9,10 +9,14 @@ import type { Chat, Project } from "@/types/domain";
  * dossier de la conversation, sa consommation dans le journal. Rien n'est gardé sur le disque par l'écran.
  */
 
-/** Le dossier où la conversation fait travailler l'agent ; null sur un VPS (pas encore lu là-bas). */
-export function contexteDe(chat: Chat, projet: Project | undefined, agentId: string): ContexteConnaissances | null {
-  if (chat.lieu) return null;
-  return { dossier: chat.kind === "equipe" ? (projet?.folder ?? null) : null, sessionId: chat.sessions[agentId] ?? null };
+/**
+ * Le dossier où la conversation fait travailler l'agent. Sur un VPS : le serveur (`lieu`) et le dossier du
+ * projet là-bas, comme pour l'envoi d'un message (cf. `dossierVps` dans workspace.tsx).
+ */
+export function contexteDe(chat: Chat, projet: Project | undefined, agentId: string): ContexteConnaissances {
+  const sessionId = chat.sessions[agentId] ?? null;
+  if (chat.lieu) return { dossier: chat.kind === "equipe" && projet?.lieu === chat.lieu ? projet.folder : null, sessionId, lieu: chat.lieu };
+  return { dossier: chat.kind === "equipe" ? (projet?.folder ?? null) : null, sessionId };
 }
 
 type Lecture<T> = { etat: "chargement" } | { etat: "pret"; valeur: T } | { etat: "erreur"; message: string } | { etat: "indisponible" };
@@ -22,7 +26,8 @@ export function useMemoireAgent(agentId: string, contexte: ContexteConnaissances
   const [lecture, setLecture] = useState<Lecture<MemoireAgent | null>>({ etat: "chargement" });
   const dossier = contexte?.dossier ?? null;
   const sessionId = contexte?.sessionId ?? null;
-  const disponible = contexte !== null;
+  // La mémoire d'un agent sur un VPS ne se lit pas encore d'ici.
+  const disponible = contexte !== null && !contexte.lieu;
   const [tour, setTour] = useState(0);
   const actualiser = useCallback(() => setTour((t) => t + 1), []);
 
@@ -47,10 +52,14 @@ export function useMemoireAgent(agentId: string, contexte: ContexteConnaissances
   return { lecture, actualiser };
 }
 
-/** Ses compétences : celles de sa fiche, du projet et du poste ; relues quand `cle` change (fiche réécrite). */
+/**
+ * Ses compétences : celles de sa fiche, du projet et du poste (ou du VPS de la conversation, lues là-bas) ;
+ * relues quand `cle` change (fiche réécrite).
+ */
 export function useCompetencesAgent(agentId: string, contexte: ContexteConnaissances | null, cle?: unknown) {
   const [lecture, setLecture] = useState<Lecture<CompetencesAgent>>({ etat: "chargement" });
   const dossier = contexte?.dossier ?? null;
+  const lieu = contexte?.lieu ?? null;
   const disponible = contexte !== null;
   useEffect(() => {
     const lire = getBridge()?.agents.competences;
@@ -61,13 +70,13 @@ export function useCompetencesAgent(agentId: string, contexte: ContexteConnaissa
         actif = false;
       };
     }
-    void lire(agentId, { dossier }).then((r) => {
+    void lire(agentId, lieu ? { dossier, lieu } : { dossier }).then((r) => {
       if (actif) setLecture(r.ok ? { etat: "pret", valeur: r.data } : { etat: "erreur", message: r.message });
     });
     return () => {
       actif = false;
     };
-  }, [agentId, dossier, disponible, cle]);
+  }, [agentId, dossier, lieu, disponible, cle]);
   return lecture;
 }
 

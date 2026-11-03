@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld("klyra", {
       ipcRenderer.invoke("agents:souvenir:creer", agent, contexte, titre, contenu),
     montrerSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string | null) =>
       ipcRenderer.invoke("agents:souvenir:montrer", agent, contexte, id),
-    competences: (agent: string, contexte: { dossier: string | null }) => ipcRenderer.invoke("agents:competences", agent, contexte),
+    competences: (agent: string, contexte: { dossier: string | null; lieu?: string | null }) => ipcRenderer.invoke("agents:competences", agent, contexte),
     montrerCompetence: (agent: string, contexte: { dossier: string | null }, nom: string) => ipcRenderer.invoke("agents:competence:montrer", agent, contexte, nom),
     onChange: (callback: () => void) => {
       const listener = () => callback();

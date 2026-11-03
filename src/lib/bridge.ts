@@ -17,6 +17,8 @@ export type { Competence, Competences as CompetencesAgent, Memoire as MemoireAge
 export interface ContexteConnaissances {
   dossier: string | null;
   sessionId: string | null;
+  /** Le VPS de la conversation (son origine) : `dossier` est alors celui du projet là-bas. Absent : ce PC. */
+  lieu?: string | null;
 }
 export type { EtatConnect };
 
@@ -327,7 +329,7 @@ export interface KlyraBridge {
     ecrireSouvenir?: (agent: string, contexte: ContexteConnaissances, id: string, contenu: string, attendu: number | null) => Promise<Reponse<{ modifieLe: number }>>;
     creerSouvenir?: (agent: string, contexte: ContexteConnaissances, titre: string, contenu: string) => Promise<Reponse<Souvenir>>;
     montrerSouvenir?: (agent: string, contexte: ContexteConnaissances, id: string | null) => Promise<Reponse<void>>;
-    competences?: (agent: string, contexte: { dossier: string | null }) => Promise<Reponse<CompetencesAgent>>;
+    competences?: (agent: string, contexte: { dossier: string | null; lieu?: string | null }) => Promise<Reponse<CompetencesAgent>>;
     montrerCompetence?: (agent: string, contexte: { dossier: string | null }, nom: string) => Promise<Reponse<void>>;
     onChange: (callback: () => void) => () => void;
   };

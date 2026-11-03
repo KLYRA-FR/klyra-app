@@ -472,6 +472,15 @@ export function creerGestionnaire(options) {
         }
         return repondre(res, 200, capacites());
       }
+      /* Le panneau Compétences d'un agent de ce VPS (`?agent=…&dossier=…`). */
+      if (action === "competences") {
+        if (req.method !== "GET") return repondre(res, 405, { erreur: "methode" });
+        try {
+          return repondre(res, 200, { competences: agents.competences(url.searchParams.get("agent"), url.searchParams.get("dossier")) });
+        } catch (erreur) {
+          return repondre(res, 400, { erreur: "competences", message: erreur instanceof Error ? erreur.message : "Lecture impossible sur le VPS." });
+        }
+      }
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
       const corps = await lireCorpsRequete(req, CORPS_AGENT_MAX);
       const requestId = typeof corps?.requestId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(corps.requestId) ? corps.requestId : null;

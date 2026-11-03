@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -280,6 +280,61 @@ test("un agent répond sur le VPS, en flux, avec rattrapage et autorisation", as
     assert.equal(inconnu.statut, 202);
     const refus = await lireFlux(ecoute.port, jeton, 0, premier.instance, (recus) => recus.some((e) => e.requestId === "r3"));
     assert.match(refus.recus.find((e) => e.requestId === "r3").event.erreur, /pas dans Mes agents/);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("les compétences d'un agent du VPS : lues sur le serveur, préchargées, et /skill remis en tête", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const claude = path.join(home, "faux-claude");
+  writeFileSync(claude, FAUX_CLAUDE);
+  chmodSync(claude, 0o755);
+  writeFileSync(path.join(dossier, "claude-token"), "jeton-claude");
+  mkdirSync(path.join(home, ".claude", "skills", "rangement"), { recursive: true });
+  writeFileSync(path.join(home, ".claude", "skills", "rangement", "SKILL.md"), "---\nname: rangement\ndescription: Range les fichiers.\nversion: 3\n---\n\nTEXTE-RANGEMENT\n");
+  const projet = path.join(home, "projets", "site");
+  mkdirSync(path.join(projet, ".claude", "skills", "deploi"), { recursive: true });
+  writeFileSync(path.join(projet, ".claude", "skills", "deploi", "SKILL.md"), "---\nname: deploi\ndescription: Déploie.\n---\n\nTEXTE-DEPLOI\n");
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, claude });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  const competences = (jeton, agent, projetVps = null) =>
+    appel(ecoute.port, `${CHEMIN_AGENT}/competences?agent=${encodeURIComponent(agent)}${projetVps ? `&dossier=${encodeURIComponent(projetVps)}` : ""}`, { jeton });
+  try {
+    assert.equal((await competences(undefined, "lou")).statut, 401);
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    // La fiche arrive du PC avec ses skills en liste, comme l'app les écrit.
+    const fiche = "---\nname: lou\nskills:\n  - rangement\n  - absente\n---\nPrompt de Lou.";
+    assert.equal((await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [{ id: "lou", nom: "Lou", contenu: fiche }], assistant: "Cicco", empreinte: "e1" } })).statut, 200);
+
+    const lues = (await competences(jeton, "lou", projet)).json.competences;
+    assert.deepEqual(lues.fiche.map((c) => [c.nom, c.version, !!c.dossier]), [["rangement", "3", true], ["absente", null, false]]);
+    assert.deepEqual(lues.poste.map((c) => c.nom), ["rangement"]);
+    assert.deepEqual(lues.projet.map((c) => [c.nom, c.description]), [["deploi", "Déploie."]]);
+    // L'assistant n'a pas de fiche ; sans projet, pas de skills de projet.
+    const assistant = (await competences(jeton, "principal")).json.competences;
+    assert.deepEqual([assistant.fiche, assistant.projet, assistant.poste.map((c) => c.nom)], [[], [], ["rangement"]]);
+    // Hors du dossier de klyra, ou un nom d'agent qui sort de son dossier : refusé.
+    assert.equal((await competences(jeton, "lou", "/etc")).statut, 400);
+    assert.equal((await competences(jeton, "../x")).statut, 400);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/competences?agent=lou`, { methode: "POST", jeton, corps: {} })).statut, 405);
+
+    // Lou lancé seul reçoit sa skill préchargée ; « /rangement » passe devant le message de l'app.
+    const options = { agent: "lou", prompt: "[Contexte] Essai.\n\n[Message de Corentin]\n/rangement range", sessionId: null, acces: "projet", skill: "rangement" };
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "s1", options } })).statut, 202);
+    const flux = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "s1" && e.event?.type === "fin"));
+    assert.equal(flux.recus.find((e) => e.requestId === "s1" && e.event.type === "fin").event.texte, `Bonjour /rangement\n\n${options.prompt}`);
+    const args = readFileSync(path.join(home, "args.log"), "utf8");
+    assert.match(args, /TEXTE-RANGEMENT/);
+    assert.match(args, /Introuvables sur ce poste, donc absentes : absente/);
+    // Une compétence au nom invalide : la demande est refusée.
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "s2", options: { ...options, skill: "../x" } } })).statut, 202);
+    const refus = await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "s2"));
+    assert.match(refus.recus.find((e) => e.requestId === "s2").event.erreur, /Compétence invalide/);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

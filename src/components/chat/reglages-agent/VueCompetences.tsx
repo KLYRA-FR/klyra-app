@@ -13,7 +13,7 @@ import { EnteteVue, messageErreur, Note, TitreGroupe } from "./elements";
 
 /** Le nombre à montrer sur la ligne : celles de sa fiche, sinon celles qu'il peut utiliser. */
 export function resumeCompetences(lecture: Lecture<CompetencesAgent>): string | undefined {
-  if (lecture.etat !== "pret") return lecture.etat === "indisponible" ? "Sur le serveur" : undefined;
+  if (lecture.etat !== "pret") return undefined;
   const { fiche, poste: duPoste, projet } = lecture.valeur;
   if (fiche.length) return `${fiche.length} dans sa fiche`;
   const n = duPoste.length + projet.length;
@@ -29,12 +29,15 @@ function CarteCompetence({
   prechargee,
   onBasculer,
   occupe,
+  ou,
 }: {
   competence: Competence;
   onMontrer?: () => void;
   prechargee: boolean;
   onBasculer?: (oui: boolean) => void;
   occupe: boolean;
+  /** Où l'agent travaille : « ce Mac », « ce PC » ou « le serveur ». */
+  ou: string;
 }) {
   return (
     <li className="flex items-start gap-3 rounded-sm px-2.5 py-2">
@@ -49,7 +52,7 @@ function CarteCompetence({
         {competence.dossier ? (
           competence.description && <span className="line-clamp-2 text-ui-xs leading-[1.45] text-texte-tertiaire">{competence.description}</span>
         ) : (
-          <span className="text-ui-xs leading-[1.45] text-texte-erreur">Introuvable sur {poste.ce} : l’agent ne la recevra pas.</span>
+          <span className="text-ui-xs leading-[1.45] text-texte-erreur">Introuvable sur {ou} : l’agent ne la recevra pas.</span>
         )}
       </span>
       {onMontrer && competence.dossier && (
@@ -98,8 +101,11 @@ export function VueCompetences({
   const bridge = getBridge()?.agents;
   const [enCours, setEnCours] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  // Sur un VPS : ses compétences sont celles du serveur, et leur dossier n'est pas sur ce poste.
+  const surServeur = !!contexte?.lieu;
+  const ou = surServeur ? "le serveur" : poste.ce;
   const montrer =
-    contexte && bridge?.montrerCompetence
+    contexte && !surServeur && bridge?.montrerCompetence
       ? (nom: string) => void bridge.montrerCompetence!(role.id, { dossier: contexte.dossier }, nom).then((r) => !r.ok && annoncer(r.message))
       : undefined;
   const c = lecture.etat === "pret" ? lecture.valeur : null;
@@ -134,6 +140,7 @@ export function VueCompetences({
               prechargee={prechargees}
               onBasculer={basculer ? (oui) => void basculer(s)(oui) : undefined}
               occupe={enCours !== null}
+              ou={ou}
             />
           ))}
         </ul>
@@ -161,7 +168,7 @@ export function VueCompetences({
 
       {lecture.etat === "chargement" && <Note>Lecture de ses compétences…</Note>}
       {lecture.etat === "erreur" && <Note erreur>{lecture.message}</Note>}
-      {lecture.etat === "indisponible" && <Note>Les compétences d’un agent sur un serveur ne se lisent pas encore d’ici.</Note>}
+      {lecture.etat === "indisponible" && <Note>Les compétences se lisent dans l’app de bureau.</Note>}
       {erreur && <Note erreur>{erreur}</Note>}
       {c && (
         <>
@@ -173,13 +180,23 @@ export function VueCompetences({
           )}
           {liste("Du projet", "Rangées dans le dossier .claude/skills du projet.", c.projet.filter((s) => !dansLaFiche(s)), false)}
           {liste(
-            `De ${poste.ce}`,
-            "Tous tes agents peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.",
+            surServeur ? "Du serveur" : `De ${poste.ce}`,
+            `Tous tes agents${surServeur ? " sur ce serveur" : ""} peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.`,
             c.poste.filter((s) => !dansLaFiche(s)),
             false,
           )}
           {!c.fiche.length && !c.projet.length && !c.poste.length && (
-            <Note>Aucune compétence sur {poste.ce} pour l’instant. Une skill de Claude Code rangée dans ton dossier personnel (.claude/skills) apparaîtra ici.</Note>
+            <Note>
+              {surServeur
+                ? "Aucune compétence sur le serveur pour l’instant. Une skill de Claude Code rangée dans le dossier .claude/skills de l’utilisateur klyra du VPS apparaîtra ici."
+                : `Aucune compétence sur ${poste.ce} pour l’instant. Une skill de Claude Code rangée dans ton dossier personnel (.claude/skills) apparaîtra ici.`}
+            </Note>
+          )}
+          {surServeur && attribuer && (
+            <Note>
+              Sa fiche est celle de {poste.ce}, copiée sur le serveur à chaque échange : une compétence que tu précharges ici l’est aussi sur {poste.ce}, si elle y est
+              rangée.
+            </Note>
           )}
           {pourquoiFige && <Note>{POURQUOI[pourquoiFige]}</Note>}
         </>

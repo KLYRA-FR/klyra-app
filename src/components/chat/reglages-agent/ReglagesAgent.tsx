@@ -92,7 +92,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
 
   const resumeMemoire = (() => {
     const l = memoire.lecture;
-    if (l.etat === "indisponible") return "Sur le serveur";
+    if (l.etat === "indisponible") return chat.lieu ? "Sur le serveur" : undefined;
     if (l.etat !== "pret") return undefined;
     if (!l.valeur) return "Sans mémoire";
     const n = l.valeur.souvenirs.filter((s) => !s.toujours).length;
