@@ -266,7 +266,7 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
       const debut = instanceConnue === instance ? depuis : 0;
       const garder = (entree) => entree.seq > debut && (requete === null || entree.requestId === requete);
       for (const entree of entrees) if (garder(entree)) ecrireA(res, entree);
-      const abonne = { write: (texte) => res.write(texte), end: () => res.end(), garder };
+      const abonne = { write: (texte) => res.write(texte), end: () => res.end(), garder, tout: requete === null };
       abonnes.add(abonne);
       const battement = setInterval(() => res.write(": battement\n\n"), 20_000);
       res.on("close", () => {
@@ -274,6 +274,8 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
         abonnes.delete(abonne);
       });
     },
+    /** Les appareils qui suivent tout le journal (le PC ; le téléphone suit un message à la fois). */
+    ecouteurs: () => [...abonnes].filter((a) => a.tout).length,
     fermerTout() {
       for (const res of abonnes) res.end();
       abonnes.clear();
@@ -535,7 +537,8 @@ export function creerGestionnaire(options) {
         }
       }
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
-      const corps = await lireCorpsRequete(req, CORPS_AGENT_MAX);
+      // Le résultat d'un outil du navigateur peut porter une capture d'écran.
+      const corps = await lireCorpsRequete(req, action === "navigateur" ? 10 * CORPS_AGENT_MAX : CORPS_AGENT_MAX);
       const requestId = typeof corps?.requestId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(corps.requestId) ? corps.requestId : null;
       if (!requestId) return repondre(res, 400, { erreur: "requete" });
       if (action === "envoyer") {
@@ -558,6 +561,8 @@ export function creerGestionnaire(options) {
       }
       if (action === "autoriser") return repondre(res, 200, { ok: agents.autoriser(requestId, String(corps.demandeId ?? ""), String(corps.decision ?? "")) });
       if (action === "annuler") return repondre(res, 200, { ok: agents.annuler(requestId) });
+      /* Le PC rend le résultat d'un outil du navigateur de KLYRA demandé par un agent d'ici (cf. navigateur.mjs). */
+      if (action === "navigateur") return repondre(res, 200, { ok: agents.navigateur?.repondre(requestId, corps.resultat) ?? false });
       return repondre(res, 404, { erreur: "introuvable" });
     }
 
@@ -654,7 +659,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   };
   const ia = creerIa({ donnees: dossier, version: String(PROTOCOLE) });
   await ia.demarrer();
-  const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane, ia, version: String(PROTOCOLE) });
+  const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane, ia, version: String(PROTOCOLE), ecouteurs: journal.ecouteurs });
   const moteurs = creerMoteurs({ home, claude: agents.claude, codex: agents.codex });
   routines = creerRoutines({ donnees: dossier, home, envoyer: agents.envoyer, annuler: agents.annuler });
   const ecoute = await ecouter({

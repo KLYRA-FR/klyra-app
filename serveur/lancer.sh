@@ -137,6 +137,8 @@ curl -fsSL "$SOURCE/consommation-ecart.mjs" -o "$CODE_DIR/consommation-ecart.mjs
 curl -fsSL "$SOURCE/diagnostic-poste.mjs" -o "$CODE_DIR/diagnostic-poste.mjs"
 curl -fsSL "$SOURCE/consignes-projet.mjs" -o "$CODE_DIR/consignes-projet.mjs"
 curl -fsSL "$SOURCE/rendus.mjs" -o "$CODE_DIR/rendus.mjs"
+curl -fsSL "$SOURCE/navigateur.mjs" -o "$CODE_DIR/navigateur.mjs"
+curl -fsSL "$SOURCE/navigateur-definitions.mjs" -o "$CODE_DIR/navigateur-definitions.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────

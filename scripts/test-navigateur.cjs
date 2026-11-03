@@ -292,6 +292,46 @@ app.whenReady().then(async () => {
     verifier(!liste.tools.some((o) => o.name.startsWith("navigateur_")) && r.isError, "réglage coupé : plus d'outils", texteDe(r));
     await reglages.ecrireReglages({ ...reglages.lireReglages(), navigateur: { agents: true } });
 
+    /* Un agent d'un VPS : l'appel passe par le vrai serveur KLYRA (journal, route, relais) jusqu'au navigateur de ce PC. */
+    const { pathToFileURL } = require("node:url");
+    const srv = await import(pathToFileURL(path.join(__dirname, "..", "serveur", "klyra-serveur.mjs")).href);
+    const { creerRelaisNavigateur } = await import(pathToFileURL(path.join(__dirname, "..", "serveur", "navigateur.mjs")).href);
+    const dossierVps = path.join(TMP, "vps");
+    fs.mkdirSync(dossierVps, { recursive: true });
+    const journal = srv.creerJournal();
+    const relais = creerRelaisNavigateur({ publier: journal.publier, ecouteurs: journal.ecouteurs });
+    const ecoute = await srv.ecouter({ dossier: dossierVps, port: 0, journal, agents: { navigateur: relais, fermerTout: () => undefined } });
+    const origine = `http://127.0.0.1:${ecoute.port}`;
+    try {
+      r = await relais.appeler({ agent: "principal", conversation: "chat-vps" }, "navigateur_lire", {});
+      verifier(r.isError && /pas ouverte/.test(r.content[0].text), "VPS : sans PC à l'écoute, l'outil le dit tout de suite", r.content[0].text);
+      const appaire = await fetch(`${origine}${srv.CHEMIN_APPAIRER}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: srv.creerCode(dossierVps), appareil: "PC de test" }) }).then((x) => x.json());
+      fs.writeFileSync(path.join(app.getPath("userData"), "conversations.json"), JSON.stringify({ version: 1, chats: [{ id: "chat-vps", kind: "direct", roleIds: ["principal"], lieu: origine }, { id: "chat-a", kind: "direct", roleIds: ["principal"] }], messages: [], projects: [] }));
+      const distants = require(path.join(dist, "agents-distants.js"));
+      const { executerPourServeur } = require(path.join(dist, "navigateur", "outils.js"));
+      distants.brancherAgentsDistants(
+        {
+          fenetre: () => ({ evenement: () => undefined, spontane: () => undefined, rendu: () => undefined }),
+          equipe: () => ({ fiches: [], assistant: null, configuration: { memoireAgents: true, consignes: null, navigateur: true }, empreinte: "test" }),
+          jeton: () => appaire.jeton,
+          navigateur: (o, appel) => executerPourServeur(o, appel),
+        },
+        [origine],
+      );
+      for (let i = 0; i < 50 && !journal.ecouteurs(); i++) await pause(100);
+      r = await relais.appeler({ agent: "principal", conversation: "chat-vps" }, "navigateur_aller", { url: base });
+      verifier(!r.isError && /Page : Contact KLYRA/.test(r.content[0].text) && nav.ongletsDe("chat-vps").length === 1, "VPS : l'agent ouvre et lit une page dans le navigateur de ce PC, dans l'onglet de sa conversation", r.content.map((c) => c.text).join("\n"));
+      r = await relais.appeler({ agent: "principal", conversation: "chat-vps" }, "navigateur_capture", {});
+      verifier(!r.isError && r.content.some((c) => c.type === "image" && c.data.length > 2000), "VPS : la capture revient en image", JSON.stringify(r).slice(0, 200));
+      r = await relais.appeler({ agent: "principal", conversation: "chat-a" }, "navigateur_onglets", {});
+      verifier(r.isError && /pas une conversation de ce serveur/.test(r.content[0].text), "VPS : une conversation de ce PC lui est refusée", r.content[0].text);
+      distants.oublierServeur(origine);
+      for (const o of nav.ongletsDe("chat-vps")) nav.fermerOnglet(o.id);
+    } finally {
+      journal.fermerTout();
+      await ecoute.fermer();
+    }
+
     /* Gardés sur le disque. */
     await pause(1200);
     const garde = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "navigateur.json"), "utf8"));

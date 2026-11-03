@@ -499,7 +499,7 @@ async function vignette(o: Onglet): Promise<void> {
   const wc = vivante(o);
   if (!wc || wc.isLoading()) return;
   try {
-    const image = await wc.capturePage(undefined, { stayHidden: true });
+    const image = await imagePage(o, wc);
     if (image.isEmpty()) return;
     const { width } = image.getSize();
     o.vignette = `data:image/jpeg;base64,${(width > LARGEUR_VIGNETTE ? image.resize({ width: LARGEUR_VIGNETTE, quality: "good" }) : image).toJPEG(62).toString("base64")}`;
@@ -634,6 +634,23 @@ async function cdp(wc: WebContents, methode: string, params: Record<string, unkn
     await wc.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => undefined);
   }
   return wc.debugger.sendCommand(methode, params);
+}
+
+/**
+ * Une image de la page, même cachée : une vue qu'on ne regarde pas n'a pas toujours de surface à
+ * capturer ; la taille de la page est alors fixée le temps de la capture (comme OpenBot).
+ */
+async function imagePage(o: Onglet, wc: WebContents): Promise<Electron.NativeImage> {
+  const cachee = !o.vue?.getVisible();
+  if (cachee) {
+    const vue = await script<{ largeur: number; hauteur: number; echelle: number }>(wc, "({ largeur: innerWidth, hauteur: innerHeight, echelle: devicePixelRatio })").catch(() => null);
+    if (vue?.largeur && vue.hauteur) await cdp(wc, "Emulation.setDeviceMetricsOverride", { width: vue.largeur, height: vue.hauteur, deviceScaleFactor: vue.echelle || 1, mobile: false }).catch(() => undefined);
+  }
+  try {
+    return await avecDelai(wc.capturePage(undefined, { stayHidden: true, stayAwake: true }), DELAI_SCRIPT_MS, "La capture n’a pas abouti.");
+  } finally {
+    if (cachee) await cdp(wc, "Emulation.clearDeviceMetricsOverride").catch(() => undefined);
+  }
 }
 
 /** L'onglet sur lequel un agent travaille : celui qu'il nomme (de sa conversation), sinon le dernier qu'on a utilisé. */
@@ -839,7 +856,7 @@ export async function defiler(o: Onglet, wc: WebContents, ref: string | null, dx
 /** La partie visible de la page, en JPEG, réduite à 1 280 px de large au plus. */
 export async function capturer(o: Onglet, wc: WebContents): Promise<{ base64: string; largeur: number; hauteur: number; echelle: number }> {
   await attendreCalme(wc, 5_000);
-  const image = await avecDelai(wc.capturePage(undefined, { stayHidden: true }), DELAI_SCRIPT_MS, "La capture n’a pas abouti.");
+  const image = await imagePage(o, wc);
   if (image.isEmpty()) throw new Error("La page n’a encore rien affiché.");
   const vue = await script<{ largeur: number }>(wc, "({ largeur: innerWidth })").catch(() => null);
   const taille = image.getSize();

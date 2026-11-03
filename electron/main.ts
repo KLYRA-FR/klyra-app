@@ -128,6 +128,7 @@ import {
 } from "./reglages";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
 import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
+import { executerPourServeur, navigateurActif } from "./navigateur/outils";
 import {
   actionMenu,
   afficherOnglet,
@@ -880,7 +881,7 @@ function registerBridge() {
     const assistant = mesAgents().assistant.nom ?? null;
     /* La configuration KLYRA de ce PC, comme `environnementAgent` et `consignesApp` la donnent aux sessions locales. */
     const { configuration: reglage } = lireReglages();
-    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes) };
+    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes), navigateur: navigateurActif() };
     const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches, configuration])).digest("hex").slice(0, 16);
     return { fiches, assistant, configuration, empreinte };
   };
@@ -975,6 +976,8 @@ function registerBridge() {
         },
         equipe: equipePourVps,
         jeton: jetonServeur,
+        /* Un agent du VPS utilise le navigateur de ce PC : seulement pour une conversation de ce serveur. */
+        navigateur: (origine, appel) => executerPourServeur(origine, appel),
       },
       originesServeurs(),
     );

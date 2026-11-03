@@ -63,7 +63,7 @@ export interface Equipe {
    * La configuration KLYRA adoptée sur ce PC (mémoire coupée, consignes), appliquée par le VPS à toutes
    * ses sessions : messages du PC, du téléphone PC fermé, routines du serveur.
    */
-  configuration: { memoireAgents: boolean; consignes: string | null };
+  configuration: { memoireAgents: boolean; consignes: string | null; navigateur?: boolean };
   empreinte: string;
 }
 
@@ -71,7 +71,37 @@ interface Liaison {
   fenetre: () => Fenetre | null;
   equipe: () => Equipe;
   jeton: (origine: string) => string | null;
+  /** Un agent du VPS appelle un outil du navigateur de KLYRA : ce PC l'exécute et rend le résultat MCP. */
+  navigateur?: (origine: string, appel: AppelNavigateur) => Promise<unknown>;
 }
+
+/** Un appel d'outil du navigateur venu d'un agent du VPS (cf. serveur/navigateur.mjs), vérifié champ par champ. */
+export interface AppelNavigateur {
+  id: string;
+  nom: string;
+  arguments: Record<string, unknown>;
+  agent: string;
+  conversation: string;
+}
+
+export function appelNavigateurDe(event: unknown, maintenant = Date.now()): AppelNavigateur | null {
+  const e = (event ?? {}) as Record<string, unknown>;
+  if (e.type !== "navigateur" || typeof e.id !== "string" || !/^[0-9a-f-]{36}$/.test(e.id)) return null;
+  if (typeof e.nom !== "string" || !/^navigateur_[a-z]+$/.test(e.nom)) return null;
+  // Un appel relu après coup (reconnexion, redémarrage de l'app) a déjà abandonné côté VPS.
+  if (typeof e.expire !== "number" || e.expire < maintenant) return null;
+  if (typeof e.conversation !== "string" || !e.conversation || e.conversation.length > 120) return null;
+  return {
+    id: e.id,
+    nom: e.nom,
+    arguments: e.arguments && typeof e.arguments === "object" && !Array.isArray(e.arguments) ? (e.arguments as Record<string, unknown>) : {},
+    agent: typeof e.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(e.agent) ? e.agent : "principal",
+    conversation: e.conversation,
+  };
+}
+
+/** Les appels déjà servis (un même appel relu n'est pas exécuté deux fois). */
+const appelsServis = new Set<string>();
 
 interface Entree {
   seq: number;
@@ -165,6 +195,19 @@ function distribuer(origine: string, entree: Entree) {
   if (typeof entree.requestId === "string" && entree.event) compterConsommation(entree.requestId, entree.event);
   const fenetre = liaison?.fenetre();
   if (!fenetre || typeof entree.requestId !== "string") return;
+  // Un outil du navigateur appelé par un agent du VPS : exécuté dans le navigateur de ce PC, résultat renvoyé au VPS.
+  const appel = appelNavigateurDe(entree.event);
+  if (appel) {
+    if (appelsServis.has(appel.id) || !liaison?.navigateur) return;
+    appelsServis.add(appel.id);
+    if (appelsServis.size > 500) appelsServis.delete(appelsServis.values().next().value!);
+    void liaison
+      .navigateur(origine, appel)
+      .catch((e: unknown) => ({ content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true }))
+      .then((resultat) => requete(origine, "/klyra/v1/agent/navigateur", "POST", { requestId: appel.id, resultat }))
+      .catch(() => undefined);
+    return;
+  }
   // Un livrable publié sur le VPS : il n'appartient à aucune réponse, l'écran le recopie dans Artefacts.
   const rendu = renduDe(entree.event);
   if (rendu) {

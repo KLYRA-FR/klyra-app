@@ -1,3 +1,4 @@
+import { readConversations } from "../conversations";
 import { lireReglages } from "../reglages";
 import {
   apresAction,
@@ -25,7 +26,7 @@ import {
   viser,
 } from "./navigateur";
 import { consigneNavigateurTexte, estOutilNavigateur, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE } from "./definitions";
-import { formaterInstantane, hoteDe, normaliserAdresse, trancheTexte } from "./regles";
+import { formaterInstantane, normaliserAdresse, trancheTexte } from "./regles";
 
 export { estOutilNavigateur, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE };
 
@@ -227,4 +228,15 @@ async function agir(args: Record<string, unknown>, appelant: { chatId: string; r
   if (note) lignes.push(note);
   if (args.relire === true) lignes.push("", formaterInstantane(await lireInstantane(o, wc)));
   return texte(avecNotes(lignes, prendreNotes(o)));
+}
+
+/**
+ * Un outil appelé par un agent d'un VPS relié (cf. agents-distants.ts et serveur/navigateur.mjs) :
+ * exécuté ici seulement pour une conversation de ce serveur, dans ses onglets.
+ */
+export async function executerPourServeur(origine: string, appel: { nom: string; arguments: Record<string, unknown>; agent: string; conversation: string }): Promise<ResultatOutil> {
+  const donnees = (await readConversations().catch(() => null)) as { chats?: { id?: unknown; lieu?: unknown }[] } | null;
+  const chat = donnees?.chats?.find((c) => c.id === appel.conversation);
+  if (!chat || chat.lieu !== origine) return texte("Cette conversation n’est pas une conversation de ce serveur sur l’ordinateur de la personne.", true);
+  return executerOutilNavigateur(appel.nom, appel.arguments, { chatId: appel.conversation, roleId: appel.agent });
 }

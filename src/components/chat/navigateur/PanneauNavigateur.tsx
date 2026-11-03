@@ -386,7 +386,7 @@ export function PanneauNavigateur({ chat }: { chat: Chat }) {
       {erreur && <span className="px-1.5 text-ui-xs text-texte-erreur">{erreur}</span>}
       {surServeur && (
         <span className="mx-1.5 rounded-sm bg-fond-surface-grise px-2.5 py-2 text-ui-xs leading-[1.45] text-texte-secondaire">
-          Cette conversation tourne sur un serveur : ses agents n’utilisent pas encore ce navigateur. Tu peux t’en servir toi-même.
+          Cette conversation tourne sur un serveur : ses agents utilisent ce navigateur, sur cet ordinateur, tant que KLYRA y est ouvert.
         </span>
       )}
       {onglets.length ? (
@@ -398,9 +398,7 @@ export function PanneauNavigateur({ chat }: { chat: Chat }) {
       ) : (
         <Vide titre="Aucun onglet dans cette conversation">
           <span className="text-ui-xs leading-[1.45] text-texte-tertiaire">
-            {surServeur
-              ? "Ouvre une page pour t’en servir ici."
-              : `Quand ${agent.name} utilise un site pour toi, ses onglets s’affichent ici et tu le vois faire. Tu peux aussi ouvrir une page, t’y connecter, puis lui demander de continuer.`}
+            {`Quand ${agent.name} utilise un site pour toi, ses onglets s’affichent ici et tu le vois faire. Tu peux aussi ouvrir une page, t’y connecter, puis lui demander de continuer.`}
           </span>
         </Vide>
       )}
