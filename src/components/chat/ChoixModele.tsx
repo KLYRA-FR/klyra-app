@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { LogoFournisseur } from "@/components/ui/LogoFournisseur";
@@ -8,6 +9,7 @@ import { cheminServeur } from "@/components/serveur/catalogue";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { fournisseur, FOURNISSEURS, moteurDe, nomEffort, PAR_DEFAUT } from "@/lib/fournisseurs";
+import { placeMenuFlottant, type PlaceMenu } from "@/lib/menu-flottant";
 import { useMoteurs } from "@/lib/moteurs";
 import { apparition } from "@/lib/mouvement";
 import { useRole, useTravail, useWorkspace } from "@/lib/workspace";
@@ -92,16 +94,64 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
   const [vue, setVue] = useState(moteur);
   const [recherche, setRecherche] = useState("");
   const [connexion, setConnexion] = useState<{ etat: "en-cours" } | { etat: "erreur"; message: string } | null>(null);
+  const [place, setPlace] = useState<PlaceMenu | null>(null);
   const zone = useRef<HTMLDivElement>(null);
+  const bouton = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const modelesVue = useModelesDe(vue, lieu);
   const modelesActuels = useModelesDe(moteur, lieu);
+  const dansLeTiroir = variante === "champ";
+
+  const placer = useCallback(() => {
+    const b = bouton.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    setPlace(
+      placeMenuFlottant(
+        { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+        { width: window.innerWidth, height: window.innerHeight },
+        menu.current?.offsetHeight || 320,
+      ),
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    if (ouvert && dansLeTiroir) placer();
+  }, [ouvert, dansLeTiroir, placer]);
+
+  useEffect(() => {
+    if (!ouvert || !dansLeTiroir) return;
+    const defilement = (e: Event) => {
+      if (!menu.current?.contains(e.target as Node)) placer();
+    };
+    window.addEventListener("resize", placer);
+    window.addEventListener("scroll", defilement, true);
+    return () => {
+      window.removeEventListener("resize", placer);
+      window.removeEventListener("scroll", defilement, true);
+    };
+  }, [ouvert, dansLeTiroir, placer]);
+
+  const placee = place !== null;
+  const versLeHaut = place?.versLeHaut ?? false;
+  useLayoutEffect(() => {
+    if (!ouvert) return;
+    if (!dansLeTiroir || placee) apparition(menu.current);
+  }, [ouvert, dansLeTiroir, placee, versLeHaut]);
 
   useEffect(() => {
     if (!ouvert) return;
     const fermer = (e: MouseEvent) => {
-      if (!zone.current?.contains(e.target as Node)) setOuvert(false);
+      const cible = e.target as Node;
+      if (zone.current?.contains(cible) || menu.current?.contains(cible)) return;
+      setPlace(null);
+      setOuvert(false);
     };
-    const echap = (e: KeyboardEvent) => e.key === "Escape" && setOuvert(false);
+    const echap = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setPlace(null);
+      setOuvert(false);
+    };
     document.addEventListener("mousedown", fermer);
     document.addEventListener("keydown", echap);
     return () => {
@@ -125,6 +175,7 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
     setVue(moteur);
     setRecherche("");
     setConnexion(null);
+    setPlace(null);
     setOuvert((v) => !v);
   };
 
@@ -137,7 +188,10 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
       const garde = vue === PAR_DEFAUT && m.id === modeleFiche ? null : m.id;
       choisirFournisseur(chat.id, vue, garde, effort && m.efforts.includes(effort) ? effort : null);
     }
-    if (!m.efforts.length || vue !== moteur) setOuvert(false);
+    if (!m.efforts.length || vue !== moteur) {
+      setPlace(null);
+      setOuvert(false);
+    }
   };
 
   const seConnecter = async () => {
@@ -145,6 +199,7 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
     if (!bridge) return;
     // Sur un VPS, la connexion passe par un code à saisir : la page du fournisseur le montre.
     if (lieu) {
+      setPlace(null);
       setOuvert(false);
       router.push(cheminServeur("fournisseurs", { fournisseur: vue, serveur: lieu }));
       return;
@@ -155,38 +210,20 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
     setConnexion(r.ok ? null : { etat: "erreur", message: r.message });
   };
 
-  return (
-    <div ref={zone} className={cn("relative", variante === "champ" && "w-full")}>
-      <button
-        type="button"
-        onClick={ouvrir}
-        disabled={bloque}
-        aria-expanded={ouvert}
-        aria-haspopup="dialog"
-        title={bloque ? "Attends la fin du travail en cours pour changer de modèle." : `${fournisseur(moteur).nom} · ${actuel?.nom ?? nomCourt}${effort ? ` · effort ${nomEffort(effort)}` : ""}`}
-        className={cn(
-          "flex cursor-pointer items-center gap-1.5 rounded-xs border border-bordure-subtile bg-fond-surface text-texte-principal transition-[border-color,scale] duration-[120ms] ease-sortie hover:border-bordure-forte active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60",
-          variante === "entete" ? "h-8 max-w-[260px] px-2.5 text-ui-s" : "h-11 w-full px-3 text-ui",
-        )}
-      >
-        <Pastille id={moteur} />
-        <span className="truncate font-medium">{libelle}</span>
-        <Icon
-          name="chevron-down"
-          size={14}
-          className={cn("ml-auto shrink-0 text-icone-secondaire transition-transform duration-[220ms] ease-sortie", ouvert && "rotate-180")}
-        />
-      </button>
-
-      {ouvert && (
+  const panneau = ouvert ? (
         <div
-          ref={apparition}
+          ref={menu}
           role="dialog"
           aria-label="Fournisseur, modèle et effort"
           className={cn(
-            "absolute top-full z-50 mt-2 flex w-[400px] max-w-[calc(100vw-32px)] rounded-lg border border-bordure-subtile bg-fond-surface shadow-ombre-flottante",
-            variante === "entete" ? "right-0" : "left-0",
+            "flex w-[400px] max-w-[calc(100vw-32px)] rounded-lg border border-bordure-subtile bg-fond-surface shadow-ombre-flottante",
+            dansLeTiroir ? cn("fixed z-[70]", !place && "invisible") : "absolute top-full right-0 z-50 mt-2",
           )}
+          style={
+            dansLeTiroir && place
+              ? { top: place.top, bottom: place.bottom, left: place.left, width: place.largeur }
+              : undefined
+          }
         >
           {/* Les fournisseurs prêts sur ce poste. */}
           <div role="tablist" aria-label="Fournisseurs" aria-orientation="vertical" className="flex w-14 shrink-0 flex-col items-center gap-1.5 border-r border-bordure-subtile p-2">
@@ -217,6 +254,7 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
               title="Ajouter un fournisseur"
               aria-label="Ajouter un fournisseur"
               onClick={() => {
+                setPlace(null);
                 setOuvert(false);
                 router.push(cheminServeur("fournisseurs", { serveur: lieu }));
               }}
@@ -337,7 +375,32 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
             )}
           </div>
         </div>
-      )}
+  ) : null;
+
+  return (
+    <div ref={zone} className={cn("relative", variante === "champ" && "w-full")}>
+      <button
+        ref={bouton}
+        type="button"
+        onClick={ouvrir}
+        disabled={bloque}
+        aria-expanded={ouvert}
+        aria-haspopup="dialog"
+        title={bloque ? "Attends la fin du travail en cours pour changer de modèle." : `${fournisseur(moteur).nom} · ${actuel?.nom ?? nomCourt}${effort ? ` · effort ${nomEffort(effort)}` : ""}`}
+        className={cn(
+          "flex cursor-pointer items-center gap-1.5 rounded-xs border border-bordure-subtile bg-fond-surface text-texte-principal transition-[border-color,scale] duration-[120ms] ease-sortie hover:border-bordure-forte active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60",
+          variante === "entete" ? "h-8 max-w-[260px] px-2.5 text-ui-s" : "h-11 w-full px-3 text-ui",
+        )}
+      >
+        <Pastille id={moteur} />
+        <span className="truncate font-medium">{libelle}</span>
+        <Icon
+          name="chevron-down"
+          size={14}
+          className={cn("ml-auto shrink-0 text-icone-secondaire transition-transform duration-[220ms] ease-sortie", ouvert && "rotate-180")}
+        />
+      </button>
+      {panneau && (dansLeTiroir ? createPortal(panneau, document.body) : panneau)}
     </div>
   );
 }
