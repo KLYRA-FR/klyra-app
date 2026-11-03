@@ -518,8 +518,8 @@ function AjoutArtefact({ onFermer }: { onFermer: () => void }) {
 
 /* ─── L'écran ──────────────────────────────────────────────────── */
 
-/** Artefacts : les pages publiées par Claude, en blocs avec leur aperçu ; les siennes (synchronisées avec
- *  le compte Claude) et celles que l'équipe a partagées. */
+/** Artefacts : les livrables des agents et, en option, les artefacts claude.ai, en blocs avec leur aperçu ;
+ *  et les liens que l'équipe a partagés. */
 export function ArtefactsScreen() {
   return (
     <ArtefactsEquipeProvider>
