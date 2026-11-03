@@ -11,6 +11,8 @@
     "desktop": "pnpm build:electron && concurrently -k -n web,app -c gray,black \"next dev -p 3100\" \"wait-on http://localhost:3100 && env -u ELECTRON_RUN_AS_NODE KLYRA_DEV_URL=http://localhost:3100 electron .\"",
     "build": "next build",
     "build:electron": "tsc -p electron/tsconfig.json",
+    "site:dev": "next dev site -p 3200",
+    "site:build": "next build site",
     "agents:equipe": "node scripts/agents-equipe.mjs",
     "start:desktop": "pnpm build && pnpm build:electron && env -u ELECTRON_RUN_AS_NODE electron .",
     "test:smoke": "pnpm build && pnpm build:electron && env -u ELECTRON_RUN_AS_NODE KLYRA_SMOKE_TEST=1 electron .",
@@ -68,7 +70,8 @@
     "test:report": "vitest run src/lib/report.test.ts",
     "test:planning-telephone": "vitest run src/lib/telephone/planning.test.ts src/lib/telephone/saisie-planning.test.ts",
     "test:modeles": "vitest run src/lib/maj-modele.test.ts src/lib/modeles-klyra.test.ts",
-    "test:automatisations": "vitest run src/lib/telephone/routines-telephone.test.ts src/lib/telephone/workflow-etapes.test.ts"
+    "test:automatisations": "vitest run src/lib/telephone/routines-telephone.test.ts src/lib/telephone/workflow-etapes.test.ts",
+    "test:app-web": "node --test scripts/sortie-vercel.test.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",
