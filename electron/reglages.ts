@@ -1,4 +1,4 @@
-import { app, shell, systemPreferences } from "electron";
+import { app, desktopCapturer, shell, systemPreferences } from "electron";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -172,6 +172,8 @@ export function autorisationsComputerUse(): { plateforme: string; accessibilite:
 export async function ouvrirAutorisation(type: "accessibilite" | "ecran"): Promise<void> {
   if (process.platform !== "darwin") throw new Error("Ce système ne demande pas cette autorisation.");
   if (type === "accessibilite") systemPreferences.isTrustedAccessibilityClient(true);
+  // Une première capture fait apparaître KLYRA dans la liste « Enregistrement de l'écran » (macOS ne propose pas d'y ajouter une app).
+  else await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
   const panneau = type === "accessibilite" ? "Privacy_Accessibility" : "Privacy_ScreenCapture";
   await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${panneau}`);
 }

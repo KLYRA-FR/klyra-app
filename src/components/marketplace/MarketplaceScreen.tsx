@@ -10,7 +10,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { Modale, useConfirmation } from "@/components/ui/Modale";
-import { Erreur, Pastille } from "@/components/reglages/ui";
+import { ancreReglage, Erreur, Pastille } from "@/components/reglages/ui";
 import { getBridge, type EtatConnect, type McpDirect, type VueCompteComposio, type VueServiceComposio } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { useComposio, type ComposioApiInterface } from "@/lib/composio";
@@ -26,7 +26,21 @@ const APPS: { id: string; nom: string; description: string }[] = [
   { id: "stripe", nom: "Stripe", description: "Paiements, clients et abonnements." },
 ];
 
-/** La Marketplace : Composio d'abord (une connexion, des centaines d'apps), puis les MCP directs. */
+/** Les apps à brancher : Composio d'abord (une connexion, des centaines d'apps), puis les MCP directs. Section des Réglages. */
+export function Marketplace() {
+  return (
+    <>
+      <div id={ancreReglage("composio")} className="scroll-mt-6">
+        <CarteComposio />
+      </div>
+      <div id={ancreReglage("apps-directes")} className="scroll-mt-6">
+        <AppsDirectes />
+      </div>
+    </>
+  );
+}
+
+/** La Marketplace en page seule (ancienne adresse) ; le menu mène aux Réglages. */
 export function MarketplaceScreen() {
   return (
     <div className="h-full overflow-y-auto">

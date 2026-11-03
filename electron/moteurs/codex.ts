@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { app, shell } from "electron";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
+import { signatureOrdinateur } from "../ordinateur/pilote";
 import { espaceComposio } from "../composio";
 import { configMcp } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
@@ -249,7 +250,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   await serveur.demarrer(bin);
   const acces = accesCodex(options.acces ?? "projet");
   // Mes agents ou Composio ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null]);
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur()]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {

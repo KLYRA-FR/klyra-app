@@ -7,14 +7,11 @@ import type { ReactNode } from "react";
 import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
-import { raccourciDuSysteme } from "@/lib/plateforme";
-import { ouvrirRecherche, useRechercheOuverte } from "@/lib/recherche-session";
 import { colonneTicket } from "@/lib/tickets";
 import { useProjects, useWorkspace } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
 import { NAVIGATION } from "./navigation";
 import { PastilleMaj } from "./PastilleMaj";
-import { SelecteurServeur } from "./SelecteurServeur";
 
 /** Une entrée du rail : l'icône seule, à sa taille de dessin (24 px, trait plein) ; le nom au survol. */
 const ENTREE =
@@ -42,6 +39,16 @@ const PANNEAUX = {
 
 const SEPARATEUR = <span aria-hidden="true" className="my-1.5 h-px w-8 shrink-0 bg-white/12" />;
 
+/** Sans projet épinglé, le rail montre les plus récents, pas plus. */
+const RECENTS_MAX = 3;
+
+/** « Portfolio Pelin » → « PP », « Klyra » → « KL » : deux lettres pour distinguer les projets. */
+function sigle(nom: string): string {
+  const mots = nom.trim().split(/[\s\-_]+/).filter(Boolean);
+  const lettres = mots.length > 1 ? mots[0][0] + mots[1][0] : nom.trim().slice(0, 2);
+  return lettres.toUpperCase();
+}
+
 /**
  * Le menu de l'app, toujours en rail : en noir, le logo-icône KLYRA
  * (carré K1, signe blanc) en haut — le signe bleu seul sur noir est interdit. Dans un projet ou dans les chats, il ouvre le panneau
@@ -60,10 +67,14 @@ export function AppRail({
   const projects = useProjects();
   const currentId = useSearchParams().get("id");
   const pathname = usePathname();
-  const rechercheOuverte = useRechercheOuverte();
   /* Les tickets à valider : ils t'attendent, leur nombre se pose sur l'entrée Tickets. */
   const { chats, travail } = useWorkspace().state;
   const aValider = chats.filter((c) => c.fil && colonneTicket(c.fil, !!travail[c.id]) === "a-valider").length;
+  /* Les projets du rail : les épinglés (sinon les plus récents), et celui qu'on regarde. Tous les autres : Projets. */
+  const epingles = projects.filter((p) => p.pinned);
+  const choisis = epingles.length ? epingles : [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, RECENTS_MAX);
+  const courant = pathname === "/projet" ? projects.find((p) => p.id === currentId) : undefined;
+  const projetsRail = courant && !choisis.includes(courant) ? [...choisis, courant] : choisis;
 
   return (
     <nav
@@ -75,23 +86,8 @@ export function AppRail({
         <Image src="/brand/logo-icone.svg" alt="" width={36} height={36} priority />
       </Link>
 
-      {/* La machine où tournent les agents : ce PC ou un VPS relié, comme dans OpenBot. */}
-      <SelecteurServeur />
-
       {/* Le milieu défile si la fenêtre est basse : le bas du rail reste visible. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto [scrollbar-width:none]">
-        {/* Rechercher dans les conversations : la fenêtre s'ouvre par-dessus l'écran. */}
-        <button
-          type="button"
-          onClick={() => ouvrirRecherche()}
-          aria-label="Rechercher"
-          aria-haspopup="dialog"
-          aria-expanded={rechercheOuverte}
-          title={`Rechercher (${raccourciDuSysteme("⌘K")})`}
-          className={entree(rechercheOuverte)}
-        >
-          <Icon name="search-01" size={24} />
-        </button>
         {NAVIGATION.map((item) => {
           const active = pathname === item.href || (item.href === "/chats" && (pathname === "/equipe" || (pathname === "/chat" && panneau === "conversations")));
           return (
@@ -108,12 +104,12 @@ export function AppRail({
         })}
 
         {SEPARATEUR}
-        {/* Les projets : une tuile par projet, son initiale (pleine en K1 si épinglé). */}
+        {/* Les projets : une tuile par projet du rail, ses deux lettres ; la liste complète est dans Projets. */}
         <Link href="/projets" title="Projets" className={entree(pathname === "/projets")}>
           <Entree icone="projets-dossier" nom="Projets" active={pathname === "/projets"} />
         </Link>
         <div className="flex flex-col items-center gap-1.5 py-1">
-          {projects.map((p) => {
+          {projetsRail.map((p) => {
             const actif = pathname === "/projet" && currentId === p.id;
             return (
               <Link
@@ -124,11 +120,11 @@ export function AppRail({
                 aria-current={actif ? "page" : undefined}
                 className={cn(
                   "flex size-10 items-center justify-center rounded-md text-ui-s font-semibold no-underline transition-[background-color,box-shadow] duration-[120ms] ease-sortie",
-                  p.pinned ? "bg-bleu-k1-500 text-texte-inverse" : "bg-white/10 text-texte-inverse hover:bg-white/16",
+                  "bg-white/10 text-texte-inverse hover:bg-white/16",
                   actif && "ring-2 ring-texte-inverse ring-offset-2 ring-offset-fond-inverse-fort",
                 )}
               >
-                {p.name.charAt(0).toUpperCase()}
+                {sigle(p.name)}
               </Link>
             );
           })}
@@ -155,10 +151,6 @@ export function AppRail({
       <div className="flex shrink-0 flex-col items-center gap-1 pt-2">
         <PastilleMaj />
         <UtilisationRail />
-        {/* Les apps à brancher (Composio, MCP directs). */}
-        <Link href="/marketplace" title="Marketplace" aria-current={pathname === "/marketplace" ? "page" : undefined} className={entree(pathname === "/marketplace")}>
-          <Entree icone="boutique-01" nom="Marketplace" active={pathname === "/marketplace"} />
-        </Link>
         {SEPARATEUR}
         {/* Les réglages s'ouvrent d'un clic sur l'avatar. */}
         <span className="pt-1">

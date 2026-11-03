@@ -1,16 +1,19 @@
-# Pull requests qui touchent à la couche système de Computer Use : sur un Mac,
-# klyra-entrees est compilé (swiftc) et le test de bout en bout tourne (clic,
-# frappe, raccourci, défilement, capture). Sur un Mac Intel : les runners Apple
-# Silicon de GitHub manquent souvent. Ne publie rien.
+# Pull requests qui touchent à Computer Use : sur un Mac, l'app est fabriquée
+# (signature ad hoc) pour vérifier que cua-driver garde la signature de son
+# éditeur, puis le test de bout en bout tourne avec le vrai pilote. Le runner
+# n'a pas les autorisations de macOS : le test s'arrête alors à l'état
+# « autorisations », et vérifie que les agents n'ont pas les outils. Sur un Mac
+# Intel : les runners Apple Silicon de GitHub manquent souvent. Ne publie rien.
 name: Vérification Mac (Computer Use)
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - native/entrees/**
       - electron/ordinateur/**
-      - scripts/preparer-entrees.mjs
+      - cua-driver.lock.json
+      - scripts/preparer-cua-driver.mjs
+      - scripts/signer-mac.cjs
       - scripts/test-ordinateur.cjs
       - .github/workflows/verification-ordinateur-mac.yml
 
@@ -23,9 +26,9 @@ concurrency:
 
 jobs:
   ordinateur:
-    name: Clavier, souris et capture sur Mac
+    name: Pilote, signature et outils sur Mac
     runs-on: macos-15-intel
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -34,8 +37,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:electron && pnpm entrees
-      - name: klyra-entrees répond
-        run: echo '{"id":1,"action":"ping"}' | vendor/entrees/darwin/klyra-entrees
-      - name: Computer Use, clavier, souris et capture
-        run: env -u ELECTRON_RUN_AS_NODE perl -e 'alarm 180; exec @ARGV' pnpm exec electron scripts/test-ordinateur.cjs
+      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
+      # Sur une PR, electron-builder ne signe rien : on force la signature ad hoc (aucun certificat ni secret ici),
+      # pour que scripts/signer-mac.cjs tourne comme à la publication, avec son « codesign --deep ».
+      - name: L'app signée garde la signature de cua-driver
+        env:
+          CSC_FOR_PULL_REQUEST: "true"
+        run: |
+          pnpm exec electron-builder --mac --dir --publish never --config.directories.output=dist-app
+          APP=$(ls -d dist-app/mac*/KLYRA.app | head -1)
+          "$APP/Contents/Resources/cua-driver/cua-driver" --version | grep -q '0.34.0'
+          SIGNATURE=$(codesign --display --verbose=2 "$APP/Contents/Resources/cua-driver/cua-driver" 2>&1)
+          echo "$SIGNATURE"
+          echo "$SIGNATURE" | grep -q 'Authority=Developer ID Application: Cua AI'
+          codesign --verify --deep --strict "$APP"
+      - name: Computer Use, pilote et outils
+        run: env -u ELECTRON_RUN_AS_NODE perl -e 'alarm 180; exec @ARGV' pnpm test:ordinateur

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
+import { consigneOrdinateur, OUTILS_ORDINATEUR_INTERDITS, OUTILS_ORDINATEUR_LECTURE, serveurOrdinateur, signatureOrdinateur } from "./ordinateur/pilote";
 import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
@@ -356,7 +357,7 @@ const CONSIGNE_ARTEFACTS = "Où ranger : le code et les sources d'un projet vont
 export function consignesApp(options: StreamOptions, mcp: string | null): string[] {
   const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS, CONSIGNE_ARTEFACTS,
     composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
-  ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp)];
+  ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp), consigneOrdinateur()];
   if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
   return consignes;
 }
@@ -674,7 +675,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur()]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
@@ -714,6 +715,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       "AskUserQuestion",
       "EnterPlanMode",
       ...OUTILS_HORS_APP,
+      ...OUTILS_ORDINATEUR_INTERDITS,
       ...refusAgents(cwd),
       "--settings",
       REGLE_AGENTS,
@@ -721,7 +723,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     // Les outils de l'app (fils, autres IA ajoutées dans les Réglages), par son serveur MCP local.
     const capaciteComposio = espaceComposio.creerCapacite();
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, capaciteComposio);
-    if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? OUTILS_APP() : []));
+    if (acces === "projet")
+      args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? OUTILS_APP() : []), ...(serveurOrdinateur() ? [...OUTILS_ORDINATEUR_LECTURE, "ListMcpResourcesTool", "ReadMcpResourceTool"] : []));
     if (mcp) args.push("--mcp-config", mcp);
     if (options.agent) args.push("--agent", options.agent);
     if (options.sessionId) args.push("--resume", options.sessionId);
