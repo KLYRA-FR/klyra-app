@@ -32,11 +32,20 @@ const ONGLETS: Record<Onglet, { nom: string; icone: IconName }> = {
 };
 const ORDRE: Onglet[] = ["reglages", "fichiers", "taches"];
 
+/** Demande d'ouvrir le panneau sur les réglages de l'agent (clic sur son avatar ou son prénom). */
+export const OUVRIR_PANNEAU_AGENT = "klyra:panneau-agent";
+export const ouvrirPanneauAgent = () => window.dispatchEvent(new Event(OUVRIR_PANNEAU_AGENT));
+
+/** Le panneau sur l'onglet des réglages, rouvert s'il avait été fermé. */
+export function surReglages(e: EtatPanneau): EtatPanneau {
+  return { ...e, actif: "reglages", ouverts: e.ouverts.includes("reglages") ? e.ouverts : ORDRE.filter((o) => o === "reglages" || e.ouverts.includes(o)) };
+}
+
 const LARGEUR_DEFAUT = 340;
 const LARGEUR_MIN = 296;
 const CLE = "klyra-panneau-lateral";
 
-interface EtatPanneau {
+export interface EtatPanneau {
   ouverts: Onglet[];
   actif: Onglet;
   largeur: number;

@@ -26,6 +26,8 @@ import { COMMANDE_RESUME_AUTO, estCommandeCompacter, formaterJetons, nouvelleMes
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
+import { extraitMarkdown } from "@/lib/apercu/extrait";
+import { texteBrut, type Inline } from "@/lib/apercu/markdown";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
   Artefact,
@@ -2675,7 +2677,10 @@ export function useRecentChats(limit?: number): Chat[] {
 export interface ChatPreview {
   /** Rôle à afficher en avatar : auteur du dernier message, ou le Principal. */
   roleId: RoleId;
+  /** Le dernier message en texte seul, sur une ligne (Markdown retiré). */
   text: string;
+  /** Le même, avec sa mise en forme en ligne (gras, italique, code…), pour la barre. */
+  contenu: Inline[];
   /** Date du dernier message, null si la conversation est vide. */
   at: string | null;
 }
@@ -2687,17 +2692,15 @@ export function useChatPreview(chatId: string): ChatPreview {
   return useMemo(() => {
     const direct = chatId.startsWith(DIRECT);
     const last = messages.findLast((m) => m.chatId === chatId && (m.statut !== "en-cours" || texteDe(m)));
-    if (!last) return { roleId: "principal", text: "", at: null };
-    const text = texteDe(last).replace(/\s+/g, " ") || (last.statut === "erreur" ? "Arrêté sur une erreur" : "…");
-    if (last.author.kind === "user") return { roleId: "principal", text: `Toi : ${text}`, at: last.createdAt };
-    const { roleId } = last.author;
-    const name = roles.find((r) => r.id === roleId)?.name ?? "";
+    if (!last) return { roleId: "principal", text: "", contenu: [], at: null };
+    const extrait = extraitMarkdown(texteDe(last));
+    const vide = !texteBrut(extrait).trim();
+    const contenu: Inline[] = vide ? [{ type: "texte", texte: last.statut === "erreur" ? "Arrêté sur une erreur" : "…" }] : extrait;
     // Conversation directe : pas besoin de répéter le prénom de l'agent.
-    return {
-      roleId,
-      text: direct ? text : `${name} : ${text}`,
-      at: last.createdAt,
-    };
+    const roleId = last.author.kind === "user" ? "principal" : last.author.roleId;
+    const prefixe = last.author.kind === "user" ? "Toi : " : direct ? "" : `${roles.find((r) => r.id === roleId)?.name ?? ""} : `;
+    const avecPrefixe: Inline[] = prefixe ? [{ type: "texte", texte: prefixe }, ...contenu] : contenu;
+    return { roleId, text: texteBrut(avecPrefixe), contenu: avecPrefixe, at: last.createdAt };
   }, [messages, roles, chatId]);
 }
 
