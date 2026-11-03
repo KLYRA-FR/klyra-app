@@ -32,6 +32,8 @@ import {
   skillsConnues,
 } from "./connaissances-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
+import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
+import { creerRendus } from "./rendus.mjs";
 import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
@@ -55,6 +57,9 @@ function configurationValide(c) {
 const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente aucun fait : ni prix, ni délai, ni autorisation, ni horaire, coordonnée, chiffre ou promesse au nom de quelqu'un ; ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien. Ce qui se mesure (tests, liens, contrastes, rendu) se vérifie avec ce que le projet et le poste offrent déjà : trouve l'outil qu'il faut par une recherche ciblée (which, chemins habituels), n'installe rien et ne fouille pas des dossiers sans rapport sans accord, et dis ce qui n'a pas pu être vérifié.`;
 const UN_RESPONSABLE = `Un livrable, un responsable : un livrable va entier à un seul agent, celui de sa partie principale, qui fait aussi les petites parties voisines (les textes d'une page qu'il intègre, par exemple). Plusieurs agents seulement pour des parties lourdes et indépendantes, menées en parallèle, jamais en relais de l'un à l'autre : chaque passage de main fait tout relire. Une tâche que tu ferais en quelques minutes, fais-la toi-même ; si la personne demande expressément son équipe, suis-la avec le moins d'agents possible.`;
 const LIVRER_EN_FICHIERS = `Livre ton travail dans des fichiers ; ta réponse finale est un compte rendu court qui donne leurs chemins, sans recopier leur contenu.`;
+/** Comme CONSIGNE_ARTEFACTS de l'app (electron/claude.ts) : tout fichier demandé se publie avant « livré ». */
+const CONSIGNE_ARTEFACTS = `Publie avec publier_artefact (chemin complet sur ce VPS, ou dossier d'une page avec index.html ; un titre court ; à quoi il sert) chaque fichier qu'on t'a demandé de produire, quel que soit son format, que la demande vienne de la personne ou de l'agent qui t'a confié le travail, et tout rendu qu'elle doit voir : l'app en garde une copie sur son ordinateur et elle le retrouve dans l'écran Artefacts. Publie-le avant de dire que c'est livré. Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet.`;
+const OUTIL_PUBLIER = "mcp__klyra__publier_artefact";
 
 const COMMANDES_AUTORISEES = [
   "Bash(pnpm:*)",
@@ -246,7 +251,7 @@ export function creerAgents(options) {
     const equipe = actifs.length
       ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant avec un brief qui se suffit (objectif, contexte et chemins, contraintes, critère de fin, le livrable attendu dans des fichiers et un compte rendu court) ; n'en invente pas d'autre. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
       : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-    return `${qui} ${equipe} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_ATELIER}` : ""}`;
+    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_ATELIER}` : ""}`;
   }
 
   function consigneAgent(id) {
@@ -255,11 +260,15 @@ export function creerAgents(options) {
     const equipe = autres.length
       ? `Dans cette app, les agents que la personne a choisis sont : ${listeAgents(autres)}, et son assistant ${assistant ?? "l'assistant"} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais ta part et dis ce qui reste.`
       : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${assistant ?? "l'assistant"} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais ta part et dis ce qui reste.`;
-    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${REGLES_COMMUNES}`;
+    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}`;
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
-  const mcpIa = () => options.ia?.configMcp() ?? null;
+  /* Les livrables des agents (outil publier_artefact du serveur MCP local) : retenus ici, recopiés par l'app. */
+  const rendus = creerRendus({ home, donnees, publier });
+  options.ia?.surPublication((appelant, args) => rendus.publier(appelant, args));
+  /** La configuration MCP d'une session : l'agent et la conversation en en-têtes (qui publie). */
+  const mcpIa = (demande = {}) => options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation: demande.conversation ?? demande.contexte?.chatId ?? "" }) ?? null;
 
   /* ─── L'atelier d'un agent, avec l'assistant (comme sur le PC) ───── */
 
@@ -642,10 +651,10 @@ export function creerAgents(options) {
     if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
 
     const acces = demande.acces ?? "projet";
-    /* Le serveur MCP sait qui l'appelle : l'agent, et la conversation dont il suit l'atelier. */
+    /* Le serveur MCP sait qui l'appelle : l'agent, et la conversation (publication, atelier suivi). */
     const assistant = demande.agent === null;
     const conversation = typeof demande.conversation === "string" && CONVERSATION.test(demande.conversation) ? demande.conversation : "";
-    const mcp = options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation }) ?? null;
+    const mcp = mcpIa(demande);
     /* Les skills, comme dans l'app (cf. electron/connaissances-agent.ts) : celles que la fiche précharge,
        que Claude Code ne donne pas à un agent lancé seul, et `/<skill>` remis en tête du message. */
     const configClaude = path.join(home, ".claude");
@@ -693,7 +702,7 @@ export function creerAgents(options) {
         "--settings",
         REGLE_AGENTS,
       ];
-      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA, ...(assistant ? OUTILS_ATELIER : [])] : []));
+      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, ...(assistant ? OUTILS_ATELIER : [])] : []));
       if (mcp) args.push("--mcp-config", mcp);
       if (demande.agent) args.push("--agent", demande.agent);
       if (demande.sessionId) args.push("--resume", demande.sessionId);
@@ -746,5 +755,8 @@ export function creerAgents(options) {
     env: environnement,
   };
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
+  /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
+  const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
+
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
 }

@@ -104,9 +104,13 @@ test("l'atelier d'un agent sur le VPS : outils de l'assistant, carte suivie, ref
     // Les outils : à l'assistant seulement.
     const config = ia.configMcp({ agent: "principal", conversation: "dm-principal" });
     assert.ok(config, "l'assistant reçoit le serveur MCP, même sans IA ajoutée");
-    assert.equal(ia.configMcp({ agent: "lou", conversation: "dm-lou" }), null, "un autre agent n'a pas ces outils");
     const noms = (await mcp(config, "tools/list")).tools.map((t) => t.name);
-    assert.deepEqual(noms, ["proposer_agent", "proposer_choix"]);
+    assert.ok(noms.includes("proposer_agent") && noms.includes("proposer_choix"), `les outils de l'atelier pour l'assistant (${noms.join(", ")})`);
+    const configLou = ia.configMcp({ agent: "lou", conversation: "dm-lou" });
+    const nomsLou = configLou ? (await mcp(configLou, "tools/list")).tools.map((t) => t.name) : [];
+    assert.ok(!nomsLou.includes("proposer_agent") && !nomsLou.includes("proposer_choix"), "un autre agent n'a pas ces outils");
+    const refuse = configLou ? await mcp(configLou, "tools/call", { name: "proposer_agent", arguments: { nom: "Zoe" } }) : null;
+    assert.ok(!configLou || refuse.isError, "et son appel est refusé");
 
     // La carte suivie par conversation, comme sur le PC.
     const appeler = (args, cfg = config, nom = "proposer_agent") => mcp(cfg, "tools/call", { name: nom, arguments: args });

@@ -7,17 +7,19 @@
  * - `/<skill>` n'est reconnu qu'en tête : derrière le contexte de l'app, rien n'est chargé, et
  *   `promptAvecSkill` (la commande remise en tête) la charge, avec tout le message en arguments ;
  * - les `skills` d'une fiche (liste écrite par `setListe`) : préchargées par Claude Code pour un
- *   sous-agent, pas pour un agent lancé seul (`--agent`) ; `competencesPrechargees` les lui donne.
+ *   sous-agent, pas pour un agent lancé seul (`--agent`) ; `competencesPrechargees` les lui donne ;
+ * - une skill de plugin (plugin installé par `claude plugin install` depuis un dépôt local) : trouvée par
+ *   `lireCompetences` sous son nom `<plugin>:<skill>`, présentée au modèle, chargée par `/outils:…`.
  * Prérequis : Claude Code installé (sinon le test est sauté), Node 22 (types retirés à la volée).
  *   pnpm test:skills
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { competencesPrechargees, promptAvecSkill, skillsConnues } from "../electron/connaissances-agent.ts";
+import { competencesPrechargees, lireCompetences, promptAvecSkill, skillsConnues } from "../electron/connaissances-agent.ts";
 import { parseAgentFile, serializeAgentFile, setListe } from "../src/lib/agent-file.ts";
 
 const CLAUDE = [
@@ -53,6 +55,19 @@ const brut = parseAgentFile("---\nname: hugo\ndescription: \"Essai — Hugo.\"\n
 const ficheHugo = serializeAgentFile({ frontmatter: setListe(brut.frontmatter, "skills", ["rangement"]), body: brut.body });
 writeFileSync(path.join(CONFIG, "agents", "hugo.md"), ficheHugo);
 verifier(/skills:\n {2}- rangement\n/.test(ficheHugo), "la fiche écrite par l’app porte ses skills en liste YAML");
+
+/* Un plugin d'un dépôt local, installé par Claude Code lui-même, avec une skill. */
+const MARCHE = path.join(TMP, "marche");
+mkdirSync(path.join(MARCHE, ".claude-plugin"), { recursive: true });
+mkdirSync(path.join(MARCHE, "outils", ".claude-plugin"), { recursive: true });
+mkdirSync(path.join(MARCHE, "outils", "skills", "deploi-rapide"), { recursive: true });
+writeFileSync(path.join(MARCHE, ".claude-plugin", "marketplace.json"), JSON.stringify({ name: "essai", owner: { name: "KLYRA" }, plugins: [{ name: "outils", source: "./outils", description: "Outils d’essai", version: "1.0.0" }] }));
+writeFileSync(path.join(MARCHE, "outils", ".claude-plugin", "plugin.json"), JSON.stringify({ name: "outils", version: "1.0.0", description: "Outils d’essai" }));
+writeFileSync(path.join(MARCHE, "outils", "skills", "deploi-rapide", "SKILL.md"), "---\nname: deploi-rapide\ndescription: Déploie vite, skill de plugin.\n---\n\nSKILL-PLUGIN-TEXTE\n");
+const claudePlugin = (...args) => spawnSync(CLAUDE, ["plugin", ...args], { cwd: PROJET, env: { PATH: process.env.PATH, HOME, DISABLE_TELEMETRY: "1", DISABLE_AUTOUPDATER: "1" }, encoding: "utf8", timeout: 60_000 });
+const ajoutMarche = claudePlugin("marketplace", "add", MARCHE);
+const installation = claudePlugin("install", "outils@essai");
+verifier(ajoutMarche.status === 0 && installation.status === 0, `plugin d’essai installé par Claude Code ${ajoutMarche.status === 0 && installation.status === 0 ? "" : `(${(ajoutMarche.stderr + installation.stderr).slice(0, 300)})`}`);
 
 /* Le faux fournisseur : « utilise <skill> » appelle l'outil Skill, « appelle <agent> » l'outil Agent. */
 const texte = (c) => (typeof c === "string" ? c : (c ?? []).map((x) => (x.type === "text" ? x.text : x.type === "tool_result" ? JSON.stringify(x.content) : "")).join("\n"));
@@ -136,6 +151,13 @@ try {
   verifier(envoye.startsWith("/rangement\n\n") && charge(r), "/rangement remis en tête : la skill est chargée");
   verifier(r.requetes.some((q) => q.tout.includes("ARGUMENTS: [Contexte]") && q.tout.includes("range le dossier")), "avec tout le message de l’app en arguments");
   verifier(promptAvecSkill(contexte, "inconnue", skillsConnues(CONFIG, PROJET)) === contexte, "une skill inconnue laisse le message tel quel");
+
+  const plugins = lireCompetences(null, CONFIG, PROJET).plugins;
+  verifier(plugins.some((p) => p.nom === "outils:deploi-rapide" && p.description === "Déploie vite, skill de plugin."), "lireCompetences trouve la skill du plugin, sous son nom outils:deploi-rapide");
+  const avecPlugin = await tour("bonjour");
+  verifier(!!avecPlugin.evenements.find((e) => e.subtype === "init")?.skills?.includes("outils:deploi-rapide") && avecPlugin.requetes[0]?.tout.includes("- outils:deploi-rapide: Déploie vite, skill de plugin."), "Claude Code la présente au modèle sous le même nom");
+  const contextePlugin = "[Contexte] Essai.\n\n[Message de Corentin]\n/outils:deploi-rapide vas-y";
+  verifier(charge(await tour(promptAvecSkill(contextePlugin, "outils:deploi-rapide", skillsConnues(CONFIG, PROJET))), "SKILL-PLUGIN-TEXTE"), "/outils:deploi-rapide remis en tête : la skill du plugin est chargée");
 
   const sous = await tour("appelle hugo", { mode: "acceptEdits" });
   verifier(sous.requetes.some((q) => q.sousAgent && q.tout.includes("SKILL-RANGEMENT-TEXTE")), "sous-agent : Claude Code précharge les skills de sa fiche");

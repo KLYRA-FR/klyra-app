@@ -1,4 +1,5 @@
 import type { Competence, Competences, Memoire, PorteeMemoire, Souvenir } from "./connaissances-agent";
+import type { DiagnosticPoste, ElementPoste } from "./diagnostic-poste";
 import { appel, VIEUX_SERVEUR } from "./fournisseurs-vps";
 
 /**
@@ -59,7 +60,7 @@ export async function competencesVps(origine: string, jeton: string | null, agen
   const brut = json.competences as Json | undefined;
   if (!brut || typeof brut !== "object") throw new Error("Le VPS n’a pas répondu comme prévu.");
   const liste = (v: unknown) => (Array.isArray(v) ? v.map(competenceDe).filter((c): c is Competence => c !== null) : []);
-  return { fiche: liste(brut.fiche), poste: liste(brut.poste), projet: liste(brut.projet) };
+  return { fiche: liste(brut.fiche), poste: liste(brut.poste), projet: liste(brut.projet), plugins: liste(brut.plugins) };
 }
 
 /* ─── Mémoire ─────────────────────────────────────────────────── */
@@ -117,4 +118,30 @@ export async function creerSouvenirVps(origine: string, jeton: string | null, ag
   const s = souvenirDe(json.souvenir);
   if (!s) throw new Error("Le VPS n’a pas répondu comme prévu.");
   return s;
+}
+
+/* ─── Diagnostic du serveur ───────────────────────────────────── */
+
+const CLES_DIAGNOSTIC: ElementPoste["cle"][] = ["claude-md", "skills", "agents", "plugins", "mcp"];
+
+/** Ce que la configuration de Claude Code du VPS ajoute à chaque appel de ses agents (Réglages du serveur › Général). */
+export async function diagnosticVps(origine: string, jeton: string | null): Promise<DiagnosticPoste> {
+  const d = (await demander(origine, jeton, "/klyra/v1/agent/diagnostic")).diagnostic as Json | undefined;
+  if (!d || !Array.isArray(d.elements)) throw new Error("Le VPS n’a pas répondu comme prévu.");
+  const elements = d.elements
+    .map((e): ElementPoste | null => {
+      const x = (e ?? {}) as Json;
+      if (!CLES_DIAGNOSTIC.includes(x.cle as ElementPoste["cle"]) || typeof x.libelle !== "string") return null;
+      return {
+        cle: x.cle as ElementPoste["cle"],
+        libelle: x.libelle,
+        detail: typeof x.detail === "string" ? x.detail : "",
+        jetons: typeof x.jetons === "number" ? x.jetons : null,
+        conseil: typeof x.conseil === "string" ? x.conseil : null,
+        // Un fichier du serveur : il ne s'ouvre pas sur ce poste.
+        chemin: null,
+      };
+    })
+    .filter((e): e is ElementPoste => e !== null);
+  return { elements, total: typeof d.total === "number" ? d.total : elements.reduce((n, e) => n + (e.jetons ?? 0), 0) };
 }

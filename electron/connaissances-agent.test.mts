@@ -14,6 +14,9 @@ import {
   nomDeFichier,
   porteeDeLaFiche,
   competencesPrechargees,
+  consigneSkillsCodex,
+  lireSkillsPlugins,
+  promptAvecSkillCodex,
   promptAvecSkill,
   skillEnTete,
   skillsConnues,
@@ -174,6 +177,54 @@ test("les skills connues du poste et du projet, et ce que la fiche précharge", 
     assert.match(p.texte ?? "", /Introuvables sur ce poste, donc absentes : absente\./);
     assert.deepEqual(competencesPrechargees("---\nname: a\n---\n", config, projet), { noms: [], texte: null });
     assert.deepEqual(competencesPrechargees(null, config, projet), { noms: [], texte: null });
+  } finally {
+    fin();
+  }
+});
+
+test("pour Codex : les skills de Claude présentées par leur fichier, et la compétence demandée à lire d'abord", () => {
+  const { config, projet, fin } = poste();
+  try {
+    mkdirSync(path.join(config, "skills", "rangement"), { recursive: true });
+    writeFileSync(path.join(config, "skills", "rangement", "SKILL.md"), "---\nname: rangement\ndescription: Range les fichiers\n---\n\nTrie par extension.\n");
+    mkdirSync(path.join(projet, ".claude", "skills", "deploi"), { recursive: true });
+    writeFileSync(path.join(projet, ".claude", "skills", "deploi", "SKILL.md"), "---\nname: deploi\ndescription: Déploie\n---\n\nÉtapes.\n");
+    const c = consigneSkillsCodex("---\nskills:\n  - rangement\n---\n", config, projet);
+    assert.deepEqual(c.noms, ["deploi", "rangement", "fiche:rangement"]);
+    assert.match(c.texte ?? "", /- rangement: Range les fichiers \(fichier : .*rangement\/SKILL\.md\)/);
+    assert.match(c.texte ?? "", /- deploi: Déploie \(fichier : .*deploi\/SKILL\.md\)/);
+    assert.match(c.texte ?? "", /<competence nom="rangement">[\s\S]*Trie par extension\./);
+    assert.deepEqual(consigneSkillsCodex(null, path.join(config, "vide"), null), { noms: [], texte: null });
+    const prompt = "[Contexte] Essai.\n\n[Message de Corentin]\n/rangement range";
+    assert.match(promptAvecSkillCodex(prompt, "rangement", config, projet), /^\[La personne demande la compétence « rangement » : lis .*rangement\/SKILL\.md avant de répondre, et suis-la\.\]\n\n\[Contexte\]/);
+    assert.equal(promptAvecSkillCodex(prompt, "inconnue", config, projet), prompt);
+    assert.equal(promptAvecSkillCodex(prompt, "../x", config, projet), prompt);
+  } finally {
+    fin();
+  }
+});
+
+test("les skills des plugins activés, nommées <plugin>:<skill>, comme Claude Code les trouve", () => {
+  const { config, projet, fin } = poste();
+  try {
+    const installe = (id: string) => {
+      const dossier = path.join(config, "plugins", "cache", "essai", id.split("@")[0], "1.0.0");
+      mkdirSync(path.join(dossier, "skills", "deploi-rapide"), { recursive: true });
+      writeFileSync(path.join(dossier, "skills", "deploi-rapide", "SKILL.md"), "---\nname: deploi-rapide\ndescription: Déploie vite\n---\n\nTexte.\n");
+      return [{ scope: "user", installPath: dossier, version: "1.0.0" }];
+    };
+    mkdirSync(path.join(config, "plugins"), { recursive: true });
+    writeFileSync(path.join(config, "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins: { "outils@essai": installe("outils@essai"), "coupe@essai": installe("coupe@essai"), "projetonly@essai": installe("projetonly@essai") } }));
+    writeFileSync(path.join(config, "settings.json"), JSON.stringify({ enabledPlugins: { "outils@essai": true, "coupe@essai": false } }));
+    mkdirSync(path.join(projet, ".claude"), { recursive: true });
+    writeFileSync(path.join(projet, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "projetonly@essai": true } }));
+    assert.deepEqual(lireSkillsPlugins(config, null).map((s) => s.nom), ["outils:deploi-rapide"]);
+    assert.deepEqual(lireSkillsPlugins(config, projet).map((s) => s.nom), ["outils:deploi-rapide", "projetonly:deploi-rapide"]);
+    assert.ok(skillsConnues(config, null).has("outils:deploi-rapide"));
+    const c = lireCompetences("---\nskills: outils:deploi-rapide\n---\n", config, null);
+    assert.deepEqual([c.fiche[0].nom, !!c.fiche[0].dossier, c.plugins.length], ["outils:deploi-rapide", true, 1]);
+    assert.match(consigneSkillsCodex(null, config, null).texte ?? "", /- outils:deploi-rapide: Déploie vite/);
+    assert.deepEqual(lireSkillsPlugins(path.join(config, "absent"), null), []);
   } finally {
     fin();
   }

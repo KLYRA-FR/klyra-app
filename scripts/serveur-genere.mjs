@@ -6,6 +6,8 @@
  * - `serveur/atelier.mjs` : le dossier de chaque agent hors projet (electron/atelier.ts) ;
  * - `serveur/connaissances-agent.mjs` : les skills et la mémoire d'un agent (electron/connaissances-agent.ts) ;
  * - `serveur/consommation-ecart.mjs` : ce qu'un tour de Claude Code a consommé (electron/consommation-ecart.ts) ;
+ * - `serveur/diagnostic-poste.mjs` : ce que la configuration de Claude Code ajoute à chaque appel (electron/diagnostic-poste.ts) ;
+ * - `serveur/consignes-projet.mjs` : les consignes KLYRA d'un projet, AGENTS.md et CLAUDE.md (electron/consignes-projet.ts) ;
  * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
  *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture).
  * Un import entre fichiers générés (`./epreuve`) devient `./epreuve.mjs` ; tout autre import relatif est refusé.
@@ -22,6 +24,8 @@ const FICHIERS = [
   ["electron/atelier.ts", "serveur/atelier.mjs"],
   ["electron/connaissances-agent.ts", "serveur/connaissances-agent.mjs"],
   ["electron/consommation-ecart.ts", "serveur/consommation-ecart.mjs"],
+  ["electron/diagnostic-poste.ts", "serveur/diagnostic-poste.mjs"],
+  ["electron/consignes-projet.ts", "serveur/consignes-projet.mjs"],
   ["electron/epreuve.ts", "serveur/epreuve.mjs"],
   ["electron/json-partiel.ts", "serveur/json-partiel.mjs"],
   ["electron/atelier-agent.ts", "serveur/atelier-agent.mjs"],

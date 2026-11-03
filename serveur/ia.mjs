@@ -17,6 +17,22 @@ import { FOURNISSEURS } from "./ia-catalogue.mjs";
 
 export { FOURNISSEURS };
 
+/** Un agent montre ce qu'il a produit : le fichier rejoint l'écran Artefacts de l'app (cf. serveur/rendus.mjs). */
+const OUTIL_PUBLIER = {
+  name: "publier_artefact",
+  description:
+    "Publie dans l'écran Artefacts de la personne un fichier que tu as produit sur ce VPS : tout fichier qu'on t'a demandé, quel que soit son format (texte, tableur, document, page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app), et tout rendu qu'elle doit voir. L'app en garde une copie sur son ordinateur, montre un aperçu et l'ouvre d'un clic ; l'original reste où il est. Une page qui a des ressources (images, CSS, JS) se publie par son dossier, qui doit contenir index.html (300 Mo au plus, sans node_modules ni .git). Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet. Republier le même fichier remplace sa copie.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      chemin: { type: "string", description: "Le chemin complet du fichier (ou du dossier d'une page avec index.html), sur ce VPS." },
+      titre: { type: "string", description: "Un titre court (80 caractères au plus), ex. « Maquette de la page d'accueil »." },
+      description: { type: "string", description: "À quoi il sert, en une phrase (500 caractères au plus)." },
+    },
+    required: ["chemin", "titre"],
+  },
+};
+
 const OUTIL_DEMANDER = {
   name: "demander_ia",
   description:
@@ -28,6 +44,8 @@ export function creerIa(options) {
   const fichier = path.join(options.donnees, "ia.json");
   const appeler = options.fetch ?? fetch;
   let generation = 0;
+  /** Qui reçoit les publications (serveur/rendus.mjs, branché par agents.mjs) ; sans lui, l'outil n'est pas proposé. */
+  let publication = null;
 
   function lire() {
     try {
@@ -148,6 +166,7 @@ export function creerIa(options) {
         return resultat({});
       case "tools/list": {
         const noms = lire().map((i) => i.nom);
+        const publier = publication ? [OUTIL_PUBLIER] : [];
         const outils = noms.length
           ? [
               {
@@ -163,10 +182,18 @@ export function creerIa(options) {
               },
             ]
           : [];
-        return resultat({ tools: [...outils, ...(outilsApp?.lister(appelant) ?? [])] });
+        return resultat({ tools: [...outils, ...publier, ...(outilsApp?.lister(appelant) ?? [])] });
       }
       case "tools/call": {
         const nom = String(msg.params?.name ?? "");
+        if (nom === OUTIL_PUBLIER.name && publication) {
+          /* L'agent et la conversation de la session, posés dans sa configuration MCP (cf. configMcp). */
+          try {
+            return texte(publication(appelant, msg.params?.arguments ?? {}));
+          } catch (e) {
+            return texte(e instanceof Error ? e.message : String(e), true);
+          }
+        }
         const args = msg.params?.arguments ?? {};
         const autre = nom === OUTIL_DEMANDER.name ? null : await outilsApp?.appeler(nom, args, appelant);
         if (autre) return texte(autre.texte, autre.erreur);
@@ -205,14 +232,18 @@ export function creerIa(options) {
   }
 
   /**
-   * La configuration MCP d'une session (format `--mcp-config` de Claude Code) ; null sans IA ajoutée ni
-   * outil de l'app pour cet appelant. `appelant` : l'agent et la conversation (clé de l'atelier).
+   * La configuration MCP d'une session (format `--mcp-config` de Claude Code) : l'agent et la conversation
+   * en en-têtes, pour savoir qui publie et quel atelier suivre. Null sans outil à proposer (ni IA ajoutée,
+   * ni publication, ni outil de l'app pour cet appelant).
    */
-  function configMcp(appelant = null) {
+  function configMcp(appelant = {}) {
     if (!serveur) return null;
-    const autres = appelant ? (outilsApp?.lister(appelant).length ?? 0) : 0;
-    if (!lire().length && !autres) return null;
-    const qui = appelant ? { "X-Klyra-Agent": appelant.agent, ...(appelant.conversation ? { "X-Klyra-Conversation": appelant.conversation } : {}) } : {};
+    const autres = typeof appelant.agent === "string" ? (outilsApp?.lister({ agent: appelant.agent, conversation: appelant.conversation ?? "" }).length ?? 0) : 0;
+    if (!lire().length && !publication && !autres) return null;
+    const qui = {
+      ...(typeof appelant.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(appelant.agent) ? { "X-Klyra-Agent": appelant.agent } : {}),
+      ...(typeof appelant.conversation === "string" && /^[A-Za-z0-9_.:@-]{1,120}$/.test(appelant.conversation) ? { "X-Klyra-Conversation": appelant.conversation } : {}),
+    };
     return JSON.stringify({ mcpServers: { klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}`, ...qui } } } });
   }
 
@@ -225,6 +256,10 @@ export function creerIa(options) {
     demarrer,
     configMcp,
     brancherOutils,
+    /** Branche l'outil `publier_artefact` : `fn(appelant, arguments)` rend le texte pour l'agent, ou lève. */
+    surPublication: (fn) => {
+      publication = fn;
+    },
     /** Change à chaque ajout ou retrait : un agent ouvert est relancé avec la liste à jour. */
     generation: () => generation,
     fermer: () => http?.close(),

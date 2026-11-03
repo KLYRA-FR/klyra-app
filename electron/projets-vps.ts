@@ -1,4 +1,5 @@
 import { net } from "electron";
+import type { EtatConsignesProjet } from "./consignes-projet";
 import { contenuFichier, type ContenuFichier, type Noeud } from "./projets";
 
 /**
@@ -48,4 +49,12 @@ export async function creerDossierVps(origine: string, jeton: string | null, dos
   const json = await appel(origine, jeton, `/klyra/v1/fichiers/dossier?${requete(dossier)}`, "POST");
   if (typeof json.dossier !== "string") throw new Error("Réponse illisible du VPS.");
   return json.dossier;
+}
+
+/** Les consignes KLYRA d'un projet du VPS (serveur/fichiers.mjs, même module que sur ce PC). */
+export async function consignesVps(origine: string, jeton: string | null, dossier: string, nom: string, ecrire = false): Promise<EtatConsignesProjet> {
+  const json = await appel(origine, jeton, `/klyra/v1/fichiers/consignes?${requete(dossier)}&nom=${encodeURIComponent(nom)}`, ecrire ? "POST" : "GET");
+  const c = json.consignes as EtatConsignesProjet | undefined;
+  if (!c || typeof c !== "object" || !Array.isArray(c.propositions)) throw new Error("Réponse illisible du VPS.");
+  return c;
 }

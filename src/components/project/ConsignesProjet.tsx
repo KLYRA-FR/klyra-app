@@ -6,11 +6,12 @@ import { Bouton } from "@/components/ui/Bouton";
 import { getBridge, unwrap } from "@/lib/bridge";
 import type { Project } from "@/types/domain";
 import type { EtatConsignesProjet } from "../../../electron/consignes-projet";
+import { ouvrirFichier as ouvrirDansVisionneuse } from "./Visionneuse";
 
 /**
  * Les consignes du projet pour ses agents (electron/consignes-projet.ts) : un AGENTS.md court à remplir,
  * lu par Claude et ChatGPT, en un clic. L'aperçu montre ce qui sera écrit ; rien n'est écrasé.
- * Projets de ce poste seulement (un projet sur un VPS n'a pas encore cette carte).
+ * Projet de ce poste ou d'un VPS : le même module, lu et écrit là où est le projet.
  */
 export function ConsignesProjet({ project }: { project: Project }) {
   const pont = getBridge()?.projets;
@@ -18,33 +19,38 @@ export function ConsignesProjet({ project }: { project: Project }) {
   const [apercu, setApercu] = useState(false);
   const [cree, setCree] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const local = !project.lieu && !!pont?.consignes;
+  const disponible = !!pont?.consignes;
+  const lieu = project.lieu ?? null;
 
   useEffect(() => {
-    if (!local || !pont?.consignes) return;
+    if (!disponible || !pont?.consignes) return;
     let actif = true;
     pont
-      .consignes(project.folder, project.name)
+      .consignes(project.folder, project.name, lieu)
       .then((r) => actif && setEtat(unwrap(r)))
       .catch((e: unknown) => actif && setErreur(e instanceof Error ? e.message : String(e)));
     return () => {
       actif = false;
     };
-  }, [local, pont, project.folder, project.name]);
+  }, [disponible, pont, project.folder, project.name, lieu]);
 
-  if (!local || (!etat && !erreur)) return null;
+  if (!disponible || (!etat && !erreur)) return null;
 
   const ecrire = async () => {
     setErreur(null);
     try {
-      setEtat(unwrap(await pont!.ecrireConsignes!(project.folder, project.name)));
+      setEtat(unwrap(await pont!.ecrireConsignes!(project.folder, project.name, lieu)));
       setApercu(false);
       setCree(true);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     }
   };
-  const ouvrir = () => void pont!.ouvrirFichier(project.folder, "AGENTS.md").then(unwrap).catch((e: unknown) => setErreur(e instanceof Error ? e.message : String(e)));
+  // Sur un VPS, le fichier est sur le serveur : il s'ouvre dans la visionneuse du projet.
+  const ouvrir = () =>
+    lieu
+      ? ouvrirDansVisionneuse({ projectId: project.id, chemin: "AGENTS.md" })
+      : void pont!.ouvrirFichier(project.folder, "AGENTS.md").then(unwrap).catch((e: unknown) => setErreur(e instanceof Error ? e.message : String(e)));
   const enPlace = !!etat && etat.propositions.length === 0;
 
   return (
