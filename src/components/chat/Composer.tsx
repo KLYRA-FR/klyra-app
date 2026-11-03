@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
+import { BoutonIcone } from "@/components/ui/Bouton";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { getBridge } from "@/lib/bridge";
 import { garderBrouillon, lireBrouillons, prendreDemandeEcriture, surBrouillon } from "@/lib/brouillons";
@@ -13,8 +14,9 @@ import { analyserCollage, estCaptureCollee } from "@/lib/collage";
 import { nomFichier } from "@/lib/fichiers";
 import { useCompteClaude } from "@/lib/compte-claude";
 import { findMention } from "@/lib/mentions";
+import { surRepondre } from "@/lib/repondre";
 import { useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
-import type { Chat, Project, Role, RoleId } from "@/types/domain";
+import type { Chat, Citation, Project, Role, RoleId } from "@/types/domain";
 import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
 
@@ -136,6 +138,20 @@ function FileAttente({ chatId, roleId }: { chatId: string; roleId: RoleId }) {
   );
 }
 
+/** Au-dessus du champ : le message d'agent auquel on répond, à retirer d'un clic. */
+function BandeauReponse({ citation, onRetirer }: { citation: Citation; onRetirer: () => void }) {
+  const role = useRole(citation.roleId);
+  return (
+    <div className="mb-1.5 flex items-start gap-2 rounded-lg border border-bordure-subtile bg-fond-surface-grise py-2 pr-1.5 pl-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-ui-2xs font-medium text-texte-tertiaire">Réponse à {role.name}</span>
+        <span className="line-clamp-2 text-ui-xs leading-[1.45] text-texte-secondaire">{citation.extrait}</span>
+      </div>
+      <BoutonIcone variant="discret" taille="mini" icone={<Icon name="x-01" size={14} />} libelle="Ne plus répondre à ce message" onClick={onRetirer} />
+    </div>
+  );
+}
+
 /** Composeur sous le fil d'un chat. */
 export function Composer({ chat, project }: { chat: Chat; project: Project | undefined }) {
   const roles = useRoles();
@@ -180,6 +196,16 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       placer();
     });
   }, [chat.id]);
+  /* « Répondre » sous une réponse d'agent : le message auquel on répond, au-dessus du champ. */
+  const [citation, setCitation] = useState<Citation | null>(null);
+  useEffect(
+    () =>
+      surRepondre(chat.id, (c) => {
+        setCitation(c);
+        requestAnimationFrame(() => champ.current?.focus());
+      }),
+    [chat.id],
+  );
   const [depot, setDepot] = useState(false);
   const [alerte, setAlerte] = useState<string | null>(null);
   const zone = useRef<HTMLDivElement>(null);
@@ -295,7 +321,14 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   const onToucheAvant = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
-    if (!proposes.length) return false;
+    if (!proposes.length) {
+      // Échap retire la réponse en cours, sans toucher au texte.
+      if (event.key === "Escape" && citation) {
+        setCitation(null);
+        return true;
+      }
+      return false;
+    }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const pas = event.key === "ArrowDown" ? 1 : -1;
@@ -317,7 +350,8 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const submit = () => {
     const recipient = direct ? null : to === AUTO ? findMention(text, roles) : to;
     const texte = text.trim() || (fichiers.length > 1 ? "Regarde ces fichiers." : "Regarde ce fichier.");
-    sendMessage(chat.id, texte, recipient, fichiers);
+    sendMessage(chat.id, texte, recipient, fichiers, citation ?? undefined);
+    setCitation(null);
     setText("");
     setCurseur(0);
     setFichiers([]);
@@ -345,6 +379,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       {travail && <FileAttente chatId={chat.id} roleId={travail.roleId} />}
       <div className="relative">
         {proposes.length > 0 && <ListeMentions roles={proposes} actif={Math.min(actif, proposes.length - 1)} onChoisir={choisir} />}
+        {citation && <BandeauReponse citation={citation} onRetirer={() => setCitation(null)} />}
         <PromptBox
           ref={champ}
           value={text}

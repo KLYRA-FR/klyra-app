@@ -15,7 +15,7 @@ import { requeteRetenue } from "@/lib/recherche-session";
 import { DEPART_ROUTINE } from "@/lib/message-routine";
 import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
-import { ActionsReponse } from "./ActionsReponse";
+import { ActionsReponse, Reactions } from "./ActionsReponse";
 import { MenuMessage, type CibleMessage } from "./MenuMessage";
 import { MessagePartView } from "./MessageParts";
 import { RailMessages } from "./RailMessages";
@@ -221,6 +221,7 @@ function RoleMessage({
             {message.erreur ?? "L’agent s’est arrêté sur une erreur."}
           </p>
         )}
+        <Reactions message={message} />
         {!enCours && <ActionsReponse chat={chat} message={message} derniere={derniere} />}
       </div>
     </div>
