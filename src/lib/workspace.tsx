@@ -521,7 +521,7 @@ export function estConversationAgent(id: string | null | undefined): boolean {
 /** Titre d'un fil tant qu'il n'a pas de premier message. */
 export const FIL_SANS_TITRE = "Nouveau fil";
 
-/** Titre d'un nouveau chat : le début du premier message. */
+/** Titre provisoire d'un chat : le début du premier message, en attendant celui de l'IA (`titrer`). */
 function chatTitle(text: string): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > 42 ? `${clean.slice(0, 40).trimEnd()}…` : clean;
@@ -1295,6 +1295,24 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     lancerTot.current = lancer;
   });
 
+  /**
+   * Le titre provisoire (début du texte) remplacé par la demande comprise, en
+   * quelques mots, par l'IA. Un titre changé entre-temps (renommé) est gardé.
+   */
+  const titrer = useCallback(
+    (chatId: string, texte: string) => {
+      const titre = bridge?.claude.titre;
+      if (!titre || !texte.trim()) return;
+      const provisoire = chatTitle(texte);
+      void titre(texte).then((r) => {
+        if (!r.ok || !r.data) return;
+        const propre = r.data;
+        dispatch({ type: "chat/update", id: chatId, patch: (c) => (c.title === provisoire ? { ...c, title: propre } : c) });
+      });
+    },
+    [bridge],
+  );
+
   /** La conversation, créée si c'est la première fois qu'on s'adresse à cet agent en direct. */
   const assurerChat = useCallback((chatId: string): Chat | undefined => {
     let chat = stateRef.current.chats.find((c) => c.id === chatId);
@@ -1342,9 +1360,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         return idFile;
       }
 
-      // Un fil sans titre prend le début de son premier message.
+      // Un fil sans titre prend le début de son premier message, puis le titre que l'IA en tire.
       if (chat.fil && chat.title === FIL_SANS_TITRE && text.trim()) {
         dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, title: chatTitle(text) }) });
+        titrer(chatId, text);
       }
 
       const message: Message = {
@@ -1367,7 +1386,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       timers.current.push(setTimeout(() => lancerRef.current(chatId, roleId, message), 0));
       return message.id;
     },
-    [assurerChat],
+    [assurerChat, titrer],
   );
   useEffect(() => {
     envoyerRef.current = envoyer;
@@ -1519,8 +1538,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       chats: [chat, ...stateRef.current.chats],
     };
     envoyerRef.current(id, text, to, fichiers);
+    titrer(id, text);
     return id;
-  }, []);
+  }, [titrer]);
 
   const arreter = useCallback(
     (chatId: string) => {
@@ -1657,6 +1677,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
           const id = creerFil(agent, titre || brief, lanceur, ticket);
+          if (!titre) titrer(id, brief);
           if (lanceur) {
             dispatch({ type: "chat/update", id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: true } } : c) });
           }
@@ -1828,7 +1849,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         }
       })();
     });
-  }, [bridge, creerFil, archiverFil, arreter]);
+  }, [bridge, creerFil, archiverFil, arreter, titrer]);
 
   const nouvelleConversation = useCallback((chatId: string) => {
     if (stateRef.current.travail[chatId]) return;
