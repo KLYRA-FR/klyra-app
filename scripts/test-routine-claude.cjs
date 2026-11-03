@@ -51,16 +51,16 @@ class FauxProcessus extends EventEmitter {
 
 /** Un module compilé pur, avec les chemins simulés du test (posix), même sous Windows. */
 function chargerAvecCheminsPosix(fichier) {
-  const module = { exports: {} };
+  const charge = { exports: {} };
   vm.runInNewContext(readFileSync(fichier, "utf8"), {
-    exports: module.exports,
-    module,
+    exports: charge.exports,
+    module: charge,
     require: (nom) => {
       assert.ok(nom === "node:path", `Dépendance non simulée interdite : ${nom}`);
       return path.posix;
     },
   }, { filename: fichier });
-  return module.exports;
+  return charge.exports;
 }
 
 function fixture() {

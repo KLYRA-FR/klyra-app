@@ -2,7 +2,7 @@ import type { Rendu, TypeRendu } from "@/types/domain";
 
 /**
  * Les rendus des agents (outil `publier_artefact`) : ce qu'un agent publie, lu et rangé sans Electron.
- * Le fichier reste où l'agent l'a écrit : on ne garde que son chemin, un titre et à quoi il sert.
+ * L'app en garde une copie dans l'espace de l'agent (cf. `electron/rendus.ts`), avec un titre et à quoi il sert.
  */
 
 const TYPES: [RegExp, TypeRendu][] = [
@@ -42,10 +42,15 @@ export function lirePublication(args: Record<string, unknown>): PublicationRendu
   return { chemin, titre: titre.slice(0, 80), description: description.slice(0, 500) };
 }
 
-/** Publier deux fois le même fichier met à jour son rendu (titre, description, date) au lieu d'en ajouter un. */
+/** L'original déjà publié : sa fiche, pour remplacer sa copie au lieu d'en ajouter une. */
+export function renduDeLOrigine(rendus: Rendu[], origine: string): Rendu | undefined {
+  return rendus.find((r) => r.origine === origine);
+}
+
+/** Publier deux fois le même original met son rendu à jour (copie, titre, description, date) et le remonte. */
 export function publierRendu(rendus: Rendu[], nouveau: Rendu): Rendu[] {
-  const existant = rendus.find((r) => r.chemin === nouveau.chemin);
+  const existant = renduDeLOrigine(rendus, nouveau.origine);
   if (!existant) return [nouveau, ...rendus];
-  const misAJour: Rendu = { ...existant, titre: nouveau.titre, description: nouveau.description, type: nouveau.type, roleId: nouveau.roleId, chatId: nouveau.chatId, projectId: nouveau.projectId, misAJour: nouveau.misAJour };
+  const misAJour: Rendu = { ...nouveau, id: existant.id, ajouteLe: existant.ajouteLe };
   return [misAJour, ...rendus.filter((r) => r.id !== existant.id)];
 }

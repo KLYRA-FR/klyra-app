@@ -398,8 +398,12 @@ export type TypeRendu = "page" | "image" | "video" | "pdf" | "document";
  */
 export interface Rendu {
   id: string;
-  /** Chemin complet du fichier, sur ce PC. */
+  /** La copie gardée par l'app (`~/.klyra/rendus/<agent>/…`) : fichier, ou dossier d'une page avec ses ressources. */
   chemin: string;
+  /** Le fichier publié par l'agent, là où il l'a mis. */
+  origine: string;
+  /** Octets de la copie. */
+  taille: number;
   titre: string;
   description: string;
   type: TypeRendu;

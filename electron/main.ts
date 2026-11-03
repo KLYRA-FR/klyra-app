@@ -120,7 +120,7 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
-import { montrerRendu, ouvrirRendu, vignetteRendu } from "./rendus";
+import { copierRendu, enregistrerRenduDans, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { arbreVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
@@ -635,6 +635,10 @@ function registerBridge() {
   handle("rendus:vignette", (chemin: string, forcer: boolean) => vignetteRendu(chemin, !!forcer));
   handle("rendus:ouvrir", (chemin: string) => ouvrirRendu(chemin));
   handle("rendus:montrer", (chemin: string) => montrerRendu(chemin));
+  handle("rendus:copier", (origine: string, agent: string, remplace: string | null) => copierRendu(origine, agent, remplace));
+  handle("rendus:supprimer", (chemin: string) => supprimerCopieRendu(chemin));
+  handle("rendus:enregistrer", (chemin: string, dossier: string | null) => enregistrerRenduDans(chemin, dossier));
+  handle("rendus:dossier-agent", (agent: string, quoi: string) => ouvrirDossierAgent(agent, quoi));
   handle("claude-ai:etat", () => etatClaudeAi());
   handle("claude-ai:connexion", () => connecterClaudeAi(BrowserWindow.getFocusedWindow() ?? undefined));
   handle("claude-ai:deconnexion", () => deconnecterClaudeAi());

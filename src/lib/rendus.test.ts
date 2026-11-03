@@ -4,7 +4,9 @@ import { estCheminComplet, lirePublication, nomDuFichier, publierRendu, typeDeRe
 
 const rendu = (r: Partial<Rendu>): Rendu => ({
   id: "r1",
-  chemin: "/home/alice/.klyra/atelier/designer/maquette.html",
+  chemin: "/home/alice/.klyra/rendus/designer/2026-11-03 maquette.html",
+  origine: "/home/alice/.klyra/atelier/designer/maquette.html",
+  taille: 1200,
   titre: "Maquette",
   description: "",
   type: "page",
@@ -38,12 +40,12 @@ describe("rendus des agents", () => {
     expect(lirePublication({ chemin: "/tmp/a.png", titre: "x".repeat(200), description: "y".repeat(900) })).toMatchObject({ titre: "x".repeat(80), description: "y".repeat(500) });
   });
 
-  test("republier le même fichier met son rendu à jour et le remonte", () => {
-    const autre = rendu({ id: "r2", chemin: "/tmp/autre.png", type: "image" });
+  test("republier le même original met son rendu à jour (nouvelle copie) et le remonte", () => {
+    const autre = rendu({ id: "r2", chemin: "/r/autre.png", origine: "/tmp/autre.png", type: "image" });
     const liste = [autre, rendu({})];
-    const apres = publierRendu(liste, rendu({ id: "neuf", titre: "Maquette v2", description: "Accueil", misAJour: "2026-11-03T12:00:00.000Z" }));
+    const apres = publierRendu(liste, rendu({ id: "neuf", chemin: "/r/2026-11-04 maquette.html", titre: "Maquette v2", description: "Accueil", ajouteLe: "2026-11-04T12:00:00.000Z", misAJour: "2026-11-04T12:00:00.000Z" }));
     expect(apres.map((r) => r.id)).toEqual(["r1", "r2"]);
-    expect(apres[0]).toMatchObject({ titre: "Maquette v2", description: "Accueil", ajouteLe: "2026-11-03T10:00:00.000Z", misAJour: "2026-11-03T12:00:00.000Z" });
-    expect(publierRendu(liste, rendu({ id: "r3", chemin: "/tmp/nouveau.pdf" })).map((r) => r.id)).toEqual(["r3", "r2", "r1"]);
+    expect(apres[0]).toMatchObject({ chemin: "/r/2026-11-04 maquette.html", titre: "Maquette v2", description: "Accueil", ajouteLe: "2026-11-03T10:00:00.000Z", misAJour: "2026-11-04T12:00:00.000Z" });
+    expect(publierRendu(liste, rendu({ id: "r3", chemin: "/r/n.pdf", origine: "/tmp/nouveau.pdf" })).map((r) => r.id)).toEqual(["r3", "r2", "r1"]);
   });
 });

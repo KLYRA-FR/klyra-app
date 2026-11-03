@@ -14,7 +14,7 @@ import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { lireProposition } from "@/lib/proposition-agent";
-import { lirePublication, publierRendu, typeDeRendu } from "@/lib/rendus";
+import { lirePublication, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
@@ -608,7 +608,7 @@ interface WorkspaceApi {
   /** Ta réponse à une demande d'autorisation d'un agent. */
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
   supprimerArtefact: (id: string) => void;
-  /** Retire un rendu d'agent de la liste ; le fichier reste où il est. */
+  /** Retire un rendu d'agent de la liste et supprime la copie de l'app ; l'original reste où il est. */
   retirerRendu: (id: string) => void;
   /** Montrer (ou non) les artefacts claude.ai dans l'écran Artefacts. */
   choisirArtefactsClaude: (actif: boolean) => void;
@@ -1783,16 +1783,23 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         }
         case "publier_artefact": {
           const publication = lirePublication(args);
-          const existe = await bridge?.projets.dossierExiste(publication.chemin);
-          if (!existe?.ok || !existe.data) throw new Error(`Aucun fichier à ${publication.chemin} sur ce PC : vérifie le chemin complet.`);
+          if (!bridge) throw new Error("La publication marche dans l’app de bureau.");
+          const avant = renduDeLOrigine(stateRef.current.rendus, publication.chemin);
+          // L'app garde sa copie dans l'espace de l'agent : le livrable survit au ménage de son dossier.
+          const copie = await bridge.rendus.copier(publication.chemin, appelant.roleId, avant?.chemin ?? null);
+          if (!copie.ok) throw new Error(copie.message);
           const chat = chats.find((c) => c.id === appelant.chatId);
           const maintenant = new Date().toISOString();
           dispatch({
             type: "rendu/publier",
             rendu: {
               id: crypto.randomUUID(),
-              ...publication,
-              type: typeDeRendu(publication.chemin),
+              chemin: copie.data.chemin,
+              origine: publication.chemin,
+              taille: copie.data.taille,
+              titre: publication.titre,
+              description: publication.description,
+              type: copie.data.dossier ? "page" : typeDeRendu(publication.chemin),
               roleId: appelant.roleId,
               chatId: chat?.id ?? null,
               projectId: chat?.projectId ?? null,
@@ -1800,7 +1807,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
               misAJour: maintenant,
             },
           });
-          return `Publié dans Artefacts : « ${publication.titre} ». La personne le retrouve là, avec son aperçu ; republier le même fichier met sa fiche à jour.`;
+          return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans ton espace de livrables ; republier le même fichier remplace cette copie.`;
         }
         case "proposer_agent": {
           const proposition = lireProposition(args);
@@ -1928,7 +1935,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     });
   }, []);
   const supprimerArtefact = useCallback((id: string) => dispatch({ type: "artefact/supprimer", id }), []);
-  const retirerRendu = useCallback((id: string) => dispatch({ type: "rendu/retirer", id }), []);
+  /* Retirer un livrable supprime la copie de l'app ; l'original de l'agent reste où il était. */
+  const retirerRendu = useCallback((id: string) => {
+    const rendu = stateRef.current.rendus.find((r) => r.id === id);
+    if (rendu) void bridge?.rendus.supprimer(rendu.chemin);
+    dispatch({ type: "rendu/retirer", id });
+  }, [bridge]);
   const choisirArtefactsClaude = useCallback((actif: boolean) => dispatch({ type: "artefacts-claude/choisir", actif }), []);
   const modifierArtefact = useCallback(
     (id: string, patch: Partial<Artefact>) => dispatch({ type: "artefact/modifier", id, patch }),

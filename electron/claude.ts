@@ -338,7 +338,7 @@ export function autoriser(requestId: string, demandeId: string, decision: Decisi
  * que l'app tient à jour, les fils et Composio quand ses outils sont là, et qui il est.
  */
 /** Les rendus à montrer rejoignent l'écran Artefacts ; hors projet, chacun range les siens dans son dossier (cf. `atelier.ts`). */
-const CONSIGNE_ARTEFACTS = "Quand tu livres un rendu que la personne doit voir (page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app), appelle publier_artefact avec le chemin complet du fichier, un titre court et à quoi il sert : elle le retrouve dans l'écran Artefacts. Pas pour un fichier de travail intermédiaire ni pour du code source. Hors projet, garde tes rendus dans ton dossier de travail.";
+const CONSIGNE_ARTEFACTS = "Où ranger : le code et les sources d'un projet vont dans le dossier du projet (son dépôt Git) ; tes essais hors projet, dans ton dossier de travail. Quand tu livres un rendu que la personne doit voir (page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app), appelle publier_artefact avec le chemin complet du fichier (ou du dossier d'une page avec index.html), un titre court et à quoi il sert : l'app en garde une copie et la personne le retrouve dans l'écran Artefacts. Pas pour un fichier de travail intermédiaire ni pour du code source. N'ajoute pas de captures ou de vidéos au dépôt d'un projet sans qu'elle le demande : elle les y enregistre elle-même depuis Artefacts.";
 
 export function consignesApp(options: StreamOptions, mcp: string | null): string[] {
   const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS, CONSIGNE_ARTEFACTS,

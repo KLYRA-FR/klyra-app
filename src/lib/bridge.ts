@@ -376,6 +376,14 @@ export interface KlyraBridge {
     /** Avec l'app du système ; un type qu'on ne sait pas montrer s'ouvre dans son dossier. */
     ouvrir: (chemin: string) => Promise<Reponse<void>>;
     montrer: (chemin: string) => Promise<Reponse<void>>;
+    /** Copie un livrable dans l'espace de l'agent (`~/.klyra/rendus/<agent>/`) ; `remplace` : sa copie précédente. */
+    copier: (origine: string, agent: string, remplace: string | null) => Promise<Reponse<{ chemin: string; taille: number; dossier: boolean }>>;
+    /** Supprime la copie d'un livrable (jamais hors de l'espace des rendus). */
+    supprimer: (chemin: string) => Promise<Reponse<void>>;
+    /** Copie le livrable dans un dossier choisi ; null si la personne annule. */
+    enregistrer: (chemin: string, dossier: string | null) => Promise<Reponse<string | null>>;
+    /** Ouvre l'espace des livrables d'un agent, ou son dossier de travail hors projet. */
+    dossierAgent: (agent: string, quoi: "rendus" | "atelier") => Promise<Reponse<void>>;
   };
   fenetres: {
     /** Ouvre une adresse locale (localhost) dans une fenêtre de l'app. */

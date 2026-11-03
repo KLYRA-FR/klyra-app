@@ -16,6 +16,7 @@ import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { poste } from "@/lib/plateforme";
+import { nomDuFichier } from "@/lib/rendus";
 import { idDirect, useProjects, useRole, useWorkspace } from "@/lib/workspace";
 import type { Artefact, Rendu, TypeRendu } from "@/types/domain";
 import { DESCRIPTION_MAX, lienArtefact } from "../../../convex/model/artefacts";
@@ -281,12 +282,22 @@ function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
   const { image, carte } = useVignette({ type: "rendu", chemin: rendu.chemin }, true, version);
   const [retirer, setRetirer] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [enregistre, setEnregistre] = useState<string | null>(null);
   const type = RENDUS[rendu.type];
 
-  const agir = (action: "ouvrir" | "montrer") => {
+  const agir = (action: "ouvrir" | "montrer", chemin = rendu.chemin) => {
     if (!bridge) return;
     setErreur(null);
-    void bridge.rendus[action](rendu.chemin).then((r) => !r.ok && setErreur(r.message));
+    void bridge.rendus[action](chemin).then((r) => !r.ok && setErreur(r.message));
+  };
+  /* « Enregistrer dans… » : une copie dans le dossier choisi, celui du projet proposé d'abord. */
+  const enregistrer = () => {
+    if (!bridge) return;
+    setErreur(null);
+    void bridge.rendus.enregistrer(rendu.chemin, projet?.folder ?? null).then((r) => {
+      if (!r.ok) setErreur(r.message);
+      else if (r.data) setEnregistre(r.data);
+    });
   };
 
   return (
@@ -305,6 +316,7 @@ function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
         <div className="flex items-start gap-2">
           <span className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{rendu.titre}</span>
           <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover/artefact:opacity-100 focus-within:opacity-100">
+            <BoutonIcone taille="mini" icone={<Icon name="download-02" size={16} />} libelle="Enregistrer dans un dossier…" onClick={enregistrer} className="text-icone-secondaire" />
             <BoutonIcone taille="mini" icone={<Icon name="folder-open-01" size={16} />} libelle={`Montrer ${poste.dansExplorateur}`} onClick={() => agir("montrer")} className="text-icone-secondaire" />
             <BoutonIcone taille="mini" icone={<Icon name="trash-01" size={16} />} libelle="Retirer de la liste" onClick={() => setRetirer(true)} className="text-icone-secondaire" />
           </span>
@@ -320,8 +332,21 @@ function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
           <span className="ml-auto">{date.format(new Date(rendu.misAJour))}</span>
         </div>
         {erreur && <p className="m-0 text-ui-xs text-texte-erreur">{erreur}</p>}
+        {enregistre && (
+          <p className="m-0 flex flex-wrap items-center gap-x-2 text-ui-xs text-texte-secondaire">
+            <span className="min-w-0 truncate">Enregistré : {nomDuFichier(enregistre)}</span>
+            <button type="button" onClick={() => agir("montrer", enregistre)} className="cursor-pointer border-0 bg-transparent p-0 text-ui-xs text-texte-secondaire underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
+              Montrer
+            </button>
+          </p>
+        )}
         {retirer && (
-          <Confirmation texte="Retirer de la liste ? Le fichier reste où il est." action="Retirer" onConfirmer={() => retirerRendu(rendu.id)} onAnnuler={() => setRetirer(false)} />
+          <Confirmation
+            texte="Retirer de la liste ? La copie gardée par KLYRA est supprimée ; l’original de l’agent et ce que tu as enregistré ailleurs restent."
+            action="Retirer"
+            onConfirmer={() => retirerRendu(rendu.id)}
+            onAnnuler={() => setRetirer(false)}
+          />
         )}
       </div>
     </li>

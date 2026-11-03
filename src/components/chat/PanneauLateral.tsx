@@ -229,7 +229,83 @@ function useFichiersChat(chatId: string): FichierChat[] {
   }, [messages]);
 }
 
+/** La taille d'un livrable, lisible. */
+function octets(n: number): string {
+  if (n < 1024) return `${n} o`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} Ko`;
+  return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`;
+}
+
+/**
+ * Les livrables (outil `publier_artefact`) : ceux de l'agent, toutes conversations confondues, dans sa
+ * conversation directe ; ceux de cette conversation ailleurs. Avec, sur ce PC, ses deux dossiers :
+ * ses livrables (copies gardées par l'app) et son dossier de travail hors projet.
+ */
+function Livrables({ chat }: { chat: Chat }) {
+  const { state } = useWorkspace();
+  const bridge = getBridge();
+  const direct = chat.kind === "direct" && !chat.fil;
+  const agentId = chat.roleIds[0] ?? "principal";
+  const agent = useRole(agentId);
+  const livrables = state.rendus.filter((r) => (direct ? r.roleId === agentId : r.chatId === chat.id));
+  const total = livrables.reduce((n, r) => n + (r.taille ?? 0), 0);
+  const surCePc = !!bridge && !chat.lieu;
+  if (!livrables.length && !(direct && surCePc)) return null;
+
+  return (
+    <section aria-label="Livrables" className="flex flex-col gap-2 p-3 pb-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-ui-xs font-semibold text-texte-principal">{direct ? `Livrables de ${agent.name}` : "Livrables de cette conversation"}</span>
+        {livrables.length > 0 && <span className="klyra-mono text-ui-2xs text-texte-tertiaire">{livrables.length} · {octets(total)}</span>}
+      </div>
+      {livrables.length > 0 ? (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+          {livrables.slice(0, 30).map((r) => (
+            <li key={r.id}>
+              <button
+                type="button"
+                onClick={() => bridge && void bridge.rendus.ouvrir(r.chemin)}
+                title={`${r.titre}\n${r.origine}\nClic pour l’ouvrir`}
+                className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent p-1.5 text-left hover:bg-fond-survol"
+              >
+                <PastilleExtension chemin={r.origine} />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-ui-s font-medium text-texte-principal">{r.titre}</span>
+                  <span className="truncate text-ui-2xs text-texte-tertiaire">
+                    {octets(r.taille ?? 0)} · {formatListDate(r.misAJour)}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <span className="text-ui-xs leading-[1.45] text-texte-tertiaire">Ce que {agent.name} publie (pages, maquettes, captures, vidéos) arrive ici et dans Artefacts.</span>
+      )}
+      {direct && surCePc && (
+        <div className="flex flex-wrap gap-1.5">
+          <Bouton variant="gris" taille="compact" onClick={() => void bridge.rendus.dossierAgent(agentId, "rendus")}>
+            Ses livrables
+          </Bouton>
+          <Bouton variant="gris" taille="compact" onClick={() => void bridge.rendus.dossierAgent(agentId, "atelier")}>
+            Son dossier de travail
+          </Bouton>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Fichiers({ chat }: { chat: Chat }) {
+  return (
+    <div className="flex flex-col">
+      <Livrables chat={chat} />
+      <FichiersConversation chat={chat} />
+    </div>
+  );
+}
+
+function FichiersConversation({ chat }: { chat: Chat }) {
   const fichiers = useFichiersChat(chat.id);
   const [filtre, setFiltre] = useState<Source | "tous">("tous");
   const bridge = getBridge();

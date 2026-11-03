@@ -272,11 +272,11 @@ const OUTIL_PROPOSER = {
 const OUTIL_PUBLIER = {
   name: "publier_artefact",
   description:
-    "Publie dans l'écran Artefacts de la personne un rendu que tu as produit et qu'elle doit voir : page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app. Le fichier reste où il est : l'app garde son chemin, montre un aperçu et l'ouvre d'un clic. Pas pour un fichier de travail intermédiaire ni pour du code source. Republier le même fichier met sa fiche à jour.",
+    "Publie dans l'écran Artefacts de la personne un livrable que tu as produit et qu'elle doit voir : page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app. L'app en garde une copie dans ton espace de livrables, montre un aperçu et l'ouvre d'un clic ; l'original reste où il est. Une page qui a des ressources (images, CSS, JS) se publie par son dossier, qui doit contenir index.html (300 Mo au plus, sans node_modules ni .git). Pas pour un fichier de travail intermédiaire ni pour du code source. Republier le même fichier remplace sa copie.",
   inputSchema: {
     type: "object",
     properties: {
-      chemin: { type: "string", description: "Le chemin complet du fichier, sur ce poste." },
+      chemin: { type: "string", description: "Le chemin complet du fichier (ou du dossier d'une page avec index.html), sur ce poste." },
       titre: { type: "string", description: "Un titre court (80 caractères au plus), ex. « Maquette de la page d'accueil »." },
       description: { type: "string", description: "À quoi il sert, en une phrase (500 caractères au plus)." },
     },
