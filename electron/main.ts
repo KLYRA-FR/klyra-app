@@ -110,6 +110,7 @@ import {
   type DossierApp,
   type EvenementNotification,
 } from "./reglages";
+import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
 import { arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
@@ -847,7 +848,13 @@ function registerBridge() {
 
   /* Réglages de l'app : notifications, lancement au démarrage, dossiers, mises à jour. */
   handle("reglages:lire", () => lireReglages());
-  handle("reglages:ecrire", (reglages: unknown) => ecrireReglages(reglages));
+  handle("reglages:ecrire", async (reglages: unknown) => {
+    const avant = lireReglages().computerUse.actif;
+    const ecrits = await ecrireReglages(reglages);
+    /* Computer Use allumé : le pilote démarre ; coupé : il s'arrête tout de suite, et ses outils disparaissent. */
+    if (lireReglages().computerUse.actif !== avant) void etatPilote();
+    return ecrits;
+  });
   handle("reglages:lancement", () => lancementAuDemarrage());
   handle("reglages:lancement:changer", (actif: boolean) => changerLancement(actif));
   handle("reglages:infos", () => infosApp());
@@ -858,6 +865,11 @@ function registerBridge() {
     new Notification({ title: "KLYRA", body: "Les notifications arrivent bien.", silent: !lireReglages().notifications.son }).show();
   });
   handle("reglages:computer-use:autorisations", () => autorisationsComputerUse());
+  /* L'état du pilote (cua-driver), relu à la demande : démarré si l'interrupteur est allumé. */
+  handle("reglages:computer-use:etat", () => etatPilote());
+  surEtatPilote((etat) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.webContents.isDestroyed()) win.webContents.send("computer-use:etat", etat);
+  });
   handle("reglages:computer-use:ouvrir", (type: "accessibilite" | "ecran") => {
     if (type !== "accessibilite" && type !== "ecran") throw new Error("Autorisation inconnue.");
     return ouvrirAutorisation(type);
@@ -931,6 +943,8 @@ void app.whenReady().then(async () => {
 
   void demarrerServeurMcp();
   void chargerMcpDirects();
+  /* Computer Use : le pilote reste prêt si l'interrupteur est allumé et les autorisations déjà données. */
+  void prechaufferPilote();
   /* Composio Connect : jetons relus, puis renouvelés avant leur expiration. */
   void composioConnect.charger();
   setInterval(() => void composioConnect.renouvelerSiBesoin(), 60_000);
@@ -963,6 +977,7 @@ app.on("will-quit", () => {
   arreterDictee();
   arreterRoutines();
   moteurs.fermer();
+  arreterPilote();
 });
 process.on("exit", () => arreterDictee());
 

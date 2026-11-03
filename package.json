@@ -45,13 +45,13 @@
     "test:profil": "node scripts/test-profil.mjs",
     "test:liens": "node scripts/test-liens.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
-    "test:coordonnees": "node scripts/test-coordonnees.cjs",
+    "test:relais": "node --experimental-strip-types --test electron/ordinateur/relais.test.mts",
     "test:routines": "node scripts/test-routine-schedule.cjs && node scripts/test-routines.cjs && node scripts/test-routine-ipc.cjs && node scripts/test-routine-claude.cjs",
     "test:ordinateur": "electron scripts/test-ordinateur.cjs",
     "test:sons": "electron scripts/test-sons.cjs",
-    "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm entrees && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
+    "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
     "whisper": "node scripts/preparer-whisper.mjs",
-    "entrees": "node scripts/preparer-entrees.mjs",
+    "cua-driver": "node scripts/preparer-cua-driver.mjs",
     "test:convex": "vitest run convex",
     "test:selecteur": "node scripts/test-selecteur-serveur.mjs",
     "test:mobile": "vitest run src/lib/mobile.test.ts src/lib/poste-texte.test.ts convex/telephone.test.ts && node --test serveur/qr.test.mjs",
@@ -160,7 +160,9 @@
       "sign": "scripts/signer-mac.cjs",
       "hardenedRuntime": false,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "KLYRA utilise le micro pour la dictée, transcrite sur ce Mac."
+        "NSMicrophoneUsageDescription": "KLYRA utilise le micro pour la dictée, transcrite sur ce Mac.",
+        "NSScreenCaptureUsageDescription": "KLYRA capture l’écran pour qu’un agent voie les fenêtres des apps que tu lui demandes de piloter.",
+        "NSAppleEventsUsageDescription": "KLYRA envoie des événements d’automatisation pour qu’un agent pilote les apps que tu lui demandes."
       },
       "extraResources": [
         {
@@ -171,10 +173,11 @@
           ]
         },
         {
-          "from": "vendor/entrees/darwin",
-          "to": "entrees",
+          "from": "vendor/cua-driver/darwin",
+          "to": "cua-driver",
           "filter": [
-            "klyra-entrees"
+            "cua-driver",
+            "LICENSE.md"
           ]
         }
       ]
@@ -202,10 +205,11 @@
           ]
         },
         {
-          "from": "vendor/entrees/win32",
-          "to": "entrees",
+          "from": "vendor/cua-driver/win32",
+          "to": "cua-driver",
           "filter": [
-            "klyra-entrees.exe"
+            "cua-driver.exe",
+            "LICENSE.md"
           ]
         }
       ]

@@ -84,19 +84,23 @@ jobs:
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
       - name: Sons de l'app, rendus dans Chromium
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-sons.cjs
-      - name: Computer Use, conversions capture ↔ écran
-        run: node scripts/test-coordonnees.cjs
+      - name: Computer Use, relais entre les agents et le pilote
+        run: pnpm test:relais
       - name: Routines, échéances et moteur (dossiers temporaires, sans agent)
         run: pnpm test:routines
       - name: Transport du parcours routines (preload et moteur réels, hôte et agent fictifs)
         run: node scripts/routines-browser-fixture.cjs --self-test
       - name: Moteurs des agents (registre, traduction de Codex) et changement de fournisseur
         run: pnpm test:moteurs && pnpm test:fournisseurs
-      - name: Computer Use, interrupteur et capture
-        run: timeout 120 xvfb-run -a -s "-screen 0 1600x1000x24" env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-ordinateur.cjs
+      # Le vrai pilote (cua-driver épinglé) ; openbox, parce que le clic au premier plan veut un gestionnaire de fenêtres.
+      - name: Computer Use, pilote, outils MCP, clic et frappe
+        run: |
+          sudo apt-get install -y --no-install-recommends openbox
+          pnpm cua-driver
+          timeout 150 xvfb-run -a -s "-screen 0 1600x1000x24" sh -c 'openbox & sleep 2; env -u ELECTRON_RUN_AS_NODE pnpm test:ordinateur'
 
   # Les mêmes tests sous Windows : dossier de l'app dans %APPDATA%, chemins en \, fins de ligne CRLF,
-  # et Computer Use pour de vrai (klyra-entrees compilé ici : clic, frappe, raccourci, défilement).
+  # et Computer Use pour de vrai (cua-driver épinglé : outils MCP, capture, clic, frappe).
   windows:
     name: Consommation et Computer Use sous Windows
     runs-on: windows-latest
@@ -139,8 +143,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Le test des sons a échoué sous Windows." }
       - name: Routines sous Windows (fichier, verrou, fuseaux)
         run: pnpm test:routines
-      - run: pnpm entrees
-      - name: Computer Use, clavier, souris et capture
+      - run: pnpm cua-driver
+      - name: Computer Use, pilote, outils MCP, clic et frappe
         shell: pwsh
         run: |
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue

@@ -293,6 +293,12 @@ contextBridge.exposeInMainWorld("klyra", {
     essaiNotification: () => ipcRenderer.invoke("reglages:essai-notification"),
     autorisationsComputerUse: () => ipcRenderer.invoke("reglages:computer-use:autorisations"),
     ouvrirAutorisation: (type: string) => ipcRenderer.invoke("reglages:computer-use:ouvrir", type),
+    etatComputerUse: () => ipcRenderer.invoke("reglages:computer-use:etat"),
+    surEtatComputerUse: (callback: (etat: unknown) => void) => {
+      const listener = (_e: unknown, etat: unknown) => callback(etat);
+      ipcRenderer.on("computer-use:etat", listener);
+      return () => ipcRenderer.removeListener("computer-use:etat", listener);
+    },
   },
   consommation: {
     lire: () => ipcRenderer.invoke("consommation:lire"),

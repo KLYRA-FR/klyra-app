@@ -546,6 +546,9 @@ export interface KlyraBridge {
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;
     ouvrirAutorisation: (type: "accessibilite" | "ecran") => Promise<Reponse<void>>;
+    /** Le pilote de Computer Use (cua-driver) : démarré si l'interrupteur est allumé. Absent avant la relance de l'app. */
+    etatComputerUse?: () => Promise<Reponse<EtatPilote>>;
+    surEtatComputerUse?: (callback: (etat: EtatPilote) => void) => () => void;
   };
   /** Configuration Composio locale : la clé et les liens de consentement restent dans main. */
   composio?: {
@@ -637,6 +640,14 @@ export interface Reglages {
 }
 
 export type EtatAutorisation = "accordee" | "refusee" | "a-demander" | "sans-objet" | "inconnue";
+
+/** Cf. electron/ordinateur/pilote.ts. */
+export interface EtatPilote {
+  statut: "coupe" | "non-pris-en-charge" | "absent" | "autorisations" | "pret" | "erreur";
+  autorisations: { ecran: boolean; accessibilite: boolean } | null;
+  message: string | null;
+  version: string;
+}
 
 export interface AutorisationsComputerUse {
   plateforme: string;
