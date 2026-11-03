@@ -76,7 +76,9 @@ function fixture() {
         assert.equal(args[args.indexOf("--input-format") + 1], "stream-json");
         // Hors projet, l'assistant travaille dans son dossier de l'atelier (electron/atelier.ts).
         assert.equal(options.cwd, `${PROFILE}/.klyra/atelier/principal`);
-        assert.deepEqual(Object.keys(options.env).sort(), ["ELECTRON_RUN_AS_NODE", "KLYRA_CLAUDE_PATH", "PATH"]);
+        // Les skills livrées avec Claude Code sont coupées pour toutes les sessions de l'app (electron/claude.ts).
+        assert.deepEqual(Object.keys(options.env).sort(), ["CLAUDE_CODE_DISABLE_BUNDLED_SKILLS", "ELECTRON_RUN_AS_NODE", "KLYRA_CLAUDE_PATH", "PATH"]);
+        assert.equal(options.env.CLAUDE_CODE_DISABLE_BUNDLED_SKILLS, "1");
         const child = new FauxProcessus(args, options);
         processus.push(child);
         return child;
