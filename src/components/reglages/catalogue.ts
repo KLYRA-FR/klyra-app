@@ -195,10 +195,16 @@ function points(mot: string, texte: string, poids: number): number {
  * (« son » donne « Son » avant « Sonnet »).
  */
 export function chercher(requete: string): Resultat[] {
+  return chercherDans(SECTIONS, requete);
+}
+
+/** La même recherche, dans d'autres sections (les Réglages du serveur) ; chaque résultat garde sa note. */
+export function chercherDans<S extends { titre: string; entrees: EntreeReglage[] }>(sections: S[], requete: string): { section: S; entree: EntreeReglage | null; note: number }[] {
   const tapes = normaliser(requete).split(/\s+/).filter(Boolean);
   if (!tapes.length) return [];
-  const notes: (Resultat & { note: number })[] = [];
-  const noter = (r: Resultat, champs: [string, number][]) => {
+  type R = { section: S; entree: EntreeReglage | null };
+  const notes: (R & { note: number })[] = [];
+  const noter = (r: R, champs: [string, number][]) => {
     let note = 0;
     for (const mot of tapes) {
       const meilleur = Math.max(...champs.map(([texte, poids]) => points(mot, texte, poids)));
@@ -207,7 +213,7 @@ export function chercher(requete: string): Resultat[] {
     }
     notes.push({ ...r, note });
   };
-  for (const section of SECTIONS) {
+  for (const section of sections) {
     noter({ section, entree: null }, [[section.titre, 4]]);
     for (const entree of section.entrees) {
       noter({ section, entree }, [

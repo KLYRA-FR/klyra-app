@@ -1,6 +1,6 @@
 # L’app web du téléphone : ce qu’il faut pour la publier
 
-Rien n’est publié. Cette page dit ce qu’une future publication à adresse stable demande, pour que Réglages › Mobile affiche son QR et que les liens de connexion ouvrent l’app sur l’iPhone. Choisir un hébergement, le payer et le mettre en ligne restent à décider par Corentin.
+L’app web du téléphone se publie sur Vercel, à l’adresse prévue `https://app.klyra.fr`, dès que le projet et ses secrets sont posés (ci-dessous). Une fois `KLYRA_APP_URL` posée, Réglages › Mobile affiche son QR et les liens de connexion ouvrent l’app sur l’iPhone.
 
 ## Ce qui existe
 
@@ -9,12 +9,20 @@ Rien n’est publié. Cette page dit ce qu’une future publication à adresse s
 - **Le compte** : hors Electron, l’app parle à Convex directement (`adresseNavigateur`, `src/lib/compte.tsx`) : la production par défaut, le déploiement de développement sur `localhost`. Les jetons restent dans le stockage de la page.
 - **`public/manifest.webmanifest`** : nom et icônes pour « Sur l’écran d’accueil ».
 
-## Ce qu’il faut pour publier
+## Publier sur Vercel (choix de Corentin, 02/11/2026)
 
-1. **Une adresse https stable** (un nom de domaine, ou un sous-domaine d’un hébergeur statique). Un tunnel temporaire (`trycloudflare.com`, port local) change à chaque lancement : il ne convient pas.
-2. **Un hébergement de fichiers statiques** qui sert `out/` tel quel, avec une règle : une adresse sans extension sert le fichier `.html` du même nom (`/chats` → `chats.html`, `/reglages` → `reglages.html`), et `/` sert `index.html`. Pas besoin de Node côté serveur.
-3. **Publier depuis `main`**, après fusion, avec la même commande `pnpm build` que l’app de bureau. `.github/workflows/app-web.yml` construit déjà l’export à chaque push sur `main` et le garde en artefact (`app-web`, 14 jours) sans rien mettre en ligne : l’étape de mise en ligne vers l’hébergement choisi s’ajoute après « Construire » (accord de Corentin, mise en œuvre par Diego).
-4. **Poser `KLYRA_APP_URL`** dans le déploiement Convex de production, une fois l’adresse en ligne : l’adresse https, sans barre finale (`convex/convex.config.ts`). Elle n’est pas secrète. C’est un changement de production : sur accord de Corentin seulement.
+`.github/workflows/app-web.yml` construit l’export à chaque push sur `main`, le garde en artefact (`app-web`, 14 jours) et le met en ligne sur Vercel. Vercel ne reconstruit rien : `scripts/sortie-vercel.mjs` range `out/` dans `.vercel/output/` (Build Output API v3), qui sert chaque page sans extension (`/chats` → `chats.html`), relit `sw.js` à chaque visite et renvoie `404.html` pour le reste ; puis `vercel deploy --prebuilt --prod`. Sans les trois secrets ci-dessous, la mise en ligne est sautée.
+
+Une fois, par Corentin :
+
+1. **Projet Vercel** : sur vercel.com, dans l’équipe de KLYRA, créer un projet `klyra-app` (framework « Other », sans dépôt relié : c’est l’action GitHub qui publie). L’offre gratuite (Hobby) interdit l’usage commercial : le projet va dans l’équipe payante de KLYRA, celle de klyra.fr.
+2. **Secrets du dépôt** (GitHub › Settings › Secrets and variables › Actions) :
+   - `VERCEL_TOKEN` : un jeton créé dans Vercel › Account Settings › Tokens, limité à l’équipe de KLYRA ;
+   - `VERCEL_ORG_ID` : l’identifiant de l’équipe (Team Settings › General › Team ID) ;
+   - `VERCEL_PROJECT_ID` : l’identifiant du projet (Project Settings › General › Project ID).
+3. **Domaine** : dans le projet, Settings › Domains, ajouter `app.klyra.fr`. Chez Hostinger (DNS de klyra.fr), l’enregistrement que Vercel indique, en général un CNAME `app` vers `cname.vercel-dns.com`.
+4. **Première mise en ligne** : relancer « App web » (Actions › App web › Run workflow), ou attendre la prochaine fusion sur `main`.
+5. **Poser `KLYRA_APP_URL`** dans le déploiement Convex de production, une fois l’adresse en ligne : `npx convex env set KLYRA_APP_URL https://app.klyra.fr --prod` (sans barre finale, `convex/convex.config.ts`). Elle n’est pas secrète. C’est un changement de production : sur accord de Corentin seulement.
 
 ## Ce que `KLYRA_APP_URL` change
 

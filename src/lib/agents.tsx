@@ -96,6 +96,7 @@ export function roleFromContent(name: string, content: string, meta: AgentsMeta,
     pitch: parsed.pitch,
     sections: parsed.sections,
     model: getField(frontmatter, "model") ?? "",
+    ...(reglage.fournisseur ? { fournisseur: reglage.fournisseur } : {}),
     memory: getField(frontmatter, "memory") ?? "",
     file,
   };
@@ -156,6 +157,8 @@ interface AgentsApi {
    * le détacher (sa fiche est réécrite depuis la version suivie) ; sinon, écrit dans sa fiche.
    */
   changerModele: (id: string, modele: string) => Promise<void>;
+  /** Le fournisseur de ses nouvelles conversations et de ses fils. */
+  changerFournisseur: (id: string, fournisseur: string) => Promise<void>;
   create: (id: string, content: string, reglage: { tag: string; teinte: RoleTeinte }) => Promise<void>;
   history: (id: string) => Promise<HistoryEntry[]>;
   readVersion: (id: string, versionId: string) => Promise<string>;
@@ -247,11 +250,13 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
 
   /* Les préférences d'un agent : on remplace ce qui est donné, le reste (modèle choisi…) est gardé. */
   const saveMeta = useCallback(
-    async (id: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string; modele?: string }) => {
+    async (id: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string; modele?: string; fournisseur?: string }) => {
       const current = metaRef.current[id] ?? {};
       const voulu = { ...current, ...reglage };
       if ("nom" in reglage && !reglage.nom?.trim()) delete voulu.nom;
       if ("modele" in reglage && !reglage.modele) delete voulu.modele;
+      // Claude est le fournisseur par défaut : il ne s'écrit pas.
+      if ("fournisseur" in reglage && (!reglage.fournisseur || reglage.fournisseur === "claude")) delete voulu.fournisseur;
       if (JSON.stringify(voulu) === JSON.stringify(current)) return;
       const next = { ...metaRef.current, [id]: voulu };
       metaRef.current = next;
@@ -315,6 +320,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       saveReglage: async (id, reglage) => {
         await saveMeta(id, reglage);
       },
+      changerFournisseur: (id, fournisseur) => saveMeta(id, { fournisseur }),
       changerModele: async (id, modele) => {
         const fiche = filesRef.current.find((f) => f.name === id);
         if (!fiche) throw new BridgeError("introuvable", `La fiche « ${id} » n’existe plus sur le disque.`);

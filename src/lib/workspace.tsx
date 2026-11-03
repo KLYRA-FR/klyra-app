@@ -20,6 +20,7 @@ import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
+import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, moteurDuMessage, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -537,6 +538,7 @@ interface WorkspaceApi {
   sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[]) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
+  choisirFournisseur: (chatId: string, moteur: string, modele: string | null, effort: string | null) => void;
   /** Ce PC (null) ou un VPS relié, pour cette conversation seulement. Les agents y reprennent la session qu'ils y avaient, sinon une neuve. */
   choisirLieu: (chatId: string, lieu: string | null) => void;
   /** Le sélecteur du rail : la machine active, et les conversations directes au repos y passent. */
@@ -810,17 +812,27 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const allRoles = rolesRef.current;
     const nom = (id: RoleId) => allRoles.find((r) => r.id === id)?.name ?? id;
     const fil = messages.filter((m) => m.chatId === chat.id && m.id !== messageUtilisateur.id);
-    const derniere = fil.findLastIndex((m) => m.author.kind === "role" && m.author.roleId === roleId);
-    const depuis = fil
-      .slice(derniere + 1)
+    // Ce que l'agent n'a pas vu avec ce moteur : depuis sa dernière réponse écrite avec lui (cf. fournisseurs.ts).
+    const moteur = moteurDe(chat);
+    const aVoir = aReprendre(fil, roleId, moteur);
+    const jamaisRepondu = aVoir.length === fil.length;
+    const lus = aVoir
       .filter((m) => m.statut !== "en-cours")
       .map((m) => {
         const texte = texteDe(m);
         if (!texte) return null;
-        const auteur = m.author.kind === "user" ? personne.name : nom(m.author.roleId);
+        // Sa propre réponse, écrite avec un autre fournisseur : il doit savoir que c'est la sienne.
+        const auteur =
+          m.author.kind === "user"
+            ? personne.name
+            : m.author.roleId === roleId && moteurDuMessage(m) !== moteur
+              ? `${nom(m.author.roleId)} (toi, avec ${fournisseur(moteurDuMessage(m)).nom})`
+              : nom(m.author.roleId);
         return `${auteur} : ${texte}`;
       })
-      .filter(Boolean);
+      .filter((l): l is string => !!l);
+    // Une session neuve reçoit la conversation : les plus anciens messages au-delà de la limite restent de côté.
+    const depuis = chat.sessions[roleId] ? lus : limiterReprise(lus);
 
     const lignes: string[] = [];
     if (!chat.sessions[roleId]) {
@@ -848,7 +860,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       }
       if (chat.amorce) lignes.push(`[Conversation reprise jusqu’ici]\n${chat.amorce}`);
     }
-    if (depuis.length) lignes.push(`[Depuis ta dernière réponse]\n${depuis.join("\n\n")}`);
+    if (depuis.length) lignes.push(`${jamaisRepondu ? "[La conversation jusqu’ici]" : "[Depuis ta dernière réponse]"}\n${depuis.join("\n\n")}`);
     // Le retour d'un fil arrive au nom de l'agent qui l'a fait, pas de la personne.
     const de = messageUtilisateur.author.kind === "role" ? `Retour du fil, de ${nom(messageUtilisateur.author.roleId)}` : `Message de ${personne.name}`;
     lignes.push(`${lignes.length || messageUtilisateur.author.kind === "role" ? `[${de}]\n` : ""}${texteDe(messageUtilisateur)}`);
@@ -1145,6 +1157,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       const chat = stateRef.current.chats.find((c) => c.id === chatId);
       if (!chat) return;
       const messageId = messageUtilisateur.routineRun ? `routine-answer-${messageUtilisateur.routineRun}` : crypto.randomUUID();
+      const moteur = moteurDe(chat);
       const reponse: Message = {
         id: messageId,
         chatId,
@@ -1153,6 +1166,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         parts: [],
         statut: "en-cours",
         ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
+        ...(moteur !== PAR_DEFAUT ? { moteur } : {}),
       };
       dispatch({ type: "message/add", message: reponse });
       dispatch({
@@ -1219,6 +1233,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }
         }
         return bridge.claude.stream(messageId, {
+          ...(moteur !== PAR_DEFAUT ? { moteur } : {}),
           agent: roleId === "principal" ? null : roleId,
           prompt: construirePrompt(chat, roleId, messageUtilisateur),
           // Sur un VPS, le dossier du PC n'existe pas : l'agent travaille dans son atelier là-bas.
@@ -1271,6 +1286,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         sessions: {},
         luJusqua: null,
         lieu: lieuParDefaut(),
+        // Le fournisseur choisi pour l'agent dans Réglages du serveur › Agents.
+        ...(role.fournisseur ? { fournisseur: role.fournisseur } : {}),
       };
       dispatch({ type: "chat/add", chat });
       stateRef.current = {
@@ -1357,6 +1374,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [assurerChat],
   );
 
+  /** La conversation passe sur un autre fournisseur, avec le modèle et l'effort choisis chez lui. */
+  const choisirFournisseur = useCallback(
+    (chatId: string, moteur: string, modele: string | null, effort: string | null) => {
+      if (!assurerChat(chatId)) return;
+      dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...changerDeMoteur(c, moteur), modele, effort }) });
+    },
+    [assurerChat],
+  );
+
   const choisirLieu = useCallback(
     (chatId: string, lieu: string | null) => {
       if (!assurerChat(chatId)) return;
@@ -1431,6 +1457,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       modele: chat.modele,
       lieu: chat.lieu,
       effort: chat.effort,
+      ...(chat.fournisseur ? { fournisseur: chat.fournisseur } : {}),
       amorce: repris
         .map((m) => `${nom(m)} : ${texteDe(m)}`)
         .filter((l) => !l.endsWith(": "))
@@ -1490,6 +1517,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       luJusqua: null,
       fil: { roleId, statut: "ouvert", creeLe: maintenant, lancePar: lancePar ?? null, etape: "a-faire", ...ticket },
     };
+    // Le fil part avec le fournisseur de l'agent qui le reçoit.
+    const fournisseurAgent = rolesRef.current.find((r) => r.id === roleId)?.fournisseur;
+    if (fournisseurAgent) chat.fournisseur = fournisseurAgent;
     dispatch({ type: "chat/add", chat });
     stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
     return chat.id;
@@ -2260,6 +2290,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       state,
       sendMessage,
       choisirModele,
+      choisirFournisseur,
       choisirLieu,
       basculerMachine,
       nouvelleConversation,
@@ -2313,6 +2344,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       poserEvenementsCompte,
       sendMessage,
       choisirModele,
+      choisirFournisseur,
       choisirLieu,
       basculerMachine,
       nouvelleConversation,

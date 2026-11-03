@@ -14,6 +14,8 @@ import { getField, parseAgentFile } from "@/lib/agent-file";
 import { useAgents } from "@/lib/agents";
 import { BridgeError, getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { FOURNISSEURS, PAR_DEFAUT } from "@/lib/fournisseurs";
+import { pret, useMoteurs } from "@/lib/moteurs";
 import { useRole, useWorkspace } from "@/lib/workspace";
 import type { Role } from "@/types/domain";
 import { ancreReglage, Erreur, Groupe, Ligne, SeulementBureau } from "../ui";
@@ -52,6 +54,38 @@ function ChoixAcces() {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Le fournisseur d'un agent : celui de ses nouvelles conversations et de ses fils. Sa conversation
+ * directe passe aussi dessus (elle garde ce qui s'y est dit, cf. lib/fournisseurs.ts).
+ */
+function FournisseurAgent({ role }: { role: Role }) {
+  const { changerFournisseur, canEdit } = useAgents();
+  const { state, choisirFournisseur } = useWorkspace();
+  const { moteurs } = useMoteurs();
+  const [erreur, setErreur] = useState<string | null>(null);
+  const actuel = role.fournisseur || PAR_DEFAUT;
+  const options = FOURNISSEURS.filter((f) => f.id === PAR_DEFAUT || f.id === actuel || moteurs?.some((m) => m.moteur.id === f.id && pret(m))).map((f) => ({ value: f.id, label: f.nom }));
+  if (options.length < 2) return null;
+
+  const changer = async (fournisseur: string) => {
+    setErreur(null);
+    try {
+      await changerFournisseur(role.id, fournisseur);
+      const direct = state.chats.find((c) => c.id === `dm-${role.id}`);
+      if (direct && !direct.lieu && !state.travail[direct.id] && (direct.fournisseur || PAR_DEFAUT) !== fournisseur) choisirFournisseur(direct.id, fournisseur, null, null);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <ListeDeroulante variante="compact" libelle={`Fournisseur de ${role.name}`} value={actuel} options={options} disabled={!canEdit} onChange={(f) => void changer(f)} className="min-w-[110px]" />
+      {erreur && <Erreur>{erreur}</Erreur>}
     </div>
   );
 }
@@ -147,10 +181,10 @@ export function Agents() {
       </Groupe>
 
       <Groupe
-        titre="Modèle de chaque agent"
+        titre="Fournisseur et modèle de chaque agent"
         description={
           canEdit
-            ? "Écrit dans la fiche de l’agent, comme depuis Mes agents. Dans une conversation, tu peux encore choisir un autre modèle pour une réponse."
+            ? "Le fournisseur vaut pour ses nouvelles conversations, ses fils et sa conversation directe. Le modèle Claude est écrit dans sa fiche, comme depuis Mes agents. Dans une conversation, tu peux encore en choisir d’autres."
             : "Les fiches se lisent et s’écrivent dans l’app de bureau."
         }
       >
@@ -165,7 +199,7 @@ export function Agents() {
               </Bouton>
             </Ligne>
           ) : (
-            <ul className="m-0 flex list-none flex-col divide-y divide-bordure-subtile p-0">
+            <ul id={ancreReglage("fournisseur-agent")} className="m-0 flex list-none flex-col divide-y divide-bordure-subtile p-0">
               {agents.map((role) => (
                 <li key={role.id} className="flex items-center gap-3 px-4 py-2.5">
                   <AgentRond roleId={role.id} taille={28} fondPastille="surface" />
@@ -175,6 +209,7 @@ export function Agents() {
                     </span>
                     <span className="truncate text-ui-xs text-texte-tertiaire">{role.title}</span>
                   </span>
+                  <FournisseurAgent role={role} />
                   <ModeleAgent role={role} />
                 </li>
               ))}
