@@ -402,8 +402,10 @@ const OUTILS = `
   const titreDe = (li) => esp(li.querySelector('[role="checkbox"]')?.getAttribute("aria-label")).replace(/^(Terminer|Rouvrir) /, "");
   const lignes = (z) => [...(z?.querySelectorAll("li") ?? [])].filter((li) => li.querySelector('[role="checkbox"]'));
   const ligne = (z, titre) => lignes(z).find((li) => titreDe(li) === esp(titre)) ?? null;
+  /* Le bouton de MenuReporter : la ligne porte aussi « Confier à un agent » (MenuConfier), autre menu. */
+  const BOUTON_REPORT = "button[data-reporter]";
   const LIBELLES = (titre) => ["Reporter « " + titre + " »", "Planifier « " + titre + " »"].map(esp);
-  const bouton = (z, titre) => [...(z?.querySelectorAll('button[aria-haspopup="menu"]') ?? [])].find((b) => LIBELLES(titre).includes(esp(b.getAttribute("aria-label")))) ?? null;
+  const bouton = (z, titre) => [...(z?.querySelectorAll(BOUTON_REPORT) ?? [])].find((b) => LIBELLES(titre).includes(esp(b.getAttribute("aria-label")))) ?? null;
   const menuReport = () => [...document.querySelectorAll('[role="menu"]')].find((m) => /^(Reporter|Planifier) « /.test(esp(m.getAttribute("aria-label")))) ?? null;
   const itemsMenu = () => [...(menuReport()?.querySelectorAll('[role="menuitem"]') ?? [])];
   const itemMenu = (choix) => itemsMenu().find((i) => esp(i.getAttribute("aria-label")).startsWith(choix + ",")) ?? null;
@@ -471,7 +473,7 @@ const lirePlanning = () =>
         lignes: lignes(col).map((li) => {
           const c = li.querySelector('[role="checkbox"]');
           const d = dateDe(li);
-          const b = li.querySelector('button[aria-haspopup="menu"]');
+          const b = li.querySelector(BOUTON_REPORT);
           return {
             titre: titreDe(li),
             faite: c.getAttribute("aria-checked") === "true",
@@ -498,7 +500,7 @@ const lireAccueil = () =>
       return z
         ? lignes(z).map((li) => {
             const c = li.querySelector('[role="checkbox"]');
-            const b = li.querySelector('button[aria-haspopup="menu"]');
+            const b = li.querySelector(BOUTON_REPORT);
             return {
               titre: titreDe(li),
               faite: c.getAttribute("aria-checked") === "true",
@@ -514,7 +516,7 @@ const lireAccueil = () =>
     return {
       afaire: lire("afaire"),
       programme: lire("programme"),
-      autresLignesProgramme: p ? [...p.querySelectorAll("li")].filter((li) => !li.querySelector('[role="checkbox"]') && esp(li.innerText)).map((li) => ({ texte: esp(li.innerText), bouton: !!li.querySelector('button[aria-haspopup="menu"]') })) : [],
+      autresLignesProgramme: p ? [...p.querySelectorAll("li")].filter((li) => !li.querySelector('[role="checkbox"]') && esp(li.innerText)).map((li) => ({ texte: esp(li.innerText), bouton: !!li.querySelector(BOUTON_REPORT) })) : [],
       repere: p?.querySelector('[aria-label^="Il est "]')?.getAttribute("aria-label") ?? null,
       regions: document.querySelectorAll('p[aria-live="polite"]').length,
     };
@@ -532,7 +534,7 @@ const etatMenu = (titre) =>
     const m = menuReport();
     if (!m) return null;
     const items = itemsMenu();
-    const b = [...document.querySelectorAll('button[aria-haspopup="menu"]')].find((x) => LIBELLES(${q(titre)}).includes(esp(x.getAttribute("aria-label"))));
+    const b = [...document.querySelectorAll(BOUTON_REPORT)].find((x) => LIBELLES(${q(titre)}).includes(esp(x.getAttribute("aria-label"))));
     let rogne = false;
     for (let p = m.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
       const s = getComputedStyle(p);
@@ -696,10 +698,10 @@ async function suivreApres(nom, t, attendu, { zone, verbe, quitte = false, rang 
       const z = document.querySelector(ZONES[${q(zone)}]);
       const ls = lignes(z);
       const suivante = ls[Math.min(${rang}, ls.length - 1)];
-      const visee = suivante?.querySelector('button[aria-haspopup="menu"]') ?? z.querySelector('input[placeholder^="Nouveau rappel"]');
+      const visee = suivante?.querySelector(BOUTON_REPORT) ?? z.querySelector('input[placeholder^="Nouveau rappel"]');
       const a = document.activeElement;
       const nommer = (el) => esp(el?.getAttribute("aria-label") ?? el?.getAttribute("placeholder")) || el?.tagName || "rien";
-      return { ok: !!visee && a === visee, dansLaCarte: !!z?.contains(a) && a?.getAttribute("aria-haspopup") === "menu", visee: visee ? nommer(visee) : null, vu: nommer(a) };
+      return { ok: !!visee && a === visee, dansLaCarte: !!z?.contains(a) && !!a?.matches(BOUTON_REPORT), visee: visee ? nommer(visee) : null, vu: nommer(a) };
     `);
     if (zone === "afaire") verifier(f.ok, `${nom} : le focus passe à la ligne qui prend sa place, sinon au champ « Nouveau rappel » (attendu ${f.visee}, focus : ${f.vu})`);
     else if (f.visee) verifier(f.dansLaCarte, `${nom} : le focus passe à un bouton Reporter de la carte (focus : ${f.vu})`);
@@ -1100,9 +1102,13 @@ try {
     const avant = tachesDisque();
     await app.parquer();
     await page(`ligne(document.querySelector(RAPPELS), ${q(t.titre)}).querySelector("textarea").focus(); return true;`);
+    /* Dans le Planning, « Confier à un agent » (MenuConfier) précède Reporter sur la ligne. */
+    await app.touche("Tab", { apres: 300 });
+    const confier = await page(`const a = document.activeElement; return { confier: a?.getAttribute("data-confier") === ${q(t.id)}, label: esp(a?.getAttribute("aria-label")), opacite: Number(getComputedStyle(a).opacity) };`);
+    verifier(confier.confier && confier.opacite === 1, `Tab depuis le texte du rappel mène d’abord à « Confier à un agent », qui apparaît au focus (focus : ${confier.label}, opacité ${confier.opacite})`);
     await app.touche("Tab", { apres: 300 });
     let b = await etatBouton(t.titre);
-    verifier(b?.focus && b.opacite === 1, `Tab depuis le texte du rappel mène au bouton Reporter, qui apparaît au focus (focus ${b?.focus}, opacité ${b?.opacite})`);
+    verifier(b?.focus && b.opacite === 1, `Tab suivant : le bouton Reporter, qui apparaît au focus (focus ${b?.focus}, opacité ${b?.opacite})`);
     await app.touche("ArrowDown");
     verifier((await menuPret()) && (await focusMenu()) === 0, "↓ ouvre le menu, focus sur « Dans 1 h »");
     const n = (await etatMenu(t.titre))?.items.length ?? 0;
@@ -1252,13 +1258,13 @@ try {
       const visee = await page(`
         const cols = [...document.querySelectorAll(RAPPELS + " section[aria-label]")];
         const col = cols.reduce((a, b) => (b.getBoundingClientRect().height > a.getBoundingClientRect().height ? b : a));
-        const avecBouton = lignes(col).filter((li) => li.querySelector('button[aria-haspopup="menu"]'));
+        const avecBouton = lignes(col).filter((li) => li.querySelector(BOUTON_REPORT));
         const li = avecBouton[avecBouton.length - 1];
         li.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
         const z = defileur(col);
         /* Le bas de page contient aussi le champ de saisie : placer le bouton
            près du bord, au lieu de supposer que scrollHeight y amène la ligne. */
-        const b = li.querySelector('button[aria-haspopup="menu"]');
+        const b = li.querySelector(BOUTON_REPORT);
         if (z) z.scrollTop += b.getBoundingClientRect().bottom - (innerHeight - 65);
         return { colonne: col.getAttribute("aria-label"), titre: titreDe(li), hauteur: Math.round(col.getBoundingClientRect().height) };
       `);
