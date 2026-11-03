@@ -4,7 +4,11 @@ import { existsSync, mkdirSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { lireListeArtefacts, LIEN_ARTEFACT as LIEN, type ArtefactClaude } from "./artefacts-liste";
 import { findClaude } from "./claude";
+import { expliquerLancement } from "./claude-binaire";
+
+export type { ArtefactClaude };
 
 /**
  * Les artefacts claude.ai de la personne connectée :
@@ -14,51 +18,49 @@ import { findClaude } from "./claude";
  */
 
 const PARTITION = "persist:claude-ai";
-const LIEN = /^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+\/?$/;
 const ATELIER = path.join(os.homedir(), ".klyra", "atelier");
+const DELAI_LISTE_MS = 180_000;
 
-export interface ArtefactClaude {
-  titre: string;
-  url: string;
-  misAJour: string | null;
-}
-
-/** La liste des artefacts du compte, demandée à Claude Code (modèle léger, outil Artifact seul). */
+/**
+ * La liste des artefacts du compte, demandée à Claude Code (outil Artifact seul, et ToolSearch s'il
+ * faut d'abord le charger : Sonnet, car Haiku ne sait pas chercher un outil différé). En cas d'échec,
+ * l'erreur dit ce que Claude Code a répondu (cf. `lireListeArtefacts`).
+ */
 export function listerArtefacts(): Promise<ArtefactClaude[]> {
   const bin = findClaude();
   if (!bin) return Promise.reject(new Error("Claude Code est introuvable sur ce poste."));
   mkdirSync(ATELIER, { recursive: true });
   const consigne =
     'Appelle l’outil Artifact avec action "list", scope "mine" et limit 200. Réponds UNIQUEMENT avec un tableau JSON, ' +
-    'sans texte autour ni bloc de code : [{"titre": "...", "url": "...", "misAJour": "date ISO"}].';
+    'sans texte autour ni bloc de code : [{"titre": "...", "url": "...", "misAJour": "date ISO"}]. ' +
+    "Si l’outil Artifact n’existe pas ou échoue, réponds en une phrase pourquoi, sans tableau.";
   return new Promise((resolve, reject) => {
     const child = spawn(
       bin,
-      ["-p", "--model", "haiku", "--output-format", "json", "--no-session-persistence", "--allowedTools", "Artifact", "--disallowedTools", "Bash", "Write", "Edit", "Read"],
+      ["-p", "--model", "sonnet", "--output-format", "json", "--no-session-persistence", "--allowedTools", "Artifact", "ToolSearch", "--disallowedTools", "Bash", "Write", "Edit", "Read"],
       { cwd: ATELIER, env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true },
     );
     let sortie = "";
+    let erreurs = "";
+    let expire = false;
     child.stdout.on("data", (d: Buffer) => (sortie += d.toString()));
-    const timeout = setTimeout(() => child.kill("SIGTERM"), 180_000);
+    child.stderr.on("data", (d: Buffer) => (erreurs += d.toString()));
+    const timeout = setTimeout(() => {
+      expire = true;
+      child.kill("SIGTERM");
+    }, DELAI_LISTE_MS);
     child.on("error", (e) => {
       clearTimeout(timeout);
       reject(e);
     });
     child.on("close", () => {
       clearTimeout(timeout);
+      if (expire) return reject(new Error("Claude Code n’a pas répondu en 3 minutes. Réessaie dans un instant."));
       try {
-        const resultat = (JSON.parse(sortie) as { result?: string }).result ?? "";
-        const json = resultat.slice(resultat.indexOf("["), resultat.lastIndexOf("]") + 1);
-        const liste = (JSON.parse(json) as { titre?: unknown; url?: unknown; misAJour?: unknown }[])
-          .filter((a) => typeof a.url === "string" && LIEN.test(a.url))
-          .map((a) => ({
-            titre: typeof a.titre === "string" && a.titre ? a.titre : "Sans titre",
-            url: a.url as string,
-            misAJour: typeof a.misAJour === "string" ? a.misAJour : null,
-          }));
-        resolve(liste);
-      } catch {
-        reject(new Error("La liste des artefacts n’a pas pu être lue. Réessaie dans un instant."));
+        resolve(lireListeArtefacts(sortie));
+      } catch (e) {
+        const lancement = sortie.trim() ? null : (expliquerLancement(erreurs, bin) ?? (erreurs.trim() ? `Claude Code n’a pas démarré : « ${erreurs.trim().slice(0, 220)} »` : null));
+        reject(lancement ? new Error(lancement) : e);
       }
     });
     child.stdin.end(consigne);
