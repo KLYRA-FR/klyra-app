@@ -26,6 +26,7 @@ import type {
   Etape,
   MessageAction,
   MessagePart,
+  RoleId,
   Task,
   TaskStatus,
 } from "@/types/domain";
@@ -56,6 +57,26 @@ export function TextBubble({ text, tone }: { text: string; tone: "user" | "role"
     <div data-cherchable className="w-fit max-w-[680px] min-w-0 rounded-xl bg-fond-survol px-3.5 py-2.5 [overflow-wrap:anywhere]">
       <Markdown source={text} className="gap-2 text-ui leading-[1.6] text-texte-principal" />
     </div>
+  );
+}
+
+/**
+ * Au-dessus de ta bulle : le message d'agent auquel tu réponds (« Répondre »).
+ * Un clic le ramène au centre du fil, s'il y est encore.
+ */
+function CarteCitation({ messageId, roleId, extrait }: { messageId: string; roleId: RoleId; extrait: string }) {
+  const role = useRole(roleId);
+  const montrer = () => document.querySelector(`[data-message="${CSS.escape(messageId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  return (
+    <button
+      type="button"
+      onClick={montrer}
+      title="Voir le message"
+      className="flex w-fit max-w-[560px] cursor-pointer flex-col items-start gap-0.5 rounded-lg border-0 border-l-2 border-solid border-l-bordure-forte bg-fond-survol px-3 py-1.5 text-left hover:bg-fond-surface-grise"
+    >
+      <span className="text-ui-2xs font-medium text-texte-tertiaire">Réponse à {role.name}</span>
+      <span className="line-clamp-2 text-ui-xs leading-[1.45] text-texte-secondaire">{extrait}</span>
+    </button>
   );
 }
 
@@ -461,6 +482,8 @@ export function MessagePartView({
   switch (part.type) {
     case "text":
       return part.text.trim() ? <TextBubble text={part.text} tone={tone} /> : null;
+    case "citation":
+      return <CarteCitation messageId={part.messageId} roleId={part.roleId} extrait={part.extrait} />;
     case "fichiers":
       return <FichiersJoints chemins={part.chemins} />;
     case "autorisation":

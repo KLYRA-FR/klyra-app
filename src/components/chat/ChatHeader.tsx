@@ -7,6 +7,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { ChoixModele } from "./ChoixModele";
+import { ouvrirPanneauAgent } from "./PanneauLateral";
 import { MenuConversation } from "./MenuConversation";
 import type { ActionExport } from "./useExporterConversation";
 import { useBasculerEpingle } from "./BoutonEpingle";
@@ -24,6 +25,7 @@ interface ChatHeaderProps {
 
 /** En-tête d'une conversation directe : l'agent, ce qu'il fait, sa fiche. */
 function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { chat: Chat; panneauOuvert: boolean; onTogglePanneau: () => void; actionExport?: ActionExport }) {
+  const onOuvrirPanneau = ouvrirPanneauAgent;
   const options = useRef<HTMLButtonElement>(null);
   const router = useRouter();
   const role = useRole(chat.roleIds[0] ?? "principal");
@@ -33,10 +35,15 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
   const etat = ici ? "Travaille…" : chat.fil ? `${chat.title} · ${chat.id}` : occupe ? "Travaille dans une conversation d’équipe" : role.title;
   return (
     <header className="@container flex items-center gap-3 border-b border-bordure-subtile px-5 py-3">
-      <AgentRond roleId={role.id} taille={32} statut={occupe ? { type: "travaille" } : null} fondPastille="surface" />
+      {/* L'avatar et le prénom ouvrent le panneau de l'agent, sur ses réglages. */}
+      <button type="button" onClick={onOuvrirPanneau} aria-label={`Ouvrir le panneau de ${role.name}`} className="cursor-pointer rounded-full border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bordure-forte">
+        <AgentRond roleId={role.id} taille={32} statut={occupe ? { type: "travaille" } : null} fondPastille="surface" />
+      </button>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <h1 className="m-0 flex items-baseline gap-2 truncate text-ui font-semibold text-texte-principal">
-          {role.name}
+          <button type="button" onClick={onOuvrirPanneau} title={`Ouvrir le panneau de ${role.name}`} className="cursor-pointer truncate border-0 bg-transparent p-0 text-left font-[inherit] text-[length:inherit] text-inherit hover:underline hover:underline-offset-2">
+            {role.name}
+          </button>
           <span className="text-ui-2xs font-normal text-texte-tertiaire">{role.tag}</span>
         </h1>
         <span className={occupe ? "klyra-respire truncate text-ui-xs text-texte-secondaire" : "truncate text-ui-xs text-texte-tertiaire"}>

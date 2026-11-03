@@ -27,11 +27,14 @@ import { COMMANDE_RESUME_AUTO, estCommandeCompacter, formaterJetons, nouvelleMes
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
+import { extraitMarkdown } from "@/lib/apercu/extrait";
+import { texteBrut, type Inline } from "@/lib/apercu/markdown";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
   Artefact,
   Rendu,
   Chat,
+  Citation,
   Etape,
   EtapeTicket,
   Message,
@@ -89,6 +92,8 @@ export interface EnAttente {
   text: string;
   to: RoleId | null;
   fichiers: string[];
+  /** « Répondre » à un message d'agent : il repart avec le message. */
+  citation?: Citation;
   /** Une exécution de routine qui attend son tour (cf. `useLivraisonRoutines`). */
   routineRun?: string;
 }
@@ -544,7 +549,9 @@ const VERSION_STOCKAGE = 1;
 interface WorkspaceApi {
   state: WorkspaceState;
   /** Envoie un message ; sans destinataire, c'est le Principal (ou l'agent de la conversation directe) qui répond. */
-  sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[]) => void;
+  sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[], citation?: Citation) => void;
+  /** Ajoute ou retire ta réaction (un émoji) à un message. */
+  reagir: (messageId: string, emoji: string) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
   /** « Plus tard » sur le conseil de résumer : il revient quand la conversation dépasse `jusqua` jetons. */
@@ -892,7 +899,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     if (depuis.length) lignes.push(`${jamaisRepondu ? "[La conversation jusqu’ici]" : "[Depuis ta dernière réponse]"}\n${depuis.join("\n\n")}`);
     // Le retour d'un fil arrive au nom de l'agent qui l'a fait, pas de la personne.
     const de = messageUtilisateur.author.kind === "role" ? `Retour du fil, de ${nom(messageUtilisateur.author.roleId)}` : `Message de ${personne.name}`;
-    lignes.push(`${lignes.length || messageUtilisateur.author.kind === "role" ? `[${de}]\n` : ""}${texteDe(messageUtilisateur)}`);
+    // « Répondre » : l'agent sait à quel message on répond.
+    const citation = messageUtilisateur.parts.find((p) => p.type === "citation");
+    const enReponse = citation?.type === "citation" ? `[En réponse à ce message de ${nom(citation.roleId)}]\n> ${citation.extrait}\n\n` : "";
+    lignes.push(`${lignes.length || messageUtilisateur.author.kind === "role" ? `[${de}]\n` : ""}${enReponse}${texteDe(messageUtilisateur)}`);
     const joints = messageUtilisateur.parts.find((p) => p.type === "fichiers");
     if (joints?.type === "fichiers" && joints.chemins.length) {
       lignes.push(`[Fichiers joints, à lire]\n${joints.chemins.map((c) => `- ${c}`).join("\n")}`);
@@ -903,7 +913,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /** `lancer`, pour ce qui est déclaré avant lui (retours des fils). */
   const lancerTot = useRef<(chatId: string, roleId: RoleId, message: Message) => void>(() => {});
   const envoyerRef = useRef<
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean, routineRun?: string, idImpose?: string) => void
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean, routineRun?: string, idImpose?: string, citation?: Citation) => void
   >(() => {});
 
   /** La suite de la file d'attente, quand l'agent a fini. */
@@ -919,7 +929,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     dispatch({ type: "file/retirer", chatId, id: prochain.id });
     // L'état « travail » est libéré au rendu suivant : le message part juste après.
     timers.current.push(
-      setTimeout(() => envoyerRef.current(chatId, prochain.text, prochain.to, prochain.fichiers, true, prochain.routineRun), 0),
+      setTimeout(() => envoyerRef.current(chatId, prochain.text, prochain.to, prochain.fichiers, true, prochain.routineRun, undefined, prochain.citation), 0),
     );
   }, []);
 
@@ -1463,7 +1473,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /** `horsFile` : le message sort de la file, l'agent vient de finir (l'état n'est peut-être pas encore à jour). */
   const envoyer = useCallback(
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false, routineRun?: string, idImpose?: string) => {
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false, routineRun?: string, idImpose?: string, citation?: Citation) => {
       const chat = assurerChat(chatId);
       if (!chat) return;
 
@@ -1474,7 +1484,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         dispatch({
           type: "file/ajouter",
           chatId,
-          message: { id: idFile, text, to, fichiers, ...(routineRun ? { routineRun } : {}) },
+          message: { id: idFile, text, to, fichiers, ...(routineRun ? { routineRun } : {}), ...(citation ? { citation } : {}) },
         });
         return idFile;
       }
@@ -1483,7 +1493,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       const cible = chat.kind === "direct" ? chat.roleIds[0] : (to ?? (chat.roleIds.includes("principal") ? "principal" : chat.roleIds[0]));
       if (!horsFile && !routineRun && configurationRef.current.resumeAuto && !estCommandeCompacter(text) && resumeAvantEnvoi(chat, cible)) {
         const idFile = idImpose ?? crypto.randomUUID();
-        dispatch({ type: "file/ajouter", chatId, message: { id: idFile, text, to, fichiers } });
+        dispatch({ type: "file/ajouter", chatId, message: { id: idFile, text, to, fichiers, ...(citation ? { citation } : {}) } });
         compacterAuto(chatId, cible, "envoi");
         return idFile;
       }
@@ -1499,12 +1509,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         chatId,
         author: { kind: "user" },
         createdAt: new Date().toISOString(),
-        parts: fichiers.length
-          ? [
-              { type: "text", text },
-              { type: "fichiers", chemins: fichiers },
-            ]
-          : [{ type: "text", text }],
+        parts: [
+          ...(citation ? [{ type: "citation" as const, ...citation }] : []),
+          { type: "text", text },
+          ...(fichiers.length ? [{ type: "fichiers" as const, chemins: fichiers }] : []),
+        ],
         ...(routineRun ? { routineRun } : {}),
       };
       dispatch({ type: "message/add", message });
@@ -1531,9 +1540,22 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     }
   }, [state.travail, state.file]);
   const sendMessage = useCallback(
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[] = []) => envoyer(chatId, text, to, fichiers),
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[] = [], citation?: Citation) =>
+      envoyer(chatId, text, to, fichiers, false, undefined, undefined, citation),
     [envoyer],
   );
+
+  const reagir = useCallback((messageId: string, emoji: string) => {
+    dispatch({
+      type: "message/update",
+      id: messageId,
+      patch: (m) => {
+        const avant = m.reactions ?? [];
+        const reactions = avant.includes(emoji) ? avant.filter((e) => e !== emoji) : [...avant, emoji];
+        return { ...m, reactions: reactions.length ? reactions : undefined };
+      },
+    });
+  }, []);
 
   const choisirModele = useCallback(
     (chatId: string, modele: string | null, effort: string | null) => {
@@ -2523,6 +2545,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       moi,
       choisirAcces,
       repondreAutorisation,
+      reagir,
       enregistrerTache,
       supprimerTache,
       restaurerTaches,
@@ -2575,6 +2598,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       enregistrerProfil,
       choisirAcces,
       repondreAutorisation,
+      reagir,
       enregistrerTache,
       supprimerTache,
       restaurerTaches,
@@ -2717,7 +2741,10 @@ export function useRecentChats(limit?: number): Chat[] {
 export interface ChatPreview {
   /** Rôle à afficher en avatar : auteur du dernier message, ou le Principal. */
   roleId: RoleId;
+  /** Le dernier message en texte seul, sur une ligne (Markdown retiré). */
   text: string;
+  /** Le même, avec sa mise en forme en ligne (gras, italique, code…), pour la barre. */
+  contenu: Inline[];
   /** Date du dernier message, null si la conversation est vide. */
   at: string | null;
 }
@@ -2729,17 +2756,15 @@ export function useChatPreview(chatId: string): ChatPreview {
   return useMemo(() => {
     const direct = chatId.startsWith(DIRECT);
     const last = messages.findLast((m) => m.chatId === chatId && (m.statut !== "en-cours" || texteDe(m)));
-    if (!last) return { roleId: "principal", text: "", at: null };
-    const text = texteDe(last).replace(/\s+/g, " ") || (last.statut === "erreur" ? "Arrêté sur une erreur" : "…");
-    if (last.author.kind === "user") return { roleId: "principal", text: `Toi : ${text}`, at: last.createdAt };
-    const { roleId } = last.author;
-    const name = roles.find((r) => r.id === roleId)?.name ?? "";
+    if (!last) return { roleId: "principal", text: "", contenu: [], at: null };
+    const extrait = extraitMarkdown(texteDe(last));
+    const vide = !texteBrut(extrait).trim();
+    const contenu: Inline[] = vide ? [{ type: "texte", texte: last.statut === "erreur" ? "Arrêté sur une erreur" : "…" }] : extrait;
     // Conversation directe : pas besoin de répéter le prénom de l'agent.
-    return {
-      roleId,
-      text: direct ? text : `${name} : ${text}`,
-      at: last.createdAt,
-    };
+    const roleId = last.author.kind === "user" ? "principal" : last.author.roleId;
+    const prefixe = last.author.kind === "user" ? "Toi : " : direct ? "" : `${roles.find((r) => r.id === roleId)?.name ?? ""} : `;
+    const avecPrefixe: Inline[] = prefixe ? [{ type: "texte", texte: prefixe }, ...contenu] : contenu;
+    return { roleId, text: texteBrut(avecPrefixe), contenu: avecPrefixe, at: last.createdAt };
   }, [messages, roles, chatId]);
 }
 
