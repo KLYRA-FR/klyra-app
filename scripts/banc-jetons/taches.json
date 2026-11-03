@@ -1,0 +1,41 @@
+[
+  {
+    "id": "dev",
+    "titre": "Petite évolution de code avec tests",
+    "fixture": "dev",
+    "prompt": "Dans ce petit projet (src/panier.js), ajoute une fonction exportée formaterPrix(centimes, devise = \"EUR\") qui rend un prix lisible en français (ex. 1234 centimes → « 12,34 € », devise USD → « 12,34 $US »), refuse un nombre de centimes non entier ou négatif avec une RangeError, et couvre-la par des tests dans test/. Les tests doivent passer avec `node --test`.",
+    "controle": "node --test"
+  },
+  {
+    "id": "offre",
+    "titre": "Livrable multi-métier (offre + mail)",
+    "fixture": null,
+    "prompt": "Un restaurant de Lyon (Le Bouchon des Pentes) veut refaire son site vitrine et être mieux trouvé sur Google. Prépare dans un fichier livrable.md : 1) une proposition de 3 formules d'accompagnement KLYRA (contenu, livrables, délais indicatifs, sans prix), 2) le mail d'envoi de cette proposition au gérant, prêt à relire. Ne l'envoie pas.",
+    "controle": "test -s livrable.md"
+  },
+  {
+    "id": "equipe",
+    "titre": "Page d'accueil multi-métier, confiée à l'équipe côté klyra",
+    "fixture": null,
+    "prompt": "Le Bouchon des Pentes, un bouchon lyonnais des pentes de la Croix-Rousse, veut une page d'accueil de site vitrine. Livre dans ce dossier : index.html (HTML et CSS dans le même fichier, responsive, sans dépendance externe) avec un vrai texte d'accueil, la présentation de la cuisine, les horaires à compléter et un appel à réserver, et direction.md qui explique en quelques lignes les choix de ton, de typographie et de couleurs.",
+    "promptKlyra": "Fais-le avec ton équipe : confie chaque partie à l'agent du métier concerné (texte, direction visuelle, intégration), puis assemble.",
+    "controle": "test -s index.html && test -s direction.md"
+  },
+  {
+    "id": "ping",
+    "essai": true,
+    "titre": "Essai de tuyauterie",
+    "fixture": null,
+    "prompt": "Réponds juste « prêt ».",
+    "controle": null
+  },
+  {
+    "id": "ping-equipe",
+    "essai": true,
+    "titre": "Essai délégation en arrière-plan",
+    "fixture": null,
+    "prompt": "Écris une phrase d'accueil pour un restaurant dans phrase.txt.",
+    "promptKlyra": "Confie-la à l'agent redacteur, en arrière-plan, puis vérifie le fichier quand il a fini.",
+    "controle": "test -s phrase.txt"
+  }
+]

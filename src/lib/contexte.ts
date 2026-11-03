@@ -15,9 +15,9 @@ import type { Chat, RoleId } from "@/types/domain";
 export const COMMANDE_COMPACTER = "/compact";
 
 /*
- * Les seuils portent sur les échanges (taille moins socle) : le socle (consignes, outils, fiche :
- * ~30 k jetons dans l'app de bureau, ~16 k sur le VPS, mesurés le 03/11/2026) est le même pour un
- * fil neuf, et un résumé ne le réduit pas.
+ * Les seuils portent sur les échanges (taille moins socle) : le socle (consignes, outils, agents
+ * listés : ~15 k jetons avant ces réglages, ~12 k après, mesurés par `pnpm mesure:socle`) est le même
+ * pour un fil neuf, et un résumé ne le réduit pas.
  */
 /** Au-delà, chaque étape relit beaucoup d'échanges : on propose de résumer. */
 export const SEUIL_LOURD = 50_000;

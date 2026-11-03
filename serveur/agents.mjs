@@ -18,8 +18,8 @@ import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
 const OUTILS_BLOQUANTS = ["AskUserQuestion", "EnterPlanMode"];
-/** Outils de Claude Code sans usage ici (~4 500 jetons à chaque tour) : les mêmes que dans l'app (electron/claude.ts). */
-const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext"];
+/** Outils de Claude Code sans usage ici (~4 900 jetons à chaque appel) : les mêmes que dans l'app (electron/claude.ts). */
+const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext", "ListAgents"];
 const AGENTS_DE_CLAUDE = ["general-purpose", "Explore", "Plan", "statusline-setup", "claude", "claude-code-guide", "output-style-setup"];
 const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent"] } });
 const VEILLE_MS = 30 * 60 * 1000;
@@ -97,8 +97,9 @@ export function creerAgents(options) {
     return "non-connecte";
   }
 
+  /* Sans les skills livrées avec Claude Code (~2 300 jetons à chaque appel), comme dans l'app. */
   const environnement = () => {
-    const env = { ...process.env, HOME: home };
+    const env = { ...process.env, HOME: home, CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" };
     const jeton = jetonClaude();
     if (jeton) env.CLAUDE_CODE_OAUTH_TOKEN = jeton;
     return env;
@@ -431,6 +432,8 @@ export function creerAgents(options) {
         "stream-json",
         "--verbose",
         "--include-partial-messages",
+        // Infos du poste dans le premier message : le cache se partage entre sessions (cf. electron/claude.ts).
+        "--exclude-dynamic-system-prompt-sections",
         "--permission-prompt-tool",
         "stdio",
         "--permission-prompts",

@@ -37,6 +37,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
       outils: (corps.tools ?? []).map((t) => t.name),
       listes: agentsSurveilles.filter((n) => brut.includes(`- ${n}: `)),
       resultats: resultats.map((r) => ({ erreur: !!r.is_error, texte: JSON.stringify(r.content).slice(0, 300) })),
+      // La requête entière : ce que Claude Code envoie au modèle (cf. mesure-socle.mjs).
+      corps,
     });
     if (sousAgent) return [{ type: "text", text: `bonjour de ${sousAgent}` }];
     // Les outils de l'app : « fil » ouvre un fil, « liste » liste ceux de l'agent.
