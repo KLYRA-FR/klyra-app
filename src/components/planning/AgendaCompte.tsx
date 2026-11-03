@@ -153,7 +153,7 @@ export function FenetreEvenementCompte({ initial, onFermer }: { initial: Eveneme
       <form
         role="dialog"
         aria-modal="true"
-        aria-label="Événement"
+        aria-label="Rendez-vous"
         onSubmit={enregistrer}
         onMouseDown={(x) => x.stopPropagation()}
         className="flex w-[380px] max-w-full flex-col gap-3 rounded-xl border border-bordure-subtile bg-fond-surface p-4 shadow-ombre-flottante"
@@ -161,10 +161,11 @@ export function FenetreEvenementCompte({ initial, onFermer }: { initial: Eveneme
         <input
           autoFocus
           value={e.titre}
-          placeholder="Nouvel événement"
+          placeholder="Nouveau rendez-vous"
           onChange={(x) => setE({ ...e, titre: x.target.value })}
           className="border-0 bg-transparent p-0 text-ui font-semibold text-texte-principal outline-none placeholder:text-texte-tertiaire"
         />
+        <p className="m-0 -mt-2 text-ui-xs text-texte-secondaire">Les agents le lisent dans leur planning.</p>
         <div className="flex flex-wrap items-center gap-2">
           <Input
             size="sm"
