@@ -77,6 +77,7 @@
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:projets-telephone": "vitest run src/lib/telephone/dossiers.test.ts src/lib/telephone/gestes-fichiers.test.ts src/lib/telephone/ecrans.test.tsx",
     "test:identite": "vitest run src/lib/identite.test.ts",
+    "test:infobulle": "vitest run src/lib/infobulle.test.ts",
     "test:collage": "vitest run src/lib/collage.test.ts",
     "test:recherche": "vitest run src/lib/recherche.test.ts",
     "test:report": "vitest run src/lib/report.test.ts",
