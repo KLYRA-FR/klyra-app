@@ -49,6 +49,20 @@ class FauxProcessus extends EventEmitter {
   }
 }
 
+/** Un module compilé pur, avec les chemins simulés du test (posix), même sous Windows. */
+function chargerAvecCheminsPosix(fichier) {
+  const module = { exports: {} };
+  vm.runInNewContext(readFileSync(fichier, "utf8"), {
+    exports: module.exports,
+    module,
+    require: (nom) => {
+      assert.ok(nom === "node:path", `Dépendance non simulée interdite : ${nom}`);
+      return path.posix;
+    },
+  }, { filename: fichier });
+  return module.exports;
+}
+
 function fixture() {
   const processus = [];
   const minuteurs = new Map();
@@ -79,7 +93,7 @@ function fixture() {
     },
     // Fonctions pures (tri des binaires, message de lancement) : le vrai module compilé.
     "./claude-binaire": require(path.join(path.dirname(filename), "claude-binaire.js")),
-    "./atelier": require(path.join(path.dirname(filename), "atelier.js")),
+    "./atelier": chargerAvecCheminsPosix(path.join(path.dirname(filename), "atelier.js")),
     "./consommation": { enregistrerTourClaude: () => ({}) },
     "./ia": {
       configMcp: (contexte, composio) => JSON.stringify({ contexte, composio }),
