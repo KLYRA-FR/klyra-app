@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
 import { formatDaySeparator, formatTime, isSameDay } from "@/lib/format";
+import { citationDe, REACTIONS, repondreA } from "@/lib/repondre";
 import { texteDe, useTravail, useWorkspace, type FaconReessai } from "@/lib/workspace";
 import type { Chat, Message } from "@/types/domain";
 import { nomModele, useModelesDe, useModeleEffectif } from "./ChoixModele";
@@ -69,13 +70,14 @@ function texteParle(message: Message): string {
  */
 export function ActionsReponse({ chat, message, derniere }: { chat: Chat; message: Message; derniere: boolean }) {
   const router = useRouter();
-  const { reessayer, brancher } = useWorkspace();
+  const { reessayer, brancher, reagir } = useWorkspace();
   const travail = useTravail(chat.id);
   const { moteur, modele } = useModeleEffectif(chat);
   const modeles = useModelesDe(moteur, chat.lieu ?? null);
   const [copie, setCopie] = useState(false);
   const [parle, setParle] = useState(false);
   const [ouvert, setOuvert] = useState(false);
+  const [emojis, setEmojis] = useState(false);
   const [sous, setSous] = useState<"reessayer" | "modele" | null>(null);
   /* Le sous-menu ne se referme qu'après un court délai : le temps d'aller jusqu'à lui en diagonale. */
   const minuteur = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,18 +95,24 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
   const occupe = !!travail;
 
   useEffect(() => {
-    if (!ouvert) return;
+    if (!ouvert && !emojis) return;
     const fermer = (e: MouseEvent) => {
-      if (!zone.current?.contains(e.target as Node)) setOuvert(false);
+      if (zone.current?.contains(e.target as Node)) return;
+      setOuvert(false);
+      setEmojis(false);
     };
-    const echap = (e: KeyboardEvent) => e.key === "Escape" && setOuvert(false);
+    const echap = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOuvert(false);
+      setEmojis(false);
+    };
     document.addEventListener("mousedown", fermer);
     document.addEventListener("keydown", echap);
     return () => {
       document.removeEventListener("mousedown", fermer);
       document.removeEventListener("keydown", echap);
     };
-  }, [ouvert]);
+  }, [ouvert, emojis]);
 
   /* On coupe la lecture en quittant la conversation. */
   useEffect(() => () => window.speechSynthesis?.cancel(), []);
@@ -134,7 +142,7 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
       ref={zone}
       className={cn(
         "relative -ml-1 flex items-center gap-0.5 transition-opacity duration-[120ms]",
-        !derniere && !ouvert && "opacity-0 group-hover/message:opacity-100 focus-within:opacity-100",
+        !derniere && !ouvert && !emojis && "opacity-0 group-hover/message:opacity-100 focus-within:opacity-100",
       )}
     >
       <button
@@ -161,6 +169,33 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
       >
         <Icon name={parle ? "stop-01" : "volume-01"} size={16} />
       </button>
+      {/* Une réaction, pour le plaisir : elle reste dans l'app, l'agent ne la reçoit pas. */}
+      <button
+        type="button"
+        title="Réagir"
+        aria-label="Réagir"
+        aria-haspopup="menu"
+        aria-expanded={emojis}
+        onClick={() => {
+          setOuvert(false);
+          setEmojis((v) => !v);
+        }}
+        className={cn(BOUTON, emojis && "bg-fond-survol text-texte-principal")}
+      >
+        <Icon name="face-smile" size={16} />
+      </button>
+      <button
+        type="button"
+        title="Répondre"
+        aria-label="Répondre à ce message"
+        onClick={() => {
+          const citation = citationDe(message, texte);
+          if (citation) repondreA(chat.id, citation);
+        }}
+        className={BOUTON}
+      >
+        <Icon name="reply-01" size={16} />
+      </button>
       <button
         type="button"
         title="Plus d’actions"
@@ -169,12 +204,40 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
         aria-expanded={ouvert}
         onClick={() => {
           setSous(null);
+          setEmojis(false);
           setOuvert((v) => !v);
         }}
         className={cn(BOUTON, ouvert && "bg-fond-survol text-texte-principal")}
       >
         <Icon name="dot-horizontal" size={16} />
       </button>
+
+      {emojis && (
+        <div ref={apparition} role="menu" aria-label="Réactions" className="absolute bottom-full left-0 z-50 mb-1.5 flex items-center gap-0.5 rounded-lg border border-bordure-subtile bg-fond-surface p-1 shadow-ombre-flottante">
+          {REACTIONS.map((emoji) => {
+            const mise = message.reactions?.includes(emoji) ?? false;
+            return (
+              <button
+                key={emoji}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={mise}
+                aria-label={`Réagir ${emoji}`}
+                onClick={() => {
+                  reagir(message.id, emoji);
+                  setEmojis(false);
+                }}
+                className={cn(
+                  "flex size-8 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 text-[18px] leading-none transition-[background-color,scale] duration-[120ms] ease-sortie hover:scale-110 hover:bg-fond-survol",
+                  mise && "bg-fond-surface-grise",
+                )}
+              >
+                {emoji}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {ouvert && (
         <div ref={apparition} role="menu" aria-label="Actions sur la réponse" className={cn(MENU, "bottom-full left-0 mb-1.5")}>
@@ -251,6 +314,29 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Sous une réponse : tes réactions ; un clic sur l'une la retire. */
+export function Reactions({ message }: { message: Message }) {
+  const { reagir } = useWorkspace();
+  if (!message.reactions?.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {message.reactions.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          aria-pressed
+          title="Retirer ta réaction"
+          aria-label={`Retirer la réaction ${emoji}`}
+          onClick={() => reagir(message.id, emoji)}
+          className="flex h-6 cursor-pointer items-center rounded-full border border-bordure-subtile bg-fond-surface px-2 text-ui-s leading-none transition-colors duration-[120ms] ease-sortie hover:border-bordure-forte"
+        >
+          {emoji}
+        </button>
+      ))}
     </div>
   );
 }

@@ -265,6 +265,8 @@ export interface Etape {
 
 export type MessagePart =
   | { type: "text"; text: string }
+  /** Ton message répond à un message d'agent (« Répondre ») : son extrait, au-dessus de ta bulle. */
+  | ({ type: "citation" } & Citation)
   /** Fichiers joints par l'utilisateur (chemins complets). */
   | { type: "fichiers"; chemins: string[] }
   | { type: "etapes"; etapes: Etape[] }
@@ -288,6 +290,13 @@ export type MessagePart =
   | { type: "options"; options: DeliverableOption[] }
   | { type: "worklog"; durationMin: number; files: ChangedFile[] }
   | { type: "actions"; actions: MessageAction[] };
+
+/** Le message d'agent auquel on répond : son id, son auteur et le début de son texte, sans Markdown. */
+export interface Citation {
+  messageId: string;
+  roleId: RoleId;
+  extrait: string;
+}
 
 /** Une fiche d'agent proposée par l'assistant (outil `proposer_agent`), pas encore enregistrée. */
 export interface PropositionAgent {
@@ -315,6 +324,8 @@ export interface Message {
   compaction?: boolean;
   /** Résumé lancé par l'app (configuration KLYRA) : avant un message, ou pendant une pause. Sans notification. */
   compactionAuto?: "envoi" | "pause";
+  /** Tes réactions à une réponse d'agent (émojis), pour le plaisir : rien n'est envoyé à l'agent. */
+  reactions?: string[];
 }
 
 /* ─── Planning ─────────────────────────────────────────────────── */

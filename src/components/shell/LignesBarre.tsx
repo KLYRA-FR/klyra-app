@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
+import { ApercuEnLigne } from "./ApercuEnLigne";
 import { AgentRond, VisuelAgent, type StatutAgent } from "@/components/roles/AgentRond";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
@@ -60,7 +61,7 @@ function Corps({
   titre: string;
   etiquette?: string;
   heure: string | null;
-  apercu: string;
+  apercu: ReactNode;
   enCours: boolean;
   epinglee?: boolean;
   avecBouton?: boolean;
@@ -128,7 +129,7 @@ export function LigneAgent({
     ? `${etapeEnCours(messages, travail.messageId) ?? "Réfléchit"}…`
     : occupeAilleurs
       ? "Travaille dans une conversation d’équipe…"
-      : apercu.text || role.title;
+      : apercu.contenu.length ? <ApercuEnLigne contenu={apercu.contenu} /> : role.title;
 
   return (
     <Link
@@ -216,7 +217,7 @@ export function LigneConversation({ chat, active, projet, onMenu }: { chat: Chat
         titre={chat.title}
         etiquette={projet}
         heure={apercu.at ? formatListDate(apercu.at) : null}
-        apercu={qui ? `${qui} travaille…` : apercu.text || "Nouvelle conversation"}
+        apercu={qui ? `${qui} travaille…` : apercu.contenu.length ? <ApercuEnLigne contenu={apercu.contenu} /> : "Nouvelle conversation"}
         enCours={!!travail}
         epinglee={estEpinglee(chat)}
         avecBouton
