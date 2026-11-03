@@ -159,6 +159,11 @@ interface AgentsApi {
   changerModele: (id: string, modele: string) => Promise<void>;
   /** Le fournisseur de ses nouvelles conversations et de ses fils. */
   changerFournisseur: (id: string, fournisseur: string) => Promise<void>;
+  /**
+   * Sa place dans la barre et ses notifications, sur ce poste : masqué (toujours actif et appelable),
+   * muet (ses réponses finies ne préviennent plus ; ses erreurs, si), épinglé en haut.
+   */
+  preferer: (id: string, preference: { masque?: boolean; muet?: boolean; epingle?: boolean }) => Promise<void>;
   create: (id: string, content: string, reglage: { tag: string; teinte: RoleTeinte }) => Promise<void>;
   history: (id: string) => Promise<HistoryEntry[]>;
   readVersion: (id: string, versionId: string) => Promise<string>;
@@ -250,9 +255,13 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
 
   /* Les préférences d'un agent : on remplace ce qui est donné, le reste (modèle choisi…) est gardé. */
   const saveMeta = useCallback(
-    async (id: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string; modele?: string; fournisseur?: string }) => {
+    async (id: string, reglage: { tag?: string; teinte?: RoleTeinte; nom?: string; modele?: string; fournisseur?: string; masque?: boolean; muet?: boolean; epingleLe?: string }) => {
       const current = metaRef.current[id] ?? {};
       const voulu = { ...current, ...reglage };
+      // Une bascule éteinte ne s'écrit pas.
+      if ("masque" in reglage && !reglage.masque) delete voulu.masque;
+      if ("muet" in reglage && !reglage.muet) delete voulu.muet;
+      if ("epingleLe" in reglage && !reglage.epingleLe) delete voulu.epingleLe;
       if ("nom" in reglage && !reglage.nom?.trim()) delete voulu.nom;
       if ("modele" in reglage && !reglage.modele) delete voulu.modele;
       // Claude est le fournisseur par défaut : il ne s'écrit pas.
@@ -321,6 +330,12 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         await saveMeta(id, reglage);
       },
       changerFournisseur: (id, fournisseur) => saveMeta(id, { fournisseur }),
+      preferer: (id, { masque, muet, epingle }) =>
+        saveMeta(id, {
+          ...(masque !== undefined ? { masque } : {}),
+          ...(muet !== undefined ? { muet } : {}),
+          ...(epingle !== undefined ? { epingleLe: epingle ? new Date().toISOString() : undefined } : {}),
+        }),
       changerModele: async (id, modele) => {
         const fiche = filesRef.current.find((f) => f.name === id);
         if (!fiche) throw new BridgeError("introuvable", `La fiche « ${id} » n’existe plus sur le disque.`);

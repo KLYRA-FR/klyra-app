@@ -628,7 +628,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const bridge = getBridge();
   const [erreurChargement, setErreurChargement] = useState<string | null>(null);
   const { toutes: routinesLocales, actif: moteurRoutines } = useRoutines();
-  const { roles, status: statutAgents } = useAgents();
+  const { roles, status: statutAgents, meta: metaAgents } = useAgents();
   const [state, dispatch] = useReducer(reducer, undefined, (): WorkspaceState => {
     const mock = createMockWorkspace();
     // App de bureau : de vraies conversations, lues sur le disque juste après.
@@ -685,9 +685,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   const ecritureRegroupee = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rolesRef = useRef(roles);
+  const metaAgentsRef = useRef(metaAgents);
   useEffect(() => {
     stateRef.current = state;
     rolesRef.current = roles;
+    metaAgentsRef.current = metaAgents;
   });
   const ecouteurs = useRef(new Map<string, (event: AgentEvent) => void>());
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -1115,7 +1117,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           terminer();
           // Un résumé n'est pas une réponse : ni notification, ni ticket, ni retour de fil.
           if (stateRef.current.messages.find((m) => m.id === messageId)?.compaction) break;
-          if (event.erreur !== "Arrêté par toi." && !event.silencieux) {
+          // Un agent mis en sourdine (clic droit dans la barre) ne prévient plus de ses réponses ; ses erreurs, si.
+          const sourdine = event.ok && !!metaAgentsRef.current[roleId]?.muet;
+          if (event.erreur !== "Arrêté par toi." && !event.silencieux && !sourdine) {
             const notifiee = prevenir(chatId, roleId, messageId, event.ok);
             // Le son de l'app, sauf si la notification du système sonne déjà.
             if (!(notifiee && notificationSonore(event.ok ? "agentFini" : "agentErreur"))) jouer(event.ok ? "fin-de-tache" : "erreur");

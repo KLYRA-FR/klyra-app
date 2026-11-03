@@ -1,14 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
+import {
+  ElementContextuel,
+  EnteteContextuel,
+  MenuContextuel,
+  SeparateurContextuel,
+  SousMenuContextuel,
+  useMenuContextuel,
+} from "@/components/ui/MenuContextuel";
 import { cn } from "@/lib/cn";
 import { enRetard, libelleEcheance } from "@/lib/dates";
-import type { ColonneTicket } from "@/lib/tickets";
+import { LIBELLES_ETAPES, type ColonneTicket } from "@/lib/tickets";
 import { useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Fil } from "@/types/domain";
 import { useFermerTicket } from "./useFermerTicket";
@@ -94,10 +103,66 @@ function Reglages({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: Colon
   );
 }
 
+const PRIORITES = ["Aucune", "Basse", "Moyenne", "Haute"] as const;
+
+/** Le clic droit sur un ticket : l'ouvrir, sa priorité, son étape, le fermer ou le supprimer. */
+function MenuTicket({ chat, colonne, x, y, onFermer }: { chat: Chat & { fil: Fil }; colonne: ColonneTicket; x: number; y: number; onFermer: (rendreFocus?: boolean) => void }) {
+  const router = useRouter();
+  const { majTicket, rouvrirFil, arreter } = useWorkspace();
+  const fermer = useFermerTicket();
+  const role = useRole(chat.fil.roleId);
+  const travail = useTravail(chat.id);
+  const priorite = chat.fil.priorite ?? 0;
+  const termine = colonne === "termine";
+  return (
+    <MenuContextuel x={x} y={y} libelle={`Ticket ${chat.title}`} onFermer={onFermer}>
+      <EnteteContextuel visuel={<AgentRond roleId={chat.fil.roleId} taille={24} />} titre={chat.title} sousTitre={`${role.name} · ${LIBELLES_ETAPES[colonne]}`} enCours={!!travail} />
+      <SeparateurContextuel />
+      <ElementContextuel icone="message-square" raccourci="↵" onChoisir={() => router.push(`/chat?id=${encodeURIComponent(chat.id)}`)}>
+        Ouvrir le fil
+      </ElementContextuel>
+      {!termine && (
+        <SousMenuContextuel icone="star-01" libelle="Priorité">
+          {PRIORITES.map((libelle, rang) => (
+            <ElementContextuel key={libelle} icone={rang === priorite ? "check-01" : "circle"} raccourci={"!".repeat(rang) || undefined} onChoisir={() => majTicket(chat.id, { priorite: rang as 0 | 1 | 2 | 3 })}>
+              {libelle}
+            </ElementContextuel>
+          ))}
+        </SousMenuContextuel>
+      )}
+      {travail && (
+        <ElementContextuel icone="stop-01" onChoisir={() => arreter(chat.id)}>
+          Arrêter {role.name}
+        </ElementContextuel>
+      )}
+      <SeparateurContextuel />
+      {termine ? (
+        <ElementContextuel icone="arrow-rotate-left-01" onChoisir={() => rouvrirFil(chat.id)}>
+          Rouvrir
+        </ElementContextuel>
+      ) : (
+        <>
+          {colonne !== "a-faire" && (
+            <ElementContextuel icone="arrow-rotate-left-01" onChoisir={() => majTicket(chat.id, { etape: "a-faire" })}>
+              Remettre à faire
+            </ElementContextuel>
+          )}
+          <ElementContextuel icone={colonne === "a-valider" ? "check-01" : "x-01"} onChoisir={() => fermer(chat.id)}>
+            {colonne === "a-valider" ? "Valider et fermer" : "Fermer"}
+          </ElementContextuel>
+        </>
+      )}
+      <ElementContextuel icone="trash-01" danger onChoisir={() => fermer(chat.id, true)}>
+        Supprimer
+      </ElementContextuel>
+    </MenuContextuel>
+  );
+}
+
 /**
  * Un ticket (un fil) : titre, agent, projet, priorité, échéance, progression,
  * raison de blocage. Le titre ouvre le fil dans l'onglet de l'agent ; le « … »
- * déplie les réglages, comme une ligne de rappel.
+ * déplie les réglages, comme une ligne de rappel ; le clic droit ouvre `MenuTicket`.
  */
 export function CarteTicket({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: ColonneTicket }) {
   const { state } = useWorkspace();
@@ -107,6 +172,7 @@ export function CarteTicket({ chat, colonne }: { chat: Chat & { fil: Fil }; colo
   const lanceur = useRole(fil.lancePar?.roleId ?? fil.roleId);
   const travail = useTravail(chat.id);
   const [ouverte, setOuverte] = useState(false);
+  const menu = useMenuContextuel<null>();
   const projet = fil.projetId ? state.projects.find((p) => p.id === fil.projetId) : null;
   const retard = colonne !== "termine" && !!fil.echeance && enRetard(fil.echeance, null);
   const priorite = fil.priorite ?? 0;
@@ -114,6 +180,10 @@ export function CarteTicket({ chat, colonne }: { chat: Chat & { fil: Fil }; colo
   return (
     <article
       data-ticket={chat.id}
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest("input, textarea")) return;
+        menu.ouvrir(e, null);
+      }}
       className={cn(
         "group/ticket flex flex-col gap-2 rounded-md border border-bordure-subtile bg-fond-surface p-3 transition-colors duration-[120ms]",
         colonne === "termine" && "bg-transparent",
@@ -169,6 +239,7 @@ export function CarteTicket({ chat, colonne }: { chat: Chat & { fil: Fil }; colo
       )}
 
       {ouverte && <Reglages chat={chat} colonne={colonne} />}
+      {menu.menu && <MenuTicket key={menu.menu.x + "," + menu.menu.y} chat={chat} colonne={colonne} x={menu.menu.x} y={menu.menu.y} onFermer={menu.fermer} />}
     </article>
   );
 }

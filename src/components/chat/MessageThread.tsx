@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
+import { useMenuContextuel } from "@/components/ui/MenuContextuel";
 import { plagesDans, SURLIGNAGE } from "@/components/recherche/surligner";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
@@ -14,6 +15,7 @@ import { DEPART_ROUTINE } from "@/lib/message-routine";
 import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse } from "./ActionsReponse";
+import { MenuMessage, type CibleMessage } from "./MenuMessage";
 import { MessagePartView } from "./MessageParts";
 import { RailMessages } from "./RailMessages";
 
@@ -306,6 +308,7 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   const messages = useChatMessages(chatId);
   const travail = useTravail(chatId);
   const { sendMessage, marquerLu } = useWorkspace();
+  const menu = useMenuContextuel<CibleMessage>();
   const zone = useRef<HTMLDivElement>(null);
   const enBas = useRef(true);
   /* Arrivé sur un message par la recherche : on y reste, même si un agent écrit, jusqu'au prochain geste dans le fil. */
@@ -368,7 +371,18 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
             return (
               <Fragment key={message.id}>
                 {showDay && <DaySeparator iso={message.createdAt} />}
-                <div data-message={message.id} data-auteur={message.author.kind} className={cn("klyra-arrivee", suite ? "mt-1.5" : "")}>
+                <div
+                  data-message={message.id}
+                  data-auteur={message.author.kind}
+                  onContextMenu={(e) => {
+                    /* Un champ (réponse à une question…) garde son clic droit. */
+                    if ((e.target as HTMLElement).closest("input, textarea, [contenteditable]")) return;
+                    const choix = window.getSelection();
+                    const dedans = !!choix?.rangeCount && e.currentTarget.contains(choix.getRangeAt(0).commonAncestorContainer);
+                    menu.ouvrir(e, { message, selection: dedans ? (choix?.toString().trim() ?? "") : "" });
+                  }}
+                  className={cn("klyra-arrivee", suite ? "mt-1.5" : "")}
+                >
                   {message.author.kind === "user" ? (
                     <UserMessage message={message} suite={suite} />
                   ) : (
@@ -390,6 +404,16 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
         </div>
       </div>
       <RailMessages zone={zone} messages={messages} />
+      {menu.menu && (
+        <MenuMessage
+          key={menu.menu.cible.message.id + menu.menu.x + menu.menu.y}
+          chat={chat}
+          cible={menu.menu.cible}
+          x={menu.menu.x}
+          y={menu.menu.y}
+          onFermer={menu.fermer}
+        />
+      )}
       <p ref={annonce} aria-live="polite" className="sr-only" />
     </div>
   );

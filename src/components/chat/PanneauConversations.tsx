@@ -1,16 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { LigneAgent, LigneConversation, SectionBarre } from "@/components/shell/LignesBarre";
+import { MenuAgent } from "@/components/shell/MenuAgent";
+import { MenuConversationBarre, ModaleRenommer } from "@/components/shell/MenuConversationBarre";
 import { MenuCreationAgent } from "@/components/team/MenuCreationAgent";
+import { useDesactiverAgent } from "@/components/team/useDesactiverAgent";
 import { BoutonIcone } from "@/components/ui/Bouton";
+import { useMenuContextuel } from "@/components/ui/MenuContextuel";
+import { useAgents } from "@/lib/agents";
+import { annoncer } from "@/lib/annonces";
+import { cn } from "@/lib/cn";
 import { useChat, useIdDirect, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
+import type { Chat, Role } from "@/types/domain";
 
 /**
  * Panneau blanc des conversations, à côté du rail (comme celui d'un projet) :
  * Mes agents, une ligne par agent avec ce qu'il fait, puis les conversations
- * d'équipe. L'utilisation de Claude est dans le rail.
+ * d'équipe. L'utilisation de Claude est dans le rail. Le clic droit sur une ligne
+ * ouvre son menu ; les agents épinglés passent juste après l'assistant, les masqués
+ * se rangent sous « N masqués » (ils restent actifs et appelables).
  */
 export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const router = useRouter();
@@ -21,6 +32,21 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const idDirect = useIdDirect();
   /* Dans un fil, la ligne de son agent reste active. */
   const agentDuFil = useChat(currentId)?.fil?.roleId;
+  const { meta } = useAgents();
+  const menuAgent = useMenuContextuel<Role>();
+  const menuConversation = useMenuContextuel<Chat>();
+  const [desactiver, fenetreDesactiver] = useDesactiverAgent();
+  const [renommage, setRenommage] = useState<Chat | null>(null);
+  const [voirMasques, setVoirMasques] = useState(false);
+
+  const estActif = (role: Role) => currentId === idDirect(role.id) || agentDuFil === role.id;
+  const [assistant, ...autres] = roles;
+  const epingleLe = (role: Role) => meta[role.id]?.epingleLe ?? "";
+  const epingles = autres.filter((r) => epingleLe(r) && !meta[r.id]?.masque).sort((a, b) => epingleLe(b).localeCompare(epingleLe(a)));
+  const masques = autres.filter((r) => meta[r.id]?.masque);
+  /* Un agent masqué dont la conversation est ouverte reste à sa place le temps qu'on y est. */
+  const visibles = [assistant, ...epingles, ...autres.filter((r) => !epingleLe(r) && (!meta[r.id]?.masque || estActif(r)))];
+  const masquesRanges = masques.filter((r) => !estActif(r));
 
   return (
     <aside
@@ -75,9 +101,31 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
             />
           }
         >
-          {roles.map((role) => (
-            <LigneAgent key={role.id} role={role} active={currentId === idDirect(role.id) || agentDuFil === role.id} />
+          {visibles.map((role) => (
+            <LigneAgent
+              key={role.id}
+              role={role}
+              active={estActif(role)}
+              epingle={!!epingleLe(role)}
+              masque={!!meta[role.id]?.masque}
+              onMenu={(e) => menuAgent.ouvrir(e, role)}
+            />
           ))}
+          {masquesRanges.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={voirMasques}
+              onClick={() => setVoirMasques((v) => !v)}
+              className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-ui-xs text-texte-tertiaire transition-colors duration-[120ms] hover:bg-fond-survol hover:text-texte-secondaire"
+            >
+              <Icon name="chevron-right" size={14} className={cn("ml-2.5 text-icone-secondaire transition-transform duration-[220ms] ease-sortie", voirMasques && "rotate-90")} />
+              {masquesRanges.length > 1 ? `${masquesRanges.length} agents masqués` : "1 agent masqué"}
+            </button>
+          )}
+          {voirMasques &&
+            masquesRanges.map((role) => (
+              <LigneAgent key={role.id} role={role} active={false} masque onMenu={(e) => menuAgent.ouvrir(e, role)} />
+            ))}
           {roles.length === 1 && (
             <MenuCreationAgent
               declencheur={({ ref, basculer, attributs }) => (
@@ -104,11 +152,36 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
                 chat={chat}
                 active={currentId === chat.id}
                 projet={projects.find((p) => p.id === chat.projectId)?.name}
+                onMenu={(e) => menuConversation.ouvrir(e, chat)}
               />
             ))}
           </SectionBarre>
         )}
       </nav>
+
+      {menuAgent.menu && (
+        <MenuAgent
+          key={menuAgent.menu.cible.id + menuAgent.menu.x + menuAgent.menu.y}
+          role={menuAgent.menu.cible}
+          x={menuAgent.menu.x}
+          y={menuAgent.menu.y}
+          onFermer={menuAgent.fermer}
+          onDesactiver={(role) => void desactiver(role).catch((e: unknown) => annoncer(e instanceof Error ? e.message : String(e)))}
+        />
+      )}
+      {menuConversation.menu && (
+        <MenuConversationBarre
+          key={menuConversation.menu.cible.id + menuConversation.menu.x + menuConversation.menu.y}
+          chat={menuConversation.menu.cible}
+          projet={projects.find((p) => p.id === menuConversation.menu?.cible.projectId)?.name}
+          x={menuConversation.menu.x}
+          y={menuConversation.menu.y}
+          onFermer={menuConversation.fermer}
+          onRenommer={setRenommage}
+        />
+      )}
+      {renommage && <ModaleRenommer chat={renommage} onFermer={() => setRenommage(null)} />}
+      {fenetreDesactiver}
     </aside>
   );
 }

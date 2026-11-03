@@ -9,7 +9,6 @@ import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { Markdown } from "@/components/ui/Markdown";
-import { useConfirmation } from "@/components/ui/Modale";
 import { useAgents } from "@/lib/agents";
 import { annoncer } from "@/lib/annonces";
 import { useBibliotheque } from "@/lib/bibliotheque";
@@ -17,7 +16,6 @@ import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
 import { lienDe, type Lien } from "@/lib/lien-bibliotheque";
 import { poste } from "@/lib/plateforme";
-import { useRoutines } from "@/lib/routines";
 import { useIdDirect, useWorkspace } from "@/lib/workspace";
 import type { Role, RoleSection } from "@/types/domain";
 import { LigneRole } from "./AgentCard";
@@ -26,6 +24,7 @@ import { dateCourte } from "./etats-agents";
 import { QuandAppeler, SectionFiche } from "./FicheSections";
 import { MenuLignes, type LigneMenu } from "./MenuLignes";
 import { ModalePersonnaliserAssistant } from "./PersonnaliserAssistant";
+import { useDesactiverAgent } from "./useDesactiverAgent";
 
 const dateLongue = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
@@ -150,13 +149,12 @@ export function AgentDetail({ role }: { role: Role }) {
 function FicheAgent({ role }: { role: Role }) {
   const router = useRouter();
   const { canEdit, reveal, tous, roles, activer, ajouter } = useAgents();
-  const { state, arreter } = useWorkspace();
+  const { state } = useWorkspace();
   const versDirect = useIdDirect();
-  const { routines } = useRoutines();
   const compte = useCompte();
   const bibliotheque = useBibliotheque();
   const retirerDeBibliotheque = useRetirerDeBibliotheque();
-  const [demander, fenetre] = useConfirmation();
+  const [desactiverAgent, fenetreDesactiver] = useDesactiverAgent();
   const [partage, setPartage] = useState<"partager" | "mettre-a-jour" | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -188,37 +186,7 @@ function FicheAgent({ role }: { role: Role }) {
     }
   };
 
-  const desactiver = async () => {
-    const enCours = Object.entries(state.travail).filter(([, t]) => t.roleId === role.id).map(([chatId]) => chatId);
-    const nombreRoutines = routines.filter((r) => r.agentId === role.id).length;
-    const oui = await demander({
-      titre: `Désactiver ${role.name} ?`,
-      texte: (
-        <div className="flex flex-col gap-2">
-          <p className="m-0">
-            {role.name} ne pourra plus être appelé dans KLYRA : ni par toi, ni par {roles[0].name}, ni par tes autres agents. Ses conversations et sa fiche
-            sont gardées, et tu pourras le réactiver. Cela ne vaut que pour KLYRA : sa fiche reste dans ~/.claude/agents, et Claude Code dans le terminal ou
-            tes autres outils l’utilisent comme avant.
-          </p>
-          {enCours.length > 0 && <p className="m-0">Il travaille en ce moment : sa réponse en cours sera arrêtée.</p>}
-          {nombreRoutines > 0 && (
-            <p className="m-0">
-              {nombreRoutines > 1
-                ? `${nombreRoutines} routines lui sont confiées : elles échoueront tant qu’il est désactivé. Change leur agent ou mets-les en pause dans Automatisations.`
-                : "1 routine lui est confiée : elle échouera tant qu’il est désactivé. Change son agent ou mets-la en pause dans Automatisations."}
-            </p>
-          )}
-        </div>
-      ),
-      confirmer: "Désactiver",
-    });
-    if (!oui) return;
-    await agir(async () => {
-      enCours.forEach((chatId) => arreter(chatId));
-      await activer(role.id, false);
-      annoncer(`${role.name} désactivé.`);
-    });
-  };
+  const desactiver = () => agir(async () => { await desactiverAgent(role); });
 
   const reactiver = () =>
     agir(async () => {
@@ -436,7 +404,7 @@ function FicheAgent({ role }: { role: Role }) {
             <ParlerEnEquipe key={section.title} section={section} />
           ))}
       </div>
-      {fenetre}
+      {fenetreDesactiver}
       {local && partage && <ModalePartager agent={local} mode={partage} ouvert onFermer={() => setPartage(null)} />}
     </div>
   );
