@@ -96,6 +96,14 @@ function fixture() {
     "./titre": require(path.join(path.dirname(filename), "titre.js")),
     "./atelier": chargerAvecCheminsPosix(path.join(path.dirname(filename), "atelier.js")),
     "./consommation": { enregistrerTourClaude: () => ({}) },
+    // Computer Use coupé, comme sur un profil qui ne l'a jamais allumé : pas d'outils « ordinateur ».
+    "./ordinateur/pilote": {
+      consigneOrdinateur: () => "Computer Use est coupé.",
+      OUTILS_ORDINATEUR_INTERDITS: [],
+      OUTILS_ORDINATEUR_LECTURE: [],
+      serveurOrdinateur: () => null,
+      signatureOrdinateur: () => "",
+    },
     "./ia": {
       configMcp: (contexte, composio) => JSON.stringify({ contexte, composio }),
       OUTILS_APP: () => [],
