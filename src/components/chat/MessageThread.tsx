@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons/Icon";
 import { useMenuContextuel } from "@/components/ui/MenuContextuel";
 import { plagesDans, SURLIGNAGE } from "@/components/recherche/surligner";
 import { AgentRond } from "@/components/roles/AgentRond";
+import { ouvrirPanneauAgent } from "./PanneauLateral";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { plierAteliers, type EtatAtelier } from "@/lib/atelier-agent";
 import { cn } from "@/lib/cn";
@@ -15,7 +16,7 @@ import { requeteRetenue } from "@/lib/recherche-session";
 import { DEPART_ROUTINE } from "@/lib/message-routine";
 import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
-import { ActionsReponse } from "./ActionsReponse";
+import { ActionsReponse, Reactions } from "./ActionsReponse";
 import { MenuMessage, type CibleMessage } from "./MenuMessage";
 import { BarreAtelier } from "./CarteAtelier";
 import { MessagePartView } from "./MessageParts";
@@ -24,6 +25,9 @@ import { RailMessages } from "./RailMessages";
 /** Deux messages du même auteur à moins de 5 min d'écart forment un groupe : un seul nom, un seul rond. */
 const GROUPE_MS = 5 * 60 * 1000;
 
+
+/** Avatar ou prénom qui ouvre le panneau : un bouton sans habillage, focus visible. */
+const CLIQUABLE = "cursor-pointer rounded-full border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bordure-forte";
 function memeAuteur(a: Message, b: Message): boolean {
   if (a.author.kind !== b.author.kind) return false;
   // Le même agent avec un autre fournisseur : son nom revient, avec le fournisseur.
@@ -157,6 +161,8 @@ function RoleMessage({
 }) {
   const role = useRole(roleId);
   const { repondreAutorisation } = useWorkspace();
+  // Conversation directe : l'avatar et le prénom ouvrent le panneau de l'agent.
+  const panneau = chat.kind === "direct";
   const enCours = message.statut === "en-cours";
   const visibles = message.parts.filter((p) => p.type !== "text" || p.text.trim());
   // Étapes de chaque collègue à qui l'agent a confié une partie.
@@ -165,14 +171,35 @@ function RoleMessage({
 
   return (
     <div className={cn("group/message grid grid-cols-[32px_minmax(0,1fr)] gap-x-2.5", !suite && "mt-3")}>
-      <div className="pt-0.5">{!suite && <AgentRond roleId={roleId} taille={32} />}</div>
+      <div className="pt-0.5">
+        {!suite &&
+          (panneau ? (
+            <button type="button" onClick={ouvrirPanneauAgent} aria-label={`Ouvrir le panneau de ${role.name}`} className={CLIQUABLE}>
+              <AgentRond roleId={roleId} taille={32} />
+            </button>
+          ) : (
+            <AgentRond roleId={roleId} taille={32} />
+          ))}
+      </div>
       <div className="flex min-w-0 flex-col items-start gap-1.5">
         {!suite && (
           <div className="flex items-baseline gap-2">
             {/* Le prénom dans la couleur foncée de l'agent : on voit qui parle d'un coup d'œil. */}
-            <span className="text-ui-s font-semibold" style={{ color: AGENT_PASTELS[role.teinte].encre }}>
-              {role.name}
-            </span>
+            {panneau ? (
+              <button
+                type="button"
+                onClick={ouvrirPanneauAgent}
+                title={`Ouvrir le panneau de ${role.name}`}
+                className={cn(CLIQUABLE, "text-ui-s font-semibold hover:underline hover:underline-offset-2")}
+                style={{ color: AGENT_PASTELS[role.teinte].encre }}
+              >
+                {role.name}
+              </button>
+            ) : (
+              <span className="text-ui-s font-semibold" style={{ color: AGENT_PASTELS[role.teinte].encre }}>
+                {role.name}
+              </span>
+            )}
             <span className="text-ui-2xs text-texte-tertiaire">{role.tag}</span>
             {/* Écrite avec un autre fournisseur que Claude : on le dit, sans plus. */}
             {message.moteur && <span className="text-ui-2xs text-texte-tertiaire">· avec {fournisseur(message.moteur).nom}</span>}
@@ -207,6 +234,7 @@ function RoleMessage({
             {message.erreur ?? "L’agent s’est arrêté sur une erreur."}
           </p>
         )}
+        <Reactions message={message} />
         {!enCours && <ActionsReponse chat={chat} message={message} derniere={derniere} />}
       </div>
     </div>

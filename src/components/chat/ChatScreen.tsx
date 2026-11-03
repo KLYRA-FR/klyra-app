@@ -22,7 +22,7 @@ import { MessageExport } from "./MessageExport";
 import { useExporterConversation } from "./useExporterConversation";
 import { OngletsConversations } from "./OngletsConversations";
 import { OngletsFils } from "./OngletsFils";
-import { PanneauLateral, usePanneauLateral } from "./PanneauLateral";
+import { OUVRIR_PANNEAU_AGENT, PanneauLateral, surReglages, usePanneauLateral } from "./PanneauLateral";
 import type { DemandeApercu } from "@/components/ui/Lien";
 
 /** « Modifié par Dev · 09:52 » : dernier journal de travail du chat. */
@@ -174,6 +174,16 @@ export function ChatScreen() {
     window.addEventListener("klyra:apercu", prendre);
     return () => window.removeEventListener("klyra:apercu", prendre);
   }, [equipe]);
+
+  /* Avatar ou prénom de l'agent cliqué : le panneau s'ouvre sur ses réglages. */
+  useEffect(() => {
+    const ouvrir = () => {
+      setPanneauOuvert(true);
+      setEtatPanneau(surReglages);
+    };
+    window.addEventListener(OUVRIR_PANNEAU_AGENT, ouvrir);
+    return () => window.removeEventListener(OUVRIR_PANNEAU_AGENT, ouvrir);
+  }, [setEtatPanneau]);
 
   const fermerPanneau = useCallback(() => {
     setPanneauOuvert(false);

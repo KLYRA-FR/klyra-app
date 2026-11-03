@@ -108,6 +108,9 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
   switch (part.type) {
     case "text":
       return { type: "text", text: net(part.text, TEXTE_MAX) };
+    // Le téléphone ne connaît pas les citations : l'extrait part comme une ligne de texte.
+    case "citation":
+      return { type: "text", text: net(`En réponse : ${part.extrait}`, 300) };
     case "fichiers":
       return avecFichiers
         ? { type: "fichiers", fichiers: part.chemins.slice(0, 10).map((c) => ({ nom: nomDe(c).slice(0, 160), chemin: relatifAuProjet(c, dossier) })) }

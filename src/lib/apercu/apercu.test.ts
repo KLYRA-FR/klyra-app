@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { colorer, langageDe, type Jeton, type Langage } from "./coloration";
 import { ancreDe, cibleLien } from "./liens";
 import { lireMarkdown, texteBrut, type Bloc, type Inline } from "./markdown";
+import { extraitMarkdown, texteExtrait } from "./extrait";
 import { aUnEntete, indenterJson, lireCsv, renduDe } from "./texte";
 
 const premier = (source: string): Bloc => lireMarkdown(source).blocs[0];
@@ -255,5 +256,27 @@ describe("coloration de la vue Source", () => {
     contient("---\nnom: klyra # app\nliste:\n  - cle: 'v'\n    actif: true\n    n: 3", "yaml", ["motcle:---", "cle:nom", "commentaire:# app", "cle:  - cle", "chaine:'v'", "cle:    actif", "nombre:true", "nombre:3"]);
     contient("SELECT id, nom FROM clients WHERE statut = 'active' -- note\nLIMIT 10;", "sql", ["motcle:SELECT", "motcle:FROM", "motcle:WHERE", "chaine:'active'", "commentaire:-- note", "motcle:LIMIT", "nombre:10"]);
     contient("# Titre\n\n- [lien](a.md) et `code` et **gras**\n> cité\n```ts\nx\n```", "markdown", ["titre:# Titre", "motcle:-", "lien:[lien](a.md)", "chaine:`code`", "gras:**gras**", "motcle:> ", "commentaire:```ts", "commentaire:```"]);
+  });
+});
+
+describe("extrait d'un message pour la barre", () => {
+  test("garde le gras sur une ligne, sans les marques", () => {
+    const e = extraitMarkdown("Bonne idée. Mon conseil : **un agent = un rôle précis**, pas plus.");
+    expect(e).toEqual([
+      { type: "texte", texte: "Bonne idée. Mon conseil : " },
+      { type: "gras", enfants: [{ type: "texte", texte: "un agent = un rôle précis" }] },
+      { type: "texte", texte: ", pas plus." },
+    ]);
+    expect(texteExtrait("Mon conseil : **un agent**")).toBe("Mon conseil : un agent");
+  });
+
+  test("met à plat titres, listes, citations et liens", () => {
+    const source = "## Pour bien le cadrer\n\n1. **Sa mission** en une phrase\n2. Son [modèle](https://x.fr)\n\n> À retenir\n\n---\n\n`code`";
+    expect(texteExtrait(source)).toBe("Pour bien le cadrer Sa mission en une phrase Son modèle À retenir code");
+  });
+
+  test("ne laisse pas de marque ouverte sur un long message", () => {
+    const long = `${"mot ".repeat(200)}\n**fin en gras qui dépasse ${"x".repeat(50)}**`;
+    expect(texteExtrait(long)).not.toContain("**");
   });
 });
