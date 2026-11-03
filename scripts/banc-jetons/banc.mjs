@@ -12,7 +12,9 @@
  *
  * Coûte de vrais jetons, sur le compte du poste. Mac et Linux (bash).
  *   CLAUDE_CODE_OAUTH_TOKEN=… pnpm bench:jetons -- [--taches dev,offre,equipe] [--reps 1]
- *     [--modele sonnet] [--bras direct,klyra] [--agents dev,designer] [--assistant Cicco]
+ *     [--modele sonnet] [--bras direct,consignes,klyra] [--agents dev,designer] [--assistant Cicco]
+ * Bras `consignes` : Claude Code seul avec les consignes KLYRA (electron/configuration-klyra.ts) ajoutées
+ * comme l'app les ajoute ; comparé au bras `direct`, il mesure ce qu'elles font gagner ou perdre.
  * Sans `--agents` : toutes les fiches de ~/.claude/agents sont actives. Le jeton se crée avec
  * `claude setup-token` ; sans lui, il faut ~/.claude/.credentials.json. Les essais vont dans
  * ~/.klyra/banc/<date>/ (rapport.md, resultats.json, sorties brutes).
@@ -23,6 +25,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import os from "node:os";
 import path from "node:path";
 import { creerAgents } from "../../serveur/agents.mjs";
+import { consigneKlyra, MODELE_CONSIGNES } from "../../electron/configuration-klyra.ts";
 
 const ICI = import.meta.dirname;
 const HOME = os.homedir();
@@ -70,9 +73,10 @@ mkdirSync(racine, { recursive: true });
 
 /* ─── Bras A : Claude Code seul ───────────────────────────────────── */
 
-function lancerDirect(prompt, cwd, log) {
+function lancerDirect(prompt, cwd, log, consigne = null) {
   const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions"];
   if (modele) args.push("--model", modele);
+  if (consigne) args.push("--append-system-prompt", consigne);
   return new Promise((resolve) => {
     const child = spawn(path.join(ICI, "claude-tee.sh"), args, { cwd, env: { ...envClaude, BENCH_CLAUDE: CLAUDE, BENCH_LOG: log }, stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
@@ -245,7 +249,12 @@ for (const tache of taches) {
       else mkdirSync(cwd, { recursive: true });
       process.stderr.write(`▶ ${nom}… `);
       const debut = Date.now();
-      const issue = b === "direct" ? await lancerDirect(tache.prompt, cwd, log) : await lancerKlyra(tache.promptKlyra ? `${tache.prompt}\n\n${tache.promptKlyra}` : tache.prompt, cwd, log);
+      const issue =
+        b === "direct"
+          ? await lancerDirect(tache.prompt, cwd, log)
+          : b === "consignes"
+            ? await lancerDirect(tache.prompt, cwd, log, consigneKlyra(MODELE_CONSIGNES))
+            : await lancerKlyra(tache.promptKlyra ? `${tache.prompt}\n\n${tache.promptKlyra}` : tache.prompt, cwd, log);
       const dureeMs = Date.now() - debut;
       const controle = tache.controle ? spawnSync("bash", ["-c", tache.controle], { cwd, encoding: "utf8", env: { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH}` } }) : null;
       const mesure = analyser(log);
@@ -267,15 +276,20 @@ md += "| Tâche | Bras | Rép. | OK | Contrôle | Entrée | Sortie | Cache lu | 
 for (const r of resultats) {
   md += `| ${r.tache} | ${r.bras} | ${r.rep} | ${r.ok ? "oui" : "non"} | ${r.controleOk == null ? "—" : r.controleOk ? "oui" : "non"} | ${fmt(r.jetons.entree)} | ${fmt(r.jetons.sortie)} | ${fmt(r.jetons.cacheLu)} | ${fmt(r.jetons.cacheEcrit)} | ${fmt(r.jetons.total)} | ${r.coutUsd == null ? "—" : `${r.coutUsd.toFixed(3)} $`} | ${Math.round(r.dureeMs / 1000)} s | ${r.tours ?? "—"} | ${r.agentsAppeles.join(", ") || "aucun"} |\n`;
 }
-md += "\n## Écart moyen klyra / direct\n\n| Tâche | Coût | Jetons totaux | Sortie | Durée |\n|---|---|---|---|---|\n";
+md += "\n## Moyennes par bras, et écart à Claude Code seul (direct)\n\n| Tâche | Bras | Coût moyen | Jetons moyens | Sortie moyenne | Durée moyenne | Contrôle | Écart coût | Écart jetons | Écart durée |\n|---|---|---|---|---|---|---|---|---|---|\n";
 for (const tache of taches) {
   const de = (b) => resultats.filter((r) => r.tache === tache.id && r.bras === b);
-  const ratio = (f) => {
+  const ecart = (b, f) => {
     const a = moyenne(de("direct").map(f));
-    const k = moyenne(de("klyra").map(f));
+    const k = moyenne(de(b).map(f));
     return a && k != null ? `×${(k / a).toFixed(2)}` : "—";
   };
-  md += `| ${tache.id} | ${ratio((r) => r.coutUsd ?? 0)} | ${ratio((r) => r.jetons.total)} | ${ratio((r) => r.jetons.sortie)} | ${ratio((r) => r.dureeMs)} |\n`;
+  for (const b of bras) {
+    const rs = de(b);
+    if (!rs.length) continue;
+    const reussis = rs.filter((r) => r.controleOk).length;
+    md += `| ${tache.id} | ${b} | ${(moyenne(rs.map((r) => r.coutUsd ?? 0)) ?? 0).toFixed(3)} $ | ${fmt(Math.round(moyenne(rs.map((r) => r.jetons.total))))} | ${fmt(Math.round(moyenne(rs.map((r) => r.jetons.sortie))))} | ${Math.round(moyenne(rs.map((r) => r.dureeMs)) / 1000)} s | ${tache.controle ? `${reussis}/${rs.length}` : "—"} | ${b === "direct" ? "—" : ecart(b, (r) => r.coutUsd ?? 0)} | ${b === "direct" ? "—" : ecart(b, (r) => r.jetons.total)} | ${b === "direct" ? "—" : ecart(b, (r) => r.dureeMs)} |\n`;
+  }
 }
 md += "\n## Détail par modèle\n\n";
 for (const r of resultats) {
