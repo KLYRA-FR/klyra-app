@@ -164,6 +164,8 @@ interface AgentsApi {
    * muet (ses réponses finies ne préviennent plus ; ses erreurs, si), épinglé en haut.
    */
   preferer: (id: string, preference: { masque?: boolean; muet?: boolean; epingle?: boolean }) => Promise<void>;
+  /** L'ordre choisi dans la barre (glisser un agent) : chaque agent donné reçoit son rang, en une seule écriture. */
+  ranger: (ids: string[]) => Promise<void>;
   create: (id: string, content: string, reglage: { tag: string; teinte: RoleTeinte }) => Promise<void>;
   history: (id: string) => Promise<HistoryEntry[]>;
   readVersion: (id: string, versionId: string) => Promise<string>;
@@ -336,6 +338,23 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
           ...(muet !== undefined ? { muet } : {}),
           ...(epingle !== undefined ? { epingleLe: epingle ? new Date().toISOString() : undefined } : {}),
         }),
+      ranger: async (ids) => {
+        const next = { ...metaRef.current };
+        ids.forEach((id, rang) => {
+          next[id] = { ...next[id], rang };
+        });
+        if (JSON.stringify(next) === JSON.stringify(metaRef.current)) return;
+        const avant = metaRef.current;
+        // L'ordre change tout de suite à l'écran ; un échec d'écriture le remet comme avant.
+        metaRef.current = next;
+        setMeta(next);
+        const r = await requireBridge().agents.writeMeta(next);
+        if (!r.ok) {
+          metaRef.current = avant;
+          setMeta(avant);
+        }
+        unwrap(r);
+      },
       changerModele: async (id, modele) => {
         const fiche = filesRef.current.find((f) => f.name === id);
         if (!fiche) throw new BridgeError("introuvable", `La fiche « ${id} » n’existe plus sur le disque.`);

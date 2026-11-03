@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { LigneAgent, LigneConversation, SectionBarre } from "@/components/shell/LignesBarre";
@@ -13,6 +13,7 @@ import { useMenuContextuel } from "@/components/ui/MenuContextuel";
 import { useAgents } from "@/lib/agents";
 import { annoncer } from "@/lib/annonces";
 import { cn } from "@/lib/cn";
+import { decaler, deplacer, trierParRang } from "@/lib/rang-agents";
 import { useChat, useIdDirect, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
 import type { Chat, Role } from "@/types/domain";
 
@@ -32,7 +33,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const idDirect = useIdDirect();
   /* Dans un fil, la ligne de son agent reste active. */
   const agentDuFil = useChat(currentId)?.fil?.roleId;
-  const { meta } = useAgents();
+  const { meta, ranger } = useAgents();
   const menuAgent = useMenuContextuel<Role>();
   const menuConversation = useMenuContextuel<Chat>();
   const [desactiver, fenetreDesactiver] = useDesactiverAgent();
@@ -42,10 +43,92 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const estActif = (role: Role) => currentId === idDirect(role.id) || agentDuFil === role.id;
   const [assistant, ...autres] = roles;
   const epingleLe = (role: Role) => meta[role.id]?.epingleLe ?? "";
-  const epingles = autres.filter((r) => epingleLe(r) && !meta[r.id]?.masque).sort((a, b) => epingleLe(b).localeCompare(epingleLe(a)));
+  const rang = (id: string) => meta[id]?.rang;
+  /* Les épinglés en haut ; dans chaque groupe, l'ordre choisi en glissant (cf. rang-agents.ts). */
+  const epingles = trierParRang(
+    autres.filter((r) => epingleLe(r) && !meta[r.id]?.masque).sort((a, b) => epingleLe(b).localeCompare(epingleLe(a))),
+    rang,
+  );
   const masques = autres.filter((r) => meta[r.id]?.masque);
   /* Un agent masqué dont la conversation est ouverte reste à sa place le temps qu'on y est. */
-  const visibles = [assistant, ...epingles, ...autres.filter((r) => !epingleLe(r) && (!meta[r.id]?.masque || estActif(r)))];
+  const suivants = trierParRang(
+    autres.filter((r) => !epingleLe(r) && (!meta[r.id]?.masque || estActif(r))),
+    rang,
+  );
+  const visibles = [assistant, ...epingles, ...suivants];
+  const groupeDe = (id: string) => (epingles.some((r) => r.id === id) ? epingles : suivants.some((r) => r.id === id) ? suivants : null);
+
+  /* Glisser un agent dans son groupe (épinglés ou non) ; l'assistant reste en tête. */
+  const [glisse, setGlisse] = useState<string | null>(null);
+  const [cible, setCible] = useState<{ id: string; apres: boolean } | null>(null);
+  const ecrireOrdre = (ordre: string[]) =>
+    void ranger(ordre).catch((e: unknown) => annoncer(e instanceof Error ? e.message : String(e)));
+  const poser = () => {
+    const groupe = glisse ? groupeDe(glisse) : null;
+    if (glisse && cible && groupe?.some((r) => r.id === cible.id)) {
+      const avant = groupe.map((r) => r.id);
+      const apres = deplacer(avant, glisse, cible.id, cible.apres);
+      if (apres.join() !== avant.join()) ecrireOrdre(apres);
+    }
+    setGlisse(null);
+    setCible(null);
+  };
+  /* Au clavier : Alt + flèche haut ou bas déplace l'agent d'une place dans son groupe. */
+  const auClavier = (role: Role) => (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    const groupe = groupeDe(role.id);
+    if (!groupe) return;
+    e.preventDefault();
+    const avant = groupe.map((r) => r.id);
+    const apres = decaler(avant, role.id, e.key === "ArrowUp" ? -1 : 1);
+    if (apres.join() === avant.join()) return;
+    ecrireOrdre(apres);
+    annoncer(`${role.name} : place ${apres.indexOf(role.id) + 1} sur ${apres.length}.`);
+  };
+  const deplacable = (role: Role, ligne: ReactNode) => {
+    if (!groupeDe(role.id) || groupeDe(role.id)!.length < 2) return ligne;
+    const memeGroupe = !!glisse && groupeDe(glisse) === groupeDe(role.id);
+    return (
+      <div
+        key={role.id}
+        draggable
+        data-agent-barre={role.id}
+        aria-roledescription="agent déplaçable"
+        onKeyDown={auClavier(role)}
+        onDragStart={(e: DragEvent<HTMLDivElement>) => {
+          // Sans l'adresse du lien : lâché ailleurs, il n'ouvre rien.
+          e.dataTransfer.clearData();
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("application/x-klyra-agent", role.id);
+          setGlisse(role.id);
+        }}
+        onDragOver={(e) => {
+          if (!memeGroupe) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const boite = e.currentTarget.getBoundingClientRect();
+          const apres = e.clientY > boite.top + boite.height / 2;
+          if (cible?.id !== role.id || cible.apres !== apres) setCible({ id: role.id, apres });
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          poser();
+        }}
+        onDragEnd={() => {
+          setGlisse(null);
+          setCible(null);
+        }}
+        className={cn(
+          "relative",
+          glisse === role.id && "opacity-50",
+          cible?.id === role.id && glisse !== role.id && "after:pointer-events-none after:absolute after:inset-x-2 after:h-0.5 after:rounded-full after:bg-fond-accent",
+          cible?.id === role.id && (cible.apres ? "after:-bottom-px" : "after:-top-px"),
+        )}
+      >
+        {ligne}
+      </div>
+    );
+  };
   const masquesRanges = masques.filter((r) => !estActif(r));
 
   return (
@@ -101,16 +184,19 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
             />
           }
         >
-          {visibles.map((role) => (
-            <LigneAgent
-              key={role.id}
-              role={role}
-              active={estActif(role)}
-              epingle={!!epingleLe(role)}
-              masque={!!meta[role.id]?.masque}
-              onMenu={(e) => menuAgent.ouvrir(e, role)}
-            />
-          ))}
+          {visibles.map((role) =>
+            deplacable(
+              role,
+              <LigneAgent
+                key={role.id}
+                role={role}
+                active={estActif(role)}
+                epingle={!!epingleLe(role)}
+                masque={!!meta[role.id]?.masque}
+                onMenu={(e) => menuAgent.ouvrir(e, role)}
+              />,
+            ),
+          )}
           {masquesRanges.length > 0 && (
             <button
               type="button"
