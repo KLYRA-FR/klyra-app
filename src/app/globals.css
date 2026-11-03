@@ -221,6 +221,23 @@ body[data-glisse] iframe {
   scrollbar-color: var(--color-gris-k2-500) transparent;
 }
 
+/* Infobulle : elle arrive du côté de l'ancre, puis disparaît. Les durées
+   viennent des tokens ; « moins d'animations » les coupe plus bas. */
+.klyra-infobulle {
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-sortie),
+    translate var(--duration-fast) var(--ease-sortie);
+}
+.klyra-infobulle[data-cote="droite"] { translate: calc(var(--radius-2xs) * -1) 0; }
+.klyra-infobulle[data-cote="gauche"] { translate: var(--radius-2xs) 0; }
+.klyra-infobulle[data-cote="bas"] { translate: 0 calc(var(--radius-2xs) * -1); }
+.klyra-infobulle[data-cote="haut"] { translate: 0 var(--radius-2xs); }
+.klyra-infobulle[data-visible="true"] {
+  opacity: 1;
+  translate: 0 0;
+}
+
 /* Voile derrière une fenêtre (Modale) : il apparaît en fondu. */
 .klyra-voile {
   animation: klyra-voile 220ms var(--ease-sortie) backwards;

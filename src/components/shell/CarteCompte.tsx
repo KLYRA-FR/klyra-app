@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
+import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
 import { nomAbonnement, useCompteClaude } from "@/lib/compte-claude";
 import { apparition } from "@/lib/mouvement";
@@ -121,6 +122,7 @@ export function CarteCompteRail() {
 
   return (
     <div ref={zone} className="relative flex">
+      <Infobulle texte={`${moi.name} · ${texte}`} cote="droite">
       <button
         ref={bouton}
         type="button"
@@ -128,7 +130,6 @@ export function CarteCompteRail() {
         aria-expanded={ouvert}
         aria-controls={ouvert ? idMenu : undefined}
         aria-label={libelle}
-        title={`${texte} · ${s.nom}`}
         onClick={() => (ouvert ? fermer(false) : setOuvert(true))}
         onKeyDown={(e) => {
           if (e.key !== "ArrowUp" || ouvert) return;
@@ -146,6 +147,7 @@ export function CarteCompteRail() {
           </span>
         )}
       </button>
+      </Infobulle>
 
       {ouvert && (
         <div ref={apparition} className="absolute bottom-0 left-full z-50 ml-3 flex items-end gap-1">

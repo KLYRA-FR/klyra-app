@@ -1,6 +1,8 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
+import type { CoteInfobulle } from "@/lib/infobulle";
 
 /**
  * Bouton du design system KLYRA (composant Bouton, `k-btn`), version app.
@@ -78,25 +80,28 @@ export interface BoutonIconeProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">,
     Omit<VariantProps<typeof boutonVariants>, "icone"> {
   icone: ReactNode;
-  /** Libellé lu par les lecteurs d'écran (et affiché au survol). */
+  /** Libellé lu par les lecteurs d'écran, et montré dans l'infobulle. */
   libelle: string;
+  /** Côté de l'infobulle. En bas dans une barre, à droite dans le rail. */
+  cote?: CoteInfobulle;
 }
 
 /** Bouton carré à icône seule, mêmes variantes que Bouton. */
 export const BoutonIcone = forwardRef<HTMLButtonElement, BoutonIconeProps>(function BoutonIcone(
-  { variant = "discret", taille, actif, icone, libelle, className, type = "button", ...rest },
+  { variant = "discret", taille, actif, icone, libelle, cote = "bas", className, type = "button", ...rest },
   ref,
 ) {
   return (
-    <button
-      ref={ref}
-      type={type}
-      aria-label={libelle}
-      title={libelle}
-      className={cn(boutonVariants({ variant, taille, actif, icone: true }), className)}
-      {...rest}
-    >
-      {icone}
-    </button>
+    <Infobulle texte={libelle} cote={cote}>
+      <button
+        ref={ref}
+        type={type}
+        aria-label={libelle}
+        className={cn(boutonVariants({ variant, taille, actif, icone: true }), className)}
+        {...rest}
+      >
+        {icone}
+      </button>
+    </Infobulle>
   );
 });
