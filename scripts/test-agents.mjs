@@ -118,11 +118,13 @@ try {
   await app.cliquer("Ouvrir pour ajuster");
   verifier(await app.quand("document.querySelector('main')?.innerText.includes('Préparé par Sam')"), "l’éditeur s’ouvre, préparé par Sam");
   verifier((await app.ev("document.querySelector('main input')?.value")) === "Nina", "le nom proposé est pré-rempli");
+  verifier(/Environ \d+ jetons, relus à chaque appel/.test(await app.ev("document.querySelector('main')?.innerText ?? ''")), "sous la fiche : son poids en jetons");
   verifier(!existsSync(path.join(n.agents, "juriste.md")), "rien n’est écrit avant « Créer l’agent »");
   await app.cliquer("Créer l’agent");
   verifier(await app.quand("new URL(location.href).searchParams.get('agent') === 'juriste'"), "« Créer l’agent » ouvre sa fiche");
   mes = lireJson(path.join(n.donnees, "mes-agents.json"));
   verifier(existsSync(path.join(n.agents, "juriste.md")) && mes.agents.juriste?.actif && mes.agents.juriste.origine.type === "local", "juriste.md écrit, actif dans Mes agents, à soi");
+  verifier(!/^memory:/m.test(readFileSync(path.join(n.agents, "juriste.md"), "utf8")), "nouvel agent : sans mémoire (« Aucune » par défaut)");
 
   // Créer à la main : un nom pris, puis un identifiant pris.
   await app.aller("/equipe?nouveau=1");

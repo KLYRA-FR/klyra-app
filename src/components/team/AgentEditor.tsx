@@ -19,6 +19,7 @@ import { BridgeError } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { lienDe } from "@/lib/lien-bibliotheque";
 import { identifiantDe, nomDejaPris, nomPropre } from "@/lib/noms-agents";
+import { aideFiche } from "@/lib/poids-fiche";
 import { oublierProposition, reprendreDansEditeur } from "@/lib/proposition-agent";
 import { jouer } from "@/lib/sons/sons";
 import type { Role, RoleTeinte } from "@/types/domain";
@@ -70,6 +71,8 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
   const lie = local?.entree?.origine.type === "bibliotheque";
   const lien = local ? lienDe(local, { etat: bibliotheque.etat, moiId: bibliotheque.moiId, etats: bibliotheque.etats }) : null;
   const auteur = lien?.type === "recu" ? lien.auteur : null;
+  // Une fiche qui suit une version (Bibliothèque, ou modèle KLYRA intact) : la raccourcir la ferait diverger.
+  const versionSuivie = lie || (lien?.type === "modele" && lien.aJour);
   const assistant = roles[0];
 
   // La version ouverte est figée : si le fichier change sur le disque pendant
@@ -87,7 +90,8 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
       tag: role?.tag ?? proposition?.role ?? "",
       teinte: role?.teinte ?? (proposition ? roleFromContent(proposition.id || identifiantDe(proposition.nom), "", {}, null).teinte : ("bleu-k2" as RoleTeinte)),
       model: getField(parsed.frontmatter, "model") ?? "opus",
-      memory: getField(parsed.frontmatter, "memory") ?? (lie ? "" : "project"),
+      // Sans mémoire par défaut : elle coûte ~4 000 jetons à chaque appel de l'agent (cf. configuration KLYRA).
+      memory: getField(parsed.frontmatter, "memory") ?? "",
       description: getField(parsed.frontmatter, "description") ?? proposition?.description ?? "",
       body: role ? parsed.body.trim() : (proposition?.consignes ?? ""),
       modifiedAt: role?.file?.modifiedAt ?? null,
@@ -347,7 +351,7 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
           <Champ
             label="Fiche"
             erreur={essai ? erreurs.body : undefined}
-            aide="En Markdown : un titre « # Nom — Rôle », une présentation, puis des sections « ## ». C’est la consigne complète de l’agent."
+            aide={aideFiche(corps, !versionSuivie)}
           >
             <textarea
               value={corps}
@@ -382,7 +386,10 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
               <Champ label="Modèle">
                 <ListeDeroulante options={MODELES} value={model} onChange={setModel} />
               </Champ>
-              <Champ label="Mémoire" aide={lie ? "Réglée par la version suivie." : undefined}>
+              <Champ
+                label="Mémoire"
+                aide={lie ? "Réglée par la version suivie." : "Environ 4 000 jetons à chaque appel de l’agent, même vide. Les fichiers du projet (AGENTS.md, notes) peuvent la remplacer."}
+              >
                 <ListeDeroulante options={MEMOIRES} value={memory} onChange={setMemory} disabled={lie} />
               </Champ>
             </div>
