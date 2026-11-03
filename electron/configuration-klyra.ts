@@ -28,12 +28,12 @@ export const TAILLE_MAX_CONSIGNES = 6000;
 
 /** Le modèle KLYRA des consignes. Changer le texte : nouvelle version, l'ancienne dans MODELES_PRECEDENTS. */
 export const MODELE_CONSIGNES: ConsignesAdoptees = {
-  version: 1,
+  version: 2,
   texte: [
     "- Cherche avant de lire : trouve l'endroit par une recherche (Grep, Glob, rg), puis lis seulement les lignes utiles. N'ouvre pas un gros fichier en entier pour une ligne.",
     "- N'affiche jamais une sortie entière (journal, build, tests) : filtre-la (tail, grep) et garde ce qui sert à décider.",
     "- Pour vérifier, lance la commande de vérification du projet et lis son résultat. Ne relis pas un fichier que tu viens d'écrire : l'outil t'aurait signalé un échec.",
-    "- Reste dans le projet : pas d'exploration du poste, ni d'outil installé pour l'occasion sans accord.",
+    "- Reste dans le projet. Pour lancer une vérification, trouve l'outil qu'il faut par une recherche ciblée (which, chemins habituels) ; n'installe rien et ne fouille pas des dossiers sans rapport sans accord.",
     "- Une question simple appelle une réponse courte. Pas de récapitulatif de chaque étape, pas de reprise de la demande, pas de liste de suites possibles qu'on ne t'a pas demandée.",
     "- Un livrable de plus de quelques lignes va dans un fichier ; dans ta réponse, son chemin et l'essentiel.",
     "- S'il te manque une information pour avancer, demande-la en une ligne plutôt que de la chercher longtemps ou de la deviner.",
@@ -41,7 +41,16 @@ export const MODELE_CONSIGNES: ConsignesAdoptees = {
 };
 
 /** Les textes des versions précédentes du modèle : un texte resté tel quel passe à la nouvelle d'office. */
-export const MODELES_PRECEDENTS: Record<number, string> = {};
+export const MODELES_PRECEDENTS: Record<number, string> = {
+  // v1 (03/11/2026) : « pas d'exploration du poste » empêchait de trouver l'outil de vérification hors du PATH (banc du 03/11).
+  1: `- Cherche avant de lire : trouve l'endroit par une recherche (Grep, Glob, rg), puis lis seulement les lignes utiles. N'ouvre pas un gros fichier en entier pour une ligne.
+- N'affiche jamais une sortie entière (journal, build, tests) : filtre-la (tail, grep) et garde ce qui sert à décider.
+- Pour vérifier, lance la commande de vérification du projet et lis son résultat. Ne relis pas un fichier que tu viens d'écrire : l'outil t'aurait signalé un échec.
+- Reste dans le projet : pas d'exploration du poste, ni d'outil installé pour l'occasion sans accord.
+- Une question simple appelle une réponse courte. Pas de récapitulatif de chaque étape, pas de reprise de la demande, pas de liste de suites possibles qu'on ne t'a pas demandée.
+- Un livrable de plus de quelques lignes va dans un fichier ; dans ta réponse, son chemin et l'essentiel.
+- S'il te manque une information pour avancer, demande-la en une ligne plutôt que de la chercher longtemps ou de la deviner.`,
+};
 
 export const CONFIGURATION_PAR_DEFAUT: ConfigurationKlyra = { consignes: null, memoireAgents: true, proposition: "a-proposer" };
 

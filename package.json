@@ -67,7 +67,7 @@
     "test:fournisseurs": "vitest run src/lib/fournisseurs.test.ts",
     "test:contexte": "vitest run src/lib/contexte.test.ts",
     "mesure:socle": "node scripts/mesure-socle.mjs",
-    "bench:jetons": "node scripts/banc-jetons/banc.mjs",
+    "bench:jetons": "node --experimental-strip-types scripts/banc-jetons/banc.mjs",
     "test:conseil-contexte": "node scripts/test-conseil-contexte.mjs",
     "test:configuration": "node scripts/test-configuration-klyra.mjs",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",

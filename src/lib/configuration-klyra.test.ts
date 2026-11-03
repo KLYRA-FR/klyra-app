@@ -40,6 +40,14 @@ describe("versions du modèle", () => {
     }
     expect(nouveauModeleDisponible({ ...MODELE_CONSIGNES })).toBe(false);
   });
+
+  it("chaque version précédente du modèle mène à l'actuelle (la v1 publiée le 03/11 passe en v2)", () => {
+    for (const [version, texte] of Object.entries(MODELES_PRECEDENTS)) {
+      expect(consignesAJour({ texte, version: Number(version) })).toEqual(MODELE_CONSIGNES);
+    }
+    expect(MODELES_PRECEDENTS[1]).toMatch(/pas d'exploration du poste/);
+    expect(MODELE_CONSIGNES.texte).toMatch(/recherche ciblée/);
+  });
 });
 
 describe("ce qui part aux agents", () => {
