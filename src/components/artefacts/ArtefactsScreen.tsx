@@ -23,6 +23,10 @@ const LIEN_ARTEFACT = /^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+\/
 
 /* ─── Session claude.ai et vignettes ───────────────────────────── */
 
+/** Dernière lecture du compte pendant cette session de l'app : l'écran relit à l'ouverture, au plus toutes les 10 minutes. */
+let derniereSynchro = 0;
+const INTERVALLE_SYNCHRO_MS = 10 * 60_000;
+
 /** Les vignettes déjà lues pendant cette session de l'app. */
 const vignettes = new Map<string, string | null>();
 
@@ -425,7 +429,8 @@ function Ecran() {
   const { state, synchroniserArtefacts } = useWorkspace();
   const projects = useProjects();
   const [ajout, setAjout] = useState(false);
-  const [sync, setSync] = useState<{ enCours: boolean; message: string | null; erreur: boolean }>({ enCours: false, message: null, erreur: false });
+  const [autoSynchro] = useState(() => !!bridge && Date.now() - derniereSynchro > INTERVALLE_SYNCHRO_MS);
+  const [sync, setSync] = useState<{ enCours: boolean; message: string | null; erreur: boolean }>({ enCours: autoSynchro, message: null, erreur: false });
   const [session, setSession] = useState(false);
   const [version, setVersion] = useState(0);
   const [recherche, setRecherche] = useState("");
@@ -440,15 +445,30 @@ function Ecran() {
     };
   }, [bridge]);
 
-  const synchroniser = async () => {
-    setSync({ enCours: true, message: null, erreur: false });
-    try {
-      const { total, nouveaux } = await synchroniserArtefacts();
-      setSync({ enCours: false, message: `${total} artefacts sur ton compte · ${nouveaux} nouveau${nouveaux > 1 ? "x" : ""}.`, erreur: false });
-    } catch (e) {
-      setSync({ enCours: false, message: e instanceof Error ? e.message : String(e), erreur: true });
-    }
+  /** Lit le compte et rend ce que l'écran doit en dire. `auto` : la lecture faite à l'ouverture de l'écran,
+   *  qui ne dit rien quand rien n'est arrivé. */
+  const lire = (auto: boolean) => {
+    derniereSynchro = Date.now();
+    return synchroniserArtefacts().then(
+      ({ total, nouveaux }) => ({
+        enCours: false,
+        message: auto && !nouveaux ? null : `${total} artefact${total > 1 ? "s" : ""} sur ton compte · ${nouveaux} nouveau${nouveaux > 1 ? "x" : ""}.`,
+        erreur: false,
+      }),
+      (e: unknown) => ({ enCours: false, message: e instanceof Error ? e.message : String(e), erreur: true }),
+    );
   };
+
+  const synchroniser = () => {
+    setSync({ enCours: true, message: null, erreur: false });
+    void lire(false).then(setSync);
+  };
+
+  useEffect(() => {
+    if (autoSynchro) void lire(true).then(setSync);
+    // Une seule fois à l'ouverture de l'écran.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const connecter = async () => {
     if (!bridge) return;
@@ -489,7 +509,7 @@ function Ecran() {
             <Bouton variant="blanc" taille="md" onClick={() => setAjout(true)} disabled={ajout}>
               Ajouter un lien
             </Bouton>
-            <BoutonPrincipal onClick={() => void synchroniser()} disabled={sync.enCours || !bridge}>
+            <BoutonPrincipal onClick={synchroniser} disabled={sync.enCours || !bridge}>
               {sync.enCours ? "Lecture du compte…" : "Synchroniser avec Claude"}
             </BoutonPrincipal>
           </div>
