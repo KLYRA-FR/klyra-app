@@ -54,6 +54,21 @@ function useLargeur() {
 }
 
 
+/** Un onglet de l'aperçu : sa page, comme un onglet de navigateur. */
+interface OngletApercu {
+  id: string;
+  /** Ce qu'affiche la barre d'adresse (on peut y taper sans charger). */
+  adresse: string;
+  /** La page chargée dans son iframe. */
+  chargee: string;
+  recharge: number;
+}
+
+const nouvelOnglet = (url: string): OngletApercu => ({ id: crypto.randomUUID(), adresse: url, chargee: url, recharge: 0 });
+
+/** « localhost:3002/offre » : le titre court d'un onglet. */
+const titreOnglet = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "") || "Nouvel onglet";
+
 interface PreviewPanelProps {
   project: Project | undefined;
   chat: Chat;
@@ -68,9 +83,15 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
   const [tab, setTab] = useState<PreviewTab>("apercu");
   const [device, setDevice] = useState<Device>("desktop");
   const [largeur, setLargeur] = useLargeur();
-  const [adresse, setAdresse] = useState(project?.previewUrl ?? "");
-  const [chargee, setChargee] = useState(project?.previewUrl ?? "");
-  const [recharge, setRecharge] = useState(0);
+  const [onglets, setOnglets] = useState<OngletApercu[]>(() => [nouvelOnglet(project?.previewUrl ?? "")]);
+  const [actifId, setActifId] = useState(() => onglets[0].id);
+  const actif = onglets.find((o) => o.id === actifId) ?? onglets[0];
+  const { adresse, chargee } = actif;
+  /** Change l'onglet affiché (celui qu'on voit est celui qu'on manipule). */
+  const majActif = (maj: (o: OngletApercu) => Partial<OngletApercu>) =>
+    setOnglets((liste) => liste.map((o) => (o.id === actifId ? { ...o, ...maj(o) } : o)));
+  const setAdresse = (valeur: string) => majActif(() => ({ adresse: valeur }));
+  const recharger = () => majActif((o) => ({ recharge: o.recharge + 1 }));
   const [publier, setPublier] = useState(false);
   const panneau = useRef<HTMLElement>(null);
 
@@ -79,25 +100,37 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
   if (adresseDemandee && adresseDemandee.n !== derniereDemande) {
     setDerniereDemande(adresseDemandee.n);
     const adresseLue = adresseDemandee.url.replace(/^http:\/\//, "");
-    setAdresse(adresseLue);
-    setChargee(adresseLue);
+    majActif(() => ({ adresse: adresseLue, chargee: adresseLue }));
     setTab("apercu");
     noterAdresse(adresseLue);
   }
 
-  /* On navigue dans l'aperçu : la barre montre la page affichée (sauf pendant qu'on y tape). */
+  /* On navigue dans l'aperçu : la barre de l'onglet affiché montre sa page (sauf pendant qu'on y tape). */
   useEffect(() => {
     return getBridge()?.apercu?.onAdresse((url) => {
       noterAdresse(url);
       if (document.activeElement?.getAttribute("aria-label") === "Adresse de l’aperçu") return;
-      setAdresse(url.replace(/^http:\/\//, ""));
+      const lue = url.replace(/^http:\/\//, "");
+      setOnglets((liste) => liste.map((o) => (o.id === actifId ? { ...o, adresse: lue } : o)));
     });
-  }, []);
+  }, [actifId]);
 
   const ouvrirAdresse = (url: string) => {
-    setChargee(url.trim());
-    setRecharge((n) => n + 1);
+    majActif((o) => ({ chargee: url.trim(), recharge: o.recharge + 1 }));
     noterAdresse(url);
+  };
+
+  const ajouterOnglet = () => {
+    const onglet = nouvelOnglet(project?.previewUrl ?? "");
+    setOnglets((liste) => [...liste, onglet]);
+    setActifId(onglet.id);
+  };
+  const fermerOnglet = (id: string) => {
+    if (onglets.length < 2) return;
+    const rang = onglets.findIndex((o) => o.id === id);
+    const reste = onglets.filter((o) => o.id !== id);
+    setOnglets(reste);
+    if (id === actifId) setActifId(reste[Math.min(rang, reste.length - 1)].id);
   };
 
   /* Poignée : on tire le bord gauche ; double-clic pour revenir à la largeur de départ. */
@@ -164,6 +197,49 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
 
       {tab === "apercu" && (
         <>
+          <div role="tablist" aria-label="Onglets de l’aperçu" className="flex items-center gap-1 overflow-x-auto px-4 pb-2 [scrollbar-width:none]">
+            {onglets.map((o) => {
+              const estActif = o.id === actif.id;
+              const titre = titreOnglet(o.chargee);
+              return (
+                <div
+                  key={o.id}
+                  className={cn(
+                    "group/onglet flex h-7 max-w-[180px] min-w-0 shrink-0 items-center gap-1 rounded-sm pr-1 pl-2 text-ui-xs font-medium transition-colors duration-[120ms]",
+                    estActif ? "bg-fond-surface-grise text-texte-principal" : "text-texte-secondaire hover:bg-fond-survol",
+                    onglets.length < 2 && "pr-2",
+                  )}
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={estActif}
+                    title={titre}
+                    onClick={() => setActifId(o.id)}
+                    onAuxClick={(e) => e.button === 1 && fermerOnglet(o.id)}
+                    className="min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent p-0 text-left text-inherit"
+                  >
+                    {titre}
+                  </button>
+                  {onglets.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => fermerOnglet(o.id)}
+                      aria-label={`Fermer l’onglet ${titre}`}
+                      data-son="fermer"
+                      className={cn(
+                        "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-2xs border-0 bg-transparent p-0 text-icone-secondaire hover:bg-fond-survol hover:text-texte-principal",
+                        !estActif && "invisible group-hover/onglet:visible",
+                      )}
+                    >
+                      <Icon name="x-01" size={12} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <BoutonIcone taille="mini" icone={<Icon name="plus-01" size={16} />} libelle="Nouvel onglet" onClick={ajouterOnglet} className="shrink-0 text-icone-secondaire" />
+          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -175,7 +251,7 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
               taille="compact"
               icone={<Icon name="refresh-01" size={16} />}
               libelle="Recharger l’aperçu"
-              onClick={() => setRecharge((n) => n + 1)}
+              onClick={recharger}
               className="text-icone-secondaire hover:text-icone-defaut"
             />
             <BarreAdresse
@@ -223,12 +299,18 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
                     device === "mobile" ? "w-[390px] max-w-full rounded-3xl" : "w-full rounded-md",
                   )}
                 >
-                  <iframe
-                    key={`${chargee}-${recharge}`}
-                    src={versUrl(chargee)}
-                    title={`Aperçu de ${project?.name ?? "projet"}`}
-                    className="size-full border-0"
-                  />
+                  {/* Chaque onglet garde sa page chargée : on cache les autres, on ne les recharge pas. */}
+                  {onglets
+                    .filter((o) => o.chargee)
+                    .map((o) => (
+                      <iframe
+                        key={`${o.id}-${o.chargee}-${o.recharge}`}
+                        src={versUrl(o.chargee)}
+                        title={`Aperçu de ${project?.name ?? "projet"} : ${titreOnglet(o.chargee)}`}
+                        hidden={o.id !== actif.id}
+                        className="size-full border-0"
+                      />
+                    ))}
                 </div>
                 <p className="m-0 text-center text-ui-2xs text-texte-tertiaire">
                   {modifiedLabel ? `${modifiedLabel} · ` : ""}Rien ne s’affiche ? Lance le serveur de dev du projet.
