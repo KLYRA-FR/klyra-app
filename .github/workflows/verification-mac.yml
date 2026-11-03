@@ -48,7 +48,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build && pnpm build:electron && pnpm whisper
+      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
       - name: Routines sous macOS (fichier, verrou, fuseaux)
         run: pnpm test:routines
       - name: Sons de l'app et réglage des sons du système (Mac)

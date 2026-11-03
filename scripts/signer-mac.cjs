@@ -14,6 +14,8 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- electron-builder charge ce fichier en CommonJS
 const { execFileSync, spawnSync } = require("node:child_process");
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- idem
+const { existsSync } = require("node:fs");
 
 module.exports = async function signerMac(options) {
   const app = options.app;
@@ -31,6 +33,7 @@ module.exports = async function signerMac(options) {
   // Computer Use : cua-driver (Contents/Resources) garde la signature Developer ID de son éditeur et son
   // droit Automation. Le signer de nouveau les retirerait : le pilote ne pourrait plus piloter les apps.
   const pilote = `${app}/Contents/Resources/cua-driver/cua-driver`;
+  if (!existsSync(pilote)) throw new Error("cua-driver manque dans l'app : lance « pnpm cua-driver » avant electron-builder.");
   const { stdout, stderr } = spawnSync("/usr/bin/codesign", ["--display", "--verbose=2", pilote], { encoding: "utf8" });
   if (!/Authority=Developer ID Application: Cua AI/.test(`${stdout}${stderr}`)) throw new Error("cua-driver a perdu la signature de son éditeur : Computer Use ne marcherait pas.");
   console.log("  • cua-driver garde la signature de son éditeur");
