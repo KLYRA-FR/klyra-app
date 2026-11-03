@@ -11,7 +11,7 @@
  * - réglage coupé : plus d'outils, ni dans tools/list du serveur MCP de l'app.
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- lancé par Electron en CommonJS */
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, safeStorage } = require("electron");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -21,6 +21,8 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "klyra-navigateur-"));
 app.setPath("userData", path.join(TMP, "donnees"));
 app.setPath("sessionData", path.join(TMP, "session"));
 app.setPath("downloads", path.join(TMP, "telechargements"));
+// Sous Linux sans trousseau : le chiffrement de base de Chromium, pour essayer le coffre (l'app installée garde celui du système).
+if (process.platform === "linux") app.commandLine.appendSwitch("password-store", "basic");
 fs.mkdirSync(app.getPath("userData"), { recursive: true });
 fs.mkdirSync(app.getPath("downloads"), { recursive: true });
 
@@ -46,6 +48,22 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>Contact KLYRA</title>
 <div style="height:3000px"></div><p>Bas de page</p>
 </body>`;
 
+const CADRE = `<!doctype html><meta charset="utf-8"><title>Cadre</title><body>
+<input id="ville" placeholder="Ville"><button onclick="window.parent.postMessage('clic-cadre','*')">Valider dans le cadre</button></body>`;
+const autre = http.createServer((_req, res) => {
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(CADRE);
+});
+
+const ENVOI = (port) => `<!doctype html><meta charset="utf-8"><title>Envoi</title><body>
+<iframe id="ifr" src="http://localhost:${port}/" style="width:500px;height:120px;border:0"></iframe>
+<label>Pièce <input type="file" id="f" multiple></label>
+<input type="file" id="cache" style="display:none"><button id="joindre" onclick="document.getElementById('cache').click()">Joindre</button>
+<form action="/connecte" method="get"><input type="email" name="email" placeholder="E-mail"><input type="password" name="mdp" id="mdpc"><button type="submit">Se connecter</button></form>
+<a href="/autre" id="lien">Un lien</a>
+<script>window.addEventListener("message", (e) => { if (e.data === "clic-cadre") window.clicCadre = true; });</script>
+</body>`;
+
 const serveur = http.createServer((req, res) => {
   if (req.url.startsWith("/fichier.txt")) {
     res.writeHead(200, { "Content-Type": "text/plain", "Content-Disposition": 'attachment; filename="devis.txt"' });
@@ -54,6 +72,15 @@ const serveur = http.createServer((req, res) => {
   if (req.url.startsWith("/merci")) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     return res.end(`<!doctype html><meta charset="utf-8"><title>Merci</title><p>Message reçu de ${new URL(req.url, "http://x").searchParams.get("nom")}</p>`);
+  }
+  if (req.url.startsWith("/envoi")) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(ENVOI(autre.address().port));
+  }
+  if (req.url.startsWith("/connecte")) {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    const q = new URL(req.url, "http://x").searchParams;
+    return res.end(`<!doctype html><meta charset="utf-8"><title>Connecté</title><p>Connecté ${q.get("email")} ${q.get("mdp") === "s3cret!" ? "mot de passe juste" : "mot de passe faux"}</p>`);
   }
   if (req.url.startsWith("/autre")) {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -65,6 +92,7 @@ const serveur = http.createServer((req, res) => {
 
 app.whenReady().then(async () => {
   await new Promise((r) => serveur.listen(0, "127.0.0.1", r));
+  await new Promise((r) => autre.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${serveur.address().port}`;
   const dist = path.join(__dirname, "..", "dist-electron");
   const nav = require(path.join(dist, "navigateur", "navigateur.js"));
@@ -75,13 +103,16 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1200, height: 800, show: true, webPreferences: { sandbox: true, contextIsolation: true } });
   await win.loadURL("data:text/html,<title>KLYRA</title><body>app</body>");
   const etats = [];
-  nav.brancherNavigateur({ fenetre: () => win, signaler: (e) => etats.push(e) });
+  const menus = [];
+  nav.brancherNavigateur({ fenetre: () => win, signaler: (e) => etats.push(e), menu: (id, m) => menus.push({ id, m }) });
+  const coffre = require(path.join(dist, "navigateur", "coffre.js"));
+  if (process.platform === "linux" && !safeStorage.isEncryptionAvailable()) safeStorage.setUsePlainTextEncryption?.(true);
 
   const A = { chatId: "chat-a", roleId: "principal" };
   const B = { chatId: "chat-b", roleId: "dev" };
   const outil = (nom, args, qui = A) => executerOutilNavigateur(nom, args, qui);
   const texteDe = (r) => r.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
-  const refDe = (t, motif) => (t.split("\n").find((l) => motif.test(l)) ?? "").match(/\[(e\d+)\]/)?.[1];
+  const refDe = (t, motif) => (t.split("\n").find((l) => motif.test(l)) ?? "").match(/\[((?:c\d+)?e\d+)\]/)?.[1];
 
   try {
     /* Ouvrir et lire. */
@@ -172,6 +203,77 @@ app.whenReady().then(async () => {
     await pause(1500);
     verifier(!!nav.etatNavigateur().find((o) => o.id === id).vignette?.startsWith("data:image/jpeg"), "une vignette existe pour l'aperçu des onglets");
 
+    /* Un cadre d'une autre origine : lu, visé, tapé. */
+    r = await outil("navigateur_aller", { url: `${base}/envoi`, nouvel_onglet: true });
+    t = texteDe(r);
+    const idEnvoi = t.match(/Onglet (nav-[\w-]+)/)?.[1];
+    const pageEnvoi = nav.contenuDe(idEnvoi);
+    verifier(/Cadre c1 \(localhost:\d+\)/.test(t) && /\[c1e\d+\] bouton « Valider dans le cadre »/.test(t), "un cadre d'une autre origine est lu, avec ses références", t);
+    r = await outil("navigateur_agir", { action: "taper", ref: refDe(t, /\[c1e\d+\] champ « Ville »/), texte: "Lyon" });
+    const cadre = pageEnvoi.mainFrame.frames[0];
+    verifier(!r.isError && (await cadre.executeJavaScript("document.getElementById('ville').value")) === "Lyon", "la frappe arrive dans le champ du cadre", texteDe(r));
+    r = await outil("navigateur_agir", { action: "cliquer", ref: refDe(t, /\[c1e\d+\] bouton/) });
+    await pause(200);
+    verifier(!r.isError && (await pageEnvoi.executeJavaScript("window.clicCadre === true")), "le clic arrive au bouton du cadre", texteDe(r));
+
+    /* Envoyer des fichiers : au champ, puis par un bouton qui ouvre le choix (intercepté). */
+    const f1 = path.join(TMP, "devis.pdf");
+    const f2 = path.join(TMP, "photo.png");
+    fs.writeFileSync(f1, "%PDF-1.4 essai");
+    fs.writeFileSync(f2, "png");
+    r = await outil("navigateur_agir", { action: "envoyer_fichiers", ref: refDe(t, /fichier « Pièce »/), chemins: [f1, f2] });
+    verifier(!r.isError && (await pageEnvoi.executeJavaScript("[...document.getElementById('f').files].map((x) => x.name).join(',')")) === "devis.pdf,photo.png", "des fichiers donnés au champ « fichier »", texteDe(r));
+    r = await outil("navigateur_agir", { action: "envoyer_fichiers", ref: refDe(t, /bouton « Joindre »/), chemins: [f1] });
+    verifier(!r.isError && (await pageEnvoi.executeJavaScript("document.getElementById('cache').files[0]?.name")) === "devis.pdf", "un bouton qui ouvre le choix de fichiers : choix intercepté et rempli", texteDe(r));
+    r = await outil("navigateur_agir", { action: "envoyer_fichiers", ref: refDe(t, /fichier « Pièce »/), chemins: ["relatif.txt"] });
+    verifier(r.isError && /chemin complet/.test(texteDe(r)), "un chemin relatif est refusé", texteDe(r));
+
+    /* Le coffre : l'agent remplit la connexion sans voir le mot de passe. */
+    r = await outil("navigateur_agir", { action: "remplir_connexion" });
+    verifier(r.isError && /Aucune connexion enregistrée/.test(texteDe(r)), "sans connexion dans le coffre : l'agent est invité à passer la main", texteDe(r));
+    let chiffrement = true;
+    try {
+      await coffre.ajouterAuCoffre({ site: "127.0.0.1", identifiant: "pelin@klyra.fr", motDePasse: "s3cret!", agents: true });
+    } catch (e) {
+      chiffrement = false;
+      console.log(`       (coffre non testé : ${e.message})`);
+    }
+    if (chiffrement) {
+      const disque = fs.readFileSync(path.join(app.getPath("userData"), "coffre-navigateur.json"), "utf8");
+      verifier(!disque.includes("s3cret!") && coffre.listerCoffre().every((c) => !("motDePasse" in c)), "le mot de passe est chiffré sur le disque et ne sort pas du coffre");
+      r = await outil("navigateur_lire", {});
+      verifier(/Coffre : une connexion enregistrée pour 127\.0\.0\.1 \(pelin@klyra\.fr\)/.test(texteDe(r)), "la lecture signale la connexion du coffre (identifiant seulement)", texteDe(r));
+      r = await outil("navigateur_agir", { action: "remplir_connexion", valider: true });
+      await pause(800);
+      const apres = await outil("navigateur_lire", { mode: "texte" });
+      verifier(!r.isError && !texteDe(r).includes("s3cret!") && /Connecté pelin@klyra\.fr mot de passe juste/.test(texteDe(apres)), "remplir_connexion connecte, sans montrer le mot de passe", `${texteDe(r)}\n${texteDe(apres)}`);
+      const [entree] = coffre.listerCoffre();
+      await coffre.changerAgentsCoffre(entree.id, false);
+      await outil("navigateur_aller", { historique: "retour" });
+      r = await outil("navigateur_agir", { action: "remplir_connexion" });
+      verifier(r.isError, "une connexion que la personne n'a pas permise aux agents leur est refusée", texteDe(r));
+      await coffre.retirerDuCoffre(entree.id);
+    }
+
+    /* Le clic droit de la personne : le menu de l'app, avec le lien. */
+    await outil("navigateur_aller", { url: `${base}/envoi`, onglet: idEnvoi });
+    nav.afficherOnglet(idEnvoi, { x: 0, y: 0, width: 900, height: 700 });
+    await pause(13_000); // l'agent ne pilote plus (sinon son clic droit n'ouvre pas de menu)
+    const pos = await pageEnvoi.executeJavaScript("(() => { const r = document.getElementById('lien').getBoundingClientRect(); return { x: Math.round(r.x + 5), y: Math.round(r.y + 5) }; })()");
+    pageEnvoi.sendInputEvent({ type: "mouseDown", x: pos.x, y: pos.y, button: "right", clickCount: 1 });
+    pageEnvoi.sendInputEvent({ type: "mouseUp", x: pos.x, y: pos.y, button: "right", clickCount: 1 });
+    await pause(1000);
+    const menu = menus.find((m) => m.id === idEnvoi);
+    verifier(!!menu && /\/autre$/.test(menu.m.lien ?? ""), "un clic droit de la personne ouvre le menu de l'app, avec le lien", JSON.stringify(menus));
+    if (menu) {
+      await nav.actionMenu(idEnvoi, "lien-onglet");
+      verifier(nav.ongletsDe("chat-a").some((o) => /\/autre$/.test(o.url) && o.id !== idEnvoi), "« Ouvrir le lien dans un nouvel onglet » ouvre l'onglet dans la conversation");
+      await nav.actionMenu(idEnvoi, "copier").then(() => verifier(false, "une action d'un menu déjà servi est refusée"), () => verifier(true, "une action d'un menu déjà servi est refusée"));
+    }
+    nav.afficherOnglet(null, null);
+    for (const o of nav.ongletsDe("chat-a")) if (o.id !== id && !/\/autre$/.test(o.url)) nav.fermerOnglet(o.id);
+    for (const o of nav.ongletsDe("chat-a").filter((x) => /\/autre$/.test(x.url)).slice(1)) nav.fermerOnglet(o.id);
+
     /* Le réglage et le serveur MCP de l'app. */
     await ia.demarrerServeurMcp();
     const config = JSON.parse(ia.configMcp({ chatId: "chat-a", roleId: "principal" })).mcpServers.klyra;
@@ -203,6 +305,7 @@ app.whenReady().then(async () => {
 
   console.log(echecs.length ? `\n${echecs.length} ÉCHEC(S)` : "\nNAVIGATEUR : TOUT PASSE");
   serveur.close();
+  autre.close();
   fs.rmSync(TMP, { recursive: true, force: true });
   app.exit(echecs.length ? 1 : 0);
 });

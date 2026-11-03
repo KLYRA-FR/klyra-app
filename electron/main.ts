@@ -127,7 +127,9 @@ import {
   type EvenementNotification,
 } from "./reglages";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
+import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
 import {
+  actionMenu,
   afficherOnglet,
   allerA,
   brancherNavigateur,
@@ -139,6 +141,8 @@ import {
   ouvrirAilleurs,
   ouvrirOnglet,
   prendreLaMain,
+  remplirParLaPersonne,
+  type ActionMenu,
   type GesteHistorique,
 } from "./navigateur/navigateur";
 import { absolu, arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
@@ -893,6 +897,10 @@ function registerBridge() {
       const wc = fenetrePrincipale?.webContents;
       if (wc && !wc.isDestroyed()) wc.send("navigateur:etat", etat);
     },
+    menu: (id, menu) => {
+      const wc = fenetrePrincipale?.webContents;
+      if (wc && !wc.isDestroyed()) wc.send("navigateur:menu", id, menu);
+    },
   });
   const texteNav = (v: unknown, max = 4_096) => (typeof v === "string" ? v.slice(0, max) : "");
   const navigateur = (canal: string, fn: (...args: unknown[]) => unknown) =>
@@ -920,6 +928,20 @@ function registerBridge() {
   navigateur("navigateur:ailleurs", (id) => ouvrirAilleurs(texteNav(id, 200)));
   navigateur("navigateur:telechargement", (chemin) => montrerTelechargement(texteNav(chemin)));
   navigateur("navigateur:effacer", () => effacerDonnees());
+  const ACTIONS_MENU: ActionMenu[] = ["retour", "suivant", "recharger", "couper", "copier", "coller", "tout", "copier-lien", "lien-onglet", "lien-ailleurs", "image-onglet", "copier-image", "chercher"];
+  navigateur("navigateur:menu-action", (id, action) => {
+    if (!ACTIONS_MENU.includes(action as ActionMenu)) throw new Error("Action inconnue.");
+    return actionMenu(texteNav(id, 200), action as ActionMenu);
+  });
+  /* Le coffre : le mot de passe arrive une fois de l'écran, chiffré aussitôt ; il n'y retourne jamais. */
+  navigateur("navigateur:coffre", () => listerCoffre());
+  navigateur("navigateur:coffre:ajouter", (entree) => {
+    const e = (entree ?? {}) as Record<string, unknown>;
+    return ajouterAuCoffre({ site: e.site, identifiant: e.identifiant, motDePasse: e.motDePasse, agents: e.agents });
+  });
+  navigateur("navigateur:coffre:retirer", (id) => retirerDuCoffre(texteNav(id, 100)));
+  navigateur("navigateur:coffre:agents", (id, agents) => changerAgentsCoffre(texteNav(id, 100), agents === true));
+  navigateur("navigateur:coffre:remplir", (id, idConnexion) => remplirParLaPersonne(texteNav(id, 200), texteNav(idConnexion, 100)));
   const origineVps = (adresse: unknown) => (typeof adresse === "string" ? adresse : "");
   ipcMain.handle("serveur:interroger", (event, adresse: unknown) => repondre(() => {
     depuisFenetre(event);

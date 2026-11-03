@@ -626,6 +626,16 @@ export interface KlyraBridge {
     montrerTelechargement: (chemin: string) => Promise<Reponse<void>>;
     effacer: () => Promise<Reponse<void>>;
     onEtat: (callback: (etat: OngletNavigateur[]) => void) => () => void;
+    /** Clic droit de la personne dans une page : l'écran dessine le menu de l'app. Absents avant la relance de l'app. */
+    onMenu?: (callback: (id: string, menu: MenuNavigateur) => void) => () => void;
+    actionMenu?: (id: string, action: ActionMenuNavigateur) => Promise<Reponse<void>>;
+    /** Le coffre : site et identifiant seulement ; le mot de passe va vers le main, jamais l'inverse. */
+    coffre?: () => Promise<Reponse<ConnexionCoffre[]>>;
+    ajouterAuCoffre?: (entree: { site: string; identifiant: string; motDePasse: string; agents: boolean }) => Promise<Reponse<ConnexionCoffre[]>>;
+    retirerDuCoffre?: (id: string) => Promise<Reponse<ConnexionCoffre[]>>;
+    agentsCoffre?: (id: string, agents: boolean) => Promise<Reponse<ConnexionCoffre[]>>;
+    /** Remplit la connexion de la page de cet onglet (la personne, d'un clic). */
+    remplir?: (id: string, idConnexion: string) => Promise<Reponse<string>>;
   };
   /** La consommation de l'année (cf. electron/consommation.ts). */
   consommation?: {
@@ -698,6 +708,32 @@ export interface Reglages {
   navigateur: { agents: boolean };
   sons: PreferencesSons;
   configuration: ConfigurationKlyra;
+}
+
+/** Le menu du clic droit dans une page (cf. electron/navigateur/navigateur.ts, `ParametresMenu`). */
+export interface MenuNavigateur {
+  x: number;
+  y: number;
+  lien: string | null;
+  texteLien: string;
+  image: string | null;
+  selection: string;
+  editable: boolean;
+  peut: { couper: boolean; copier: boolean; coller: boolean; toutSelectionner: boolean };
+  peutReculer: boolean;
+  peutAvancer: boolean;
+}
+
+export type ActionMenuNavigateur = "retour" | "suivant" | "recharger" | "couper" | "copier" | "coller" | "tout" | "copier-lien" | "lien-onglet" | "lien-ailleurs" | "image-onglet" | "copier-image" | "chercher";
+
+/** Une connexion du coffre du navigateur (cf. electron/navigateur/coffre.ts) : jamais le mot de passe. */
+export interface ConnexionCoffre {
+  id: string;
+  hote: string;
+  identifiant: string;
+  agents: boolean;
+  ajouteLe: number;
+  utiliseLe: number | null;
 }
 
 /** Un onglet du navigateur de KLYRA (cf. electron/navigateur/navigateur.ts, `OngletPublic`). */

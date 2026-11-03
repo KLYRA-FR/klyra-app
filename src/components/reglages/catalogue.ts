@@ -166,6 +166,7 @@ export const SECTIONS: SectionReglages[] = [
       { id: "navigateur-agents", titre: "Laisser les agents utiliser le navigateur", mots: "web site page onglets computer use pilotage formulaire clic internet chrome" },
       { id: "navigateur-donnees", titre: "Connexions et cookies", mots: "effacer donnees navigation session cache vider deconnecter" },
       { id: "navigateur-telechargements", titre: "Téléchargements", mots: "fichiers telecharges dossier downloads" },
+      { id: "navigateur-coffre", titre: "Mots de passe du navigateur", mots: "coffre identifiants connexion login mot de passe remplir trousseau" },
     ],
   },
   {

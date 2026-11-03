@@ -1,15 +1,23 @@
-import { app, shell, session as sessions, WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
+import { app, clipboard, shell, session as sessions, webFrameMain, WebContentsView, type BrowserWindow, type Session, type WebContents, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { connexionsPour, secretPour, type ConnexionCoffre } from "./coffre";
 import {
   adresseAutorisee,
+  decouperRef,
   evenementsTouche,
   hoteDe,
   MONDE_ISOLE,
   normaliserAdresse,
+  RECHERCHE,
   SCRIPT_INSTANTANE,
+  scriptDemarquerFichier,
+  scriptFichier,
+  scriptInstantane,
+  scriptPlaceCadre,
+  scriptRemplirConnexion,
   SCRIPT_TEXTE,
   SCRIPT_VALEUR_FOCUS,
   scriptChoisir,
@@ -18,6 +26,7 @@ import {
   scriptCurseur,
   scriptDefiler,
   scriptFocus,
+  type CadreLu,
   type InstantanePage,
 } from "./regles";
 
@@ -81,6 +90,24 @@ interface Onglet extends Omit<OngletPublic, "endormi" | "affiche"> {
   minuteurPilote: NodeJS.Timeout | null;
   minuteurVignette: NodeJS.Timeout | null;
   derniereVignette: number;
+  /** Les cadres de la dernière lecture (c1, c2…) : leur page, et l'élément iframe qui les situe. */
+  cadres: Map<string, { token: string; processus: number; refIframe: string }>;
+  /** Le dernier menu du clic droit ouvert par la personne : ses actions ne lisent que lui. */
+  menu: ParametresMenu | null;
+}
+
+/** Ce que l'écran reçoit d'un clic droit dans une page, pour dessiner le menu de l'app. */
+export interface ParametresMenu {
+  x: number;
+  y: number;
+  lien: string | null;
+  texteLien: string;
+  image: string | null;
+  selection: string;
+  editable: boolean;
+  peut: { couper: boolean; copier: boolean; coller: boolean; toutSelectionner: boolean };
+  peutReculer: boolean;
+  peutAvancer: boolean;
 }
 
 export const PARTITION = "persist:klyra-navigateur";
@@ -100,6 +127,7 @@ const OUBLI_MS = 30 * 24 * 3600_000;
 const onglets = new Map<string, Onglet>();
 let fenetre: () => BrowserWindow | null = () => null;
 let signaler: (etat: OngletPublic[]) => void = () => undefined;
+let montrerMenu: (id: string, menu: ParametresMenu) => void = () => undefined;
 let affiche: { id: string; cadre: Electron.Rectangle } | null = null;
 let fenetreSuivie: BrowserWindow | null = null;
 let sessionNav: Session | null = null;
@@ -173,6 +201,8 @@ function nouvelOnglet(chatId: string, url: string, id: string = `nav-${randomUUI
     minuteurPilote: null,
     minuteurVignette: null,
     derniereVignette: 0,
+    cadres: new Map(),
+    menu: null,
   };
 }
 
@@ -350,6 +380,29 @@ function creerVue(o: Onglet): WebContents {
   wc.on("will-navigate", bloquer);
   wc.on("will-redirect", bloquer);
   wc.on("will-frame-navigate", bloquer);
+  /* Le clic droit de la personne : le menu de l'app, dessiné par l'écran (pas celui d'un clic droit de l'agent). */
+  wc.on("context-menu", (_e, p) => {
+    if (o.pilote && Date.now() - o.pilote.at < 2_000) return;
+    if (affiche?.id !== o.id) return;
+    const lien = adresseAutorisee(p.linkURL) && p.linkURL !== "about:blank" ? p.linkURL : null;
+    o.menu = {
+      x: p.x,
+      y: p.y,
+      lien,
+      texteLien: (p.linkText || "").slice(0, 120),
+      image: p.mediaType === "image" && adresseAutorisee(p.srcURL) ? p.srcURL : null,
+      selection: (p.selectionText || "").trim().slice(0, 500),
+      editable: p.isEditable,
+      peut: { couper: p.editFlags.canCut, copier: p.editFlags.canCopy, coller: p.editFlags.canPaste, toutSelectionner: p.editFlags.canSelectAll },
+      peutReculer: wc.navigationHistory.canGoBack(),
+      peutAvancer: wc.navigationHistory.canGoForward(),
+    };
+    // La vignette d'abord : la page s'efface derrière elle tant que le menu est ouvert.
+    void vignette(o).finally(() => {
+      fenetre()?.webContents.focus();
+      if (o.menu) montrerMenu(o.id, o.menu);
+    });
+  });
   /* Une fenêtre ouverte par la page devient un onglet de la même conversation. */
   wc.setWindowOpenHandler(({ url }) => {
     if (adresseAutorisee(url) && url !== "about:blank") {
@@ -634,8 +687,56 @@ export async function attendreCalme(wc: WebContents, ms = DELAI_CHARGEMENT_MS): 
   await pause(250);
 }
 
-export async function lireInstantane(wc: WebContents): Promise<InstantanePage> {
-  return script<InstantanePage>(wc, SCRIPT_INSTANTANE);
+/** Un script dans un cadre de la page (son monde principal : Electron n'offre pas de monde isolé à un cadre). */
+async function scriptCadre<T>(cadre: WebFrameMain, code: string): Promise<T> {
+  return avecDelai(cadre.executeJavaScript(code) as Promise<T>, DELAI_SCRIPT_MS, "Le cadre ne répond pas : regarde la page avec navigateur_capture.");
+}
+
+function cadreDe(o: Onglet, prefixe: string): { cadre: WebFrameMain; refIframe: string } {
+  const c = o.cadres.get(prefixe);
+  const cadre = c ? webFrameMain.fromFrameToken(c.processus, c.token) : null;
+  if (!c || !cadre || cadre.detached) throw new Error(`Le cadre ${prefixe} a changé : relis la page avec navigateur_lire.`);
+  return { cadre, refIframe: c.refIframe };
+}
+
+/** Un script dans la page, ou dans le cadre d'où vient la référence (c1e4). */
+async function scriptPour<T>(o: Onglet, wc: WebContents, ref: string | null, fabrique: (ref: string | null) => string): Promise<T> {
+  const d = ref ? decouperRef(ref) : { cadre: null, ref: null };
+  if (!d.cadre) return script<T>(wc, fabrique(d.ref));
+  return scriptCadre<T>(cadreDe(o, d.cadre).cadre, fabrique(d.ref));
+}
+
+const CADRES_LUS_MAX = 6;
+
+/**
+ * La page, puis ses cadres directs (paiement, connexion, contenu intégré), chacun avec des
+ * références préfixées (c1e4). Un cadre est rapproché de son élément iframe par son nom, son
+ * adresse, ou son rang quand les deux listes ont la même longueur.
+ */
+export async function lireInstantane(o: Onglet, wc: WebContents): Promise<InstantanePage> {
+  const page = await script<InstantanePage>(wc, SCRIPT_INSTANTANE);
+  o.cadres.clear();
+  const iframes = page.iframes ?? [];
+  const enfants = wc.mainFrame.frames.filter((f) => !f.detached);
+  const lus: CadreLu[] = [];
+  for (const [rang, cadre] of enfants.entries()) {
+    if (lus.length >= CADRES_LUS_MAX) break;
+    if (!/^https?:/i.test(cadre.url)) continue;
+    const el =
+      (cadre.name && iframes.find((x) => x.nom === cadre.name)) ||
+      iframes.find((x) => x.src && x.src === cadre.url) ||
+      (enfants.length === iframes.length ? iframes[rang] : undefined);
+    if (!el || !el.visible) continue;
+    const prefixe = `c${lus.length + 1}`;
+    try {
+      const lu = await scriptCadre<InstantanePage>(cadre, scriptInstantane(prefixe));
+      o.cadres.set(prefixe, { token: cadre.frameToken, processus: cadre.processId, refIframe: el.ref });
+      lus.push({ prefixe, origine: hoteDe(cadre.url), elements: lu.elements ?? [], texte: String(lu.texte ?? "").slice(0, 600) });
+    } catch {
+      /* cadre qui ne répond pas : compté comme non lu */
+    }
+  }
+  return { ...page, cadresLus: lus };
 }
 
 export async function lireTexte(wc: WebContents): Promise<string> {
@@ -659,10 +760,25 @@ async function curseur(wc: WebContents, x: number, y: number): Promise<void> {
 /** Les coordonnées d'un élément (`eN`) ou d'un point de la dernière capture, en pixels de la page. */
 export async function viser(o: Onglet, wc: WebContents, cible: { ref?: string; x?: number; y?: number }): Promise<{ x: number; y: number; note: string | null; protege: boolean }> {
   if (cible.ref) {
-    const r = await script<{ ok: boolean; raison?: string; x: number; y: number; protege: boolean; desactive: boolean; recouvert: string | null; nom: string }>(wc, scriptCible(cible.ref));
+    type Cible = { ok: boolean; raison?: string; x: number; y: number; protege: boolean; desactive: boolean; recouvert: string | null; nom: string };
+    const d = decouperRef(cible.ref);
+    let r: Cible;
+    let decalage = { x: 0, y: 0 };
+    if (d.cadre) {
+      /* Dans un cadre : l'élément centré dans le cadre, le cadre amené à l'écran, puis le point dans la page. */
+      const { cadre, refIframe } = cadreDe(o, d.cadre);
+      type Place = { x: number; y: number; hauteurVue: number } | null;
+      let place = await script<Place>(wc, scriptPlaceCadre(refIframe));
+      if (!place) throw new Error(`Le cadre ${d.cadre} a disparu de la page : relis-la.`);
+      r = await scriptCadre<Cible>(cadre, scriptCible(d.ref));
+      if (r.ok && (place.y + r.y < 0 || place.y + r.y > place.hauteurVue)) {
+        place = (await script<Place>(wc, scriptPlaceCadre(refIframe, place.y + r.y - place.hauteurVue / 2))) ?? place;
+      }
+      decalage = { x: place.x, y: place.y };
+    } else r = await script<Cible>(wc, scriptCible(d.ref));
     if (!r.ok) throw new Error(r.raison);
     const notes = [r.desactive ? "l’élément est désactivé" : "", r.recouvert ? `un autre élément le recouvre (« ${r.recouvert} »)` : ""].filter(Boolean);
-    return { x: r.x, y: r.y, protege: r.protege, note: notes.length ? `Attention : ${notes.join(", ")}.` : null };
+    return { x: Math.round(decalage.x + r.x), y: Math.round(decalage.y + r.y), protege: r.protege, note: notes.length ? `Attention : ${notes.join(", ")}.` : null };
   }
   if (typeof cible.x === "number" && typeof cible.y === "number" && Number.isFinite(cible.x) && Number.isFinite(cible.y)) {
     return { x: Math.round(cible.x * o.echelle), y: Math.round(cible.y * o.echelle), protege: false, note: null };
@@ -692,25 +808,30 @@ export async function appuyer(wc: WebContents, combinaison: string): Promise<voi
  * Tape un texte dans l'élément visé (ou celui qui a le focus). Jamais dans un
  * mot de passe, un code à usage unique ou un champ de carte.
  */
-export async function taper(wc: WebContents, ref: string | null, texte: string, effacer: boolean): Promise<string | null> {
-  const f = await script<{ ok: boolean; raison?: string; editable: boolean; protege: boolean; avant?: string }>(wc, scriptFocus(ref, effacer));
+export async function taper(o: Onglet, wc: WebContents, ref: string | null, texte: string, effacer: boolean): Promise<string | null> {
+  /* Dans un cadre, le focus y entre par un vrai clic ; la frappe va ensuite au cadre qui a le focus. */
+  if (ref && decouperRef(ref).cadre) {
+    const c = await viser(o, wc, { ref });
+    await cliquer(wc, c.x, c.y);
+  }
+  const f = await scriptPour<{ ok: boolean; raison?: string; editable: boolean; protege: boolean; avant?: string }>(o, wc, ref, (r) => scriptFocus(r, effacer));
   if (!f.ok) throw new Error(f.raison);
   if (f.protege) throw new Error("Champ protégé (mot de passe, code ou carte) : tu ne le remplis jamais. Passe la main à la personne (navigateur_agir, action passer_la_main) pour qu’elle le remplisse.");
   await cdp(wc, "Input.insertText", { text: texte });
   if (!f.editable) return "Aucun champ n’avait le focus : le texte est parti au clavier vers la page.";
-  const apres = await script<string | null>(wc, SCRIPT_VALEUR_FOCUS).catch(() => null);
+  const apres = await scriptPour<string | null>(o, wc, ref, () => SCRIPT_VALEUR_FOCUS).catch(() => null);
   if (apres !== null && texte && !apres.includes(texte.slice(0, 40)) && apres === (effacer ? "" : f.avant)) return "Le champ ne semble pas avoir reçu le texte : relis la page.";
   return null;
 }
 
-export async function choisir(wc: WebContents, ref: string, valeur: string): Promise<string> {
-  const r = await script<{ ok: boolean; raison?: string; choisi?: string }>(wc, scriptChoisir(ref, valeur));
+export async function choisir(o: Onglet, wc: WebContents, ref: string, valeur: string): Promise<string> {
+  const r = await scriptPour<{ ok: boolean; raison?: string; choisi?: string }>(o, wc, ref, (x) => scriptChoisir(x ?? "", valeur));
   if (!r.ok) throw new Error(r.raison);
   return r.choisi ?? valeur;
 }
 
-export async function defiler(wc: WebContents, ref: string | null, dx: number, dy: number): Promise<{ y: number; bouge: boolean; max: number }> {
-  const r = await script<{ ok: boolean; raison?: string; y: number; bouge: boolean; max: number }>(wc, scriptDefiler(ref, dx, dy));
+export async function defiler(o: Onglet, wc: WebContents, ref: string | null, dx: number, dy: number): Promise<{ y: number; bouge: boolean; max: number }> {
+  const r = await scriptPour<{ ok: boolean; raison?: string; y: number; bouge: boolean; max: number }>(o, wc, ref, (x) => scriptDefiler(x, dx, dy));
   if (!r.ok) throw new Error(r.raison);
   return r;
 }
@@ -731,15 +852,186 @@ export async function capturer(o: Onglet, wc: WebContents): Promise<{ base64: st
   return { base64: reduite.toJPEG(75).toString("base64"), largeur: t.width, hauteur: t.height, echelle: o.echelle };
 }
 
+/* ─── Envoyer des fichiers ────────────────────────────────────── */
+
+export const FICHIERS_MAX = 10;
+const FICHIER_TAILLE_MAX = 100 * 1024 * 1024;
+
+/** Des fichiers de ce poste : chemins complets, qui existent, 100 Mo au plus chacun. */
+export function verifierFichiers(brut: unknown): string[] {
+  const liste = Array.isArray(brut) ? brut : typeof brut === "string" ? [brut] : [];
+  const chemins = liste.map((c) => String(c ?? "").trim()).filter(Boolean);
+  if (!chemins.length) throw new Error("Donne les chemins complets des fichiers (chemins).");
+  if (chemins.length > FICHIERS_MAX) throw new Error(`${FICHIERS_MAX} fichiers au plus à la fois.`);
+  for (const c of chemins) {
+    if (!path.isAbsolute(c)) throw new Error(`Donne le chemin complet, pas « ${c} ».`);
+    let taille: number;
+    try {
+      const st = statSync(c);
+      if (!st.isFile()) throw new Error("dossier");
+      taille = st.size;
+    } catch {
+      throw new Error(`Aucun fichier à ${c}.`);
+    }
+    if (taille > FICHIER_TAILLE_MAX) throw new Error(`${path.basename(c)} est trop lourd (100 Mo au plus).`);
+  }
+  return chemins;
+}
+
+/**
+ * Donne des fichiers à un champ « fichier » de la page, ou au choix de fichiers qu'ouvre un bouton
+ * (le choix est intercepté : aucune fenêtre du système ne s'ouvre).
+ */
+export async function envoyerFichiers(o: Onglet, wc: WebContents, ref: string, brut: unknown): Promise<string> {
+  const chemins = verifierFichiers(brut);
+  if (decouperRef(ref).cadre) throw new Error("Envoyer des fichiers dans un cadre n’est pas possible : passe la main à la personne pour cette étape.");
+  const marque = randomUUID();
+  const r = await script<{ ok: boolean; raison?: string; champ: boolean; multiple: boolean }>(wc, scriptFichier(ref, marque));
+  if (!r.ok) throw new Error(r.raison);
+  if (!r.multiple && chemins.length > 1) throw new Error("Ce champ n’accepte qu’un fichier.");
+  const noms = chemins.map((c) => path.basename(c)).join(", ");
+  if (r.champ) {
+    try {
+      const doc = (await cdp(wc, "DOM.getDocument", { depth: 0 })) as { root: { nodeId: number } };
+      const trouve = (await cdp(wc, "DOM.querySelector", { nodeId: doc.root.nodeId, selector: `[data-klyra-fichier="${marque}"]` })) as { nodeId: number };
+      if (!trouve.nodeId) throw new Error("Champ introuvable (dans un composant isolé) : vise plutôt le bouton qui ouvre le choix de fichiers.");
+      await cdp(wc, "DOM.setFileInputFiles", { files: chemins, nodeId: trouve.nodeId });
+    } finally {
+      await script(wc, scriptDemarquerFichier(marque)).catch(() => undefined);
+    }
+    return `Fichiers donnés au champ ${ref} : ${noms}`;
+  }
+  await cdp(wc, "Page.setInterceptFileChooserDialog", { enabled: true });
+  try {
+    const ouvert = new Promise<{ backendNodeId: number; mode: string } | null>((resoudre) => {
+      const ecoute = (_e: unknown, methode: string, params: { backendNodeId: number; mode: string }) => {
+        if (methode !== "Page.fileChooserOpened") return;
+        clearTimeout(minuteur);
+        wc.debugger.removeListener("message", ecoute);
+        resoudre(params);
+      };
+      const minuteur = setTimeout(() => {
+        wc.debugger.removeListener("message", ecoute);
+        resoudre(null);
+      }, 5_000);
+      wc.debugger.on("message", ecoute);
+    });
+    const c = await viser(o, wc, { ref });
+    await cliquer(wc, c.x, c.y);
+    const choix = await ouvert;
+    if (!choix) throw new Error("Aucun choix de fichiers ne s’est ouvert en cliquant sur cet élément : vise le champ ou le bouton « Joindre ».");
+    if (choix.mode === "selectSingle" && chemins.length > 1) throw new Error("Ce choix n’accepte qu’un fichier.");
+    await cdp(wc, "DOM.setFileInputFiles", { files: chemins, backendNodeId: choix.backendNodeId });
+  } finally {
+    await cdp(wc, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => undefined);
+  }
+  return `Fichiers donnés par ${ref} : ${noms}`;
+}
+
+/* ─── Coffre : remplir une connexion ──────────────────────────── */
+
+/** Les connexions du coffre qui valent pour la page de cet onglet. */
+export function connexionsDeLOnglet(o: Onglet, parAgent: boolean): ConnexionCoffre[] {
+  return connexionsPour(vivante(o)?.getURL() || o.url, parAgent);
+}
+
+/**
+ * Remplit la connexion de la page avec le coffre : par la personne (d'un clic) ou par un agent
+ * (seulement les connexions qu'elle lui permet). Le mot de passe ne passe que par la page de son site.
+ */
+export async function remplirConnexion(
+  o: Onglet,
+  wc: WebContents,
+  choix: { id?: string | null; identifiant?: string | null; refIdentifiant?: string | null; refMotDePasse?: string | null; valider?: boolean; parAgent: boolean },
+): Promise<string> {
+  const url = wc.getURL();
+  const dispo = connexionsPour(url, choix.parAgent);
+  const voulu = choix.identifiant?.trim().toLowerCase();
+  const candidates = choix.id ? dispo.filter((c) => c.id === choix.id) : voulu ? dispo.filter((c) => c.identifiant.toLowerCase() === voulu) : dispo;
+  if (!candidates.length)
+    throw new Error(
+      dispo.length
+        ? `Aucune connexion « ${choix.identifiant} » pour ce site. Enregistrées : ${dispo.map((c) => c.identifiant || "(sans identifiant)").join(", ")}.`
+        : `Aucune connexion enregistrée${choix.parAgent ? " pour les agents" : ""} pour ${hoteDe(url)} : passe la main à la personne (passer_la_main) pour qu’elle se connecte.`,
+    );
+  if (candidates.length > 1) throw new Error(`Plusieurs connexions pour ce site : précise identifiant (${candidates.map((c) => c.identifiant).join(", ")}).`);
+  for (const r of [choix.refIdentifiant, choix.refMotDePasse]) if (r && decouperRef(r).cadre) throw new Error("Une connexion dans un cadre se remplit par la personne : passe-lui la main.");
+  const secret = secretPour(candidates[0].id, url, choix.parAgent);
+  const r = await script<{ ok: boolean; raison?: string; identifiant: boolean }>(
+    wc,
+    scriptRemplirConnexion({ refIdentifiant: choix.refIdentifiant, refMotDePasse: choix.refMotDePasse, identifiant: secret.identifiant, motDePasse: secret.motDePasse }),
+  );
+  if (!r.ok) throw new Error(r.raison);
+  if (choix.valider) {
+    await pause(120);
+    await appuyer(wc, "Enter");
+  }
+  return `Connexion « ${secret.identifiant || "sans identifiant"} » remplie pour ${secret.hote}${r.identifiant ? "" : " (mot de passe seul : aucun champ d’identifiant trouvé)"}${choix.valider ? ", puis validée" : ""}.`;
+}
+
+/** La personne remplit la connexion de l'onglet affiché, d'un clic, avec une entrée du coffre. */
+export async function remplirParLaPersonne(id: string, idConnexion: string): Promise<string> {
+  const o = exiger(id);
+  return remplirConnexion(o, reveiller(o), { id: idConnexion, parAgent: false });
+}
+
+/* ─── Menu du clic droit ──────────────────────────────────────── */
+
+export type ActionMenu = "retour" | "suivant" | "recharger" | "couper" | "copier" | "coller" | "tout" | "copier-lien" | "lien-onglet" | "lien-ailleurs" | "image-onglet" | "copier-image" | "chercher";
+
+/** Une ligne du menu choisie : elle ne vaut que pour le dernier menu ouvert sur cet onglet. */
+export async function actionMenu(id: string, action: ActionMenu): Promise<void> {
+  const o = exiger(id);
+  const m = o.menu;
+  const wc = vivante(o);
+  if (!m || !wc) throw new Error("Ce menu n’est plus valable.");
+  o.menu = null;
+  switch (action) {
+    case "retour":
+    case "suivant":
+    case "recharger":
+      return historique(id, action);
+    case "couper":
+      return wc.cut();
+    case "copier":
+      return wc.copy();
+    case "coller":
+      return wc.paste();
+    case "tout":
+      return wc.selectAll();
+    case "copier-lien":
+      if (m.lien) clipboard.writeText(m.lien);
+      return;
+    case "lien-onglet":
+      if (m.lien) ouvrirOnglet(o.chatId, m.lien);
+      return;
+    case "lien-ailleurs":
+      if (m.lien && /^https?:/i.test(m.lien)) await shell.openExternal(m.lien);
+      return;
+    case "image-onglet":
+      if (m.image) ouvrirOnglet(o.chatId, m.image);
+      return;
+    case "copier-image":
+      if (m.image) clipboard.writeText(m.image);
+      return;
+    case "chercher":
+      if (m.selection) ouvrirOnglet(o.chatId, RECHERCHE + encodeURIComponent(m.selection.slice(0, 200)));
+      return;
+    default:
+      throw new Error("Action inconnue.");
+  }
+}
+
 export function apresAction(o: Onglet): void {
   planifierVignette(o, 400);
 }
 
 /* ─── Branchement ─────────────────────────────────────────────── */
 
-export function brancherNavigateur(options: { fenetre: () => BrowserWindow | null; signaler: (etat: OngletPublic[]) => void }): void {
+export function brancherNavigateur(options: { fenetre: () => BrowserWindow | null; signaler: (etat: OngletPublic[]) => void; menu?: (id: string, menu: ParametresMenu) => void }): void {
   fenetre = options.fenetre;
   signaler = options.signaler;
+  if (options.menu) montrerMenu = options.menu;
   fichierEtat = path.join(app.getPath("userData"), "navigateur.json");
   restaurer();
 }

@@ -208,6 +208,17 @@ export interface InstantanePage {
   texte: string;
   /** La longueur totale du texte de la page. */
   texteTotal: number;
+  /** Les cadres de la page (leur élément iframe a une référence, pour les situer). */
+  iframes?: { ref: string; nom: string; src: string; visible: boolean }[];
+  /** Les cadres lus, à la suite de la page : leurs éléments ont des références préfixées (c1e4). */
+  cadresLus?: CadreLu[];
+}
+
+export interface CadreLu {
+  prefixe: string;
+  origine: string;
+  elements: ElementPage[];
+  texte: string;
 }
 
 /** Le nombre d'éléments listés au plus, et de caractères de texte avec eux. */
@@ -255,7 +266,17 @@ export function formaterInstantane(i: InstantanePage, options: { requete?: strin
   lignes.push("", gardes.length ? "Éléments (vise-les par leur référence [eN]) :" : "Aucun élément interactif" + (requete ? " qui corresponde." : " trouvé."));
   for (const e of gardes) lignes.push(ligneElement(e));
   if (omis) lignes.push(`… ${omis} autres éléments non listés : précise « requete », ou fais défiler.`);
-  if (i.cadres) lignes.push(`La page contient ${i.cadres} cadre${i.cadres > 1 ? "s" : ""} (iframe) que la lecture ne traverse pas : utilise navigateur_capture et des coordonnées.`);
+  for (const c of i.cadresLus ?? []) {
+    const dedans = requete ? c.elements.filter((e) => correspond(`${e.role} ${e.nom} ${e.valeur ?? ""}`)) : c.elements;
+    const { gardes: gc, omis: oc } = choisirElements(dedans, Math.max(20, Math.floor((options.max ?? ELEMENTS_MAX) / 3)));
+    if (!gc.length && requete) continue;
+    lignes.push("", `Cadre ${c.prefixe} (${c.origine}) :`);
+    for (const e of gc) lignes.push(ligneElement(e));
+    if (!gc.length) lignes.push(c.texte.trim() ? `(texte seul) ${court(c.texte.trim(), 300)}` : "(vide)");
+    if (oc) lignes.push(`… ${oc} autres éléments dans ce cadre.`);
+  }
+  const nonLus = i.cadres - (i.cadresLus?.length ?? 0);
+  if (nonLus > 0) lignes.push(`La page contient ${nonLus} cadre${nonLus > 1 ? "s" : ""} (iframe) non lu${nonLus > 1 ? "s" : ""} (vide, caché ou imbriqué) : utilise navigateur_capture et des coordonnées.`);
   const texte = requete
     ? i.texte
         .split("\n")
@@ -286,12 +307,12 @@ export const MONDE_ISOLE = 1_207;
  * Commun à tous les scripts : l'état des références (`eN` ↔ élément, faible),
  * la visibilité, le nom accessible et les champs qu'un agent ne remplit jamais.
  */
-const COMMUN = String.raw`
+const commun = (prefixe = "") => String.raw`
 const K = window.__klyra || (window.__klyra = { n: 0, refs: new Map(), ids: new WeakMap() });
 const propre = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
 const refDe = (el) => {
   let id = K.ids.get(el);
-  if (!id) { id = "e" + (++K.n); K.ids.set(el, id); K.refs.set(id, new WeakRef(el)); }
+  if (!id) { id = ${JSON.stringify(prefixe)} + "e" + (++K.n); K.ids.set(el, id); K.refs.set(id, new WeakRef(el)); }
   return id;
 };
 const elementDe = (ref) => { const w = K.refs.get(String(ref)); const el = w && w.deref(); return el && el.isConnected ? el : null; };
@@ -331,10 +352,14 @@ const nomDe = (el) => {
   return propre(el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("name") || "");
 };
 `;
+const COMMUN = commun();
 
-/** La page : éléments interactifs (avec référence) et titres, dans l'ordre du document, et le texte visible. */
-export const SCRIPT_INSTANTANE = String.raw`(() => {
-${COMMUN}
+/**
+ * La page : éléments interactifs (avec référence) et titres, dans l'ordre du document, et le texte visible.
+ * `prefixe` : celui des références d'un cadre (« c1 » → c1e4) ; la page principale n'en a pas.
+ */
+export const scriptInstantane = (prefixe = "") => String.raw`(() => {
+${commun(prefixe)}
 const SEL = 'a[href],button,input:not([type=hidden]),textarea,select,summary,[contenteditable=""],[contenteditable=true],[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=menuitemcheckbox],[role=option],[role=switch],[role=combobox],[role=textbox],[role=searchbox],[role=slider],[tabindex]:not([tabindex="-1"]),h1,h2,h3';
 const racines = [document];
 for (let i = 0; i < racines.length && i < 200; i++) {
@@ -392,8 +417,10 @@ for (const el of liste) {
 const corps = document.body ? document.body.innerText || "" : "";
 const texte = corps.replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
 const max = Math.max(0, (document.scrollingElement || document.documentElement).scrollHeight - vh);
-return { titre: document.title, url: location.href, vue: { largeur: vw, hauteur: vh }, defilement: { y: scrollY, max }, elements, cadres: document.querySelectorAll("iframe,frame").length, texte, texteTotal: texte.length };
+const iframes = [...document.querySelectorAll("iframe,frame")].map((f) => ({ ref: refDe(f), nom: f.name || "", src: f.src || "", visible: !!boite(f) }));
+return { titre: document.title, url: location.href, vue: { largeur: vw, hauteur: vh }, defilement: { y: scrollY, max }, elements, cadres: iframes.length, iframes, texte, texteTotal: texte.length };
 })()`;
+export const SCRIPT_INSTANTANE = scriptInstantane();
 
 /** Où viser un élément : il est amené au centre de la fenêtre, puis on rend le centre de sa boîte. */
 export function scriptCible(ref: string): string {
@@ -497,4 +524,112 @@ requestAnimationFrame(() => { rond.style.transform = "scale(1.6)"; rond.style.op
 setTimeout(() => hote.remove(), 700);
 return true;
 })()`;
+}
+
+/** Une référence d'un cadre (c2e14) : le cadre (c2) et l'élément. Une référence de la page : sans cadre. */
+export function decouperRef(ref: string): { cadre: string | null; ref: string } {
+  const m = /^(c\d{1,3})(e\d{1,7})$/.exec(String(ref ?? "").trim());
+  return m ? { cadre: m[1], ref: m[0] } : { cadre: null, ref: String(ref ?? "").trim() };
+}
+
+/** Où est le contenu d'un cadre dans la page : l'élément iframe amené à l'écran, puis le coin de son contenu. */
+export function scriptPlaceCadre(ref: string, decalageY = 0): string {
+  return String.raw`(() => {
+${COMMUN}
+const el = elementDe(${JSON.stringify(ref)});
+if (!el) return null;
+if (${Number(decalageY) || 0}) scrollBy({ top: ${Number(decalageY) || 0}, behavior: "instant" });
+else el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+const r = el.getBoundingClientRect();
+return { x: r.left + el.clientLeft, y: r.top + el.clientTop, hauteurVue: innerHeight, largeurVue: innerWidth };
+})()`;
+}
+
+/**
+ * Un champ pour envoyer des fichiers : s'il en est un (input type=file), il est marqué le temps
+ * de lui donner les fichiers (`DOM.setFileInputFiles`), sinon c'est un bouton qui ouvre le choix.
+ */
+export function scriptFichier(ref: string, marque: string): string {
+  return String.raw`(() => {
+${COMMUN}
+const el = elementDe(${JSON.stringify(ref)});
+if (!el) return { ok: false, raison: "La référence n’existe plus (la page a changé) : relis la page avec navigateur_lire." };
+if (el.tagName === "INPUT" && (el.type || "").toLowerCase() === "file") {
+  el.setAttribute("data-klyra-fichier", ${JSON.stringify(marque)});
+  return { ok: true, champ: true, multiple: !!el.multiple };
+}
+return { ok: true, champ: false, multiple: true };
+})()`;
+}
+
+export function scriptDemarquerFichier(marque: string): string {
+  return `(() => { document.querySelectorAll('[data-klyra-fichier=${JSON.stringify(marque)}]').forEach((e) => e.removeAttribute("data-klyra-fichier")); return true; })()`;
+}
+
+/**
+ * Remplit une connexion avec ce que le coffre garde : le champ du mot de passe (sa référence, sinon
+ * le premier visible) et celui de l'identifiant (sa référence, sinon le champ texte ou e-mail qui le
+ * précède dans le formulaire). Le mot de passe n'est jamais rendu.
+ */
+export function scriptRemplirConnexion(entree: { refIdentifiant?: string | null; refMotDePasse?: string | null; identifiant: string; motDePasse: string }): string {
+  return String.raw`(() => {
+${COMMUN}
+const visibles = (sel, racine = document) => [...racine.querySelectorAll(sel)].filter((x) => boite(x) && !x.disabled && !x.readOnly);
+const mdp = ${entree.refMotDePasse ? `elementDe(${JSON.stringify(entree.refMotDePasse)})` : `visibles('input[type="password"]')[0]`};
+if (!mdp || mdp.tagName !== "INPUT" || (mdp.type || "").toLowerCase() !== "password") return { ok: false, raison: "Aucun champ de mot de passe visible : la page n’est peut-être pas encore à l’étape du mot de passe." };
+const TEXTE = 'input[type="email"],input[type="text"],input[type="tel"],input:not([type]),input[autocomplete="username"]';
+let id = ${entree.refIdentifiant ? `elementDe(${JSON.stringify(entree.refIdentifiant)})` : "null"};
+if (!id) {
+  const dans = mdp.form ? visibles(TEXTE, mdp.form) : visibles(TEXTE);
+  const avant = dans.filter((x) => x.compareDocumentPosition(mdp) & 4);
+  id = avant[avant.length - 1] || null;
+}
+const poser = (el, valeur) => {
+  el.focus();
+  const proto = Object.getPrototypeOf(el);
+  const d = Object.getOwnPropertyDescriptor(proto, "value") || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  d.set.call(el, valeur);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+};
+const identifiant = ${JSON.stringify(entree.identifiant)};
+if (id && identifiant) poser(id, identifiant);
+poser(mdp, ${JSON.stringify(entree.motDePasse)});
+mdp.focus();
+return { ok: true, identifiant: !!(id && identifiant) };
+})()`;
+}
+
+/* ─── Coffre : à quel site va une connexion ────────────────────── */
+
+/** Le site d'une connexion, tel que la personne le tape (« klyra.fr », « https://app.klyra.fr/login ») : son hôte, sans www. */
+export function hoteDeSaisie(saisie: string): string {
+  const texte = String(saisie ?? "").trim().toLowerCase();
+  if (!texte) throw new Error("Indique le site (ex. klyra.fr).");
+  let hote: string;
+  try {
+    hote = new URL(/^[a-z][a-z0-9+.-]*:\/\//.test(texte) ? texte : `https://${texte}`).hostname;
+  } catch {
+    throw new Error("Site illisible.");
+  }
+  hote = hote.replace(/^www\./, "");
+  if (!/^[a-z0-9.-]+$/.test(hote) || (!hote.includes(".") && hote !== "localhost")) throw new Error("Site illisible.");
+  return hote;
+}
+
+/**
+ * Une connexion du coffre vaut-elle pour cette page ? Le même site ou l'un de ses sous-domaines
+ * (« klyra.fr » vaut pour app.klyra.fr), et seulement en https (ou un serveur local).
+ */
+export function connexionPourPage(hoteConnexion: string, urlPage: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(urlPage);
+  } catch {
+    return false;
+  }
+  const local = /^(localhost|127\.0\.0\.1)$/.test(u.hostname);
+  if (u.protocol !== "https:" && !(local && u.protocol === "http:")) return false;
+  const hote = u.hostname.replace(/^www\./, "");
+  return hote === hoteConnexion || hote.endsWith(`.${hoteConnexion}`);
 }

@@ -4,7 +4,10 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
-import { getBridge, type OngletNavigateur } from "@/lib/bridge";
+import { ElementContextuel, MenuContextuel, SeparateurContextuel } from "@/components/ui/MenuContextuel";
+import { getBridge, type ActionMenuNavigateur, type MenuNavigateur, type OngletNavigateur } from "@/lib/bridge";
+import { raccourciDuSysteme } from "@/lib/plateforme";
+import { ModaleCoffre } from "./Coffre";
 import { cn } from "@/lib/cn";
 import { siteDe, useOngletsChat, useOngletVu, usePlacementOnglet } from "@/lib/navigateur";
 import { useRole, useTravail, useWorkspace } from "@/lib/workspace";
@@ -146,11 +149,69 @@ function octets(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`;
 }
 
+/** Le menu du clic droit dans une page : celui de l'app, posé là où la personne a cliqué. */
+function MenuPage({ onglet, menu, x, y, onFermer }: { onglet: OngletNavigateur; menu: MenuNavigateur; x: number; y: number; onFermer: () => void }) {
+  const faire = (action: ActionMenuNavigateur) => void pont()?.actionMenu?.(onglet.id, action);
+  const extrait = menu.selection.length > 28 ? `${menu.selection.slice(0, 27)}…` : menu.selection;
+  return (
+    <MenuContextuel x={x} y={y} libelle="Menu de la page" onFermer={onFermer}>
+      {menu.lien && (
+        <>
+          <ElementContextuel icone="plus-01" onChoisir={() => faire("lien-onglet")}>Ouvrir le lien dans un nouvel onglet</ElementContextuel>
+          <ElementContextuel icone="link-external" onChoisir={() => faire("lien-ailleurs")}>Ouvrir le lien dans ton navigateur</ElementContextuel>
+          <ElementContextuel icone="link" onChoisir={() => faire("copier-lien")}>Copier le lien</ElementContextuel>
+          <SeparateurContextuel />
+        </>
+      )}
+      {menu.image && (
+        <>
+          <ElementContextuel icone="image-01" onChoisir={() => faire("image-onglet")}>Ouvrir l’image dans un nouvel onglet</ElementContextuel>
+          <ElementContextuel icone="copy-left" onChoisir={() => faire("copier-image")}>Copier l’adresse de l’image</ElementContextuel>
+          <SeparateurContextuel />
+        </>
+      )}
+      {menu.editable ? (
+        <>
+          <ElementContextuel icone="eraser-01" desactive={!menu.peut.couper} raccourci={raccourciDuSysteme("⌘X")} onChoisir={() => faire("couper")}>Couper</ElementContextuel>
+          <ElementContextuel icone="copy-left" desactive={!menu.peut.copier} raccourci={raccourciDuSysteme("⌘C")} onChoisir={() => faire("copier")}>Copier</ElementContextuel>
+          <ElementContextuel icone="copy-right" desactive={!menu.peut.coller} raccourci={raccourciDuSysteme("⌘V")} onChoisir={() => faire("coller")}>Coller</ElementContextuel>
+          <ElementContextuel icone="text-input-01" raccourci={raccourciDuSysteme("⌘A")} onChoisir={() => faire("tout")}>Tout sélectionner</ElementContextuel>
+          <SeparateurContextuel />
+        </>
+      ) : (
+        menu.selection && (
+          <>
+            <ElementContextuel icone="copy-left" raccourci={raccourciDuSysteme("⌘C")} onChoisir={() => faire("copier")}>Copier</ElementContextuel>
+            <ElementContextuel icone="search-01" onChoisir={() => faire("chercher")}>Chercher « {extrait} »</ElementContextuel>
+            <SeparateurContextuel />
+          </>
+        )
+      )}
+      <ElementContextuel icone="arrow-rotate-left-01" desactive={!menu.peutReculer} onChoisir={() => faire("retour")}>Page précédente</ElementContextuel>
+      <ElementContextuel icone="arrow-rotate-right-01" desactive={!menu.peutAvancer} onChoisir={() => faire("suivant")}>Page suivante</ElementContextuel>
+      <ElementContextuel icone="refresh-01" onChoisir={() => faire("recharger")}>Recharger</ElementContextuel>
+    </MenuContextuel>
+  );
+}
+
 /** Une page ouverte : sa barre, ce qui s'y passe, la page elle-même, ses téléchargements. */
 function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigateur; chat: Chat; nombre: number; retour: () => void; nouveau: boolean }) {
   const zone = useRef<HTMLDivElement>(null);
   const recouvert = usePlacementOnglet(onglet.id, zone);
   const p = pont();
+  const [menu, setMenu] = useState<{ menu: MenuNavigateur; x: number; y: number } | null>(null);
+  const [coffre, setCoffre] = useState(false);
+  /* Clic droit dans la page : le main l'annonce, le menu se pose au point du clic (page + zone). */
+  useEffect(
+    () =>
+      p?.onMenu?.((id, m) => {
+        if (id !== onglet.id || !zone.current) return;
+        const r = zone.current.getBoundingClientRect();
+        setMenu({ menu: m, x: r.left + m.x, y: r.top + m.y });
+      }),
+    [p, onglet.id],
+  );
+  const site = /^https?:/.test(onglet.url) ? siteDe(onglet.url) : null;
   const fermer = () => {
     retour();
     void p?.fermer(onglet.id);
@@ -180,6 +241,9 @@ function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigat
           {!onglet.main && (
             <BoutonIcone taille="mini" cote="haut" icone={<Icon name="cursor-01" size={14} />} libelle="Prendre la main sur cet onglet" onClick={() => void p?.main(onglet.id, true)} />
           )}
+          {site && p?.coffre && (
+            <BoutonIcone taille="mini" cote="haut" icone={<Icon name="lock-01" size={14} />} libelle="Mots de passe de ce site" aria-haspopup="dialog" onClick={() => setCoffre(true)} />
+          )}
           <BoutonIcone taille="mini" cote="haut" icone={<Icon name="link-external" size={14} />} libelle="Ouvrir dans ton navigateur" disabled={!/^https?:/.test(onglet.url)} onClick={() => void p?.ailleurs(onglet.id)} />
           <BoutonIcone taille="mini" cote="haut" icone={<Icon name="trash-01" size={14} />} libelle="Fermer l’onglet" data-son="fermer" onClick={fermer} />
         </div>
@@ -196,6 +260,9 @@ function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigat
           <img src={onglet.vignette} alt="" className={cn("absolute inset-x-0 top-0 w-full object-cover object-top", !recouvert && "opacity-60")} />
         )}
       </div>
+
+      {menu && <MenuPage onglet={onglet} menu={menu.menu} x={menu.x} y={menu.y} onFermer={() => setMenu(null)} />}
+      {coffre && site && <ModaleCoffre hote={site.replace(/:\d+$/, "")} ongletId={onglet.id} onFermer={() => setCoffre(false)} />}
 
       {onglet.telechargements.length > 0 && (
         <ul aria-label="Téléchargements" className="m-0 flex shrink-0 list-none flex-col gap-0.5 border-t border-bordure-subtile p-1.5">

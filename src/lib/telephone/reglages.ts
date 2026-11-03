@@ -114,6 +114,7 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "navigateur-agents": { type: "poste", elevation: RAISONS.computerUse },
   "navigateur-donnees": sur(RAISONS.ordinateur),
   "navigateur-telechargements": L,
+  "navigateur-coffre": sur(RAISONS.cles),
   /* Mises à jour : l'état se lit, l'installation reste devant l'ordinateur. */
   "version-installee": L,
   "version-disponible": L,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ListeCoffre } from "@/components/chat/navigateur/Coffre";
 import { Bouton } from "@/components/ui/Bouton";
 import { useConfirmation } from "@/components/ui/Modale";
 import { getBridge } from "@/lib/bridge";
@@ -69,6 +70,15 @@ export function Navigateur() {
           libelle="Téléchargements"
           description="Les fichiers téléchargés dans le navigateur vont dans ton dossier Téléchargements ; l’onglet les montre, et l’agent sait où ils sont."
         />
+      </Groupe>
+
+      <Groupe
+        titre="Mots de passe"
+        description="Le coffre du navigateur : chiffré par le trousseau de ton ordinateur, jamais montré à un agent. « Remplir » est aussi dans la barre de chaque onglet ; un agent que tu y autorises remplit la page de connexion sans voir le mot de passe."
+      >
+        <Ligne id="navigateur-coffre" libelle="Connexions enregistrées" pile>
+          {pont ? <ListeCoffre /> : <SeulementBureau />}
+        </Ligne>
       </Groupe>
       {fenetre}
     </>
