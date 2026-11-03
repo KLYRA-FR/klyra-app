@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
+import { LogoFournisseur } from "@/components/ui/LogoFournisseur";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { fournisseur, FOURNISSEURS, moteurDe, nomEffort, PAR_DEFAUT } from "@/lib/fournisseurs";
@@ -68,20 +69,9 @@ export function useModeleEffectif(chat: Chat) {
   return { moteur, modele, effort, modeleFiche: parDefaut?.id ?? null };
 }
 
-/** Le petit carré du fournisseur, dans le bouton et la colonne du choix. */
+/** Le logo du fournisseur, dans le bouton et la colonne du choix. */
 function Pastille({ id, taille = "sm" }: { id: string; taille?: "sm" | "md" }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-2xs font-semibold",
-        id === PAR_DEFAUT ? "bg-bleu-k1-500 text-texte-inverse" : "bg-fond-inverse-fort text-texte-inverse",
-        taille === "sm" ? "size-4 text-ui-3xs" : "size-8 text-ui-s",
-      )}
-    >
-      {fournisseur(id).initiale}
-    </span>
-  );
+  return <LogoFournisseur id={id} initiale={fournisseur(id).initiale} taille={taille === "sm" ? 16 : 32} />;
 }
 
 /**

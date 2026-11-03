@@ -8,6 +8,7 @@ import { Claude } from "@/components/reglages/sections/Claude";
 import { ancreReglage, Erreur, Groupe, Ligne, Pastille, Valeur } from "@/components/reglages/ui";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { CHAMP } from "@/components/ui/Champ";
+import { LogoFournisseur } from "@/components/ui/LogoFournisseur";
 import { useAgents } from "@/lib/agents";
 import { getBridge, type AutreIa, type ProgressionMoteur } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
@@ -50,20 +51,9 @@ function aJour(installee: string | null | undefined, publiee: string | null | un
 
 /* ─── Petits morceaux ──────────────────────────────────────────── */
 
-/** Le carré du fournisseur (même que dans le choix rapide de la conversation). `initiale` : une IA à consulter. */
+/** Le logo du fournisseur (même que dans le choix rapide de la conversation). `initiale` : une IA sans logo. */
 export function Marque({ id, taille = 32, initiale }: { id: string; taille?: number; initiale?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      style={{ width: taille, height: taille }}
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-sm text-ui-s font-semibold text-texte-inverse",
-        id === PAR_DEFAUT ? "bg-bleu-k1-500" : "bg-fond-inverse-fort",
-      )}
-    >
-      {initiale ?? fournisseur(id).initiale}
-    </span>
-  );
+  return <LogoFournisseur id={id} initiale={initiale ?? fournisseur(id).initiale} taille={taille} />;
 }
 
 /** Ce que dit la ligne d'un fournisseur sous son nom. */
