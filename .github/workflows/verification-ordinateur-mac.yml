@@ -38,12 +38,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
-      - name: L'app fabriquée garde la signature de cua-driver
+      # Sur une PR, electron-builder ne signe rien : on force la signature ad hoc (aucun certificat ni secret ici),
+      # pour que scripts/signer-mac.cjs tourne comme à la publication, avec son « codesign --deep ».
+      - name: L'app signée garde la signature de cua-driver
+        env:
+          CSC_FOR_PULL_REQUEST: "true"
         run: |
           pnpm exec electron-builder --mac --dir --publish never --config.directories.output=dist-app
           APP=$(ls -d dist-app/mac*/KLYRA.app | head -1)
           "$APP/Contents/Resources/cua-driver/cua-driver" --version | grep -q '0.34.0'
-          codesign --display --verbose=2 "$APP/Contents/Resources/cua-driver/cua-driver" 2>&1 | tee /dev/stderr | grep -q 'Authority=Developer ID Application: Cua AI'
+          SIGNATURE=$(codesign --display --verbose=2 "$APP/Contents/Resources/cua-driver/cua-driver" 2>&1)
+          echo "$SIGNATURE"
+          echo "$SIGNATURE" | grep -q 'Authority=Developer ID Application: Cua AI'
           codesign --verify --deep --strict "$APP"
       - name: Computer Use, pilote et outils
         run: env -u ELECTRON_RUN_AS_NODE perl -e 'alarm 180; exec @ARGV' pnpm test:ordinateur
