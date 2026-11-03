@@ -16,7 +16,7 @@ const CONNEXION_MAX_MS = 15 * 60 * 1000;
 
 /**
  * @param {{ home: string, version: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
- *   consigne: (agent: string | null) => string, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
+ *   consigne: (agent: string | null) => string, consignesKlyra?: () => string | null, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
  *   codex?: string | null }} options
  */
 export function creerCodex(options) {
@@ -193,14 +193,16 @@ export function creerCodex(options) {
     await pret();
     const acces = demande.acces ?? "projet";
     const politique = accesCodex(acces);
-    const signature = JSON.stringify([demande.agent, options.generation()]);
+    /* Les consignes KLYRA adoptées sur le PC (reçues avec l'équipe), données aussi à Codex, comme `consignesApp` dans l'app. */
+    const consignesKlyra = options.consignesKlyra?.() ?? null;
+    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra]);
     const reglages = () => {
       const mcp = options.mcp();
       return {
         cwd,
         approvalPolicy: politique.approvalPolicy,
         sandbox: politique.sandbox,
-        developerInstructions: [demande.agent ? ficheDe(demande.agent) : null, options.consigne(demande.agent), CONSIGNE_CODEX].filter(Boolean).join("\n\n"),
+        developerInstructions: [demande.agent ? ficheDe(demande.agent) : null, options.consigne(demande.agent), consignesKlyra, CONSIGNE_CODEX].filter(Boolean).join("\n\n"),
         config: { mcp_servers: mcpPourCodex(mcp) },
         ...(demande.modele ? { model: demande.modele } : {}),
       };

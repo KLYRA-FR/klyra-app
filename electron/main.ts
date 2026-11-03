@@ -1,11 +1,25 @@
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import os, { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
+import { consigneKlyra } from "./configuration-klyra";
+import { dossierHorsProjet } from "./atelier";
+import {
+  creerSouvenir,
+  dossierMemoire,
+  ecrireSouvenir,
+  ErreurConnaissances,
+  lireCompetences,
+  lireMemoire,
+  lireSouvenir,
+  cheminSouvenir,
+  porteeDeLaFiche,
+  type PorteeMemoire,
+} from "./connaissances-agent";
 import { diagnostiquerPoste, existe } from "./diagnostic-poste";
 import {
   AgentError,
@@ -143,6 +157,7 @@ import {
   travailVps,
   versionDisponibleVps,
 } from "./fournisseurs-vps";
+import { competencesVps, creerSouvenirVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
@@ -319,7 +334,7 @@ async function repondre<T>(fn: () => Promise<T> | T): Promise<Reponse<T>> {
   try {
     return { ok: true, data: await fn() };
   } catch (error) {
-    if (error instanceof AgentError || error instanceof ErreurDictee) return { ok: false, code: error.code, message: error.message };
+    if (error instanceof AgentError || error instanceof ErreurDictee || error instanceof ErreurConnaissances) return { ok: false, code: error.code, message: error.message };
     return { ok: false, code: "erreur", message: error instanceof Error ? error.message : String(error) };
   }
 }
@@ -419,6 +434,98 @@ function registerBridge() {
   handle("agents:reveal", (name: string) => {
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(name)) throw new AgentError("nom-invalide", "Nom d’agent invalide.");
     shell.showItemInFolder(path.join(agentsDir(), `${name}.md`));
+  });
+  /*
+   * Ce que sait un agent (cf. connaissances-agent.ts) : sa mémoire dans le dossier de la conversation, ses
+   * compétences. L'écran donne l'agent et la conversation (dossier du projet, session) ; la portée vient de
+   * sa fiche et le chemin est calculé ici. Rien n'est supprimé.
+   */
+  const configClaude = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  /** La conversation : le dossier de son projet et la session ; `lieu` : son VPS, où tout se lit et s'écrit. */
+  type Contexte = { dossier?: string | null; sessionId?: string | null; lieu?: string | null } | null;
+  const surVps = (contexte: Contexte) => {
+    const lieu = typeof contexte?.lieu === "string" && contexte.lieu ? contexte.lieu : null;
+    if (!lieu) return null;
+    const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? contexte.dossier : null;
+    const sessionId = typeof contexte?.sessionId === "string" && /^[0-9a-f-]{36}$/.test(contexte.sessionId) ? contexte.sessionId : null;
+    return { lieu, jeton: jetonServeur(lieu), contexte: { dossier, sessionId } };
+  };
+  const dossierConversation = (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
+    const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? contexte.dossier : null;
+    if (dossier) return dossier.startsWith("~") ? path.join(os.homedir(), dossier.slice(1)) : dossier;
+    const sessionId = typeof contexte?.sessionId === "string" ? contexte.sessionId : null;
+    return dossierHorsProjet(path.join(os.homedir(), ".klyra", "atelier"), agent === "principal" ? null : agent, sessionId, configClaude(), existsSync);
+  };
+  const porteeDe = async (agent: string): Promise<PorteeMemoire | null> => (agent === "principal" ? "auto" : porteeDeLaFiche((await lireFiche(agent))?.content ?? ""));
+  const memoireDe = async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
+    const portee = await porteeDe(String(agent));
+    return portee ? { portee, dossier: dossierMemoire(String(agent), portee, dossierConversation(String(agent), contexte), configClaude()) } : null;
+  };
+  const exigerMemoire = async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
+    const m = await memoireDe(agent, contexte);
+    if (!m) throw new ErreurConnaissances("introuvable", "Cet agent n’a pas de mémoire.");
+    return m;
+  };
+  handle("agents:memoire", async (agent: string, contexte: Contexte) => {
+    const vps = surVps(contexte);
+    if (vps) {
+      // La fiche du VPS (sa portée) est la copie de celle de ce PC : envoyée d'abord.
+      await synchroniserEquipe(vps.lieu).catch(() => undefined);
+      return memoireVps(vps.lieu, vps.jeton, String(agent), vps.contexte);
+    }
+    const m = await memoireDe(agent, contexte);
+    return m ? lireMemoire(m.portee, m.dossier) : null;
+  });
+  handle("agents:souvenir", async (agent: string, contexte: Contexte, id: string) => {
+    const vps = surVps(contexte);
+    if (vps) return souvenirVps(vps.lieu, vps.jeton, String(agent), vps.contexte, String(id));
+    return lireSouvenir((await exigerMemoire(agent, contexte)).dossier, String(id));
+  });
+  handle("agents:souvenir:ecrire", async (agent: string, contexte: Contexte, id: string, contenu: string, attendu: number | null) => {
+    const vps = surVps(contexte);
+    const quand = typeof attendu === "number" ? attendu : null;
+    if (vps) return ecrireSouvenirVps(vps.lieu, vps.jeton, String(agent), vps.contexte, String(id), String(contenu ?? ""), quand);
+    return ecrireSouvenir((await exigerMemoire(agent, contexte)).dossier, String(id), String(contenu ?? ""), quand);
+  });
+  handle("agents:souvenir:creer", async (agent: string, contexte: Contexte, titre: string, contenu: string) => {
+    const vps = surVps(contexte);
+    if (vps) return creerSouvenirVps(vps.lieu, vps.jeton, String(agent), vps.contexte, String(titre ?? ""), String(contenu ?? ""));
+    return creerSouvenir((await exigerMemoire(agent, contexte)).dossier, String(titre ?? ""), String(contenu ?? ""));
+  });
+  handle("agents:souvenir:montrer", async (agent: string, contexte: Contexte, id: string | null) => {
+    if (surVps(contexte)) throw new ErreurConnaissances("introuvable", "Sa mémoire est sur le serveur : elle ne s’ouvre pas sur ce poste.");
+    const { dossier } = await exigerMemoire(agent, contexte);
+    if (id) {
+      const fichier = cheminSouvenir(dossier, String(id));
+      if (!existsSync(fichier)) throw new ErreurConnaissances("introuvable", "Ce souvenir n’existe plus.");
+      shell.showItemInFolder(fichier);
+    } else {
+      if (!existsSync(dossier)) throw new ErreurConnaissances("introuvable", "Sa mémoire est encore vide : le dossier n’existe pas.");
+      const erreur = await shell.openPath(dossier);
+      if (erreur) throw new Error(erreur);
+    }
+  });
+  handle("agents:competences", async (agent: string, contexte: Contexte) => {
+    /* Un agent d'une conversation sur un VPS : ses compétences sont celles du serveur, lues là-bas, avec sa
+       fiche copiée depuis ce PC (envoyée d'abord, pour qu'une compétence cochée à l'instant y soit). */
+    const vps = surVps(contexte);
+    if (vps) {
+      await synchroniserEquipe(vps.lieu).catch(() => undefined);
+      return competencesVps(vps.lieu, vps.jeton, String(agent), vps.contexte.dossier);
+    }
+    const fiche = agent === "principal" ? null : await lireFiche(String(agent));
+    const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? dossierConversation(String(agent), contexte) : null;
+    return lireCompetences(fiche?.content ?? null, configClaude(), dossier);
+  });
+  handle("agents:competence:montrer", async (agent: string, contexte: Contexte, nom: string) => {
+    if (surVps(contexte)) throw new ErreurConnaissances("introuvable", "Cette compétence est sur le serveur : elle ne s’ouvre pas sur ce poste.");
+    const fiche = agent === "principal" ? null : await lireFiche(String(agent));
+    const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? dossierConversation(String(agent), contexte) : null;
+    const c = lireCompetences(fiche?.content ?? null, configClaude(), dossier);
+    // Seulement le dossier d'une skill que la lecture vient de trouver.
+    const trouvee = [...c.fiche, ...c.projet, ...c.poste].find((s) => s.nom === nom && s.dossier);
+    if (!trouvee?.dossier) throw new ErreurConnaissances("introuvable", "Cette compétence n’est pas sur ce poste.");
+    shell.showItemInFolder(path.join(trouvee.dossier, "SKILL.md"));
   });
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
@@ -743,8 +850,11 @@ function registerBridge() {
       }
     });
     const assistant = mesAgents().assistant.nom ?? null;
-    const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches])).digest("hex").slice(0, 16);
-    return { fiches, assistant, empreinte };
+    /* La configuration KLYRA de ce PC, comme `environnementAgent` et `consignesApp` la donnent aux sessions locales. */
+    const { configuration: reglage } = lireReglages();
+    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes) };
+    const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches, configuration])).digest("hex").slice(0, 16);
+    return { fiches, assistant, configuration, empreinte };
   };
   const depuisFenetre = (event: Electron.IpcMainInvokeEvent) => {
     const win = fenetrePrincipale;
