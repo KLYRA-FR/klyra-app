@@ -369,6 +369,14 @@ export interface KlyraBridge {
     connecter: () => Promise<Reponse<boolean>>;
     deconnecter: () => Promise<Reponse<void>>;
   };
+  /** Les fichiers publiés par les agents (cf. `electron/rendus.ts`). */
+  rendus: {
+    /** Vignette PNG (data URL) ; null pour une vidéo, un PDF ou un document. */
+    vignette: (chemin: string, forcer: boolean) => Promise<Reponse<string | null>>;
+    /** Avec l'app du système ; un type qu'on ne sait pas montrer s'ouvre dans son dossier. */
+    ouvrir: (chemin: string) => Promise<Reponse<void>>;
+    montrer: (chemin: string) => Promise<Reponse<void>>;
+  };
   fenetres: {
     /** Ouvre une adresse locale (localhost) dans une fenêtre de l'app. */
     ouvrir: (url: string) => Promise<Reponse<void>>;

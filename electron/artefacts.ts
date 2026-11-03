@@ -154,7 +154,7 @@ let enCours = 0;
 const file: (() => void)[] = [];
 
 /** Deux captures à la fois au plus. */
-async function aTour<T>(fn: () => Promise<T>): Promise<T> {
+export async function aTour<T>(fn: () => Promise<T>): Promise<T> {
   if (enCours >= 2) await new Promise<void>((r) => file.push(r));
   enCours++;
   try {

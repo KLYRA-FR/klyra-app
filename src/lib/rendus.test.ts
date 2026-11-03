@@ -1,0 +1,49 @@
+import { describe, expect, test } from "vitest";
+import type { Rendu } from "@/types/domain";
+import { estCheminComplet, lirePublication, nomDuFichier, publierRendu, typeDeRendu } from "./rendus";
+
+const rendu = (r: Partial<Rendu>): Rendu => ({
+  id: "r1",
+  chemin: "/home/alice/.klyra/atelier/designer/maquette.html",
+  titre: "Maquette",
+  description: "",
+  type: "page",
+  roleId: "designer",
+  chatId: "dm-designer",
+  projectId: null,
+  ajouteLe: "2026-11-03T10:00:00.000Z",
+  misAJour: "2026-11-03T10:00:00.000Z",
+  ...r,
+});
+
+describe("rendus des agents", () => {
+  test("le type vient de l'extension", () => {
+    expect(["a.html", "b.HTM", "c.png", "d.jpeg", "e.svg", "f.mp4", "g.pdf", "h.docx", "i"].map(typeDeRendu)).toEqual([
+      "page", "page", "image", "image", "image", "video", "pdf", "document", "document",
+    ]);
+  });
+
+  test("chemins complets sous Mac, Linux et Windows ; nom du fichier", () => {
+    expect(["/tmp/a.png", "~/a.png", "C:\\Users\\a.png", "D:/a.png", "\\\\nas\\a.png"].every(estCheminComplet)).toBe(true);
+    expect(["a.png", "./a.png", "dossier/a.png", ""].some(estCheminComplet)).toBe(false);
+    expect(nomDuFichier("C:\\Users\\Ali\\captures\\accueil.png")).toBe("accueil.png");
+    expect(nomDuFichier("/home/a/rendu.html")).toBe("rendu.html");
+  });
+
+  test("ce que l'agent envoie : chemin complet obligatoire, titre par défaut, longueurs bornées", () => {
+    expect(() => lirePublication({})).toThrow(/chemin/);
+    expect(() => lirePublication({ chemin: "captures/accueil.png" })).toThrow(/chemin complet/);
+    expect(lirePublication({ chemin: " /tmp/accueil.png ", titre: "  Page   d’accueil " })).toEqual({ chemin: "/tmp/accueil.png", titre: "Page d’accueil", description: "" });
+    expect(lirePublication({ chemin: "/tmp/accueil.png" }).titre).toBe("accueil.png");
+    expect(lirePublication({ chemin: "/tmp/a.png", titre: "x".repeat(200), description: "y".repeat(900) })).toMatchObject({ titre: "x".repeat(80), description: "y".repeat(500) });
+  });
+
+  test("republier le même fichier met son rendu à jour et le remonte", () => {
+    const autre = rendu({ id: "r2", chemin: "/tmp/autre.png", type: "image" });
+    const liste = [autre, rendu({})];
+    const apres = publierRendu(liste, rendu({ id: "neuf", titre: "Maquette v2", description: "Accueil", misAJour: "2026-11-03T12:00:00.000Z" }));
+    expect(apres.map((r) => r.id)).toEqual(["r1", "r2"]);
+    expect(apres[0]).toMatchObject({ titre: "Maquette v2", description: "Accueil", ajouteLe: "2026-11-03T10:00:00.000Z", misAJour: "2026-11-03T12:00:00.000Z" });
+    expect(publierRendu(liste, rendu({ id: "r3", chemin: "/tmp/nouveau.pdf" })).map((r) => r.id)).toEqual(["r3", "r2", "r1"]);
+  });
+});
