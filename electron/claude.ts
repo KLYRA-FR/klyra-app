@@ -9,6 +9,8 @@ import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { dossierHorsProjet } from "./atelier";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
+import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
+import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
@@ -45,7 +47,13 @@ const DELAI_MAX_MS = 10 * 60 * 1000;
  */
 export const environnementAgent = () =>
   Object.fromEntries(
-    Object.entries({ ...process.env, ELECTRON_RUN_AS_NODE: undefined, CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" }).filter(([nom]) => !/^(COMPOSIO|KLYRA_COMPOSIO)_/.test(nom)),
+    Object.entries({
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: undefined,
+      CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1",
+      // Mémoire des agents coupée dans la configuration KLYRA : sans réécrire leurs fiches.
+      ...(lireReglages().configuration.memoireAgents ? {} : { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" }),
+    }).filter(([nom]) => !/^(COMPOSIO|KLYRA_COMPOSIO)_/.test(nom)),
   );
 
 /** Sous Windows, le binaire natif de Claude Code (un .cmd de npm ne se lance pas sans shell). */
@@ -371,6 +379,9 @@ export function consignesApp(options: StreamOptions, mcp: string | null): string
   const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS, CONSIGNE_ARTEFACTS,
     composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
   ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp), consigneOrdinateur()];
+  // Les consignes KLYRA adoptées par la personne (configuration-klyra.ts), pour Claude Code comme pour Codex.
+  const klyra = consigneKlyra(lireReglages().configuration.consignes);
+  if (klyra) consignes.push(klyra);
   if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
   return consignes;
 }
@@ -702,7 +713,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur()]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureConfiguration(lireReglages().configuration)]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;

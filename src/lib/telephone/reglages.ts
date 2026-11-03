@@ -78,6 +78,10 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   utilisation: L,
   "cle-admin": sur(RAISONS.cles),
   /* Agents : descendre le niveau d'accès, oui ; « Tout accepter », devant l'ordinateur. */
+  /* La configuration KLYRA : se change d'ici, sur l'ordinateur ouvert ; le texte des consignes, devant lui. */
+  "configuration-klyra": P,
+  "memoire-agents": P,
+  "consignes-klyra": sur(RAISONS.ordinateur),
   acces: { type: "poste", elevation: RAISONS.toutAccepter },
   assistant: P,
   modeles: P,

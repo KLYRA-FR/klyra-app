@@ -4,10 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { CONFIGURATION_PAR_DEFAUT, validerConfiguration, type ConfigurationKlyra } from "./configuration-klyra";
 
 /**
  * Les réglages de l'app qui ne sont ni dans les conversations ni dans les
- * fiches des agents : notifications, sons, Computer Use. Un fichier JSON dans
+ * fiches des agents : notifications, sons, Computer Use, configuration KLYRA. Un fichier JSON dans
  * le dossier de l'app, lu par l'interface et par le process principal (qui
  * affiche les notifications). Le lancement au démarrage est un réglage du
  * système : il est lu et écrit chez lui, pas ici.
@@ -44,6 +45,8 @@ export interface Reglages {
   /** Les agents peuvent-ils piloter l'ordinateur ? Coupé par défaut ; rien ne pilote sans lui. */
   computerUse: { actif: boolean };
   sons: PreferencesSons;
+  /** Consignes KLYRA et mémoire des agents, proposées en un clic (configuration-klyra.ts). */
+  configuration: ConfigurationKlyra;
 }
 
 export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "majPrete";
@@ -52,6 +55,7 @@ const PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
   computerUse: { actif: false },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
+  configuration: CONFIGURATION_PAR_DEFAUT,
 };
 
 const fichier = () => path.join(app.getPath("userData"), "reglages.json");
@@ -60,7 +64,7 @@ let courants: Reglages | null = null;
 
 /** Garde seulement les clés connues, de bon type ; le reste reprend la valeur par défaut. */
 function valider(brut: unknown): Reglages {
-  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; sons?: Record<string, unknown> } | null;
+  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; sons?: Record<string, unknown>; configuration?: unknown } | null;
   const n = b?.notifications ?? {};
   const notifications = { ...PAR_DEFAUT.notifications };
   for (const cle of Object.keys(notifications) as (keyof PreferencesNotifications)[]) {
@@ -72,7 +76,7 @@ function valider(brut: unknown): Reglages {
     theme: THEMES_SONS.find((t) => t === s.theme) ?? PAR_DEFAUT.sons.theme,
     volume: typeof s.volume === "number" && Number.isFinite(s.volume) ? Math.min(1, Math.max(0, s.volume)) : PAR_DEFAUT.sons.volume,
   };
-  return { notifications, computerUse: { actif: b?.computerUse?.actif === true }, sons };
+  return { notifications, computerUse: { actif: b?.computerUse?.actif === true }, sons, configuration: validerConfiguration(b?.configuration) };
 }
 
 export function lireReglages(): Reglages {

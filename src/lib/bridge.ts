@@ -7,6 +7,7 @@ import type { FileNode } from "@/types/domain";
 import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
 import type { EtatConnect } from "../../electron/composio-connect";
+import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
 export type { EtatConnect };
 
 /** Un MCP direct branché dans la Marketplace : tout, sauf le jeton. */
@@ -639,6 +640,7 @@ export interface Reglages {
   notifications: PreferencesNotifications;
   computerUse: { actif: boolean };
   sons: PreferencesSons;
+  configuration: ConfigurationKlyra;
 }
 
 export type EtatAutorisation = "accordee" | "refusee" | "a-demander" | "sans-objet" | "inconnue";
