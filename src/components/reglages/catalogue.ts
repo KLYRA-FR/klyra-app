@@ -178,6 +178,7 @@ export const SECTIONS: SectionReglages[] = [
       { id: "derniere-verification", titre: "Dernière vérification", mots: "date heure" },
       { id: "rechercher-maj", titre: "Rechercher une mise à jour", mots: "verifier maintenant nouvelle version" },
       { id: "installer-maj", titre: "Installer et relancer", mots: "redemarrer" },
+      { id: "changelog", titre: "Nouveautés", mots: "changelog notes versions nouveautes site" },
       { id: "depot-versions", titre: "Toutes les versions", mots: "github releases klyra-app-versions telecharger" },
     ],
   },
