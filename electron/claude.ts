@@ -485,6 +485,14 @@ function lireLigne(proc: Processus, ligne: string) {
     noterUtilisation(msg.rate_limit_info);
     return;
   }
+  /* La conversation résumée : son résultat arrive vide, mais c'est bien la réponse à « /compact ». */
+  if (msg.type === "system" && msg.subtype === "compact_boundary") {
+    const meta = msg.compact_metadata as { pre_tokens?: number; post_tokens?: number } | undefined;
+    if (!courant) return;
+    courant.activite = true;
+    courant.emit({ type: "compacte", avant: meta?.pre_tokens ?? 0, apres: meta?.post_tokens ?? 0 });
+    return;
+  }
   if (msg.type === "system" && msg.subtype === "thinking_tokens" && typeof msg.estimated_tokens_delta === "number") {
     courant?.compter(msg.estimated_tokens_delta);
     return;
@@ -514,7 +522,13 @@ function lireLigne(proc: Processus, ligne: string) {
     // Les agents d'arrière-plan travaillent sans réponse ouverte : on ne les suit que dans une réponse.
     const tour = parent === null && outils.length ? tourOuSpontane(proc) : courant;
     if (!tour) return;
-    if (parent === null) tour.activite = true;
+    if (parent === null) {
+      tour.activite = true;
+      /* Ce que cet appel a relu : la taille de la conversation pour la suite (cf. ConseilContexte). */
+      const u = (msg.message as { usage?: Record<string, number> })?.usage;
+      const jetons = u ? (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) : 0;
+      if (jetons > 0) tour.emit({ type: "contexte", jetons });
+    }
     for (const bloc of outils) {
       if (bloc.input?.run_in_background === true) proc.fond += 1;
       tour.emit({ type: "etape", id: bloc.id!, outil: bloc.name!, entree: bloc.input ?? {}, parent });

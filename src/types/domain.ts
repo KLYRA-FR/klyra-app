@@ -169,6 +169,10 @@ export interface Chat {
   fournisseur?: string | null;
   /** Les sessions laissées dans les autres moteurs, reprises quand la conversation y revient (cf. lib/fournisseurs.ts). */
   sessionsParMoteur?: Record<string, Record<RoleId, string>>;
+  /** Ce que relit chaque appel, par agent : jetons, socle de la session, date et session de la dernière mesure (cf. lib/contexte.ts). */
+  contexte?: Record<RoleId, { jetons: number; base?: number; le: string; session: string | null }>;
+  /** « Plus tard » sur le conseil de résumer : masqué tant que la conversation ne dépasse pas ce nombre de jetons. */
+  contexteMasqueJusqua?: number;
 }
 
 /**
@@ -307,6 +311,8 @@ export interface Message {
   routineRun?: string;
   /** Réponse d'agent : le moteur qui l'a écrite (« codex ») ; absent : Claude Code. */
   moteur?: string;
+  /** Réponse à « /compact » : la conversation résumée, pas une réponse de l'agent (cf. aReprendre). */
+  compaction?: boolean;
 }
 
 /* ─── Planning ─────────────────────────────────────────────────── */

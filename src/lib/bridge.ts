@@ -91,6 +91,8 @@ export type AgentEvent =
   | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
   | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
   | { type: "jetons"; total: number }
+  | { type: "contexte"; jetons: number }
+  | { type: "compacte"; avant: number; apres: number }
   | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean };

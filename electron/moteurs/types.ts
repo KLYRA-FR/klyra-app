@@ -17,6 +17,10 @@ export type AgentEvent =
   | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
   /** Les tokens écrits depuis le début (réflexion, texte, outils, sous-agents compris), estimés en direct. */
   | { type: "jetons"; total: number }
+  /** Ce que relit chaque appel au modèle dans cette conversation (consignes, outils, échanges), en jetons. */
+  | { type: "contexte"; jetons: number }
+  /** La conversation a été résumée (/compact, ou d'office par Claude Code près de sa limite). */
+  | { type: "compacte"; avant: number; apres: number }
   /** L'agent demande ton accord avant d'utiliser un outil hors de son accès. */
   | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
   /** La demande a reçu sa réponse (de toi, ou d'office en accès complet). */

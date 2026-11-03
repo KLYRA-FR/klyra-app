@@ -44,9 +44,10 @@ export const moteurDuMessage = (m: Message) => m.moteur || PAR_DEFAUT;
 /**
  * Ce que l'agent n'a pas encore vu avec ce moteur : tout ce qui suit sa dernière réponse écrite
  * avec lui. Jamais répondu avec ce moteur : toute la conversation, pour qu'il la reprenne.
+ * Un résumé (`compaction`) n'est pas une réponse : ce qui le précède sans avoir été lu reste à lire.
  */
 export function aReprendre(fil: Message[], roleId: RoleId, moteur: string): Message[] {
-  const derniere = fil.findLastIndex((m) => m.author.kind === "role" && m.author.roleId === roleId && moteurDuMessage(m) === moteur);
+  const derniere = fil.findLastIndex((m) => m.author.kind === "role" && m.author.roleId === roleId && moteurDuMessage(m) === moteur && !m.compaction);
   return fil.slice(derniere + 1);
 }
 
