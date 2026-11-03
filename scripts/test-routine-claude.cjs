@@ -93,6 +93,7 @@ function fixture() {
     },
     // Fonctions pures (tri des binaires, message de lancement) : le vrai module compilé.
     "./claude-binaire": require(path.join(path.dirname(filename), "claude-binaire.js")),
+    "./titre": require(path.join(path.dirname(filename), "titre.js")),
     "./atelier": chargerAvecCheminsPosix(path.join(path.dirname(filename), "atelier.js")),
     "./consommation": { enregistrerTourClaude: () => ({}) },
     "./ia": {
