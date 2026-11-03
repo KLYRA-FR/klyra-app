@@ -4,8 +4,8 @@
  * son flux en `AgentEvent` : l'interface des conversations ne connaît que lui.
  */
 
-/** Les moteurs que l'app sait lancer. */
-export type IdMoteur = "claude";
+/** Les moteurs que l'app sait lancer : Claude Code, et Codex pour ChatGPT. */
+export type IdMoteur = "claude" | "codex";
 
 /** Ce que l'interface reçoit pendant qu'un agent travaille (cf. src/lib/bridge.ts). */
 export type AgentEvent =
@@ -78,6 +78,23 @@ export interface CompteMoteur {
   verifieLe: number;
 }
 
+/** Où en est une installation ou une mise à jour, pour la barre de l'écran. */
+export interface Progression {
+  etape: "telechargement" | "verification" | "installation" | "mise-a-jour";
+  recu: number;
+  total: number | null;
+}
+
+/** Un modèle qu'un moteur annonce, avec les efforts de réflexion qu'il accepte. */
+export interface ModeleMoteur {
+  id: string;
+  nom: string;
+  efforts: string[];
+  effortParDefaut: string | null;
+  /** Celui du moteur quand on n'en choisit pas. */
+  parDefaut: boolean;
+}
+
 export interface Moteur {
   id: IdMoteur;
   /** Le programme : « Claude Code ». */
@@ -90,10 +107,22 @@ export interface Moteur {
   /** Ouvre la connexion du moteur et attend qu'elle aboutisse. */
   connecter(): Promise<CompteMoteur>;
   deconnecter(): Promise<CompteMoteur>;
+  /** Se connecter avec une clé API plutôt qu'un abonnement ; absent si le moteur ne le permet pas ici. */
+  connecterAvecCle?(cle: string): Promise<CompteMoteur>;
+  /** Les modèles que le moteur annonce ; absent : la liste fixe de l'interface (les alias de Claude Code). */
+  modeles?(): Promise<ModeleMoteur[]>;
+  /** La dernière version publiée ; null si on ne sait pas la lire. */
+  versionDisponible?(): Promise<string | null>;
+  /** Installe le moteur dans ~/.klyra/moteurs ; absent : l'app ne sait pas l'installer. */
+  installer?(progression: (p: Progression) => void): Promise<CompteMoteur>;
+  /** Met le moteur à jour : celui de l'app est réinstallé, celui du poste par sa propre commande. */
+  mettreAJour?(progression: (p: Progression) => void): Promise<CompteMoteur>;
   /** Fait répondre l'agent, en direct. Se termine toujours par un événement `fin`. */
   lancer(requestId: string, options: StreamOptions, emit: (event: AgentEvent) => void, spontane: Spontane): void;
   /** Arrête une réponse ; sans effet si elle n'est pas à ce moteur. */
   arreter(requestId: string): void;
   /** Transmet ta réponse à une demande d'autorisation ; false si elle n'est pas à ce moteur. */
   autoriser(requestId: string, demandeId: string, decision: Decision): boolean;
+  /** Arrête ce que le moteur garde ouvert, quand l'app se ferme. */
+  fermer?(): void;
 }

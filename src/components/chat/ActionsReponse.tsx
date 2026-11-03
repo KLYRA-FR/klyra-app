@@ -8,7 +8,7 @@ import { apparition } from "@/lib/mouvement";
 import { formatDaySeparator, formatTime, isSameDay } from "@/lib/format";
 import { texteDe, useTravail, useWorkspace, type FaconReessai } from "@/lib/workspace";
 import type { Chat, Message } from "@/types/domain";
-import { MODELES, nomModele, useModeleEffectif } from "./ChoixModele";
+import { nomModele, useModelesDe, useModeleEffectif } from "./ChoixModele";
 
 const BOUTON =
   "flex size-7 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 text-icone-secondaire transition-colors duration-[120ms] ease-sortie hover:bg-fond-survol hover:text-texte-principal disabled:cursor-not-allowed disabled:opacity-50";
@@ -71,7 +71,8 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
   const router = useRouter();
   const { reessayer, brancher } = useWorkspace();
   const travail = useTravail(chat.id);
-  const { modele } = useModeleEffectif(chat);
+  const { moteur, modele } = useModeleEffectif(chat);
+  const modeles = useModelesDe(moteur);
   const [copie, setCopie] = useState(false);
   const [parle, setParle] = useState(false);
   const [ouvert, setOuvert] = useState(false);
@@ -207,7 +208,7 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
             </Ligne>
             {sous && (
               <div ref={apparition} role="menu" aria-label="Réessayer" onMouseEnter={annulerSous} className={cn(MENU, "bottom-0 left-full ml-2")}>
-                <span className={ENTETE}>{nomModele(modele)} utilisé</span>
+                <span className={ENTETE}>{modeles.find((m) => m.id === modele)?.nom ?? nomModele(modele)} utilisé</span>
                 {occupe && <span className="px-2 pb-1 text-ui-2xs text-texte-tertiaire">L’agent travaille : ce sera fait juste après.</span>}
                 <Ligne icone="refresh-01" onSurvol={() => viserSous("reessayer")} onClick={() => refaire("reessayer")}>
                   Réessayer
@@ -237,7 +238,7 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
                   </Ligne>
                   {sous === "modele" && (
                     <div ref={apparition} role="menu" aria-label="Changer de modèle" onMouseEnter={annulerSous} className={cn(MENU, "bottom-0 left-full ml-2")}>
-                      {MODELES.filter((m) => m.id !== modele).map((m) => (
+                      {modeles.filter((m) => m.id !== modele).map((m) => (
                         <Ligne key={m.id} icone="refresh-01" onClick={() => refaire("reessayer", m.id)}>
                           {m.nom}
                         </Ligne>

@@ -75,7 +75,7 @@ export interface HistoryEntry {
 }
 
 /** Préférences personnelles de chaque agent : rôle court, couleur et nom affiché (sans toucher à la fiche). */
-export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string; modele?: string }>;
+export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string; modele?: string; fournisseur?: string }>;
 
 export interface ClaudeResult {
   ok: boolean;
@@ -120,6 +120,37 @@ export interface CompteClaude {
   organisation: string | null;
   abonnement: string | null;
   verifieLe: number;
+}
+
+/** Un moteur d'agents sur ce poste (cf. electron/moteurs). */
+export interface MoteurPoste {
+  id: string;
+  /** Le programme : « Codex ». */
+  nom: string;
+  /** Ce que tu choisis : « ChatGPT ». */
+  fournisseur: string;
+  /** Où il est installé ; null s'il ne l'est pas. */
+  chemin: string | null;
+  /** Installé par l'app (dans ~/.klyra/moteurs) : c'est elle qui le met à jour. */
+  gere: boolean;
+  /** L'app sait l'installer elle-même. */
+  installable: boolean;
+}
+
+/** Où en est une installation ou une mise à jour de moteur. */
+export interface ProgressionMoteur {
+  etape: "telechargement" | "verification" | "installation" | "mise-a-jour";
+  recu: number;
+  total: number | null;
+}
+
+/** Un modèle annoncé par un moteur, avec ses efforts de réflexion. */
+export interface ModeleMoteur {
+  id: string;
+  nom: string;
+  efforts: string[];
+  effortParDefaut: string | null;
+  parDefaut: boolean;
 }
 
 export interface EtatGit {
@@ -184,6 +215,8 @@ export interface ContexteReponse {
 }
 
 export interface StreamOptions {
+  /** Le moteur qui fait travailler l'agent (« codex » pour ChatGPT) ; absent : Claude Code. */
+  moteur?: string | null;
   agent: string | null;
   prompt: string;
   dossier: string | null;
@@ -270,6 +303,19 @@ export interface KlyraBridge {
     writeMeta: (meta: AgentsMeta) => Promise<Reponse<void>>;
     reveal: (name: string) => Promise<Reponse<void>>;
     onChange: (callback: () => void) => () => void;
+  };
+  /** Les moteurs des agents : Claude Code, Codex pour ChatGPT. Le compte a la forme de celui de Claude. */
+  moteurs?: {
+    liste: () => Promise<Reponse<MoteurPoste[]>>;
+    compte: (id: string) => Promise<Reponse<CompteClaude>>;
+    connecter: (id: string) => Promise<Reponse<CompteClaude>>;
+    connecterAvecCle: (id: string, cle: string) => Promise<Reponse<CompteClaude>>;
+    deconnecter: (id: string) => Promise<Reponse<CompteClaude>>;
+    modeles: (id: string) => Promise<Reponse<ModeleMoteur[]>>;
+    versionDisponible: (id: string) => Promise<Reponse<string | null>>;
+    installer: (id: string) => Promise<Reponse<CompteClaude>>;
+    mettreAJour: (id: string) => Promise<Reponse<CompteClaude>>;
+    onProgression: (callback: (id: string, p: ProgressionMoteur) => void) => () => void;
   };
   claude: {
     status: () => Promise<Reponse<{ path: string | null }>>;

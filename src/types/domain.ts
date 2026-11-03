@@ -82,6 +82,8 @@ export interface Role {
   pitch: string;
   sections: RoleSection[];
   model: string;
+  /** Le fournisseur de ses nouvelles conversations et de ses fils (« codex ») ; absent : Claude. */
+  fournisseur?: string;
   memory: string;
   /** null pour le Principal, et pour les fiches d'exemple hors app de bureau. */
   file: RoleFile | null;
@@ -163,6 +165,10 @@ export interface Chat {
   lieu?: string | null;
   /** Les sessions laissées sur les autres machines (« pc » ou l'origine du VPS), reprises quand la conversation y revient. */
   sessionsParLieu?: Record<string, Record<RoleId, string>>;
+  /** Le moteur des agents de cette conversation (« codex » pour ChatGPT) ; absent : Claude Code. Sur un VPS : toujours Claude Code. */
+  fournisseur?: string | null;
+  /** Les sessions laissées dans les autres moteurs, reprises quand la conversation y revient (cf. lib/fournisseurs.ts). */
+  sessionsParMoteur?: Record<string, Record<RoleId, string>>;
 }
 
 /**
@@ -299,6 +305,8 @@ export interface Message {
   erreur?: string;
   /** L'exécution de routine (moteur du process principal) que ce message porte : la consigne, puis la réponse de l'agent. */
   routineRun?: string;
+  /** Réponse d'agent : le moteur qui l'a écrite (« codex ») ; absent : Claude Code. */
+  moteur?: string;
 }
 
 /* ─── Planning ─────────────────────────────────────────────────── */

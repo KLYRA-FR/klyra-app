@@ -24,6 +24,7 @@ const PAGES: Record<string, string> = {
   "/artefacts": "Artefacts",
   "/reglages": "Réglages",
   "/serveurs": "Serveurs",
+  "/serveur/reglages": "Réglages du serveur",
   "/marketplace": "Marketplace",
 };
 
