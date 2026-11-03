@@ -13,7 +13,7 @@
  * demande toujours d'ouvrir l'app une première fois par clic droit.
  */
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- electron-builder charge ce fichier en CommonJS
-const { execFileSync } = require("node:child_process");
+const { execFileSync, spawnSync } = require("node:child_process");
 
 module.exports = async function signerMac(options) {
   const app = options.app;
@@ -28,4 +28,10 @@ module.exports = async function signerMac(options) {
   execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app], { stdio: "inherit" });
   // L'exigence désignée, dans le journal du build : c'est elle que macOS compare d'une version à l'autre.
   execFileSync("/usr/bin/codesign", ["--display", "--requirements", "-", app], { stdio: "inherit" });
+  // Computer Use : cua-driver (Contents/Resources) garde la signature Developer ID de son éditeur et son
+  // droit Automation. Le signer de nouveau les retirerait : le pilote ne pourrait plus piloter les apps.
+  const pilote = `${app}/Contents/Resources/cua-driver/cua-driver`;
+  const { stdout, stderr } = spawnSync("/usr/bin/codesign", ["--display", "--verbose=2", pilote], { encoding: "utf8" });
+  if (!/Authority=Developer ID Application: Cua AI/.test(`${stdout}${stderr}`)) throw new Error("cua-driver a perdu la signature de son éditeur : Computer Use ne marcherait pas.");
+  console.log("  • cua-driver garde la signature de son éditeur");
 };

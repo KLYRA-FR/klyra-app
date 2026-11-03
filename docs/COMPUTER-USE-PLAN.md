@@ -1,5 +1,12 @@
 # Computer Use dans l'app KLYRA : plan d'architecture
 
+> **Révision du 03/11/2026, décidée par Corentin** : les étapes 3 à 7 ci-dessous sont remplacées par **cua-driver** (trycua, MIT), le pilote qu'utilise OpenBot. La couche maison (`klyra-entrees`, capture par `desktopCapturer`, conversions de coordonnées) est retirée. Ce qui vaut maintenant :
+> - **Pilote** : cua-driver 0.34.0, épinglé avec ses empreintes (`cua-driver.lock.json`), embarqué dans l'app (Mac, Windows ; Linux pour les tests). Il lit l'accessibilité et agit le plus souvent en arrière-plan, sans prendre la souris ; il gère plusieurs écrans. Statistiques et recherche de mises à jour du fournisseur coupées.
+> - **Lancement** : un seul démon, lancé directement par l'app (macOS attribue l'Enregistrement de l'écran et l'Accessibilité à KLYRA), seulement si l'interrupteur est allumé ; il s'arrête quand on coupe l'interrupteur ou qu'on quitte l'app. Socket privé (0700) ou pipe nommé au hasard.
+> - **Agents** : une entrée MCP « ordinateur » pour Claude Code et Codex, seulement quand le pilote est prêt, plus une consigne reprise d'OpenBot. Un relais ajoute à chaque réponse une copie JSON des identifiants (fenêtre, capture, élément).
+> - **Accord** : comme OpenBot. Accès « Tout » : aucune demande. Accès « Projet » : lectures de l'écran libres, chaque action demande l'accord. Accès « Demander » : tout demande. Jamais d'installation ou de mise à jour du pilote par un agent.
+> - **Reste à faire** : Computer Use agent par agent (aujourd'hui, l'interrupteur vaut pour tous) ; curseur de l'agent et contour de la fenêtre visée sur chaque écran (aujourd'hui, le curseur du pilote, sur l'écran principal seulement) ; essais réels sur le Mac et le PC de Corentin.
+
 29/10/2026, pour Corentin. Ce plan ne contient pas de code. Il s'appuie sur `electron/claude.ts`, `electron/ia.ts`, `electron/main.ts`, `electron/reglages.ts` et la config `build` de `package.json`.
 
 ## En bref

@@ -32,7 +32,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: npm pkg set version="$VERSION"
       # next build vérifie aussi les types (ceux des routes sont générés pendant le build).
-      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm entrees
+      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
       # Le même certificat à chaque version : macOS garde les autorisations de l'app (cf. scripts/signer-mac.cjs).
       - name: Certificat de signature
         env:
@@ -53,8 +53,10 @@ jobs:
             perl -e 'alarm 120; exec @ARGV' dist-app/mac-arm64/KLYRA.app/Contents/MacOS/KLYRA
       - name: Whisper embarqué se lance
         run: dist-app/mac-arm64/KLYRA.app/Contents/Resources/whisper/whisper-server --help 2>&1 | grep -qi usage
-      - name: klyra-entrees embarqué répond (Computer Use)
-        run: echo '{"id":1,"action":"ping"}' | dist-app/mac-arm64/KLYRA.app/Contents/Resources/entrees/klyra-entrees | grep -q '"ok":true'
+      - name: cua-driver embarqué, avec la signature de son éditeur (Computer Use)
+        run: |
+          dist-app/mac-arm64/KLYRA.app/Contents/Resources/cua-driver/cua-driver --version 2>&1 | grep -q '0.34.0'
+          codesign --display --verbose=2 dist-app/mac-arm64/KLYRA.app/Contents/Resources/cua-driver/cua-driver 2>&1 | grep -q 'Authority=Developer ID Application'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -79,7 +81,7 @@ jobs:
       - run: pnpm build
       - run: pnpm build:electron
       - run: pnpm whisper
-      - run: pnpm entrees
+      - run: pnpm cua-driver
       - run: pnpm exec electron-builder --win --publish never --config.directories.output=dist-app
 
       - name: L'app démarre et affiche l'interface
@@ -95,11 +97,11 @@ jobs:
         run: |
           $sortie = & "dist-app\win-unpacked\resources\whisper\whisper-server.exe" --help 2>&1 | Out-String
           if ($sortie -notmatch "usage") { throw "whisper-server ne démarre pas : $sortie" }
-      - name: klyra-entrees embarqué répond (Computer Use)
+      - name: cua-driver embarqué répond (Computer Use)
         shell: pwsh
         run: |
-          $sortie = '{"id":1,"action":"ping"}' | & "dist-app\win-unpacked\resources\entrees\klyra-entrees.exe" | Out-String
-          if ($sortie -notmatch '"ok":true') { throw "klyra-entrees ne répond pas : $sortie" }
+          $sortie = & "dist-app\win-unpacked\resources\cua-driver\cua-driver.exe" --version 2>&1 | Out-String
+          if ($sortie -notmatch "0.34.0") { throw "cua-driver ne répond pas : $sortie" }
 
       - uses: actions/upload-artifact@v4
         with:

@@ -7,6 +7,7 @@ import path from "node:path";
 import { enregistrerAppelIa } from "./consommation";
 import { composioConnect, espaceComposio, OUTILS_COMPOSIO } from "./composio";
 import { serveursMcpDirects } from "./mcp-direct";
+import { serveurOrdinateur } from "./ordinateur/pilote";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -409,10 +410,13 @@ export async function demarrerServeurMcp(): Promise<void> {
 export function configMcp(appelant: Appelant, composio: string | null = null): string | null {
   if (!serveur) return null;
   const connect = composioConnect.serveur();
+  // Computer Use : seulement quand le pilote tourne avec ses autorisations (cf. ordinateur/pilote.ts).
+  const ordinateur = serveurOrdinateur();
   return JSON.stringify({
     mcpServers: {
       ...serveursMcpDirects(),
       ...(connect ? { composio: connect } : {}),
+      ...(ordinateur ? { ordinateur } : {}),
       klyra: {
         type: "http",
         url: serveur.url,
