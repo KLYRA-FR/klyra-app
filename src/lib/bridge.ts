@@ -9,7 +9,18 @@ export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../
 import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
 import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
+import type { RenduVps } from "../../electron/agents-distants";
 import type { EtatConsignesProjet } from "../../electron/consignes-projet";
+import type { Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
+export type { Competence, Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
+
+/** La conversation dont on lit ce que sait l'agent : le dossier de son projet (null : son atelier) et sa session. */
+export interface ContexteConnaissances {
+  dossier: string | null;
+  sessionId: string | null;
+  /** Le VPS de la conversation (son origine) : `dossier` est alors celui du projet là-bas. Absent : ce PC. */
+  lieu?: string | null;
+}
 export type { EtatConnect };
 
 /** Un MCP direct branché dans la Marketplace : tout, sauf le jeton. */
@@ -238,6 +249,8 @@ export interface StreamOptions {
   lieu?: string | null;
   /** Sur le VPS : le dossier du projet sur cette machine. */
   dossierVps?: string | null;
+  /** La skill demandée en tête du message (« /rangement … ») : remise devant le contexte si elle existe. */
+  skill?: string | null;
 }
 
 /** Ce qu'un agent peut faire sans demander (cf. electron/claude.ts). */
@@ -308,6 +321,17 @@ export interface KlyraBridge {
     readMeta: () => Promise<Reponse<AgentsMeta>>;
     writeMeta: (meta: AgentsMeta) => Promise<Reponse<void>>;
     reveal: (name: string) => Promise<Reponse<void>>;
+    /*
+     * Ce que sait l'agent (cf. electron/connaissances-agent.ts), dans le dossier de la conversation
+     * (`dossier` : celui du projet ; null : son atelier, retrouvé avec la session). Absents avant la relance de l'app.
+     */
+    memoire?: (agent: string, contexte: ContexteConnaissances) => Promise<Reponse<MemoireAgent | null>>;
+    souvenir?: (agent: string, contexte: ContexteConnaissances, id: string) => Promise<Reponse<{ contenu: string; modifieLe: number }>>;
+    ecrireSouvenir?: (agent: string, contexte: ContexteConnaissances, id: string, contenu: string, attendu: number | null) => Promise<Reponse<{ modifieLe: number }>>;
+    creerSouvenir?: (agent: string, contexte: ContexteConnaissances, titre: string, contenu: string) => Promise<Reponse<Souvenir>>;
+    montrerSouvenir?: (agent: string, contexte: ContexteConnaissances, id: string | null) => Promise<Reponse<void>>;
+    competences?: (agent: string, contexte: { dossier: string | null; lieu?: string | null }) => Promise<Reponse<CompetencesAgent>>;
+    montrerCompetence?: (agent: string, contexte: { dossier: string | null }, nom: string) => Promise<Reponse<void>>;
     onChange: (callback: () => void) => () => void;
   };
   /** Les moteurs des agents : Claude Code, Codex pour ChatGPT. Le compte a la forme de celui de Claude. */
@@ -365,8 +389,8 @@ export interface KlyraBridge {
     ouvrirFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
     montrerFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
     /** Les consignes du projet pour ses agents (electron/consignes-projet.ts). Absent avant la relance de l'app. */
-    consignes?: (dossier: string, nom: string) => Promise<Reponse<EtatConsignesProjet>>;
-    ecrireConsignes?: (dossier: string, nom: string) => Promise<Reponse<EtatConsignesProjet>>;
+    consignes?: (dossier: string, nom: string, lieu?: string | null) => Promise<Reponse<EtatConsignesProjet>>;
+    ecrireConsignes?: (dossier: string, nom: string, lieu?: string | null) => Promise<Reponse<EtatConsignesProjet>>;
   };
   artefacts: {
     /** Les artefacts claude.ai de la personne, lus dans sa galerie par la session claude.ai de l'app. */
@@ -389,6 +413,10 @@ export interface KlyraBridge {
     montrer: (chemin: string) => Promise<Reponse<void>>;
     /** Copie un livrable dans l'espace de l'agent (`~/.klyra/rendus/<agent>/`) ; `remplace` : sa copie précédente. */
     copier: (origine: string, agent: string, remplace: string | null) => Promise<Reponse<{ chemin: string; taille: number; dossier: boolean }>>;
+    /** Recopie le livrable d'un agent du VPS `lieu` (annoncé par `onVps`) dans l'espace de l'agent sur ce PC. */
+    copierVps?: (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) => Promise<Reponse<{ chemin: string; taille: number; dossier: boolean }>>;
+    /** Un agent du VPS `lieu` a publié un livrable (cf. serveur/rendus.mjs). */
+    onVps?: (callback: (lieu: string, rendu: RenduVps) => void) => () => void;
     /** Supprime la copie d'un livrable (jamais hors de l'espace des rendus). */
     supprimer: (chemin: string) => Promise<Reponse<void>>;
     /** Copie le livrable dans un dossier choisi ; null si la personne annule. */
@@ -553,7 +581,8 @@ export interface KlyraBridge {
     infos: () => Promise<Reponse<InfosApp>>;
     ouvrirDossier: (nom: DossierApp) => Promise<Reponse<void>>;
     /** Ce que le poste ajoute à chaque appel (electron/diagnostic-poste.ts). Absent avant la relance de l'app. */
-    diagnosticPoste?: () => Promise<Reponse<DiagnosticPoste>>;
+    /** Ce que la configuration de Claude Code ajoute à chaque appel : de ce poste, ou du VPS `lieu`. */
+    diagnosticPoste?: (lieu?: string | null) => Promise<Reponse<DiagnosticPoste>>;
     montrerDiagnostic?: (chemin: string) => Promise<Reponse<void>>;
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;

@@ -29,6 +29,16 @@ contextBridge.exposeInMainWorld("klyra", {
     readMeta: () => ipcRenderer.invoke("agents:meta:read"),
     writeMeta: (meta: unknown) => ipcRenderer.invoke("agents:meta:write", meta),
     reveal: (name: string) => ipcRenderer.invoke("agents:reveal", name),
+    memoire: (agent: string, contexte: { dossier: string | null; sessionId: string | null }) => ipcRenderer.invoke("agents:memoire", agent, contexte),
+    souvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string) => ipcRenderer.invoke("agents:souvenir", agent, contexte, id),
+    ecrireSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string, contenu: string, attendu: number | null) =>
+      ipcRenderer.invoke("agents:souvenir:ecrire", agent, contexte, id, contenu, attendu),
+    creerSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, titre: string, contenu: string) =>
+      ipcRenderer.invoke("agents:souvenir:creer", agent, contexte, titre, contenu),
+    montrerSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string | null) =>
+      ipcRenderer.invoke("agents:souvenir:montrer", agent, contexte, id),
+    competences: (agent: string, contexte: { dossier: string | null; lieu?: string | null }) => ipcRenderer.invoke("agents:competences", agent, contexte),
+    montrerCompetence: (agent: string, contexte: { dossier: string | null }, nom: string) => ipcRenderer.invoke("agents:competence:montrer", agent, contexte, nom),
     onChange: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on("agents:changed", listener);
@@ -94,8 +104,8 @@ contextBridge.exposeInMainWorld("klyra", {
     lireFichier: (dossier: string, relatif: string, lieu?: string | null) => ipcRenderer.invoke("projets:lire-fichier", dossier, relatif, lieu),
     ouvrirFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:ouvrir-fichier", dossier, relatif),
     montrerFichier: (dossier: string, relatif: string) => ipcRenderer.invoke("projets:montrer-fichier", dossier, relatif),
-    consignes: (dossier: string, nom: string) => ipcRenderer.invoke("projets:consignes", dossier, nom),
-    ecrireConsignes: (dossier: string, nom: string) => ipcRenderer.invoke("projets:consignes:ecrire", dossier, nom),
+    consignes: (dossier: string, nom: string, lieu?: string | null) => ipcRenderer.invoke("projets:consignes", dossier, nom, lieu ?? null),
+    ecrireConsignes: (dossier: string, nom: string, lieu?: string | null) => ipcRenderer.invoke("projets:consignes:ecrire", dossier, nom, lieu ?? null),
   },
   artefacts: {
     lister: () => ipcRenderer.invoke("artefacts:lister"),
@@ -110,6 +120,13 @@ contextBridge.exposeInMainWorld("klyra", {
     ouvrir: (chemin: string) => ipcRenderer.invoke("rendus:ouvrir", chemin),
     montrer: (chemin: string) => ipcRenderer.invoke("rendus:montrer", chemin),
     copier: (origine: string, agent: string, remplace: string | null) => ipcRenderer.invoke("rendus:copier", origine, agent, remplace),
+    copierVps: (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) =>
+      ipcRenderer.invoke("rendus:copier-vps", lieu, id, agent, nom, dossier, remplace),
+    onVps: (callback: (lieu: string, rendu: unknown) => void) => {
+      const listener = (_e: unknown, lieu: string, rendu: unknown) => callback(lieu, rendu);
+      ipcRenderer.on("rendus:vps", listener);
+      return () => ipcRenderer.removeListener("rendus:vps", listener);
+    },
     supprimer: (chemin: string) => ipcRenderer.invoke("rendus:supprimer", chemin),
     enregistrer: (chemin: string, dossier: string | null) => ipcRenderer.invoke("rendus:enregistrer", chemin, dossier),
     dossierAgent: (agent: string, quoi: "rendus" | "atelier") => ipcRenderer.invoke("rendus:dossier-agent", agent, quoi),
@@ -292,7 +309,7 @@ contextBridge.exposeInMainWorld("klyra", {
     changerLancement: (actif: boolean) => ipcRenderer.invoke("reglages:lancement:changer", actif),
     infos: () => ipcRenderer.invoke("reglages:infos"),
     ouvrirDossier: (nom: string) => ipcRenderer.invoke("reglages:ouvrir-dossier", nom),
-    diagnosticPoste: () => ipcRenderer.invoke("reglages:diagnostic-poste"),
+    diagnosticPoste: (lieu?: string | null) => ipcRenderer.invoke("reglages:diagnostic-poste", lieu ?? null),
     montrerDiagnostic: (chemin: string) => ipcRenderer.invoke("reglages:diagnostic-poste:montrer", chemin),
     essaiNotification: () => ipcRenderer.invoke("reglages:essai-notification"),
     autorisationsComputerUse: () => ipcRenderer.invoke("reglages:computer-use:autorisations"),

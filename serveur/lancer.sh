@@ -132,6 +132,11 @@ curl -fsSL "$SOURCE/moteurs.mjs" -o "$CODE_DIR/moteurs.mjs"
 curl -fsSL "$SOURCE/ia.mjs" -o "$CODE_DIR/ia.mjs"
 curl -fsSL "$SOURCE/ia-catalogue.mjs" -o "$CODE_DIR/ia-catalogue.mjs"
 curl -fsSL "$SOURCE/atelier.mjs" -o "$CODE_DIR/atelier.mjs"
+curl -fsSL "$SOURCE/connaissances-agent.mjs" -o "$CODE_DIR/connaissances-agent.mjs"
+curl -fsSL "$SOURCE/consommation-ecart.mjs" -o "$CODE_DIR/consommation-ecart.mjs"
+curl -fsSL "$SOURCE/diagnostic-poste.mjs" -o "$CODE_DIR/diagnostic-poste.mjs"
+curl -fsSL "$SOURCE/consignes-projet.mjs" -o "$CODE_DIR/consignes-projet.mjs"
+curl -fsSL "$SOURCE/rendus.mjs" -o "$CODE_DIR/rendus.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────

@@ -1,21 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { NIVEAUX_ACCES } from "@/lib/acces";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Icon, type IconName } from "@/components/icons/Icon";
-import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { nomFichier } from "@/lib/fichiers";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
-import { useChatMessages, useProject, useRole, useTravail, useWorkspace } from "@/lib/workspace";
+import { useChatMessages, useRole, useWorkspace } from "@/lib/workspace";
 import type { Chat, TacheAgent } from "@/types/domain";
-import { ChoixModele } from "./ChoixModele";
 import { PastilleExtension } from "./PastilleExtension";
+import { ReglagesAgent } from "./reglages-agent/ReglagesAgent";
 
 /**
  * Panneau à droite d'une conversation, à onglets : les réglages de l'agent,
@@ -70,136 +66,6 @@ export function usePanneauLateral() {
     }
   }, [etat]);
   return [etat, setEtat] as const;
-}
-
-/* ─── Onglet Réglages ──────────────────────────────────────────── */
-
-function Groupe({ titre, children }: { titre: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-2">
-      <h3 className="m-0 text-ui-xs font-medium text-texte-tertiaire">{titre}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Ligne({ libelle, valeur }: { libelle: string; valeur: ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-3 py-2 text-ui-s">
-      <span className="shrink-0 text-texte-secondaire">{libelle}</span>
-      <span className="min-w-0 text-right text-texte-principal">{valeur}</span>
-    </div>
-  );
-}
-
-function Reglages({ chat }: { chat: Chat }) {
-  const router = useRouter();
-  const role = useRole(chat.roleIds[0] ?? "principal");
-  const project = useProject(chat.projectId);
-  const travail = useTravail(chat.id);
-  const { nouvelleConversation, state } = useWorkspace();
-  const acces = state.acces;
-  const [confirmer, setConfirmer] = useState(false);
-  const dossier = chat.kind === "equipe" ? (project?.folder ?? "—") : "~/.klyra/atelier";
-
-  return (
-    <div className="flex flex-col gap-6 p-4">
-      <div className="flex items-center gap-3">
-        <AgentRond roleId={role.id} taille={52} />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-ui font-semibold text-texte-principal">{role.name}</span>
-          <span className="truncate text-ui-xs text-texte-tertiaire">{role.title}</span>
-        </div>
-      </div>
-
-      <Groupe titre="Cerveau">
-        <ChoixModele chat={chat} variante="champ" />
-        <p className="m-0 text-ui-2xs leading-[1.45] text-texte-tertiaire">
-          Pour cette conversation. Sans choix, l’agent prend le modèle de sa fiche.
-        </p>
-      </Groupe>
-
-      {role.whenToCall && (
-        <Groupe titre="Quand l’appeler">
-          <p className="m-0 text-ui-s leading-[1.5] text-texte-principal">{role.whenToCall}</p>
-        </Groupe>
-      )}
-
-      {role.skills.length > 0 && (
-        <Groupe titre="Ce qu’il sait faire">
-          <div className="flex flex-wrap gap-1.5">
-            {role.skills.map((s) => (
-              <span key={s} className="rounded-2xs bg-fond-surface-grise px-2 py-0.5 text-ui-xs text-texte-principal">
-                {s}
-              </span>
-            ))}
-          </div>
-        </Groupe>
-      )}
-
-      <Groupe titre="Travail">
-        <div className="flex flex-col divide-y divide-bordure-subtile rounded-md border border-bordure-subtile px-3">
-          <Ligne libelle="Dossier" valeur={<span className="klyra-mono text-ui-xs [overflow-wrap:anywhere]">{dossier}</span>} />
-          <Ligne
-            libelle="Accès"
-            valeur={
-              <Link href="/reglages" className="text-texte-principal underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
-                {NIVEAUX_ACCES.find((n) => n.id === acces)?.nom}
-              </Link>
-            }
-          />
-          <Ligne libelle="Mémoire" valeur={role.memory || "—"} />
-        </div>
-      </Groupe>
-
-      <Groupe titre="Conversation">
-        {confirmer ? (
-          <div className="flex flex-col gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
-            <p className="m-0 text-ui-s leading-[1.45] text-texte-principal">
-              Les messages et ce que {role.name} retient de cette conversation seront effacés.
-            </p>
-            <div className="flex gap-2">
-              <Bouton
-                variant="sombre"
-                taille="compact"
-                onClick={() => {
-                  nouvelleConversation(chat.id);
-                  setConfirmer(false);
-                }}
-              >
-                Effacer et repartir
-              </Bouton>
-              <Bouton variant="blanc" taille="compact" onClick={() => setConfirmer(false)}>
-                Annuler
-              </Bouton>
-            </div>
-          </div>
-        ) : (
-          <Bouton
-            variant="blanc"
-            taille="compact"
-            disabled={!!travail}
-            iconeGauche={<Icon name="refresh-01" size={16} />}
-            onClick={() => setConfirmer(true)}
-            className="self-start"
-          >
-            Nouvelle conversation
-          </Bouton>
-        )}
-        {role.file && (
-          <Bouton
-            variant="discret"
-            taille="compact"
-            iconeGauche={<Icon name="file-code" size={16} />}
-            onClick={() => router.push(`/equipe?agent=${role.id}&mode=modifier`)}
-            className="self-start"
-          >
-            Modifier la fiche de {role.name}
-          </Bouton>
-        )}
-      </Groupe>
-    </div>
-  );
 }
 
 /* ─── Onglet Fichiers ──────────────────────────────────────────── */
@@ -629,7 +495,7 @@ export function PanneauLateral({
       </div>
 
       <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
-        {actif === "reglages" && <Reglages chat={chat} />}
+        {actif === "reglages" && <ReglagesAgent key={chat.id} chat={chat} />}
         {actif === "fichiers" && <Fichiers chat={chat} />}
         {actif === "taches" && <Taches chat={chat} />}
       </div>

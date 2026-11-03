@@ -7,6 +7,7 @@ import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { dossierHorsProjet } from "./atelier";
+import { competencesPrechargees, promptAvecSkill, skillsConnues } from "./connaissances-agent";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
@@ -408,6 +409,15 @@ const COMMANDES_AUTORISEES = [
 const ATELIER = path.join(HOME, ".klyra", "atelier");
 const CONFIG_CLAUDE = () => process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude");
 
+/** Le texte d'un fichier, ou null s'il n'est pas là. */
+function lireSiPresent(fichier: string): string | null {
+  try {
+    return readFileSync(fichier, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 /**
  * `~/…` → chemin absolu. null si le dossier du projet n'existe pas. Hors projet : le dossier de l'agent
  * dans l'atelier (`agent` donné, cf. `electron/atelier.ts`), ou l'atelier commun (sans agent : Codex).
@@ -707,13 +717,19 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   if (!cwd) return echec(`Le dossier du projet est introuvable : ${options.dossier}`);
 
   const acces = options.acces ?? "projet";
+  /* Les skills (cf. connaissances-agent.ts) : celles que sa fiche précharge, que Claude Code ne donne pas
+     à un agent lancé seul, et `/<skill>` tapé par la personne, remis en tête du message. */
+  const configClaude = CONFIG_CLAUDE();
+  const ficheAgent = options.agent ? lireSiPresent(path.join(agentsDir(), `${options.agent}.md`)) : null;
+  const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd) : { noms: [], texte: null };
+  const prompt = promptAvecSkill(options.prompt, options.skill, skillsConnues(configClaude, cwd));
   // Les dossiers des pièces jointes, pour que l'agent puisse les lire.
   const dossiersJoints = [...new Set((options.fichiers ?? []).filter((f) => path.isAbsolute(f) && existsSync(f)).map((f) => path.dirname(f)))].filter(
     (d) => !d.startsWith(cwd),
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureConfiguration(lireReglages().configuration)]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureConfiguration(lireReglages().configuration), precharge.noms]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
@@ -770,13 +786,13 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (options.modele) args.push("--model", options.modele);
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
-    args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", consignesApp(options, mcp).join("\n\n"));
+    args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", [...consignesApp(options, mcp), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);
   }
 
   ajouterTour(proc, nouveauTour(requestId, emit, acces));
-  ecrire(proc, { type: "user", message: { role: "user", content: options.prompt } });
+  ecrire(proc, { type: "user", message: { role: "user", content: prompt } });
 }
 
 /* ─── Utilisation de Claude ────────────────────────────────────── */

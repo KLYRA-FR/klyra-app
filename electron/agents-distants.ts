@@ -2,6 +2,8 @@ import { app, net } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { enregistrerConsommation } from "./consommation";
+import { ligneValide } from "./consommation-ecart";
 import type { AgentEvent, StreamOptions } from "./moteurs/types";
 import { contexteDe, type ContexteReponse } from "./contexte-distant";
 
@@ -18,11 +20,50 @@ export interface Fenetre {
   evenement: (requestId: string, event: AgentEvent) => void;
   /** Une réponse que l'interface n'a pas demandée (tâche de fond, routine du VPS, réponse finie pendant l'absence de l'app). */
   spontane: (requestId: string, sessionId: string, contexte: (ContexteReponse & { lieu: string }) | null) => void;
+  /** Un livrable publié par un agent du VPS (`publier_artefact`, cf. serveur/rendus.mjs) : l'écran le recopie. */
+  rendu: (origine: string, rendu: RenduVps) => void;
 }
+
+/** L'annonce d'un livrable du VPS, vérifiée champ par champ. */
+export interface RenduVps {
+  id: string;
+  chemin: string;
+  dossier: boolean;
+  taille: number;
+  titre: string;
+  description: string;
+  agent: string;
+  conversation: string;
+  at: number;
+}
+
+function renduDe(event: unknown): RenduVps | null {
+  const e = (event ?? {}) as Record<string, unknown>;
+  if (e.type !== "rendu" || typeof e.id !== "string" || !/^[0-9a-f-]{36}$/.test(e.id) || typeof e.chemin !== "string" || !e.chemin) return null;
+  return {
+    id: e.id,
+    chemin: e.chemin,
+    dossier: e.dossier === true,
+    taille: typeof e.taille === "number" ? e.taille : 0,
+    titre: typeof e.titre === "string" ? e.titre.slice(0, 80) : "",
+    description: typeof e.description === "string" ? e.description.slice(0, 500) : "",
+    agent: typeof e.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(e.agent) ? e.agent : "principal",
+    conversation: typeof e.conversation === "string" ? e.conversation.slice(0, 120) : "",
+    at: typeof e.at === "number" ? e.at : Date.now(),
+  };
+}
+
+/** Les annonces déjà passées à l'écran (une même publication relue n'est pas recopiée deux fois). */
+const annonces = new Set<string>();
 
 export interface Equipe {
   fiches: { id: string; nom: string; contenu: string }[];
   assistant: string | null;
+  /**
+   * La configuration KLYRA adoptée sur ce PC (mémoire coupée, consignes), appliquée par le VPS à toutes
+   * ses sessions : messages du PC, du téléphone PC fermé, routines du serveur.
+   */
+  configuration: { memoireAgents: boolean; consignes: string | null };
   empreinte: string;
 }
 
@@ -101,9 +142,38 @@ async function requete(origine: string, chemin: string, methode: "POST" | "PUT",
   }
 }
 
+/** Les réponses du VPS dont la consommation est déjà inscrite : un événement relu n'est pas compté deux fois. */
+const comptees = new Set<string>();
+
+/**
+ * Ce qu'une réponse du VPS a consommé (sa fin porte l'écart du `modelUsage`, calculé là-bas comme ici par
+ * consommation-ecart.ts) : inscrit dans le journal de ce PC, comme une réponse locale, pour l'Utilisation
+ * de l'agent et le Profil.
+ */
+function compterConsommation(requestId: string, event: unknown) {
+  const c = (event as { type?: string; consommation?: { agent?: unknown; lignes?: unknown } }) ?? {};
+  if (c.type !== "fin" || !c.consommation || comptees.has(requestId)) return;
+  comptees.add(requestId);
+  const agent = typeof c.consommation.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(c.consommation.agent) ? c.consommation.agent : "principal";
+  for (const brut of Array.isArray(c.consommation.lignes) ? c.consommation.lignes.slice(0, 20) : []) {
+    const ligne = ligneValide(brut);
+    if (ligne) enregistrerConsommation({ fournisseur: "Claude Code", modele: ligne.modele, agent, jetons: ligne.jetons, coutUsd: ligne.coutUsd });
+  }
+}
+
 function distribuer(origine: string, entree: Entree) {
+  if (typeof entree.requestId === "string" && entree.event) compterConsommation(entree.requestId, entree.event);
   const fenetre = liaison?.fenetre();
   if (!fenetre || typeof entree.requestId !== "string") return;
+  // Un livrable publié sur le VPS : il n'appartient à aucune réponse, l'écran le recopie dans Artefacts.
+  const rendu = renduDe(entree.event);
+  if (rendu) {
+    if (!annonces.has(entree.requestId)) {
+      annonces.add(entree.requestId);
+      fenetre.rendu(origine, rendu);
+    }
+    return;
+  }
   if (entree.spontane) {
     if (!entree.sessionId || connues.has(entree.requestId)) return;
     connues.add(entree.requestId);
@@ -250,6 +320,8 @@ export async function streamDistant(origine: string, requestId: string, options:
         dossier: options.dossierVps ?? null,
         /* Le VPS retient la session de cette conversation : le téléphone, PC fermé, y reprend. */
         conversation: options.chatId ?? null,
+        /* `/<skill>` en tête du message : le VPS la remet devant le contexte s'il la connaît. */
+        ...(options.skill ? { skill: options.skill } : {}),
       },
     });
     if (recu.status === 401) throw new Error("Ce PC n’est plus relié à ce VPS. Relance la commande sur le VPS et colle le nouveau lien dans Serveurs.");

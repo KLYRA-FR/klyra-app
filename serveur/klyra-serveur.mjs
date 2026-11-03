@@ -28,6 +28,7 @@ export const CHEMIN_FICHIERS = "/klyra/v1/fichiers";
 export const CHEMIN_ROUTINES = "/klyra/v1/routines";
 export const CHEMIN_MOTEURS = "/klyra/v1/moteurs";
 export const CHEMIN_IA = "/klyra/v1/ia";
+export const CHEMIN_RENDUS = "/klyra/v1/rendus";
 export const PROTOCOLE = 1;
 
 export const DUREE_CODE_MS = 10 * 60_000;
@@ -435,6 +436,28 @@ export function creerGestionnaire(options) {
       return repondre(res, 404, { erreur: "introuvable" });
     }
 
+    /* Les livrables publiés par les agents du VPS (serveur/rendus.mjs), recopiés par l'app :
+       /klyra/v1/rendus/<id>/fichiers (la liste), /klyra/v1/rendus/<id>/fichier?relatif=… (les octets). */
+    if (url.pathname.startsWith(`${CHEMIN_RENDUS}/`)) {
+      if (!agents?.rendus) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      if (req.method !== "GET") return repondre(res, 405, { erreur: "methode" });
+      const [id = "", action = ""] = url.pathname.slice(CHEMIN_RENDUS.length + 1).split("/");
+      if (!/^[0-9a-f-]{36}$/.test(id)) return repondre(res, 404, { erreur: "introuvable" });
+      try {
+        if (action === "fichiers") return repondre(res, 200, { fichiers: agents.rendus.fichiers(id) });
+        if (action === "fichier") {
+          const { chemin, taille } = agents.rendus.fichierDe(id, url.searchParams.get("relatif") ?? "");
+          res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": taille, "Cache-Control": "no-store", ...ENTETES_CORS });
+          agents.rendus.flux(chemin).on("error", () => res.destroy()).pipe(res);
+          return;
+        }
+      } catch (erreur) {
+        return repondre(res, 400, { erreur: "rendu", message: erreur instanceof Error ? erreur.message : "Lecture impossible sur le VPS." });
+      }
+      return repondre(res, 404, { erreur: "introuvable" });
+    }
+
     if (url.pathname.startsWith(`${CHEMIN_FICHIERS}/`)) {
       if (!fichiers) return repondre(res, 404, { erreur: "introuvable" });
       if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
@@ -444,6 +467,9 @@ export function creerGestionnaire(options) {
         if (action === "arbre" && req.method === "GET") return repondre(res, 200, { noeuds: await fichiers.arbre(dossierProjet, url.searchParams.get("relatif") ?? "") });
         if (action === "lire" && req.method === "GET") return repondre(res, 200, await fichiers.lire(dossierProjet, url.searchParams.get("relatif") ?? ""));
         if (action === "dossier" && req.method === "POST") return repondre(res, 200, { dossier: await fichiers.creerDossier(dossierProjet) });
+        /* La carte « Consignes du projet » d'un projet du VPS : GET l'état (et ce qui serait écrit), POST l'écriture. */
+        if (action === "consignes" && req.method === "GET") return repondre(res, 200, { consignes: fichiers.consignes(dossierProjet, url.searchParams.get("nom") ?? "") });
+        if (action === "consignes" && req.method === "POST") return repondre(res, 200, { consignes: fichiers.ecrireConsignes(dossierProjet, url.searchParams.get("nom") ?? "") });
       } catch (erreur) {
         return repondre(res, 400, { erreur: "fichier", message: erreur instanceof ErreurFichier ? erreur.message : "Lecture impossible sur le VPS." });
       }
@@ -471,6 +497,42 @@ export function creerGestionnaire(options) {
           return repondre(res, 400, { erreur: "fiches" });
         }
         return repondre(res, 200, capacites());
+      }
+      /* Réglages du serveur › Général : ce que la configuration de Claude Code de ce VPS ajoute à chaque appel. */
+      if (action === "diagnostic") {
+        if (req.method !== "GET") return repondre(res, 405, { erreur: "methode" });
+        return repondre(res, 200, { diagnostic: agents.diagnostic() });
+      }
+      /* Le panneau Compétences d'un agent de ce VPS (`?agent=…&dossier=…`). */
+      if (action === "competences") {
+        if (req.method !== "GET") return repondre(res, 405, { erreur: "methode" });
+        try {
+          return repondre(res, 200, { competences: agents.competences(url.searchParams.get("agent"), url.searchParams.get("dossier")) });
+        } catch (erreur) {
+          return repondre(res, 400, { erreur: "competences", message: erreur instanceof Error ? erreur.message : "Lecture impossible sur le VPS." });
+        }
+      }
+      /*
+       * La mémoire d'un agent de ce VPS, pour le panneau Souvenirs de l'app (comme sur le PC) :
+       * GET memoire et souvenir (`?agent=…&dossier=…&session=…&id=…`), POST souvenir-ecrire et souvenir-creer.
+       */
+      if (action === "memoire" || action === "souvenir" || action === "souvenir-ecrire" || action === "souvenir-creer") {
+        const lecture = action === "memoire" || action === "souvenir";
+        if (req.method !== (lecture ? "GET" : "POST")) return repondre(res, 405, { erreur: "methode" });
+        try {
+          if (lecture) {
+            const agent = url.searchParams.get("agent");
+            const contexte = { dossier: url.searchParams.get("dossier"), sessionId: url.searchParams.get("session") };
+            return repondre(res, 200, action === "memoire" ? { memoire: agents.memoire.lire(agent, contexte) } : { souvenir: agents.memoire.souvenir(agent, contexte, url.searchParams.get("id")) });
+          }
+          const c = (await lireCorpsRequete(req, CORPS_AGENT_MAX)) ?? {};
+          const contexte = { dossier: c.dossier ?? null, sessionId: c.sessionId ?? null };
+          if (action === "souvenir-ecrire") return repondre(res, 200, { ecrit: agents.memoire.ecrire(c.agent, contexte, c.id, c.contenu, c.attendu) });
+          return repondre(res, 200, { souvenir: agents.memoire.creer(c.agent, contexte, c.titre, c.contenu) });
+        } catch (erreur) {
+          const code = erreur && typeof erreur === "object" && typeof erreur.code === "string" ? erreur.code : "memoire";
+          return repondre(res, code === "conflit" ? 409 : 400, { erreur: code, message: erreur instanceof Error ? erreur.message : "Lecture impossible sur le VPS." });
+        }
       }
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
       const corps = await lireCorpsRequete(req, CORPS_AGENT_MAX);

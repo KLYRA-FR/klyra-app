@@ -36,7 +36,7 @@ function absolu(chemin: unknown): string {
   return path.resolve(complet);
 }
 
-const dansLesRendus = (chemin: string) => {
+export const dansLesRendus = (chemin: string) => {
   const rel = path.relative(RACINE_RENDUS, chemin);
   return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
 };
@@ -67,7 +67,7 @@ function taille(chemin: string, max = Infinity): number {
 }
 
 /** Un nom libre dans `dossier` : « nom », sinon « nom (2) », « nom (3) »… */
-function nomLibre(dossier: string, nom: string): string {
+export function nomLibre(dossier: string, nom: string): string {
   const ext = path.extname(nom);
   const base = nom.slice(0, nom.length - ext.length);
   for (let i = 1; ; i++) {

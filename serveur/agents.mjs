@@ -14,6 +14,21 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dossierHorsProjet } from "./atelier.mjs";
+import {
+  competencesPrechargees,
+  creerSouvenir as creerSouvenirDans,
+  dossierMemoire,
+  ecrireSouvenir as ecrireSouvenirDans,
+  lireCompetences,
+  lireMemoire,
+  lireSouvenir,
+  porteeDeLaFiche,
+  promptAvecSkill,
+  skillsConnues,
+} from "./connaissances-agent.mjs";
+import { ecartModelUsage } from "./consommation-ecart.mjs";
+import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
+import { creerRendus } from "./rendus.mjs";
 import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
@@ -25,10 +40,21 @@ const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent"] } });
 const VEILLE_MS = 30 * 60 * 1000;
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/** La configuration KLYRA reçue du PC, vérifiée : mémoire coupée ou non, consignes (texte court). */
+function configurationValide(c) {
+  return {
+    memoireAgents: c?.memoireAgents !== false,
+    consignes: typeof c?.consignes === "string" && c.consignes.trim() && c.consignes.length <= 20_000 ? c.consignes.trim() : null,
+  };
+}
+
 /** Les mêmes que dans l'app (electron/claude.ts) : ne pas les changer d'un seul côté. */
 const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente aucun fait : ni prix, ni délai, ni autorisation, ni horaire, coordonnée, chiffre ou promesse au nom de quelqu'un ; ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien. Ce qui se mesure (tests, liens, contrastes, rendu) se vérifie avec ce que le projet et le poste offrent déjà : trouve l'outil qu'il faut par une recherche ciblée (which, chemins habituels), n'installe rien et ne fouille pas des dossiers sans rapport sans accord, et dis ce qui n'a pas pu être vérifié.`;
 const UN_RESPONSABLE = `Un livrable, un responsable : un livrable va entier à un seul agent, celui de sa partie principale, qui fait aussi les petites parties voisines (les textes d'une page qu'il intègre, par exemple). Plusieurs agents seulement pour des parties lourdes et indépendantes, menées en parallèle, jamais en relais de l'un à l'autre : chaque passage de main fait tout relire. Une tâche que tu ferais en quelques minutes, fais-la toi-même ; si la personne demande expressément son équipe, suis-la avec le moins d'agents possible.`;
 const LIVRER_EN_FICHIERS = `Livre ton travail dans des fichiers ; ta réponse finale est un compte rendu court qui donne leurs chemins, sans recopier leur contenu.`;
+/** Comme CONSIGNE_ARTEFACTS de l'app (electron/claude.ts) : tout fichier demandé se publie avant « livré ». */
+const CONSIGNE_ARTEFACTS = `Publie avec publier_artefact (chemin complet sur ce VPS, ou dossier d'une page avec index.html ; un titre court ; à quoi il sert) chaque fichier qu'on t'a demandé de produire, quel que soit son format, que la demande vienne de la personne ou de l'agent qui t'a confié le travail, et tout rendu qu'elle doit voir : l'app en garde une copie sur son ordinateur et elle le retrouve dans l'écran Artefacts. Publie-le avant de dire que c'est livré. Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet.`;
+const OUTIL_PUBLIER = "mcp__klyra__publier_artefact";
 
 const COMMANDES_AUTORISEES = [
   "Bash(pnpm:*)",
@@ -68,9 +94,14 @@ export function creerAgents(options) {
   const lireEquipe = () => {
     try {
       const equipe = JSON.parse(readFileSync(fichierEquipe, "utf8"));
-      return { assistant: typeof equipe.assistant === "string" ? equipe.assistant : null, actifs: Array.isArray(equipe.actifs) ? equipe.actifs : [], empreinte: equipe.empreinte ?? "" };
+      return {
+        assistant: typeof equipe.assistant === "string" ? equipe.assistant : null,
+        actifs: Array.isArray(equipe.actifs) ? equipe.actifs : [],
+        configuration: configurationValide(equipe.configuration),
+        empreinte: equipe.empreinte ?? "",
+      };
     } catch {
-      return { assistant: null, actifs: [], empreinte: "" };
+      return { assistant: null, actifs: [], configuration: configurationValide(null), empreinte: "" };
     }
   };
 
@@ -98,8 +129,10 @@ export function creerAgents(options) {
   }
 
   /* Sans les skills livrées avec Claude Code (~2 300 jetons à chaque appel), comme dans l'app. */
-  const environnement = () => {
+  /** Comme `environnementAgent` de l'app : sans les skills livrées, et sans mémoire si la configuration KLYRA la coupe. */
+  const environnement = (configuration = { memoireAgents: true }) => {
     const env = { ...process.env, HOME: home, CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" };
+    if (!configuration.memoireAgents) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
     const jeton = jetonClaude();
     if (jeton) env.CLAUDE_CODE_OAUTH_TOKEN = jeton;
     return env;
@@ -121,7 +154,80 @@ export function creerAgents(options) {
     for (const f of valides) writeFileSync(path.join(dossierAgents, `${f.id}.md`), f.contenu, { mode: 0o600 });
     const actifs = valides.map((f) => ({ id: f.id, nom: typeof f.nom === "string" && f.nom.trim() ? f.nom.trim().slice(0, 80) : f.id }));
     const assistant = typeof corps.assistant === "string" ? corps.assistant.trim().slice(0, 80) || null : null;
-    writeFileSync(fichierEquipe, JSON.stringify({ assistant, actifs, empreinte: String(corps.empreinte ?? "").slice(0, 80) }), { mode: 0o600 });
+    writeFileSync(fichierEquipe, JSON.stringify({ assistant, actifs, configuration: configurationValide(corps.configuration), empreinte: String(corps.empreinte ?? "").slice(0, 80) }), { mode: 0o600 });
+  }
+
+  /**
+   * Les compétences d'un agent sur ce VPS, pour le panneau de l'app (cf. electron/connaissances-agent.ts) :
+   * celles que sa fiche précharge (la fiche copiée depuis le PC), celles du projet et de l'utilisateur
+   * klyra. Mêmes gardes que pour un message : un agent valide, un projet sous le dossier personnel.
+   */
+  function competences(agent, dossier) {
+    return lireCompetences(ficheDe(agentValide(agent)), path.join(home, ".claude"), projetValide(dossier));
+  }
+
+  /** Un agent de la demande : son identifiant, ou « principal » pour l'assistant. */
+  function agentValide(agent) {
+    if (agent !== "principal" && (typeof agent !== "string" || !ID_AGENT.test(agent))) throw new Error("Nom d’agent invalide.");
+    return agent;
+  }
+
+  /** Le dossier d'un projet du VPS (sous le dossier de klyra, existant), ou null hors projet. */
+  function projetValide(dossier) {
+    if (typeof dossier !== "string" || !dossier) return null;
+    const rel = path.relative(path.resolve(home), path.resolve(dossier));
+    if (!path.isAbsolute(dossier) || rel.startsWith("..") || path.isAbsolute(rel)) throw new Error(`Un projet du VPS doit être sous ${home}.`);
+    if (!existsSync(dossier)) throw new Error(`Le dossier du projet est introuvable sur le VPS : ${dossier}`);
+    return dossier;
+  }
+
+  /** La fiche d'un agent sur le VPS (copiée depuis le PC), ou null. */
+  function ficheDe(agent) {
+    if (agent === "principal") return null;
+    try {
+      return readFileSync(path.join(dossierAgents, `${agent}.md`), "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * La mémoire d'un agent sur ce VPS, comme sur le PC (cf. electron/connaissances-agent.ts et main.ts) :
+   * la portée vient de sa fiche, le dossier de la conversation (son projet, sinon son atelier retrouvé avec
+   * la session). Null : l'agent n'a pas de mémoire.
+   */
+  function memoireDe(agent, contexte) {
+    const id = agentValide(agent);
+    const portee = id === "principal" ? "auto" : porteeDeLaFiche(ficheDe(id) ?? "");
+    if (!portee) return null;
+    const projet = projetValide(contexte?.dossier);
+    const sessionId = typeof contexte?.sessionId === "string" && /^[0-9a-f-]{36}$/.test(contexte.sessionId) ? contexte.sessionId : null;
+    const travail = projet ?? dossierHorsProjet(atelier, id === "principal" ? null : id, sessionId, path.join(home, ".claude"), existsSync);
+    return { portee, dossier: dossierMemoire(id, portee, travail, path.join(home, ".claude")) };
+  }
+  const exigerMemoire = (agent, contexte) => {
+    const m = memoireDe(agent, contexte);
+    if (!m) throw new Error("Cet agent n’a pas de mémoire.");
+    return m;
+  };
+  const memoire = {
+    lire: (agent, contexte) => {
+      const m = memoireDe(agent, contexte);
+      return m ? lireMemoire(m.portee, m.dossier) : null;
+    },
+    souvenir: (agent, contexte, id) => lireSouvenir(exigerMemoire(agent, contexte).dossier, String(id ?? "")),
+    ecrire: (agent, contexte, id, contenu, attendu) =>
+      ecrireSouvenirDans(exigerMemoire(agent, contexte).dossier, String(id ?? ""), String(contenu ?? ""), typeof attendu === "number" ? attendu : null),
+    creer: (agent, contexte, titre, contenu) => creerSouvenirDans(exigerMemoire(agent, contexte).dossier, String(titre ?? ""), String(contenu ?? "")),
+  };
+
+  /**
+   * La configuration KLYRA adoptée sur le PC (cf. electron/configuration-klyra.ts), reçue avec l'équipe et
+   * appliquée à chaque session de ce VPS, d'où qu'elle vienne (PC, téléphone, routine) ; avant la première
+   * synchronisation, celle de Claude Code : mémoire gardée, sans consignes.
+   */
+  function configurationDe() {
+    return lireEquipe().configuration;
   }
 
   /* ─── Consignes ─────────────────────────────────────────────────── */
@@ -136,7 +242,7 @@ export function creerAgents(options) {
     const equipe = actifs.length
       ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant avec un brief qui se suffit (objectif, contexte et chemins, contraintes, critère de fin, le livrable attendu dans des fichiers et un compte rendu court) ; n'en invente pas d'autre. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
       : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-    return `${qui} ${equipe} ${REGLES_COMMUNES}`;
+    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}`;
   }
 
   function consigneAgent(id) {
@@ -145,17 +251,22 @@ export function creerAgents(options) {
     const equipe = autres.length
       ? `Dans cette app, les agents que la personne a choisis sont : ${listeAgents(autres)}, et son assistant ${assistant ?? "l'assistant"} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais ta part et dis ce qui reste.`
       : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${assistant ?? "l'assistant"} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais ta part et dis ce qui reste.`;
-    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${REGLES_COMMUNES}`;
+    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}`;
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
-  const mcpIa = () => options.ia?.configMcp() ?? null;
+  /* Les livrables des agents (outil publier_artefact du serveur MCP local) : retenus ici, recopiés par l'app. */
+  const rendus = creerRendus({ home, donnees, publier });
+  options.ia?.surPublication((appelant, args) => rendus.publier(appelant, args));
+  /** La configuration MCP d'une session : l'agent et la conversation en en-têtes (qui publie). */
+  const mcpIa = (demande = {}) => options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation: demande.conversation ?? demande.contexte?.chatId ?? "" }) ?? null;
 
   const codex = creerCodex({
     home,
     version: options.version ?? "1",
     publier,
     consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
+    consignesKlyra: () => lireEquipe().configuration.consignes,
     estActif,
     mcp: mcpIa,
     generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
@@ -327,9 +438,16 @@ export function creerAgents(options) {
       return;
     }
     if (msg.type === "result") {
+      /* Ce que ce tour a consommé, même un tour vide (tâche de fond), comme dans l'app : l'écart du
+         `modelUsage` cumulé (consommation-ecart.mjs), rendu au PC avec la fin de la réponse. */
+      const { cumul, lignes } = ecartModelUsage(msg.modelUsage, proc.cumul);
+      proc.cumul = cumul;
+      proc.aCompter.push(...lignes);
       if (!courant) return;
       if (!courant.activite && !courant.arretee && msg.subtype === "success" && !msg.is_error && !msg.result) return;
       const ok = !courant.arretee && !msg.is_error && msg.subtype === "success";
+      const consommation = proc.aCompter.length ? { agent: proc.agent, lignes: proc.aCompter } : undefined;
+      proc.aCompter = [];
       finirTour(proc, courant, {
         type: "fin",
         ok,
@@ -337,13 +455,15 @@ export function creerAgents(options) {
         erreur: ok ? undefined : courant.arretee ? "Arrêté par toi." : (typeof msg.result === "string" && msg.result) || "L’agent s’est arrêté sur une erreur.",
         costUsd: typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : undefined,
         sessionId: typeof msg.session_id === "string" ? msg.session_id : undefined,
+        ...(consommation ? { consommation } : {}),
       });
     }
   }
 
   function lancer(bin, args, cwd, signature, demande, acces) {
-    const child = spawn(bin, args, { cwd, env: environnement(), stdio: ["pipe", "pipe", "pipe"] });
-    const proc = { child, signature, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0 };
+    const child = spawn(bin, args, { cwd, env: environnement(configurationDe()), stdio: ["pipe", "pipe", "pipe"] });
+    /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
+    const proc = { child, signature, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [] };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
     let tampon = "";
     let stderr = "";
@@ -381,6 +501,7 @@ export function creerAgents(options) {
     if (demande.effort && !(codexDemande ? EFFORTS_CODEX : EFFORTS_CLAUDE).includes(demande.effort)) return "Effort invalide.";
     if (demande.acces && !["demander", "projet", "tout"].includes(demande.acces)) return "Accès invalide.";
     if (demande.dossier !== null && demande.dossier !== undefined && (typeof demande.dossier !== "string" || !path.isAbsolute(demande.dossier))) return "Dossier invalide.";
+    if (demande.skill !== undefined && demande.skill !== null && (typeof demande.skill !== "string" || !/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(demande.skill))) return "Compétence invalide.";
     return null;
   }
 
@@ -410,8 +531,20 @@ export function creerAgents(options) {
     if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
 
     const acces = demande.acces ?? "projet";
-    const mcp = mcpIa();
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0]);
+    const mcp = mcpIa(demande);
+    /* Les skills, comme dans l'app (cf. electron/connaissances-agent.ts) : celles que la fiche précharge,
+       que Claude Code ne donne pas à un agent lancé seul, et `/<skill>` remis en tête du message. */
+    const configClaude = path.join(home, ".claude");
+    let fiche = null;
+    try {
+      fiche = demande.agent ? readFileSync(path.join(dossierAgents, `${demande.agent}.md`), "utf8") : null;
+    } catch {
+      fiche = null;
+    }
+    const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd) : { noms: [], texte: null };
+    const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, skillsConnues(configClaude, cwd));
+    const configuration = configurationDe();
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     if (ouvert && vivant(ouvert) && (ouvert.signature === signature || ouvert.tours.length)) {
@@ -446,18 +579,18 @@ export function creerAgents(options) {
         "--settings",
         REGLE_AGENTS,
       ];
-      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA] : []));
+      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER] : []));
       if (mcp) args.push("--mcp-config", mcp);
       if (demande.agent) args.push("--agent", demande.agent);
       if (demande.sessionId) args.push("--resume", demande.sessionId);
       if (demande.modele) args.push("--model", demande.modele);
       if (demande.effort) args.push("--effort", demande.effort);
       const consigne = demande.agent === null ? consigneAssistant() : consigneAgent(demande.agent);
-      args.push("--append-system-prompt", `${ici()}\n\n${consigne}`);
+      args.push("--append-system-prompt", [ici(), consigne, ...(configuration.consignes ? [configuration.consignes] : []), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
       proc = lancer(bin, args, cwd, signature, demande, acces);
     }
     ajouterTour(proc, nouveauTour(proc, requestId, acces));
-    ecrire(proc, { type: "user", message: { role: "user", content: demande.prompt } });
+    ecrire(proc, { type: "user", message: { role: "user", content: prompt } });
   }
 
   function autoriser(requestId, demandeId, decision) {
@@ -499,5 +632,8 @@ export function creerAgents(options) {
     env: environnement,
   };
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
+  /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
+  const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
+
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
 }

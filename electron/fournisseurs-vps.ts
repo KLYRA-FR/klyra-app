@@ -14,11 +14,11 @@ const ATTENTE_MS = 20_000;
 const ATTENTE_TEST_MS = 130_000;
 const TRAVAIL_MAX_MS = 15 * 60_000;
 const CONNEXION_MAX_MS = 15 * 60_000;
-const VIEUX_SERVEUR = "Ce VPS ne connaît pas encore les fournisseurs : relance la commande d’installation sur le VPS pour le mettre à jour.";
+export const VIEUX_SERVEUR = "Ce VPS ne connaît pas encore les fournisseurs : relance la commande d’installation sur le VPS pour le mettre à jour.";
 
 type Json = Record<string, unknown>;
 
-async function appel(origine: string, jeton: string | null, chemin: string, methode: "GET" | "POST" = "GET", corps?: unknown, delai = ATTENTE_MS): Promise<Json> {
+export async function appel(origine: string, jeton: string | null, chemin: string, methode: "GET" | "POST" = "GET", corps?: unknown, delai = ATTENTE_MS): Promise<Json> {
   if (!jeton) throw new Error("Ce PC n’est plus relié à ce VPS. Relance la commande sur le VPS et colle le nouveau lien dans Serveurs.");
   const controle = new AbortController();
   const minuterie = setTimeout(() => controle.abort(), delai);

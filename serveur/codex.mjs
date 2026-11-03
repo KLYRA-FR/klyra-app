@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
+import { consigneSkillsCodex, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { binaireGere } from "./installation.mjs";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
@@ -16,7 +17,7 @@ const CONNEXION_MAX_MS = 15 * 60 * 1000;
 
 /**
  * @param {{ home: string, version: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
- *   consigne: (agent: string | null) => string, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
+ *   consigne: (agent: string | null) => string, consignesKlyra?: () => string | null, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
  *   codex?: string | null }} options
  */
 export function creerCodex(options) {
@@ -173,8 +174,13 @@ export function creerCodex(options) {
 
   /** La fiche de l'agent (`~/.claude/agents/<nom>.md`, envoyée par l'app), sans son en-tête. */
   function ficheDe(agent) {
+    const brute = ficheBrute(agent);
+    return brute ? corpsDeFiche(brute) : null;
+  }
+  /** La fiche entière, en-tête compris (ses `skills`). */
+  function ficheBrute(agent) {
     const fichier = path.join(home, ".claude", "agents", `${agent}.md`);
-    return existsSync(fichier) ? corpsDeFiche(readFileSync(fichier, "utf8")) : null;
+    return existsSync(fichier) ? readFileSync(fichier, "utf8") : null;
   }
 
   const CONSIGNE_CODEX = "Dans cette session, tu travailles avec ChatGPT (Codex) et tu ne peux confier aucun travail à un autre agent : fais ta part seul et dis ce qui reste.";
@@ -193,14 +199,18 @@ export function creerCodex(options) {
     await pret();
     const acces = demande.acces ?? "projet";
     const politique = accesCodex(acces);
-    const signature = JSON.stringify([demande.agent, options.generation()]);
+    /* Les consignes KLYRA adoptées sur le PC (reçues avec l'équipe), données aussi à Codex, comme `consignesApp` dans l'app. */
+    const consignesKlyra = options.consignesKlyra?.() ?? null;
+    /* Les skills de Claude sur ce VPS, que Codex ne lit pas de lui-même (cf. electron/connaissances-agent.ts). */
+    const skills = consigneSkillsCodex(demande.agent ? ficheBrute(demande.agent) : null, path.join(home, ".claude"), cwd);
+    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms]);
     const reglages = () => {
-      const mcp = options.mcp();
+      const mcp = options.mcp(demande);
       return {
         cwd,
         approvalPolicy: politique.approvalPolicy,
         sandbox: politique.sandbox,
-        developerInstructions: [demande.agent ? ficheDe(demande.agent) : null, options.consigne(demande.agent), CONSIGNE_CODEX].filter(Boolean).join("\n\n"),
+        developerInstructions: [demande.agent ? ficheDe(demande.agent) : null, options.consigne(demande.agent), consignesKlyra, skills.texte, CONSIGNE_CODEX].filter(Boolean).join("\n\n"),
         config: { mcp_servers: mcpPourCodex(mcp) },
         ...(demande.modele ? { model: demande.modele } : {}),
       };
@@ -235,7 +245,7 @@ export function creerCodex(options) {
     try {
       const r = await requete("turn/start", {
         threadId,
-        input: [{ type: "text", text: demande.prompt, text_elements: [] }],
+        input: [{ type: "text", text: promptAvecSkillCodex(demande.prompt, demande.skill ?? null, path.join(home, ".claude"), cwd), text_elements: [] }],
         cwd,
         approvalPolicy: politique.approvalPolicy,
         sandboxPolicy: politique.sandboxPolicy,
