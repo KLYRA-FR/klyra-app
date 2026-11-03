@@ -9,6 +9,7 @@ export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../
 import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
 import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
+import type { EtatConsignesProjet } from "../../electron/consignes-projet";
 export type { EtatConnect };
 
 /** Un MCP direct branché dans la Marketplace : tout, sauf le jeton. */
@@ -362,6 +363,9 @@ export interface KlyraBridge {
     /** Ouvre le fichier avec l'app par défaut du Mac. */
     ouvrirFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
     montrerFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
+    /** Les consignes du projet pour ses agents (electron/consignes-projet.ts). Absent avant la relance de l'app. */
+    consignes?: (dossier: string, nom: string) => Promise<Reponse<EtatConsignesProjet>>;
+    ecrireConsignes?: (dossier: string, nom: string) => Promise<Reponse<EtatConsignesProjet>>;
   };
   artefacts: {
     /** Les artefacts claude.ai de la personne, lus dans sa galerie par la session claude.ai de l'app. */

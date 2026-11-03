@@ -36,7 +36,7 @@ const IGNORES = new Set([
   "coverage",
   ".DS_Store",
 ]);
-function absolu(dossier: string): string {
+export function absolu(dossier: string): string {
   return dossier.startsWith("~") ? path.join(os.homedir(), dossier.slice(1)) : dossier;
 }
 
