@@ -238,8 +238,13 @@ const OUTILS_FILS = [
   },
   {
     name: "arreter_fil",
-    description: "Arrête le travail en cours d'un fil, sans le fermer.",
+    description: "Suspend le travail d'un fil, sans le fermer. Aucun nouveau départ tant qu'il n'est pas repris après contrôle.",
     inputSchema: { type: "object", properties: { id }, required: ["id"] },
+  },
+  {
+    name: "reprendre_fil",
+    description: "Reprend un fil suspendu, après un contrôle nommé dans controle. Un fil terminé ou annulé ne reprend pas.",
+    inputSchema: { type: "object", properties: { id, controle: { type: "string", description: "La référence du contrôle qui autorise la reprise." } }, required: ["id", "controle"] },
   },
   {
     name: "fermer_fil",

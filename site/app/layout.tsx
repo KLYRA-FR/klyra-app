@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: { default: "KLYRA — ton équipe d’agents, sur ton poste", template: "%s · KLYRA" },
   description:
     "L’app de bureau KLYRA réunit tes conversations avec les agents, tes projets, tes tickets et tes routines, sur ton poste ou sur ton VPS.",
-  icons: { icon: icone.src },
+  icons: { icon: icone },
 };
 
 export const viewport: Viewport = {

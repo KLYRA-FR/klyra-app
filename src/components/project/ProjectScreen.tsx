@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar, EmptyState } from "klyra-ui";
 import { PromptBox } from "@/components/chat/PromptBox";
+import { TravauxProjet } from "@/components/project/TravauxProjet";
 import { BoutonEpingle } from "@/components/chat/BoutonEpingle";
 import { estEpinglee } from "@/lib/epinglage";
 import { Icon } from "@/components/icons/Icon";
@@ -177,6 +178,8 @@ export function ProjectScreen() {
             <p className="m-0 px-1 text-ui text-texte-tertiaire">Pas encore de chat : écris le premier au-dessus.</p>
           )}
         </section>
+
+        <TravauxProjet projectId={project.id} />
       </div>
     </div>
   );
