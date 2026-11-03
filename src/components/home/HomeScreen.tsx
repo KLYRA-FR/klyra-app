@@ -18,7 +18,7 @@ import { aujourdhui } from "@/lib/dates";
 import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
 import { deuxiemeBloc, premierBloc } from "@/lib/mouvement";
 import { findMention } from "@/lib/mentions";
-import { idDirect, useProjects, useRole, useRoles, useWorkspace } from "@/lib/workspace";
+import { useIdDirect, useProjects, useRole, useRoles, useWorkspace } from "@/lib/workspace";
 import type { RoleId } from "@/types/domain";
 
 const AUTO = "auto";
@@ -62,6 +62,7 @@ export function HomeScreen() {
   const router = useRouter();
   const { state, moi, startChat, sendMessage } = useWorkspace();
   const roles = useRoles();
+  const idDirect = useIdDirect();
   const assistant = useRole("principal");
   const { assistantANommer, status } = useAgents();
   /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
@@ -114,7 +115,7 @@ export function HomeScreen() {
     if (!projectId) {
       const chatId = idDirect(recipient ?? "principal");
       sendMessage(chatId, message, null, fichiers);
-      router.push(`/chat?id=${chatId}`);
+      router.push(`/chat?id=${encodeURIComponent(chatId)}`);
       return;
     }
     const chatId = startChat(projectId, message, recipient, fichiers);

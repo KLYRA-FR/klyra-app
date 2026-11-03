@@ -18,7 +18,7 @@ import { nomFichier } from "@/lib/fichiers";
 import { identifiantDe } from "@/lib/noms-agents";
 import { poste } from "@/lib/plateforme";
 import { confierAEditeur } from "@/lib/proposition-agent";
-import { idDirect, useRole } from "@/lib/workspace";
+import { useIdDirect, useRole } from "@/lib/workspace";
 import { PastilleExtension } from "./PastilleExtension";
 import type {
   ChangedFile,
@@ -218,12 +218,13 @@ export function PassationView({
   etapes: number;
 }) {
   const role = useRole(roleId);
+  const idDirect = useIdDirect();
   const libelle = statut === "en-cours" ? "Confié à" : statut === "fait" ? "Rendu par" : "Arrêté chez";
   return (
     <div className="flex min-h-6 max-w-[680px] flex-wrap items-center justify-center gap-x-1.5 gap-y-1 self-center px-4 text-center text-ui-xs text-texte-tertiaire">
       <span className={cn(statut === "en-cours" && "klyra-respire")}>{libelle}</span>
       <Link
-        href={`/chat?id=${idDirect(roleId)}`}
+        href={`/chat?id=${encodeURIComponent(idDirect(roleId))}`}
         className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-bordure-subtile bg-fond-surface pr-2.5 pl-px font-medium text-texte-principal no-underline transition-colors duration-[120ms] hover:border-bordure-forte"
       >
         <AgentRond roleId={roleId} taille={20} />

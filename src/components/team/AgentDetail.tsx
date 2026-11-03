@@ -18,7 +18,7 @@ import { useCompte } from "@/lib/compte";
 import { lienDe, type Lien } from "@/lib/lien-bibliotheque";
 import { poste } from "@/lib/plateforme";
 import { useRoutines } from "@/lib/routines";
-import { useWorkspace } from "@/lib/workspace";
+import { useIdDirect, useWorkspace } from "@/lib/workspace";
 import type { Role, RoleSection } from "@/types/domain";
 import { LigneRole } from "./AgentCard";
 import { AgentVisuel, couleurAgent } from "./AgentVisuel";
@@ -151,6 +151,7 @@ function FicheAgent({ role }: { role: Role }) {
   const router = useRouter();
   const { canEdit, reveal, tous, roles, activer, ajouter } = useAgents();
   const { state, arreter } = useWorkspace();
+  const versDirect = useIdDirect();
   const { routines } = useRoutines();
   const compte = useCompte();
   const bibliotheque = useBibliotheque();
@@ -300,9 +301,9 @@ function FicheAgent({ role }: { role: Role }) {
             {/* Actions, sous l'identité : la place est là, à côté de l'illustration. */}
             <div className="mt-1 flex flex-wrap items-center gap-2">
               {statut === "actif" ? (
-                <BoutonPrincipal href={`/chat?id=dm-${role.id}`}>Écrire à {role.name}</BoutonPrincipal>
-              ) : statut === "desactive" && state.chats.some((c) => c.id === `dm-${role.id}`) ? (
-                <BoutonPrincipal href={`/chat?id=dm-${role.id}`}>Voir ses conversations</BoutonPrincipal>
+                <BoutonPrincipal href={`/chat?id=${encodeURIComponent(versDirect(role.id))}`}>Écrire à {role.name}</BoutonPrincipal>
+              ) : statut === "desactive" && state.chats.some((c) => c.id === versDirect(role.id)) ? (
+                <BoutonPrincipal href={`/chat?id=${encodeURIComponent(versDirect(role.id))}`}>Voir ses conversations</BoutonPrincipal>
               ) : null}
               <Bouton
                 variant="blanc"

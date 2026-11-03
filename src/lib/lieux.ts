@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import type { Chat } from "@/types/domain";
+import type { Chat, RoleId } from "@/types/domain";
 import { CLE_CARNET, interroger, lireCarnet, sondeDe, type Carnet, type ServeurConnu, type Sonde } from "./serveur-vps";
 
 /**
  * Où tourne une conversation : ce PC (null) ou un VPS relié (son origine https).
- * Les VPS viennent du carnet de l'écran Serveurs. La machine active, choisie dans le sélecteur
- * du rail, sert aux conversations directes et aux nouveaux projets, routines et conversations.
+ * Les VPS viennent du carnet de l'écran Serveurs. La machine active, choisie dans le sélecteur,
+ * est l'espace affiché, comme dans OpenBot : ses conversations, ses projets et ses routines.
+ * Ce qu'on crée y va. Une conversation ne change jamais de machine.
  */
 
 const CLE_LIEU = "klyra:lieu-actif";
@@ -102,23 +103,53 @@ export function useLieuActif(): string | null {
   return useSyncExternalStore(abonnerLieu, lieuParDefaut, () => null);
 }
 
-/** La clé d'une machine dans `Chat.sessionsParLieu`. */
-function cleLieu(lieu: string | null): string {
-  return lieu ?? "pc";
+/** Un élément (conversation, projet, routine) est-il dans l'espace de cette machine ? Ce PC : `null`. */
+export function dansEspace(lieu: string | null | undefined, espace: string | null): boolean {
+  return (lieu ?? null) === espace;
+}
+
+/** L'hôte d'un VPS, tel qu'il figure dans l'id d'une conversation directe (`dm-<agent>@<hôte>`). */
+export function hoteDe(lieu: string): string {
+  try {
+    return new URL(lieu).host;
+  } catch {
+    return lieu;
+  }
+}
+
+/** Le VPS relié qui a cet hôte ; à défaut, son adresse https. */
+export function lieuDeHote(hote: string): string {
+  return lire().find((s) => hoteDe(s.adresse) === hote)?.adresse ?? `https://${hote}`;
+}
+
+/** Préfixe des conversations directes : `dm-<agent>`, et `dm-<agent>@<hôte>` sur un VPS. */
+export const DIRECT = "dm-";
+/** `dm-<agent>@pc` : la conversation de ce PC quand `dm-<agent>` est restée à un VPS (avant l'espace par serveur). */
+const SUR_PC = "pc";
+
+/** L'agent et l'hôte (null : ce PC) qu'annonce l'id d'une conversation directe. */
+export function lireIdDirect(id: string): { roleId: RoleId; hote: string | null } | null {
+  if (!id.startsWith(DIRECT)) return null;
+  const reste = id.slice(DIRECT.length);
+  const at = reste.indexOf("@");
+  if (at < 0) return { roleId: reste, hote: null };
+  const hote = reste.slice(at + 1);
+  return { roleId: reste.slice(0, at), hote: hote === SUR_PC ? null : hote };
 }
 
 /**
- * La conversation passe sur une autre machine. Une session n'existe que là où elle a été créée :
- * celles d'ici restent de côté, celles que la conversation avait laissées là-bas reviennent.
+ * La conversation directe avec un agent dans l'espace d'une machine : une par agent et par serveur.
+ * Celle qui existe est reprise, même sous un id d'avant (`dm-<agent>` restée sur un VPS). Sinon :
+ * `dm-<agent>` sur ce PC, `dm-<agent>@<hôte>` sur un VPS, `dm-<agent>@pc` si l'id simple est pris.
  */
-export function changerDeLieu(chat: Chat, lieu: string | null): Chat {
-  const avant = chat.lieu ?? null;
-  if (avant === lieu) return chat;
-  const { [cleLieu(lieu)]: reprises = {}, ...autres } = chat.sessionsParLieu ?? {};
-  const laissees = Object.keys(chat.sessions).length ? { ...autres, [cleLieu(avant)]: chat.sessions } : autres;
-  const suivant: Chat = { ...chat, lieu, sessions: reprises, sessionsParLieu: laissees };
-  if (!Object.keys(laissees).length) delete suivant.sessionsParLieu;
-  return suivant;
+export function idDirect(roleId: RoleId, lieu: string | null = null, chats: readonly Chat[] = []): string {
+  const existante = chats.find(
+    (c) => c.kind === "direct" && !c.fil && lireIdDirect(c.id)?.roleId === roleId && dansEspace(c.lieu, lieu),
+  );
+  if (existante) return existante.id;
+  if (lieu) return `${DIRECT}${roleId}@${hoteDe(lieu)}`;
+  const simple = `${DIRECT}${roleId}`;
+  return chats.some((c) => c.id === simple) ? `${simple}@${SUR_PC}` : simple;
 }
 
 /** La dernière sonde de chaque VPS relié, relue quand la liste change (Réglages › Mobile, Ce téléphone). */

@@ -9,7 +9,7 @@ import { formatListDate } from "@/lib/format";
 import { estEpinglee } from "@/lib/epinglage";
 import { BoutonEpingle } from "@/components/chat/BoutonEpingle";
 import {
-  idDirect,
+  useIdDirect,
   useAgentOccupe,
   useChatMessages,
   useChatPreview,
@@ -101,7 +101,8 @@ function Corps({
 
 /** Un agent : un clic ouvre sa conversation directe. */
 export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
-  const chatId = idDirect(role.id);
+  // Sa conversation sur le serveur affiché : chaque serveur a la sienne.
+  const chatId = useIdDirect()(role.id);
   const apercu = useChatPreview(chatId);
   const travail = useTravail(chatId);
   const messages = useChatMessages(chatId);
@@ -118,7 +119,7 @@ export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
 
   return (
     <Link
-      href={`/chat?id=${chatId}`}
+      href={`/chat?id=${encodeURIComponent(chatId)}`}
       aria-current={active ? "page" : undefined}
       className={cn(LIGNE, active ? LIGNE_ACTIVE : LIGNE_REPOS)}
     >

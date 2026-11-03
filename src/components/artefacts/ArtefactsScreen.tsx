@@ -17,7 +17,7 @@ import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { poste } from "@/lib/plateforme";
 import { nomDuFichier } from "@/lib/rendus";
-import { idDirect, useProjects, useRole, useWorkspace } from "@/lib/workspace";
+import { useIdDirect, useProjects, useRole, useWorkspace } from "@/lib/workspace";
 import type { Artefact, Rendu, TypeRendu } from "@/types/domain";
 import { DESCRIPTION_MAX, lienArtefact } from "../../../convex/model/artefacts";
 
@@ -142,6 +142,7 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
   const projects = useProjects();
   const projet = projects.find((p) => p.id === artefact.projectId);
   const { modifierArtefact, supprimerArtefact } = useWorkspace();
+  const idDirect = useIdDirect();
   const { image, carte } = useVignette({ type: "claude", url: artefact.url }, session, version);
   const [edition, setEdition] = useState(false);
   const [titre, setTitre] = useState(artefact.titre);
@@ -165,7 +166,7 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
   };
   const modifierAvecAgent = () => {
     const brouillon = `Modifie l’artefact « ${artefact.titre} » (${artefact.url}) : `;
-    router.push(`/chat?id=${idDirect("principal")}&brouillon=${encodeURIComponent(brouillon)}`);
+    router.push(`/chat?id=${encodeURIComponent(idDirect("principal"))}&brouillon=${encodeURIComponent(brouillon)}`);
   };
 
   return (

@@ -6,7 +6,8 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
-import { idDirect, useTravail, useWorkspace } from "@/lib/workspace";
+import { useIdDirect, useTravail, useWorkspace } from "@/lib/workspace";
+import { dansEspace } from "@/lib/lieux";
 import { colonneTicket } from "@/lib/tickets";
 import { useFermerTicket } from "@/components/tickets/useFermerTicket";
 import type { Chat, RoleId } from "@/types/domain";
@@ -129,8 +130,10 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
   const router = useRouter();
   const { state, creerFil, renommerChat, rouvrirFil } = useWorkspace();
   const fermerTicket = useFermerTicket();
-  const principal = idDirect(roleId);
-  const fils = state.chats.filter((c) => c.fil?.roleId === roleId).sort((a, b) => a.fil!.creeLe.localeCompare(b.fil!.creeLe));
+  const principal = useIdDirect()(roleId);
+  const lieu = state.chats.find((c) => c.id === chatId)?.lieu;
+  // Les fils de l'agent sur le serveur de cette conversation (ceux de ce PC : leurs outils sont les siens).
+  const fils = state.chats.filter((c) => c.fil?.roleId === roleId && dansEspace(c.lieu, lieu ?? null)).sort((a, b) => a.fil!.creeLe.localeCompare(b.fil!.creeLe));
   const ouverts = fils.filter((c) => c.fil!.statut === "ouvert");
   const archives = fils.filter((c) => c.fil!.statut === "archive" && !c.fil!.supprime).reverse();
   const chatPrincipal = state.chats.find((c) => c.id === principal) ?? ({ id: principal, roleIds: [roleId] } as Chat);

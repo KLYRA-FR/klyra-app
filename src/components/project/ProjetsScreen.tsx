@@ -10,7 +10,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge } from "@/lib/bridge";
-import { lieuParDefaut, useServeursRelies } from "@/lib/lieux";
+import { lieuParDefaut, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
@@ -42,21 +42,14 @@ function identifiant(nom: string, existants: Project[]): string {
 
 /** Les projets d'un VPS vivent sous le dossier de l'utilisateur klyra (serveur/lancer.sh, serveur/fichiers.mjs). */
 const RACINE_VPS = "/var/lib/klyra/projets";
-const nomDossier = (nom: string) =>
-  nom
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
 
 /** Ajouter ou modifier un projet : son dossier sur ce Mac (ou sur un VPS relié), son nom, à quoi il sert. */
 function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini: (id: string | null) => void }) {
   const projects = useProjects();
   const { enregistrerProjet } = useWorkspace();
   const bridge = getBridge();
-  // Un nouveau projet part sur la machine active (sélecteur du rail).
-  const [lieu, setLieu] = useState<string | null>(() => (initial ? (initial.lieu ?? null) : lieuParDefaut()));
+  // Un nouveau projet va dans l'espace affiché, celui du serveur choisi.
+  const [lieu] = useState<string | null>(() => (initial ? (initial.lieu ?? null) : lieuParDefaut()));
   const [folder, setFolder] = useState(() => initial?.folder ?? (lieu ? `${RACINE_VPS}/projet` : ""));
   const [name, setName] = useState(initial?.name ?? "");
   const [subtitle, setSubtitle] = useState(initial?.subtitle ?? "");
@@ -120,17 +113,8 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   return (
     <form onSubmit={(e) => void enregistrer(e)} className="klyra-carte-flottante @container flex flex-col gap-5 rounded-lg p-5">
       {(serveurs.length > 0 || surVps) && (
-        <Champ label="Machine" aide={initial ? "Un projet reste sur sa machine." : "Ses conversations y tournent, et ses fichiers y vivent."}>
-          <ListeDeroulante
-            value={lieu ?? "pc"}
-            disabled={!!initial}
-            options={[{ value: "pc", label: "Ce PC" }, ...serveurs.map((s) => ({ value: s.adresse, label: s.nom }))]}
-            onChange={(valeur) => {
-              const suivant = valeur === "pc" ? null : valeur;
-              setLieu(suivant);
-              setFolder(suivant ? `${RACINE_VPS}/${nomDossier(name) || "projet"}` : "");
-            }}
-          />
+        <Champ label="Serveur" aide={initial ? "Un projet reste sur son serveur." : "Celui du menu Serveurs. Ses conversations y tournent, et ses fichiers y vivent."}>
+          <p className="m-0 text-ui text-texte-principal">{nomLieu(lieu, serveurs)}</p>
         </Champ>
       )}
       {surVps ? (

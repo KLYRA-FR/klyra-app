@@ -16,7 +16,7 @@ import { BridgeError, getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { FOURNISSEURS, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { pret, useMoteurs } from "@/lib/moteurs";
-import { useRole, useWorkspace } from "@/lib/workspace";
+import { idDirect, useRole, useWorkspace } from "@/lib/workspace";
 import type { Role } from "@/types/domain";
 import { ancreReglage, Erreur, Groupe, Ligne, SeulementBureau } from "../ui";
 
@@ -75,7 +75,7 @@ function FournisseurAgent({ role }: { role: Role }) {
     setErreur(null);
     try {
       await changerFournisseur(role.id, fournisseur);
-      const direct = state.chats.find((c) => c.id === `dm-${role.id}`);
+      const direct = state.chats.find((c) => c.id === idDirect(role.id, null, state.chats));
       if (direct && !direct.lieu && !state.travail[direct.id] && (direct.fournisseur || PAR_DEFAUT) !== fournisseur) choisirFournisseur(direct.id, fournisseur, null, null);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));

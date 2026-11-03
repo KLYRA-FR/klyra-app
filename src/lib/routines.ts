@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBridge } from "@/lib/bridge";
+import { dansEspace, useLieuActif } from "@/lib/lieux";
 import type { Routine, RoutineInput, RoutinePatch, RoutineRun } from "@/types/routines";
 
-/** Source de l'écran : uniquement le moteur Electron, jamais les anciennes routines du workspace. */
+/** Source de l'écran : uniquement le moteur Electron, jamais les anciennes routines du workspace.
+ *  `routines` : celles de l'espace affiché (le serveur choisi) ; `toutes` : celles de chaque serveur. */
 export function useRoutines() {
   const api = getBridge()?.routines;
+  const espace = useLieuActif();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [enCours, setEnCours] = useState<RoutineRun[]>([]);
   const [version, setVersion] = useState(0);
@@ -60,8 +63,9 @@ export function useRoutines() {
     if (!r.ok) throw Object.assign(new Error(r.message), { code: r.code });
     return r.data;
   };
+  const ici = useMemo(() => routines.filter((r) => dansEspace(r.lieu, espace)), [routines, espace]);
   return {
-    routines, enCours, charge, actif, erreur, actualiser, revision: version,
+    routines: ici, toutes: routines, enCours, charge, actif, erreur, actualiser, revision: version,
     creer: (input: RoutineInput) => demander(() => api!.creer(input)),
     modifier: (id: string, patch: RoutinePatch) => demander(() => api!.modifier(id, patch)),
     supprimer: (id: string) => demander(() => api!.supprimer(id)),

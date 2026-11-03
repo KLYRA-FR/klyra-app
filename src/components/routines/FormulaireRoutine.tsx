@@ -46,7 +46,7 @@ function normaliser(input?: RoutineInput | Routine | null): Valeurs {
     active: input?.active ?? true,
     missedPolicy: input?.schedule.kind === "once" ? "run-once" : input?.missedPolicy ?? "skip",
     projectId: input?.projectId ?? null,
-    // Une routine existante garde sa machine ; une nouvelle part sur la machine active (sélecteur du rail).
+    // Une routine existante garde son serveur ; une nouvelle va dans l'espace affiché (menu Serveurs).
     lieu: input && "id" in input ? (input.lieu ?? null) : (input?.lieu ?? lieuParDefaut()),
   };
 }
@@ -267,14 +267,8 @@ function SaisieRoutine({ initiale, valeursInitiales, onEnregistrer, onAnnuler, o
         )}
       </div>
       {(serveursRelies.length > 0 || valeurs.lieu) && (
-        <Champ label="Machine" aide={initiale ? "Une routine reste sur sa machine." : "Sur un VPS, elle tourne même quand ce PC est éteint."}>
-          <ListeDeroulante libelle="Machine" value={valeurs.lieu ?? "pc"} disabled={occupé || !!initiale}
-            options={[
-              { value: "pc", label: "Ce PC" },
-              ...serveursRelies.map((s) => ({ value: s.adresse, label: s.nom })),
-              ...(valeurs.lieu && !serveursRelies.some((s) => s.adresse === valeurs.lieu) ? [{ value: valeurs.lieu, label: `${nomLieu(valeurs.lieu, serveursRelies)} (plus relié)`, disabled: true }] : []),
-            ]}
-            onChange={(value) => setValeurs((courantes) => ({ ...courantes, lieu: value === "pc" ? null : value, projectId: null }))} />
+        <Champ label="Serveur" aide={initiale ? "Une routine reste sur son serveur." : "Celui du menu Serveurs. Sur un VPS, elle tourne même quand ce PC est éteint."}>
+          <p className="m-0 text-ui text-texte-principal">{nomLieu(valeurs.lieu, serveursRelies)}</p>
         </Champ>
       )}
       <div data-champ="projectId">

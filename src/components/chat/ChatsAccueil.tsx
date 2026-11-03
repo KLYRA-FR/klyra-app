@@ -2,11 +2,12 @@
 
 import { AgentRond } from "@/components/roles/AgentRond";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
-import { idDirect, useRole, useRoles } from "@/lib/workspace";
+import { useIdDirect, useRole, useRoles } from "@/lib/workspace";
 
 /** Aucun chat ouvert : on choisit un agent dans le panneau, ou on écrit à l'assistant. */
 export function ChatsAccueil() {
   const assistant = useRole("principal");
+  const idDirect = useIdDirect();
   const seul = useRoles().length <= 1;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-12 text-center">
@@ -29,7 +30,7 @@ export function ChatsAccueil() {
             : `Choisis-le dans le panneau à gauche. Tu ne sais pas à qui confier ta demande ? ${assistant.name} la répartit.`}
         </p>
       </div>
-      <BoutonPrincipal href={`/chat?id=${idDirect("principal")}`}>Écrire à {assistant.name}</BoutonPrincipal>
+      <BoutonPrincipal href={`/chat?id=${encodeURIComponent(idDirect("principal"))}`}>Écrire à {assistant.name}</BoutonPrincipal>
     </div>
   );
 }
