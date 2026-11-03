@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond, VisuelAgent, type StatutAgent } from "@/components/roles/AgentRond";
 import { cn } from "@/lib/cn";
@@ -31,7 +31,7 @@ export const LIGNE_ACTIVE = "bg-fond-surface-grise";
 export const LIGNE_REPOS = "hover:bg-fond-survol";
 
 /** Ce que l'agent fait en ce moment, tiré de la dernière étape de sa réponse. */
-function etapeEnCours(messages: Message[], messageId: string): string | null {
+export function etapeEnCours(messages: Message[], messageId: string): string | null {
   const message = messages.find((m) => m.id === messageId);
   if (!message) return null;
   // Une demande d'autorisation passe avant tout : l'agent est bloqué tant que tu ne réponds pas.
@@ -99,8 +99,21 @@ function Corps({
   );
 }
 
-/** Un agent : un clic ouvre sa conversation directe. */
-export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
+/** Un agent : un clic ouvre sa conversation directe, le clic droit son menu (`MenuAgent`). */
+export function LigneAgent({
+  role,
+  active,
+  epingle = false,
+  masque = false,
+  onMenu,
+}: {
+  role: Role;
+  active: boolean;
+  epingle?: boolean;
+  /** Masqué de la liste mais montré quand même (« Voir les masqués », ou sa conversation ouverte). */
+  masque?: boolean;
+  onMenu?: (e: MouseEvent<HTMLElement>) => void;
+}) {
   // Sa conversation sur le serveur affiché : chaque serveur a la sienne.
   const chatId = useIdDirect()(role.id);
   const apercu = useChatPreview(chatId);
@@ -121,7 +134,8 @@ export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
     <Link
       href={`/chat?id=${encodeURIComponent(chatId)}`}
       aria-current={active ? "page" : undefined}
-      className={cn(LIGNE, active ? LIGNE_ACTIVE : LIGNE_REPOS)}
+      onContextMenu={onMenu}
+      className={cn(LIGNE, active ? LIGNE_ACTIVE : LIGNE_REPOS, masque && "opacity-60 hover:opacity-100 focus-visible:opacity-100")}
     >
       <AgentRond roleId={role.id} taille={36} statut={statut} fondPastille="surface" />
       <Corps
@@ -130,6 +144,7 @@ export function LigneAgent({ role, active }: { role: Role; active: boolean }) {
         heure={apercu.at ? formatListDate(apercu.at) : null}
         apercu={texte}
         enCours={enCours}
+        epinglee={epingle}
       />
     </Link>
   );
@@ -169,8 +184,8 @@ export function Grappe({ chat, roles, petite = false }: { chat: Chat; roles: Rol
   );
 }
 
-/** Une conversation d'équipe d'un projet. */
-export function LigneConversation({ chat, active, projet }: { chat: Chat; active: boolean; projet?: string }) {
+/** Une conversation d'équipe d'un projet ; le clic droit ouvre son menu (`MenuConversationBarre`). */
+export function LigneConversation({ chat, active, projet, onMenu }: { chat: Chat; active: boolean; projet?: string; onMenu?: (e: MouseEvent<HTMLElement>) => void }) {
   const roles = useRoles();
   const apercu = useChatPreview(chat.id);
   const travail = useTravail(chat.id);
@@ -183,6 +198,7 @@ export function LigneConversation({ chat, active, projet }: { chat: Chat; active
       href={`/chat?id=${chat.id}`}
       data-conversation={chat.id}
       aria-current={active ? "page" : undefined}
+      onContextMenu={onMenu}
       className={cn(LIGNE, active ? LIGNE_ACTIVE : "group-hover/conv:bg-fond-survol")}
     >
       <span className="relative">

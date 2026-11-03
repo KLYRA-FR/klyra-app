@@ -30,6 +30,7 @@
     "test:conversation": "node scripts/test-conversation.mjs",
     "test:epinglage": "vitest run src/lib/epinglage.test.ts",
     "test:epingler": "node scripts/test-epinglage.mjs",
+    "test:menu-contextuel": "node scripts/test-menu-contextuel.mjs",
     "test:export-document": "vitest run src/lib/export-conversation.test.ts",
     "test:exporter": "node scripts/test-export.mjs",
     "test:apercu": "vitest run src/lib/apercu/apercu.test.ts",

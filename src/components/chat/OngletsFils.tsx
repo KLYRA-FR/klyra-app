@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent as EvenementSouris } from "react";
 import { useRouter } from "next/navigation";
-import { Icon, type IconName } from "@/components/icons/Icon";
+import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
+import { ElementContextuel, MenuContextuel, SeparateurContextuel, useMenuContextuel } from "@/components/ui/MenuContextuel";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
 import { useIdDirect, useTravail, useWorkspace } from "@/lib/workspace";
@@ -13,25 +14,7 @@ import { useFermerTicket } from "@/components/tickets/useFermerTicket";
 import type { Chat, RoleId } from "@/types/domain";
 
 const MENU =
-  "fixed z-50 flex w-max min-w-[240px] flex-col gap-0.5 rounded-lg border border-bordure-subtile bg-fond-surface p-1.5 shadow-ombre-flottante";
-const SEPARATEUR = <span aria-hidden="true" className="my-1 h-px bg-bordure-subtile" />;
-
-function Ligne({ icone, children, onClick, danger }: { icone: IconName; children: ReactNode; onClick: () => void; danger?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className={cn(
-        "flex h-8 cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent px-2 text-left text-ui-s whitespace-nowrap hover:bg-fond-survol",
-        danger ? "text-texte-erreur" : "text-texte-principal",
-      )}
-    >
-      <Icon name={icone} size={16} className={cn("shrink-0", danger ? "text-texte-erreur" : "text-icone-secondaire")} />
-      {children}
-    </button>
-  );
-}
+  "flex w-max min-w-[240px] flex-col gap-0.5 rounded-lg border border-bordure-subtile bg-fond-surface p-1.5 shadow-ombre-flottante";
 
 const ONGLET = "group/onglet flex h-7 max-w-[220px] min-w-0 shrink-0 items-center gap-1.5 rounded-sm pr-1 pl-2 text-ui-xs font-medium transition-colors duration-[120ms]";
 
@@ -52,7 +35,7 @@ function Onglet({
   onOuvrir: () => void;
   /** Absent : l'onglet ne se ferme pas (le chat principal). */
   onFermer?: () => void;
-  onMenu?: (x: number, y: number) => void;
+  onMenu?: (e: EvenementSouris<HTMLElement>) => void;
   onRenommer: (titre: string | null) => void;
 }) {
   const travail = useTravail(chat.id);
@@ -60,11 +43,7 @@ function Onglet({
   const [titre, setTitre] = useState(libelle);
   return (
     <div
-      onContextMenu={(e) => {
-        if (!onMenu) return;
-        e.preventDefault();
-        onMenu(e.clientX, e.clientY);
-      }}
+      onContextMenu={onMenu}
       className={cn(ONGLET, actif ? "bg-fond-surface-grise text-texte-principal" : "text-texte-secondaire hover:bg-fond-survol", !onFermer && "pr-2")}
     >
       {/* Un agent y travaille : le point respire, comme dans la barre latérale. */}
@@ -138,22 +117,20 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
   const archives = fils.filter((c) => c.fil!.statut === "archive" && !c.fil!.supprime).reverse();
   const chatPrincipal = state.chats.find((c) => c.id === principal) ?? ({ id: principal, roleIds: [roleId] } as Chat);
 
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const { menu, ouvrir: ouvrirMenu, fermer: fermerMenu } = useMenuContextuel<string>();
   const [edition, setEdition] = useState<string | null>(null);
   const [listeArchives, setListeArchives] = useState(false);
   const boiteArchives = useRef<HTMLDivElement>(null);
 
-  /* Clic ailleurs ou Échap : les menus se ferment. */
+  /* Clic ailleurs ou Échap : la liste des archivés se ferme (le menu du clic droit se ferme seul). */
   useEffect(() => {
-    if (!menu && !listeArchives) return;
+    if (!listeArchives) return;
     const fermer = (e: MouseEvent) => {
       if ((e.target as HTMLElement).closest("[data-menu-fils]")) return;
-      setMenu(null);
       setListeArchives(false);
     };
     const echap = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      setMenu(null);
       setListeArchives(false);
     };
     document.addEventListener("mousedown", fermer);
@@ -162,7 +139,7 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
       document.removeEventListener("mousedown", fermer);
       document.removeEventListener("keydown", echap);
     };
-  }, [menu, listeArchives]);
+  }, [listeArchives]);
 
   const aller = (id: string) => router.push(`/chat?id=${encodeURIComponent(id)}`);
 
@@ -170,13 +147,12 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
   const clore = (ids: string[], supprime = false) => {
     // Fermer, c'est valider : le rappel confié se coche (sauf « Supprimer »).
     for (const id of ids) fermerTicket(id, supprime);
-    setMenu(null);
     if (ids.includes(chatId)) aller(principal);
   };
 
   const nouveau = () => aller(creerFil(roleId));
 
-  const choisi = menu ? ouverts.find((c) => c.id === menu.id) : undefined;
+  const choisi = menu ? ouverts.find((c) => c.id === menu.cible) : undefined;
   const rang = choisi ? ouverts.indexOf(choisi) : -1;
   // Les fermetures groupées épargnent les fils où un agent travaille encore.
   const libres = (liste: Chat[]) => liste.filter((c) => !state.travail[c.id]).map((c) => c.id);
@@ -195,7 +171,7 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
             enEdition={edition === c.id}
             onOuvrir={() => aller(c.id)}
             onFermer={() => clore([c.id])}
-            onMenu={(x, y) => setMenu({ id: c.id, x, y })}
+            onMenu={(e) => ouvrirMenu(e, c.id)}
             onRenommer={(titre) => {
               if (titre !== null) renommerChat(c.id, titre);
               setEdition(null);
@@ -241,34 +217,28 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
       <BoutonIcone taille="mini" icone={<Icon name="plus-01" size={16} />} libelle="Nouveau fil" onClick={nouveau} className="text-icone-secondaire" />
 
       {menu && choisi && (
-        <div ref={apparition} data-menu-fils role="menu" aria-label={`Fil ${choisi.title}`} className={MENU} style={{ left: menu.x, top: menu.y }}>
-          <Ligne
-            icone="pencil-01"
-            onClick={() => {
-              setEdition(choisi.id);
-              setMenu(null);
-            }}
-          >
+        <MenuContextuel key={choisi.id + menu.x + menu.y} x={menu.x} y={menu.y} libelle={`Fil ${choisi.title}`} onFermer={fermerMenu}>
+          <ElementContextuel icone="pencil-01" onChoisir={() => setEdition(choisi.id)}>
             Renommer
-          </Ligne>
-          {SEPARATEUR}
-          <Ligne icone="x-01" onClick={() => clore([choisi.id])}>
+          </ElementContextuel>
+          <SeparateurContextuel />
+          <ElementContextuel icone="x-01" onChoisir={() => clore([choisi.id])}>
             Fermer l’onglet
-          </Ligne>
-          <Ligne icone="layers-01" onClick={() => clore(libres(ouverts.filter((c) => c.id !== choisi.id)))}>
+          </ElementContextuel>
+          <ElementContextuel icone="layers-01" desactive={ouverts.length < 2} onChoisir={() => clore(libres(ouverts.filter((c) => c.id !== choisi.id)))}>
             Fermer les autres onglets
-          </Ligne>
-          <Ligne icone="chevron-right" onClick={() => clore(libres(ouverts.slice(rang + 1)))}>
+          </ElementContextuel>
+          <ElementContextuel icone="chevron-right" desactive={rang === ouverts.length - 1} onChoisir={() => clore(libres(ouverts.slice(rang + 1)))}>
             Fermer les onglets à droite
-          </Ligne>
-          {SEPARATEUR}
-          <Ligne icone="folder" onClick={() => clore([choisi.id])}>
+          </ElementContextuel>
+          <SeparateurContextuel />
+          <ElementContextuel icone="folder" onChoisir={() => clore([choisi.id])}>
             Archiver
-          </Ligne>
-          <Ligne icone="trash-01" danger onClick={() => clore([choisi.id], true)}>
+          </ElementContextuel>
+          <ElementContextuel icone="trash-01" danger onChoisir={() => clore([choisi.id], true)}>
             Supprimer
-          </Ligne>
-        </div>
+          </ElementContextuel>
+        </MenuContextuel>
       )}
     </div>
   );

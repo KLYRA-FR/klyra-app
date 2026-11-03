@@ -78,7 +78,8 @@ export interface HistoryEntry {
 }
 
 /** Préférences personnelles de chaque agent : rôle court, couleur et nom affiché (sans toucher à la fiche). */
-export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string; modele?: string; fournisseur?: string }>;
+/** Préférences d'un agent sur ce poste. `masque`, `muet`, `epingleLe` : sa place dans la barre et ses notifications, rien de plus. */
+export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: string; modele?: string; fournisseur?: string; masque?: boolean; muet?: boolean; epingleLe?: string }>;
 
 export interface ClaudeResult {
   ok: boolean;

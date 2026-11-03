@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
@@ -65,6 +66,13 @@ export function TicketsScreen() {
   const roles = useRoles();
   /* Rien n'est rendu au build (AppShell attend l'ouverture) : le stockage se lit dès le premier rendu. */
   const [filtres, setFiltres] = useState<FiltresTickets>(lireFiltres);
+  /* « Ses tickets » (clic droit sur un agent) : `/tickets?agent=…` filtre sur lui, sans toucher au reste. */
+  const agentDemande = useSearchParams().get("agent");
+  const [agentVu, setAgentVu] = useState<string | null>(null);
+  if (agentDemande && agentDemande !== agentVu) {
+    setAgentVu(agentDemande);
+    setFiltres((f) => ({ ...f, agent: agentDemande }));
+  }
   const [tousTermines, setTousTermines] = useState(false);
   const changer = (patch: Partial<FiltresTickets>) => {
     const suite = { ...filtres, ...patch };
