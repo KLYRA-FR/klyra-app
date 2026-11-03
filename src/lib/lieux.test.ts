@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chat } from "@/types/domain";
-import { changerDeLieu } from "./lieux";
+import { dansEspace, hoteDe, idDirect, lireIdDirect } from "./lieux";
 
 const VPS = "https://klyra-vps.exemple.ts.net:8791";
 
@@ -8,36 +8,42 @@ function chat(partiel: Partial<Chat> = {}): Chat {
   return { id: "dm-principal", kind: "direct", projectId: null, title: "Principal", roleIds: ["principal"], updatedAt: "2026-11-02T00:00:00.000Z", sessions: {}, luJusqua: null, ...partiel };
 }
 
-describe("changerDeLieu", () => {
-  it("ne change rien sur la même machine", () => {
-    const avant = chat({ lieu: VPS, sessions: { principal: "s-vps" } });
-    expect(changerDeLieu(avant, VPS)).toBe(avant);
-    const pc = chat({ sessions: { principal: "s-pc" } });
-    expect(changerDeLieu(pc, null)).toBe(pc);
+describe("dansEspace", () => {
+  it("range sans lieu dans Ce PC, et chaque VPS à part", () => {
+    expect(dansEspace(undefined, null)).toBe(true);
+    expect(dansEspace(null, null)).toBe(true);
+    expect(dansEspace(VPS, null)).toBe(false);
+    expect(dansEspace(VPS, VPS)).toBe(true);
+    expect(dansEspace(null, VPS)).toBe(false);
+  });
+});
+
+describe("idDirect", () => {
+  it("donne une conversation par agent et par serveur", () => {
+    expect(idDirect("hugo")).toBe("dm-hugo");
+    expect(idDirect("hugo", VPS)).toBe(`dm-hugo@${hoteDe(VPS)}`);
+    expect(hoteDe(VPS)).toBe("klyra-vps.exemple.ts.net:8791");
   });
 
-  it("garde de côté les sessions du PC et part d'une session neuve sur le VPS", () => {
-    const apres = changerDeLieu(chat({ sessions: { principal: "s-pc" } }), VPS);
-    expect(apres.lieu).toBe(VPS);
-    expect(apres.sessions).toEqual({});
-    expect(apres.sessionsParLieu).toEqual({ pc: { principal: "s-pc" } });
+  it("reprend une conversation d'avant restée sur le VPS, et en ouvre une autre pour ce PC", () => {
+    const chats = [chat({ id: "dm-hugo", roleIds: ["hugo"], lieu: VPS })];
+    expect(idDirect("hugo", VPS, chats)).toBe("dm-hugo");
+    expect(idDirect("hugo", null, chats)).toBe("dm-hugo@pc");
+    expect(idDirect("hugo", null, [...chats, chat({ id: "dm-hugo@pc", roleIds: ["hugo"] })])).toBe("dm-hugo@pc");
   });
 
-  it("reprend les sessions laissées quand la conversation revient", () => {
-    const surVps = changerDeLieu(chat({ sessions: { principal: "s-pc" } }), VPS);
-    const travaille = { ...surVps, sessions: { principal: "s-vps" } };
-    const retour = changerDeLieu(travaille, null);
-    expect(retour.lieu).toBeNull();
-    expect(retour.sessions).toEqual({ principal: "s-pc" });
-    expect(retour.sessionsParLieu).toEqual({ [VPS]: { principal: "s-vps" } });
-    const encore = changerDeLieu(retour, VPS);
-    expect(encore.sessions).toEqual({ principal: "s-vps" });
-    expect(encore.sessionsParLieu).toEqual({ pc: { principal: "s-pc" } });
+  it("ne prend ni un fil ni la conversation d'un autre agent", () => {
+    const chats = [
+      chat({ id: "klyra-fil-1a2b", roleIds: ["hugo"], lieu: VPS, fil: { roleId: "hugo" } as Chat["fil"] }),
+      chat({ id: "dm-hugone", roleIds: ["hugone"], lieu: VPS }),
+    ];
+    expect(idDirect("hugo", VPS, chats)).toBe(`dm-hugo@${hoteDe(VPS)}`);
   });
 
-  it("n'écrit rien de vide", () => {
-    const apres = changerDeLieu(chat(), VPS);
-    expect(apres.sessions).toEqual({});
-    expect("sessionsParLieu" in apres).toBe(false);
+  it("relit l'agent et l'hôte d'un id", () => {
+    expect(lireIdDirect("dm-hugo")).toEqual({ roleId: "hugo", hote: null });
+    expect(lireIdDirect("dm-hugo@pc")).toEqual({ roleId: "hugo", hote: null });
+    expect(lireIdDirect(idDirect("hugo", VPS))).toEqual({ roleId: "hugo", hote: hoteDe(VPS) });
+    expect(lireIdDirect("klyra-fil-1a2b")).toBeNull();
   });
 });

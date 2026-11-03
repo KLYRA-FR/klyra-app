@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ajouterAuBrouillon } from "@/lib/brouillons";
-import { idDirect } from "@/lib/workspace";
+import { useIdDirect } from "@/lib/workspace";
 
 /** Le début de la demande, que la personne complète avant d'envoyer (spec §9.2). */
 export const DEBUT_DEMANDE_AGENT = "Aide-moi à créer un agent qui ";
@@ -15,9 +15,10 @@ export const DEBUT_DEMANDE_AGENT = "Aide-moi à créer un agent qui ";
  */
 export function useDecrireAAssistant(): () => void {
   const router = useRouter();
+  const idDirect = useIdDirect();
   return useCallback(() => {
     const chatId = idDirect("principal");
     ajouterAuBrouillon(chatId, DEBUT_DEMANDE_AGENT);
-    router.push(`/chat?id=${chatId}`);
-  }, [router]);
+    router.push(`/chat?id=${encodeURIComponent(chatId)}`);
+  }, [router, idDirect]);
 }

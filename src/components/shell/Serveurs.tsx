@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { useConfirmation } from "@/components/ui/Modale";
 import { cn } from "@/lib/cn";
-import { modifierCarnet, nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
+import { idDirect, lireIdDirect, modifierCarnet, nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
 import { EVENEMENT_AJOUTER, interroger, libelleServeur, retirer, retirerServeur, sondeDe, type ServeurConnu, type Sonde } from "@/lib/serveur-vps";
 import { useWorkspace } from "@/lib/workspace";
+import type { Chat, Message } from "@/types/domain";
 
 /** Un serveur relié est réinterrogé à cet intervalle, et à chaque ouverture du menu. */
 const SONDE_MS = 60_000;
@@ -75,7 +77,7 @@ function Choix({
   nom,
   detail,
   sonde,
-  desactive,
+  nonLus = 0,
   onClick,
 }: {
   choisi: boolean;
@@ -83,7 +85,8 @@ function Choix({
   nom: string;
   detail: string;
   sonde?: Sonde;
-  desactive: boolean;
+  /** Réponses pas encore lues dans l'espace de ce serveur (montrées quand il n'est pas affiché). */
+  nonLus?: number;
   onClick: () => void;
 }) {
   return (
@@ -91,10 +94,9 @@ function Choix({
       type="button"
       role="menuitemradio"
       aria-checked={choisi}
-      aria-disabled={desactive || undefined}
       tabIndex={-1}
-      onClick={() => !desactive && onClick()}
-      className={cn(LIGNE, "min-h-11 items-center py-1.5", desactive ? "cursor-not-allowed" : "cursor-pointer hover:bg-fond-survol")}
+      onClick={onClick}
+      className={cn(LIGNE, "min-h-11 cursor-pointer items-center py-1.5 hover:bg-fond-survol")}
     >
       <span
         aria-hidden="true"
@@ -105,11 +107,19 @@ function Choix({
       >
         {choisi && <Icon name="check-01" size={14} />}
       </span>
-      <Icon name={icone} size={16} className={cn("shrink-0 text-icone-secondaire", desactive && "opacity-60")} />
+      <Icon name={icone} size={16} className="shrink-0 text-icone-secondaire" />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className={cn("truncate", desactive ? "text-texte-tertiaire" : "text-texte-principal")}>{nom}</span>
+        <span className="truncate text-texte-principal">{nom}</span>
         <span className="truncate text-ui-xs leading-[1.35] text-texte-tertiaire">{detail}</span>
       </span>
+      {!choisi && nonLus > 0 && (
+        <span
+          aria-label={`${nonLus} non lu${nonLus > 1 ? "s" : ""}`}
+          className="klyra-mono min-w-5 shrink-0 rounded-full bg-fond-accent px-1.5 text-center text-ui-2xs leading-5 text-texte-inverse"
+        >
+          {nonLus > 99 ? "99+" : nonLus}
+        </span>
+      )}
       {sonde && <Point sonde={sonde} />}
     </button>
   );
@@ -126,30 +136,59 @@ export function parcourirMenu(e: KeyboardEvent<HTMLElement>, menu: HTMLElement |
   return true;
 }
 
+/** Les réponses d'agents pas encore lues, par serveur (`""` : ce PC). */
+function nonLusParServeur({ chats, messages }: { chats: Chat[]; messages: Message[] }): Record<string, number> {
+  const parId = new Map(chats.map((c) => [c.id, c]));
+  const compte: Record<string, number> = {};
+  for (const m of messages) {
+    const chat = parId.get(m.chatId);
+    if (!chat || m.author.kind !== "role" || m.statut === "en-cours" || m.createdAt <= (chat.luJusqua ?? "")) continue;
+    const cle = chat.lieu ?? "";
+    compte[cle] = (compte[cle] ?? 0) + 1;
+  }
+  return compte;
+}
+
+/** Ce qui s'ouvre sur l'autre serveur à la place de la page affichée : la conversation du même agent, sinon l'accueil. */
+function pageSurServeur(chats: Chat[], suivant: string | null): string | null {
+  const ici = new URL(window.location.href);
+  const page = ici.pathname.replace(/\/$/, "");
+  const id = ici.searchParams.get("id");
+  if (page === "/projet") return "/projets";
+  if (page !== "/chat" || !id) return null;
+  const chat = chats.find((c) => c.id === id);
+  if (chat && (chat.lieu ?? null) === suivant) return null;
+  const agent = chat?.fil?.roleId ?? (chat ? (chat.kind === "direct" ? chat.roleIds[0] : undefined) : lireIdDirect(id)?.roleId);
+  return agent ? `/chat?id=${encodeURIComponent(idDirect(agent, suivant, chats))}` : "/";
+}
+
 /**
- * La machine où tournent les agents, comme le sélecteur de serveur d'OpenBot : ce PC ou un VPS relié.
- * La machine choisie reçoit les conversations directes avec les agents (`basculerMachine`) et les nouveaux
- * projets et routines. Chaque conversation garde la mémoire de ses agents sur chaque machine.
+ * Le serveur affiché, comme le sélecteur de serveur d'OpenBot : ce PC ou un VPS relié. Chaque serveur est un
+ * espace : ses conversations (une par agent), ses projets, ses routines. On change d'espace, jamais une
+ * conversation de machine ; un travail en cours continue sur la sienne.
  * `ouvert` relance la sonde ; `fermer` referme le menu qui montre les serveurs.
  */
 export function useServeurs(ouvert: boolean, fermer: (rendreFocus: boolean) => void) {
   const { state, basculerMachine } = useWorkspace();
+  const router = useRouter();
   const serveurs = useServeursRelies();
   const lieu = useLieuActif();
   const etats = useEtatsServeurs(serveurs, ouvert);
   const [demander, fenetre] = useConfirmation();
 
-  // Une conversation directe au travail ne peut pas changer de machine en cours de route.
-  const auTravail = state.chats.find((c) => c.kind === "direct" && !c.fil && state.travail[c.id]);
   const actif = serveurs.find((s) => s.adresse === lieu) ?? null;
   const nom = nomLieu(lieu, serveurs);
   const sonde = actif ? etats[actif.adresse]?.sonde : undefined;
   const etatActif = actif ? libelleServeur("joint", sonde, etats[actif.adresse]?.agents) : "Les agents tournent ici";
-  const occupe = auTravail ? "Attends la fin du travail en cours" : null;
+  const { chats, messages } = state;
+  const nonLus = useMemo(() => nonLusParServeur({ chats, messages }), [chats, messages]);
 
   const choisir = (suivant: string | null) => {
     fermer(true);
-    if (suivant !== lieu) basculerMachine(suivant);
+    if (suivant === lieu) return;
+    const page = pageSurServeur(state.chats, suivant);
+    basculerMachine(suivant);
+    if (page) router.push(page);
   };
 
   const retirerActif = async () => {
@@ -157,16 +196,18 @@ export function useServeurs(ouvert: boolean, fermer: (rendreFocus: boolean) => v
     fermer(false);
     const ok = await demander({
       titre: `Retirer ${actif.nom} ?`,
-      texte: "L’app oublie ce serveur et son accès, et les conversations directes repassent sur ce PC. Pour le relier à nouveau, il faudra relancer la commande sur le VPS.",
+      texte: "L’app oublie ce serveur et son accès, et revient sur ce PC. Ses conversations restent dans l’app, sans agent pour y répondre. Pour le relier à nouveau, il faudra relancer la commande sur le VPS.",
       confirmer: "Retirer",
     });
     if (!ok) return;
     void retirer(actif.adresse);
     modifierCarnet((carnet) => retirerServeur(carnet, actif.id));
+    const page = pageSurServeur(state.chats, null);
     basculerMachine(null);
+    if (page) router.push(page);
   };
 
-  return { serveurs, actif, nom, sonde, etatActif, etats, occupe, choisir, retirerActif, fenetre };
+  return { serveurs, actif, nom, sonde, etatActif, etats, nonLus, choisir, retirerActif, fenetre };
 }
 
 export type Serveurs = ReturnType<typeof useServeurs>;
@@ -176,7 +217,7 @@ export { Point as PointServeur };
 
 /** Le contenu du menu Serveurs : Ce PC et les VPS reliés à cocher, puis les actions sur la machine active. */
 export function ListeServeurs({ s, aller }: { s: Serveurs; aller: (chemin: string) => void }) {
-  const { serveurs, actif, etats, occupe, choisir, retirerActif } = s;
+  const { serveurs, actif, etats, nonLus, choisir, retirerActif } = s;
   return (
     <>
       <p className="m-0 px-2 pt-1 pb-1 text-ui-xs text-texte-tertiaire">Serveurs</p>
@@ -184,8 +225,8 @@ export function ListeServeurs({ s, aller }: { s: Serveurs; aller: (chemin: strin
         choisi={!actif}
         icone="computer"
         nom="Ce PC"
-        detail={actif && occupe ? occupe : "Les agents tournent ici"}
-        desactive={!!actif && !!occupe}
+        detail="Les agents tournent ici"
+        nonLus={nonLus[""]}
         onClick={() => choisir(null)}
       />
       {serveurs.map((serveur) => {
@@ -197,9 +238,9 @@ export function ListeServeurs({ s, aller }: { s: Serveurs; aller: (chemin: strin
             choisi={choisi}
             icone="globe-01"
             nom={serveur.nom}
-            detail={!choisi && occupe ? occupe : libelleServeur("joint", etat?.sonde, etat?.agents)}
+            detail={libelleServeur("joint", etat?.sonde, etat?.agents)}
             sonde={etat?.sonde ?? "attente"}
-            desactive={!choisi && !!occupe}
+            nonLus={nonLus[serveur.adresse]}
             onClick={() => choisir(serveur.adresse)}
           />
         );

@@ -24,6 +24,7 @@ import {
 } from "@/lib/recherche";
 import { retenirRequete, signalerRecherche } from "@/lib/recherche-session";
 import { idDirect, useRoles, useWorkspace } from "@/lib/workspace";
+import { dansEspace, useLieuActif } from "@/lib/lieux";
 import type { Chat, Role } from "@/types/domain";
 
 /**
@@ -114,6 +115,7 @@ function Visuel({ chat, roleId, roles, petit }: { chat: Chat; roleId: string | n
 export function FenetreRecherche() {
   const { state, rouvrirFil } = useWorkspace();
   const roles = useRoles();
+  const espace = useLieuActif();
   const router = useRouter();
   const pathname = usePathname();
   const idCourant = useSearchParams().get("id");
@@ -193,7 +195,9 @@ export function FenetreRecherche() {
       const d = derniere.get(m.chatId);
       if (!d || m.createdAt > d) derniere.set(m.chatId, m.createdAt);
     }
-    const liste: ConversationCherchable[] = state.chats.map((chat) => ({
+    // On cherche dans l'espace affiché, celui du serveur choisi.
+    const chats = state.chats.filter((c) => dansEspace(c.lieu, espace));
+    const liste: ConversationCherchable[] = chats.map((chat) => ({
       chat,
       titre: chat.kind === "direct" && !chat.fil ? (roles.find((r) => r.id === chat.roleIds[0])?.name ?? chat.title) : chat.title,
       derniere: derniere.get(chat.id) ?? null,
@@ -201,7 +205,7 @@ export function FenetreRecherche() {
     /* La conversation directe d'un agent existe dès qu'on l'ouvre, même absente de la liste des chats. */
     const connues = new Set(state.chats.map((c) => c.id));
     for (const role of roles) {
-      const id = idDirect(role.id);
+      const id = idDirect(role.id, espace, state.chats);
       if (connues.has(id) || !derniere.has(id)) continue;
       liste.push({
         chat: { id, kind: "direct", projectId: null, title: role.name, roleIds: [role.id], updatedAt: derniere.get(id)!, sessions: {}, luJusqua: null },
@@ -210,7 +214,7 @@ export function FenetreRecherche() {
       });
     }
     return liste;
-  }, [ouverte, state.chats, state.messages, roles]);
+  }, [ouverte, state.chats, state.messages, roles, espace]);
 
   const resultat = useMemo(
     () => (ouverte && state.charge ? chercher(conversations, state.messages, requete, porteeEffective, chatCourant) : null),

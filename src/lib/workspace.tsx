@@ -1,6 +1,6 @@
 "use client";
 
-import { changerDeLieu, lieuParDefaut, retenirLieu, useLieuActif } from "./lieux";
+import { DIRECT, dansEspace, idDirect, lieuDeHote, lireIdDirect, retenirLieu, useLieuActif } from "./lieux";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
 import { Bouton } from "@/components/ui/Bouton";
@@ -501,15 +501,10 @@ const SIMULATED_REPLIES: Record<string, string> = {
   prompty: "Je lis la doc du modèle et je te rends un prompt avec son critère de réussite.",
 };
 
-/** Préfixe des conversations directes : `dm-<agent>`. */
 /** Les façons de refaire une réponse, depuis le menu sous le message. */
 export type FaconReessai = "reessayer" | "details" | "concis" | "web";
 
-export const DIRECT = "dm-";
-
-export function idDirect(roleId: RoleId): string {
-  return `${DIRECT}${roleId}`;
-}
+export { DIRECT, idDirect };
 
 /** Les fils d'un agent : `klyra-fil-…`, l'identifiant qu'on cite. */
 export const FIL = "klyra-fil-";
@@ -553,9 +548,7 @@ interface WorkspaceApi {
   /** « Plus tard » sur le conseil de résumer : il revient quand la conversation dépasse `jusqua` jetons. */
   masquerConseilContexte: (chatId: string, jusqua: number) => void;
   choisirFournisseur: (chatId: string, moteur: string, modele: string | null, effort: string | null) => void;
-  /** Ce PC (null) ou un VPS relié, pour cette conversation seulement. Les agents y reprennent la session qu'ils y avaient, sinon une neuve. */
-  choisirLieu: (chatId: string, lieu: string | null) => void;
-  /** Le sélecteur du rail : la machine active, et les conversations directes au repos y passent. */
+  /** Le sélecteur de serveur : l'espace affiché (null : ce PC). Aucune conversation ne change de machine. */
   basculerMachine: (lieu: string | null) => void;
   /** Repart de zéro avec l'agent : les messages et sa mémoire de cette conversation sont effacés. */
   nouvelleConversation: (chatId: string) => void;
@@ -633,7 +626,7 @@ const WorkspaceContext = createContext<WorkspaceApi | null>(null);
 function WorkspaceStore({ children }: { children: ReactNode }) {
   const bridge = getBridge();
   const [erreurChargement, setErreurChargement] = useState<string | null>(null);
-  const { routines: routinesLocales, actif: moteurRoutines } = useRoutines();
+  const { toutes: routinesLocales, actif: moteurRoutines } = useRoutines();
   const { roles, status: statutAgents } = useAgents();
   const [state, dispatch] = useReducer(reducer, undefined, (): WorkspaceState => {
     const mock = createMockWorkspace();
@@ -1342,8 +1335,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /** La conversation, créée si c'est la première fois qu'on s'adresse à cet agent en direct. */
   const assurerChat = useCallback((chatId: string): Chat | undefined => {
     let chat = stateRef.current.chats.find((c) => c.id === chatId);
-    if (!chat && chatId.startsWith(DIRECT)) {
-      const roleId = chatId.slice(DIRECT.length);
+    const direct = lireIdDirect(chatId);
+    if (!chat && direct) {
+      const { roleId } = direct;
       const role = rolesRef.current.find((r) => r.id === roleId);
       if (!role) return;
       chat = {
@@ -1355,7 +1349,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         updatedAt: new Date().toISOString(),
         sessions: {},
         luJusqua: null,
-        lieu: lieuParDefaut(),
+        // L'id dit la machine : `dm-<agent>` ce PC, `dm-<agent>@<hôte>` un VPS.
+        lieu: direct.hote ? lieuDeHote(direct.hote) : null,
         // Le fournisseur choisi pour l'agent dans Réglages › Agents.
         ...(role.fournisseur ? { fournisseur: role.fournisseur } : {}),
       };
@@ -1457,24 +1452,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [assurerChat],
   );
 
-  const choisirLieu = useCallback(
-    (chatId: string, lieu: string | null) => {
-      if (!assurerChat(chatId)) return;
-      dispatch({ type: "chat/update", id: chatId, patch: (c) => changerDeLieu(c, lieu) });
-    },
-    [assurerChat],
-  );
-
-  /* Comme le sélecteur de serveur d'OpenBot : les conversations directes avec les agents suivent la machine
-     active. Les fils restent où ils sont (leurs outils sont ceux de ce PC), les projets aussi (leurs dossiers). */
-  const basculerMachine = useCallback((lieu: string | null) => {
-    retenirLieu(lieu);
-    const { chats, travail } = stateRef.current;
-    for (const chat of chats) {
-      if (chat.kind !== "direct" || chat.fil || travail[chat.id] || (chat.lieu ?? null) === lieu) continue;
-      dispatch({ type: "chat/update", id: chat.id, patch: (c) => changerDeLieu(c, lieu) });
-    }
-  }, []);
+  /* Comme le sélecteur de serveur d'OpenBot : on change d'espace, pas de conversation. Chaque agent a une
+     conversation directe par serveur (`idDirect`) ; un travail en cours continue sur sa machine. */
+  const basculerMachine = useCallback((lieu: string | null) => retenirLieu(lieu), []);
 
   /** Sous une réponse : la refaire, plus détaillée, plus concise, en cherchant sur le web, ou avec un autre modèle. */
   const reessayer = useCallback(
@@ -1913,7 +1893,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const chatDeRoutine = useCallback(
     (routine: { id: string; nom: string; roleId: RoleId; projectId: string | null; relais?: RelaisRoutine[] }) => {
       const relais = routine.relais ?? [];
-      if (!routine.projectId && relais.length === 0) return idDirect(routine.roleId);
+      if (!routine.projectId && relais.length === 0) return idDirect(routine.roleId, null, stateRef.current.chats);
       const chatId = `routine-${routine.id}`;
       const roleIds = [...new Set<RoleId>(["principal", routine.roleId, ...relais.flatMap((l) => [l.de, l.vers])])];
       const existant = stateRef.current.chats.find((c) => c.id === chatId);
@@ -2403,7 +2383,6 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirModele,
       masquerConseilContexte,
       choisirFournisseur,
-      choisirLieu,
       basculerMachine,
       nouvelleConversation,
       creerFil,
@@ -2460,7 +2439,6 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirModele,
       masquerConseilContexte,
       choisirFournisseur,
-      choisirLieu,
       basculerMachine,
       nouvelleConversation,
       creerFil,
@@ -2546,20 +2524,30 @@ export function useRole(id: RoleId): Role {
   );
 }
 
+/** Les projets de l'espace affiché (le serveur choisi). */
 export function useProjects(): Project[] {
-  return useWorkspace().state.projects;
+  const { projects } = useWorkspace().state;
+  const espace = useLieuActif();
+  return useMemo(() => projects.filter((p) => dansEspace(p.lieu, espace)), [projects, espace]);
 }
 
-/** Une conversation par son id. Celle d'un agent (`dm-<agent>`) existe dès qu'on l'ouvre, même vide,
- *  y compris pour un agent hors de Mes agents (elle s'ouvre alors en lecture). */
+/** La conversation directe avec un agent dans l'espace affiché (cf. `idDirect`). */
+export function useIdDirect(): (roleId: RoleId) => string {
+  const { chats } = useWorkspace().state;
+  const espace = useLieuActif();
+  return useCallback((roleId: RoleId) => idDirect(roleId, espace, chats), [chats, espace]);
+}
+
+/** Une conversation par son id. Celle d'un agent (`dm-<agent>`, `dm-<agent>@<hôte>` sur un VPS) existe dès
+ *  qu'on l'ouvre, même vide, y compris pour un agent hors de Mes agents (elle s'ouvre alors en lecture). */
 export function useChat(id: string | null): Chat | undefined {
   const { chats } = useWorkspace().state;
   const { roles, tous } = useAgents();
-  const lieuActif = useLieuActif();
   return useMemo(() => {
     const chat = chats.find((c) => c.id === id);
-    if (chat || !id?.startsWith(DIRECT)) return chat;
-    const roleId = id.slice(DIRECT.length);
+    const direct = id ? lireIdDirect(id) : null;
+    if (chat || !id || !direct) return chat;
+    const { roleId } = direct;
     const role = roles.find((r) => r.id === roleId) ?? tous.find((a) => a.role.id === roleId)?.role;
     if (!role) return undefined;
     return {
@@ -2571,9 +2559,9 @@ export function useChat(id: string | null): Chat | undefined {
       updatedAt: new Date(0).toISOString(),
       sessions: {},
       luJusqua: null,
-      lieu: lieuActif,
+      lieu: direct.hote ? lieuDeHote(direct.hote) : null,
     };
-  }, [chats, roles, tous, id, lieuActif]);
+  }, [chats, roles, tous, id]);
 }
 
 export function useChatMessages(chatId: string): Message[] {
@@ -2609,13 +2597,14 @@ export function useNonLus(chatId: string): number {
   }, [messages, chats, chatId]);
 }
 
-/** Conversations d'équipe : épinglées en tête, puis les plus récentes. */
+/** Conversations d'équipe de l'espace affiché : épinglées en tête, puis les plus récentes. */
 export function useRecentChats(limit?: number): Chat[] {
   const { chats } = useWorkspace().state;
+  const espace = useLieuActif();
   return useMemo(() => {
-    const sorted = trierConversations(chats.filter((c) => c.kind === "equipe"));
+    const sorted = trierConversations(chats.filter((c) => c.kind === "equipe" && dansEspace(c.lieu, espace)));
     return limit === undefined ? sorted : sorted.slice(0, limit);
-  }, [chats, limit]);
+  }, [chats, limit, espace]);
 }
 
 export interface ChatPreview {
@@ -2647,8 +2636,9 @@ export function useChatPreview(chatId: string): ChatPreview {
   }, [messages, roles, chatId]);
 }
 
+/** Un projet par son id, quel que soit son serveur. */
 export function useProject(id: string | null): Project | undefined {
-  return useProjects().find((p) => p.id === id);
+  return useWorkspace().state.projects.find((p) => p.id === id);
 }
 
 /** Fichiers modifiés par les agents dans les chats d'un projet, en chemins relatifs à son dossier. */

@@ -1,7 +1,7 @@
 /**
  * Le sélecteur de serveur, de bout en bout : un vrai serveur KLYRA local (dossier jetable), l'app sur un
  * profil temporaire, le menu de l'avatar (Réglages, Serveurs), l'appairage par le lien, puis la bascule
- * Ce PC ↔ VPS et le retrait.
+ * Ce PC ↔ VPS (chaque serveur est un espace : la conversation de l'assistant n'est pas la même) et le retrait.
  * Prérequis : `pnpm build && pnpm build:electron`. Linux : `xvfb-run -a pnpm test:selecteur`.
  */
 import { spawn, execFileSync } from "node:child_process";
@@ -42,7 +42,9 @@ try {
   };
   const choisir = (nom) =>
     app.ev(`(() => { const b = [...document.querySelectorAll('[role="menuitemradio"]')].find((x) => x.innerText.split("\\n")[0].trim() === ${JSON.stringify(nom)}); if (!b) return false; b.click(); return true; })()`);
-  const machineEnTete = () => app.ev(`document.querySelector('header [aria-label="Machine de la conversation"]')?.innerText.trim() ?? null`);
+  const machineEnTete = () => app.ev(`document.querySelector('header [aria-label="Machine de la conversation"]') !== null`);
+  const conversation = () => app.ev(`new URLSearchParams(location.search).get("id")`);
+  const hote = new URL(adresse).host;
 
   verifier((await app.ev(`document.querySelectorAll('nav button[aria-haspopup="menu"]').length`)) === 1, "le haut du rail n’a plus de sélecteur : seul l’avatar ouvre un menu");
   verifier((await libelle()).includes("Serveur : Ce PC"), `sans serveur, l’avatar annonce Ce PC (« ${await libelle()} »)`);
@@ -78,12 +80,17 @@ try {
   verifier(await app.quand(`${bouton}?.querySelector('[aria-hidden="true"] svg') && !document.querySelector('[role="menu"][aria-label="Compte"]')`), "le globe sur l’avatar montre qu’un VPS est actif, menu fermé");
   await ouvrirCompte();
   verifier(await app.quand(`${ligneServeurs}?.innerText.includes("Klyra-VPS")`), "la ligne Serveurs du menu montre Klyra-VPS");
-  verifier((await machineEnTete())?.includes("Klyra-VPS"), `la conversation avec l’assistant passe sur Klyra-VPS (en-tête : « ${await machineEnTete()} »)`);
+  verifier(await app.quand(`new URLSearchParams(location.search).get("id") === ${JSON.stringify(`dm-principal@${hote}`)}`), `la page passe à la conversation de l’assistant sur Klyra-VPS (« ${await conversation()} »)`);
+  verifier(!(await machineEnTete()), "l’en-tête n’a plus de choix de machine : on change de serveur, pas de conversation");
+  verifier(!(await app.ev(`[...document.querySelectorAll('[role="status"]')].some((e) => e.innerText.includes("Passer sur"))`)), "la conversation affichée est bien celle du serveur choisi");
+  await app.touche("Escape", "Escape", 27);
 
   await ouvrir();
   verifier(await choisir("Ce PC"), "on revient sur Ce PC");
   verifier(await app.quand(`${bouton}?.getAttribute('aria-label').includes("Serveur : Ce PC")`), "l’avatar annonce Ce PC");
-  verifier((await machineEnTete())?.includes("Ce PC"), "la conversation revient sur Ce PC");
+  verifier(await app.quand(`new URLSearchParams(location.search).get("id") === "dm-principal"`), `la page revient à la conversation de Ce PC (« ${await conversation()} »)`);
+  await app.aller(`/chat?id=${encodeURIComponent(`dm-principal@${hote}`)}`);
+  verifier(await app.quand(`[...document.querySelectorAll('[role="status"]')].some((e) => e.innerText.includes("Passer sur Klyra-VPS"))`), "un lien vers une conversation du VPS propose d’y passer");
 
   await ouvrir();
   await choisir("Klyra-VPS");

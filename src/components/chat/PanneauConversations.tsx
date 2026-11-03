@@ -5,7 +5,7 @@ import { Icon } from "@/components/icons/Icon";
 import { LigneAgent, LigneConversation, SectionBarre } from "@/components/shell/LignesBarre";
 import { MenuCreationAgent } from "@/components/team/MenuCreationAgent";
 import { BoutonIcone } from "@/components/ui/Bouton";
-import { idDirect, useChat, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
+import { useChat, useIdDirect, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
 
 /**
  * Panneau blanc des conversations, à côté du rail (comme celui d'un projet) :
@@ -18,6 +18,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const roles = useRoles();
   const projects = useProjects();
   const conversations = useRecentChats();
+  const idDirect = useIdDirect();
   /* Dans un fil, la ligne de son agent reste active. */
   const agentDuFil = useChat(currentId)?.fil?.roleId;
 
