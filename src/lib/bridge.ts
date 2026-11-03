@@ -358,7 +358,7 @@ export interface KlyraBridge {
     montrerFichier: (dossier: string, relatif: string) => Promise<Reponse<void>>;
   };
   artefacts: {
-    /** Les artefacts du compte Claude, lus par Claude Code. */
+    /** Les artefacts claude.ai de la personne, lus dans sa galerie par la session claude.ai de l'app. */
     lister: () => Promise<Reponse<{ titre: string; url: string; misAJour: string | null }[]>>;
     /** Vignette PNG (data URL), null sans session claude.ai dans l'app. */
     vignette: (url: string, forcer: boolean) => Promise<Reponse<string | null>>;

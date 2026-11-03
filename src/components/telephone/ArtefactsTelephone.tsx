@@ -58,7 +58,7 @@ export function ArtefactsTelephone() {
   };
   const poste = { desactivee: !ouvert || occupe, note: ouvert ? undefined : <NotePoste /> };
   const actions: ActionMenu[] = [
-    { libelle: "Synchroniser avec Claude", onChoisir: () => void synchroniser(), ...poste },
+    { libelle: "Relire claude.ai", onChoisir: () => void synchroniser(), ...poste },
     {
       libelle: "Refaire les aperçus",
       onChoisir: () => void agir<{ lances: number }>("artefacts.apercus", {}, (x) => `Aperçus en cours sur l’ordinateur (${x.lances}).`),
@@ -137,7 +137,7 @@ function ListeArtefactsTelephone({
           ))}
         </ul>
       ) : (
-        <p className="py-4 text-ui text-texte-secondaire">{liste.artefacts.length ? "Aucun artefact ne correspond." : "Aucun artefact pour l’instant : synchronise avec ton compte Claude."}</p>
+        <p className="py-4 text-ui text-texte-secondaire">{liste.artefacts.length ? "Aucun artefact ne correspond." : "Aucun artefact pour l’instant."}</p>
       )}
     </div>
   );
