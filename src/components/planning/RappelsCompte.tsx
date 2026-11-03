@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
+import { ContexteEquipeRappels, type EquipeRappels } from "./equipe-rappels";
 import { ConfieA, MenuConfier } from "@/components/tickets/MenuConfier";
 import { ListeDeroulante, type OptionListe } from "@/components/ui/ListeDeroulante";
 import { api } from "../../../convex/_generated/api";
@@ -173,7 +174,34 @@ export function RappelsCompte({
     }
   };
 
+  /* « Pour » sur chaque rappel : moi (il reste ici) ou un membre (il part dans son compte). */
+  const equipe: EquipeRappels = {
+      personnes: [
+        { value: "", label: "Moi" },
+        ...(membres ?? []).filter((membre) => membre._id !== moiId).map((membre) => ({ value: membre._id, label: membre.nom })),
+      ],
+      donner: (saisie, membreId) => {
+        const jour = saisie.date;
+        const heure = jour ? saisie.heure : null;
+        const fin = jour && saisie.fin && saisie.fin > jour ? saisie.fin : null;
+        return agir(() =>
+          creer({
+            titre: saisie.titre,
+            notes: saisie.notes,
+            jour,
+            heure,
+            fin,
+            echeance: echeanceLocale(jour, heure, fin),
+            priorite: saisie.priorite,
+            assigneA: membreId as Id<"membres">,
+            liste: null,
+          }),
+        );
+      },
+  };
+
   return (
+    <ContexteEquipeRappels.Provider value={equipe}>
     <div className="flex flex-col gap-3">
       {aImporter.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-bordure-subtile bg-fond-surface px-3 py-2">
@@ -224,16 +252,6 @@ export function RappelsCompte({
         </ul>
       )}
 
-      {moiId && (
-        <FormulaireRappel
-          moiId={moiId}
-          membres={membres}
-          categories={categories}
-          occupe={envoi}
-          onCreer={(saisie) => agir(() => creer(saisie))}
-        />
-      )}
-
       {vue === "assignes" ? (
         <ListeRappels rappels={assignes ?? []} moiId={moiId} categories={categories} voirFaits={voirFaits} libelle="Ceux que j’ai assignés" />
       ) : (
@@ -243,6 +261,7 @@ export function RappelsCompte({
         </div>
       )}
     </div>
+    </ContexteEquipeRappels.Provider>
   );
 }
 
@@ -259,143 +278,6 @@ function Interrupteur({ actif, onClick, children }: { actif: boolean; onClick: (
     >
       {children}
     </button>
-  );
-}
-
-function FormulaireRappel({
-  moiId,
-  membres,
-  categories,
-  occupe,
-  onCreer,
-}: {
-  moiId: Id<"membres">;
-  membres: { _id: Id<"membres">; nom: string }[] | undefined;
-  categories: Categorie[];
-  occupe: boolean;
-  onCreer: (saisie: {
-    titre: string;
-    notes: string;
-    jour: string | null;
-    heure: string | null;
-    fin: string | null;
-    echeance: number | null;
-    priorite: Priorite;
-    assigneA: Id<"membres">;
-    liste: string | null;
-  }) => Promise<boolean>;
-}) {
-  const [titre, setTitre] = useState("");
-  const [notes, setNotes] = useState("");
-  const [jour, setJour] = useState<string | null>(null);
-  const [heure, setHeure] = useState<string | null>(null);
-  const [fin, setFin] = useState<string | null>(null);
-  const [priorite, setPriorite] = useState<Priorite>(0);
-  const [assigneA, setAssigneA] = useState<Id<"membres">>(moiId);
-  const [liste, setListe] = useState<string>(categories[0]?.id ?? "");
-  const pourSoi = assigneA === moiId;
-  const optionsMembres: OptionListe<string>[] = (membres ?? [{ _id: moiId, nom: "Moi" }]).map((membre) => ({
-    value: membre._id,
-    label: membre._id === moiId ? `${membre.nom} (moi)` : membre.nom,
-  }));
-  const optionsListes: OptionListe<string>[] = [
-    { value: "", label: "Sans catégorie" },
-    ...categories.map((categorie) => ({ value: categorie.id, label: categorie.nom })),
-  ];
-
-  const creer = () => {
-    if (!titre.trim() || occupe) return;
-    const finPropre = jour && fin && fin > jour ? fin : null;
-    const heurePropre = jour ? heure : null;
-    void onCreer({
-      titre,
-      notes,
-      jour,
-      heure: heurePropre,
-      fin: finPropre,
-      echeance: echeanceLocale(jour, heurePropre, finPropre),
-      priorite,
-      assigneA,
-      liste: pourSoi && liste ? liste : null,
-    }).then((ok) => {
-      if (!ok) return;
-      setTitre("");
-      setNotes("");
-      setJour(null);
-      setHeure(null);
-      setFin(null);
-      setPriorite(0);
-    });
-  };
-
-  const puce = "flex h-7 items-center gap-1.5 rounded-sm border border-bordure-subtile bg-fond-surface px-2 text-ui-xs text-texte-secondaire";
-  return (
-    <form
-      className="flex flex-col gap-2 rounded-lg border border-bordure-subtile bg-fond-surface px-3 py-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        creer();
-      }}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          value={titre}
-          onChange={(e) => setTitre(e.target.value)}
-          placeholder="Nouveau rappel pour l’équipe"
-          aria-label="Titre du rappel"
-          className="h-8 min-w-[180px] flex-1 border-0 bg-transparent text-ui-s text-texte-principal outline-none placeholder:text-texte-tertiaire"
-        />
-        <ListeDeroulante
-          libelle="Assigner à"
-          variante="compact"
-          options={optionsMembres}
-          value={assigneA}
-          onChange={(value) => setAssigneA(value as Id<"membres">)}
-        />
-        {pourSoi && (
-          <ListeDeroulante libelle="Catégorie" variante="compact" options={optionsListes} value={liste} onChange={setListe} />
-        )}
-        <Bouton type="submit" variant="sombre" taille="compact" disabled={occupe || !titre.trim()}>
-          Assigner
-        </Bouton>
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <label className={puce}>
-          <Icon name="calendar-01" size={14} />
-          <input
-            type="date"
-            value={jour ?? ""}
-            aria-label="Date"
-            onChange={(e) => setJour(e.target.value || null)}
-            className="w-[112px] border-0 bg-transparent p-0 text-ui-xs text-inherit outline-none"
-          />
-        </label>
-        <label className={puce}>
-          <Icon name="clock-01" size={14} />
-          <input
-            type="time"
-            value={heure ?? ""}
-            aria-label="Heure"
-            onChange={(e) => setHeure(e.target.value || null)}
-            className="w-[60px] border-0 bg-transparent p-0 text-ui-xs text-inherit outline-none"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => setPriorite(((priorite + 1) % 4) as Priorite)}
-          className={cn(puce, "cursor-pointer font-semibold", priorite > 0 && "border-bleu-k1-500/40 text-texte-accent")}
-        >
-          {priorite === 0 ? "Urgence" : "!".repeat(priorite)}
-        </button>
-        <input
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Notes"
-          aria-label="Notes"
-          className="h-7 min-w-[120px] flex-1 border-0 bg-transparent text-ui-xs text-texte-secondaire outline-none placeholder:text-texte-tertiaire"
-        />
-      </div>
-    </form>
   );
 }
 

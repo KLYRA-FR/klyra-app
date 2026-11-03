@@ -6,7 +6,7 @@ import type { IconName } from "@/components/icons/Icon";
  * est l'ancre d'une `Ligne` de la section (cf. ui.tsx).
  */
 
-export type IdSection = "general" | "profil" | "equipe" | "mobile" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "mises-a-jour";
+export type IdSection = "general" | "profil" | "equipe" | "mobile" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "marketplace" | "mises-a-jour";
 
 export interface EntreeReglage {
   id: string;
@@ -150,6 +150,16 @@ export const SECTIONS: SectionReglages[] = [
       { id: "computer-use-actif", titre: "Laisser les agents piloter l’ordinateur", mots: "activer desactiver interrupteur ecran souris clavier" },
       { id: "autorisation-accessibilite", titre: "Autorisation Accessibilité", mots: "macos permission systeme clic clavier" },
       { id: "autorisation-ecran", titre: "Autorisation Enregistrement de l’écran", mots: "macos permission capture" },
+    ],
+  },
+  {
+    id: "marketplace",
+    titre: "Marketplace",
+    icone: "boutique-01",
+    description: "Les apps que tes agents peuvent utiliser.",
+    entrees: [
+      { id: "composio", titre: "Composio", mots: "apps connexion gmail slack notion google drive outils integrations" },
+      { id: "apps-directes", titre: "Apps branchées en direct", mots: "mcp github linear supabase neon stripe serveur" },
     ],
   },
   {

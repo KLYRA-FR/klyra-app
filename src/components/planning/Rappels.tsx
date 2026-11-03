@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
@@ -11,6 +12,7 @@ import { jouer } from "@/lib/sons/sons";
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte, type Tache } from "@/types/domain";
 import { ConfieA, MenuConfier } from "@/components/tickets/MenuConfier";
+import { useEquipeRappels } from "./equipe-rappels";
 import { MenuReporter } from "./MenuReporter";
 import { LignesCompte, RappelsCompte, rappelsDansColonne } from "./RappelsCompte";
 
@@ -119,13 +121,19 @@ function Reglages({
   heure,
   priorite,
   onChange,
+  pour,
+  onPour,
 }: {
   date: string | null;
   fin: string | null;
   heure: string | null;
   priorite: Tache["priorite"];
   onChange: (patch: Partial<Pick<Tache, "date" | "fin" | "heure" | "priorite">>) => void;
+  /** Pour qui : « » = moi, sinon un membre de l'équipe. Sans compte d'équipe, pas de choix. */
+  pour?: string;
+  onPour?: (membreId: string) => void;
 }) {
+  const equipe = useEquipeRappels();
   const puce = "flex h-7 items-center gap-1.5 rounded-sm border border-bordure-subtile bg-fond-surface px-2 text-ui-xs text-texte-secondaire";
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -176,12 +184,16 @@ function Reglages({
       >
         {priorite === 0 ? "Urgence" : "!".repeat(priorite)}
       </button>
+      {equipe && onPour && equipe.personnes.length > 1 && (
+        <ListeDeroulante libelle="Pour" variante="compact" options={equipe.personnes} value={pour ?? ""} onChange={onPour} />
+      )}
     </div>
   );
 }
 
 export function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeinte }) {
   const { enregistrerTache, supprimerTache } = useWorkspace();
+  const equipe = useEquipeRappels();
   const annoncer = useContext(AnnonceRappels);
   const [titre, setTitre] = useState(tache.titre);
   const [ouverte, setOuverte] = useState(false);
@@ -279,7 +291,20 @@ export function LigneRappel({ tache, teinte }: { tache: Tache; teinte: RoleTeint
         )}
         <ConfieA source="local" id={tache.id} />
         {ouverte && (
-          <Reglages date={tache.date} fin={tache.fin ?? null} heure={tache.heure} priorite={tache.priorite} onChange={(patch) => maj({ ...patch, notifiee: false })} />
+          <Reglages
+            date={tache.date}
+            fin={tache.fin ?? null}
+            heure={tache.heure}
+            priorite={tache.priorite}
+            onChange={(patch) => maj({ ...patch, notifiee: false })}
+            /* Donné à quelqu'un : le rappel part dans son compte et quitte cette colonne. */
+            onPour={(membreId) => {
+              if (!membreId || !equipe) return;
+              void equipe
+                .donner({ titre: tache.titre, notes: tache.notes, date: tache.date, heure: tache.heure, fin: tache.fin ?? null, priorite: tache.priorite }, membreId)
+                .then((ok) => ok && supprimerTache(tache.id));
+            }}
+          />
         )}
       </div>
     </li>
@@ -393,21 +418,29 @@ function Colonne({ categorie, taches, voirFaits, avant }: { categorie: Categorie
   const [heure, setHeure] = useState<string | null>(null);
   const [fin, setFin] = useState<string | null>(null);
   const [priorite, setPriorite] = useState<Tache["priorite"]>(0);
+  const [pour, setPour] = useState("");
   const [saisie, setSaisie] = useState(false);
+  const equipe = useEquipeRappels();
   const champ = useRef<HTMLTextAreaElement>(null);
   const { accent } = AGENT_PASTELS[categorie.teinte] ?? AGENT_PASTELS.violet;
 
   const aFaire = trierRappels(taches.filter((t) => !t.faite));
   const faits = taches.filter((t) => t.faite);
 
-  const ajouter = () => {
+  const ajouter = async () => {
     if (!titre.trim()) return;
-    enregistrerTache(nouvelleTache({ titre: titre.trim(), date, fin, heure, priorite, liste: categorie.id }));
+    if (pour && equipe) {
+      // Pour quelqu'un d'autre : il part dans son compte, il ne reste pas dans cette colonne.
+      if (!(await equipe.donner({ titre: titre.trim(), notes: "", date, heure, fin, priorite }, pour))) return;
+    } else {
+      enregistrerTache(nouvelleTache({ titre: titre.trim(), date, fin, heure, priorite, liste: categorie.id }));
+    }
     setTitre("");
     setDate(null);
     setFin(null);
     setHeure(null);
     setPriorite(0);
+    setPour("");
     champ.current?.focus();
   };
 
@@ -452,7 +485,7 @@ function Colonne({ categorie, taches, voirFaits, avant }: { categorie: Categorie
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  ajouter();
+                  void ajouter();
                 }
                 if (e.key === "Escape") {
                   setTitre("");
@@ -468,6 +501,8 @@ function Colonne({ categorie, taches, voirFaits, avant }: { categorie: Categorie
                 fin={fin}
                 heure={heure}
                 priorite={priorite}
+                pour={pour}
+                onPour={setPour}
                 onChange={(p) => {
                   if ("date" in p) setDate(p.date ?? null);
                   if ("fin" in p) setFin(p.fin ?? null);

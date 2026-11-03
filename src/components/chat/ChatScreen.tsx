@@ -12,6 +12,7 @@ import { demanderEcriture } from "@/lib/brouillons";
 import { formatTime } from "@/lib/format";
 import { jouer } from "@/lib/sons/sons";
 import { texteDe, useChat, useChatMessages, useProjects, useRoles, useWorkspace } from "@/lib/workspace";
+import { AgentsEnCours } from "./AgentsEnCours";
 import { ChatHeader } from "./ChatHeader";
 import { Composer } from "./Composer";
 import { MessageThread } from "./MessageThread";
@@ -192,6 +193,7 @@ export function ChatScreen() {
         />
         <MessageThread key={chat.id} chatId={chat.id} messageExport={exportConversation.message &&
           <MessageExport key={exportConversation.numero} message={exportConversation.message} onFermer={exportConversation.fermer} />} />
+        <AgentsEnCours chatId={chat.id} />
         {horsDeMesAgents ? (
           <BarreHorsDeMesAgents key={`hors-${chat.id}`} agent={horsDeMesAgents} chatId={chat.id} />
         ) : (

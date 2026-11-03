@@ -11,6 +11,7 @@ import { Agents } from "./sections/Agents";
 import { Claude } from "./sections/Claude";
 import { ComputerUse } from "./sections/ComputerUse";
 import { Equipe } from "./sections/Equipe";
+import { Marketplace } from "@/components/marketplace/MarketplaceScreen";
 import { General } from "./sections/General";
 import { MisesAJour } from "./sections/MisesAJour";
 import { Mobile } from "./sections/Mobile";
@@ -34,6 +35,7 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
   notifications: () => <Notifications />,
   voix: () => <Voix />,
   "computer-use": () => <ComputerUse />,
+  marketplace: () => <Marketplace />,
   "mises-a-jour": () => <MisesAJour />,
 };
 
