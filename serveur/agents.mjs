@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dossierHorsProjet } from "./atelier.mjs";
+import { competencesPrechargees, promptAvecSkill, skillsConnues } from "./connaissances-agent.mjs";
 import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
@@ -381,6 +382,7 @@ export function creerAgents(options) {
     if (demande.effort && !(codexDemande ? EFFORTS_CODEX : EFFORTS_CLAUDE).includes(demande.effort)) return "Effort invalide.";
     if (demande.acces && !["demander", "projet", "tout"].includes(demande.acces)) return "Accès invalide.";
     if (demande.dossier !== null && demande.dossier !== undefined && (typeof demande.dossier !== "string" || !path.isAbsolute(demande.dossier))) return "Dossier invalide.";
+    if (demande.skill !== undefined && demande.skill !== null && (typeof demande.skill !== "string" || !/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(demande.skill))) return "Compétence invalide.";
     return null;
   }
 
@@ -411,7 +413,18 @@ export function creerAgents(options) {
 
     const acces = demande.acces ?? "projet";
     const mcp = mcpIa();
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0]);
+    /* Les skills, comme dans l'app (cf. electron/connaissances-agent.ts) : celles que la fiche précharge,
+       que Claude Code ne donne pas à un agent lancé seul, et `/<skill>` remis en tête du message. */
+    const configClaude = path.join(home, ".claude");
+    let fiche = null;
+    try {
+      fiche = demande.agent ? readFileSync(path.join(dossierAgents, `${demande.agent}.md`), "utf8") : null;
+    } catch {
+      fiche = null;
+    }
+    const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd) : { noms: [], texte: null };
+    const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, skillsConnues(configClaude, cwd));
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     if (ouvert && vivant(ouvert) && (ouvert.signature === signature || ouvert.tours.length)) {
@@ -453,11 +466,11 @@ export function creerAgents(options) {
       if (demande.modele) args.push("--model", demande.modele);
       if (demande.effort) args.push("--effort", demande.effort);
       const consigne = demande.agent === null ? consigneAssistant() : consigneAgent(demande.agent);
-      args.push("--append-system-prompt", `${ici()}\n\n${consigne}`);
+      args.push("--append-system-prompt", [ici(), consigne, ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
       proc = lancer(bin, args, cwd, signature, demande, acces);
     }
     ajouterTour(proc, nouveauTour(proc, requestId, acces));
-    ecrire(proc, { type: "user", message: { role: "user", content: demande.prompt } });
+    ecrire(proc, { type: "user", message: { role: "user", content: prompt } });
   }
 
   function autoriser(requestId, demandeId, decision) {

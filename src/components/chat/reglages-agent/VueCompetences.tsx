@@ -1,13 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { Icon } from "@/components/icons/Icon";
+import { Interrupteur } from "@/components/reglages/ui";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { annoncer } from "@/lib/annonces";
 import { getBridge, type Competence, type CompetencesAgent, type ContexteConnaissances } from "@/lib/bridge";
 import { poste } from "@/lib/plateforme";
 import type { Role } from "@/types/domain";
 import type { Lecture } from "./donnees";
-import { EnteteVue, Note, TitreGroupe } from "./elements";
+import { EnteteVue, messageErreur, Note, TitreGroupe } from "./elements";
 
 /** Le nombre à montrer sur la ligne : celles de sa fiche, sinon celles qu'il peut utiliser. */
 export function resumeCompetences(lecture: Lecture<CompetencesAgent>): string | undefined {
@@ -18,7 +20,22 @@ export function resumeCompetences(lecture: Lecture<CompetencesAgent>): string | 
   return n ? `${n} disponible${n > 1 ? "s" : ""}` : "Aucune";
 }
 
-function CarteCompetence({ competence, onMontrer }: { competence: Competence; onMontrer?: () => void }) {
+/** Le dernier dossier d'un chemin (le nom d'une skill sur le disque), sans module Node côté écran. */
+const dossierDe = (chemin: string | null) => chemin?.split(/[\\/]/).filter(Boolean).pop() ?? null;
+
+function CarteCompetence({
+  competence,
+  onMontrer,
+  prechargee,
+  onBasculer,
+  occupe,
+}: {
+  competence: Competence;
+  onMontrer?: () => void;
+  prechargee: boolean;
+  onBasculer?: (oui: boolean) => void;
+  occupe: boolean;
+}) {
   return (
     <li className="flex items-start gap-3 rounded-sm px-2.5 py-2">
       <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm bg-fond-surface-grise text-icone-accent">
@@ -38,46 +55,91 @@ function CarteCompetence({ competence, onMontrer }: { competence: Competence; on
       {onMontrer && competence.dossier && (
         <BoutonIcone variant="discret" taille="mini" libelle={`Montrer ${poste.dansExplorateur}`} icone={<Icon name="folder-open-01" size={14} />} onClick={onMontrer} />
       )}
+      {onBasculer && (
+        <span className="mt-1.5 shrink-0">
+          <Interrupteur
+            actif={prechargee}
+            libelle={prechargee ? `Ne plus précharger « ${competence.nom} »` : `Précharger « ${competence.nom} » dans sa fiche`}
+            disabled={occupe}
+            onChange={onBasculer}
+          />
+        </span>
+      )}
     </li>
   );
 }
 
-function Liste({ titre, aide, competences, montrer }: { titre: string; aide: string; competences: Competence[]; montrer?: (nom: string) => void }) {
-  if (!competences.length) return null;
-  return (
-    <section className="flex flex-col gap-1.5">
-      <TitreGroupe>{titre}</TitreGroupe>
-      <ul className="m-0 flex list-none flex-col gap-px rounded-md border border-bordure-subtile bg-fond-surface p-1">
-        {competences.map((c) => (
-          <CarteCompetence key={`${c.nom}-${c.dossier ?? "absente"}`} competence={c} onMontrer={montrer ? () => montrer(c.nom) : undefined} />
-        ))}
-      </ul>
-      <Note>{aide}</Note>
-    </section>
-  );
-}
+const POURQUOI: Record<"assistant" | "partage" | "sans-fiche", string> = {
+  assistant: "Ton assistant n’a pas de fiche : il charge la compétence qu’il lui faut quand la tâche s’y prête, ou quand tu la demandes avec « / » dans ton message.",
+  partage: "Sa fiche suit la version partagée : ses compétences préchargées se changent dans sa fiche, en copie privée.",
+  "sans-fiche": "Cette fiche n’est pas sur le disque : ses compétences préchargées ne se changent pas d’ici.",
+};
 
 /**
- * Ses compétences : les skills que sa fiche précharge, celles du projet et du poste que tout agent peut
- * utiliser, et ce que sa description dit qu'il couvre.
+ * Ses compétences : les skills que sa fiche précharge (à ajouter ou retirer d'ici), celles du projet et
+ * du poste que tout agent peut suivre, et ce que sa description dit qu'il couvre.
  */
 export function VueCompetences({
   role,
   contexte,
   lecture,
+  attribuer,
+  pourquoiFige,
   onRetour,
 }: {
   role: Role;
   contexte: ContexteConnaissances | null;
   lecture: Lecture<CompetencesAgent>;
+  /** Ajoute ou retire une compétence préchargée par sa fiche ; absent : figé (cf. `pourquoiFige`). */
+  attribuer?: (nom: string, oui: boolean) => Promise<void>;
+  pourquoiFige: keyof typeof POURQUOI | null;
   onRetour: () => void;
 }) {
   const bridge = getBridge()?.agents;
+  const [enCours, setEnCours] = useState<string | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
   const montrer =
     contexte && bridge?.montrerCompetence
       ? (nom: string) => void bridge.montrerCompetence!(role.id, { dossier: contexte.dossier }, nom).then((r) => !r.ok && annoncer(r.message))
       : undefined;
   const c = lecture.etat === "pret" ? lecture.valeur : null;
+  // Une skill de la fiche se reconnaît par son nom ou par le dossier où elle est rangée.
+  const dansLaFiche = (s: Competence) => !!c?.fiche.some((f) => f.nom === s.nom || f.nom === dossierDe(s.dossier));
+
+  const basculer = attribuer
+    ? (s: Competence) => async (oui: boolean) => {
+        setEnCours(s.nom);
+        setErreur(null);
+        try {
+          await attribuer(s.nom, oui);
+          annoncer(oui ? `${s.nom} préchargée pour ${role.name}.` : `${s.nom} n’est plus préchargée.`);
+        } catch (e) {
+          setErreur(messageErreur(e));
+        } finally {
+          setEnCours(null);
+        }
+      }
+    : null;
+
+  const liste = (titre: string, aide: string, competences: Competence[], prechargees: boolean) =>
+    competences.length > 0 && (
+      <section className="flex flex-col gap-1.5">
+        <TitreGroupe>{titre}</TitreGroupe>
+        <ul className="m-0 flex list-none flex-col gap-px rounded-md border border-bordure-subtile bg-fond-surface p-1">
+          {competences.map((s) => (
+            <CarteCompetence
+              key={`${s.nom}-${s.dossier ?? "absente"}`}
+              competence={s}
+              onMontrer={montrer ? () => montrer(s.nom) : undefined}
+              prechargee={prechargees}
+              onBasculer={basculer ? (oui) => void basculer(s)(oui) : undefined}
+              occupe={enCours !== null}
+            />
+          ))}
+        </ul>
+        <Note>{aide}</Note>
+      </section>
+    );
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -100,24 +162,26 @@ export function VueCompetences({
       {lecture.etat === "chargement" && <Note>Lecture de ses compétences…</Note>}
       {lecture.etat === "erreur" && <Note erreur>{lecture.message}</Note>}
       {lecture.etat === "indisponible" && <Note>Les compétences d’un agent sur un serveur ne se lisent pas encore d’ici.</Note>}
+      {erreur && <Note erreur>{erreur}</Note>}
       {c && (
         <>
-          <Liste
-            titre="Dans sa fiche"
-            aide="Préchargées : leur texte entre dans chaque appel de l’agent."
-            competences={c.fiche}
-            montrer={montrer}
-          />
-          <Liste titre="Du projet" aide="Dans le dossier .claude/skills du projet." competences={c.projet} montrer={montrer} />
-          <Liste
-            titre={`De ${poste.ce}`}
-            aide="Tous tes agents peuvent s’en servir : seuls leur nom et leur description sont présentés à chaque appel."
-            competences={c.poste}
-            montrer={montrer}
-          />
-          {!c.fiche.length && !c.projet.length && !c.poste.length && (
-            <Note>Aucune compétence sur {poste.ce} pour l’instant. Une skill de Claude Code ajoutée dans ton dossier personnel apparaîtra ici.</Note>
+          {liste(
+            "Préchargées par sa fiche",
+            `Leur texte entre dans chaque appel de ${role.name}, qu’il travaille seul ou pour un autre agent. Précharge seulement ce qui sert à presque chaque tâche : le reste, il le charge au besoin.`,
+            c.fiche,
+            true,
           )}
+          {liste("Du projet", "Rangées dans le dossier .claude/skills du projet.", c.projet.filter((s) => !dansLaFiche(s)), false)}
+          {liste(
+            `De ${poste.ce}`,
+            "Tous tes agents peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.",
+            c.poste.filter((s) => !dansLaFiche(s)),
+            false,
+          )}
+          {!c.fiche.length && !c.projet.length && !c.poste.length && (
+            <Note>Aucune compétence sur {poste.ce} pour l’instant. Une skill de Claude Code rangée dans ton dossier personnel (.claude/skills) apparaîtra ici.</Note>
+          )}
+          {pourquoiFige && <Note>{POURQUOI[pourquoiFige]}</Note>}
         </>
       )}
     </div>

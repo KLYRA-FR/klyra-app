@@ -21,6 +21,12 @@
 export interface Frontmatter {
   /** Paires clé / valeur, dans l'ordre du fichier. */
   entries: [string, string][];
+  /**
+   * Les lignes en retrait sous une clé (liste `- a`, sous-clés), gardées telles quelles : `skills:` ou
+   * `tools:` en liste, `mcpServers:`, `hooks:`… La valeur de la clé est alors ce qui suit ses deux-points
+   * (souvent vide). Une clé réécrite par l'app perd son bloc ; les autres le gardent mot pour mot.
+   */
+  blocs?: Record<string, string>;
 }
 
 export interface ParsedAgentFile {
@@ -56,16 +62,52 @@ function quote(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
 }
 
+/** Un bloc `>` (replié) ou `|` (littéral) : ses lignes sans leur retrait commun. */
+function scalaireBloc(indicateur: string, lignes: string[]): string {
+  const retrait = Math.min(...lignes.filter((l) => l.trim()).map((l) => l.match(/^ */)![0].length));
+  const texte = lignes.map((l) => l.slice(Number.isFinite(retrait) ? retrait : 0));
+  return (indicateur.startsWith(">") ? texte.join(" ").replace(/ {2,}/g, " ") : texte.join("\n")).trim();
+}
+
 export function parseAgentFile(content: string): ParsedAgentFile {
   const normalized = content.replace(/\r\n/g, "\n");
   const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!match) return { frontmatter: { entries: [] }, body: normalized };
   const entries: [string, string][] = [];
+  const blocs: Record<string, string> = {};
+  const suite: Record<string, string[]> = {};
+  let cle: string | null = null;
   for (const line of match[1].split("\n")) {
     const m = line.match(/^([A-Za-z][\w-]*):\s?(.*)$/);
-    if (m) entries.push([m[1], unquote(m[2])]);
+    if (m) {
+      cle = m[1];
+      entries.push([m[1], unquote(m[2])]);
+    } else if (cle && /^(\s+\S|-\s)/.test(line)) (suite[cle] ??= []).push(line);
   }
-  return { frontmatter: { entries }, body: normalized.slice(match[0].length).replace(/^\n+/, "") };
+  for (const [k, lignes] of Object.entries(suite)) {
+    const i = entries.findIndex(([key]) => key === k);
+    if (/^[|>][+-]?$/.test(entries[i][1])) entries[i] = [k, scalaireBloc(entries[i][1], lignes)];
+    else blocs[k] = lignes.join("\n");
+  }
+  return { frontmatter: { entries, ...(Object.keys(blocs).length ? { blocs } : {}) }, body: normalized.slice(match[0].length).replace(/^\n+/, "") };
+}
+
+/** Une liste de l'en-tête : `cle: a, b`, `cle: [a, b]` ou en lignes `- a`. */
+export function getListe(fm: Frontmatter, key: string): string[] {
+  const nettoyer = (v: string) => v.trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+  const bloc = fm.blocs?.[key];
+  if (bloc)
+    return bloc
+      .split("\n")
+      .map((l) => /^\s*-\s+(.+)$/.exec(l)?.[1])
+      .filter((v): v is string => !!v)
+      .map(nettoyer)
+      .filter(Boolean);
+  return (getField(fm, key) ?? "")
+    .replace(/^\[|\]$/g, "")
+    .split(",")
+    .map(nettoyer)
+    .filter(Boolean);
 }
 
 export function getField(fm: Frontmatter, key: string): string | undefined {
@@ -78,11 +120,28 @@ export function setFields(fm: Frontmatter, values: Record<string, string | undef
   for (const [k, v] of Object.entries(values)) {
     if (v !== undefined && !entries.some(([key]) => key === k)) entries.push([k, v]);
   }
-  return { entries: entries.filter(([, v]) => v !== "") };
+  // Une clé réécrite perd son bloc ; une clé vide disparaît, sauf si son bloc la porte.
+  const blocs = Object.fromEntries(Object.entries(fm.blocs ?? {}).filter(([k]) => values[k] === undefined));
+  return { entries: entries.filter(([k, v]) => v !== "" || k in blocs), ...(Object.keys(blocs).length ? { blocs } : {}) };
+}
+
+/** Écrit une liste en lignes `- a` (la forme de la documentation de Claude Code) ; vide, la clé disparaît. */
+export function setListe(fm: Frontmatter, key: string, valeurs: string[]): Frontmatter {
+  const propres = [...new Set(valeurs.map((v) => v.trim()).filter(Boolean))];
+  const sans = setFields(fm, { [key]: "" });
+  if (!propres.length) return sans;
+  const entries: [string, string][] = fm.entries.some(([k]) => k === key)
+    ? fm.entries.filter(([k, v]) => k === key || v !== "" || k in (sans.blocs ?? {})).map(([k, v]): [string, string] => [k, k === key ? "" : v])
+    : [...sans.entries, [key, ""]];
+  return { entries, blocs: { ...(sans.blocs ?? {}), [key]: propres.map((v) => `  - ${/^[\w.:-]+$/.test(v) ? v : JSON.stringify(v)}`).join("\n") } };
 }
 
 export function serializeAgentFile({ frontmatter, body }: ParsedAgentFile): string {
-  const head = frontmatter.entries.map(([k, v]) => `${k}: ${k === "description" ? `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : quote(v)}`);
+  const head = frontmatter.entries.map(([k, v]) => {
+    const bloc = frontmatter.blocs?.[k];
+    const ligne = bloc && v === "" ? `${k}:` : `${k}: ${k === "description" ? `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : quote(v)}`;
+    return bloc ? `${ligne}\n${bloc}` : ligne;
+  });
   return `---\n${head.join("\n")}\n---\n\n${body.trim()}\n`;
 }
 

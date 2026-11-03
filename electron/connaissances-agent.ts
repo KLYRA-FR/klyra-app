@@ -288,3 +288,83 @@ export function lireCompetences(contenuFiche: string | null, configClaude: strin
   );
   return { fiche, poste, projet };
 }
+
+/* ─── Skills dans une session ─────────────────────────────────── */
+
+/*
+ * Ce que l'app fait pour que les skills marchent comme dans Claude Code (vérifié avec Claude Code
+ * 2.1.317 et un faux fournisseur, le 03/11/2026) :
+ * - une commande `/<skill>` n'est reconnue qu'en tout début du message ; l'app, qui écrit le contexte
+ *   avant le message de la personne, la remet donc en tête (le reste devient ses arguments) ;
+ * - Claude Code précharge les `skills` d'une fiche pour un sous-agent, mais pas pour un agent lancé
+ *   seul (`--agent`, la conversation directe et les fils de l'app) : l'app les lui donne elle-même.
+ */
+
+/** Une commande de Claude Code que l'app traite à part : jamais prise pour une skill. */
+const COMMANDES_A_PART = new Set(["compact"]);
+
+/** Le nom de la skill demandée en tête d'un message (« /rangement range le dossier » → « rangement ») ; null sinon. */
+export function skillEnTete(texte: string): string | null {
+  const nom = /^\/([a-z0-9][a-z0-9:_-]{0,63})(?=\s|$)/i.exec(texte.trimStart())?.[1] ?? null;
+  return nom && !COMMANDES_A_PART.has(nom.toLowerCase()) ? nom : null;
+}
+
+/** Les noms des skills que Claude Code trouvera dans ce dossier (poste et projet), par leur nom et par leur dossier. */
+export function skillsConnues(configClaude: string, dossier: string | null): Set<string> {
+  const noms = new Set<string>();
+  for (const s of [...lireSkills(path.join(configClaude, "skills")), ...(dossier ? lireSkills(path.join(dossier, ".claude", "skills")) : [])]) {
+    noms.add(s.nom);
+    if (s.dossier) noms.add(path.basename(s.dossier));
+  }
+  return noms;
+}
+
+/**
+ * Le message envoyé à Claude Code quand la personne a tapé `/<skill>` : la commande en tête, puis tout
+ * le message construit par l'app (contexte, conversation, son texte), que Claude Code passe en arguments.
+ * Une skill inconnue (ou une commande de Claude Code) : le message tel quel.
+ */
+export function promptAvecSkill(prompt: string, skill: string | null | undefined, connues: Set<string>): string {
+  if (!skill || skillEnTete(`/${skill}`) !== skill || !connues.has(skill)) return prompt;
+  if (skillEnTete(prompt) === skill) return prompt;
+  return `/${skill}\n\n${prompt}`;
+}
+
+/** Le texte d'une skill sans son en-tête YAML. */
+const sansEnteteYaml = (contenu: string) => contenu.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
+
+/** Au-delà, une skill préchargée est coupée (et l'agent le sait) : elle entre dans chaque appel. */
+export const MAX_PRECHARGE = 40_000;
+
+/**
+ * Les skills que la fiche précharge, à ajouter aux consignes d'un agent lancé seul (`--agent`) :
+ * leur texte, comme Claude Code le donne à un sous-agent. `texte` est null sans skill dans la fiche.
+ */
+export function competencesPrechargees(contenuFiche: string | null, configClaude: string, dossier: string | null): { noms: string[]; texte: string | null } {
+  const { fiche } = lireCompetences(contenuFiche, configClaude, dossier);
+  if (!fiche.length) return { noms: [], texte: null };
+  const blocs: string[] = [];
+  const absentes: string[] = [];
+  for (const s of fiche) {
+    let contenu: string | null = null;
+    try {
+      contenu = s.dossier ? sansEnteteYaml(readFileSync(path.join(s.dossier, "SKILL.md"), "utf8")) : null;
+    } catch {
+      contenu = null;
+    }
+    if (contenu === null) {
+      absentes.push(s.nom);
+      continue;
+    }
+    const coupe = contenu.length > MAX_PRECHARGE;
+    blocs.push(
+      `<competence nom="${s.nom}">\nDossier de la compétence : ${s.dossier}\n\n${coupe ? `${contenu.slice(0, MAX_PRECHARGE)}\n\n[Coupée ici : lis la suite dans ${path.join(s.dossier!, "SKILL.md")}.]` : contenu}\n</competence>`,
+    );
+  }
+  const lignes = [
+    "Compétences préchargées par ta fiche (`skills`) : leurs consignes sont ci-dessous, suis-les quand la tâche s’y prête, sans les recharger avec l’outil Skill.",
+    ...blocs,
+  ];
+  if (absentes.length) lignes.push(`Introuvables sur ce poste, donc absentes : ${absentes.join(", ")}. Ne fais pas comme si tu les avais.`);
+  return { noms: fiche.map((s) => s.nom), texte: blocs.length || absentes.length ? lignes.join("\n\n") : null };
+}

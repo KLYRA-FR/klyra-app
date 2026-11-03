@@ -246,6 +246,8 @@ export interface StreamOptions {
   lieu?: string | null;
   /** Sur le VPS : le dossier du projet sur cette machine. */
   dossierVps?: string | null;
+  /** La skill demandée en tête du message (« /rangement … ») : remise devant le contexte si elle existe. */
+  skill?: string | null;
 }
 
 /** Ce qu'un agent peut faire sans demander (cf. electron/claude.ts). */

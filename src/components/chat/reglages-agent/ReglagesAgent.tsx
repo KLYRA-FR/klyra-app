@@ -6,7 +6,7 @@ import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { NIVEAUX_ACCES } from "@/lib/acces";
-import { parseAgentFile, serializeAgentFile, setFields } from "@/lib/agent-file";
+import { getListe, parseAgentFile, serializeAgentFile, setFields, setListe } from "@/lib/agent-file";
 import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { useReglages } from "@/lib/reglages";
@@ -43,7 +43,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
   const contexte = contexteDe(chat, project, role.id);
   // Relue à la fin de chaque travail : l'agent a pu écrire un souvenir.
   const memoire = useMemoireAgent(role.id, contexte, !!travail);
-  const competences = useCompetencesAgent(role.id, contexte);
+  const competences = useCompetencesAgent(role.id, contexte, role.file?.modifiedAt);
   const consommation = useConsommationAgent(role.id);
 
   const local = tous.find((a) => a.role.id === role.id) ?? null;
@@ -54,6 +54,15 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
   const nbRoutines = routines.routines.filter((r) => r.agentId === role.id).length;
   const dossier = chat.lieu ? "Sur le serveur" : chat.kind === "equipe" && project ? project.folder : `~/.klyra/atelier/${role.id}`;
   const retour = () => setVue("accueil");
+
+  /** Ajoute ou retire une compétence préchargée par sa fiche (`skills`, en liste), par `save`. */
+  async function attribuer(nom: string, oui: boolean) {
+    if (!role.file) throw new Error("Cette fiche n’est pas sur le disque.");
+    const { frontmatter, body } = parseAgentFile(role.file.content);
+    const actuelles = getListe(frontmatter, "skills");
+    const voulues = oui ? [...actuelles, nom] : actuelles.filter((n) => n !== nom);
+    await save(role.id, serializeAgentFile({ frontmatter: setListe(frontmatter, "skills", voulues), body }), {}, role.file.modifiedAt);
+  }
 
   if (vue === "souvenirs")
     return (
@@ -67,7 +76,17 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
         onRetour={retour}
       />
     );
-  if (vue === "competences") return <VueCompetences role={role} contexte={contexte} lecture={competences} onRetour={retour} />;
+  if (vue === "competences")
+    return (
+      <VueCompetences
+        role={role}
+        contexte={contexte}
+        lecture={competences}
+        attribuer={canEdit && !assistant && !lie && role.file ? attribuer : undefined}
+        pourquoiFige={assistant ? "assistant" : lie ? "partage" : !role.file ? "sans-fiche" : null}
+        onRetour={retour}
+      />
+    );
   if (vue === "routines") return <VueRoutines role={role} api={routines} onRetour={retour} />;
   if (vue === "utilisation") return <VueUtilisation role={role} lecture={consommation} onRetour={retour} />;
 
@@ -87,10 +106,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
     const { frontmatter, body } = parseAgentFile(role.file.content);
     await save(role.id, serializeAgentFile({ frontmatter: setFields(frontmatter, { description }), body }), {}, role.file.modifiedAt);
   };
-  // Une fiche dont l'en-tête a des listes sur plusieurs lignes (`tools:`, `skills:` en liste) : l'éditeur
-  // d'en-tête de l'app ne les relit pas, on ne la réécrit donc pas d'ici.
-  const enteteSimple = !!role.file && !/^---\r?\n[\s\S]*?^\s+-\s/m.test(/^---\r?\n[\s\S]*?\r?\n---/.exec(role.file.content)?.[0] ?? "");
-  const descriptionModifiable = canEdit && !assistant && !lie && enteteSimple;
+  const descriptionModifiable = canEdit && !assistant && !lie && !!role.file;
 
   return (
     <div className="flex flex-col gap-5 p-4">

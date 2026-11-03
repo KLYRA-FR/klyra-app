@@ -250,6 +250,8 @@ export async function streamDistant(origine: string, requestId: string, options:
         dossier: options.dossierVps ?? null,
         /* Le VPS retient la session de cette conversation : le téléphone, PC fermé, y reprend. */
         conversation: options.chatId ?? null,
+        /* `/<skill>` en tête du message : le VPS la remet devant le contexte s'il la connaît. */
+        ...(options.skill ? { skill: options.skill } : {}),
       },
     });
     if (recu.status === 401) throw new Error("Ce PC n’est plus relié à ce VPS. Relance la commande sur le VPS et colle le nouveau lien dans Serveurs.");

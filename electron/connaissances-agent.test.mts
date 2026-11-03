@@ -13,6 +13,10 @@ import {
   lireSouvenir,
   nomDeFichier,
   porteeDeLaFiche,
+  competencesPrechargees,
+  promptAvecSkill,
+  skillEnTete,
+  skillsConnues,
   skillsDeLaFiche,
 } from "./connaissances-agent.ts";
 
@@ -131,4 +135,46 @@ test("la portée vient de l'en-tête de la fiche, jamais de son texte", () => {
   assert.equal(porteeDeLaFiche("---\nname: a\n---\nmemory: user\n"), null);
   assert.equal(porteeDeLaFiche("---\nmemory: auto\n---\n"), null);
   assert.equal(porteeDeLaFiche(""), null);
+});
+
+test("une skill demandée en tête du message, jamais /compact", () => {
+  assert.equal(skillEnTete("/rangement range le dossier"), "rangement");
+  assert.equal(skillEnTete("  /rangement"), "rangement");
+  assert.equal(skillEnTete("/outils:deploi vite"), "outils:deploi");
+  assert.equal(skillEnTete("/compact"), null);
+  assert.equal(skillEnTete("range avec /rangement"), null);
+  assert.equal(skillEnTete("/"), null);
+  assert.equal(skillEnTete("/rangement.txt"), null);
+});
+
+test("la commande remise en tête, devant le contexte de l'app, seulement pour une skill connue", () => {
+  const connues = new Set(["rangement"]);
+  const prompt = "[Contexte] Tu échanges avec Corentin.\n\n[Message de Corentin]\n/rangement range le dossier";
+  assert.equal(promptAvecSkill(prompt, "rangement", connues), `/rangement\n\n${prompt}`);
+  assert.equal(promptAvecSkill("/rangement range", "rangement", connues), "/rangement range");
+  assert.equal(promptAvecSkill(prompt, "clear", connues), prompt);
+  assert.equal(promptAvecSkill(prompt, "../x", new Set(["../x"])), prompt);
+  assert.equal(promptAvecSkill(prompt, null, connues), prompt);
+});
+
+test("les skills connues du poste et du projet, et ce que la fiche précharge", () => {
+  const { config, projet, fin } = poste();
+  try {
+    mkdirSync(path.join(config, "skills", "rangement"), { recursive: true });
+    writeFileSync(path.join(config, "skills", "rangement", "SKILL.md"), "---\nname: rangement\ndescription: Range\n---\n\nTrie par extension.\n");
+    mkdirSync(path.join(projet, ".claude", "skills", "dossier-deploi"), { recursive: true });
+    writeFileSync(path.join(projet, ".claude", "skills", "dossier-deploi", "SKILL.md"), "---\nname: deploi\n---\n\n" + "x".repeat(50_000));
+    assert.deepEqual([...skillsConnues(config, projet)].sort(), ["deploi", "dossier-deploi", "rangement"]);
+    assert.deepEqual([...skillsConnues(config, null)], ["rangement"]);
+    const p = competencesPrechargees("---\nskills:\n  - rangement\n  - deploi\n  - absente\n---\n", config, projet);
+    assert.deepEqual(p.noms, ["rangement", "deploi", "absente"]);
+    assert.match(p.texte ?? "", /<competence nom="rangement">\nDossier de la compétence : .*rangement\n\nTrie par extension\.\n<\/competence>/);
+    assert.doesNotMatch(p.texte ?? "", /description: Range/);
+    assert.match(p.texte ?? "", /\[Coupée ici : lis la suite dans .*SKILL\.md\.\]/);
+    assert.match(p.texte ?? "", /Introuvables sur ce poste, donc absentes : absente\./);
+    assert.deepEqual(competencesPrechargees("---\nname: a\n---\n", config, projet), { noms: [], texte: null });
+    assert.deepEqual(competencesPrechargees(null, config, projet), { noms: [], texte: null });
+  } finally {
+    fin();
+  }
 });

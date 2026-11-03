@@ -47,8 +47,8 @@ export function useMemoireAgent(agentId: string, contexte: ContexteConnaissances
   return { lecture, actualiser };
 }
 
-/** Ses compétences : celles de sa fiche, du projet et du poste. */
-export function useCompetencesAgent(agentId: string, contexte: ContexteConnaissances | null) {
+/** Ses compétences : celles de sa fiche, du projet et du poste ; relues quand `cle` change (fiche réécrite). */
+export function useCompetencesAgent(agentId: string, contexte: ContexteConnaissances | null, cle?: unknown) {
   const [lecture, setLecture] = useState<Lecture<CompetencesAgent>>({ etat: "chargement" });
   const dossier = contexte?.dossier ?? null;
   const disponible = contexte !== null;
@@ -67,7 +67,7 @@ export function useCompetencesAgent(agentId: string, contexte: ContexteConnaissa
     return () => {
       actif = false;
     };
-  }, [agentId, dossier, disponible]);
+  }, [agentId, dossier, disponible, cle]);
   return lecture;
 }
 
