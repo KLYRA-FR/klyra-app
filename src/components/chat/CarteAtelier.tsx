@@ -149,22 +149,41 @@ export function CarteAtelier({
   part,
   etat,
   messageId,
+  chatId,
+  lieu,
   enDirect,
 }: {
   part: Extract<MessagePart, { type: "atelier-agent" }>;
   etat: EtatAtelier | undefined;
   messageId: string;
+  /** La conversation et sa machine : sur un VPS, l'épreuve tourne là-bas. */
+  chatId: string;
+  lieu: string | null;
   /** L'assistant est en train d'écrire ce message : les nouvelles étoiles s'allument et sonnent. */
   enDirect: boolean;
 }) {
   if (!etat) return null;
   if (!etat.dernier) return <LigneAtelier etat={etat} />;
-  return <CarteVivante etapeId={part.etapeId} etat={etat} messageId={messageId} enDirect={enDirect} />;
+  return <CarteVivante etapeId={part.etapeId} etat={etat} messageId={messageId} chatId={chatId} lieu={lieu} enDirect={enDirect} />;
 }
 
 type Creation = { type: "repos" } | { type: "creation" } | { type: "nee" } | { type: "erreur"; message: string };
 
-function CarteVivante({ etapeId, etat, messageId, enDirect }: { etapeId: string; etat: EtatAtelier; messageId: string; enDirect: boolean }) {
+function CarteVivante({
+  etapeId,
+  etat,
+  messageId,
+  chatId,
+  lieu,
+  enDirect,
+}: {
+  etapeId: string;
+  etat: EtatAtelier;
+  messageId: string;
+  chatId: string;
+  lieu: string | null;
+  enDirect: boolean;
+}) {
   const router = useRouter();
   const { roles, create, identifiantLibre } = useAgents();
   const { marquerAtelier } = useWorkspace();
@@ -330,7 +349,18 @@ function CarteVivante({ etapeId, etat, messageId, enDirect }: { etapeId: string;
       </div>
 
       {!remplacee && !etat.provisoire && (
-        <Epreuve b={b} id={id} nom={nom} teinte={teinte} etat={etat} messageId={messageId} etapeId={etapeId} lectureSeule={!!idCree || creation.type !== "repos"} />
+        <Epreuve
+          b={b}
+          id={id}
+          nom={nom}
+          teinte={teinte}
+          etat={etat}
+          messageId={messageId}
+          etapeId={etapeId}
+          chatId={chatId}
+          lieu={lieu}
+          lectureSeule={!!idCree || creation.type !== "repos"}
+        />
       )}
 
       {!idCree && !remplacee && (
@@ -382,6 +412,8 @@ function Epreuve({
   etat,
   messageId,
   etapeId,
+  chatId,
+  lieu,
   lectureSeule,
 }: {
   b: BrouillonAgent;
@@ -391,6 +423,8 @@ function Epreuve({
   etat: EtatAtelier;
   messageId: string;
   etapeId: string;
+  chatId: string;
+  lieu: string | null;
   lectureSeule: boolean;
 }) {
   const { marquerAtelier } = useWorkspace();
@@ -409,7 +443,7 @@ function Epreuve({
   const modele = MODELES[b.modele || "opus"];
   if (lectureSeule && !joues.length) return null;
 
-  const lancer = async (types: string[], brouillon: BrouillonAgent = b) => {
+  const lancer = async (types: string[], brouillon: BrouillonAgent = b, ajouts: AjoutFiche[] = etat.ajouts) => {
     const essayer = getBridge()?.claude.essayer;
     if (!essayer) {
       setIndisponible("L’épreuve se lance dans l’app de bureau, avec Claude Code.");
@@ -423,7 +457,12 @@ function Epreuve({
       cas
         .filter((c) => types.includes(c.type))
         .map(async (c) => {
-          const r = await essayer(crypto.randomUUID(), { id, description: descriptionFiche(brouillon), corps: corpsFiche(brouillon), modele: brouillon.modele || "opus", fiche }, c);
+          const r = await essayer(
+            crypto.randomUUID(),
+            { id, description: descriptionFiche(brouillon), corps: corpsFiche(brouillon), modele: brouillon.modele || "opus", fiche },
+            c,
+            { lieu, conversation: chatId, ajouts },
+          );
           const resultat: ResultatCas = r.ok
             ? r.data
             : { ...c, reponse: "", verdict: null, raison: "", correction: null, jetons: 0, empreinte: empreinteFiche(fiche), erreur: r.message };
@@ -437,7 +476,7 @@ function Epreuve({
   const corriger = (correction: AjoutFiche, type: string) => {
     marquerAtelier(messageId, etapeId, (part) => ({ ajouts: [...(part.ajouts ?? []), correction] }));
     annoncer(`Ajouté à la fiche de ${nom} : ${correction.texte}`);
-    void lancer([type], appliquerAjouts(b, [correction]));
+    void lancer([type], appliquerAjouts(b, [correction]), [...etat.ajouts, correction]);
   };
 
   return (
@@ -532,8 +571,8 @@ function Epreuve({
       <p className="m-0 text-ui-2xs leading-[1.45] text-texte-tertiaire">
         {indisponible ??
           (joues.length
-            ? `${joues.length} essai${joues.length > 1 ? "s" : ""} et leur avis : ${jetons.toLocaleString("fr-FR")} jetons, sur ton compte Claude.`
-            : `Trois vrais essais de ${nom} avec ${modele}, sans outil et sans rien écrire, puis un avis rapide sur chacun. Sur ton compte Claude.`)}
+            ? `${joues.length} essai${joues.length > 1 ? "s" : ""} et leur avis : ${jetons.toLocaleString("fr-FR")} jetons, ${lieu ? "sur le compte Claude du VPS" : "sur ton compte Claude"}.`
+            : `Trois vrais essais de ${nom} avec ${modele}${lieu ? " sur le VPS" : ""}, sans outil et sans rien écrire, puis un avis rapide sur chacun. ${lieu ? "Sur le compte Claude du VPS." : "Sur ton compte Claude."}`)}
       </p>
     </section>
   );

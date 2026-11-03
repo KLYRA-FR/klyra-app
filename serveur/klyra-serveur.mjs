@@ -318,6 +318,8 @@ export function creerGestionnaire(options) {
     ...(routines ? { routines: true } : {}),
     /* Réglages du serveur › Fournisseurs : moteurs (Claude Code, Codex) et IA à consulter. */
     ...(moteurs && ia ? { fournisseurs: true } : {}),
+    /* L'atelier d'un agent : outils de l'assistant et épreuve (avant : seulement sur le PC). */
+    ...(agents && ia ? { atelier: true } : {}),
   });
 
   return async function gestionnaire(req, res) {
@@ -503,6 +505,20 @@ export function creerGestionnaire(options) {
           return repondre(res, code === "conflit" ? 409 : 400, { erreur: code, message: erreur instanceof Error ? erreur.message : "Lecture impossible sur le VPS." });
         }
       }
+      /*
+       * L'épreuve d'un agent pas encore créé, dans une conversation de ce VPS (atelier, comme sur le PC) :
+       * un essai de sa fiche sur une demande, puis un avis. `conversation` et `ajouts` : ce que la personne a
+       * ajouté à la fiche, que l'assistant verra au prochain appel.
+       */
+      if (action === "essayer") {
+        if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+        const c = (await lireCorpsRequete(req, CORPS_AGENT_MAX)) ?? {};
+        try {
+          return repondre(res, 200, await agents.essayer(c.brouillon, c.cas, { conversation: c.conversation, ajouts: c.ajouts }));
+        } catch (erreur) {
+          return repondre(res, 400, { erreur: "essai", message: erreur instanceof Error ? erreur.message : "Essai impossible sur le VPS." });
+        }
+      }
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
       const corps = await lireCorpsRequete(req, CORPS_AGENT_MAX);
       const requestId = typeof corps?.requestId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(corps.requestId) ? corps.requestId : null;
@@ -518,6 +534,8 @@ export function creerGestionnaire(options) {
         /* La conversation (dite par le PC, ou par le contexte du téléphone) : sans session, l'agent reprend la sienne. */
         const options = corps.options && typeof corps.options === "object" ? { ...corps.options } : corps.options;
         const cle = options && typeof options === "object" ? cleConversation(options.conversation ?? contexte?.chatId, options.agent, options.moteur) : null;
+        /* Écrit du téléphone : sa conversation sert aussi à suivre l'atelier d'un agent (cf. agents.mjs). */
+        if (options && typeof options === "object" && options.conversation === undefined && typeof contexte?.chatId === "string") options.conversation = contexte.chatId;
         if (cle && journal) {
           journal.lierConversation(requestId, cle);
           if (!options.sessionId) options.sessionId = journal.sessionDe(cle);

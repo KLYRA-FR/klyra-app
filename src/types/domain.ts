@@ -1,4 +1,7 @@
-import type { PilierListe, ResultatCas } from "../../electron/epreuve";
+import type { AjoutFiche, MajAtelier } from "../../electron/atelier-agent";
+import type { ResultatCas } from "../../electron/epreuve";
+
+export type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, RoutineProposee, VoisinAgent } from "../../electron/atelier-agent";
 
 /**
  * Modèle de données de l'app. Les données factices (src/data/mock.ts) et le
@@ -318,75 +321,6 @@ export interface PropositionAgent {
   role: string;
   description: string;
   consignes: string;
-}
-
-/**
- * Ce qu'un appel à `proposer_agent` apprend de l'agent en préparation. Chaque champ donné remplace
- * le précédent ; `nouveau` repart d'une carte vide. `consignes` : le corps complet de la fiche,
- * écrit par l'assistant (sinon l'app le compose avec les piliers).
- */
-export interface MajAtelier {
-  nouveau?: boolean;
-  id?: string;
-  nom?: string;
-  role?: string;
-  mission?: string;
-  description?: string;
-  declencheurs?: string[];
-  livrables?: string[];
-  methode?: string[];
-  limites?: string[];
-  verification?: string[];
-  consignes?: string;
-  modele?: "opus" | "sonnet" | "haiku";
-  /** Trois demandes pour le mettre à l'épreuve avant sa création. */
-  epreuve?: DemandesEpreuve;
-  /** Les agents actifs qui couvrent déjà une partie de son travail. */
-  voisins?: VoisinAgent[];
-  /** Une routine à lui confier une fois créé, proposée (jamais créée d'office). */
-  routine?: RoutineProposee;
-}
-
-export interface DemandesEpreuve {
-  normal: string;
-  floue: string;
-  horsMetier: string;
-}
-
-export interface VoisinAgent {
-  id: string;
-  raison: string;
-}
-
-export interface RoutineProposee {
-  nom: string;
-  consigne: string;
-  quand: { type: "jour" | "jours-ouvres" | "semaine" | "mois"; heure: string; jour?: number };
-}
-
-/** Une phrase ajoutée à la fiche par la personne, dans un de ses piliers. */
-export interface AjoutFiche {
-  pilier: PilierListe;
-  texte: string;
-}
-
-/** L'agent en préparation, tel que la carte de l'atelier le montre : tous les appels pliés. */
-export interface BrouillonAgent {
-  id: string;
-  nom: string;
-  role: string;
-  mission: string;
-  description: string;
-  declencheurs: string[];
-  livrables: string[];
-  methode: string[];
-  limites: string[];
-  verification: string[];
-  consignes: string;
-  modele: "opus" | "sonnet" | "haiku" | "";
-  epreuve: DemandesEpreuve | null;
-  voisins: VoisinAgent[];
-  routine: RoutineProposee | null;
 }
 
 export interface Message {

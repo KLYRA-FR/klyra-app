@@ -115,3 +115,65 @@ export function empreinteFiche(texte: string): string {
   }
   return (h >>> 0).toString(36);
 }
+
+/* ─── L'essai, lancé de la même façon sur ce PC et sur un VPS ─────── */
+
+/** Un agent lancé seul : il ne confie rien et rend sa part entière (le début de `CONSIGNE_SEUL` de claude.ts). */
+export const TRAVAIL_SEUL =
+  "Dans cette session, tu ne peux confier aucun travail ni ouvrir de fil, et personne ne te répondra en cours de route : fais ta part seul, rends-la en entier, et dis ce qui reste ou ce que tu n'as pas pu vérifier.";
+
+/** Ce qui s'ajoute à la fiche pendant l'essai : travailler seul, les règles communes de la machine, l'essai. */
+export const consigneEssai = (reglesCommunes: string) => `${TRAVAIL_SEUL} ${reglesCommunes}\n\n${CONSIGNE_ESSAI}`;
+
+/** La fiche en essai, comme agent de la session (`--agents`), sous un nom qui ne croise aucun agent. */
+export function definitionEssai(brouillon: { id: string; description: string; corps: string; modele: string }): { id: string; json: string } {
+  const id = /^[a-z0-9][a-z0-9-]{0,56}$/.test(brouillon.id) ? `essai-${brouillon.id}` : "essai-agent";
+  const modele = ["opus", "sonnet", "haiku"].includes(brouillon.modele) ? brouillon.modele : "opus";
+  return { id, json: JSON.stringify({ [id]: { description: brouillon.description || "Agent en essai.", prompt: brouillon.corps, model: modele } }) };
+}
+
+/** L'essai : la fiche comme agent de la session, sans aucun outil, sans MCP, sans session gardée. */
+export const argsEssai = (fichierDefinition: string, id: string, consigne: string) => [
+  "-p",
+  "--agents",
+  fichierDefinition,
+  "--agent",
+  id,
+  "--tools",
+  "",
+  "--output-format",
+  "json",
+  "--no-session-persistence",
+  "--strict-mcp-config",
+  "--exclude-dynamic-system-prompt-sections",
+  "--append-system-prompt",
+  consigne,
+];
+
+/** Le juge : un tour de Haiku, sans outil. */
+export const ARGS_JUGE = ["-p", "--model", "haiku", "--tools", "", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config"];
+
+/** La sortie d'un tour en mode impression (`--output-format json`) : la réponse, ses jetons, ou l'erreur. */
+export function lireSortieImprimee(stdout: string, code: number | null): { texte: string; jetons: number; usage: unknown; erreur: string | null } {
+  try {
+    const json = JSON.parse(stdout) as { result?: string; is_error?: boolean; modelUsage?: unknown };
+    const jetons = jetonsDuTour(json.modelUsage);
+    if (json.is_error || code !== 0) return { texte: "", jetons, usage: json.modelUsage, erreur: json.result || `Claude Code a échoué (code ${code}).` };
+    return { texte: (json.result ?? "").trim(), jetons, usage: json.modelUsage, erreur: null };
+  } catch {
+    return { texte: "", jetons: 0, usage: null, erreur: null };
+  }
+}
+
+/** Le résultat d'un essai jugé (ou pas : `juge` null quand l'essai a échoué). */
+export function resultatEssai(
+  cas: CasEpreuve,
+  fiche: string,
+  essai: { texte: string; jetons: number; erreur: string | null },
+  juge: { texte: string; jetons: number; erreur: string | null } | null,
+): ResultatCas {
+  const base: ResultatCas = { ...cas, reponse: "", verdict: null, raison: "", correction: null, jetons: essai.jetons + (juge?.jetons ?? 0), empreinte: empreinteFiche(fiche) };
+  if (essai.erreur) return { ...base, erreur: essai.erreur };
+  const verdict = juge && !juge.erreur ? lireVerdict(juge.texte) : null;
+  return { ...base, reponse: essai.texte, ...(verdict ?? { raison: juge?.erreur ?? "Pas d’avis lisible sur cette réponse : relis-la toi-même." }) };
+}

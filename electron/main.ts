@@ -159,6 +159,8 @@ import {
   versionDisponibleVps,
 } from "./fournisseurs-vps";
 import { competencesVps, creerSouvenirVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
+import type { AjoutFiche } from "./atelier-agent";
+import { essayerVps } from "./epreuve-vps";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
@@ -532,16 +534,21 @@ function registerBridge() {
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
   handle("claude:titre", (texte: string) => titrerDemande(String(texte ?? "")));
   /* L'épreuve d'un agent pas encore créé (atelier) : un essai sans outil, puis un avis. */
-  handle("claude:essayer", (requestId: string, brouillon: unknown, cas: unknown) => {
+  /* Dans une conversation sur un VPS, l'essai tourne sur le serveur (son Claude Code) ; sinon sur ce PC. */
+  handle("claude:essayer", (requestId: string, brouillon: unknown, cas: unknown, contexte: unknown) => {
     const b = (brouillon ?? {}) as Record<string, unknown>;
     const c = (cas ?? {}) as Record<string, unknown>;
+    const x = (contexte ?? {}) as Record<string, unknown>;
     const texte = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
     const type = c.type === "floue" || c.type === "hors-metier" ? c.type : "normal";
-    return essayerBrouillon(
-      String(requestId),
-      { id: texte(b.id, 64), description: texte(b.description, 1200), corps: texte(b.corps, 40_000), modele: texte(b.modele, 10), fiche: texte(b.fiche, 50_000) },
-      { type, demande: texte(c.demande, 2000) },
-    );
+    const fiche = { id: texte(b.id, 64), description: texte(b.description, 1200), corps: texte(b.corps, 40_000), modele: texte(b.modele, 10), fiche: texte(b.fiche, 50_000) };
+    const demande = { type, demande: texte(c.demande, 2000) } as const;
+    const vps = surVps({ lieu: typeof x.lieu === "string" ? x.lieu : null });
+    if (vps) {
+      const ajouts = Array.isArray(x.ajouts) ? x.ajouts.filter((a): a is AjoutFiche => !!a && typeof a === "object" && typeof (a as AjoutFiche).texte === "string").slice(0, 20) : [];
+      return essayerVps(vps.lieu, vps.jeton, fiche, demande, typeof x.conversation === "string" ? x.conversation.slice(0, 160) : null, ajouts);
+    }
+    return essayerBrouillon(String(requestId), fiche, demande);
   });
   handle("claude:cancel", (requestId: string) => (annulerDistant(requestId) ? undefined : moteurs.arreter(requestId)));
   handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision) => {

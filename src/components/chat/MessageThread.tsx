@@ -188,6 +188,8 @@ function RoleMessage({
             nomAgent={role.name}
             remplacee={part.type === "proposition-agent" && part.etapeId !== propositionCourante}
             messageId={message.id}
+            chatId={chat.id}
+            lieu={chat.lieu ?? null}
             etatAtelier={(id) => ateliers.get(id)}
             choix={{ actif: derniere && repondu === null && !enCours, repondu, onRepondre: (texte) => onAction(texte, roleId) }}
             onAutorisation={(demandeId, decision) => repondreAutorisation(message.id, demandeId, decision)}

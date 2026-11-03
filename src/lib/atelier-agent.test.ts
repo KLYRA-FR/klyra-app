@@ -6,7 +6,10 @@ import {
   appliquerMaj,
   casEpreuve,
   piliersEnAlerte,
+  refusAtelier,
   routineProposee,
+  SUIVI_VIDE,
+  suivreAtelier,
   BROUILLON_VIDE,
   brouillonEnCours,
   corpsFiche,
@@ -248,5 +251,51 @@ describe("l'épreuve, les voisins et la routine (V2, V3)", () => {
   it("cinq piliers sans épreuve : l'assistant est invité à la proposer", () => {
     expect(retourAtelier(NINA)).toContain("trois demandes pour la mettre à l’épreuve");
     expect(retourAtelier(appliquerMaj(NINA, { epreuve: { normal: "A", floue: "B", horsMetier: "C" } }))).not.toContain("trois demandes");
+  });
+});
+
+describe("le module commun au PC et au VPS (electron/atelier-agent.ts)", () => {
+  it("ses petits outils restent ceux de l'écran", async () => {
+    const commun = await import("../../electron/atelier-agent");
+    const noms = await import("./noms-agents");
+    const poids = await import("./poids-fiche");
+    const { serializeAgentFile, setFields } = await import("./agent-file");
+    for (const t of ["  Élodie  Moreau ", "Juriste immo", "Ça-va !", ""]) {
+      expect(commun.comparable(t)).toBe(noms.comparable(t));
+      expect(commun.identifiantDe(t)).toBe(noms.identifiantDe(t));
+      expect(commun.nomPropre(t)).toBe(noms.nomPropre(t));
+    }
+    expect(commun.CARACTERES_PAR_JETON).toBe(poids.CARACTERES_PAR_JETON);
+    expect(commun.SEUIL_FICHE_LONGUE).toBe(poids.SEUIL_FICHE_LONGUE);
+    for (const b of [NINA, { ...NINA, nom: "Zoé \"la\" \\ grande", modele: "sonnet" as const, description: "Un \"guillemet\" \\ et\nune ligne" }]) {
+      const attendu = serializeAgentFile({
+        frontmatter: setFields({ entries: [] }, { name: "x", displayName: commun.nomPropre(b.nom) || undefined, description: commun.descriptionFiche(b).replace(/\s*\n\s*/g, " "), model: b.modele || "opus" }),
+        body: commun.corpsFiche(b),
+      });
+      expect(commun.ficheAgent(b, "x")).toBe(attendu);
+    }
+  });
+
+  it("les refus : identifiant, prénom ou rôle pris, voisin hors de l'équipe", () => {
+    const equipe = [{ id: "principal", noms: ["Cicco", "Assistant"] }, { id: "commercial", noms: ["Nina", "Commercial"] }];
+    expect(refusAtelier({ nom: "Elio" }, equipe)).toBeNull();
+    expect(refusAtelier({ id: "commercial" }, equipe)).toMatch(/déjà dans Mes agents/);
+    expect(refusAtelier({ nom: "nina" }, equipe)).toMatch(/s’appelle Nina/);
+    expect(refusAtelier({ nom: "Cicco" }, equipe)).toMatch(/s’appelle Cicco/);
+    expect(refusAtelier({ voisins: [{ id: "veille", raison: "x" }] }, equipe)).toMatch(/pas un de ses agents actifs/);
+    expect(refusAtelier({ voisins: [{ id: "commercial", raison: "x" }] }, equipe)).toBeNull();
+  });
+
+  it("le suivi d'un serveur : les appels se plient, une carte créée ou neuve repart de zéro", () => {
+    const equipe = [{ id: "principal", noms: ["Cicco"] }];
+    let suivi = suivreAtelier(SUIVI_VIDE, { nom: "Nina", role: "Commercial" }, equipe);
+    suivi = suivreAtelier(suivi, { mission: "Rédige." }, equipe);
+    expect(suivi.brouillon).toMatchObject({ nom: "Nina", role: "Commercial", mission: "Rédige." });
+    const ajoute = { ...suivi, ajouts: [{ pilier: "limites" as const, texte: "Le code : non." }] };
+    expect(suivreAtelier(ajoute, { mission: "Autre." }, equipe).ajouts).toHaveLength(1);
+    // Nina créée sur le PC, sa fiche arrivée sur le serveur : l'appel suivant ouvre une autre carte.
+    const apres = suivreAtelier(ajoute, { nom: "Elio" }, [...equipe, { id: "nina", noms: ["Nina"] }]);
+    expect(apres).toEqual({ brouillon: { ...BROUILLON_VIDE, nom: "Elio" }, ajouts: [] });
+    expect(suivreAtelier(ajoute, { nouveau: true, nom: "Sol" }, equipe).brouillon.role).toBe("");
   });
 });

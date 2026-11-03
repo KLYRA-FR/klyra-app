@@ -13,8 +13,7 @@ import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
-import { appliquerAjouts, appliquerMaj, atelierEnCours, lireChoix, lireMajAtelier, retourAtelier } from "@/lib/atelier-agent";
-import { nomDejaPris } from "@/lib/noms-agents";
+import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier } from "@/lib/atelier-agent";
 import { lirePublication, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
@@ -1943,21 +1942,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           });
           return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans ton espace de livrables ; republier le même fichier remplace cette copie.`;
         }
-        case "proposer_agent": {
-          const maj = lireMajAtelier(args);
-          if (!maj) throw new Error("Rien à mettre sur la carte : donne au moins un champ (prénom, rôle, mission, piliers…).");
-          if (maj.id && roles.some((r) => r.id === maj.id)) throw new Error(`« ${maj.id} » est déjà dans Mes agents : propose un autre identifiant, ou un changement de sa fiche.`);
-          const pris = maj.nom ? nomDejaPris(maj.nom, roles) : null;
-          if (pris) throw new Error(`Elle a déjà un agent qui s’appelle ${pris.name} : propose un autre prénom.`);
-          const inconnu = maj.voisins?.find((v) => !roles.some((r) => r.id === v.id));
-          if (inconnu) throw new Error(`« ${inconnu.id} » n’est pas un de ses agents actifs : ne cite dans voisins que ceux de Mes agents.`);
-          // La carte de la conversation, cet appel compris (le rejouer ne change rien : chaque champ remplace le précédent).
-          const enCours = atelierEnCours(messages.filter((m) => m.chatId === appelant.chatId));
-          return retourAtelier(appliquerAjouts(appliquerMaj(enCours.brouillon, maj), enCours.ajouts), enCours.ajouts);
+        case "proposer_agent":
+        case "proposer_choix": {
+          // Le même appel que sur un VPS (electron/atelier-agent.ts) : refus, carte suivie, ce que l'outil répond.
+          const equipe = roles.map((r) => ({ id: r.id, noms: [r.name, r.tag] }));
+          const r = appelAtelier(nom, args, atelierEnCours(messages.filter((m) => m.chatId === appelant.chatId)), equipe);
+          if (r.erreur) throw new Error(r.texte);
+          return r.texte;
         }
-        case "proposer_choix":
-          if (!lireChoix(args)) throw new Error("Propose de 2 à 6 réponses courtes et distinctes.");
-          return "Réponses affichées sous ta réponse. Termine ta réponse maintenant : la sienne arrivera dans son prochain message.";
         default:
           throw new Error("Outil inconnu.");
       }

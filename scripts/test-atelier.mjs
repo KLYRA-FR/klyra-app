@@ -12,10 +12,13 @@
  * Puis, si Claude Code est là (KLYRA_CLAUDE_PATH), le vrai Claude Code face à un faux fournisseur
  * local (aucun compte, aucune dépense) : l'assistant appelle `proposer_agent` et `proposer_choix` par
  * le serveur MCP de l'app, la carte et les réponses paraissent dans le fil, l'outil lui répond.
+ * Enfin la même chose sur un VPS : un vrai serveur KLYRA local (dossier jetable) avec ce Claude Code,
+ * relié à l'app ; l'app n'a pas de Claude Code, donc l'épreuve ne peut tourner que sur le serveur.
  * Prérequis : `pnpm build && pnpm build:electron`.
  *   pnpm test:atelier:app          (sous Linux sans bac à sable : -- --no-sandbox)
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { demarrerFournisseur } from "./faux-fournisseur.mjs";
@@ -241,6 +244,90 @@ try {
         "les réponses proposées sous sa réponse, à cocher puis envoyer (rien de coché : « Envoyer » grisé)",
       );
       verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
+      await app.fermer();
+      app = null;
+
+      /* ─── Sur un VPS : un vrai serveur KLYRA local, le même outil ───── */
+      const vps = path.join(TMP, "vps");
+      const vpsHome = path.join(vps, "home");
+      mkdirSync(path.join(vpsHome, ".local", "bin"), { recursive: true });
+      mkdirSync(path.join(vpsHome, ".claude"), { recursive: true });
+      symlinkSync(CLAUDE, path.join(vpsHome, ".local", "bin", "claude"));
+      // Connecté pour le serveur (etat « pret ») ; les appels partent au faux fournisseur par la clé d'API.
+      writeFileSync(path.join(vpsHome, ".claude", ".credentials.json"), "{}");
+      const port = 20000 + Math.floor(Math.random() * 20000);
+      const SERVEUR = path.resolve(import.meta.dirname, "..", "serveur", "klyra-serveur.mjs");
+      const envServeur = {
+        ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|ANTHROPIC)/.test(k))),
+        HOME: vpsHome,
+        KLYRA_SERVEUR_DONNEES: path.join(vps, "donnees"),
+        KLYRA_SERVEUR_PORT: String(port),
+        KLYRA_SERVEUR_HOTE: "127.0.0.1",
+        KLYRA_SERVEUR_NOM: "Klyra-VPS",
+        ANTHROPIC_BASE_URL: fournisseur.url,
+        ANTHROPIC_API_KEY: "sk-faux-essai",
+      };
+      const serveur = spawn(process.execPath, [SERVEUR], { env: envServeur, stdio: "ignore" });
+      try {
+        const adresse = `http://127.0.0.1:${port}`;
+        for (let i = 0; i < 40 && !(await fetch(`${adresse}/`).then(() => true, () => false)); i++) await attendre(250);
+        const code = execFileSync(process.execPath, [SERVEUR, "appairer"], { env: envServeur }).toString().trim();
+        const lien = `klyra://rejoindre?adresse=${encodeURIComponent(adresse)}&code=${encodeURIComponent(code)}`;
+        // Sans Claude Code sur ce PC : seul le VPS peut faire répondre les agents et passer l'épreuve.
+        app = await lancerApp({ port: 9341, env });
+        const bouton = `document.querySelector('nav button[aria-haspopup="menu"][aria-label*="Serveur : "]')`;
+        const ligneServeurs = `document.querySelector('[role="menu"][aria-label="Compte"] [aria-haspopup="menu"]')`;
+        const ouvrir = async () => {
+          if ((await app.ev(`${bouton}?.getAttribute('aria-expanded')`)) !== "true") await app.ev(`${bouton}.click()`);
+          await app.quand(`document.querySelector('[role="menu"][aria-label="Compte"]')`);
+          if ((await app.ev(`${ligneServeurs}?.getAttribute('aria-expanded')`)) !== "true") await app.ev(`${ligneServeurs}.click()`);
+          return app.quand(`document.querySelector('[role="menu"][aria-label="Serveurs"]')`);
+        };
+        await ouvrir();
+        await app.cliquer("Ajouter un serveur");
+        await app.quand(`document.querySelector('input[aria-label="Lien d’invitation"]')`);
+        await app.saisir('input[aria-label="Lien d’invitation"]', lien);
+        await app.cliquer("Rejoindre");
+        verifier(await app.quand(`document.querySelector('main')?.innerText.includes("Klyra-VPS")`), "VPS : Klyra-VPS rejoint par le lien");
+        await app.aller("/chat?id=dm-principal");
+        await ouvrir();
+        await app.quand(`[...document.querySelectorAll('[role="menuitemradio"]')].some((b) => b.innerText.includes("Répond"))`);
+        await app.ev(`[...document.querySelectorAll('[role="menuitemradio"]')].find((x) => x.innerText.split("\\n")[0].trim() === "Klyra-VPS")?.click(); 0`);
+        const hote = new URL(adresse).host;
+        verifier(await app.quand(`new URLSearchParams(location.search).get("id") === ${JSON.stringify(`dm-principal@${hote}`)}`), "VPS : la conversation de l’assistant sur Klyra-VPS");
+        await app.touche("Escape", "Escape", 27);
+
+        const avant = fournisseur.requetes.length;
+        await ecrire("atelier zoe");
+        verifier(await app.quand(`${derniere}?.innerText.includes('L’assistant écrit sa carte')`, 60000), "VPS : la carte s’écrit pendant que l’assistant remplit l’outil");
+        verifier(await app.quand(`${derniere}?.innerText.includes('Atelier · nouvel agent') && ${derniere}.innerText.includes('Zoe')`, 60000), "VPS : proposer_agent, servi par le VPS, montre la carte dans le fil");
+        verifier(await app.quand(`${derniere}?.innerText.includes('fin OK')`, 60000), "VPS : l’outil répond sans erreur");
+        verifier(
+          fournisseur.requetes.slice(avant).some((q) => q.resultats.some((r) => !r.erreur && r.texte.includes("Carte de Zoe à jour : 2/5 piliers"))),
+          "VPS : l’assistant reçoit où en est la carte, calculé sur le VPS",
+        );
+        verifier((await app.ev(`${derniere}?.innerText ?? ''`)).includes("Nina fait déjà une partie de ce travail"), "VPS : ses voisins, les agents envoyés au VPS");
+
+        const essaisAvant = fournisseur.requetes.length;
+        await app.cliquer("Lancer l’épreuve", derniere);
+        verifier(
+          await app.quand(`['normal','floue','hors-metier'].every((t) => ['ok','ko'].includes(${derniere}?.querySelector('[data-cas="' + t + '"]')?.dataset.verdict))`, 90000),
+          "VPS : l’épreuve tourne sur le serveur (ce PC n’a pas Claude Code)",
+        );
+        verifier(fournisseur.requetes.slice(essaisAvant).filter((q) => q.systeme.includes("C'est un essai avant ta création")).length === 3, "VPS : trois essais de la fiche");
+        verifier((await app.ev(`${derniere}?.querySelector('[data-cas="hors-metier"]')?.dataset.verdict`)) === "ko", "VPS : hors de son métier, à corriger");
+        await app.cliquer("Ajouter à sa fiche et rejouer", derniere);
+        verifier(await app.quand(`${derniere}?.querySelector('[data-cas="hors-metier"]')?.dataset.verdict === 'ok'`, 60000), "VPS : la phrase ajoutée, l’essai rejoué sur le serveur réussit");
+        verifier((await app.ev(`${derniere}?.innerText ?? ''`)).includes("sur le compte Claude du VPS"), "VPS : la carte dit que l’épreuve a tourné sur le VPS");
+        const journalPc = path.join(donnees, "consommation.jsonl");
+        verifier(existsSync(journalPc) && readFileSync(journalPc, "utf8").includes("Claude Code"), "VPS : ce que l’épreuve a consommé est inscrit dans le journal de ce PC");
+        await app.cliquer("Créer l’agent", derniere);
+        verifier(await ficheEcrite("zoe"), "VPS : Zoe est créée, sa fiche sur ce PC (la source des agents)");
+        verifier(readFileSync(path.join(agents, "zoe.md"), "utf8").includes("- Le code et les bugs : je passe la main."), "VPS : sa fiche garde la phrase ajoutée");
+        verifier(app.erreurs.length === 0, `VPS : aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
+      } finally {
+        serveur.kill();
+      }
     } finally {
       fournisseur.fermer();
     }

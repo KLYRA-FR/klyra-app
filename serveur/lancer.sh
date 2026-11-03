@@ -134,6 +134,9 @@ curl -fsSL "$SOURCE/ia-catalogue.mjs" -o "$CODE_DIR/ia-catalogue.mjs"
 curl -fsSL "$SOURCE/atelier.mjs" -o "$CODE_DIR/atelier.mjs"
 curl -fsSL "$SOURCE/connaissances-agent.mjs" -o "$CODE_DIR/connaissances-agent.mjs"
 curl -fsSL "$SOURCE/consommation-ecart.mjs" -o "$CODE_DIR/consommation-ecart.mjs"
+curl -fsSL "$SOURCE/epreuve.mjs" -o "$CODE_DIR/epreuve.mjs"
+curl -fsSL "$SOURCE/json-partiel.mjs" -o "$CODE_DIR/json-partiel.mjs"
+curl -fsSL "$SOURCE/atelier-agent.mjs" -o "$CODE_DIR/atelier-agent.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────

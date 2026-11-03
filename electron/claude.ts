@@ -10,8 +10,9 @@ import { dossierHorsProjet } from "./atelier";
 import { competencesPrechargees, promptAvecSkill, skillsConnues } from "./connaissances-agent";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
-import { CONSIGNE_ESSAI, consigneJuge, empreinteFiche, jetonsDuTour, lireVerdict, type CasEpreuve, type ResultatCas } from "./epreuve";
+import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, resultatEssai, TRAVAIL_SEUL, type CasEpreuve, type ResultatCas } from "./epreuve";
 import { lireJsonPartiel } from "./json-partiel";
+import { CONSIGNE_ATELIER } from "./atelier-agent";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
@@ -291,9 +292,7 @@ function consigneAssistant(outilsApp: boolean): string {
   const equipe = actifs.length
     ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre et n'ajoute personne pour finir une tâche. Quand une partie relève clairement de l'un d'eux, confie-la-lui avec un brief qui se suffit (objectif, contexte et chemins, contraintes, ce qui est permis ou non, critère de fin, le livrable attendu dans des fichiers et un compte rendu court), et reste responsable du suivi, de la cohérence et de ce que tu rends. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié.${outilsApp ? " Reprends le fil déjà ouvert sur le sujet (lister_fils) plutôt que d'en ouvrir un autre." : ""} Le retour arrive de lui-même : ne le surveille pas en boucle. Au plus trois travaux confiés en même temps, seulement s'ils sont indépendants ; au plus deux reprises avec un défaut précis, puis dis le blocage. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
     : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-  const proposer = outilsApp
-    ? ` Pour créer un agent avec elle (elle le demande, ou un besoin revient qu'aucun de ses agents ne couvre), mène l'atelier ici, une question à la fois : d'abord la dernière fois qu'elle a fait cette tâche (ce qu'elle a fait, le temps passé, ce qui a coincé) ; puis son prénom, quand l'appeler, ce qu'il livre, ce qui demande son accord, comment il vérifie son travail. Propose à chaque question des réponses tirées de ce qu'elle t'a dit (proposer_choix), puis termine ta réponse. Après chaque réponse, complète sa carte avec proposer_agent ; à la fin, ajoute trois demandes pour l'épreuve. Un exemple de son travail joint : un modèle pour sa méthode, pas à recopier. Rien n'est créé par toi : elle le met à l'épreuve et le crée sur la carte.`
-    : "";
+  const proposer = outilsApp ? ` ${CONSIGNE_ATELIER}` : "";
   return `${qui} ${equipe} ${REGLES_COMMUNES}${proposer}`;
 }
 
@@ -317,7 +316,7 @@ function consigneAgent(id: string, outilsApp: boolean): string {
 }
 
 /** Le chemin court (`runAgent`) : un seul tour, sans délégation possible. */
-const CONSIGNE_SEUL = `Dans cette session, tu ne peux confier aucun travail ni ouvrir de fil, et personne ne te répondra en cours de route : fais ta part seul, rends-la en entier, et dis ce qui reste ou ce que tu n'as pas pu vérifier. ${REGLES_COMMUNES}`;
+const CONSIGNE_SEUL = `${TRAVAIL_SEUL} ${REGLES_COMMUNES}`;
 
 /** Les dépendances encore écrites `{{chemin:cle}}` dans la fiche d'un agent reçu. */
 function dossiersAConfigurer(id: string): string[] {
@@ -992,15 +991,11 @@ function tourImprime(bin: string, args: string[], cwd: string, entree: string, r
     child.on("error", (e) => finir({ texte: "", jetons: 0, erreur: `Impossible de lancer Claude Code : ${e.message}` }));
     child.on("close", (code, signal) => {
       if (signal) return finir({ texte: "", jetons: 0, erreur: "Essai arrêté." });
-      try {
-        const json = JSON.parse(stdout) as { result?: string; is_error?: boolean; modelUsage?: unknown };
-        enregistrerTourClaude(json.modelUsage, {}, null);
-        const jetons = jetonsDuTour(json.modelUsage);
-        if (json.is_error || code !== 0) return finir({ texte: "", jetons, erreur: json.result || stderr.trim() || `Claude Code a échoué (code ${code}).` });
-        finir({ texte: (json.result ?? "").trim(), jetons, erreur: null });
-      } catch {
-        finir({ texte: "", jetons: 0, erreur: expliquerLancement(stderr, bin) ?? (stderr.trim() || `Claude Code a échoué (code ${code}).`) });
-      }
+      const sortie = lireSortieImprimee(stdout, code);
+      if (sortie.usage) enregistrerTourClaude(sortie.usage, {}, null);
+      if (!sortie.usage && !sortie.texte && !sortie.erreur)
+        return finir({ texte: "", jetons: 0, erreur: expliquerLancement(stderr, bin) ?? (stderr.trim() || `Claude Code a échoué (code ${code}).`) });
+      finir({ texte: sortie.texte, jetons: sortie.jetons, erreur: sortie.erreur });
     });
     child.stdin.end(entree);
   });
@@ -1017,37 +1012,16 @@ export async function essayerBrouillon(
   brouillon: { id: string; description: string; corps: string; modele: string; fiche: string },
   cas: CasEpreuve,
 ): Promise<ResultatCas> {
-  const base: ResultatCas = { ...cas, reponse: "", verdict: null, raison: "", correction: null, jetons: 0, empreinte: empreinteFiche(brouillon.fiche) };
   const bin = findClaude();
-  if (!bin) return { ...base, erreur: "Claude Code est introuvable sur ce poste." };
-  const id = /^[a-z0-9][a-z0-9-]{0,63}$/.test(brouillon.id) ? `essai-${brouillon.id}` : "essai-agent";
-  const modele = ["opus", "sonnet", "haiku"].includes(brouillon.modele) ? brouillon.modele : "opus";
+  if (!bin) return resultatEssai(cas, brouillon.fiche, { texte: "", jetons: 0, erreur: "Claude Code est introuvable sur ce poste." }, null);
   const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-essai-"));
   try {
+    const { id, json } = definitionEssai(brouillon);
     const definition = path.join(dossier, "agent.json");
-    writeFileSync(definition, JSON.stringify({ [id]: { description: brouillon.description || "Agent en essai.", prompt: brouillon.corps, model: modele } }));
-    const essai = await tourImprime(
-      bin,
-      ["-p", "--agents", definition, "--agent", id, "--tools", "", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", SECTIONS_DU_POSTE_A_PART, "--append-system-prompt", `${CONSIGNE_SEUL}\n\n${CONSIGNE_ESSAI}`],
-      dossier,
-      cas.demande,
-      requestId,
-    );
-    if (essai.erreur) return { ...base, jetons: essai.jetons, erreur: essai.erreur };
-    const juge = await tourImprime(
-      bin,
-      ["-p", "--model", "haiku", "--tools", "", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config"],
-      dossier,
-      consigneJuge(brouillon.fiche, cas, essai.texte),
-      requestId,
-    );
-    const verdict = juge.erreur ? null : lireVerdict(juge.texte);
-    return {
-      ...base,
-      reponse: essai.texte,
-      jetons: essai.jetons + juge.jetons,
-      ...(verdict ?? { raison: juge.erreur ?? "Pas d’avis lisible sur cette réponse : relis-la toi-même." }),
-    };
+    writeFileSync(definition, json);
+    const essai = await tourImprime(bin, argsEssai(definition, id, consigneEssai(REGLES_COMMUNES)), dossier, cas.demande, requestId);
+    const juge = essai.erreur ? null : await tourImprime(bin, ARGS_JUGE, dossier, consigneJuge(brouillon.fiche, cas, essai.texte), requestId);
+    return resultatEssai(cas, brouillon.fiche, essai, juge);
   } finally {
     rmSync(dossier, { recursive: true, force: true });
   }

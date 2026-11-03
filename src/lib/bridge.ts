@@ -9,6 +9,7 @@ export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../
 import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
 import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
+import type { AjoutFiche } from "../../electron/atelier-agent";
 import type { CasEpreuve, ResultatCas } from "../../electron/epreuve";
 import type { EtatConsignesProjet } from "../../electron/consignes-projet";
 import type { Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
@@ -362,6 +363,8 @@ export interface KlyraBridge {
       requestId: string,
       brouillon: { id: string; description: string; corps: string; modele: string; fiche: string },
       cas: CasEpreuve,
+      /** La conversation : sur un VPS (`lieu`), l'essai tourne là-bas ; `ajouts` y suivent l'atelier. */
+      contexte?: { lieu: string | null; conversation: string; ajouts: AjoutFiche[] },
     ) => Promise<Reponse<ResultatCas>>;
     cancel: (requestId: string) => Promise<Reponse<void>>;
     /** Ta réponse à une demande d'autorisation d'un agent. */

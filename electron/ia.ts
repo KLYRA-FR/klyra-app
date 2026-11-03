@@ -8,6 +8,7 @@ import { enregistrerAppelIa } from "./consommation";
 import { composioConnect, espaceComposio, OUTILS_COMPOSIO } from "./composio";
 import { serveursMcpDirects } from "./mcp-direct";
 import { serveurOrdinateur } from "./ordinateur/pilote";
+import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -247,76 +248,6 @@ const OUTILS_FILS = [
     inputSchema: { type: "object", properties: { id }, required: ["id"] },
   },
 ];
-
-/**
- * L'atelier d'un agent, dans la conversation (cf. src/lib/atelier-agent.ts) : l'assistant complète la
- * carte à chaque réponse, la personne la crée d'un clic ou l'ajuste dans l'éditeur (ou non).
- */
-const liste = (description: string) => ({ type: "array", items: { type: "string" }, description });
-const OUTIL_PROPOSER = {
-  name: "proposer_agent",
-  description:
-    "Montre et complète, dans la conversation, la carte d'un agent à créer avec la personne. Appelle-le après chaque réponse utile, avec seulement ce que tu viens d'apprendre : chaque champ donné remplace le précédent, les autres restent. La carte montre ses cinq piliers (mission, quand l'appeler, ce qu'il livre, ses limites, comment il vérifie) et le poids de sa fiche. C'est la personne qui le crée d'un clic sur la carte, ou l'ajuste dans l'éditeur : rien n'est créé par cet outil. Phrases courtes, écrites comme la fiche les dira (« Envoyer au client : jamais sans ton accord. »). N'y répète pas ce que l'app donne déjà à chaque agent (agents actifs, fils, QA sur demande, accès qui n'est pas un accord, livrables en fichiers).",
-  inputSchema: {
-    type: "object",
-    properties: {
-      nouveau: { type: "boolean", description: "true pour commencer la carte d'un autre agent." },
-      nom: { type: "string", description: "Son prénom (ex. Nina)." },
-      role: { type: "string", description: "Son rôle court (ex. Commercial)." },
-      id: { type: "string", description: "Identifiant voulu : minuscules, chiffres et tirets. Sinon tiré du prénom." },
-      mission: { type: "string", description: "Sa mission, en une phrase." },
-      declencheurs: liste("Quand l'appeler : une situation par élément."),
-      livrables: liste("Ce qu'il rend : un livrable par élément."),
-      methode: liste("Comment il travaille : 3 à 5 règles."),
-      limites: liste("Ce qu'il ne fait pas, ou seulement avec l'accord de la personne : une phrase par élément."),
-      verification: liste("Comment il vérifie son travail avant de le rendre."),
-      modele: { type: "string", enum: ["opus", "sonnet", "haiku"], description: "Seulement si la personne l'a choisi." },
-      epreuve: {
-        type: "object",
-        description: "Trois demandes réalistes, tirées de ce qu'elle t'a dit, pour le mettre à l'épreuve avant de le créer : la carte les lui fait passer pour de vrai.",
-        properties: { normal: { type: "string", description: "Une demande normale de son métier." }, floue: { type: "string", description: "Une demande à laquelle il manque l'essentiel." }, horsMetier: { type: "string", description: "Une demande qui relève d'un autre métier." } },
-        required: ["normal", "floue", "horsMetier"],
-      },
-      voisins: {
-        type: "array",
-        description: "Ses agents actifs qui font déjà une partie de ce travail, s'il y en a.",
-        items: { type: "object", properties: { id: { type: "string" }, raison: { type: "string", description: "Ce qu'il fait déjà, en une phrase." } }, required: ["id", "raison"] },
-      },
-      routine: {
-        type: "object",
-        description: "Une tâche qui revient à lui confier une fois créé, si elle en a parlé. Proposée, jamais créée d'office.",
-        properties: {
-          nom: { type: "string" },
-          consigne: { type: "string" },
-          quand: {
-            type: "object",
-            properties: { type: { type: "string", enum: ["jour", "jours-ouvres", "semaine", "mois"] }, jour: { type: "number", description: "1 = lundi … 7 = dimanche ; ou le jour du mois (1 à 28)." }, heure: { type: "string", description: "HH:MM" } },
-            required: ["type", "heure"],
-          },
-        },
-        required: ["nom", "consigne", "quand"],
-      },
-      description: { type: "string", description: "La description de l'en-tête, si tu l'écris toi-même ; sinon l'app la compose." },
-      consignes: { type: "string", description: "Le corps complet de la fiche en Markdown, seulement si tu l'écris d'un bloc ; sinon l'app le compose avec les champs." },
-    },
-  },
-};
-
-/** Des réponses toutes prêtes sous la question de l'assistant : un clic répond. */
-const OUTIL_CHOIX = {
-  name: "proposer_choix",
-  description:
-    "Montre sous ta réponse des réponses toutes prêtes à la question que tu viens de poser : la personne clique pour répondre, ou écrit la sienne. 2 à 6 réponses courtes, tirées de ce qu'elle t'a dit. Termine ta réponse juste après : sa réponse arrivera dans son prochain message.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      question: { type: "string", description: "La question, en quelques mots (déjà posée dans ton texte)." },
-      options: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 6, description: "Les réponses proposées." },
-      multiple: { type: "boolean", description: "true si plusieurs réponses vont ensemble : elle coche, puis envoie." },
-    },
-    required: ["options"],
-  },
-};
 
 /** Un agent montre ce qu'il a produit : le fichier rejoint l'écran Artefacts (cf. `src/lib/rendus.ts`). */
 const OUTIL_PUBLIER = {

@@ -447,6 +447,8 @@ export function MessagePartView({
   onAutorisation,
   remplacee = false,
   messageId = "",
+  chatId = "",
+  lieu = null,
   etatAtelier,
   choix,
 }: {
@@ -463,6 +465,9 @@ export function MessagePartView({
   /** Une proposition d'agent suivie d'une autre dans la même conversation. */
   remplacee?: boolean;
   messageId?: string;
+  /** La conversation et sa machine (un VPS, ou null : ce PC), pour l'épreuve d'un agent. */
+  chatId?: string;
+  lieu?: string | null;
   /** L'atelier d'un agent plié sur toute la conversation (cf. plierAteliers). */
   etatAtelier?: (etapeId: string) => EtatAtelier | undefined;
   /** Les réponses toutes prêtes : encore ouvertes, ou ce que la personne a répondu. */
@@ -482,7 +487,7 @@ export function MessagePartView({
     case "proposition-agent":
       return <CartePropositionAgent part={part} remplacee={remplacee} />;
     case "atelier-agent":
-      return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} enDirect={enCours} />;
+      return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} chatId={chatId} lieu={lieu} enDirect={enCours} />;
     case "choix":
       return <ChoixReponses part={part} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onRepondre={(t) => choix?.onRepondre(t)} />;
     case "tasks":

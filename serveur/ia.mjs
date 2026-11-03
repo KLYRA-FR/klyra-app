@@ -6,6 +6,8 @@
  * Les clés sont dans `donnees/ia.json` (fichier 600 de l'utilisateur klyra, comme `claude-token`) : le VPS
  * n'a pas de trousseau. Elles ne reviennent jamais à l'app et ne partent qu'à l'IA concernée.
  * Le serveur MCP n'écoute que sur 127.0.0.1, avec un jeton tiré au hasard à chaque démarrage.
+ * Il sert aussi les outils de l'app que le VPS sait rendre (`brancherOutils`, cf. agents.mjs : l'atelier
+ * d'un agent), d'après qui appelle : l'agent et la conversation, posés dans les en-têtes de sa session.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -103,6 +105,15 @@ export function creerIa(options) {
 
   let serveur = null;
   let http = null;
+  /** D'autres outils de l'app servis ici : `lister(appelant)`, `appeler(nom, args, appelant)` (null : pas le sien). */
+  let outilsApp = null;
+  const brancherOutils = (outils) => {
+    outilsApp = outils;
+  };
+  const appelantDe = (req) => ({
+    agent: typeof req.headers["x-klyra-agent"] === "string" ? req.headers["x-klyra-agent"] : "principal",
+    conversation: typeof req.headers["x-klyra-conversation"] === "string" ? req.headers["x-klyra-conversation"] : "",
+  });
 
   async function traiter(req, res) {
     const finir = (statut, corps) => {
@@ -123,6 +134,7 @@ export function creerIa(options) {
       return finir(400);
     }
     if (msg.id === undefined) return finir(202);
+    const appelant = appelantDe(req);
     const resultat = (result) => finir(200, { jsonrpc: "2.0", id: msg.id, result });
     const texte = (t, isError = false) => resultat({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
     switch (msg.method) {
@@ -151,11 +163,14 @@ export function creerIa(options) {
               },
             ]
           : [];
-        return resultat({ tools: outils });
+        return resultat({ tools: [...outils, ...(outilsApp?.lister(appelant) ?? [])] });
       }
       case "tools/call": {
-        if (String(msg.params?.name ?? "") !== OUTIL_DEMANDER.name) return texte("Outil inconnu.", true);
+        const nom = String(msg.params?.name ?? "");
         const args = msg.params?.arguments ?? {};
+        const autre = nom === OUTIL_DEMANDER.name ? null : await outilsApp?.appeler(nom, args, appelant);
+        if (autre) return texte(autre.texte, autre.erreur);
+        if (nom !== OUTIL_DEMANDER.name) return texte("Outil inconnu.", true);
         const liste = lire();
         const ia = liste.find((i) => i.nom.toLowerCase() === String(args.ia ?? "").toLowerCase());
         if (!ia) return texte(`Aucune IA « ${String(args.ia)} ». Disponibles : ${liste.map((i) => i.nom).join(", ") || "aucune"}.`, true);
@@ -189,10 +204,16 @@ export function creerIa(options) {
     });
   }
 
-  /** La configuration MCP des agents (format `--mcp-config` de Claude Code) ; null sans IA ajoutée. */
-  function configMcp() {
-    if (!serveur || !lire().length) return null;
-    return JSON.stringify({ mcpServers: { klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}` } } } });
+  /**
+   * La configuration MCP d'une session (format `--mcp-config` de Claude Code) ; null sans IA ajoutée ni
+   * outil de l'app pour cet appelant. `appelant` : l'agent et la conversation (clé de l'atelier).
+   */
+  function configMcp(appelant = null) {
+    if (!serveur) return null;
+    const autres = appelant ? (outilsApp?.lister(appelant).length ?? 0) : 0;
+    if (!lire().length && !autres) return null;
+    const qui = appelant ? { "X-Klyra-Agent": appelant.agent, ...(appelant.conversation ? { "X-Klyra-Conversation": appelant.conversation } : {}) } : {};
+    return JSON.stringify({ mcpServers: { klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}`, ...qui } } } });
   }
 
   return {
@@ -203,6 +224,7 @@ export function creerIa(options) {
     tester,
     demarrer,
     configMcp,
+    brancherOutils,
     /** Change à chaque ajout ou retrait : un agent ouvert est relancé avec la liste à jour. */
     generation: () => generation,
     fermer: () => http?.close(),
