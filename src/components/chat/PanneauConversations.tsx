@@ -57,8 +57,8 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
         <span className="flex-1 text-ui font-semibold text-texte-principal">Chats</span>
         <BoutonIcone
           taille="mini"
-          icone={<Icon name="plus-01" size={16} />}
-          libelle="Nouveau chat"
+          icone={<Icon name="message-plus-01" size={16} />}
+          libelle="Nouvelle conversation"
           onClick={() => router.push("/")}
           className="text-icone-secondaire"
         />
@@ -92,7 +92,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
                   taille="mini"
                   actif={ouvert}
                   icone={<Icon name="plus-01" size={16} />}
-                  libelle="Créer un agent"
+                  libelle="Nouvel agent"
                   className="text-icone-secondaire"
                   onClick={basculer}
                   {...attributs}
