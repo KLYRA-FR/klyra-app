@@ -154,10 +154,12 @@ try {
   const regleFaits = "ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien";
   verifier(consigneSam.includes(regleFaits) && consigneAlpha.includes(regleFaits), "assistant et agent : aucun fait inventé, les manques restent visibles");
   verifier(consigneAlpha.includes("ta réponse finale est un compte rendu court qui donne leurs chemins"), "l’agent : livrables en fichiers, compte rendu court");
-  const horsApp = ["CronCreate", "Workflow", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "SendToProject"];
+  const horsApp = ["CronCreate", "Workflow", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "SendToProject", "ListAgents"];
   const outilsSam = vues?.outils ?? [];
   verifier(outilsSam.length > 0 && !outilsSam.some((o) => horsApp.includes(o)), `l’assistant n’a pas les outils de Claude Code sans usage dans l’app (${outilsSam.filter((o) => horsApp.includes(o)).join(", ") || "aucun"})`);
-  verifier(consigneAlpha.includes("on confie un travail dans un fil de l'app ou en appelant un agent actif"), "l’agent : on confie par les fils ou un agent actif, pas par les outils d’une fiche ancienne");
+  // Les skills livrées avec Claude Code ne sont plus listées au modèle (CLAUDE_CODE_DISABLE_BUNDLED_SKILLS).
+  const listees = JSON.stringify(vues?.corps?.messages ?? []);
+  verifier(!/- (dataviz|update-config|code-review|claude-api):/.test(listees), "les skills livrées avec Claude Code ne sont pas listées au modèle");  verifier(consigneAlpha.includes("on confie un travail dans un fil de l'app ou en appelant un agent actif"), "l’agent : on confie par les fils ou un agent actif, pas par les outils d’une fiche ancienne");
 
   /* 3 ter. Un fil ouvert se retrouve : l'assistant le reprend au lieu d'en ouvrir un autre. */
   const ouvert = await demander({ agent: null, prompt: "fil alpha", sessionId: sid });

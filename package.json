@@ -66,6 +66,8 @@
     "test:moteur-codex": "electron scripts/test-moteur-codex.cjs",
     "test:fournisseurs": "vitest run src/lib/fournisseurs.test.ts",
     "test:contexte": "vitest run src/lib/contexte.test.ts",
+    "mesure:socle": "node scripts/mesure-socle.mjs",
+    "bench:jetons": "node scripts/banc-jetons/banc.mjs",
     "test:conseil-contexte": "node scripts/test-conseil-contexte.mjs",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:projets-telephone": "vitest run src/lib/telephone/dossiers.test.ts src/lib/telephone/gestes-fichiers.test.ts src/lib/telephone/ecrans.test.tsx",

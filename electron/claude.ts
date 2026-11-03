@@ -26,14 +26,27 @@ const HOME = os.homedir();
 const OUTILS_INTERDITS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"];
 /**
  * Outils de Claude Code sans usage dans l'app (tâches planifiées, workflows et notifications de Claude Code,
- * autres projets) : l'app a ses routines et ses fils. Leurs descriptions pèsent ~4 500 jetons à chaque tour
- * (mesuré le 03/11/2026, Claude Code 2.1.317). Les mêmes que serveur/agents.mjs.
+ * autres projets, sessions à qui écrire) : l'app a ses routines et ses fils. Leurs descriptions pèsent ~4 900
+ * jetons à chaque appel (mesuré le 03/11/2026, Claude Code 2.1.317). Les mêmes que serveur/agents.mjs.
  */
-const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext"];
+const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext", "ListAgents"];
+/**
+ * Les infos propres au poste (dossier, environnement, état git) passent du système au premier message :
+ * le début de la requête est le même d'une session à l'autre, et une nouvelle session (fil, routine)
+ * relit le cache au lieu de le réécrire (~1 800 jetons de moins, mesuré le 03/11/2026).
+ */
+const SECTIONS_DU_POSTE_A_PART = "--exclude-dynamic-system-prompt-sections";
 const DELAI_MAX_MS = 10 * 60 * 1000;
 
 /** Les clés Composio restent dans main, même si le terminal parent en a exporté une. */
-export const environnementAgent = () => Object.fromEntries(Object.entries({ ...process.env, ELECTRON_RUN_AS_NODE: undefined }).filter(([nom]) => !/^(COMPOSIO|KLYRA_COMPOSIO)_/.test(nom)));
+/**
+ * Les skills livrées avec Claude Code (dataviz, code-review, schedule…) sont listées au modèle à chaque appel
+ * (~2 300 jetons, mesuré le 03/11/2026) et ne servent pas dans l'app : retirées. Celles de la personne restent.
+ */
+export const environnementAgent = () =>
+  Object.fromEntries(
+    Object.entries({ ...process.env, ELECTRON_RUN_AS_NODE: undefined, CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" }).filter(([nom]) => !/^(COMPOSIO|KLYRA_COMPOSIO)_/.test(nom)),
+  );
 
 /** Sous Windows, le binaire natif de Claude Code (un .cmd de npm ne se lance pas sans shell). */
 const EXE_CLAUDE = process.platform === "win32" ? "claude.exe" : "claude";
@@ -109,7 +122,7 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
 
   return new Promise((resolve) => {
     // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul, et le sait.
-    const args = ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, ...OUTILS_HORS_APP, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
+    const args = ["-p", "--agent", agent, "--output-format", "json", SECTIONS_DU_POSTE_A_PART, "--disallowedTools", ...OUTILS_INTERDITS, ...OUTILS_HORS_APP, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
     const child = spawn(bin, args, {
       cwd: HOME,
       env: environnementAgent(),
@@ -717,6 +730,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       "stream-json",
       "--verbose",
       "--include-partial-messages",
+      SECTIONS_DU_POSTE_A_PART,
       "--permission-prompt-tool",
       "stdio",
       "--permission-prompts",
