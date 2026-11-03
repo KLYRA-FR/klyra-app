@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as artefactsEquipe from "../artefactsEquipe.js";
 import type * as auth from "../auth.js";
 import type * as bibliotheque from "../bibliotheque.js";
 import type * as connexion from "../connexion.js";
@@ -41,6 +42,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  artefactsEquipe: typeof artefactsEquipe;
   auth: typeof auth;
   bibliotheque: typeof bibliotheque;
   connexion: typeof connexion;

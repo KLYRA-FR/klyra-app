@@ -46,7 +46,11 @@ export type CodeErreur =
   // Demandes du téléphone à l'ordinateur (cf. `convex/demandesPoste.ts`).
   | "demande_invalide"
   | "trop_de_demandes"
-  | "fichier_trop_lourd";
+  | "fichier_trop_lourd"
+  // Artefacts de l'équipe (cf. `convex/artefactsEquipe.ts`).
+  | "lien_invalide"
+  | "deja_partage"
+  | "description_trop_longue";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

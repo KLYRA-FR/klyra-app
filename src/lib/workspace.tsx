@@ -57,17 +57,9 @@ function lireCategories(brut: unknown): Categorie[] | null {
   return brut as Categorie[];
 }
 
-/** Les artefacts déjà connus à la première ouverture : le design system KLYRA. */
-const ARTEFACTS_DE_DEPART: Artefact[] = [
-  {
-    id: "design-system-klyra",
-    titre: "Design system KLYRA",
-    url: "https://claude.ai/artifact/C3Tqnor89ed3qjk6n1Wben",
-    description: "La référence visuelle : tokens, composants, icônes, logos. Le site en ligne et ce design system font foi.",
-    projectId: null,
-    ajouteLe: "2026-10-07T12:00:00.000Z",
-  },
-];
+/** L'ancien artefact de départ (le design system KLYRA), mis d'office sur chaque poste jusqu'à la bibliothèque
+ *  de l'équipe : ce n'était pas un artefact de la personne. Retiré au chargement ; il se partage désormais. */
+const ANCIEN_ARTEFACT_DE_DEPART = "design-system-klyra";
 
 /**
  * État de l'espace de travail : projets, conversations, messages.
@@ -649,7 +641,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           travail: {},
           file: {},
           routines: [],
-          artefacts: ARTEFACTS_DE_DEPART,
+          artefacts: [],
           acces: "projet",
           taches: [],
           rappelsSupprimes: [],
@@ -719,7 +711,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         chats: valide ? (data.chats ?? []) : [],
         messages,
         routines: valide ? (data.routines ?? []) : [],
-        artefacts: valide && data.artefacts ? data.artefacts : ARTEFACTS_DE_DEPART,
+        artefacts: valide ? (data.artefacts ?? []).filter((a) => a.id !== ANCIEN_ARTEFACT_DE_DEPART) : [],
         projects: valide ? (data.projects ?? []) : [],
         currentUser: valide ? (data.currentUser ?? null) : null,
         acces: valide ? (data.acces ?? null) : null,

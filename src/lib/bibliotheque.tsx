@@ -119,7 +119,7 @@ type Abonnement<T> = { valeur: T | undefined; erreur: unknown };
  * nom, jamais par l'objet `api.x.y` : c'est un nouvel objet à chaque rendu, et l'abonnement serait
  * refait sans fin (l'app ne naviguait plus une fois connectée).
  */
-function useAbonnement<Q extends FunctionReference<"query">>(requete: Q, args: Q["_args"] | null, tour: number): Abonnement<Q["_returnType"]> {
+export function useAbonnement<Q extends FunctionReference<"query">>(requete: Q, args: Q["_args"] | null, tour: number): Abonnement<Q["_returnType"]> {
   const convex = useConvex();
   const [r, setR] = useState<Abonnement<Q["_returnType"]>>({ valeur: undefined, erreur: null });
   const nom = getFunctionName(requete);

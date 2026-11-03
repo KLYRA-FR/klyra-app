@@ -88,6 +88,24 @@ export default defineSchema({
     .index("by_auteurId_and_slug", ["auteurId", "slug"]),
 
   /**
+   * Les artefacts de l'équipe : des liens claude.ai qu'un membre partage volontairement
+   * (cf. `artefactsEquipe.ts`). Le lien seulement : l'accès à la page reste celui de claude.ai.
+   * Seul qui l'a partagé le modifie ou le retire.
+   */
+  artefactsEquipe: defineTable({
+    auteurId: v.id("membres"),
+    /** Normalisée par `lienArtefact` (sans « / » final) : un même lien n'est partagé qu'une fois. */
+    url: v.string(),
+    titre: v.string(),
+    description: v.string(),
+    majLe: v.number(),
+    /** null : visible par l'équipe. */
+    retireLe: v.union(v.number(), v.null()),
+  })
+    .index("by_retireLe_and_majLe", ["retireLe", "majLe"])
+    .index("by_url_and_retireLe", ["url", "retireLe"]),
+
+  /**
    * Un rappel partagé (cf. `docs/CONVEX-PLAN.md`, § 2). Visible par qui l'a créé et par
    * la personne à qui il est assigné. `liste` est la catégorie de l'assigné, sur son
    * ordinateur ; null : la colonne « Assignés par l'équipe ».

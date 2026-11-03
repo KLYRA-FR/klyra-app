@@ -171,6 +171,10 @@ const MESSAGES: Record<string, string> = {
   secret_detecte: "La fiche contient ce qui ressemble à une clé ou un mot de passe : retire-le avant de partager.",
   chemin_personnel: "La fiche contient encore un chemin de ton ordinateur : rouvre l’aperçu avant de partager.",
   dependance_invalide: "Les dossiers à configurer ne correspondent pas à la fiche : rouvre l’aperçu avant de partager.",
+  // Artefacts de l'équipe (convex/artefactsEquipe.ts).
+  lien_invalide: "Ce lien ne mène pas à un artefact claude.ai.",
+  deja_partage: "Cet artefact est déjà partagé avec l’équipe.",
+  description_trop_longue: "La description fait 500 caractères au plus.",
   reserve_au_createur: "Seul qui a créé le rappel peut changer ça.",
   rappel_invalide: "Ce rappel n’est pas valable : vérifie le titre, la date et la catégorie.",
   membre_inconnu: "Cette personne n’est plus dans l’équipe.",
