@@ -1,3 +1,8 @@
+import type { AjoutFiche, MajAtelier } from "../../electron/atelier-agent";
+import type { ResultatCas } from "../../electron/epreuve";
+
+export type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, RoutineProposee, VoisinAgent } from "../../electron/atelier-agent";
+
 /**
  * Modèle de données de l'app. Les données factices (src/data/mock.ts) et le
  * futur back-end partagent exactement ces formes : brancher le back revient à
@@ -286,6 +291,26 @@ export type MessagePart =
   | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur" }
   /** L'assistant propose la fiche d'un nouvel agent : la personne l'ouvre, l'ajuste et l'enregistre (ou non). */
   | { type: "proposition-agent"; etapeId: string; proposition: PropositionAgent }
+  /**
+   * L'atelier d'un agent (outil `proposer_agent`) : ce que cet appel a appris. La carte plie tous
+   * les appels de la conversation (`src/lib/atelier-agent.ts`). `teinte` : la couleur choisie par la
+   * personne sur la carte ; `cree` : l'id de l'agent créé depuis cette carte.
+   */
+  | {
+      type: "atelier-agent";
+      etapeId: string;
+      maj: MajAtelier;
+      teinte?: RoleTeinte;
+      cree?: string;
+      /** L'entrée encore en cours d'écriture par le modèle (carte qui s'écrit en direct). */
+      provisoire?: boolean;
+      /** L'épreuve passée sur cette carte (cf. electron/epreuve.ts). */
+      resultats?: ResultatCas[];
+      /** Les phrases que la personne a ajoutées à la fiche (corrections de l'épreuve). */
+      ajouts?: AjoutFiche[];
+    }
+  /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
+  | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }
   | { type: "tasks"; tasks: Task[] }
   | { type: "options"; options: DeliverableOption[] }
   | { type: "worklog"; durationMin: number; files: ChangedFile[] }

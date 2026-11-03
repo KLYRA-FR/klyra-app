@@ -13,7 +13,7 @@ import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
-import { lireProposition } from "@/lib/proposition-agent";
+import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier } from "@/lib/atelier-agent";
 import { lirePublication, nomDuFichier, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
@@ -37,6 +37,7 @@ import type {
   Citation,
   Etape,
   EtapeTicket,
+  MajAtelier,
   Message,
   MessagePart,
   Project,
@@ -50,6 +51,10 @@ import type {
   Categorie,
   User,
 } from "@/types/domain";
+
+/** Une carte de l'atelier, et ce que l'écran peut y noter. */
+type PartAtelier = Extract<MessagePart, { type: "atelier-agent" }>;
+type PatchAtelier = Partial<Pick<PartAtelier, "teinte" | "cree" | "resultats" | "ajouts">>;
 
 /** Les catégories de rappels à la première ouverture. */
 const CATEGORIES_DE_DEPART: Categorie[] = [
@@ -448,19 +453,37 @@ function ajouterEtape(
       },
     ];
   }
-  // L'assistant propose un nouvel agent : une carte à ouvrir dans l'éditeur, après ses étapes.
-  const proposition = etape.outil === "mcp__klyra__proposer_agent" ? lireProposition(entree) : null;
-  if (proposition) return [...parts, { type: "proposition-agent", etapeId: etape.id, proposition }];
+  // L'atelier d'un agent : la carte se complète dans le fil (cf. atelier-agent.ts), après ses étapes.
+  const maj = etape.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(entree) : null;
+  if (maj) return poserAtelier(parts, etape.id, maj, false);
+  // Des réponses toutes prêtes sous la question de l'assistant.
+  const choix = etape.outil === "mcp__klyra__proposer_choix" ? lireChoix(entree) : null;
+  if (choix) return [...parts, { type: "choix", etapeId: etape.id, ...choix }];
   // Toutes les étapes de la réponse vivent dans un seul bloc, en tête du message.
   const index = parts.findIndex((p) => p.type === "etapes");
   if (index === -1) return [{ type: "etapes", etapes: [etape] }, ...parts];
   return parts.map((p, i) => (i === index && p.type === "etapes" ? { ...p, etapes: [...p.etapes, etape] } : p));
 }
 
+/**
+ * La carte de l'atelier pour cet appel : ajoutée, ou mise à jour si elle s'écrivait déjà en direct
+ * (`provisoire`, cf. l'événement `etape-partielle`). Ce que la personne y a déjà fait reste.
+ */
+function poserAtelier(parts: MessagePart[], etapeId: string, maj: MajAtelier, provisoire: boolean): MessagePart[] {
+  const i = parts.findIndex((p) => p.type === "atelier-agent" && p.etapeId === etapeId);
+  if (i === -1) return [...parts, { type: "atelier-agent", etapeId, maj, ...(provisoire ? { provisoire } : {}) }];
+  return parts.map((p, j) => {
+    if (j !== i || p.type !== "atelier-agent") return p;
+    const { provisoire: _ancien, ...reste } = p;
+    void _ancien;
+    return { ...reste, maj, ...(provisoire ? { provisoire } : {}) };
+  });
+}
+
 function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[] {
   const statut = ok ? "fait" : "erreur";
-  // Une proposition d'agent refusée par l'app (identifiant déjà pris…) ne devient pas une carte.
-  const gardees = ok ? parts : parts.filter((p) => !(p.type === "proposition-agent" && p.etapeId === id));
+  // Une carte ou des réponses refusées par l'app (prénom déjà pris…) ne restent pas dans le fil.
+  const gardees = ok ? parts : parts.filter((p) => !((p.type === "proposition-agent" || p.type === "atelier-agent" || p.type === "choix") && p.etapeId === id));
   return gardees.map((p) => {
     if (p.type === "passation" && p.etapeId === id) return { ...p, statut };
     if (p.type === "etapes")
@@ -612,6 +635,8 @@ interface WorkspaceApi {
   changerCategories: (categories: Categorie[]) => void;
   /** Ta réponse à une demande d'autorisation d'un agent. */
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
+  /** La carte de l'atelier d'un agent : la couleur choisie, l'épreuve, les ajouts, puis l'agent créé depuis elle. */
+  marquerAtelier: (messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => void;
   supprimerArtefact: (id: string) => void;
   /** Retire un rendu d'agent de la liste et supprime la copie de l'app ; l'original reste où il est. */
   retirerRendu: (id: string) => void;
@@ -1062,6 +1087,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }
           break;
         }
+        case "etape-partielle": {
+          // La carte de l'atelier s'écrit pendant que l'assistant remplit l'outil.
+          const enCours = event.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(event.entree) : null;
+          if (enCours) maj((m) => ({ ...m, parts: poserAtelier(m.parts, event.id, enCours, true) }));
+          break;
+        }
         case "etape-fin":
           maj((m) => ({
             ...m,
@@ -1109,7 +1140,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "fin":
           maj((m) => {
             const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
-            const parts = !aDuTexte && event.texte ? ajouterTexte(m.parts, event.texte, true) : m.parts;
+            // Une carte restée en cours d'écriture (réponse arrêtée avant la fin de l'outil) n'est pas gardée.
+            const finies = m.parts.filter((p) => !(p.type === "atelier-agent" && p.provisoire));
+            const parts = !aDuTexte && event.texte ? ajouterTexte(finies, event.texte, true) : finies;
             return event.ok
               ? { ...m, parts, statut: "fait" }
               : { ...m, parts, statut: "erreur", erreur: event.erreur };
@@ -1968,11 +2001,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           });
           return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans ton espace de livrables ; republier le même fichier remplace cette copie.`;
         }
-        case "proposer_agent": {
-          const proposition = lireProposition(args);
-          if (!proposition) throw new Error("Il manque le prénom ou les consignes de l’agent proposé.");
-          if (roles.some((r) => r.id === proposition.id)) throw new Error(`« ${proposition.id} » est déjà dans Mes agents : propose un autre identifiant, ou un changement de sa fiche.`);
-          return `Proposition affichée à la personne : ${proposition.nom} (${proposition.role || "sans rôle"}). Elle l’ouvre dans l’éditeur, l’ajuste et l’enregistre elle-même ; rien n’est créé tant qu’elle n’a pas enregistré.`;
+        case "proposer_agent":
+        case "proposer_choix": {
+          // Le même appel que sur un VPS (electron/atelier-agent.ts) : refus, carte suivie, ce que l'outil répond.
+          const equipe = roles.map((r) => ({ id: r.id, noms: [r.name, r.tag] }));
+          const r = appelAtelier(nom, args, atelierEnCours(messages.filter((m) => m.chatId === appelant.chatId)), equipe);
+          if (r.erreur) throw new Error(r.texte);
+          return r.texte;
         }
         default:
           throw new Error("Outil inconnu.");
@@ -2213,6 +2248,17 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [bridge],
   );
+
+  const marquerAtelier = useCallback((messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => {
+    dispatch({
+      type: "message/update",
+      id: messageId,
+      patch: (m) => ({
+        ...m,
+        parts: m.parts.map((p) => (p.type === "atelier-agent" && p.etapeId === etapeId ? { ...p, ...(typeof patch === "function" ? patch(p) : patch) } : p)),
+      }),
+    });
+  }, []);
 
   /* Premier lancement : le profil part du nom de la session Mac. */
   useEffect(() => {
@@ -2545,6 +2591,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       moi,
       choisirAcces,
       repondreAutorisation,
+      marquerAtelier,
       reagir,
       enregistrerTache,
       supprimerTache,
@@ -2598,6 +2645,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       enregistrerProfil,
       choisirAcces,
       repondreAutorisation,
+      marquerAtelier,
       reagir,
       enregistrerTache,
       supprimerTache,

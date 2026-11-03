@@ -2,17 +2,22 @@
  * Les agents sur le VPS : Claude Code lancé comme dans l'app (electron/claude.ts, streamAgent),
  * un processus par conversation, gardé ouvert entre les messages ; ou Codex pour ChatGPT (codex.mjs),
  * quand la conversation le demande (`moteur: "codex"`). Les IA à consulter (ia.mjs) leur sont données
- * par l'outil MCP `demander_ia`.
- * Ce qui n'existe que sur le PC n'est pas là : outils de l'app (fils, proposer_agent), Composio,
- * planning, pièces jointes, consommation détaillée.
+ * par l'outil MCP `demander_ia`, et l'atelier d'un agent à l'assistant (`proposer_agent`,
+ * `proposer_choix`, son épreuve : atelier-agent.mjs et epreuve.mjs, les mêmes règles que sur le PC).
+ * Ce qui n'existe que sur le PC n'est pas là : outils des fils, Composio, planning, pièces jointes,
+ * consommation détaillée.
  *
  * Chaque événement part dans le journal (`journal.mjs`) avec le numéro de la réponse (requestId) :
  * l'app le lit en direct, et rattrape ce qu'elle a manqué en se reconnectant.
  */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
+import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
+import { lireJsonPartiel } from "./json-partiel.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
 import {
   competencesPrechargees,
@@ -76,6 +81,10 @@ const COMMANDES_AUTORISEES = [
 const EFFORTS_CLAUDE = ["low", "medium", "high", "xhigh", "max"];
 const EFFORTS_CODEX = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 const OUTIL_IA = "mcp__klyra__demander_ia";
+/** La conversation d'une session, pour suivre son atelier (cf. klyra-serveur.mjs, `cleConversation`). */
+const CONVERSATION = /^[A-Za-z0-9_.:@|-]{1,160}$/;
+/** L'entrée de cet outil est montrée pendant que le modèle l'écrit : la carte de l'atelier (cf. electron/claude.ts). */
+const OUTIL_EN_DIRECT = `mcp__klyra__${OUTIL_PROPOSER.name}`;
 
 const modeDe = (acces) => (acces === "demander" ? "manual" : acces === "projet" ? "auto" : "acceptEdits");
 
@@ -242,7 +251,7 @@ export function creerAgents(options) {
     const equipe = actifs.length
       ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant avec un brief qui se suffit (objectif, contexte et chemins, contraintes, critère de fin, le livrable attendu dans des fichiers et un compte rendu court) ; n'en invente pas d'autre. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
       : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}`;
+    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_ATELIER}` : ""}`;
   }
 
   function consigneAgent(id) {
@@ -260,6 +269,101 @@ export function creerAgents(options) {
   options.ia?.surPublication((appelant, args) => rendus.publier(appelant, args));
   /** La configuration MCP d'une session : l'agent et la conversation en en-têtes (qui publie). */
   const mcpIa = (demande = {}) => options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation: demande.conversation ?? demande.contexte?.chatId ?? "" }) ?? null;
+
+  /* ─── L'atelier d'un agent, avec l'assistant (comme sur le PC) ───── */
+
+  /**
+   * Le VPS n'a pas le fil de la conversation : il suit ici, par conversation, la carte que chaque appel
+   * complète et les phrases ajoutées pendant l'épreuve. En mémoire : après un redémarrage, la carte
+   * repart de l'appel suivant (la carte affichée, elle, vient du fil sur le PC).
+   */
+  const ateliers = new Map();
+  const equipeAtelier = () => {
+    const { assistant, actifs } = lireEquipe();
+    return [{ id: "principal", noms: [assistant ?? "", "Assistant"].filter(Boolean) }, ...actifs.map((a) => ({ id: a.id, noms: [a.nom] }))];
+  };
+  const noterAtelier = (cle, suivi) => {
+    if (!cle) return;
+    ateliers.delete(cle);
+    ateliers.set(cle, suivi);
+    if (ateliers.size > 200) ateliers.delete(ateliers.keys().next().value);
+  };
+  options.ia?.brancherOutils?.({
+    lister: (appelant) => (appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []),
+    appeler: async (nom, args, appelant) => {
+      if (nom !== OUTIL_PROPOSER.name && nom !== OUTIL_CHOIX.name) return null;
+      if (appelant.agent !== "principal") return { texte: "Seul l'assistant crée des agents avec la personne.", erreur: true };
+      const cle = CONVERSATION.test(appelant.conversation) ? appelant.conversation : null;
+      const r = appelAtelier(nom, args, (cle && ateliers.get(cle)) || SUIVI_VIDE, equipeAtelier());
+      if (!r.erreur) noterAtelier(cle, r.suivi);
+      return { texte: r.texte, erreur: r.erreur };
+    },
+  });
+
+  /** Les phrases ajoutées par la personne pendant l'épreuve (reçues avec l'essai) : l'assistant les verra. */
+  function noterAjouts(conversation, ajouts) {
+    if (typeof conversation !== "string" || !CONVERSATION.test(conversation) || !Array.isArray(ajouts)) return;
+    const valides = ajouts
+      .filter((a) => a && PILIERS_LISTE.includes(a.pilier) && typeof a.texte === "string" && a.texte.trim())
+      .slice(0, 20)
+      .map((a) => ({ pilier: a.pilier, texte: a.texte.trim().slice(0, 300) }));
+    const suivi = ateliers.get(conversation);
+    if (suivi) noterAtelier(conversation, { ...suivi, ajouts: valides });
+  }
+
+  /**
+   * L'épreuve sur ce VPS (comme `essayerBrouillon` de l'app) : la fiche répond à une demande comme agent
+   * de la session, sans aucun outil, dans un dossier vide supprimé après ; puis un tour de Haiku la juge.
+   * Rend le résultat et ce que les deux tours ont consommé.
+   */
+  async function essayer(brouillon, cas, contexte) {
+    const b = brouillon && typeof brouillon === "object" ? brouillon : {};
+    const texte = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
+    const fiche = texte(b.fiche, 50_000);
+    const demande = { type: ["floue", "hors-metier"].includes(cas?.type) ? cas.type : "normal", demande: texte(cas?.demande, 2000) };
+    noterAjouts(contexte?.conversation, contexte?.ajouts);
+    const echec = (erreur) => ({ resultat: resultatEssai(demande, fiche, { texte: "", jetons: 0, erreur }, null), consommation: [] });
+    const bin = trouverClaude();
+    if (!bin) return echec("Claude Code n’est pas installé sur le VPS. Relance la commande d’installation.");
+    if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
+    const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-essai-"));
+    try {
+      const { id, json } = definitionEssai({ id: texte(b.id, 64), description: texte(b.description, 1200), corps: texte(b.corps, 40_000), modele: texte(b.modele, 10) });
+      const definition = path.join(dossier, "agent.json");
+      writeFileSync(definition, json, { mode: 0o600 });
+      const essai = await tourImprime(bin, argsEssai(definition, id, consigneEssai(REGLES_COMMUNES)), dossier, demande.demande);
+      const juge = essai.erreur ? null : await tourImprime(bin, ARGS_JUGE, dossier, consigneJuge(fiche, demande, essai.texte));
+      /* Ce que l'épreuve a consommé, rendu au PC qui l'inscrit dans son journal (comme une réponse du VPS). */
+      const consommation = [essai, juge].flatMap((t) => (t?.usage ? ecartModelUsage(t.usage, {}).lignes : []));
+      return { resultat: resultatEssai(demande, fiche, essai, juge), consommation };
+    } finally {
+      rmSync(dossier, { recursive: true, force: true });
+    }
+  }
+
+  /** Un tour de Claude Code en mode impression, avec l'environnement des agents de ce VPS. */
+  function tourImprime(bin, args, cwd, entree) {
+    return new Promise((resolve) => {
+      const child = spawn(bin, args, { cwd, env: environnement(configurationDe()), stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d) => (stdout += d.toString()));
+      child.stderr.on("data", (d) => (stderr = (stderr + d.toString()).slice(-4000)));
+      const minuterie = setTimeout(() => child.kill("SIGTERM"), 5 * 60_000);
+      child.on("error", (e) => {
+        clearTimeout(minuterie);
+        resolve({ texte: "", jetons: 0, erreur: `Impossible de lancer Claude Code sur le VPS : ${e.message}` });
+      });
+      child.on("close", (code, signal) => {
+        clearTimeout(minuterie);
+        if (signal) return resolve({ texte: "", jetons: 0, erreur: "Essai arrêté." });
+        const sortie = lireSortieImprimee(stdout, code);
+        if (!sortie.usage && !sortie.texte && !sortie.erreur) return resolve({ texte: "", jetons: 0, erreur: stderr.trim().slice(0, 600) || `Claude Code s’est arrêté sur le VPS (code ${code}).` });
+        resolve({ texte: sortie.texte, jetons: sortie.jetons, usage: sortie.usage, erreur: sortie.erreur });
+      });
+      child.stdin.end(entree);
+    });
+  }
 
   const codex = creerCodex({
     home,
@@ -377,6 +481,22 @@ export function creerAgents(options) {
       const ev = msg.event ?? {};
       const morceau = ev.delta?.text ?? ev.delta?.partial_json ?? "";
       if (morceau) courant?.compter(morceau.length / 4);
+      /* La carte de l'atelier s'écrit pendant que le modèle remplit l'outil (comme dans l'app). */
+      if (parent === null && typeof ev.index === "number") {
+        const bloc = ev.content_block;
+        if (ev.type === "content_block_start" && bloc?.type === "tool_use" && bloc.id && bloc.name === OUTIL_EN_DIRECT) {
+          proc.saisies.set(ev.index, { id: bloc.id, outil: bloc.name, json: "" });
+        } else if (ev.type === "content_block_delta" && ev.delta?.type === "input_json_delta" && ev.delta.partial_json) {
+          const saisie = proc.saisies.get(ev.index);
+          if (saisie) {
+            saisie.json += ev.delta.partial_json;
+            const entree = lireJsonPartiel(saisie.json);
+            const tour = entree ? tourOuSpontane(proc) : null;
+            if (entree && tour) tour.emit({ type: "etape-partielle", id: saisie.id, outil: saisie.outil, entree });
+          }
+        } else if (ev.type === "content_block_stop") proc.saisies.delete(ev.index);
+        else if (ev.type === "message_start") proc.saisies.clear();
+      }
       if (parent === null && ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) {
         const tour = tourOuSpontane(proc);
         if (!tour) return;
@@ -463,7 +583,7 @@ export function creerAgents(options) {
   function lancer(bin, args, cwd, signature, demande, acces) {
     const child = spawn(bin, args, { cwd, env: environnement(configurationDe()), stdio: ["pipe", "pipe", "pipe"] });
     /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
-    const proc = { child, signature, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [] };
+    const proc = { child, signature, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map() };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
     let tampon = "";
     let stderr = "";
@@ -531,6 +651,9 @@ export function creerAgents(options) {
     if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
 
     const acces = demande.acces ?? "projet";
+    /* Le serveur MCP sait qui l'appelle : l'agent, et la conversation (publication, atelier suivi). */
+    const assistant = demande.agent === null;
+    const conversation = typeof demande.conversation === "string" && CONVERSATION.test(demande.conversation) ? demande.conversation : "";
     const mcp = mcpIa(demande);
     /* Les skills, comme dans l'app (cf. electron/connaissances-agent.ts) : celles que la fiche précharge,
        que Claude Code ne donne pas à un agent lancé seul, et `/<skill>` remis en tête du message. */
@@ -544,7 +667,7 @@ export function creerAgents(options) {
     const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd) : { noms: [], texte: null };
     const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, skillsConnues(configClaude, cwd));
     const configuration = configurationDe();
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration]);
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     if (ouvert && vivant(ouvert) && (ouvert.signature === signature || ouvert.tours.length)) {
@@ -579,7 +702,7 @@ export function creerAgents(options) {
         "--settings",
         REGLE_AGENTS,
       ];
-      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER] : []));
+      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, ...(assistant ? OUTILS_ATELIER : [])] : []));
       if (mcp) args.push("--mcp-config", mcp);
       if (demande.agent) args.push("--agent", demande.agent);
       if (demande.sessionId) args.push("--resume", demande.sessionId);
@@ -635,5 +758,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
 }

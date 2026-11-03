@@ -10,6 +10,8 @@ import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
 import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
 import type { RenduVps } from "../../electron/agents-distants";
+import type { AjoutFiche } from "../../electron/atelier-agent";
+import type { CasEpreuve, ResultatCas } from "../../electron/epreuve";
 import type { EtatConsignesProjet } from "../../electron/consignes-projet";
 import type { Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
 export type { Competence, Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
@@ -104,6 +106,8 @@ export type AgentEvent =
   | { type: "session"; sessionId: string }
   | { type: "texte"; delta: string; nouveauBloc: boolean }
   | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
+  /** L'entrée d'un outil pendant que le modèle l'écrit (la carte de l'atelier), refermée au mieux. */
+  | { type: "etape-partielle"; id: string; outil: string; entree: Record<string, unknown> }
   | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
   | { type: "jetons"; total: number }
   | { type: "contexte"; jetons: number }
@@ -355,6 +359,14 @@ export interface KlyraBridge {
     run: (requestId: string, agent: string, prompt: string) => Promise<Reponse<ClaudeResult>>;
     /** Un titre de quelques mots pour une demande (null : Claude Code absent ou en échec). */
     titre?: (texte: string) => Promise<Reponse<string | null>>;
+    /** L'épreuve d'un agent pas encore créé (atelier) : un essai sans outil, puis un avis (cf. electron/epreuve.ts). */
+    essayer?: (
+      requestId: string,
+      brouillon: { id: string; description: string; corps: string; modele: string; fiche: string },
+      cas: CasEpreuve,
+      /** La conversation : sur un VPS (`lieu`), l'essai tourne là-bas ; `ajouts` y suivent l'atelier. */
+      contexte?: { lieu: string | null; conversation: string; ajouts: AjoutFiche[] },
+    ) => Promise<Reponse<ResultatCas>>;
     cancel: (requestId: string) => Promise<Reponse<void>>;
     /** Ta réponse à une demande d'autorisation d'un agent. */
     autoriser: (requestId: string, demandeId: string, decision: "oui" | "toujours" | "non") => Promise<Reponse<boolean>>;

@@ -161,6 +161,9 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
         role: part.proposition.role.slice(0, 120),
         description: net(part.proposition.description, 400),
       };
+    case "atelier-agent":
+    case "choix":
+      return { type: "text", text: "" }; // écartés avant (partiesReduites)
     case "tasks":
       return {
         type: "tasks",
@@ -184,7 +187,9 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
  * tâches, options…), sans chemin absolu ni secret ni session. Trop long : d'abord sans les listes de
  * fichiers, puis le texte seul.
  */
-export function partiesReduites(parts: MessagePart[], dossier: string | null = null): string {
+export function partiesReduites(tout: MessagePart[], dossier: string | null = null): string {
+  // L'atelier d'un agent se mène sur l'ordinateur : le téléphone en garde le texte de l'assistant.
+  const parts = tout.filter((p) => p.type !== "atelier-agent" && p.type !== "choix");
   const json = JSON.stringify(parts.map((p) => reduire(p, parts, dossier, true)));
   if (json.length <= PARTIES_MAX) return json;
   const sansListes = JSON.stringify(parts.map((p) => reduire(p, parts, dossier, false)));

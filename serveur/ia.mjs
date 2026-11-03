@@ -6,6 +6,8 @@
  * Les clés sont dans `donnees/ia.json` (fichier 600 de l'utilisateur klyra, comme `claude-token`) : le VPS
  * n'a pas de trousseau. Elles ne reviennent jamais à l'app et ne partent qu'à l'IA concernée.
  * Le serveur MCP n'écoute que sur 127.0.0.1, avec un jeton tiré au hasard à chaque démarrage.
+ * Il sert aussi les outils de l'app que le VPS sait rendre (`brancherOutils`, cf. agents.mjs : l'atelier
+ * d'un agent), d'après qui appelle : l'agent et la conversation, posés dans les en-têtes de sa session.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -121,6 +123,15 @@ export function creerIa(options) {
 
   let serveur = null;
   let http = null;
+  /** D'autres outils de l'app servis ici : `lister(appelant)`, `appeler(nom, args, appelant)` (null : pas le sien). */
+  let outilsApp = null;
+  const brancherOutils = (outils) => {
+    outilsApp = outils;
+  };
+  const appelantDe = (req) => ({
+    agent: typeof req.headers["x-klyra-agent"] === "string" ? req.headers["x-klyra-agent"] : "principal",
+    conversation: typeof req.headers["x-klyra-conversation"] === "string" ? req.headers["x-klyra-conversation"] : "",
+  });
 
   async function traiter(req, res) {
     const finir = (statut, corps) => {
@@ -141,6 +152,7 @@ export function creerIa(options) {
       return finir(400);
     }
     if (msg.id === undefined) return finir(202);
+    const appelant = appelantDe(req);
     const resultat = (result) => finir(200, { jsonrpc: "2.0", id: msg.id, result });
     const texte = (t, isError = false) => resultat({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
     switch (msg.method) {
@@ -170,20 +182,22 @@ export function creerIa(options) {
               },
             ]
           : [];
-        return resultat({ tools: [...outils, ...publier] });
+        return resultat({ tools: [...outils, ...publier, ...(outilsApp?.lister(appelant) ?? [])] });
       }
       case "tools/call": {
-        if (String(msg.params?.name ?? "") === OUTIL_PUBLIER.name && publication) {
+        const nom = String(msg.params?.name ?? "");
+        if (nom === OUTIL_PUBLIER.name && publication) {
           /* L'agent et la conversation de la session, posés dans sa configuration MCP (cf. configMcp). */
-          const appelant = { agent: String(req.headers["x-klyra-agent"] ?? "principal"), conversation: String(req.headers["x-klyra-conversation"] ?? "") };
           try {
             return texte(publication(appelant, msg.params?.arguments ?? {}));
           } catch (e) {
             return texte(e instanceof Error ? e.message : String(e), true);
           }
         }
-        if (String(msg.params?.name ?? "") !== OUTIL_DEMANDER.name) return texte("Outil inconnu.", true);
         const args = msg.params?.arguments ?? {};
+        const autre = nom === OUTIL_DEMANDER.name ? null : await outilsApp?.appeler(nom, args, appelant);
+        if (autre) return texte(autre.texte, autre.erreur);
+        if (nom !== OUTIL_DEMANDER.name) return texte("Outil inconnu.", true);
         const liste = lire();
         const ia = liste.find((i) => i.nom.toLowerCase() === String(args.ia ?? "").toLowerCase());
         if (!ia) return texte(`Aucune IA « ${String(args.ia)} ». Disponibles : ${liste.map((i) => i.nom).join(", ") || "aucune"}.`, true);
@@ -219,10 +233,13 @@ export function creerIa(options) {
 
   /**
    * La configuration MCP d'une session (format `--mcp-config` de Claude Code) : l'agent et la conversation
-   * en en-têtes, pour savoir qui publie. Null sans outil à proposer (ni IA ajoutée, ni publication).
+   * en en-têtes, pour savoir qui publie et quel atelier suivre. Null sans outil à proposer (ni IA ajoutée,
+   * ni publication, ni outil de l'app pour cet appelant).
    */
   function configMcp(appelant = {}) {
-    if (!serveur || (!lire().length && !publication)) return null;
+    if (!serveur) return null;
+    const autres = typeof appelant.agent === "string" ? (outilsApp?.lister({ agent: appelant.agent, conversation: appelant.conversation ?? "" }).length ?? 0) : 0;
+    if (!lire().length && !publication && !autres) return null;
     const qui = {
       ...(typeof appelant.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(appelant.agent) ? { "X-Klyra-Agent": appelant.agent } : {}),
       ...(typeof appelant.conversation === "string" && /^[A-Za-z0-9_.:@-]{1,120}$/.test(appelant.conversation) ? { "X-Klyra-Conversation": appelant.conversation } : {}),
@@ -238,6 +255,7 @@ export function creerIa(options) {
     tester,
     demarrer,
     configMcp,
+    brancherOutils,
     /** Branche l'outil `publier_artefact` : `fn(appelant, arguments)` rend le texte pour l'agent, ou lève. */
     surPublication: (fn) => {
       publication = fn;

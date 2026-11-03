@@ -96,6 +96,9 @@ function fixture() {
     // Fonctions pures (tri des binaires, message de lancement) : le vrai module compilé.
     "./claude-binaire": require(path.join(path.dirname(filename), "claude-binaire.js")),
     "./titre": require(path.join(path.dirname(filename), "titre.js")),
+    "./epreuve": require(path.join(path.dirname(filename), "epreuve.js")),
+    "./json-partiel": require(path.join(path.dirname(filename), "json-partiel.js")),
+    "./atelier-agent": require(path.join(path.dirname(filename), "atelier-agent.js")),
     // Module pur : la configuration KLYRA réelle ; ses réglages, ceux par défaut (rien d'adopté).
     "./configuration-klyra": require(path.join(path.dirname(filename), "configuration-klyra.js")),
     "./reglages": { lireReglages: () => ({ configuration: require(path.join(path.dirname(filename), "configuration-klyra.js")).CONFIGURATION_PAR_DEFAUT }) },

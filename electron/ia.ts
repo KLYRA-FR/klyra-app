@@ -8,6 +8,7 @@ import { enregistrerAppelIa } from "./consommation";
 import { composioConnect, espaceComposio, OUTILS_COMPOSIO } from "./composio";
 import { serveursMcpDirects } from "./mcp-direct";
 import { serveurOrdinateur } from "./ordinateur/pilote";
+import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -248,27 +249,6 @@ const OUTILS_FILS = [
   },
 ];
 
-/** L'assistant aide à créer un agent : il propose la fiche, la personne l'ajuste et l'enregistre (ou non). */
-const OUTIL_PROPOSER = {
-  name: "proposer_agent",
-  description:
-    "Propose à la personne une fiche d'agent à créer, d'après un besoin qu'elle a exprimé et qu'aucun de ses agents ne couvre. L'app lui montre la proposition : elle l'ouvre dans l'éditeur, l'ajuste et l'enregistre elle-même. Rien n'est créé par cet outil. Une seule proposition par besoin ; demande-lui d'abord ce qui manque si le besoin est flou. Garde la fiche courte (3 000 caractères au plus suffisent souvent) : chaque ligne est relue à chaque appel de l'agent. N'y répète pas ce que l'app donne déjà à chaque agent (agents actifs, fils, QA sur demande, accès qui n'est pas un accord, livrables en fichiers).",
-  inputSchema: {
-    type: "object",
-    properties: {
-      id: { type: "string", description: "Identifiant proposé : minuscules, chiffres et tirets (ex. juriste)." },
-      nom: { type: "string", description: "Le prénom de l'agent (ex. Nina)." },
-      role: { type: "string", description: "Son rôle court (ex. Juridique)." },
-      description: {
-        type: "string",
-        description: "Une phrase : « Rôle — ce qu'il couvre, séparé par des virgules. Appelle <prénom> dès qu'il faut… »",
-      },
-      consignes: { type: "string", description: "Le corps de la fiche en Markdown : présentation, « ## Comment je travaille », « ## Ce que je ne fais pas », « ## Critères de sortie »." },
-    },
-    required: ["id", "nom", "role", "description", "consignes"],
-  },
-};
-
 /** Un agent montre ce qu'il a produit : le fichier rejoint l'écran Artefacts (cf. `src/lib/rendus.ts`). */
 const OUTIL_PUBLIER = {
   name: "publier_artefact",
@@ -342,7 +322,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
@@ -367,7 +347,8 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
         } catch (e) { return texte(e instanceof Error ? e.message : String(e), true); }
       }
       if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
-      if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name || nom === OUTIL_PUBLIER.name) {
+      if (nom === OUTIL_CHOIX.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des réponses toutes prêtes.", true);
+      if (OUTILS_FILS.some((o) => o.name === nom) || nom === OUTIL_PROPOSER.name || nom === OUTIL_CHOIX.name || nom === OUTIL_PUBLIER.name) {
         if (!relaisFils) return texte("L'app n'est pas prête, réessaie dans un instant.", true);
         try {
           return texte(await relaisFils(nom, args, appelant));
@@ -429,6 +410,6 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
 /** Les outils de l'app qu'un agent peut utiliser sans demander, en accès « projet ». */
 export const OUTILS_APP = () => [
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
-  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_PUBLIER].map((o) => `mcp__klyra__${o.name}`),
+  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_CHOIX, OUTIL_PUBLIER].map((o) => `mcp__klyra__${o.name}`),
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
 ];
