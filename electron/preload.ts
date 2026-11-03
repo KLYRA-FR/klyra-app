@@ -29,6 +29,16 @@ contextBridge.exposeInMainWorld("klyra", {
     readMeta: () => ipcRenderer.invoke("agents:meta:read"),
     writeMeta: (meta: unknown) => ipcRenderer.invoke("agents:meta:write", meta),
     reveal: (name: string) => ipcRenderer.invoke("agents:reveal", name),
+    memoire: (agent: string, contexte: { dossier: string | null; sessionId: string | null }) => ipcRenderer.invoke("agents:memoire", agent, contexte),
+    souvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string) => ipcRenderer.invoke("agents:souvenir", agent, contexte, id),
+    ecrireSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string, contenu: string, attendu: number | null) =>
+      ipcRenderer.invoke("agents:souvenir:ecrire", agent, contexte, id, contenu, attendu),
+    creerSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, titre: string, contenu: string) =>
+      ipcRenderer.invoke("agents:souvenir:creer", agent, contexte, titre, contenu),
+    montrerSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string | null) =>
+      ipcRenderer.invoke("agents:souvenir:montrer", agent, contexte, id),
+    competences: (agent: string, contexte: { dossier: string | null; lieu?: string | null }) => ipcRenderer.invoke("agents:competences", agent, contexte),
+    montrerCompetence: (agent: string, contexte: { dossier: string | null }, nom: string) => ipcRenderer.invoke("agents:competence:montrer", agent, contexte, nom),
     onChange: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on("agents:changed", listener);

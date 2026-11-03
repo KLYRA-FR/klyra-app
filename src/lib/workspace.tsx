@@ -21,6 +21,7 @@ import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
+import { skillEnTete } from "@/lib/skills";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
 import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, moteurDuMessage, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { COMMANDE_RESUME_AUTO, estCommandeCompacter, formaterJetons, nouvelleMesure, resumeAvantEnvoi, resumePause } from "@/lib/contexte";
@@ -1325,6 +1326,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           ...(moteur !== PAR_DEFAUT ? { moteur } : {}),
           agent: roleId === "principal" ? null : roleId,
           prompt: construirePrompt(chat, roleId, messageUtilisateur),
+          // `/<skill>` en tête du message de la personne : Claude Code la charge si elle existe (cf. src/lib/skills.ts).
+          ...(moteur === PAR_DEFAUT && messageUtilisateur.author.kind === "user" && skillEnTete(texteDe(messageUtilisateur))
+            ? { skill: skillEnTete(texteDe(messageUtilisateur)) }
+            : {}),
           // Sur un VPS, le dossier du PC n'existe pas : l'agent travaille dans son atelier là-bas.
           dossier: chat.lieu ? null : chat.kind === "equipe" ? (project?.folder ?? null) : null,
           lieu: chat.lieu ?? null,

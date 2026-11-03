@@ -42,6 +42,8 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return `Cherche sur le web « ${court(entree.query, 40)} »`;
     case "TodoWrite":
       return "Met à jour sa liste de tâches";
+    case "Skill":
+      return `Suit la compétence « ${court(entree.skill, 40) || "sans nom"} »`;
     case "Agent":
     case "Task": {
       const role = roles.find((r) => r.id === entree.subagent_type);
@@ -86,6 +88,7 @@ export function iconeEtape(outil: string): IconName {
     case "mcp__klyra__proposer_choix":
       return "list";
     case "mcp__klyra__publier_artefact":
+    case "Skill":
       return "layers-01";
     default:
       return "settings";

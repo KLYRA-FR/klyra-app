@@ -12,11 +12,14 @@ import { cn } from "@/lib/cn";
 import { analyserCollage, estCaptureCollee } from "@/lib/collage";
 import { nomFichier } from "@/lib/fichiers";
 import { useCompteClaude } from "@/lib/compte-claude";
+import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { findMention } from "@/lib/mentions";
+import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skills";
 import { useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Project, Role, RoleId } from "@/types/domain";
 import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
+import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
 
 /** Pas plus de 10 fichiers par message. */
 export const MAX_FICHIERS = 10;
@@ -107,6 +110,42 @@ function ListeMentions({
     </div>
   );
 }
+
+/** La liste des compétences qui sort du haut du composeur quand le message commence par « / ». */
+function ListeSkills({ skills, actif, onChoisir }: { skills: SkillProposee[]; actif: number; onChoisir: (skill: SkillProposee) => void }) {
+  return (
+    <div
+      role="listbox"
+      aria-label="Compétences"
+      className="absolute right-0 bottom-full left-0 mb-2 max-h-[264px] overflow-y-auto rounded-lg border border-bordure-subtile bg-fond-surface p-1 shadow-ombre-flottante"
+    >
+      {skills.map((skill, i) => (
+        <button
+          key={skill.nom}
+          type="button"
+          role="option"
+          aria-selected={i === actif}
+          // mousedown : le champ garde le focus.
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onChoisir(skill);
+          }}
+          className={cn(
+            "flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 px-2 py-1.5 text-left",
+            i === actif ? "bg-fond-survol" : "bg-transparent hover:bg-fond-survol",
+          )}
+        >
+          <Icon name="layers-01" size={16} className="shrink-0 text-icone-accent" />
+          <span className="shrink-0 text-ui-s font-medium text-texte-principal">/{skill.nom}</span>
+          {skill.description && <span className="min-w-0 truncate text-ui-xs text-texte-tertiaire">{skill.description}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Le résumé de la conversation, proposé avec les compétences : une commande que l'app connaît. */
+const COMPACTER: SkillProposee = { nom: "compact", description: "Résume la conversation pour alléger les prochains appels" };
 
 /** Les messages qui attendent que l'agent ait fini. */
 function FileAttente({ chatId, roleId }: { chatId: string; roleId: RoleId }) {
@@ -275,6 +314,24 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
     if (r.ok) ajouter(r.data);
   };
 
+  /* Compétences : « / » en tête du message, avec Claude (Codex n'a pas les skills de Claude Code). Celles du
+     poste et du projet, que tout agent peut suivre, et celles que la fiche de l'agent précharge. */
+  const competences = useCompetencesAgent(agent.id, contexteDe(chat, project, agent.id));
+  const commande = fermee || moteurDe(chat) !== PAR_DEFAUT ? null : commandeEnCours(text, curseur);
+  const skillsAProposer = useMemo(() => {
+    if (commande === null) return [];
+    const dispo = competences.etat === "pret" ? [...competences.valeur.fiche.filter((s) => s.dossier), ...competences.valeur.projet, ...competences.valeur.poste] : [];
+    return skillsProposees([...dispo.map((s) => ({ nom: s.nom, description: s.description })), COMPACTER], commande);
+  }, [commande, competences]);
+
+  const choisirSkill = (skill: SkillProposee) => {
+    const insere = `/${skill.nom} `;
+    const suite = text.slice(curseur).replace(/^\S*/, "").replace(/^\s+/, "");
+    setText(insere + suite);
+    setCurseur(insere.length);
+    requestAnimationFrame(() => champ.current?.setSelectionRange(insere.length, insere.length));
+  };
+
   /* Mentions : seulement dans une conversation d'équipe. */
   const mention = direct || fermee ? null : mentionEnCours(text, curseur);
   const proposes = useMemo(() => {
@@ -295,6 +352,24 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   const onToucheAvant = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (skillsAProposer.length) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const pas = event.key === "ArrowDown" ? 1 : -1;
+        setActif((a) => (a + pas + skillsAProposer.length) % skillsAProposer.length);
+        return true;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        choisirSkill(skillsAProposer[Math.min(actif, skillsAProposer.length - 1)]);
+        return true;
+      }
+      if (event.key === "Escape") {
+        setFermee(true);
+        return true;
+      }
+      return false;
+    }
     if (!proposes.length) return false;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -344,7 +419,8 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       )}
       {travail && <FileAttente chatId={chat.id} roleId={travail.roleId} />}
       <div className="relative">
-        {proposes.length > 0 && <ListeMentions roles={proposes} actif={Math.min(actif, proposes.length - 1)} onChoisir={choisir} />}
+        {skillsAProposer.length > 0 && <ListeSkills skills={skillsAProposer} actif={Math.min(actif, skillsAProposer.length - 1)} onChoisir={choisirSkill} />}
+        {!skillsAProposer.length && proposes.length > 0 && <ListeMentions roles={proposes} actif={Math.min(actif, proposes.length - 1)} onChoisir={choisir} />}
         <PromptBox
           ref={champ}
           value={text}

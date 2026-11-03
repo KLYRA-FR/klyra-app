@@ -60,6 +60,8 @@ export interface StreamOptions {
   lieu?: string | null;
   /** Sur le VPS : le dossier du projet sur cette machine. */
   dossierVps?: string | null;
+  /** La skill que la personne a demandée en tête de son message (« /rangement … ») : remise en tête du prompt si elle existe. */
+  skill?: string | null;
 }
 
 /** Réponse à une demande d'autorisation. « toujours » : accordé pour le reste de la session. */

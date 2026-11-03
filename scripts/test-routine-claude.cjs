@@ -103,6 +103,12 @@ function fixture() {
     "./reglages": { lireReglages: () => ({ configuration: require(path.join(path.dirname(filename), "configuration-klyra.js")).CONFIGURATION_PAR_DEFAUT }) },
     "./atelier": chargerAvecCheminsPosix(path.join(path.dirname(filename), "atelier.js")),
     "./consommation": { enregistrerTourClaude: () => ({}) },
+    // Les skills de la session (cf. electron/connaissances-agent.ts) : aucune sur ce profil fictif, le message passe tel quel.
+    "./connaissances-agent": {
+      competencesPrechargees: () => ({ noms: [], texte: null }),
+      promptAvecSkill: (prompt) => prompt,
+      skillsConnues: () => new Set(),
+    },
     // Computer Use coupé, comme sur un profil qui ne l'a jamais allumé : pas d'outils « ordinateur ».
     "./ordinateur/pilote": {
       consigneOrdinateur: () => "Computer Use est coupé.",
