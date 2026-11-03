@@ -7,6 +7,7 @@ import { PromptBox } from "@/components/chat/PromptBox";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Bouton } from "@/components/ui/Bouton";
+import { CarteConfiguration } from "./CarteConfiguration";
 import { MaJournee } from "./MaJournee";
 import { NommerAssistant } from "./NommerAssistant";
 import { Stickers } from "./Stickers";
@@ -173,6 +174,9 @@ export function HomeScreen() {
           <section ref={deuxiemeBloc} aria-label="Ta journée" className="rounded-3xl border border-bordure-subtile bg-fond-page p-3">
             <MaJournee />
           </section>
+
+          {/* 3. Une fois : la configuration KLYRA recommandée, à adopter en un clic. */}
+          <CarteConfiguration />
         </div>
       </div>
       {/* La zone pour écrire, fixe en bas comme dans une conversation ; le reste défile au-dessus. */}

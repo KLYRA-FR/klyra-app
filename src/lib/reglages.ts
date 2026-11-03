@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getBridge, unwrap, type PreferencesNotifications, type PreferencesSons, type Reglages } from "@/lib/bridge";
+import { CONFIGURATION_PAR_DEFAUT, validerConfiguration, type ConfigurationKlyra } from "../../electron/configuration-klyra";
 
 /**
  * Les réglages de l'app gardés par le process principal (electron/reglages.ts).
@@ -13,6 +14,7 @@ export const REGLAGES_PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
   computerUse: { actif: false },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
+  configuration: CONFIGURATION_PAR_DEFAUT,
 };
 
 const CLE_NAVIGATEUR = "klyra:reglages";
@@ -25,6 +27,7 @@ function completer(brut: Partial<Reglages> | null | undefined): Reglages {
     notifications: { ...REGLAGES_PAR_DEFAUT.notifications, ...brut?.notifications },
     computerUse: { actif: brut?.computerUse?.actif === true },
     sons: { ...REGLAGES_PAR_DEFAUT.sons, ...brut?.sons },
+    configuration: validerConfiguration(brut?.configuration),
   };
 }
 
@@ -100,5 +103,16 @@ export function useReglages() {
     }
   }, []);
 
-  return { reglages, erreur, changerNotification, changerComputerUse, changerSons, systeme: !!getBridge()?.reglages };
+  /** La configuration KLYRA : la carte l'adopte en un clic, chaque réglage se change aussi seul. */
+  const changerConfiguration = useCallback(async (patch: Partial<ConfigurationKlyra>) => {
+    const actuels = await reglagesActuels();
+    setErreur(null);
+    try {
+      await enregistrer({ ...actuels, configuration: { ...actuels.configuration, ...patch } });
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  return { reglages, erreur, changerNotification, changerComputerUse, changerSons, changerConfiguration, systeme: !!getBridge()?.reglages };
 }

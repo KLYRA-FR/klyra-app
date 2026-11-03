@@ -96,6 +96,9 @@ function fixture() {
     // Fonctions pures (tri des binaires, message de lancement) : le vrai module compilé.
     "./claude-binaire": require(path.join(path.dirname(filename), "claude-binaire.js")),
     "./titre": require(path.join(path.dirname(filename), "titre.js")),
+    // Module pur : la configuration KLYRA réelle ; ses réglages, ceux par défaut (rien d'adopté).
+    "./configuration-klyra": require(path.join(path.dirname(filename), "configuration-klyra.js")),
+    "./reglages": { lireReglages: () => ({ configuration: require(path.join(path.dirname(filename), "configuration-klyra.js")).CONFIGURATION_PAR_DEFAUT }) },
     "./atelier": chargerAvecCheminsPosix(path.join(path.dirname(filename), "atelier.js")),
     "./consommation": { enregistrerTourClaude: () => ({}) },
     // Computer Use coupé, comme sur un profil qui ne l'a jamais allumé : pas d'outils « ordinateur ».

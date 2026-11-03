@@ -69,6 +69,7 @@
     "mesure:socle": "node scripts/mesure-socle.mjs",
     "bench:jetons": "node scripts/banc-jetons/banc.mjs",
     "test:conseil-contexte": "node scripts/test-conseil-contexte.mjs",
+    "test:configuration": "node scripts/test-configuration-klyra.mjs",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:projets-telephone": "vitest run src/lib/telephone/dossiers.test.ts src/lib/telephone/gestes-fichiers.test.ts src/lib/telephone/ecrans.test.tsx",
     "test:identite": "vitest run src/lib/identite.test.ts",

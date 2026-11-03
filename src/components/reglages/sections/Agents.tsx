@@ -18,6 +18,7 @@ import { FOURNISSEURS, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { pret, useMoteurs } from "@/lib/moteurs";
 import { idDirect, useRole, useWorkspace } from "@/lib/workspace";
 import type { Role } from "@/types/domain";
+import { GroupeConfigurationKlyra } from "../ConfigurationKlyra";
 import { ancreReglage, Erreur, Groupe, Ligne, SeulementBureau } from "../ui";
 
 function ChoixAcces() {
@@ -174,6 +175,8 @@ export function Agents() {
 
   return (
     <>
+      <GroupeConfigurationKlyra />
+
       <Groupe titre="Accès des agents" description="Ce qu’un agent peut faire sans te demander. Le reste, il te le demande dans la conversation.">
         <Ligne id="acces" libelle="Niveau d’accès" description="S’applique aux prochaines réponses. Les fichiers restent limités au dossier du projet (ou à ~/.klyra/atelier hors projet)." pile>
           <ChoixAcces />
