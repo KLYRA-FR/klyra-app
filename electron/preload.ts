@@ -42,6 +42,14 @@ contextBridge.exposeInMainWorld("klyra", {
     connecterAvecCle: (id: string, cle: string) => ipcRenderer.invoke("moteurs:connecter-cle", id, cle),
     deconnecter: (id: string) => ipcRenderer.invoke("moteurs:deconnecter", id),
     modeles: (id: string) => ipcRenderer.invoke("moteurs:modeles", id),
+    versionDisponible: (id: string) => ipcRenderer.invoke("moteurs:version-disponible", id),
+    installer: (id: string) => ipcRenderer.invoke("moteurs:installer", id),
+    mettreAJour: (id: string) => ipcRenderer.invoke("moteurs:mettre-a-jour", id),
+    onProgression: (callback: (id: string, p: unknown) => void) => {
+      const listener = (_e: unknown, id: string, p: unknown) => callback(id, p);
+      ipcRenderer.on("moteurs:progression", listener);
+      return () => ipcRenderer.removeListener("moteurs:progression", listener);
+    },
   },
   claude: {
     status: () => ipcRenderer.invoke("claude:status"),

@@ -78,6 +78,13 @@ export interface CompteMoteur {
   verifieLe: number;
 }
 
+/** Où en est une installation ou une mise à jour, pour la barre de l'écran. */
+export interface Progression {
+  etape: "telechargement" | "verification" | "installation" | "mise-a-jour";
+  recu: number;
+  total: number | null;
+}
+
 /** Un modèle qu'un moteur annonce, avec les efforts de réflexion qu'il accepte. */
 export interface ModeleMoteur {
   id: string;
@@ -104,6 +111,12 @@ export interface Moteur {
   connecterAvecCle?(cle: string): Promise<CompteMoteur>;
   /** Les modèles que le moteur annonce ; absent : la liste fixe de l'interface (les alias de Claude Code). */
   modeles?(): Promise<ModeleMoteur[]>;
+  /** La dernière version publiée ; null si on ne sait pas la lire. */
+  versionDisponible?(): Promise<string | null>;
+  /** Installe le moteur dans ~/.klyra/moteurs ; absent : l'app ne sait pas l'installer. */
+  installer?(progression: (p: Progression) => void): Promise<CompteMoteur>;
+  /** Met le moteur à jour : celui de l'app est réinstallé, celui du poste par sa propre commande. */
+  mettreAJour?(progression: (p: Progression) => void): Promise<CompteMoteur>;
   /** Fait répondre l'agent, en direct. Se termine toujours par un événement `fin`. */
   lancer(requestId: string, options: StreamOptions, emit: (event: AgentEvent) => void, spontane: Spontane): void;
   /** Arrête une réponse ; sans effet si elle n'est pas à ce moteur. */

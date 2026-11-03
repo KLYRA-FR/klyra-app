@@ -49,7 +49,8 @@ import {
   type Utilisation,
 } from "./claude";
 import { moteurs } from "./moteurs";
-import type { AgentEvent, Decision, StreamOptions } from "./moteurs/types";
+import { estGere } from "./moteurs/installation";
+import type { AgentEvent, Decision, Progression, StreamOptions } from "./moteurs/types";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
 import { echecExport, exporterConversation, verifierFenetreExport } from "./export-conversation";
 import { arreterRoutines, brancherRoutines, commencerRoutine, demarrerRoutines, synchroniserToutesRoutinesVps } from "./routines";
@@ -427,7 +428,12 @@ function registerBridge() {
     if (!m || !id) throw new Error(`Fournisseur inconnu : ${id}.`);
     return m;
   };
-  handle("moteurs:liste", () => moteurs.liste().map((m) => ({ id: m.id, nom: m.nom, fournisseur: m.fournisseur, chemin: m.trouver() })));
+  handle("moteurs:liste", () =>
+    moteurs.liste().map((m) => {
+      const chemin = m.trouver();
+      return { id: m.id, nom: m.nom, fournisseur: m.fournisseur, chemin, gere: estGere(chemin), installable: !!m.installer };
+    }),
+  );
   handle("moteurs:compte", (id: string) => moteurConnu(id).compte());
   handle("moteurs:connecter", (id: string) => moteurConnu(id).connecter());
   handle("moteurs:connecter-cle", (id: string, cle: string) => {
@@ -437,6 +443,22 @@ function registerBridge() {
   });
   handle("moteurs:deconnecter", (id: string) => moteurConnu(id).deconnecter());
   handle("moteurs:modeles", (id: string) => moteurConnu(id).modeles?.() ?? []);
+  handle("moteurs:version-disponible", (id: string) => moteurConnu(id).versionDisponible?.() ?? null);
+  /* Installer ou mettre à jour : l'avancée arrive sur `moteurs:progression`, jusqu'à la réponse. */
+  const progression = (id: string) => (p: Progression) => {
+    const sender = BrowserWindow.getAllWindows()[0]?.webContents;
+    if (sender && !sender.isDestroyed()) sender.send("moteurs:progression", id, p);
+  };
+  handle("moteurs:installer", (id: string) => {
+    const m = moteurConnu(id);
+    if (!m.installer) throw new Error(`L’app ne sait pas installer ${m.nom}.`);
+    return m.installer(progression(id));
+  });
+  handle("moteurs:mettre-a-jour", (id: string) => {
+    const m = moteurConnu(id);
+    if (!m.mettreAJour) throw new Error(`L’app ne sait pas mettre à jour ${m.nom}.`);
+    return m.mettreAJour(progression(id));
+  });
   handle("projets:dossier-existe", (dossier: string) => dossierExiste(dossier));
   handle("projets:choisir-dossier", async () => {
     // Tests seulement (jamais dans l'app installée) : le dossier « choisi » sans fenêtre du système.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
@@ -90,6 +91,7 @@ function Pastille({ id, taille = "sm" }: { id: string; taille?: "sm" | "md" }) {
  * Bloqué pendant que l'agent travaille.
  */
 export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variante?: "entete" | "champ" }) {
+  const router = useRouter();
   const { choisirModele, choisirFournisseur } = useWorkspace();
   const travail = useTravail(chat.id);
   const { moteurs, actualiser } = useMoteurs();
@@ -211,6 +213,19 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
                 <span className="sr-only">{f.nom}</span>
               </button>
             ))}
+            {/* Ajouter ou connecter un fournisseur : la page Fournisseurs des Réglages du serveur. */}
+            <button
+              type="button"
+              title="Ajouter un fournisseur"
+              aria-label="Ajouter un fournisseur"
+              onClick={() => {
+                setOuvert(false);
+                router.push("/serveur/reglages?section=fournisseurs");
+              }}
+              className="mt-auto flex size-10 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent text-icone-secondaire hover:bg-fond-survol hover:text-texte-principal"
+            >
+              <Icon name="plus-01" size={18} />
+            </button>
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col">

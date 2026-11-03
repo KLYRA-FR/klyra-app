@@ -280,8 +280,12 @@ export function SelecteurServeur() {
             Ajouter un serveur
           </Action>
           <span aria-hidden="true" className="mx-2 my-1 h-px bg-bordure-subtile" />
-          <Action icone="settings" onClick={() => aller("/serveurs")}>
-            Réglages des serveurs
+          {/* Ceux de la machine active : fournisseurs, agents… (comme le menu du serveur d'OpenBot). */}
+          <Action icone="settings" onClick={() => aller("/serveur/reglages")}>
+            Réglages du serveur
+          </Action>
+          <Action icone="list" onClick={() => aller("/serveurs")}>
+            Tous les serveurs
           </Action>
           {actif && (
             <>

@@ -1269,6 +1269,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         sessions: {},
         luJusqua: null,
         lieu: lieuParDefaut(),
+        // Le fournisseur choisi pour l'agent dans Réglages du serveur › Agents.
+        ...(role.fournisseur ? { fournisseur: role.fournisseur } : {}),
       };
       dispatch({ type: "chat/add", chat });
       stateRef.current = {
@@ -1496,6 +1498,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       luJusqua: null,
       fil: { roleId, statut: "ouvert", creeLe: maintenant, lancePar: lancePar ?? null, etape: "a-faire", ...ticket },
     };
+    // Le fil part avec le fournisseur de l'agent qui le reçoit.
+    const fournisseurAgent = rolesRef.current.find((r) => r.id === roleId)?.fournisseur;
+    if (fournisseurAgent) chat.fournisseur = fournisseurAgent;
     dispatch({ type: "chat/add", chat });
     stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
     return chat.id;
