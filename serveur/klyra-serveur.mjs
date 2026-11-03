@@ -15,6 +15,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { creerAgents } from "./agents.mjs";
 import { ErreurFichier, creerFichiers } from "./fichiers.mjs";
+import { creerIa } from "./ia.mjs";
+import { creerMoteurs } from "./moteurs.mjs";
 import { creerRoutines } from "./routines.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
@@ -24,12 +26,16 @@ export const CHEMIN_AGENT = "/klyra/v1/agent";
 export const CHEMIN_FICHES = "/klyra/v1/agents/fiches";
 export const CHEMIN_FICHIERS = "/klyra/v1/fichiers";
 export const CHEMIN_ROUTINES = "/klyra/v1/routines";
+export const CHEMIN_MOTEURS = "/klyra/v1/moteurs";
+export const CHEMIN_IA = "/klyra/v1/ia";
 export const PROTOCOLE = 1;
 
 export const DUREE_CODE_MS = 10 * 60_000;
 /** Au-delà, tous les codes en attente tombent : il faut relancer `appairer`. */
 const ECHECS_MAX = 5;
 const CORPS_MAX = 2048;
+/** Le retour de la page d'OpenAI (code et état d'OAuth dans l'adresse). */
+const CORPS_RETOUR_MAX = 10_000;
 const CORPS_AGENT_MAX = 1_000_000;
 const CORPS_FICHES_MAX = 5_000_000;
 const JOURNAL_MAX = 5000;
@@ -177,10 +183,13 @@ export function contexteTelephone(brut) {
   };
 }
 
-/** Ce qui identifie l'agent d'une conversation, pour retrouver sa session : « conversation|agent ». */
-export function cleConversation(conversation, agent) {
+/**
+ * Ce qui identifie l'agent d'une conversation, pour retrouver sa session : « conversation|agent »,
+ * et « |codex » au bout pour celle de Codex (une session n'existe que dans le moteur qui l'a créée).
+ */
+export function cleConversation(conversation, agent, moteur = null) {
   if (typeof conversation !== "string" || !/^[A-Za-z0-9_.:-]{1,120}$/.test(conversation)) return null;
-  return `${conversation}|${typeof agent === "string" && agent ? agent : "principal"}`;
+  return `${conversation}|${typeof agent === "string" && agent ? agent : "principal"}${moteur === "codex" ? "|codex" : ""}`;
 }
 
 /**
@@ -279,7 +288,8 @@ function jetonDe(req) {
 
 /**
  * @param {{ nom?: string, dossier: string, maintenant?: () => number, journal?: ReturnType<typeof creerJournal>,
- *   agents?: ReturnType<typeof creerAgents>, fichiers?: ReturnType<typeof creerFichiers>, routines?: ReturnType<typeof creerRoutines> }} options
+ *   agents?: ReturnType<typeof creerAgents>, fichiers?: ReturnType<typeof creerFichiers>, routines?: ReturnType<typeof creerRoutines>,
+ *   moteurs?: ReturnType<typeof creerMoteurs>, ia?: ReturnType<typeof creerIa> }} options
  */
 export function creerGestionnaire(options) {
   const nom = (options.nom ?? "").trim() || "KLYRA";
@@ -289,6 +299,8 @@ export function creerGestionnaire(options) {
   const agents = options.agents ?? null;
   const fichiers = options.fichiers ?? null;
   const routines = options.routines ?? null;
+  const moteurs = options.moteurs ?? null;
+  const ia = options.ia ?? null;
   let echecs = 0;
 
   const appareilDe = (req) => {
@@ -304,6 +316,8 @@ export function creerGestionnaire(options) {
     equipe: agents ? agents.empreinteEquipe() : "",
     ...(fichiers ? { projets: fichiers.racine } : {}),
     ...(routines ? { routines: true } : {}),
+    /* Réglages du serveur › Fournisseurs : moteurs (Claude Code, Codex) et IA à consulter. */
+    ...(moteurs && ia ? { fournisseurs: true } : {}),
   });
 
   return async function gestionnaire(req, res) {
@@ -385,6 +399,42 @@ export function creerGestionnaire(options) {
       return repondre(res, 404, { erreur: "introuvable" });
     }
 
+    if (url.pathname === CHEMIN_MOTEURS || url.pathname.startsWith(`${CHEMIN_MOTEURS}/`)) {
+      if (!moteurs) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      /* /klyra/v1/moteurs, ou /klyra/v1/moteurs/<id>/<action> */
+      const [id = "", action = ""] = url.pathname.slice(CHEMIN_MOTEURS.length + 1).split("/");
+      try {
+        if (!id && req.method === "GET") return repondre(res, 200, { moteurs: moteurs.liste() });
+        if (action === "compte" && req.method === "GET") return repondre(res, 200, { compte: await moteurs.compte(id), connexion: id === "codex" ? moteurs.etatConnexion() : null });
+        if (action === "modeles" && req.method === "GET") return repondre(res, 200, { modeles: await moteurs.modeles(id) });
+        if (action === "version-disponible" && req.method === "GET") return repondre(res, 200, { version: await moteurs.versionDisponible(id) });
+        if ((action === "installer" || action === "mettre-a-jour") && req.method === "POST") return repondre(res, 202, { travail: moteurs.lancerTravail(id, action) });
+        if (action === "connecter" && req.method === "POST") return repondre(res, 200, await moteurs.connecter(id, (await lireCorpsRequete(req))?.mode));
+        if (action === "retour" && req.method === "POST") return repondre(res, 200, { statut: await moteurs.relayerRetour(id, (await lireCorpsRequete(req, CORPS_RETOUR_MAX))?.chemin) });
+        if (action === "connecter-cle" && req.method === "POST") return repondre(res, 200, { compte: await moteurs.connecterAvecCle(id, (await lireCorpsRequete(req))?.cle) });
+        if (action === "deconnecter" && req.method === "POST") return repondre(res, 200, { compte: await moteurs.deconnecter(id) });
+      } catch (erreur) {
+        return repondre(res, 400, { erreur: "moteur", message: erreur instanceof Error ? erreur.message : "Le fournisseur n’a pas répondu sur le VPS." });
+      }
+      return repondre(res, 404, { erreur: "introuvable" });
+    }
+
+    if (url.pathname === CHEMIN_IA || url.pathname.startsWith(`${CHEMIN_IA}/`)) {
+      if (!ia) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      const action = url.pathname.slice(CHEMIN_IA.length + 1);
+      try {
+        if (action === "" && req.method === "GET") return repondre(res, 200, { catalogue: ia.catalogue(), liste: ia.lister() });
+        if (action === "ajouter" && req.method === "POST") return repondre(res, 200, { liste: ia.ajouter(await lireCorpsRequete(req)) });
+        if (action === "retirer" && req.method === "POST") return repondre(res, 200, { liste: ia.retirer(String((await lireCorpsRequete(req))?.id ?? "")) });
+        if (action === "tester" && req.method === "POST") return repondre(res, 200, { texte: await ia.tester(String((await lireCorpsRequete(req))?.id ?? "")) });
+      } catch (erreur) {
+        return repondre(res, 400, { erreur: "ia", message: erreur instanceof Error ? erreur.message : "L’IA n’a pas répondu." });
+      }
+      return repondre(res, 404, { erreur: "introuvable" });
+    }
+
     if (url.pathname.startsWith(`${CHEMIN_FICHIERS}/`)) {
       if (!fichiers) return repondre(res, 404, { erreur: "introuvable" });
       if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
@@ -436,7 +486,7 @@ export function creerGestionnaire(options) {
         }
         /* La conversation (dite par le PC, ou par le contexte du téléphone) : sans session, l'agent reprend la sienne. */
         const options = corps.options && typeof corps.options === "object" ? { ...corps.options } : corps.options;
-        const cle = options && typeof options === "object" ? cleConversation(options.conversation ?? contexte?.chatId, options.agent) : null;
+        const cle = options && typeof options === "object" ? cleConversation(options.conversation ?? contexte?.chatId, options.agent, options.moteur) : null;
         if (cle && journal) {
           journal.lierConversation(requestId, cle);
           if (!options.sessionId) options.sessionId = journal.sessionDe(cle);
@@ -483,6 +533,7 @@ export function ecouter(options) {
         fermer: () => {
           options.journal?.fermerTout();
           options.agents?.fermerTout();
+          options.ia?.fermer();
           options.routines?.arreter();
           return new Promise((fini, echec) => serveur.close((err) => (err ? echec(err) : fini())));
         },
@@ -539,7 +590,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     journal.publier(requestId, event, sessionId, routines?.contexte(requestId) ?? null);
     routines?.surEvenement(requestId, event);
   };
-  const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane });
+  const ia = creerIa({ donnees: dossier, version: String(PROTOCOLE) });
+  await ia.demarrer();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane, ia, version: String(PROTOCOLE) });
+  const moteurs = creerMoteurs({ home, claude: agents.claude, codex: agents.codex });
   routines = creerRoutines({ donnees: dossier, home, envoyer: agents.envoyer, annuler: agents.annuler });
   const ecoute = await ecouter({
     nom: process.env.KLYRA_SERVEUR_NOM,
@@ -548,6 +602,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     agents,
     fichiers: creerFichiers(home),
     routines,
+    moteurs,
+    ia,
     port,
     hote: process.env.KLYRA_SERVEUR_HOTE ?? "127.0.0.1",
     cert: certChemin ? lireFichier(certChemin, "Certificat") : undefined,

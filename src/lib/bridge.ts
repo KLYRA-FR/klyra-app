@@ -306,16 +306,19 @@ export interface KlyraBridge {
   };
   /** Les moteurs des agents : Claude Code, Codex pour ChatGPT. Le compte a la forme de celui de Claude. */
   moteurs?: {
-    liste: () => Promise<Reponse<MoteurPoste[]>>;
-    compte: (id: string) => Promise<Reponse<CompteClaude>>;
-    connecter: (id: string) => Promise<Reponse<CompteClaude>>;
-    connecterAvecCle: (id: string, cle: string) => Promise<Reponse<CompteClaude>>;
-    deconnecter: (id: string) => Promise<Reponse<CompteClaude>>;
-    modeles: (id: string) => Promise<Reponse<ModeleMoteur[]>>;
-    versionDisponible: (id: string) => Promise<Reponse<string | null>>;
-    installer: (id: string) => Promise<Reponse<CompteClaude>>;
-    mettreAJour: (id: string) => Promise<Reponse<CompteClaude>>;
-    onProgression: (callback: (id: string, p: ProgressionMoteur) => void) => () => void;
+    /* `lieu` : ceux d'un VPS relié (son origine) ; absent : ceux de ce PC. */
+    liste: (lieu?: string | null) => Promise<Reponse<MoteurPoste[]>>;
+    compte: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
+    /** Sur un VPS, Codex se connecte par code d'appareil : le code arrive sur `onCode`, la réponse une fois connecté. */
+    connecter: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
+    connecterAvecCle: (id: string, cle: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
+    deconnecter: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
+    modeles: (id: string, lieu?: string | null) => Promise<Reponse<ModeleMoteur[]>>;
+    versionDisponible: (id: string, lieu?: string | null) => Promise<Reponse<string | null>>;
+    installer: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
+    mettreAJour: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
+    onProgression: (callback: (id: string, p: ProgressionMoteur, lieu: string | null) => void) => () => void;
+    onCode?: (callback: (id: string, lieu: string, code: { url: string; code: string }) => void) => () => void;
   };
   claude: {
     status: () => Promise<Reponse<{ path: string | null }>>;
@@ -394,11 +397,12 @@ export interface KlyraBridge {
   };
   /** Les autres IA (ChatGPT, Gemini…) que les agents peuvent interroger. La clé ne revient jamais. */
   ia?: {
-    fournisseurs: () => Promise<Reponse<Record<string, { nom: string; url: string; modele: string }>>>;
-    lister: () => Promise<Reponse<AutreIa[]>>;
-    ajouter: (entree: { nom: string; fournisseur: string; url: string; modele: string; cle: string }) => Promise<Reponse<AutreIa[]>>;
-    retirer: (id: string) => Promise<Reponse<AutreIa[]>>;
-    tester: (id: string) => Promise<Reponse<string>>;
+    /* `lieu` : celles d'un VPS relié, dont la clé reste sur le VPS ; absent : celles de ce PC. */
+    fournisseurs: (lieu?: string | null) => Promise<Reponse<Record<string, { nom: string; url: string; modele: string }>>>;
+    lister: (lieu?: string | null) => Promise<Reponse<AutreIa[]>>;
+    ajouter: (entree: { nom: string; fournisseur: string; url: string; modele: string; cle: string }, lieu?: string | null) => Promise<Reponse<AutreIa[]>>;
+    retirer: (id: string, lieu?: string | null) => Promise<Reponse<AutreIa[]>>;
+    tester: (id: string, lieu?: string | null) => Promise<Reponse<string>>;
   };
   /** Les MCP directs de la Marketplace (cf. electron/mcp-direct.ts). Le jeton ne revient jamais. */
   mcp?: {

@@ -239,6 +239,8 @@ export async function streamDistant(origine: string, requestId: string, options:
     const recu = await requete(origine, "/klyra/v1/agent/envoyer", "POST", {
       requestId,
       options: {
+        /* Claude Code ou Codex (ChatGPT) ; absent : Claude Code, comme sur un serveur plus ancien. */
+        ...(options.moteur && options.moteur !== "claude" ? { moteur: options.moteur } : {}),
         agent: options.agent,
         prompt: options.prompt,
         sessionId: options.sessionId,

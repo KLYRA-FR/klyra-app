@@ -72,7 +72,7 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
   const { reessayer, brancher } = useWorkspace();
   const travail = useTravail(chat.id);
   const { moteur, modele } = useModeleEffectif(chat);
-  const modeles = useModelesDe(moteur);
+  const modeles = useModelesDe(moteur, chat.lieu ?? null);
   const [copie, setCopie] = useState(false);
   const [parle, setParle] = useState(false);
   const [ouvert, setOuvert] = useState(false);

@@ -36,11 +36,22 @@ Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS"
 
 - `lancer.sh` installe Claude Code pour `klyra` (`/var/lib/klyra/.local/bin/claude`) et le connecte à l’abonnement de la personne : `claude setup-token`, jeton collé dans le terminal, gardé dans `donnees/claude-token`. Plus tard : `curl … | sudo sh -s -- connecter-claude`.
 - `GET /klyra/v1/serveur` dit `agents: "pret" | "non-connecte" | "absent"`.
-- `serveur/agents.mjs` lance Claude Code comme l’app (un processus par conversation, `--permission-prompt-tool stdio`), dans `/var/lib/klyra/atelier`, avec les fiches des agents actifs du PC (`PUT /klyra/v1/agents/fiches`, envoyées par l’app quand elles changent). Ni fils, ni Composio, ni planning, ni pièces jointes.
+- `serveur/agents.mjs` lance Claude Code comme l’app (un processus par conversation, `--permission-prompt-tool stdio`), dans `/var/lib/klyra/atelier`, avec les fiches des agents actifs du PC (`PUT /klyra/v1/agents/fiches`, envoyées par l’app quand elles changent). Ou Codex pour ChatGPT, quand la conversation le demande (`moteur: "codex"`, `serveur/codex.mjs`). Ni fils, ni Composio, ni planning, ni pièces jointes.
 - Événements numérotés, gardés 24 h : `GET /klyra/v1/agent/evenements?depuis=N&instance=…` (SSE). Commandes : `POST /klyra/v1/agent/envoyer | autoriser | annuler`.
 - Dans l’app, `electron/agents-distants.ts` garde un flux par VPS relié (ouvert au démarrage, curseur dans `serveurs-curseurs.json`) et rend les mêmes événements que les agents du PC. Une réponse finie pendant que l’app était fermée s’ouvre à la réouverture.
 - **Le sélecteur du rail** (en haut, sous le logo, comme dans OpenBot) choisit la machine active : « Ce PC » ou un VPS relié, avec son état (répond, ne répond pas, Claude Code à connecter), interrogé chaque minute et à l’ouverture du menu. Les conversations directes avec les agents y passent (pas les fils, ni celles d’un projet) ; les nouveaux projets et routines la proposent. Impossible de changer pendant qu’un agent travaille dans une conversation directe. Le menu mène aussi à « Ajouter un serveur », aux réglages (écran Serveurs) et à « Retirer » le serveur actif.
 - Une conversation garde la session de ses agents sur chaque machine (`Chat.sessionsParLieu`) : revenir sur une machine reprend sa mémoire là-bas. L’en-tête d’une conversation garde son propre choix (`ChoixLieu`), pour elle seule.
+
+## Fournisseurs sur le VPS
+
+Les mêmes que sur Ce PC, dans Réglages du serveur › Fournisseurs (l’app passe `lieu` aux IPC `moteurs:*` et `ia:*`, cf. `electron/fournisseurs-vps.ts`).
+
+- **Moteurs** (`serveur/moteurs.mjs`) : `GET /klyra/v1/moteurs`, puis `/klyra/v1/moteurs/<claude|codex>/compte | modeles | version-disponible` (GET) et `installer | mettre-a-jour | connecter | connecter-cle | deconnecter | retour` (POST). Installer et mettre à jour lancent un travail : la réponse part tout de suite, l’app relit `travail` (étape, octets, erreur).
+- **Codex** s’installe depuis npm comme sur le PC (`serveur/installation.mjs` : paquet de la plateforme, empreinte sha512, `/var/lib/klyra/.klyra/moteurs/codex/<version>`). Connexion au compte ChatGPT comme sur le PC : la page d’OpenAI s’ouvre dans le navigateur du PC, qui revient sur `http://127.0.0.1:1455/auth/callback` ; l’app écoute ce port sur le PC le temps de la connexion et relaie le retour au VPS (`retour`), où Codex l’attend sur la même adresse. Port déjà pris sur le PC : code d’appareil (lien + code montré dans l’app). Ou une clé API d’OpenAI.
+- **Claude Code** reste posé et connecté par `lancer.sh` (`connecter-claude`) ; la page le dit, et « Mettre à jour » lance `claude update` sur le VPS.
+- **IA à consulter** (`serveur/ia.mjs`) : `GET /klyra/v1/ia` (catalogue et liste, jamais de clé), `POST /klyra/v1/ia/ajouter | retirer | tester`. Les clés sont dans `donnees/ia.json` (600, utilisateur klyra ; le VPS n’a pas de trousseau). Les agents du VPS (Claude Code et Codex) les interrogent par l’outil `demander_ia` d’un serveur MCP sur 127.0.0.1, avec un jeton tiré à chaque démarrage.
+- La session de Codex est retenue par conversation à part de celle de Claude Code (`conversation|agent|codex`). Une session d’un autre moteur : la conversation repart sur un nouveau fil.
+- Test : `KLYRA_CODEX_PATH=/chemin/codex pnpm test:serveur-fournisseurs` (vrai serveur et vrai Codex face au faux OpenAI de `scripts/faux-openai.cjs`).
 
 ## Projets sur le VPS
 
@@ -53,7 +64,7 @@ Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS"
 
 - « Machine » dans le formulaire d’une routine (à la création). Le VPS la lance même quand le PC est éteint ; sa réponse s’ouvre dans la conversation « Routine « … » » à la réouverture de l’app.
 - `PUT /klyra/v1/routines` (liste complète, envoyée après chaque changement), `POST /klyra/v1/routines/executer | interrompre`, `GET /klyra/v1/routines/historique`.
-- `serveur/horaires.mjs` est généré : `node scripts/horaires-serveur.mjs` après tout changement de `electron/routines/schedule.ts` (`test:serveur` vérifie qu’il est à jour).
+- `serveur/horaires.mjs`, `serveur/codex-protocole.mjs` et `serveur/ia-catalogue.mjs` sont générés : `node scripts/serveur-genere.mjs` après tout changement de `electron/routines/schedule.ts`, `electron/moteurs/codex-protocole.ts` ou `electron/ia-catalogue.ts` (`test:serveur` vérifie qu’ils sont à jour).
 
 ## Dans l’app
 

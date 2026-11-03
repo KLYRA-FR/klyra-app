@@ -36,19 +36,24 @@ contextBridge.exposeInMainWorld("klyra", {
     },
   },
   moteurs: {
-    liste: () => ipcRenderer.invoke("moteurs:liste"),
-    compte: (id: string) => ipcRenderer.invoke("moteurs:compte", id),
-    connecter: (id: string) => ipcRenderer.invoke("moteurs:connecter", id),
-    connecterAvecCle: (id: string, cle: string) => ipcRenderer.invoke("moteurs:connecter-cle", id, cle),
-    deconnecter: (id: string) => ipcRenderer.invoke("moteurs:deconnecter", id),
-    modeles: (id: string) => ipcRenderer.invoke("moteurs:modeles", id),
-    versionDisponible: (id: string) => ipcRenderer.invoke("moteurs:version-disponible", id),
-    installer: (id: string) => ipcRenderer.invoke("moteurs:installer", id),
-    mettreAJour: (id: string) => ipcRenderer.invoke("moteurs:mettre-a-jour", id),
-    onProgression: (callback: (id: string, p: unknown) => void) => {
-      const listener = (_e: unknown, id: string, p: unknown) => callback(id, p);
+    liste: (lieu?: string | null) => ipcRenderer.invoke("moteurs:liste", lieu ?? null),
+    compte: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:compte", id, lieu ?? null),
+    connecter: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:connecter", id, lieu ?? null),
+    connecterAvecCle: (id: string, cle: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:connecter-cle", id, cle, lieu ?? null),
+    deconnecter: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:deconnecter", id, lieu ?? null),
+    modeles: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:modeles", id, lieu ?? null),
+    versionDisponible: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:version-disponible", id, lieu ?? null),
+    installer: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:installer", id, lieu ?? null),
+    mettreAJour: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:mettre-a-jour", id, lieu ?? null),
+    onProgression: (callback: (id: string, p: unknown, lieu: string | null) => void) => {
+      const listener = (_e: unknown, id: string, p: unknown, lieu: string | null) => callback(id, p, lieu ?? null);
       ipcRenderer.on("moteurs:progression", listener);
       return () => ipcRenderer.removeListener("moteurs:progression", listener);
+    },
+    onCode: (callback: (id: string, lieu: string, code: unknown) => void) => {
+      const listener = (_e: unknown, id: string, lieu: string, code: unknown) => callback(id, lieu, code);
+      ipcRenderer.on("moteurs:code", listener);
+      return () => ipcRenderer.removeListener("moteurs:code", listener);
     },
   },
   claude: {
@@ -128,11 +133,11 @@ contextBridge.exposeInMainWorld("klyra", {
     repondre: (id: string, ok: boolean, texte: string) => ipcRenderer.send("outils:reponse", id, ok, texte),
   },
   ia: {
-    fournisseurs: () => ipcRenderer.invoke("ia:fournisseurs"),
-    lister: () => ipcRenderer.invoke("ia:lister"),
-    ajouter: (entree: unknown) => ipcRenderer.invoke("ia:ajouter", entree),
-    retirer: (id: string) => ipcRenderer.invoke("ia:retirer", id),
-    tester: (id: string) => ipcRenderer.invoke("ia:tester", id),
+    fournisseurs: (lieu?: string | null) => ipcRenderer.invoke("ia:fournisseurs", lieu ?? null),
+    lister: (lieu?: string | null) => ipcRenderer.invoke("ia:lister", lieu ?? null),
+    ajouter: (entree: unknown, lieu?: string | null) => ipcRenderer.invoke("ia:ajouter", entree, lieu ?? null),
+    retirer: (id: string, lieu?: string | null) => ipcRenderer.invoke("ia:retirer", id, lieu ?? null),
+    tester: (id: string, lieu?: string | null) => ipcRenderer.invoke("ia:tester", id, lieu ?? null),
   },
   mcp: {
     apps: () => ipcRenderer.invoke("mcp:apps"),

@@ -1,6 +1,8 @@
 /**
  * Les agents sur le VPS : Claude Code lancé comme dans l'app (electron/claude.ts, streamAgent),
- * un processus par conversation, gardé ouvert entre les messages.
+ * un processus par conversation, gardé ouvert entre les messages ; ou Codex pour ChatGPT (codex.mjs),
+ * quand la conversation le demande (`moteur: "codex"`). Les IA à consulter (ia.mjs) leur sont données
+ * par l'outil MCP `demander_ia`.
  * Ce qui n'existe que sur le PC n'est pas là : outils de l'app (fils, proposer_agent), Composio,
  * planning, pièces jointes, consommation détaillée.
  *
@@ -11,6 +13,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
 const OUTILS_BLOQUANTS = ["AskUserQuestion", "EnterPlanMode"];
@@ -39,11 +42,16 @@ const COMMANDES_AUTORISEES = [
   "Bash(wc:*)",
 ];
 
+const EFFORTS_CLAUDE = ["low", "medium", "high", "xhigh", "max"];
+const EFFORTS_CODEX = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+const OUTIL_IA = "mcp__klyra__demander_ia";
+
 const modeDe = (acces) => (acces === "demander" ? "manual" : acces === "projet" ? "auto" : "acceptEdits");
 
 /**
  * @param {{ home: string, donnees: string, nomServeur: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
- *   spontane: (sessionId: string) => string | null, claude?: string | null }} options
+ *   spontane: (sessionId: string) => string | null, claude?: string | null, codex?: string | null, version?: string,
+ *   ia?: { configMcp: () => string | null, generation: () => number } | null }} options
  */
 export function creerAgents(options) {
   const { home, donnees, nomServeur, publier } = options;
@@ -135,6 +143,19 @@ export function creerAgents(options) {
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
+  const mcpIa = () => options.ia?.configMcp() ?? null;
+
+  const codex = creerCodex({
+    home,
+    version: options.version ?? "1",
+    publier,
+    consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
+    estActif,
+    mcp: mcpIa,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
+    ...(options.codex !== undefined ? { codex: options.codex } : {}),
+  });
+
   const agentAutorise = (type) => typeof type !== "string" || !type || estActif(type) || AGENTS_DE_CLAUDE.includes(type);
 
   /* ─── Processus et réponses ─────────────────────────────────────── */
@@ -335,9 +356,11 @@ export function creerAgents(options) {
     if (!demande || typeof demande !== "object") return "Demande invalide.";
     if (typeof demande.prompt !== "string" || !demande.prompt || demande.prompt.length > 500_000) return "Message invalide.";
     if (demande.agent !== null && (typeof demande.agent !== "string" || !ID_AGENT.test(demande.agent))) return "Nom d’agent invalide.";
+    if (demande.moteur !== undefined && demande.moteur !== null && !["claude", "codex"].includes(demande.moteur)) return `Fournisseur inconnu : ${String(demande.moteur)}.`;
+    const codexDemande = demande.moteur === "codex";
     if (demande.sessionId !== null && (typeof demande.sessionId !== "string" || !/^[0-9a-f-]{36}$/.test(demande.sessionId))) return "Session invalide.";
-    if (demande.modele && !/^[a-z0-9][a-z0-9.\-]{0,63}$/.test(demande.modele)) return "Modèle invalide.";
-    if (demande.effort && !["low", "medium", "high", "xhigh", "max"].includes(demande.effort)) return "Effort invalide.";
+    if (demande.modele && !(codexDemande ? /^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,63}$/ : /^[a-z0-9][a-z0-9.\-]{0,63}$/).test(demande.modele)) return "Modèle invalide.";
+    if (demande.effort && !(codexDemande ? EFFORTS_CODEX : EFFORTS_CLAUDE).includes(demande.effort)) return "Effort invalide.";
     if (demande.acces && !["demander", "projet", "tout"].includes(demande.acces)) return "Accès invalide.";
     if (demande.dossier !== null && demande.dossier !== undefined && (typeof demande.dossier !== "string" || !path.isAbsolute(demande.dossier))) return "Dossier invalide.";
     return null;
@@ -348,9 +371,6 @@ export function creerAgents(options) {
     const echec = (erreur) => publier(requestId, { type: "fin", ok: false, texte: "", erreur }, null);
     const invalide = verifier(demande);
     if (invalide) return echec(invalide);
-    const bin = trouverClaude();
-    if (!bin) return echec("Claude Code n’est pas installé sur le VPS. Relance la commande d’installation.");
-    if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
     if (demande.agent !== null && !estActif(demande.agent)) return echec(`« ${demande.agent} » n’est pas dans Mes agents sur ce VPS.`);
 
     let cwd = atelier;
@@ -361,8 +381,14 @@ export function creerAgents(options) {
       cwd = demande.dossier;
     } else mkdirSync(atelier, { recursive: true });
 
+    if (demande.moteur === "codex") return codex.envoyer(requestId, demande, cwd);
+    const bin = trouverClaude();
+    if (!bin) return echec("Claude Code n’est pas installé sur le VPS. Relance la commande d’installation.");
+    if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
+
     const acces = demande.acces ?? "projet";
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte]);
+    const mcp = mcpIa();
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     if (ouvert && vivant(ouvert) && (ouvert.signature === signature || ouvert.tours.length)) {
@@ -394,7 +420,8 @@ export function creerAgents(options) {
         "--settings",
         REGLE_AGENTS,
       ];
-      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES);
+      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA] : []));
+      if (mcp) args.push("--mcp-config", mcp);
       if (demande.agent) args.push("--agent", demande.agent);
       if (demande.sessionId) args.push("--resume", demande.sessionId);
       if (demande.modele) args.push("--model", demande.modele);
@@ -408,6 +435,7 @@ export function creerAgents(options) {
   }
 
   function autoriser(requestId, demandeId, decision) {
+    if (codex.autoriser(requestId, demandeId, decision)) return true;
     const enCours = parRequete.get(requestId);
     const demande = demandes.get(requestId)?.get(demandeId);
     if (!enCours || !demande || !["oui", "toujours", "non"].includes(decision)) return false;
@@ -419,6 +447,7 @@ export function creerAgents(options) {
   }
 
   function annuler(requestId) {
+    if (codex.annuler(requestId)) return true;
     const enCours = parRequete.get(requestId);
     if (!enCours) return false;
     const { proc, tour } = enCours;
@@ -433,7 +462,16 @@ export function creerAgents(options) {
 
   function fermerTout() {
     for (const proc of new Set(processus.values())) proc.child.kill("SIGTERM");
+    codex.fermer();
   }
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, empreinteEquipe: () => lireEquipe().empreinte, fermerTout };
+  /** Ce que Réglages du serveur › Fournisseurs lit de Claude Code (cf. moteurs.mjs). */
+  const claude = {
+    trouver: trouverClaude,
+    etat,
+    methode: () => (jetonClaude() ? "jeton" : "claude.ai"),
+    env: environnement,
+  };
+
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
 }

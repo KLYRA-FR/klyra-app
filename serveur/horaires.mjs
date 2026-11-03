@@ -1,4 +1,4 @@
-// Généré par scripts/horaires-serveur.mjs depuis electron/routines/schedule.ts : ne pas modifier à la main.
+// Généré par scripts/serveur-genere.mjs depuis electron/routines/schedule.ts : ne pas modifier à la main.
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;

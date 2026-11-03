@@ -17,9 +17,9 @@ export function fournisseur(id: string | null | undefined) {
   return FOURNISSEURS.find((f) => f.id === id) ?? FOURNISSEURS[0];
 }
 
-/** Le moteur qui répond dans cette conversation. Sur un VPS, Claude Code seul pour l'instant. */
-export function moteurDe(chat: Pick<Chat, "fournisseur" | "lieu">): string {
-  return chat.lieu ? PAR_DEFAUT : chat.fournisseur || PAR_DEFAUT;
+/** Le moteur qui répond dans cette conversation, sur ce PC comme sur un VPS. */
+export function moteurDe(chat: Pick<Chat, "fournisseur">): string {
+  return chat.fournisseur || PAR_DEFAUT;
 }
 
 /**

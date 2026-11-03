@@ -24,7 +24,20 @@ const OU_CREER_LA_CLE: Record<string, string> = {
 export type TestIa = { etat: "en-cours" } | { etat: "ok" } | { etat: "erreur"; message: string };
 
 /** Ajouter une IA à consulter, `initial` déjà choisie (Gemini, Grok… ou « autre »). */
-export function FormulaireIa({ fournisseurs, initial = "openai", onAjoutee, onAnnuler }: { fournisseurs: CatalogueIa; initial?: string; onAjoutee: (liste: AutreIa[]) => void; onAnnuler: () => void }) {
+export function FormulaireIa({
+  fournisseurs,
+  initial = "openai",
+  lieu = null,
+  onAjoutee,
+  onAnnuler,
+}: {
+  fournisseurs: CatalogueIa;
+  initial?: string;
+  /** Le VPS où l'ajouter (la clé y reste) ; absent : ce poste. */
+  lieu?: string | null;
+  onAjoutee: (liste: AutreIa[]) => void;
+  onAnnuler: () => void;
+}) {
   const [fournisseur, setFournisseur] = useState(initial);
   const [nom, setNom] = useState(initial === "autre" ? "" : (fournisseurs[initial]?.nom ?? ""));
   const [modele, setModele] = useState(fournisseurs[initial]?.modele ?? "");
@@ -45,7 +58,7 @@ export function FormulaireIa({ fournisseurs, initial = "openai", onAjoutee, onAn
     if (!ia) return;
     setEnvoi(true);
     setErreur(null);
-    const r = await ia.ajouter({ nom, fournisseur, url: autre ? url : "", modele, cle });
+    const r = await ia.ajouter({ nom, fournisseur, url: autre ? url : "", modele, cle }, lieu);
     setEnvoi(false);
     if (!r.ok) return setErreur(r.message);
     setCle("");
@@ -81,7 +94,7 @@ export function FormulaireIa({ fournisseurs, initial = "openai", onAjoutee, onAn
         </Champ>
         <Champ
           label="Clé API"
-          aide={OU_CREER_LA_CLE[fournisseur] ? `À créer sur ${OU_CREER_LA_CLE[fournisseur]}. Chiffrée dans le trousseau de ce poste.` : "Chiffrée dans le trousseau de ce poste."}
+          aide={`${OU_CREER_LA_CLE[fournisseur] ? `À créer sur ${OU_CREER_LA_CLE[fournisseur]}. ` : ""}${lieu ? "Gardée sur ce serveur, lisible par lui seul." : "Chiffrée dans le trousseau de ce poste."}`}
           className="@lg:col-span-2"
         >
           <Input
@@ -115,9 +128,10 @@ export function FormulaireIa({ fournisseurs, initial = "openai", onAjoutee, onAn
 /**
  * Les IA à consulter (ChatGPT, Gemini, Mistral, DeepSeek, Grok…) : on les ajoute avec leur clé API,
  * et les agents peuvent les interroger. Elles s'affichent dans Réglages du serveur › Fournisseurs.
- * La clé ne revient jamais à l'interface : elle reste chiffrée côté app.
+ * `lieu` : celles d'un VPS relié (la clé reste sur le VPS) ; absent : celles de ce poste.
+ * La clé ne revient jamais à l'interface.
  */
-export function useAutresIa() {
+export function useAutresIa(lieu: string | null = null) {
   const bridge = getBridge()?.ia;
   const [catalogue, setCatalogue] = useState<CatalogueIa | null>(null);
   const [liste, setListe] = useState<AutreIa[]>([]);
@@ -125,25 +139,25 @@ export function useAutresIa() {
 
   useEffect(() => {
     if (!bridge) return;
-    void bridge.fournisseurs().then((r) => r.ok && setCatalogue(r.data));
-    void bridge.lister().then((r) => r.ok && setListe(r.data));
-  }, [bridge]);
+    void bridge.fournisseurs(lieu).then((r) => r.ok && setCatalogue(r.data));
+    void bridge.lister(lieu).then((r) => r.ok && setListe(r.data));
+  }, [bridge, lieu]);
 
   const tester = useCallback(
     async (id: string) => {
       if (!bridge) return;
       setTests((t) => ({ ...t, [id]: { etat: "en-cours" } }));
-      const r = await bridge.tester(id);
+      const r = await bridge.tester(id, lieu);
       setTests((t) => ({ ...t, [id]: r.ok ? { etat: "ok" } : { etat: "erreur", message: r.message } }));
     },
-    [bridge],
+    [bridge, lieu],
   );
   const retirer = useCallback(
     async (id: string) => {
-      const r = await bridge?.retirer(id);
+      const r = await bridge?.retirer(id, lieu);
       if (r?.ok) setListe(r.data);
     },
-    [bridge],
+    [bridge, lieu],
   );
 
   return { disponible: !!bridge, catalogue, liste, setListe, tests, tester, retirer };

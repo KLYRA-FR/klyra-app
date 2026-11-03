@@ -22,16 +22,9 @@ import { serveursMcpDirects } from "./mcp-direct";
  * 127.0.0.1 seulement, avec un jeton tiré au hasard à chaque ouverture de l'app.
  */
 
-export const FOURNISSEURS = {
-  openai: { nom: "ChatGPT", url: "https://api.openai.com/v1", modele: "gpt-5" },
-  gemini: { nom: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", modele: "gemini-2.5-pro" },
-  mistral: { nom: "Mistral", url: "https://api.mistral.ai/v1", modele: "mistral-large-latest" },
-  deepseek: { nom: "DeepSeek", url: "https://api.deepseek.com/v1", modele: "deepseek-chat" },
-  xai: { nom: "Grok", url: "https://api.x.ai/v1", modele: "grok-4" },
-  openrouter: { nom: "OpenRouter", url: "https://openrouter.ai/api/v1", modele: "openai/gpt-5" },
-  autre: { nom: "Autre", url: "", modele: "" },
-} as const;
-export type Fournisseur = keyof typeof FOURNISSEURS;
+export { FOURNISSEURS, type Fournisseur } from "./ia-catalogue";
+import { FOURNISSEURS, type Fournisseur } from "./ia-catalogue";
+
 
 interface IaStockee {
   id: string;
