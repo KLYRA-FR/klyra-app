@@ -2,9 +2,10 @@ import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeS
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { hostname } from "node:os";
+import os, { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { diagnostiquerPoste, existe } from "./diagnostic-poste";
 import {
   AgentError,
   agentsDir,
@@ -859,6 +860,14 @@ function registerBridge() {
   handle("reglages:lancement:changer", (actif: boolean) => changerLancement(actif));
   handle("reglages:infos", () => infosApp());
   handle("reglages:ouvrir-dossier", (nom: DossierApp) => ouvrirDossier(nom));
+  /* Ce que le poste ajoute à chaque appel (configuration KLYRA), et le fichier à ouvrir pour agir. */
+  const diagnostic = () => diagnostiquerPoste(os.homedir(), presentationActifs().map((a) => a.id), process.env.CLAUDE_CONFIG_DIR || undefined);
+  handle("reglages:diagnostic-poste", () => diagnostic());
+  handle("reglages:diagnostic-poste:montrer", (chemin: string) => {
+    // Seulement un chemin que le diagnostic vient de trouver.
+    if (!diagnostic().elements.some((e) => e.chemin === chemin) || !existe(chemin)) throw new Error("Ce fichier n’est plus là.");
+    shell.showItemInFolder(chemin);
+  });
   /* Un essai depuis les Réglages : la notification telle qu'elle s'afficherait. */
   handle("reglages:essai-notification", () => {
     if (!Notification.isSupported()) throw new Error("Ce système n’affiche pas les notifications de l’app.");
