@@ -138,11 +138,25 @@ try {
   /* 3 bis. Ce que l'app dit à l'assistant et à l'agent, quelle que soit la version de leur fiche. */
   const consigneSam = vues?.systeme ?? "";
   verifier(
-    ["Une tâche, un responsable : ne refais pas en parallèle ce que tu as confié.", "Au plus trois travaux confiés en même temps", "Reprends le fil déjà ouvert sur le sujet (lister_fils)", "Vérifie les preuves reçues avant de dire que c'est livré"].every((t) => consigneSam.includes(t)),
-    "l’assistant pilote : brief, un responsable, pas de travail en double, limites, preuves vérifiées",
+    [
+      "Un livrable, un responsable : un livrable va entier à un seul agent",
+      "jamais en relais de l'un à l'autre",
+      "Ne refais pas en parallèle ce que tu as confié.",
+      "Au plus trois travaux confiés en même temps",
+      "Reprends le fil déjà ouvert sur le sujet (lister_fils)",
+      "le livrable attendu dans des fichiers et un compte rendu court",
+      "vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable",
+    ].every((t) => consigneSam.includes(t)),
+    "l’assistant pilote : un livrable un responsable, pas de relais ni de travail en double, limites, preuves vérifiées sans tout relire",
   );
   const regleQa = "une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable";
   verifier(consigneSam.includes(regleQa) && consigneAlpha.includes(regleQa), "assistant et agent : QA seulement sur demande, l’auteur vérifie lui-même");
+  const regleFaits = "ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien";
+  verifier(consigneSam.includes(regleFaits) && consigneAlpha.includes(regleFaits), "assistant et agent : aucun fait inventé, les manques restent visibles");
+  verifier(consigneAlpha.includes("ta réponse finale est un compte rendu court qui donne leurs chemins"), "l’agent : livrables en fichiers, compte rendu court");
+  const horsApp = ["CronCreate", "Workflow", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "SendToProject"];
+  const outilsSam = vues?.outils ?? [];
+  verifier(outilsSam.length > 0 && !outilsSam.some((o) => horsApp.includes(o)), `l’assistant n’a pas les outils de Claude Code sans usage dans l’app (${outilsSam.filter((o) => horsApp.includes(o)).join(", ") || "aucun"})`);
   verifier(consigneAlpha.includes("on confie un travail dans un fil de l'app ou en appelant un agent actif"), "l’agent : on confie par les fils ou un agent actif, pas par les outils d’une fiche ancienne");
 
   /* 3 ter. Un fil ouvert se retrouve : l'assistant le reprend au lieu d'en ouvrir un autre. */

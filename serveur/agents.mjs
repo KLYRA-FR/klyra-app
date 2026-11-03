@@ -18,13 +18,17 @@ import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
 const OUTILS_BLOQUANTS = ["AskUserQuestion", "EnterPlanMode"];
+/** Outils de Claude Code sans usage ici (~4 500 jetons à chaque tour) : les mêmes que dans l'app (electron/claude.ts). */
+const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext"];
 const AGENTS_DE_CLAUDE = ["general-purpose", "Explore", "Plan", "statusline-setup", "claude", "claude-code-guide", "output-style-setup"];
 const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent"] } });
 const VEILLE_MS = 30 * 60 * 1000;
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** Les mêmes que dans l'app (electron/claude.ts) : ne pas les changer d'un seul côté. */
-const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente ni prix, ni délai, ni autorisation.`;
+const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente aucun fait : ni prix, ni délai, ni autorisation, ni horaire, coordonnée, chiffre ou promesse au nom de quelqu'un ; ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien. Ce qui se mesure (tests, liens, contrastes, rendu) se vérifie avec ce que le projet et le poste offrent déjà : ne fouille pas la machine hors du projet pour trouver un autre outil, dis ce qui n'a pas pu être vérifié.`;
+const UN_RESPONSABLE = `Un livrable, un responsable : un livrable va entier à un seul agent, celui de sa partie principale, qui fait aussi les petites parties voisines (les textes d'une page qu'il intègre, par exemple). Plusieurs agents seulement pour des parties lourdes et indépendantes, menées en parallèle, jamais en relais de l'un à l'autre : chaque passage de main fait tout relire. Une tâche que tu ferais en quelques minutes, fais-la toi-même ; si la personne demande expressément son équipe, suis-la avec le moins d'agents possible.`;
+const LIVRER_EN_FICHIERS = `Livre ton travail dans des fichiers ; ta réponse finale est un compte rendu court qui donne leurs chemins, sans recopier leur contenu.`;
 
 const COMMANDES_AUTORISEES = [
   "Bash(pnpm:*)",
@@ -129,7 +133,7 @@ export function creerAgents(options) {
     const { assistant, actifs } = lireEquipe();
     const qui = `Dans cette app, tu es ${assistant ? `${assistant}, ` : ""}l'assistant personnel de la personne. Qualifie le résultat attendu et prends le chemin utile le plus court : réponds toi-même aux demandes simples, et fais toi-même, dans tes capacités et tes accès, ce qu'aucun de ses agents ne fera mieux.`;
     const equipe = actifs.length
-      ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant ; n'en invente pas d'autre. Une tâche, un responsable : ne refais pas en parallèle ce que tu as confié. Vérifie les preuves reçues avant de dire que c'est livré, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
+      ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant avec un brief qui se suffit (objectif, contexte et chemins, contraintes, critère de fin, le livrable attendu dans des fichiers et un compte rendu court) ; n'en invente pas d'autre. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
       : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
     return `${qui} ${equipe} ${REGLES_COMMUNES}`;
   }
@@ -140,7 +144,7 @@ export function creerAgents(options) {
     const equipe = autres.length
       ? `Dans cette app, les agents que la personne a choisis sont : ${listeAgents(autres)}, et son assistant ${assistant ?? "l'assistant"} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais ta part et dis ce qui reste.`
       : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${assistant ?? "l'assistant"} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais ta part et dis ce qui reste.`;
-    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${REGLES_COMMUNES}`;
+    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${REGLES_COMMUNES}`;
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
@@ -423,6 +427,7 @@ export function creerAgents(options) {
         modeDe(acces),
         "--disallowedTools",
         ...OUTILS_BLOQUANTS,
+        ...OUTILS_HORS_APP,
         "--settings",
         REGLE_AGENTS,
       ];

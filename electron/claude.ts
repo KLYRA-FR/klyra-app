@@ -24,6 +24,12 @@ const HOME = os.homedir();
 
 /** Outils retirés à l'agent : il lit et cherche, il n'écrit rien. */
 const OUTILS_INTERDITS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"];
+/**
+ * Outils de Claude Code sans usage dans l'app (tâches planifiées, workflows et notifications de Claude Code,
+ * autres projets) : l'app a ses routines et ses fils. Leurs descriptions pèsent ~4 500 jetons à chaque tour
+ * (mesuré le 03/11/2026, Claude Code 2.1.317). Les mêmes que serveur/agents.mjs.
+ */
+const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext"];
 const DELAI_MAX_MS = 10 * 60 * 1000;
 
 /** Les clés Composio restent dans main, même si le terminal parent en a exporté une. */
@@ -103,7 +109,7 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
 
   return new Promise((resolve) => {
     // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul, et le sait.
-    const args = ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
+    const args = ["-p", "--agent", agent, "--output-format", "json", "--disallowedTools", ...OUTILS_INTERDITS, ...OUTILS_HORS_APP, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
     const child = spawn(bin, args, {
       cwd: HOME,
       env: environnementAgent(),
@@ -235,7 +241,13 @@ const CONSIGNE_PLANNING = `La personne avec qui tu parles a, dans cette app, son
  * une fiche installée avant leur mise à jour (« validation QA obligatoire », équipe fixe, outils d'un autre
  * système) reçoit les mêmes règles que les modèles actuels, sans être réécrite.
  */
-const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente ni prix, ni délai, ni autorisation.`;
+const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente aucun fait : ni prix, ni délai, ni autorisation, ni horaire, coordonnée, chiffre ou promesse au nom de quelqu'un ; ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien. Ce qui se mesure (tests, liens, contrastes, rendu) se vérifie avec ce que le projet et le poste offrent déjà : ne fouille pas la machine hors du projet pour trouver un autre outil, dis ce qui n'a pas pu être vérifié.`;
+
+/** Un passage de main fait tout relire à celui qui reçoit et à l'assistant : un livrable, un responsable. */
+const UN_RESPONSABLE = `Un livrable, un responsable : un livrable va entier à un seul agent, celui de sa partie principale, qui fait aussi les petites parties voisines (les textes d'une page qu'il intègre, par exemple). Plusieurs agents seulement pour des parties lourdes et indépendantes, menées en parallèle, jamais en relais de l'un à l'autre : chaque passage de main fait tout relire. Une tâche que tu ferais en quelques minutes, fais-la toi-même ; si la personne demande expressément son équipe, suis-la avec le moins d'agents possible.`;
+
+/** Les livrables restent dans les fichiers : le compte rendu donne les chemins, pas le contenu. */
+const LIVRER_EN_FICHIERS = `Livre ton travail dans des fichiers ; ta réponse finale est un compte rendu court qui donne leurs chemins, sans recopier leur contenu.`;
 
 const listeAgents = (agents: { id: string; nom: string }[]) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
 
@@ -248,7 +260,7 @@ function consigneAssistant(outilsApp: boolean): string {
   const actifs = presentationActifs();
   const qui = `Dans cette app, tu es ${nom ? `${nom}, ` : ""}l'assistant personnel de la personne. Qualifie le résultat attendu et prends le chemin utile le plus court : réponds toi-même aux demandes simples, et fais toi-même, dans tes capacités et tes accès, ce qu'aucun de ses agents ne fera mieux.`;
   const equipe = actifs.length
-    ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre et n'ajoute personne pour finir une tâche. Quand une partie relève clairement de l'un d'eux, confie-la-lui avec un brief qui se suffit (objectif, contexte et chemins, contraintes, ce qui est permis ou non, critère de fin), avec l'équipe la plus petite possible, et reste responsable du suivi, de la cohérence et de ce que tu rends. Une tâche, un responsable : ne refais pas en parallèle ce que tu as confié.${outilsApp ? " Reprends le fil déjà ouvert sur le sujet (lister_fils) plutôt que d'en ouvrir un autre." : ""} Le retour arrive de lui-même : ne le surveille pas en boucle. Au plus trois travaux confiés en même temps, seulement s'ils sont indépendants ; au plus deux reprises avec un défaut précis, puis dis le blocage. Vérifie les preuves reçues avant de dire que c'est livré, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
+    ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre et n'ajoute personne pour finir une tâche. Quand une partie relève clairement de l'un d'eux, confie-la-lui avec un brief qui se suffit (objectif, contexte et chemins, contraintes, ce qui est permis ou non, critère de fin, le livrable attendu dans des fichiers et un compte rendu court), et reste responsable du suivi, de la cohérence et de ce que tu rends. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié.${outilsApp ? " Reprends le fil déjà ouvert sur le sujet (lister_fils) plutôt que d'en ouvrir un autre." : ""} Le retour arrive de lui-même : ne le surveille pas en boucle. Au plus trois travaux confiés en même temps, seulement s'ils sont indépendants ; au plus deux reprises avec un défaut précis, puis dis le blocage. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
     : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
   const proposer = outilsApp
     ? ` Quand elle exprime un besoin qui revient et qu'aucun de ses agents ne couvre, tu peux lui proposer une fiche d'agent avec l'outil proposer_agent : elle l'ouvre, l'ajuste et l'enregistre elle-même. Rien n'est créé avant.`
@@ -272,7 +284,7 @@ function consigneAgent(id: string, outilsApp: boolean): string {
   const dossiers = manquants.length
     ? ` Certains dossiers de ta fiche ne sont pas encore configurés sur cet ordinateur (${manquants.join(", ")}, écrits {{chemin:…}}) : si tu en as besoin, dis-le à la personne au lieu de deviner un chemin.`
     : "";
-  return `${equipe} ${confier} ${REGLES_COMMUNES}${dossiers}`;
+  return `${equipe} ${confier} ${LIVRER_EN_FICHIERS} ${REGLES_COMMUNES}${dossiers}`;
 }
 
 /** Le chemin court (`runAgent`) : un seul tour, sans délégation possible. */
@@ -702,6 +714,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       "--disallowedTools",
       "AskUserQuestion",
       "EnterPlanMode",
+      ...OUTILS_HORS_APP,
       ...OUTILS_ORDINATEUR_INTERDITS,
       ...refusAgents(cwd),
       "--settings",
