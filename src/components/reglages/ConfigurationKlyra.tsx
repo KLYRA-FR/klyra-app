@@ -89,9 +89,10 @@ function Consignes({ configuration, changer }: { configuration: ConfigurationKly
 
 /**
  * Ce que le poste ajoute à chaque appel des agents (electron/diagnostic-poste.ts) : lecture seule, avec un
- * conseil et le fichier à ouvrir. Lu à l'ouverture des Réglages ; app de bureau seulement.
+ * conseil et le fichier à ouvrir. Lu à l'ouverture des Réglages ; app de bureau seulement. Avec `lieu` :
+ * la même lecture sur un VPS relié (Réglages du serveur › Général), ses fichiers restant sur le serveur.
  */
-function DiagnosticDuPoste() {
+export function DiagnosticDuPoste({ lieu = null }: { lieu?: string | null } = {}) {
   const pont = getBridge()?.reglages;
   const [diagnostic, setDiagnostic] = useState<DiagnosticPoste | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -99,23 +100,27 @@ function DiagnosticDuPoste() {
     if (!pont?.diagnosticPoste) return;
     let actif = true;
     pont
-      .diagnosticPoste()
+      .diagnosticPoste(lieu)
       .then((r) => actif && setDiagnostic(unwrap(r)))
       .catch((e: unknown) => actif && setErreur(e instanceof Error ? e.message : String(e)));
     return () => {
       actif = false;
     };
-  }, [pont]);
+  }, [pont, lieu]);
   if (!pont?.diagnosticPoste) return null;
 
   return (
     <Ligne
-      id="diagnostic-poste"
-      libelle="Ce que ton poste ajoute"
+      id={lieu ? "diagnostic-serveur" : "diagnostic-poste"}
+      libelle={lieu ? "Ce que ce serveur ajoute" : "Ce que ton poste ajoute"}
       description={
         diagnostic
-          ? `Ta configuration personnelle de Claude Code s’ajoute à chaque appel de tes agents : environ ${diagnostic.total.toLocaleString("fr-FR")} jetons, estimés d’après la taille des fichiers. Elle ne se coupe pas sans retirer aussi tes agents ou les consignes de tes projets : allège-la à la source.`
-          : "Lecture de ta configuration personnelle de Claude Code…"
+          ? lieu
+            ? `La configuration de Claude Code de ce serveur (utilisateur klyra) s’ajoute à chaque appel de tes agents qui y travaillent : environ ${diagnostic.total.toLocaleString("fr-FR")} jetons, estimés d’après la taille des fichiers. Allège-la à la source, sur le serveur.`
+            : `Ta configuration personnelle de Claude Code s’ajoute à chaque appel de tes agents : environ ${diagnostic.total.toLocaleString("fr-FR")} jetons, estimés d’après la taille des fichiers. Elle ne se coupe pas sans retirer aussi tes agents ou les consignes de tes projets : allège-la à la source.`
+          : lieu
+            ? "Lecture de la configuration de Claude Code du serveur…"
+            : "Lecture de ta configuration personnelle de Claude Code…"
       }
       pile
     >
