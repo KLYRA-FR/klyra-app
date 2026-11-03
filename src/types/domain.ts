@@ -1,3 +1,5 @@
+import type { PilierListe, ResultatCas } from "../../electron/epreuve";
+
 /**
  * Modèle de données de l'app. Les données factices (src/data/mock.ts) et le
  * futur back-end partagent exactement ces formes : brancher le back revient à
@@ -289,7 +291,19 @@ export type MessagePart =
    * les appels de la conversation (`src/lib/atelier-agent.ts`). `teinte` : la couleur choisie par la
    * personne sur la carte ; `cree` : l'id de l'agent créé depuis cette carte.
    */
-  | { type: "atelier-agent"; etapeId: string; maj: MajAtelier; teinte?: RoleTeinte; cree?: string }
+  | {
+      type: "atelier-agent";
+      etapeId: string;
+      maj: MajAtelier;
+      teinte?: RoleTeinte;
+      cree?: string;
+      /** L'entrée encore en cours d'écriture par le modèle (carte qui s'écrit en direct). */
+      provisoire?: boolean;
+      /** L'épreuve passée sur cette carte (cf. electron/epreuve.ts). */
+      resultats?: ResultatCas[];
+      /** Les phrases que la personne a ajoutées à la fiche (corrections de l'épreuve). */
+      ajouts?: AjoutFiche[];
+    }
   /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
   | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }
   | { type: "tasks"; tasks: Task[] }
@@ -325,6 +339,35 @@ export interface MajAtelier {
   verification?: string[];
   consignes?: string;
   modele?: "opus" | "sonnet" | "haiku";
+  /** Trois demandes pour le mettre à l'épreuve avant sa création. */
+  epreuve?: DemandesEpreuve;
+  /** Les agents actifs qui couvrent déjà une partie de son travail. */
+  voisins?: VoisinAgent[];
+  /** Une routine à lui confier une fois créé, proposée (jamais créée d'office). */
+  routine?: RoutineProposee;
+}
+
+export interface DemandesEpreuve {
+  normal: string;
+  floue: string;
+  horsMetier: string;
+}
+
+export interface VoisinAgent {
+  id: string;
+  raison: string;
+}
+
+export interface RoutineProposee {
+  nom: string;
+  consigne: string;
+  quand: { type: "jour" | "jours-ouvres" | "semaine" | "mois"; heure: string; jour?: number };
+}
+
+/** Une phrase ajoutée à la fiche par la personne, dans un de ses piliers. */
+export interface AjoutFiche {
+  pilier: PilierListe;
+  texte: string;
 }
 
 /** L'agent en préparation, tel que la carte de l'atelier le montre : tous les appels pliés. */
@@ -341,6 +384,9 @@ export interface BrouillonAgent {
   verification: string[];
   consignes: string;
   modele: "opus" | "sonnet" | "haiku" | "";
+  epreuve: DemandesEpreuve | null;
+  voisins: VoisinAgent[];
+  routine: RoutineProposee | null;
 }
 
 export interface Message {

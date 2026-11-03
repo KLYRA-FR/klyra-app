@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { MajAtelier, Message, MessagePart } from "@/types/domain";
 import { getField, parseAgentFile } from "./agent-file";
 import {
+  appliquerAjouts,
   appliquerMaj,
+  casEpreuve,
+  piliersEnAlerte,
+  routineProposee,
   BROUILLON_VIDE,
   brouillonEnCours,
   corpsFiche,
@@ -149,7 +153,7 @@ describe("la fiche écrite", () => {
     expect(manques(BROUILLON_VIDE)).toEqual(["un prénom", "un rôle court", "sa mission"]);
     expect(manques(NINA)).toEqual([]);
     expect(retourAtelier(appliquerMaj(BROUILLON_VIDE, { nom: "Nina" }))).toMatch(/0\/5 piliers.*il manque : un rôle court, sa mission/);
-    expect(retourAtelier(NINA)).toMatch(/5\/5 piliers\. Fiche estimée à ~\d+ jetons.*Créer l’agent/);
+    expect(retourAtelier(NINA)).toMatch(/5\/5 piliers\. Fiche estimée à ~\d+ jetons.*la crée sur la carte/);
     expect(jetonsBrouillon(NINA)).toBeGreaterThan(50);
   });
 });
@@ -168,5 +172,81 @@ describe("les réponses toutes prêtes", () => {
     expect(envoye).toBe("Envoyer au client · Signer");
     expect([...optionsRetenues(options, envoye)]).toEqual(["Envoyer au client", "Signer"]);
     expect(optionsRetenues(options, "Autre chose").size).toBe(0);
+  });
+});
+
+describe("l'épreuve, les voisins et la routine (V2, V3)", () => {
+  it("trois demandes complètes, sinon rien", () => {
+    expect(lireMajAtelier({ epreuve: { normal: "Brief A", floue: "Fais un devis", horsMetier: "Corrige le bug" } })?.epreuve).toEqual({
+      normal: "Brief A",
+      floue: "Fais un devis",
+      horsMetier: "Corrige le bug",
+    });
+    expect(lireMajAtelier({ epreuve: { normal: "Brief A", floue: "" } })).toBeNull();
+    const b = appliquerMaj(NINA, { epreuve: { normal: "A", floue: "B", horsMetier: "C" } });
+    expect(casEpreuve(b)?.map((c) => c.type)).toEqual(["normal", "floue", "hors-metier"]);
+    expect(casEpreuve(NINA)).toBeNull();
+  });
+
+  it("les voisins : 3 au plus, avec une raison", () => {
+    expect(lireMajAtelier({ voisins: [{ id: "Designer", raison: "Elle fait les maquettes." }, { id: "dev" }] })?.voisins).toEqual([
+      { id: "designer", raison: "Elle fait les maquettes." },
+    ]);
+  });
+
+  it("la routine proposée devient un brouillon d'Automatisations", () => {
+    const routine = lireMajAtelier({ routine: { nom: "Relances", consigne: "Liste les propositions sans réponse.", quand: { type: "semaine", jour: 1, heure: "09:00" } } })?.routine;
+    expect(routine).toEqual({ nom: "Relances", consigne: "Liste les propositions sans réponse.", quand: { type: "semaine", jour: 1, heure: "09:00" } });
+    expect(lireMajAtelier({ routine: { nom: "X", consigne: "Y", quand: { type: "semaine", jour: 9 } } })).toBeNull();
+    expect(lireMajAtelier({ routine: { nom: "X", consigne: "Y", quand: { type: "jour", heure: "25:00" } } })?.routine?.quand).toEqual({ type: "jour", heure: "09:00" });
+    const b = appliquerMaj(NINA, { routine });
+    expect(routineProposee(b, "nina", "Europe/Paris")).toEqual({
+      agentId: "nina",
+      name: "Relances",
+      instruction: "Liste les propositions sans réponse.",
+      schedule: { kind: "weekly", weekday: 1, time: "09:00" },
+      timezone: "Europe/Paris",
+      missedPolicy: "skip",
+      active: true,
+    });
+    expect(routineProposee(NINA, "nina", "Europe/Paris")).toBeNull();
+  });
+
+  it("une phrase ajoutée par la personne reste, même si l'assistant réécrit le pilier", () => {
+    const ajout = { pilier: "limites" as const, texte: "Le code : je passe la main à Hugo." };
+    const etats = plierAteliers([
+      message("m1", [{ type: "atelier-agent", etapeId: "e1", maj: { nom: "Nina", limites: ["Envoyer : jamais sans accord."] }, ajouts: [ajout] }]),
+      message("m2", [atelier("e2", { limites: ["Signer : jamais."] })]),
+    ]);
+    expect(etats.get("e1")?.apres.limites).toEqual(["Envoyer : jamais sans accord.", "Le code : je passe la main à Hugo."]);
+    expect(etats.get("e2")?.apres.limites).toEqual(["Signer : jamais.", "Le code : je passe la main à Hugo."]);
+    expect(etats.get("e2")?.ajouts).toEqual([ajout]);
+    expect(appliquerAjouts(appliquerAjouts(NINA, [ajout]), [ajout]).limites.filter((l) => l === ajout.texte)).toHaveLength(1);
+    expect(retourAtelier(etats.get("e2")!.apres, [ajout])).toContain("La personne a ajouté à la fiche");
+  });
+
+  it("l'épreuve suit la carte, et l'étoile d'une correction pas encore ajoutée clignote", () => {
+    const ko = {
+      type: "hors-metier" as const,
+      demande: "Corrige le bug",
+      reponse: "Je corrige.",
+      verdict: "ko" as const,
+      raison: "Il fait le travail d’un autre.",
+      correction: { pilier: "limites" as const, texte: "Le code : je passe la main." },
+      jetons: 100,
+      empreinte: "x",
+    };
+    const etats = plierAteliers([
+      message("m1", [{ type: "atelier-agent", etapeId: "e1", maj: { nom: "Nina" }, resultats: [ko] }]),
+      message("m2", [atelier("e2", { role: "Commercial" })]),
+    ]);
+    expect(etats.get("e2")?.resultats).toEqual([ko]);
+    expect([...piliersEnAlerte([ko], [])]).toEqual(["limites"]);
+    expect(piliersEnAlerte([ko], [{ pilier: "limites", texte: "le code : je passe la main." }]).size).toBe(0);
+  });
+
+  it("cinq piliers sans épreuve : l'assistant est invité à la proposer", () => {
+    expect(retourAtelier(NINA)).toContain("trois demandes pour la mettre à l’épreuve");
+    expect(retourAtelier(appliquerMaj(NINA, { epreuve: { normal: "A", floue: "B", horsMetier: "C" } }))).not.toContain("trois demandes");
   });
 });

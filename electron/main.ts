@@ -61,6 +61,7 @@ import {
   findClaude,
   restaurerUtilisation,
   runAgent,
+  essayerBrouillon,
   surUtilisation,
   titrerDemande,
   type Utilisation,
@@ -423,6 +424,18 @@ function registerBridge() {
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
   handle("claude:titre", (texte: string) => titrerDemande(String(texte ?? "")));
+  /* L'épreuve d'un agent pas encore créé (atelier) : un essai sans outil, puis un avis. */
+  handle("claude:essayer", (requestId: string, brouillon: unknown, cas: unknown) => {
+    const b = (brouillon ?? {}) as Record<string, unknown>;
+    const c = (cas ?? {}) as Record<string, unknown>;
+    const texte = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+    const type = c.type === "floue" || c.type === "hors-metier" ? c.type : "normal";
+    return essayerBrouillon(
+      String(requestId),
+      { id: texte(b.id, 64), description: texte(b.description, 1200), corps: texte(b.corps, 40_000), modele: texte(b.modele, 10), fiche: texte(b.fiche, 50_000) },
+      { type, demande: texte(c.demande, 2000) },
+    );
+  });
   handle("claude:cancel", (requestId: string) => (annulerDistant(requestId) ? undefined : moteurs.arreter(requestId)));
   handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision) => {
     if (!["oui", "toujours", "non"].includes(decision)) throw new Error("Réponse invalide.");

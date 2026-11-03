@@ -14,6 +14,8 @@ export type AgentEvent =
   | { type: "texte"; delta: string; nouveauBloc: boolean }
   /** Une étape : lire un fichier, lancer une commande, confier à un agent… */
   | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
+  /** L'entrée d'un outil pendant que le modèle l'écrit (la carte de l'atelier), refermée au mieux. */
+  | { type: "etape-partielle"; id: string; outil: string; entree: Record<string, unknown> }
   | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
   /** Les tokens écrits depuis le début (réflexion, texte, outils, sous-agents compris), estimés en direct. */
   | { type: "jetons"; total: number }

@@ -231,6 +231,43 @@ body {
   to { opacity: 1; transform: none; }
 }
 
+/* Un pilier mis en doute par l'épreuve : l'étoile respire, orange, jusqu'à la correction. */
+.klyra-etoile-alerte {
+  animation: klyra-etoile-alerte 900ms ease-in-out infinite;
+}
+
+@keyframes klyra-etoile-alerte {
+  50% { transform: scale(1.18); opacity: 0.6; }
+}
+
+/* Un essai de l'épreuve en cours : une barre qui luit. */
+.klyra-chargement {
+  display: block;
+  background: linear-gradient(90deg, var(--color-fond-survol) 0%, var(--color-fond-teinte-bleue) 50%, var(--color-fond-survol) 100%);
+  background-size: 200% 100%;
+  animation: klyra-chargement 1100ms linear infinite;
+}
+
+@keyframes klyra-chargement {
+  to { background-position: -200% 0; }
+}
+
+/* La carte s'écrit pendant que l'assistant remplit l'outil : un curseur au bout de sa mission. */
+.klyra-curseur-texte::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--color-bleu-k1-500);
+  animation: klyra-curseur-texte 900ms steps(2) infinite;
+}
+
+@keyframes klyra-curseur-texte {
+  50% { opacity: 0; }
+}
+
 /* La carte retournée montre la fiche telle qu'elle sera écrite. */
 .klyra-carte-3d {
   transform-style: preserve-3d;
@@ -275,8 +312,11 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .klyra-etoile-allumee,
+  .klyra-etoile-alerte,
+  .klyra-chargement,
   .klyra-formes-entree,
-  .klyra-rassemble {
+  .klyra-rassemble,
+  .klyra-curseur-texte::after {
     animation: none;
   }
   .klyra-reflet::after {

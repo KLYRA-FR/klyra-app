@@ -271,6 +271,31 @@ const OUTIL_PROPOSER = {
       limites: liste("Ce qu'il ne fait pas, ou seulement avec l'accord de la personne : une phrase par élément."),
       verification: liste("Comment il vérifie son travail avant de le rendre."),
       modele: { type: "string", enum: ["opus", "sonnet", "haiku"], description: "Seulement si la personne l'a choisi." },
+      epreuve: {
+        type: "object",
+        description: "Trois demandes réalistes, tirées de ce qu'elle t'a dit, pour le mettre à l'épreuve avant de le créer : la carte les lui fait passer pour de vrai.",
+        properties: { normal: { type: "string", description: "Une demande normale de son métier." }, floue: { type: "string", description: "Une demande à laquelle il manque l'essentiel." }, horsMetier: { type: "string", description: "Une demande qui relève d'un autre métier." } },
+        required: ["normal", "floue", "horsMetier"],
+      },
+      voisins: {
+        type: "array",
+        description: "Ses agents actifs qui font déjà une partie de ce travail, s'il y en a.",
+        items: { type: "object", properties: { id: { type: "string" }, raison: { type: "string", description: "Ce qu'il fait déjà, en une phrase." } }, required: ["id", "raison"] },
+      },
+      routine: {
+        type: "object",
+        description: "Une tâche qui revient à lui confier une fois créé, si elle en a parlé. Proposée, jamais créée d'office.",
+        properties: {
+          nom: { type: "string" },
+          consigne: { type: "string" },
+          quand: {
+            type: "object",
+            properties: { type: { type: "string", enum: ["jour", "jours-ouvres", "semaine", "mois"] }, jour: { type: "number", description: "1 = lundi … 7 = dimanche ; ou le jour du mois (1 à 28)." }, heure: { type: "string", description: "HH:MM" } },
+            required: ["type", "heure"],
+          },
+        },
+        required: ["nom", "consigne", "quand"],
+      },
       description: { type: "string", description: "La description de l'en-tête, si tu l'écris toi-même ; sinon l'app la compose." },
       consignes: { type: "string", description: "Le corps complet de la fiche en Markdown, seulement si tu l'écris d'un bloc ; sinon l'app le compose avec les champs." },
     },

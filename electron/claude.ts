@@ -9,10 +9,12 @@ import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { dossierHorsProjet } from "./atelier";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
+import { CONSIGNE_ESSAI, consigneJuge, empreinteFiche, jetonsDuTour, lireVerdict, type CasEpreuve, type ResultatCas } from "./epreuve";
+import { lireJsonPartiel } from "./json-partiel";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -246,7 +248,12 @@ interface Processus {
   agent: string | null;
   /** Jetons et coût cumulés par modèle depuis le lancement (cf. consommation.ts). */
   cumul: ReturnType<typeof enregistrerTourClaude>;
+  /** Les entrées d'outil en cours d'écriture que l'écran montre en direct, par bloc du message. */
+  saisies: Map<number, { id: string; outil: string; json: string }>;
 }
+
+/** Les outils dont l'écran montre l'entrée pendant que le modèle l'écrit : la carte de l'atelier. */
+const OUTILS_EN_DIRECT = new Set(["mcp__klyra__proposer_agent"]);
 
 /** Les fils : comment l'agent confie une tâche à un coéquipier (outils du serveur MCP de l'app). */
 /** Composio Connect : le serveur MCP « composio », rejoint avec le compte de la personne. */
@@ -284,7 +291,7 @@ function consigneAssistant(outilsApp: boolean): string {
     ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre et n'ajoute personne pour finir une tâche. Quand une partie relève clairement de l'un d'eux, confie-la-lui avec un brief qui se suffit (objectif, contexte et chemins, contraintes, ce qui est permis ou non, critère de fin, le livrable attendu dans des fichiers et un compte rendu court), et reste responsable du suivi, de la cohérence et de ce que tu rends. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié.${outilsApp ? " Reprends le fil déjà ouvert sur le sujet (lister_fils) plutôt que d'en ouvrir un autre." : ""} Le retour arrive de lui-même : ne le surveille pas en boucle. Au plus trois travaux confiés en même temps, seulement s'ils sont indépendants ; au plus deux reprises avec un défaut précis, puis dis le blocage. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
     : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
   const proposer = outilsApp
-    ? ` Pour créer un agent avec elle (elle le demande, ou un besoin revient qu'aucun de ses agents ne couvre), mène l'atelier ici, une question à la fois : d'abord la dernière fois qu'elle a fait cette tâche (ce qu'elle a fait, le temps passé, ce qui a coincé) ; puis son prénom, quand l'appeler, ce qu'il livre, ce qui demande son accord, comment il vérifie son travail. Propose à chaque question des réponses tirées de ce qu'elle t'a dit (proposer_choix), puis termine ta réponse. Après chaque réponse, complète sa carte avec proposer_agent. Rien n'est créé par toi : elle le crée sur la carte.`
+    ? ` Pour créer un agent avec elle (elle le demande, ou un besoin revient qu'aucun de ses agents ne couvre), mène l'atelier ici, une question à la fois : d'abord la dernière fois qu'elle a fait cette tâche (ce qu'elle a fait, le temps passé, ce qui a coincé) ; puis son prénom, quand l'appeler, ce qu'il livre, ce qui demande son accord, comment il vérifie son travail. Propose à chaque question des réponses tirées de ce qu'elle t'a dit (proposer_choix), puis termine ta réponse. Après chaque réponse, complète sa carte avec proposer_agent ; à la fin, ajoute trois demandes pour l'épreuve. Un exemple de son travail joint : un modèle pour sa méthode, pas à recopier. Rien n'est créé par toi : elle le met à l'épreuve et le crée sur la carte.`
     : "";
   return `${qui} ${equipe} ${REGLES_COMMUNES}${proposer}`;
 }
@@ -522,10 +529,33 @@ function lireLigne(proc: Processus, ligne: string) {
     return;
   }
   if (msg.type === "stream_event") {
-    const ev = msg.event as { type?: string; delta?: { type?: string; text?: string; partial_json?: string } };
+    const ev = msg.event as {
+      type?: string;
+      index?: number;
+      content_block?: { type?: string; id?: string; name?: string };
+      delta?: { type?: string; text?: string; partial_json?: string };
+    };
     // La réflexion est comptée par thinking_tokens, juste au-dessus.
     const morceau = ev.delta?.text ?? ev.delta?.partial_json ?? "";
     if (morceau) courant?.compter(morceau.length / 4);
+    /* La carte de l'atelier s'écrit pendant que le modèle remplit l'outil (cf. json-partiel.ts). */
+    if (parent === null && typeof ev.index === "number") {
+      const bloc = ev.content_block;
+      if (ev.type === "content_block_start" && bloc?.type === "tool_use" && bloc.id && bloc.name && OUTILS_EN_DIRECT.has(bloc.name)) {
+        proc.saisies.set(ev.index, { id: bloc.id, outil: bloc.name, json: "" });
+      } else if (ev.type === "content_block_delta" && ev.delta?.type === "input_json_delta" && ev.delta.partial_json) {
+        const saisie = proc.saisies.get(ev.index);
+        if (saisie) {
+          saisie.json += ev.delta.partial_json;
+          const entree = lireJsonPartiel(saisie.json);
+          const tour = entree ? tourOuSpontane(proc) : null;
+          if (entree && tour) tour.emit({ type: "etape-partielle", id: saisie.id, outil: saisie.outil, entree });
+        }
+      } else if (ev.type === "content_block_stop" || ev.type === "message_start") {
+        if (ev.type === "message_start") proc.saisies.clear();
+        else proc.saisies.delete(ev.index);
+      }
+    }
     if (parent === null && ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) {
       const tour = tourOuSpontane(proc);
       if (!tour) return;
@@ -655,6 +685,7 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
     fond: 0,
     agent: options.agent,
     cumul: {},
+    saisies: new Map(),
   };
   if (options.sessionId) processus.set(options.sessionId, proc);
 
@@ -925,6 +956,85 @@ export function titrerDemande(texte: string): Promise<string | null> {
     });
     child.stdin.end(consigneTitre(texte));
   });
+}
+
+/** Un tour de Claude Code en mode impression : sa réponse, ses jetons, ou l'erreur. */
+function tourImprime(bin: string, args: string[], cwd: string, entree: string, requestId: string | null): Promise<{ texte: string; jetons: number; erreur: string | null }> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, args, { cwd, env: environnementAgent(), windowsHide: true });
+    if (requestId) running.set(requestId, child);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+    child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+    const timeout = setTimeout(() => child.kill("SIGTERM"), 5 * 60_000);
+    const finir = (r: { texte: string; jetons: number; erreur: string | null }) => {
+      clearTimeout(timeout);
+      if (requestId) running.delete(requestId);
+      resolve(r);
+    };
+    child.on("error", (e) => finir({ texte: "", jetons: 0, erreur: `Impossible de lancer Claude Code : ${e.message}` }));
+    child.on("close", (code, signal) => {
+      if (signal) return finir({ texte: "", jetons: 0, erreur: "Essai arrêté." });
+      try {
+        const json = JSON.parse(stdout) as { result?: string; is_error?: boolean; modelUsage?: unknown };
+        enregistrerTourClaude(json.modelUsage, {}, null);
+        const jetons = jetonsDuTour(json.modelUsage);
+        if (json.is_error || code !== 0) return finir({ texte: "", jetons, erreur: json.result || stderr.trim() || `Claude Code a échoué (code ${code}).` });
+        finir({ texte: (json.result ?? "").trim(), jetons, erreur: null });
+      } catch {
+        finir({ texte: "", jetons: 0, erreur: expliquerLancement(stderr, bin) ?? (stderr.trim() || `Claude Code a échoué (code ${code}).`) });
+      }
+    });
+    child.stdin.end(entree);
+  });
+}
+
+/**
+ * L'épreuve d'un agent pas encore créé (atelier) : sa fiche répond pour de vrai à une demande, comme
+ * agent de la session (`--agents` dans un fichier, `--agent`), sans aucun outil (`--tools ""`), sans
+ * MCP ni session gardée, dans un dossier vide supprimé après ; puis un tour de Haiku juge la réponse
+ * (cf. epreuve.ts). Rien n'est écrit dans `~/.claude/agents`.
+ */
+export async function essayerBrouillon(
+  requestId: string,
+  brouillon: { id: string; description: string; corps: string; modele: string; fiche: string },
+  cas: CasEpreuve,
+): Promise<ResultatCas> {
+  const base: ResultatCas = { ...cas, reponse: "", verdict: null, raison: "", correction: null, jetons: 0, empreinte: empreinteFiche(brouillon.fiche) };
+  const bin = findClaude();
+  if (!bin) return { ...base, erreur: "Claude Code est introuvable sur ce poste." };
+  const id = /^[a-z0-9][a-z0-9-]{0,63}$/.test(brouillon.id) ? `essai-${brouillon.id}` : "essai-agent";
+  const modele = ["opus", "sonnet", "haiku"].includes(brouillon.modele) ? brouillon.modele : "opus";
+  const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-essai-"));
+  try {
+    const definition = path.join(dossier, "agent.json");
+    writeFileSync(definition, JSON.stringify({ [id]: { description: brouillon.description || "Agent en essai.", prompt: brouillon.corps, model: modele } }));
+    const essai = await tourImprime(
+      bin,
+      ["-p", "--agents", definition, "--agent", id, "--tools", "", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", SECTIONS_DU_POSTE_A_PART, "--append-system-prompt", `${CONSIGNE_SEUL}\n\n${CONSIGNE_ESSAI}`],
+      dossier,
+      cas.demande,
+      requestId,
+    );
+    if (essai.erreur) return { ...base, jetons: essai.jetons, erreur: essai.erreur };
+    const juge = await tourImprime(
+      bin,
+      ["-p", "--model", "haiku", "--tools", "", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config"],
+      dossier,
+      consigneJuge(brouillon.fiche, cas, essai.texte),
+      requestId,
+    );
+    const verdict = juge.erreur ? null : lireVerdict(juge.texte);
+    return {
+      ...base,
+      reponse: essai.texte,
+      jetons: essai.jetons + juge.jetons,
+      ...(verdict ?? { raison: juge.erreur ?? "Pas d’avis lisible sur cette réponse : relis-la toi-même." }),
+    };
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
 }
 
 /* ─── Compte Claude ────────────────────────────────────────────── */

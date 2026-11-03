@@ -1,6 +1,9 @@
 import type { RoutineRun, RoutineSchedule } from "@/types/routines";
 
 const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+/** Le brouillon du formulaire d'une routine (Automatisations) : l'atelier d'un agent y pose la routine qu'il propose. */
+export const CLE_BROUILLON_ROUTINE = "klyra:routine-brouillon";
+
 export function libellePlanning(s: RoutineSchedule): string {
   switch (s.kind) {
     case "manual": return "À la demande";

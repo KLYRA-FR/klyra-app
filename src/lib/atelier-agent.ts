@@ -1,4 +1,6 @@
-import type { BrouillonAgent, MajAtelier, Message, RoleTeinte } from "@/types/domain";
+import type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, Message, RoleTeinte, RoutineProposee, VoisinAgent } from "@/types/domain";
+import type { RoutineInput, RoutineSchedule } from "@/types/routines";
+import { PILIERS_LISTE, type CasEpreuve, type PilierListe, type ResultatCas } from "../../electron/epreuve";
 import { serializeAgentFile, setFields } from "./agent-file";
 import { comparable, identifiantDe, nomPropre } from "./noms-agents";
 import { jetonsEstimes, SEUIL_FICHE_LONGUE } from "./poids-fiche";
@@ -36,6 +38,38 @@ export const identifiantPropre = (v: string) =>
 
 const MODELES = ["opus", "sonnet", "haiku"] as const;
 
+function lireEpreuve(v: unknown): DemandesEpreuve | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  const e = { normal: texte(o.normal, 300) ?? "", floue: texte(o.floue, 300) ?? "", horsMetier: texte(o.horsMetier, 300) ?? "" };
+  return e.normal && e.floue && e.horsMetier ? e : undefined;
+}
+
+function lireVoisins(v: unknown): VoisinAgent[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .map((x) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {}))
+    .map((x) => ({ id: identifiantPropre(texte(x.id, 64) ?? ""), raison: texte(x.raison, 200) ?? "" }))
+    .filter((x) => x.id && x.raison)
+    .slice(0, 3);
+}
+
+const HEURE = /^([01]\d|2[0-3]):[0-5]\d$/;
+function lireRoutine(v: unknown): RoutineProposee | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  const q = (o.quand && typeof o.quand === "object" ? o.quand : {}) as Record<string, unknown>;
+  const type = q.type;
+  const heure = typeof q.heure === "string" && HEURE.test(q.heure) ? q.heure : "09:00";
+  const nom = texte(o.nom, 80) ?? "";
+  const consigne = texte(o.consigne, 2000) ?? "";
+  if (!nom || !consigne || (type !== "jour" && type !== "jours-ouvres" && type !== "semaine" && type !== "mois")) return undefined;
+  const jour = typeof q.jour === "number" && Number.isInteger(q.jour) ? q.jour : 1;
+  if (type === "semaine" && (jour < 1 || jour > 7)) return undefined;
+  if (type === "mois" && (jour < 1 || jour > 28)) return undefined;
+  return { nom, consigne, quand: type === "semaine" || type === "mois" ? { type, heure, jour } : { type, heure } };
+}
+
 /** Ce qu'un appel à `proposer_agent` apprend ; `null` s'il n'apprend rien. */
 export function lireMajAtelier(entree: Record<string, unknown>): MajAtelier | null {
   const maj: MajAtelier = {};
@@ -56,6 +90,12 @@ export function lireMajAtelier(entree: Record<string, unknown>): MajAtelier | nu
   }
   if (typeof entree.consignes === "string") maj.consignes = entree.consignes.trim().slice(0, 40_000);
   if (MODELES.includes(entree.modele as (typeof MODELES)[number])) maj.modele = entree.modele as MajAtelier["modele"];
+  const epreuve = lireEpreuve(entree.epreuve);
+  if (epreuve) maj.epreuve = epreuve;
+  const voisins = lireVoisins(entree.voisins);
+  if (voisins) maj.voisins = voisins;
+  const routine = lireRoutine(entree.routine);
+  if (routine) maj.routine = routine;
   return Object.keys(maj).length ? maj : null;
 }
 
@@ -72,6 +112,9 @@ export const BROUILLON_VIDE: BrouillonAgent = {
   verification: [],
   consignes: "",
   modele: "",
+  epreuve: null,
+  voisins: [],
+  routine: null,
 };
 
 /** La carte après un appel : chaque champ donné remplace le précédent, `nouveau` repart de zéro. */
@@ -79,6 +122,16 @@ export function appliquerMaj(brouillon: BrouillonAgent, maj: MajAtelier): Brouil
   const { nouveau, ...champs } = maj;
   const depart = nouveau ? BROUILLON_VIDE : brouillon;
   return { ...depart, ...Object.fromEntries(Object.entries(champs).filter(([, v]) => v !== undefined)) };
+}
+
+/** Les phrases ajoutées par la personne : à la suite de leur pilier, une seule fois, quoi que l'assistant écrive ensuite. */
+export function appliquerAjouts(b: BrouillonAgent, ajouts: AjoutFiche[]): BrouillonAgent {
+  if (!ajouts.length) return b;
+  const suite = { ...b };
+  for (const { pilier, texte: t } of ajouts) {
+    if (!suite[pilier].some((x) => comparable(x) === comparable(t))) suite[pilier] = [...suite[pilier], t];
+  }
+  return suite;
 }
 
 /* ─── Les cinq piliers ────────────────────────────────────────────── */
@@ -172,7 +225,7 @@ export function manques(b: BrouillonAgent): string[] {
 }
 
 /** Ce que l'outil répond à l'assistant : où en est la carte, ce qu'il reste à demander. */
-export function retourAtelier(b: BrouillonAgent): string {
+export function retourAtelier(b: BrouillonAgent, ajouts: AjoutFiche[] = []): string {
   const remplis = piliersRemplis(b);
   const reste = PILIERS.filter((p) => !remplis.has(p.cle)).map((p) => p.titre.toLowerCase());
   const jetons = jetonsBrouillon(b);
@@ -180,10 +233,61 @@ export function retourAtelier(b: BrouillonAgent): string {
   return [
     `Carte de ${nomPropre(b.nom) || "l’agent"} à jour : ${remplis.size}/5 piliers${reste.length ? ` (reste : ${reste.join(", ")})` : ""}.`,
     `Fiche estimée à ~${jetons} jetons, relus à chaque appel de l’agent${jetons > SEUIL_FICHE_LONGUE ? " : au-delà de 1 500, resserre-la" : ""}.`,
+    ajouts.length ? `La personne a ajouté à la fiche (gardé, inutile de le répéter) : ${ajouts.map((a) => `« ${a.texte} »`).join(", ")}.` : "",
+    remplis.size === 5 && !b.epreuve ? "Propose ensuite trois demandes pour la mettre à l’épreuve (epreuve : une normale, une floue, une hors de son métier)." : "",
     manque.length
       ? `Pour la créer, il manque : ${manque.join(", ")}.`
-      : "Elle la crée d’un clic sur la carte (« Créer l’agent ») ou l’ajuste dans l’éditeur : ne dis pas qu’il est créé avant qu’elle l’ait fait.",
-  ].join(" ");
+      : "Elle la met à l’épreuve et la crée sur la carte, ou l’ajuste dans l’éditeur : ne dis pas qu’il est créé avant qu’elle l’ait fait.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/* ─── L'épreuve et la suite ───────────────────────────────────────── */
+
+/** Les trois demandes de l'épreuve, dans l'ordre. */
+export function casEpreuve(b: BrouillonAgent): CasEpreuve[] | null {
+  if (!b.epreuve) return null;
+  return [
+    { type: "normal", demande: b.epreuve.normal },
+    { type: "floue", demande: b.epreuve.floue },
+    { type: "hors-metier", demande: b.epreuve.horsMetier },
+  ];
+}
+
+/** Les piliers dont un essai raté demande une correction pas encore ajoutée (leur étoile clignote). */
+export function piliersEnAlerte(resultats: ResultatCas[] | null, ajouts: AjoutFiche[]): Set<Pilier> {
+  const alerte = new Set<Pilier>();
+  for (const r of resultats ?? []) {
+    if (r.verdict !== "ko" || !r.correction) continue;
+    const { pilier, texte: t } = r.correction;
+    if (pilier === "methode") continue;
+    if (!ajouts.some((a) => a.pilier === pilier && comparable(a.texte) === comparable(t))) alerte.add(pilier);
+  }
+  return alerte;
+}
+
+export const estPilierListe = (p: string): p is PilierListe => (PILIERS_LISTE as string[]).includes(p);
+
+const PLANNING: Record<RoutineProposee["quand"]["type"], (q: RoutineProposee["quand"]) => RoutineSchedule> = {
+  jour: (q) => ({ kind: "daily", time: q.heure }),
+  "jours-ouvres": (q) => ({ kind: "weekdays", time: q.heure }),
+  semaine: (q) => ({ kind: "weekly", weekday: q.jour ?? 1, time: q.heure }),
+  mois: (q) => ({ kind: "monthly", day: q.jour ?? 1, time: q.heure }),
+};
+
+/** La routine proposée, prête à relire dans Automatisations (jamais enregistrée d'office). */
+export function routineProposee(b: BrouillonAgent, agentId: string, fuseau: string): RoutineInput | null {
+  if (!b.routine) return null;
+  return {
+    agentId,
+    name: b.routine.nom,
+    instruction: b.routine.consigne,
+    schedule: PLANNING[b.routine.quand.type](b.routine.quand),
+    timezone: fuseau,
+    missedPolicy: "skip",
+    active: true,
+  };
 }
 
 /* ─── Le fil plié ─────────────────────────────────────────────────── */
@@ -202,6 +306,12 @@ export interface EtatAtelier {
   cree: string | null;
   /** La dernière série de la conversation ; une plus ancienne, jamais créée, a été remplacée. */
   courante: boolean;
+  /** Cet appel est encore en cours d'écriture par le modèle. */
+  provisoire: boolean;
+  /** Les phrases ajoutées par la personne dans la série (déjà dans `apres`). */
+  ajouts: AjoutFiche[];
+  /** La dernière épreuve passée dans la série. */
+  resultats: ResultatCas[] | null;
 }
 
 /**
@@ -213,35 +323,44 @@ export function plierAteliers(messages: Message[]): Map<string, EtatAtelier> {
   let serie: EtatAtelier[] = [];
   let derniere: EtatAtelier[] = [];
   let courant = BROUILLON_VIDE;
+  let ajouts: AjoutFiche[] = [];
   const clore = () => {
     if (serie.length) derniere = serie;
     const teinte = serie.reduce<RoleTeinte | null>((t, e) => e.teinte ?? t, null);
     const cree = serie.reduce<string | null>((c, e) => e.cree ?? c, null);
+    const resultats = serie.reduce<ResultatCas[] | null>((r, e) => e.resultats ?? r, null);
     serie.forEach((e, i) => {
       e.teinte = teinte;
       e.cree = cree;
+      e.resultats = resultats;
+      e.ajouts = ajouts;
       e.dernier = i === serie.length - 1;
     });
     serie = [];
+    ajouts = [];
     courant = BROUILLON_VIDE;
   };
   for (const message of messages) {
     for (const part of message.parts) {
       if (part.type !== "atelier-agent") continue;
       if (part.maj.nouveau || serie.some((e) => e.cree)) clore();
-      const apres = appliquerMaj(courant, part.maj);
+      const avant = serie.at(-1)?.apres ?? BROUILLON_VIDE;
+      courant = appliquerMaj(courant, part.maj);
+      ajouts = [...ajouts, ...(part.ajouts ?? [])];
       const etat: EtatAtelier = {
         serie: serie[0]?.serie ?? part.etapeId,
-        avant: courant,
-        apres,
+        avant,
+        apres: appliquerAjouts(courant, ajouts),
         dernier: false,
         teinte: part.teinte ?? null,
         cree: part.cree ?? null,
         courante: false,
+        provisoire: !!part.provisoire,
+        ajouts: [],
+        resultats: part.resultats ?? null,
       };
       serie.push(etat);
       etats.set(part.etapeId, etat);
-      courant = apres;
     }
   }
   clore();
@@ -249,12 +368,14 @@ export function plierAteliers(messages: Message[]): Map<string, EtatAtelier> {
   return etats;
 }
 
-/** La carte en cours de la conversation (celle que l'appel suivant complétera), ou une carte vide. */
-export function brouillonEnCours(messages: Message[]): BrouillonAgent {
+/** La carte en cours de la conversation (celle que l'appel suivant complétera), et ce que la personne y a ajouté. */
+export function atelierEnCours(messages: Message[]): { brouillon: BrouillonAgent; ajouts: AjoutFiche[] } {
   const etats = [...plierAteliers(messages).values()];
   const dernier = etats.at(-1);
-  return dernier && !dernier.cree ? dernier.apres : BROUILLON_VIDE;
+  return dernier && !dernier.cree ? { brouillon: dernier.apres, ajouts: dernier.ajouts } : { brouillon: BROUILLON_VIDE, ajouts: [] };
 }
+
+export const brouillonEnCours = (messages: Message[]) => atelierEnCours(messages).brouillon;
 
 /** Les piliers que cet appel vient de remplir. */
 export function piliersNouveaux(etat: Pick<EtatAtelier, "avant" | "apres">): Pilier[] {

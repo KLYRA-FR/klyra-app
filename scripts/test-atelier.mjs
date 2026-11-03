@@ -63,8 +63,11 @@ try {
   const cicco = (id, s, ps) => ({ id, chatId: "dm-principal", author: { kind: "role", roleId: "principal" }, createdAt: le(s), statut: "fait", parts: ps });
   const moi = (id, s, texte) => ({ id, chatId: "dm-principal", author: { kind: "user" }, createdAt: le(s), parts: [{ type: "text", text: texte }] });
   conv.chats = [...(conv.chats ?? []).filter((c) => c.id !== "dm-principal"), { id: "dm-principal", kind: "direct", projectId: null, title: "Cicco", roleIds: ["principal"], updatedAt: le(40), sessions: {}, luJusqua: null }];
+  // Des échanges plus anciens : le fil défile, la carte peut sortir de l'écran.
+  const ancien = (i) => (i % 2 ? cicco(`a${i}`, -60 + i, [{ type: "text", text: `Réponse ${i}. ${"Une réponse un peu longue pour remplir le fil. ".repeat(12)}` }]) : moi(`a${i}`, -60 + i, `Question ${i}`));
   conv.messages = [
     ...(conv.messages ?? []),
+    ...Array.from({ length: 10 }, (_, i) => ancien(i)),
     moi("m1", 0, "J’aimerais un agent pour mes propositions commerciales : la dernière m’a pris trois heures."),
     cicco("m2", 10, [
       { type: "text", text: "Je vois : un agent commercial. Il lui faut un prénom." },
@@ -96,6 +99,15 @@ try {
   verifier((await app.ev(`document.querySelector('[data-message="m2"]')?.innerText ?? ''`)).includes("Carte de l’agent : sa mission"), "l’appel précédent : une ligne, ce qu’il a rempli");
   verifier(/~\d+ jetons/.test(await app.ev(`${carte}?.innerText ?? ''`)), "le poids de la fiche sur la carte");
 
+  // La barre de l'atelier : seulement quand la carte est hors de l'écran ; un clic y ramène.
+  const barre = "[...document.querySelectorAll('main button')].find((b) => b.innerText.trim() === 'Voir la carte')";
+  verifier(!(await app.quand(barre, 1500)), "carte visible : pas de barre de l’atelier");
+  await app.ev("document.querySelector('[data-carte-atelier]').closest('.overflow-y-auto').scrollTop = 0; 0");
+  verifier(await app.quand(barre), "carte hors de l’écran : la barre de l’atelier en haut du fil");
+  verifier((await app.ev(`${barre}?.closest('div.absolute')?.innerText ?? ''`)).includes("Nina"), "la barre montre l’agent en préparation");
+  await app.ev(`${barre}.click(); 0`);
+  verifier(await app.quand(`!${barre}`, 5000), "« Voir la carte » ramène à la carte, la barre s’en va");
+
   // Les réponses toutes prêtes : la première est répondue, la seconde attend.
   const puce = (message, texte) => `[...document.querySelectorAll('[data-message="${message}"] [role=group] button')].find((b) => b.innerText.trim() === ${JSON.stringify(texte)})`;
   verifier((await app.ev(`${puce("m2", "Nina")}?.getAttribute('aria-pressed')`)) === "true", "réponse donnée : « Nina » marquée");
@@ -125,7 +137,9 @@ try {
   // La naissance.
   verifier(!existsSync(path.join(agents, "nina.md")), "rien n’est écrit avant « Créer l’agent »");
   await app.cliquer("Créer l’agent", carte);
-  verifier(await surDisque(() => existsSync(path.join(agents, "nina.md"))), "« Créer l’agent » écrit nina.md");
+  // La fiche est créée sans écraser (`wx`) : elle existe un instant avant d'être remplie.
+  const ficheEcrite = (nom) => surDisque(() => /\n---\n[\s\S]*\n$/.test(readFileSync(path.join(agents, `${nom}.md`), "utf8")));
+  verifier(await ficheEcrite("nina"), "« Créer l’agent » écrit nina.md");
   const fiche = readFileSync(path.join(agents, "nina.md"), "utf8");
   verifier(/^displayName: Nina$/m.test(fiche) && /^description: "Commercial — Rédige les propositions/m.test(fiche) && !/^memory:/m.test(fiche), "la fiche : prénom, description composée, sans mémoire");
   verifier(fiche.includes("## Quand m’appeler\n\n- Un brief client arrive"), "la fiche reprend les piliers");
@@ -171,8 +185,10 @@ try {
       };
 
       await ecrire("atelier lea");
+      verifier(await app.quand(`${derniere}?.innerText.includes('L’assistant écrit sa carte')`, 60000), "la carte s’écrit pendant que l’assistant remplit l’outil");
       verifier(await app.quand(`${derniere}?.innerText.includes('Atelier · nouvel agent') && ${derniere}.innerText.includes('Lea')`, 60000), "Claude Code → proposer_agent : une nouvelle carte dans le fil");
       verifier(await app.quand(`${derniere}?.innerText.includes('fin OK')`, 60000), "l’outil répond sans erreur");
+      verifier((await app.ev(`${derniere}?.innerText ?? ''`)).includes("Nina fait déjà une partie de ce travail"), "ses voisins dans l’équipe, avant de créer un doublon");
       verifier(
         fournisseur.requetes.some((q) => q.resultats.some((r) => !r.erreur && r.texte.includes("Carte de Lea à jour : 2/5 piliers"))),
         "l’assistant reçoit où en est la carte (2/5 piliers, ce qui reste)",
@@ -182,6 +198,39 @@ try {
         "après un agent créé, la carte suivante repart de zéro",
       );
       verifier(await app.quand(`${carte}?.innerText.includes('Dans ton équipe')`), "la carte de Nina reste « Dans ton équipe »");
+
+      // L'épreuve : trois vrais essais de la fiche, jugés ; un raté propose sa correction.
+      const verdict = (type) => app.ev(`${derniere}?.querySelector('[data-cas="${type}"]')?.dataset.verdict`);
+      const avantEssais = fournisseur.requetes.length;
+      verifier(await app.cliquer("Lancer l’épreuve", derniere), "« Lancer l’épreuve »");
+      verifier(
+        await app.quand(`['normal','floue','hors-metier'].every((t) => ['ok','ko'].includes(${derniere}?.querySelector('[data-cas="' + t + '"]')?.dataset.verdict))`, 90000),
+        "les trois essais reviennent jugés",
+      );
+      verifier((await verdict("normal")) === "ok" && (await verdict("floue")) === "ok" && (await verdict("hors-metier")) === "ko", "cas normal et demande floue réussis, hors de son métier à corriger");
+      const essais = fournisseur.requetes.slice(avantEssais).filter((q) => q.systeme.includes("C'est un essai avant ta création"));
+      verifier(essais.length === 3 && essais.every((q) => q.systeme.includes("Suit les concurrents et rend une note sourcée.") && q.outils.length === 0), "chaque essai : la fiche comme agent de la session, sans aucun outil");
+      verifier((await app.ev(`!!${derniere}?.querySelector('.klyra-etoile-alerte')`)) === true, "l’étoile « Ses limites » clignote");
+      verifier(/\d+ jetons, sur ton compte Claude/.test(await app.ev(`${derniere}?.innerText ?? ''`)), "ce que l’épreuve a coûté, en jetons");
+      await app.cliquer("Ajouter à sa fiche et rejouer", derniere);
+      verifier(await app.quand(`${derniere}?.querySelector('[data-cas="hors-metier"]')?.dataset.verdict === 'ok'`, 60000), "la phrase ajoutée, l’essai rejoué réussit");
+      verifier((await app.ev(`!${derniere}?.querySelector('.klyra-etoile-alerte')`)) === true, "plus d’étoile en alerte");
+
+      // La naissance de Lea, puis la suite : la routine proposée et le partage.
+      await app.cliquer("Créer l’agent", derniere);
+      verifier(await ficheEcrite("lea"), "Lea est créée");
+      verifier(readFileSync(path.join(agents, "lea.md"), "utf8").includes("- Le code et les bugs : je passe la main."), "sa fiche garde la phrase ajoutée pendant l’épreuve");
+      verifier(await app.quand(`${derniere}?.innerText.includes('Lui confier : Note de veille')`), "« Lui confier » la routine proposée par l’assistant");
+      verifier(
+        (await app.ev(`[...${derniere}.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Partager avec l’équipe')?.disabled`)) === true &&
+          (await app.ev(`${derniere}.innerText`)).includes("Connecte-toi à ton compte d’équipe"),
+        "« Partager avec l’équipe » attend un compte d’équipe, et le dit",
+      );
+      await app.ev(`[...${derniere}.querySelectorAll('button')].find((b) => b.innerText.includes('Lui confier'))?.click(); 0`);
+      verifier(await app.quand("location.href.includes('/routines') && [...document.querySelectorAll('main input')].some((i) => i.value === 'Note de veille')", 15000), "Automatisations s’ouvre sur la routine à relire");
+      const routines = path.join(donnees, "routines", "routines.json");
+      verifier(!existsSync(routines) || !readFileSync(routines, "utf8").includes("Note de veille"), "rien n’est planifié avant l’enregistrement");
+      await app.aller("/chat?id=dm-principal");
 
       await ecrire("choix x");
       verifier(await app.quand(`${derniere}?.innerText.includes('Réponses affichées')`, 60000), "Claude Code → proposer_choix : l’outil répond sans erreur");
@@ -200,7 +249,12 @@ try {
   verifier(false, `exception : ${e instanceof Error ? e.stack : e}`);
 } finally {
   if (app) await app.fermer();
-  rmSync(TMP, { recursive: true, force: true });
+  // Un Claude Code qui se ferme peut encore écrire ses journaux : le ménage réessaie, puis renonce sans échouer.
+  try {
+    rmSync(TMP, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  } catch (e) {
+    console.log(`(ménage incomplet : ${e.code ?? e.message})`);
+  }
 }
 
 console.log(echecs.length ? `\n${echecs.length} échec(s).` : "\nL’atelier passe.");

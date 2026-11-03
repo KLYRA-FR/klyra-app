@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld("klyra", {
     status: () => ipcRenderer.invoke("claude:status"),
     run: (requestId: string, agent: string, prompt: string) => ipcRenderer.invoke("claude:run", requestId, agent, prompt),
     titre: (texte: string) => ipcRenderer.invoke("claude:titre", texte),
+    essayer: (requestId: string, brouillon: unknown, cas: unknown) => ipcRenderer.invoke("claude:essayer", requestId, brouillon, cas),
     cancel: (requestId: string) => ipcRenderer.invoke("claude:cancel", requestId),
     autoriser: (requestId: string, demandeId: string, decision: string) =>
       ipcRenderer.invoke("claude:autoriser", requestId, demandeId, decision),

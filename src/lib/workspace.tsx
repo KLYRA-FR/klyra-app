@@ -13,7 +13,7 @@ import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
-import { appliquerMaj, brouillonEnCours, lireChoix, lireMajAtelier, retourAtelier } from "@/lib/atelier-agent";
+import { appliquerAjouts, appliquerMaj, atelierEnCours, lireChoix, lireMajAtelier, retourAtelier } from "@/lib/atelier-agent";
 import { nomDejaPris } from "@/lib/noms-agents";
 import { lirePublication, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
@@ -34,13 +34,13 @@ import type {
   Chat,
   Etape,
   EtapeTicket,
+  MajAtelier,
   Message,
   MessagePart,
   Project,
   Role,
   RelaisRoutine,
   RoleId,
-  RoleTeinte,
   Routine,
   Tache,
   TacheAgent,
@@ -48,6 +48,10 @@ import type {
   Categorie,
   User,
 } from "@/types/domain";
+
+/** Une carte de l'atelier, et ce que l'écran peut y noter. */
+type PartAtelier = Extract<MessagePart, { type: "atelier-agent" }>;
+type PatchAtelier = Partial<Pick<PartAtelier, "teinte" | "cree" | "resultats" | "ajouts">>;
 
 /** Les catégories de rappels à la première ouverture. */
 const CATEGORIES_DE_DEPART: Categorie[] = [
@@ -446,7 +450,7 @@ function ajouterEtape(
   }
   // L'atelier d'un agent : la carte se complète dans le fil (cf. atelier-agent.ts), après ses étapes.
   const maj = etape.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(entree) : null;
-  if (maj) return [...parts, { type: "atelier-agent", etapeId: etape.id, maj }];
+  if (maj) return poserAtelier(parts, etape.id, maj, false);
   // Des réponses toutes prêtes sous la question de l'assistant.
   const choix = etape.outil === "mcp__klyra__proposer_choix" ? lireChoix(entree) : null;
   if (choix) return [...parts, { type: "choix", etapeId: etape.id, ...choix }];
@@ -454,6 +458,21 @@ function ajouterEtape(
   const index = parts.findIndex((p) => p.type === "etapes");
   if (index === -1) return [{ type: "etapes", etapes: [etape] }, ...parts];
   return parts.map((p, i) => (i === index && p.type === "etapes" ? { ...p, etapes: [...p.etapes, etape] } : p));
+}
+
+/**
+ * La carte de l'atelier pour cet appel : ajoutée, ou mise à jour si elle s'écrivait déjà en direct
+ * (`provisoire`, cf. l'événement `etape-partielle`). Ce que la personne y a déjà fait reste.
+ */
+function poserAtelier(parts: MessagePart[], etapeId: string, maj: MajAtelier, provisoire: boolean): MessagePart[] {
+  const i = parts.findIndex((p) => p.type === "atelier-agent" && p.etapeId === etapeId);
+  if (i === -1) return [...parts, { type: "atelier-agent", etapeId, maj, ...(provisoire ? { provisoire } : {}) }];
+  return parts.map((p, j) => {
+    if (j !== i || p.type !== "atelier-agent") return p;
+    const { provisoire: _ancien, ...reste } = p;
+    void _ancien;
+    return { ...reste, maj, ...(provisoire ? { provisoire } : {}) };
+  });
 }
 
 function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[] {
@@ -609,8 +628,8 @@ interface WorkspaceApi {
   changerCategories: (categories: Categorie[]) => void;
   /** Ta réponse à une demande d'autorisation d'un agent. */
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
-  /** La carte de l'atelier d'un agent : la couleur choisie, puis l'agent créé depuis elle. */
-  marquerAtelier: (messageId: string, etapeId: string, patch: { teinte?: RoleTeinte; cree?: string }) => void;
+  /** La carte de l'atelier d'un agent : la couleur choisie, l'épreuve, les ajouts, puis l'agent créé depuis elle. */
+  marquerAtelier: (messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => void;
   supprimerArtefact: (id: string) => void;
   /** Retire un rendu d'agent de la liste et supprime la copie de l'app ; l'original reste où il est. */
   retirerRendu: (id: string) => void;
@@ -1058,6 +1077,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }
           break;
         }
+        case "etape-partielle": {
+          // La carte de l'atelier s'écrit pendant que l'assistant remplit l'outil.
+          const enCours = event.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(event.entree) : null;
+          if (enCours) maj((m) => ({ ...m, parts: poserAtelier(m.parts, event.id, enCours, true) }));
+          break;
+        }
         case "etape-fin":
           maj((m) => ({
             ...m,
@@ -1105,7 +1130,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "fin":
           maj((m) => {
             const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
-            const parts = !aDuTexte && event.texte ? ajouterTexte(m.parts, event.texte, true) : m.parts;
+            // Une carte restée en cours d'écriture (réponse arrêtée avant la fin de l'outil) n'est pas gardée.
+            const finies = m.parts.filter((p) => !(p.type === "atelier-agent" && p.provisoire));
+            const parts = !aDuTexte && event.texte ? ajouterTexte(finies, event.texte, true) : finies;
             return event.ok
               ? { ...m, parts, statut: "fait" }
               : { ...m, parts, statut: "erreur", erreur: event.erreur };
@@ -1917,8 +1944,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           if (maj.id && roles.some((r) => r.id === maj.id)) throw new Error(`« ${maj.id} » est déjà dans Mes agents : propose un autre identifiant, ou un changement de sa fiche.`);
           const pris = maj.nom ? nomDejaPris(maj.nom, roles) : null;
           if (pris) throw new Error(`Elle a déjà un agent qui s’appelle ${pris.name} : propose un autre prénom.`);
+          const inconnu = maj.voisins?.find((v) => !roles.some((r) => r.id === v.id));
+          if (inconnu) throw new Error(`« ${inconnu.id} » n’est pas un de ses agents actifs : ne cite dans voisins que ceux de Mes agents.`);
           // La carte de la conversation, cet appel compris (le rejouer ne change rien : chaque champ remplace le précédent).
-          return retourAtelier(appliquerMaj(brouillonEnCours(messages.filter((m) => m.chatId === appelant.chatId)), maj));
+          const enCours = atelierEnCours(messages.filter((m) => m.chatId === appelant.chatId));
+          return retourAtelier(appliquerAjouts(appliquerMaj(enCours.brouillon, maj), enCours.ajouts), enCours.ajouts);
         }
         case "proposer_choix":
           if (!lireChoix(args)) throw new Error("Propose de 2 à 6 réponses courtes et distinctes.");
@@ -2163,13 +2193,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [bridge],
   );
 
-  const marquerAtelier = useCallback((messageId: string, etapeId: string, patch: { teinte?: RoleTeinte; cree?: string }) => {
+  const marquerAtelier = useCallback((messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => {
     dispatch({
       type: "message/update",
       id: messageId,
       patch: (m) => ({
         ...m,
-        parts: m.parts.map((p) => (p.type === "atelier-agent" && p.etapeId === etapeId ? { ...p, ...patch } : p)),
+        parts: m.parts.map((p) => (p.type === "atelier-agent" && p.etapeId === etapeId ? { ...p, ...(typeof patch === "function" ? patch(p) : patch) } : p)),
       }),
     });
   }, []);

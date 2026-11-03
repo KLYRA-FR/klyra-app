@@ -17,6 +17,7 @@ import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWo
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse } from "./ActionsReponse";
 import { MenuMessage, type CibleMessage } from "./MenuMessage";
+import { BarreAtelier } from "./CarteAtelier";
 import { MessagePartView } from "./MessageParts";
 import { RailMessages } from "./RailMessages";
 
@@ -372,6 +373,7 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {messageExport}
+      <BarreAtelier zone={zone} ateliers={ateliers} />
       <div
         ref={zone}
         onScroll={(e) => {
