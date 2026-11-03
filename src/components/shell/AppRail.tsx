@@ -152,7 +152,7 @@ export function AppRail({
         <PastilleMaj />
         <UtilisationRail />
         {SEPARATEUR}
-        {/* Les réglages s'ouvrent d'un clic sur l'avatar. */}
+        {/* L'avatar ouvre ton menu : Réglages et Serveurs. */}
         <span className="pt-1">
           <CarteCompteRail />
         </span>
