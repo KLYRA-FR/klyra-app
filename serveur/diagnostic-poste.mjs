@@ -7,9 +7,10 @@ import path from "node:path";
  * ses agents actifs. Lecture seule. Les tailles sont estimées d'après les fichiers : une mesure exacte
  * demanderait un appel au modèle. Calibré le 03/11/2026 : un CLAUDE.md de 6 164 octets ajoute 2 391 jetons
  * réels (Claude Code l'entoure d'un peu de texte) ; 2,75 caractères par jeton, comme `pnpm mesure:socle --reel`.
- * Aucun réglage de Claude Code ne retire proprement la configuration personnelle (03/11/2026) :
- * `--setting-sources project,local` retire aussi les agents du poste, `CLAUDE_CODE_DISABLE_CLAUDE_MDS`
- * aussi les AGENTS.md des projets. D'où un diagnostic et des conseils, sans interrupteur.
+ * Une skill personnelle se retire d'un agent sans retirer ses agents ni son CLAUDE.md :
+ * `skillOverrides` à `off` dans le `--settings` de la session (prouvé le 04/11/2026).
+ * `--setting-sources project,local` retire aussi les agents du poste : on ne l'utilise pas.
+ * Les interrupteurs sont dans Réglages › Agents. Le diagnostic reste une lecture.
  */
 export const CARACTERES_PAR_JETON = 2.75;
 const jetons = (caracteres) => Math.round(caracteres / CARACTERES_PAR_JETON);
@@ -88,9 +89,9 @@ function skills(dossierClaude) {
     return {
         cle: "skills",
         libelle: "Skills personnelles",
-        detail: noms.length ? `${noms.length} skill${noms.length > 1 ? "s" : ""}, présentée${noms.length > 1 ? "s" : ""} à chaque appel : ${noms.slice(0, 6).join(", ")}${noms.length > 6 ? "…" : ""}.` : "Aucune.",
+        detail: noms.length ? `${noms.length} skill${noms.length > 1 ? "s" : ""} (${noms.slice(0, 6).join(", ")}${noms.length > 6 ? "…" : ""}) : présentée${noms.length > 1 ? "s" : ""} à un agent tant qu’on ne la coupe pas dans Réglages › Agents.` : "Aucune.",
         jetons: n,
-        conseil: n > 400 ? "Retire celles qui ne servent pas à tes agents, ou raccourcis leur description : elle suffit pour que l’agent sache quand s’en servir." : null,
+        conseil: n > 400 ? "Coupe, dans Réglages › Agents, celles qui ne servent pas à un agent : une skill coupée ne part plus dans ses appels. Rien n’est supprimé du poste." : null,
         chemin: noms.length ? dossier : null,
     };
 }

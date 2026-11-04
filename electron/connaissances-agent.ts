@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, type Dirent } from "node:fs";
 import path from "node:path";
+import { nomsCoupes, skillRecue, validerSkillsParAgent, type SkillsParAgent } from "./skills-par-agent";
 
 /*
  * Ce qu'un agent sait, lu sur le disque tel que Claude Code le range (vérifié dans Claude Code 2.1.317) :
@@ -10,7 +11,8 @@ import path from "node:path";
  *   `<config>/projects/<dossier en tirets>/memory/`. Dans chacun, `MEMORY.md` est l'index lu à chaque
  *   appel (ses 200 premières lignes, 25 000 octets au plus) ; les autres fichiers sont lus au besoin.
  * - **Ses compétences.** Celles que sa fiche précharge (`skills`), puis les skills du poste
- *   (`<config>/skills/`) et du projet (`<dossier>/.claude/skills/`), que tout agent peut utiliser.
+ *   (`<config>/skills/`) et du projet (`<dossier>/.claude/skills/`), pour les agents qui les ont
+ *   allumées (skills-par-agent.ts). Rien n'est déplacé sur le poste.
  *
  * Module pur (ni Electron ni état) : le process principal lui donne les dossiers, l'écran ne donne
  * jamais un chemin de mémoire. Rien n'est supprimé ; une écriture refuse un fichier changé entre-temps.
@@ -358,6 +360,37 @@ export function skillsConnues(configClaude: string, dossier: string | null): Set
   return noms;
 }
 
+/** Les noms des skills du poste et du projet, pour le choix par agent. */
+export function nomsSkills(configClaude: string, dossier: string | null): { poste: string[]; projet: string[] } {
+  return {
+    poste: lireSkills(path.join(configClaude, "skills")).map((s) => s.nom),
+    projet: dossier ? lireSkills(path.join(dossier, ".claude", "skills")).map((s) => s.nom) : [],
+  };
+}
+
+/** Nom et description, pour les interrupteurs de Réglages › Agents. */
+export function catalogueSkills(configClaude: string, dossier: string | null): { poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[] } {
+  const court = (s: Competence) => ({ nom: s.nom, description: s.description });
+  return {
+    poste: lireSkills(path.join(configClaude, "skills")).map(court),
+    projet: dossier ? lireSkills(path.join(dossier, ".claude", "skills")).map(court) : [],
+  };
+}
+
+/**
+ * Ce que cet agent reçoit vraiment, parmi les skills du poste et du projet.
+ * `garder` sert au préchargement, à Codex et à la commande `/<skill>`.
+ */
+export function filtreSkills(choix: SkillsParAgent | null | undefined, agent: string | null, configClaude: string, dossier: string | null): { coupes: string[]; garder: (nom: string) => boolean } {
+  const etat = validerSkillsParAgent(choix ?? null);
+  const { poste, projet } = nomsSkills(configClaude, dossier);
+  const duPoste = new Set(poste);
+  return {
+    coupes: nomsCoupes(etat, agent, poste, projet),
+    garder: (nom) => skillRecue(etat, agent, nom, duPoste.has(nom) ? "poste" : "projet"),
+  };
+}
+
 /**
  * Le message envoyé à Claude Code quand la personne a tapé `/<skill>` : la commande en tête, puis tout
  * le message construit par l'app (contexte, conversation, son texte), que Claude Code passe en arguments.
@@ -379,8 +412,13 @@ export const MAX_PRECHARGE = 40_000;
  * Les skills que la fiche précharge, à ajouter aux consignes d'un agent lancé seul (`--agent`) :
  * leur texte, comme Claude Code le donne à un sous-agent. `texte` est null sans skill dans la fiche.
  */
-export function competencesPrechargees(contenuFiche: string | null, configClaude: string, dossier: string | null): { noms: string[]; texte: string | null } {
-  const { fiche } = lireCompetences(contenuFiche, configClaude, dossier);
+export function competencesPrechargees(
+  contenuFiche: string | null,
+  configClaude: string,
+  dossier: string | null,
+  garder?: (nom: string) => boolean,
+): { noms: string[]; texte: string | null } {
+  const fiche = lireCompetences(contenuFiche, configClaude, dossier).fiche.filter((s) => !garder || garder(s.nom));
   if (!fiche.length) return { noms: [], texte: null };
   const blocs: string[] = [];
   const absentes: string[] = [];
@@ -429,9 +467,14 @@ function skillsDeClaude(configClaude: string, dossier: string | null): Competenc
 }
 
 /** La consigne qui donne à Codex les skills de Claude, et le texte de celles que la fiche précharge ; null sans skill. */
-export function consigneSkillsCodex(contenuFiche: string | null, configClaude: string, dossier: string | null): { noms: string[]; texte: string | null } {
-  const skills = skillsDeClaude(configClaude, dossier);
-  const precharge = competencesPrechargees(contenuFiche, configClaude, dossier);
+export function consigneSkillsCodex(
+  contenuFiche: string | null,
+  configClaude: string,
+  dossier: string | null,
+  garder?: (nom: string) => boolean,
+): { noms: string[]; texte: string | null } {
+  const skills = skillsDeClaude(configClaude, dossier).filter((s) => !garder || garder(s.nom));
+  const precharge = competencesPrechargees(contenuFiche, configClaude, dossier, garder);
   if (!skills.length && !precharge.texte) return { noms: [], texte: null };
   const liste = skills.map((s) => `- ${s.nom}: ${s.description || "sans description"} (fichier : ${path.join(s.dossier!, "SKILL.md")})`);
   const texte = [
@@ -446,8 +489,14 @@ export function consigneSkillsCodex(contenuFiche: string | null, configClaude: s
 }
 
 /** Le message pour Codex quand la personne a tapé `/<skill>` : la compétence à lire d'abord, puis le message de l'app. */
-export function promptAvecSkillCodex(prompt: string, skill: string | null | undefined, configClaude: string, dossier: string | null): string {
-  if (!skill || skillEnTete(`/${skill}`) !== skill) return prompt;
+export function promptAvecSkillCodex(
+  prompt: string,
+  skill: string | null | undefined,
+  configClaude: string,
+  dossier: string | null,
+  garder?: (nom: string) => boolean,
+): string {
+  if (!skill || skillEnTete(`/${skill}`) !== skill || (garder && !garder(skill))) return prompt;
   const trouvee = skillsDeClaude(configClaude, dossier).find((s) => s.nom === skill || path.basename(s.dossier ?? "") === skill);
   if (!trouvee?.dossier) return prompt;
   return `[La personne demande la compétence « ${trouvee.nom} » : lis ${path.join(trouvee.dossier, "SKILL.md")} avant de répondre, et suis-la.]\n\n${prompt}`;

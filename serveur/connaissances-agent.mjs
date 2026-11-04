@@ -1,6 +1,7 @@
 // Généré par scripts/serveur-genere.mjs depuis electron/connaissances-agent.ts : ne pas modifier à la main.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { nomsCoupes, skillRecue, validerSkillsParAgent } from "./skills-par-agent.mjs";
 export const INDEX = "MEMORY.md";
 /** Ce que Claude Code lit de l'index à chaque appel. */
 export const LIGNES_INDEX = 200;
@@ -300,6 +301,34 @@ export function skillsConnues(configClaude, dossier) {
         noms.add(s.nom);
     return noms;
 }
+/** Les noms des skills du poste et du projet, pour le choix par agent. */
+export function nomsSkills(configClaude, dossier) {
+    return {
+        poste: lireSkills(path.join(configClaude, "skills")).map((s) => s.nom),
+        projet: dossier ? lireSkills(path.join(dossier, ".claude", "skills")).map((s) => s.nom) : [],
+    };
+}
+/** Nom et description, pour les interrupteurs de Réglages › Agents. */
+export function catalogueSkills(configClaude, dossier) {
+    const court = (s) => ({ nom: s.nom, description: s.description });
+    return {
+        poste: lireSkills(path.join(configClaude, "skills")).map(court),
+        projet: dossier ? lireSkills(path.join(dossier, ".claude", "skills")).map(court) : [],
+    };
+}
+/**
+ * Ce que cet agent reçoit vraiment, parmi les skills du poste et du projet.
+ * `garder` sert au préchargement, à Codex et à la commande `/<skill>`.
+ */
+export function filtreSkills(choix, agent, configClaude, dossier) {
+    const etat = validerSkillsParAgent(choix ?? null);
+    const { poste, projet } = nomsSkills(configClaude, dossier);
+    const duPoste = new Set(poste);
+    return {
+        coupes: nomsCoupes(etat, agent, poste, projet),
+        garder: (nom) => skillRecue(etat, agent, nom, duPoste.has(nom) ? "poste" : "projet"),
+    };
+}
 /**
  * Le message envoyé à Claude Code quand la personne a tapé `/<skill>` : la commande en tête, puis tout
  * le message construit par l'app (contexte, conversation, son texte), que Claude Code passe en arguments.
@@ -320,8 +349,8 @@ export const MAX_PRECHARGE = 40_000;
  * Les skills que la fiche précharge, à ajouter aux consignes d'un agent lancé seul (`--agent`) :
  * leur texte, comme Claude Code le donne à un sous-agent. `texte` est null sans skill dans la fiche.
  */
-export function competencesPrechargees(contenuFiche, configClaude, dossier) {
-    const { fiche } = lireCompetences(contenuFiche, configClaude, dossier);
+export function competencesPrechargees(contenuFiche, configClaude, dossier, garder) {
+    const fiche = lireCompetences(contenuFiche, configClaude, dossier).fiche.filter((s) => !garder || garder(s.nom));
     if (!fiche.length)
         return { noms: [], texte: null };
     const blocs = [];
@@ -368,9 +397,9 @@ function skillsDeClaude(configClaude, dossier) {
     });
 }
 /** La consigne qui donne à Codex les skills de Claude, et le texte de celles que la fiche précharge ; null sans skill. */
-export function consigneSkillsCodex(contenuFiche, configClaude, dossier) {
-    const skills = skillsDeClaude(configClaude, dossier);
-    const precharge = competencesPrechargees(contenuFiche, configClaude, dossier);
+export function consigneSkillsCodex(contenuFiche, configClaude, dossier, garder) {
+    const skills = skillsDeClaude(configClaude, dossier).filter((s) => !garder || garder(s.nom));
+    const precharge = competencesPrechargees(contenuFiche, configClaude, dossier, garder);
     if (!skills.length && !precharge.texte)
         return { noms: [], texte: null };
     const liste = skills.map((s) => `- ${s.nom}: ${s.description || "sans description"} (fichier : ${path.join(s.dossier, "SKILL.md")})`);
@@ -385,8 +414,8 @@ export function consigneSkillsCodex(contenuFiche, configClaude, dossier) {
     return { noms: [...skills.map((s) => s.nom), ...precharge.noms.map((n) => `fiche:${n}`)], texte };
 }
 /** Le message pour Codex quand la personne a tapé `/<skill>` : la compétence à lire d'abord, puis le message de l'app. */
-export function promptAvecSkillCodex(prompt, skill, configClaude, dossier) {
-    if (!skill || skillEnTete(`/${skill}`) !== skill)
+export function promptAvecSkillCodex(prompt, skill, configClaude, dossier, garder) {
+    if (!skill || skillEnTete(`/${skill}`) !== skill || (garder && !garder(skill)))
         return prompt;
     const trouvee = skillsDeClaude(configClaude, dossier).find((s) => s.nom === skill || path.basename(s.dossier ?? "") === skill);
     if (!trouvee?.dossier)

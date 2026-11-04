@@ -107,8 +107,13 @@ function fixture() {
     // Les skills de la session (cf. electron/connaissances-agent.ts) : aucune sur ce profil fictif, le message passe tel quel.
     "./connaissances-agent": {
       competencesPrechargees: () => ({ noms: [], texte: null }),
+      filtreSkills: () => ({ coupes: [], garder: () => true }),
       promptAvecSkill: (prompt) => prompt,
       skillsConnues: () => new Set(),
+    },
+    // Sans skill coupée, le JSON de session reste celui des permissions.
+    "./skills-par-agent": {
+      reglagesSession: (base, coupes) => JSON.stringify(coupes?.length ? { ...base, skillOverrides: Object.fromEntries(coupes.map((nom) => [nom, "off"])) } : base),
     },
     // Le navigateur de KLYRA coupé pour les agents : ni consigne ni changement de signature.
     "./navigateur/outils": { consigneNavigateur: () => null, signatureNavigateur: () => "" },
