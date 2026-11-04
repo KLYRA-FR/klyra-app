@@ -27,6 +27,8 @@ const CONVEX = process.env.KLYRA_TEST_CONVEX_URL;
 const CLE_ADMIN = process.env.KLYRA_TEST_CONVEX_ADMIN_KEY;
 /** La commande qui arrête (`… stop`) et relance (`… start`) ce backend local, pour couper le réseau. */
 const SERVEUR = process.env.KLYRA_TEST_CONVEX_SERVEUR;
+/** L'avatar du rail, un bouton qui ouvre le menu du compte : son libellé commence par le prénom affiché. */
+const RAIL = `document.querySelector('button[aria-haspopup="menu"][aria-label*=" · Serveur : "]')`;
 const echecs = [];
 const verifier = (ok, message) => {
   console.log(`${ok ? "OK    " : "ÉCHEC "} ${message}`);
@@ -112,7 +114,7 @@ async function lancer() {
     /** Ce que le rail et le Profil montrent de toi. */
     identite: () =>
       ev(`(() => {
-        const rail = document.querySelector('a[href="/reglages"][aria-label]');
+        const rail = ${RAIL};
         return { rail: rail?.getAttribute('aria-label')?.split(' · ')[0] ?? null, photoRail: rail?.querySelector('img')?.getAttribute('src') ?? null };
       })()`),
     /**
@@ -199,7 +201,7 @@ try {
   let texte = await app.texte();
   verifier(texte.includes("Pelin") && texte.includes("Design · KLYRA"), "sans compte : Profil affiche le prénom et le rôle de cet ordinateur");
   await modifierProfil(app, "Pelin K.");
-  await app.quand("document.querySelector('a[href=\"/reglages\"]')?.getAttribute('aria-label')?.startsWith('Pelin K.')");
+  await app.quand(`${RAIL}?.getAttribute('aria-label')?.startsWith('Pelin K.')`);
   await attendre(1200);
   verifier(JSON.stringify(profilSurDisque()) === JSON.stringify({ ...ICI, name: "Pelin K." }), "sans compte : seul le prénom change sur le disque (photo, rôle, identifiant gardés)");
   await app.fermer();
@@ -207,7 +209,7 @@ try {
   moi = await app.identite();
   verifier(moi.rail === "Pelin K." && moi.photoRail === PHOTO, "sans compte, après redémarrage : prénom modifié et photo intacts");
   await modifierProfil(app, "Pelin");
-  await app.quand("document.querySelector('a[href=\"/reglages\"]')?.getAttribute('aria-label')?.startsWith('Pelin ·')");
+  await app.quand(`${RAIL}?.getAttribute('aria-label')?.startsWith('Pelin ·')`);
   await attendre(1200);
 
   if (!admin) {
@@ -242,7 +244,7 @@ try {
 
     /* 4. Modifier connecté : le compte, puis cet ordinateur. Redémarrer. */
     await modifierProfil(app, "Pelin B.", "Direction artistique");
-    await app.quand("document.querySelector('a[href=\"/reglages\"]')?.getAttribute('aria-label')?.startsWith('Pelin B.')");
+    await app.quand(`${RAIL}?.getAttribute('aria-label')?.startsWith('Pelin B.')`);
     await attendre(1200);
     verifier(
       JSON.stringify(profilSurDisque()) === JSON.stringify({ ...ICI, name: "Pelin B.", title: "Direction artistique" }),
@@ -265,11 +267,11 @@ try {
     texte = await app.texte();
     verifier(!texte.includes("Se déconnecter") && !texte.includes(A.email), "réseau coupé : rien du compte n’est affiché tant qu’il n’est pas vérifié");
     await modifierProfil(app, "Pelin hors ligne");
-    await app.quand("document.querySelector('a[href=\"/reglages\"]')?.getAttribute('aria-label')?.startsWith('Pelin hors ligne')");
+    await app.quand(`${RAIL}?.getAttribute('aria-label')?.startsWith('Pelin hors ligne')`);
     await attendre(1200);
     verifier(profilSurDisque().name === "Pelin hors ligne" && profilSurDisque().photo === PHOTO, "réseau coupé : le profil se modifie sur cet ordinateur");
     await app.reseau(false, false);
-    const retour = await app.quand("document.querySelector('a[href=\"/reglages\"]')?.getAttribute('aria-label')?.startsWith('Pelin B.')", 60000);
+    const retour = await app.quand(`${RAIL}?.getAttribute('aria-label')?.startsWith('Pelin B.')`, 60000);
     verifier(retour, "réseau rétabli : le compte revient tout seul (nom du compte)");
     const pendantCoupure = app.erreurs.splice(erreursAvantCoupure);
     verifier(
@@ -297,7 +299,7 @@ try {
     await app.cliquer("Se déconnecter");
     await app.quand(`document.querySelector('input[aria-label="Adresse e-mail"]')`);
     await modifierProfil(app, "Pelin");
-    await app.quand("document.querySelector('a[href=\"/reglages\"]')?.getAttribute('aria-label')?.startsWith('Pelin ·')");
+    await app.quand(`${RAIL}?.getAttribute('aria-label')?.startsWith('Pelin ·')`);
     await app.aller("/reglages?section=profil");
     texte = await app.texte();
     moi = await app.identite();
@@ -316,10 +318,11 @@ try {
     await app.quand(`document.querySelector('input[aria-label="Adresse e-mail"]')`);
   }
 
-  const { skillsParAgent, configuration, navigateur, ...reglagesChoisis } = reglagesSurDisque();
+  const { skillsParAgent, configuration, navigateur, collaboration, ...reglagesChoisis } = reglagesSurDisque();
   verifier(JSON.stringify(reglagesChoisis) === JSON.stringify(REGLAGES), "les réglages choisis de cet ordinateur n’ont pas changé");
   verifier(skillsParAgent?.fige === true, "le premier lancement fige le choix des skills, sans toucher au reste");
   verifier(navigateur?.agents === true, "le navigateur des agents reste allumé, son défaut");
+  verifier(Array.isArray(collaboration?.projets) && collaboration.projets.length === 0, "le circuit des Issues reste sans projet, son défaut");
   verifier(configuration?.memoireAgents === true && configuration?.proposition === "a-proposer" && configuration?.resumeAuto === false, "la configuration KLYRA absente du fichier reste celle par défaut");
   verifier(profilSurDisque().photo === PHOTO && profilSurDisque().id === ICI.id, "la photo et l’identifiant de cet ordinateur n’ont jamais changé");
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` (${app.erreurs.join(" | ")})` : ""}`);
