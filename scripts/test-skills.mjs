@@ -112,9 +112,10 @@ await new Promise((r) => serveur.listen(0, "127.0.0.1", r));
 const URL_FOURNISSEUR = `http://127.0.0.1:${serveur.address().port}`;
 
 /** Un tour de Claude Code lancé comme `streamAgent` : message en flux, autorisations posées à l'app. */
-function tour(prompt, { mode = "auto", agent = null, consignes = null } = {}) {
+function tour(prompt, { mode = "auto", agent = null, consignes = null, settings = null } = {}) {
   requetes = [];
   const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--exclude-dynamic-system-prompt-sections", "--permission-prompt-tool", "stdio", "--permission-prompts", "host", "--permission-mode", mode, "--disallowedTools", "AskUserQuestion", "EnterPlanMode"];
+  if (settings) args.push("--settings", settings);
   if (agent) args.push("--agent", agent);
   args.push("--append-system-prompt", ["Consigne dans l’essai principal.", ...(consignes ? [consignes] : [])].join("\n\n"));
   const env = { PATH: process.env.PATH, HOME, ANTHROPIC_BASE_URL: URL_FOURNISSEUR, ANTHROPIC_API_KEY: "sk-faux", CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1", DISABLE_TELEMETRY: "1", DISABLE_AUTOUPDATER: "1" };
@@ -167,6 +168,20 @@ try {
   const aide = await tour("bonjour", { agent: "hugo", consignes: precharge });
   verifier(aide.requetes.length > 0 && aide.requetes.every((q) => q.systeme.includes("SKILL-RANGEMENT-TEXTE") && q.systeme.includes("AGENT-HUGO")), "agent lancé seul avec competencesPrechargees : sa skill est dans ses consignes");
   verifier(!readFileSync(path.join(CONFIG, "agents", "hugo.md"), "utf8").includes("SKILL-RANGEMENT-TEXTE"), "la fiche n’est pas modifiée par le préchargement");
+
+  /* skillOverrides à off retire une skill sans retirer les agents ni les CLAUDE.md (04/11/2026). */
+  writeFileSync(path.join(CONFIG, "CLAUDE.md"), "CLAUDE-PERSO-PREUVE\n");
+  writeFileSync(path.join(PROJET, "CLAUDE.md"), "CLAUDE-PROJET-PREUVE\n");
+  const ouvert = await tour("bonjour");
+  const coupe = await tour("bonjour", { settings: JSON.stringify({ permissions: { ask: ["Agent"] }, skillOverrides: { rangement: "off" } }) });
+  const taille = (r) => r.requetes[0]?.tout.length ?? 0;
+  console.log(`Mesure skillOverrides : ${taille(ouvert)} caractères avec toutes les skills, ${taille(coupe)} avec rangement coupée (${taille(ouvert) - taille(coupe)} de moins).`);
+  const initCoupe = coupe.evenements.find((e) => e.subtype === "init");
+  const agentsCoupes = JSON.stringify(initCoupe?.agents ?? "");
+  verifier(!!initCoupe?.skills?.includes("deploi") && !initCoupe?.skills?.includes("rangement"), "skillOverrides off retire rangement et garde deploi");
+  verifier(agentsCoupes.includes("hugo"), `l’agent hugo reste (${agentsCoupes.slice(0, 180)})`);
+  verifier(coupe.requetes[0]?.tout.includes("CLAUDE-PERSO-PREUVE") && coupe.requetes[0]?.tout.includes("CLAUDE-PROJET-PREUVE"), "les CLAUDE.md personnel et de projet restent dans la requête");
+  verifier(!coupe.requetes[0]?.tout.includes("- rangement:") && !!coupe.requetes[0]?.tout.includes("- deploi:"), "la description coupée n’est pas dans la requête, l’autre reste");
 } finally {
   serveur.close();
   rmSync(TMP, { recursive: true, force: true });

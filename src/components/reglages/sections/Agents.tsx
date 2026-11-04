@@ -19,6 +19,7 @@ import { pret, useMoteurs } from "@/lib/moteurs";
 import { idDirect, useRole, useWorkspace } from "@/lib/workspace";
 import type { Role } from "@/types/domain";
 import { GroupeConfigurationKlyra } from "../ConfigurationKlyra";
+import { SkillsParAgent } from "../SkillsParAgent";
 import { ancreReglage, Erreur, Groupe, Ligne, SeulementBureau } from "../ui";
 
 function ChoixAcces() {
@@ -220,6 +221,8 @@ export function Agents() {
           )}
         </div>
       </Groupe>
+
+      <SkillsParAgent />
 
       <Groupe titre="Fiches">
         <Ligne

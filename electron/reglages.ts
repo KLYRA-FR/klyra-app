@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CONFIGURATION_PAR_DEFAUT, validerConfiguration, type ConfigurationKlyra } from "./configuration-klyra";
+import { SKILLS_PAR_DEFAUT, validerSkillsParAgent, type SkillsParAgent } from "./skills-par-agent";
 
 /**
  * Les réglages de l'app qui ne sont ni dans les conversations ni dans les
@@ -49,6 +50,8 @@ export interface Reglages {
   sons: PreferencesSons;
   /** Consignes KLYRA et mémoire des agents, proposées en un clic (configuration-klyra.ts). */
   configuration: ConfigurationKlyra;
+  /** Skills reçues par chaque agent (skills-par-agent.ts). Absent du fichier : tout est reçu, puis le premier lancement fige. */
+  skillsParAgent: SkillsParAgent;
 }
 
 export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "majPrete";
@@ -59,6 +62,7 @@ const PAR_DEFAUT: Reglages = {
   navigateur: { agents: true },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
+  skillsParAgent: SKILLS_PAR_DEFAUT,
 };
 
 const fichier = () => path.join(app.getPath("userData"), "reglages.json");
@@ -67,7 +71,7 @@ let courants: Reglages | null = null;
 
 /** Garde seulement les clés connues, de bon type ; le reste reprend la valeur par défaut. */
 function valider(brut: unknown): Reglages {
-  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; navigateur?: { agents?: unknown }; sons?: Record<string, unknown>; configuration?: unknown } | null;
+  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; navigateur?: { agents?: unknown }; sons?: Record<string, unknown>; configuration?: unknown; skillsParAgent?: unknown } | null;
   const n = b?.notifications ?? {};
   const notifications = { ...PAR_DEFAUT.notifications };
   for (const cle of Object.keys(notifications) as (keyof PreferencesNotifications)[]) {
@@ -85,6 +89,7 @@ function valider(brut: unknown): Reglages {
     navigateur: { agents: b?.navigateur?.agents !== false },
     sons,
     configuration: validerConfiguration(b?.configuration),
+    skillsParAgent: validerSkillsParAgent(b?.skillsParAgent),
   };
 }
 
