@@ -62,8 +62,9 @@ export function creerMoteurs(options) {
   }
 
   const modeles = (id) => (connu(id).id === "codex" ? codex.modeles() : id === "grok" ? grok.modeles() : Promise.resolve([]));
-  /** Les limites de l'abonnement : Codex les relit dans le compte ; Claude Code, la dernière reçue d'une session (sans requête). */
-  const utilisation = async (id, actualiser) => (connu(id).id === "codex" ? codex.utilisation(actualiser === true) : id === "grok" ? null : (claude.utilisation?.() ?? null));
+  /** Les limites de l'abonnement : Codex et Grok les relisent dans le compte ; Claude Code, la dernière reçue d'une session (sans requête). */
+  const utilisation = async (id, actualiser) =>
+    connu(id).id === "codex" ? codex.utilisation(actualiser === true) : id === "grok" ? ((await grok?.utilisation?.(actualiser === true)) ?? null) : (claude.utilisation?.() ?? null);
   const versionDisponible = (id) => derniereVersionNpm(connu(id).paquet);
 
   /** Lance l'installation (Codex) ou la mise à jour ; un seul travail à la fois par moteur. */

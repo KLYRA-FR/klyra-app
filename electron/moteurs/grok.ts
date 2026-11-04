@@ -12,6 +12,7 @@ import { signatureNavigateur } from "../navigateur/outils";
 import { voirFin, voirOutil } from "../ordinateur/apercu";
 import { signatureOrdinateur } from "../ordinateur/pilote";
 import { lireReglages } from "../reglages";
+import { lireUtilisationGrok, type Utilisation } from "../utilisation";
 import { creerClientAcp, emailDeAuth, mcpPourAcp } from "./acp";
 import { ficheBrute, ficheDe } from "./codex";
 import { binaireGere, commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation";
@@ -114,6 +115,8 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
       if (event.type === "etape" && event.outil.startsWith("mcp__ordinateur__")) voirOutil(chatId, event.outil, event.entree);
       if (event.type === "fin") voirFin(chatId);
       emit(event);
+      /* Les crédits ont bougé : relus après chaque réponse (gratuit, sans requête au modèle). */
+      if (event.type === "fin") void utilisation(true);
     },
   );
 }
@@ -167,6 +170,7 @@ async function connecter(): Promise<CompteMoteur> {
   });
   // Le processus ouvert garde l'ancienne connexion en mémoire : le prochain appel relance Grok.
   client.fermer();
+  derniereUtilisation = null;
   const etat = await compte();
   if (!etat.connecte && r.code !== 0) throw new Error(r.sortie.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "").trim().split("\n").slice(-3).join(" ").slice(0, 400) || "La connexion à Grok n’a pas abouti.");
   return etat;
@@ -182,6 +186,7 @@ async function connecterAvecCle(cle: string): Promise<CompteMoteur> {
 async function deconnecter(): Promise<CompteMoteur> {
   const bin = trouverGrok();
   ecrireCle(null);
+  derniereUtilisation = null;
   if (bin && existsSync(path.join(grokHome(), "auth.json"))) await commande(bin, ["logout"], 30_000);
   client.fermer();
   return compte();
@@ -195,6 +200,36 @@ async function modeles(): Promise<ModeleMoteur[]> {
   } finally {
     rmSync(vide, { recursive: true, force: true });
   }
+}
+
+/* ─── Utilisation de l'abonnement Grok ─────────────────────────── */
+
+let derniereUtilisation: Utilisation | null = null;
+const abonnesUtilisation = new Set<(u: Utilisation) => void>();
+
+/**
+ * Les crédits du mois de l'abonnement, lus par `_x.ai/billing` (la commande `/usage` de Grok Build) :
+ * gratuit, sans requête au modèle. Seulement avec la connexion par le compte (`grok login`) : une clé
+ * API n'a pas d'abonnement à montrer. Une lecture ratée ou illisible garde la dernière connue.
+ */
+async function utilisation(actualiser: boolean): Promise<Utilisation | null> {
+  if (!actualiser && derniereUtilisation) return derniereUtilisation;
+  if (!trouverGrok() || !existsSync(path.join(grokHome(), "auth.json"))) return derniereUtilisation;
+  try {
+    const u = lireUtilisationGrok(await client.facturation());
+    if (u) {
+      derniereUtilisation = u;
+      abonnesUtilisation.forEach((cb) => cb(u));
+    }
+  } catch {
+    /* Grok fermé, pas connecté, ou méthode absente de cette version : la dernière connue reste. */
+  }
+  return derniereUtilisation;
+}
+
+function surUtilisation(callback: (u: Utilisation) => void): () => void {
+  abonnesUtilisation.add(callback);
+  return () => abonnesUtilisation.delete(callback);
 }
 
 /** Installe Grok Build publié sur npm par xAI, pour ce système, dans ~/.klyra/moteurs/grok. */
@@ -227,6 +262,8 @@ export const grok: Moteur = {
   connecterAvecCle,
   deconnecter,
   modeles,
+  utilisation,
+  surUtilisation,
   versionDisponible: () => derniereVersionNpm(PAQUET),
   installer,
   mettreAJour,

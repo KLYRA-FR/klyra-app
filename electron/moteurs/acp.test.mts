@@ -136,6 +136,9 @@ test("le client ACP face au faux Grok : réponse, session reprise, outils, autor
     });
     assert.deepEqual([(arretee.at(-1) as { ok: boolean }).ok, (arretee.at(-1) as { erreur: string }).erreur], [false, "Arrêté par toi."]);
 
+    /* Les crédits de l'abonnement (`_x.ai/billing`) : refusés sans connexion par le compte. */
+    await assert.rejects(client.facturation(), /Authentication required/);
+
     /* Une session inconnue (d'un autre moteur) : une nouvelle, sans erreur. */
     const etrangere = await repondre("r7", demande("TEXTE", { sessionId: "00000000-0000-4000-8000-000000000000", signature: "s4" }));
     assert.ok(etrangere.some((e) => e.type === "session"));

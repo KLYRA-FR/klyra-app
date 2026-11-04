@@ -118,7 +118,7 @@ export type AgentEvent =
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean };
 
-/** Utilisation d'un abonnement (Claude, ChatGPT), cf. electron/utilisation.ts. */
+/** Utilisation d'un abonnement (Claude, ChatGPT, Grok), cf. electron/utilisation.ts. */
 export interface FenetreUtilisation {
   /** Part utilisée, de 0 à 1. */
   utilise: number;
@@ -128,6 +128,8 @@ export interface FenetreUtilisation {
 export interface Utilisation {
   session: FenetreUtilisation | null;
   semaine: FenetreUtilisation | null;
+  /** Crédits du mois (Grok). */
+  mois?: FenetreUtilisation | null;
   statut: string;
   misAJour: number;
 }

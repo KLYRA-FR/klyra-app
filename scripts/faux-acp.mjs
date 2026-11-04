@@ -4,13 +4,14 @@
  * documentation embarquée de Grok Build 1.0.70 (« Agent Mode ») : `initialize`, `session/new`
  * (`_meta.rules`, `_meta.yoloMode`, `modes`, `configOptions`), `session/load`, `session/set_mode`,
  * `session/set_config_option`, `session/prompt` (mises à jour `session/update`), `session/cancel`,
- * `session/request_permission`. Aucun réseau, aucun compte.
+ * `session/request_permission`, et `_x.ai/billing` (crédits du mois, forme de Grok Build 0.1.220).
+ * Aucun réseau, aucun compte.
  * Le message décide de la réponse : TEXTE, OUTIL, MCP, AUTORISATION, LENT (attend l'arrêt).
  * FAUX_ACP_JOURNAL=<fichier> : chaque requête reçue y est écrite (une ligne JSON).
  * Lancé comme `grok` : `faux-acp.mjs agent stdio` ; `--version`, `login --device-auth` et `logout` répondent aussi.
  */
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -140,6 +141,22 @@ if (process.argv[2] === "agent") process.stdin.on("data", (d) => {
         break;
       case "session/cancel":
         sessions.get(params.sessionId)?.annuler?.();
+        break;
+      /* La commande `/usage` de Grok Build (forme de la 0.1.220) : les crédits du mois, seulement avec le compte. */
+      case "_x.ai/billing":
+        if (!existsSync(path.join(grokHome, "auth.json"))) ecrire({ id, error: { code: -32000, message: "Authentication required", data: "Authentication required to fetch billing data" } });
+        else
+          ecrire({
+            id,
+            result: {
+              billingCycle: { billingPeriodStart: "2026-11-01T00:00:00Z", billingPeriodEnd: "2026-12-01T00:00:00Z" },
+              monthlyLimit: { val: 10000 },
+              onDemandCap: { val: 0 },
+              on_demand_enabled: false,
+              disabledByConfig: false,
+              usage: { includedUsed: { val: 2500 }, onDemandUsed: { val: 0 }, totalUsed: { val: 2500 } },
+            },
+          });
         break;
       default:
         if (id !== undefined) ecrire({ id, error: { code: -32601, message: `Méthode inconnue : ${method}` } });

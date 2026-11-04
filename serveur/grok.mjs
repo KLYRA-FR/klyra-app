@@ -14,6 +14,7 @@ import { creerClientAcp, emailDeAuth, lireCodeAppareil, mcpPourAcp } from "./acp
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { corpsDeFiche } from "./codex-protocole.mjs";
 import { binaireGere, commande } from "./installation.mjs";
+import { lireUtilisationGrok } from "./utilisation.mjs";
 
 const CONNEXION_MAX_MS = 15 * 60 * 1000;
 const CODE_MAX_MS = 30_000;
@@ -87,6 +88,8 @@ export function creerGrok(options) {
       (event) => {
         if (event.type === "session") sessionId = event.sessionId;
         publier(requestId, event, sessionId);
+        /* Les crédits ont bougé : relus après chaque réponse (gratuit, sans requête au modèle). */
+        if (event.type === "fin") void utilisation(true);
       },
     );
   }
@@ -181,6 +184,7 @@ export function creerGrok(options) {
 
   async function deconnecter() {
     rmSync(fichierCle, { force: true });
+    derniereUtilisation = null;
     const chemin = trouver();
     if (chemin && existsSync(path.join(grokHome(), "auth.json"))) await commande(chemin, ["logout"], 30_000, { env: environnement() });
     client.fermer();
@@ -197,6 +201,25 @@ export function creerGrok(options) {
     }
   }
 
+  /* ─── Utilisation de l'abonnement ─────────────────────────────── */
+
+  let derniereUtilisation = null;
+  /**
+   * Les crédits du mois, lus par `_x.ai/billing` (la commande `/usage` de Grok Build), comme sur le PC
+   * (electron/moteurs/grok.ts) : gratuit, seulement avec la connexion par le compte. Une lecture ratée
+   * garde la dernière connue.
+   */
+  async function utilisation(actualiser) {
+    if (!actualiser && derniereUtilisation) return derniereUtilisation;
+    if (!trouver() || !existsSync(path.join(grokHome(), "auth.json"))) return derniereUtilisation;
+    try {
+      derniereUtilisation = lireUtilisationGrok(await client.facturation()) ?? derniereUtilisation;
+    } catch {
+      /* Grok fermé, pas connecté, ou méthode absente de cette version. */
+    }
+    return derniereUtilisation;
+  }
+
   function fermer() {
     connexion?.child.kill("SIGTERM");
     client.fermer();
@@ -210,6 +233,7 @@ export function creerGrok(options) {
     connecterAvecCle,
     deconnecter,
     modeles,
+    utilisation,
     envoyer,
     autoriser: (requestId, demandeId, decision) => client.autoriser(requestId, demandeId, decision),
     annuler: (requestId) => client.arreter(requestId),

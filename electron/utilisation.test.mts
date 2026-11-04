@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lireUtilisation, lireUtilisationCodex } from "./utilisation.ts";
+import { lireUtilisation, lireUtilisationCodex, lireUtilisationGrok } from "./utilisation.ts";
 
 const T = 1_800_000_000_000;
 
@@ -58,4 +58,45 @@ test("Codex : rien de lisible, rien d'effacé, aucun chiffre inventé", () => {
   assert.equal(lireUtilisationCodex(null, avant, T + 1), avant);
   assert.equal(lireUtilisationCodex({ rateLimits: { primary: null, secondary: null } }, avant, T + 1), avant);
   assert.equal(lireUtilisationCodex({ rateLimits: { primary: { usedPercent: "beaucoup" } } }, null, T), null);
+});
+
+/** La réponse de `_x.ai/billing`, forme de Grok Build 0.1.220 (montants en cents). */
+const facturation = (inclus: number, plus: Record<string, unknown> = {}) => ({
+  billingCycle: { billingPeriodStart: "2026-11-01T00:00:00Z", billingPeriodEnd: "2026-12-01T00:00:00Z" },
+  monthlyLimit: { val: 10000 },
+  onDemandCap: { val: 0 },
+  on_demand_enabled: false,
+  disabledByConfig: false,
+  usage: { includedUsed: { val: inclus }, onDemandUsed: { val: 0 }, totalUsed: { val: inclus } },
+  ...plus,
+});
+const NOV = Date.parse("2026-11-15T00:00:00Z");
+const DEC = Date.parse("2026-12-01T00:00:00Z");
+
+test("Grok : crédits du mois utilisés, remise à zéro à la fin de la période", () => {
+  assert.deepEqual(lireUtilisationGrok(facturation(2500), NOV), { session: null, semaine: null, mois: { utilise: 0.25, reinitialiseA: DEC }, statut: "allowed", misAJour: NOV });
+});
+
+test("Grok : enveloppé dans `config`, montants en chaîne", () => {
+  const u = lireUtilisationGrok({ subscription_tier: "SuperGrok", config: { ...facturation(0), monthlyLimit: { val: "10000" }, usage: { includedUsed: { val: "7500" } } } }, NOV);
+  assert.equal(u?.mois?.utilise, 0.75);
+  assert.equal(u?.mois?.reinitialiseA, DEC);
+});
+
+test("Grok : forme du proxy, en pourcentage", () => {
+  const u = lireUtilisationGrok({ config: { creditUsagePercent: 12.5, currentPeriod: { start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z" } } }, NOV);
+  assert.deepEqual(u?.mois, { utilise: 0.125, reinitialiseA: DEC });
+});
+
+test("Grok : crédits épuisés = limite atteinte, sauf paiement à l'usage ou période échue", () => {
+  assert.equal(lireUtilisationGrok(facturation(10000), NOV)?.statut, "rejected");
+  assert.equal(lireUtilisationGrok(facturation(12000), NOV)?.mois?.utilise, 1);
+  assert.equal(lireUtilisationGrok(facturation(10000, { onDemandCap: { val: 5000 }, on_demand_enabled: true }), NOV)?.statut, "allowed");
+  assert.equal(lireUtilisationGrok(facturation(10000), DEC + 1)?.statut, "allowed");
+});
+
+test("Grok : sans plafond ni pourcentage, rien d'inventé", () => {
+  assert.equal(lireUtilisationGrok(null), null);
+  assert.equal(lireUtilisationGrok({ usage: { includedUsed: { val: 10 } } }), null);
+  assert.equal(lireUtilisationGrok({ monthlyLimit: { val: 0 }, usage: { includedUsed: { val: 0 } } }), null);
 });

@@ -556,11 +556,22 @@ export function creerClientAcp(o: OptionsAcp) {
     return modelesConnus ?? [];
   }
 
+  /**
+   * Les crédits de l'abonnement pour la période en cours : `_x.ai/billing`, la méthode d'extension que
+   * la commande `/usage` de Grok Build appelle (le `_` est celui des extensions d'ACP). Aucune requête au
+   * modèle. Sans connexion par le compte (clé API seule), Grok la refuse : l'appelant reçoit l'erreur.
+   */
+  async function facturation(): Promise<unknown> {
+    await pret();
+    return requete<unknown>("_x.ai/billing", {});
+  }
+
   return {
     lancer,
     arreter,
     autoriser,
     modeles,
+    facturation,
     fermer,
     demarrer: pret,
     get version() {

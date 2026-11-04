@@ -88,6 +88,9 @@ try {
     assert.equal(statSync(path.join(DONNEES, "grok.json")).mode & 0o777, 0o600);
     assert.equal((await appel("/klyra/v1/moteurs/grok/connecter-cle", "POST", { cle: "court" })).status, 400);
     ok("clé API de console.x.ai gardée sur le VPS (600), jamais renvoyée");
+    /* Une clé API n'a pas d'abonnement : aucun crédit à montrer. */
+    assert.equal((await appel("/klyra/v1/moteurs/grok/utilisation?actualiser=1")).json.utilisation, null);
+    ok("clé API : pas de crédits d’abonnement, rien d’inventé");
   }
 
   /* 3. Les modèles annoncés par Grok. */
@@ -149,6 +152,10 @@ try {
     }
     assert.deepEqual([compte.connecte, compte.methode, compte.email], [true, "grok.com", "essai@exemple.fr"]);
     assert.ok(!JSON.stringify(compte).includes("jeton-secret"), "un jeton de Grok revient à l’app");
+    /* Les crédits du mois de l'abonnement, lus par `_x.ai/billing` (la commande `/usage` de Grok). */
+    const credits = (await appel("/klyra/v1/moteurs/grok/utilisation?actualiser=1")).json.utilisation;
+    assert.deepEqual([credits?.mois, credits?.statut, credits?.session, credits?.semaine], [{ utilise: 0.25, reinitialiseA: Date.parse("2026-12-01T00:00:00Z") }, "allowed", null, null]);
+    ok("crédits du mois de l’abonnement Grok lus sur le VPS (25 % utilisés, remise à zéro le 1er)");
     const deconnecte = (await appel("/klyra/v1/moteurs/grok/deconnecter", "POST", {})).json.compte;
     assert.equal(deconnecte.connecte, false);
     ok("abonnement Grok par code d’appareil (lien + code), e-mail lu sans jeton ; déconnexion");
