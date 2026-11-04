@@ -132,15 +132,17 @@ function Confirmation({ texte, action, erreur, enCours, onConfirmer, onAnnuler }
   onAnnuler: () => void;
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-fond-page p-2.5">
-      <span className="flex-1 text-ui-xs text-texte-principal">{texte}</span>
-      <Bouton variant="sombre" taille="compact" onClick={onConfirmer} disabled={enCours}>
-        {action}
-      </Bouton>
-      <Bouton variant="blanc" taille="compact" onClick={onAnnuler}>
-        Annuler
-      </Bouton>
-      {erreur && <span className="w-full text-ui-xs text-texte-erreur">{erreur}</span>}
+    <div className="mt-2 flex flex-col gap-2 rounded-md bg-fond-page p-2.5">
+      <p className="m-0 text-ui-xs leading-[1.45] text-texte-principal">{texte}</p>
+      <div className="flex flex-wrap gap-2">
+        <Bouton variant="sombre" taille="compact" onClick={onConfirmer} disabled={enCours}>
+          {action}
+        </Bouton>
+        <Bouton variant="blanc" taille="compact" onClick={onAnnuler}>
+          Annuler
+        </Bouton>
+      </div>
+      {erreur && <p className="m-0 text-ui-xs text-texte-erreur">{erreur}</p>}
     </div>
   );
 }
