@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type Ref } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
@@ -10,13 +10,18 @@ import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
+import { Modale } from "@/components/ui/Modale";
 import { Onglets } from "@/components/ui/Onglets";
-import { ArtefactsEquipeProvider, useArtefactsEquipe, type ArtefactEquipe } from "@/lib/artefacts-equipe";
+import { annoncer } from "@/lib/annonces";
+import { ArtefactsEquipeProvider, useArtefactsEquipe, type ArtefactEquipe, type EtatArtefactsEquipe } from "@/lib/artefacts-equipe";
 import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
+import { codeErreur } from "@/lib/compte";
+import { apparition } from "@/lib/mouvement";
 import { poste } from "@/lib/plateforme";
 import { nomDuFichier } from "@/lib/rendus";
+import { jouer } from "@/lib/sons/sons";
 import { useIdDirect, useProjects, useRole, useWorkspace } from "@/lib/workspace";
 import type { Artefact, Rendu, TypeRendu } from "@/types/domain";
 import { DESCRIPTION_MAX, lienArtefact } from "../../../convex/model/artefacts";
@@ -71,16 +76,18 @@ function useVignette(source: SourceVignette, actif: boolean, version: number) {
 }
 
 /** La vignette : un clic ouvre l'artefact en grand. */
-function Apercu({ titre, image, sansImage, icone = "layers-01", onOuvrir }: {
+function Apercu({ titre, image, sansImage, icone = "layers-01", onOuvrir, ref }: {
   titre: string;
   image: string | null | undefined;
   /** Ce que dit la carte sans vignette (sinon « Aperçu… » puis « Aperçu indisponible »). */
   sansImage?: string;
   icone?: IconName;
   onOuvrir: () => void;
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onOuvrir}
       aria-label={`Ouvrir ${titre}`}
@@ -135,6 +142,120 @@ function Confirmation({ texte, action, erreur, enCours, onConfirmer, onAnnuler }
   );
 }
 
+/** Où en est la fenêtre de partage d'un artefact. */
+type PhasePartage = "confirmer" | "envoi" | "erreur" | "deja";
+
+/**
+ * « Partager avec l'équipe » d'un artefact claude.ai : une fenêtre de l'app, hors de la carte (#127),
+ * comme `ModalePartager` pour un agent. Focus sur Annuler : Entrée par réflexe ne partage pas. Pendant
+ * l'envoi, rien ne la ferme (le partage aboutirait quand même) et le bouton est `aria-disabled`, pas
+ * `disabled` : le focus reste dessus.
+ */
+function ModalePartageArtefact({ artefact, partage, onFermer, onPartage }: {
+  artefact: Artefact;
+  /** Le lien dans la liste de l'équipe : arrivé fenêtre ouverte, quelqu'un l'a partagé entre-temps. */
+  partage: ArtefactEquipe | undefined;
+  onFermer: () => void;
+  onPartage: () => void;
+}) {
+  const equipe = useArtefactsEquipe();
+  const [phase, setPhase] = useState<PhasePartage>("confirmer");
+  const [erreur, setErreur] = useState<string | null>(null);
+  const principal = useRef<HTMLButtonElement>(null);
+  const fermer = useRef<HTMLButtonElement>(null);
+
+  /* Pendant notre envoi, c'est sans doute le nôtre : la fenêtre va se fermer. */
+  if (partage && phase !== "envoi" && phase !== "deja") setPhase("deja");
+
+  useEffect(() => {
+    if (phase === "erreur") principal.current?.focus();
+    else if (phase === "deja") fermer.current?.focus();
+  }, [phase]);
+
+  const envoyer = async () => {
+    if (phase === "envoi") return;
+    setPhase("envoi");
+    setErreur(null);
+    try {
+      await equipe.partager({ url: artefact.url, titre: artefact.titre, description: artefact.description.slice(0, DESCRIPTION_MAX) });
+    } catch (e) {
+      if (e instanceof Error && codeErreur(e.cause) === "deja_partage") setPhase("deja");
+      else {
+        setErreur(e instanceof Error ? e.message : String(e));
+        setPhase("erreur");
+      }
+      return;
+    }
+    onPartage();
+  };
+
+  /* Hors ligne, Convex garderait la mutation en attente et « Partage… » resterait affiché. */
+  const indisponible =
+    equipe.etat === "pret" || phase === "envoi"
+      ? null
+      : equipe.etat === "hors-ligne"
+        ? "Hors ligne : tu pourras partager quand le réseau reviendra."
+        : texteEtatEquipe(equipe.etat, equipe.message);
+  const texteDeja = partage?.deMoi
+    ? "Tu l’as déjà partagé : il est dans l’onglet Équipe."
+    : partage
+      ? `${partage.auteur.nom} l’a déjà partagé : il est dans l’onglet Équipe.`
+      : "Cet artefact est déjà dans l’onglet Équipe.";
+
+  return (
+    <Modale
+      role="alertdialog"
+      titre={phase === "deja" ? "Déjà partagé avec l’équipe" : `Partager « ${artefact.titre} » avec l’équipe ?`}
+      onFermer={() => {
+        if (phase !== "envoi") onFermer();
+      }}
+      actions={
+        phase === "deja" ? (
+          <Bouton ref={fermer} variant="sombre" taille="md" onClick={onFermer}>
+            Fermer
+          </Bouton>
+        ) : (
+          <>
+            <Bouton variant="blanc" taille="md" data-autofocus disabled={phase === "envoi"} onClick={onFermer}>
+              Annuler
+            </Bouton>
+            <Bouton
+              ref={principal}
+              variant="sombre"
+              taille="md"
+              disabled={indisponible !== null}
+              aria-disabled={phase === "envoi" || undefined}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-60"
+              onClick={() => void envoyer()}
+            >
+              {phase === "envoi" ? "Partage…" : phase === "erreur" ? "Réessayer" : "Partager"}
+            </Bouton>
+          </>
+        )
+      }
+    >
+      {phase === "deja" ? (
+        <p className="m-0">{texteDeja}</p>
+      ) : (
+        <div className="flex flex-col gap-3 text-pretty">
+          <p className="m-0">Chacun verra ce lien dans l’onglet Équipe.</p>
+          <div className="flex items-start gap-2.5 rounded-md bg-fond-page px-3 py-2.5">
+            <Icon name="link" size={16} className="mt-0.5 shrink-0 text-icone-secondaire" />
+            <p className="m-0">Pour l’ouvrir, il faut aussi que l’artefact soit partagé sur claude.ai.</p>
+          </div>
+          {phase === "erreur" && erreur && (
+            <div role="alert" className="flex flex-col gap-0.5 rounded-md border border-bordure-erreur bg-fond-surface p-3 text-ui-s text-texte-erreur">
+              <p className="m-0 font-medium">Le partage n’a pas abouti. Rien n’a été partagé.</p>
+              <p className="m-0">{erreur}</p>
+            </div>
+          )}
+          {indisponible && <p className="m-0 text-ui-s text-texte-secondaire">{indisponible}</p>}
+        </div>
+      )}
+    </Modale>
+  );
+}
+
 /* ─── Une carte ────────────────────────────────────────────────── */
 
 function CarteArtefact({ artefact, session, version }: { artefact: Artefact; session: boolean; version: number }) {
@@ -152,17 +273,35 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
   const equipe = useArtefactsEquipe();
   const lien = lienArtefact(artefact.url);
   const partage = equipe.artefacts.find((a) => a.url === lien);
-  const [partager, setPartager] = useState<{ enCours: boolean; erreur: string | null } | null>(null);
+  const [fenetrePartage, setFenetrePartage] = useState(false);
+  /* La puce « Équipe » n'entre en mouvement qu'après un partage fait depuis cette carte. */
+  const [vientDePartager, setVientDePartager] = useState(false);
+  const boutonPartage = useRef<HTMLButtonElement>(null);
+  const apercu = useRef<HTMLButtonElement>(null);
+  /* Où va le focus quand la fenêtre se ferme : l'icône de partage si elle est encore là, sinon l'aperçu. */
+  const focusApres = useRef<"icone" | "apercu" | null>(null);
+
+  /* Après le nettoyage de la Modale (qui rend le focus à l'icône, même si elle va disparaître) : les
+     nettoyages d'une validation passent avant ses effets. */
+  useEffect(() => {
+    if (fenetrePartage || !focusApres.current) return;
+    const cible = focusApres.current === "icone" && boutonPartage.current?.isConnected ? boutonPartage.current : apercu.current;
+    focusApres.current = null;
+    cible?.focus();
+  }, [fenetrePartage]);
 
   const ouvrir = () => ouvrirArtefact(artefact.url, artefact.titre);
-  const confirmerPartage = async () => {
-    setPartager({ enCours: true, erreur: null });
-    try {
-      await equipe.partager({ url: artefact.url, titre: artefact.titre, description: artefact.description.slice(0, DESCRIPTION_MAX) });
-      setPartager(null);
-    } catch (e) {
-      setPartager({ enCours: false, erreur: e instanceof Error ? e.message : String(e) });
-    }
+  const fermerPartage = () => {
+    focusApres.current = "icone";
+    setFenetrePartage(false);
+  };
+  /* Le bouton de partage disparaît avec le partage : le focus va sur l'aperçu. */
+  const partageFait = () => {
+    focusApres.current = "apercu";
+    setFenetrePartage(false);
+    setVientDePartager(true);
+    jouer("validation");
+    annoncer(`« ${artefact.titre} » partagé avec l’équipe.`);
   };
   const modifierAvecAgent = () => {
     const brouillon = `Modifie l’artefact « ${artefact.titre} » (${artefact.url}) : `;
@@ -175,7 +314,7 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
       ref={carte}
       className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2 transition-[box-shadow,translate] duration-[300ms] ease-sortie hover:-translate-y-0.5 hover:shadow-ombre-ambiante"
     >
-      <Apercu titre={artefact.titre} image={image} sansImage={session ? undefined : "Connecte claude.ai pour voir l’aperçu"} onOuvrir={ouvrir} />
+      <Apercu ref={apercu} titre={artefact.titre} image={image} sansImage={session ? undefined : "Connecte claude.ai pour voir l’aperçu"} onOuvrir={ouvrir} />
 
       {edition ? (
         <form
@@ -220,7 +359,15 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
             <span className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{artefact.titre}</span>
             <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover/artefact:opacity-100 focus-within:opacity-100">
               {equipe.etat === "pret" && !partage && lien && (
-                <BoutonIcone taille="mini" icone={<Icon name="users-profiles-plus" size={16} />} libelle="Partager avec l’équipe" onClick={() => setPartager({ enCours: false, erreur: null })} className="text-icone-secondaire" />
+                <BoutonIcone
+                  ref={boutonPartage}
+                  taille="mini"
+                  icone={<Icon name="users-profiles-plus" size={16} />}
+                  libelle="Partager avec l’équipe"
+                  aria-haspopup="dialog"
+                  onClick={() => setFenetrePartage(true)}
+                  className="text-icone-secondaire"
+                />
               )}
               <BoutonIcone taille="mini" icone={<Icon name="file-code" size={16} />} libelle="Modifier le titre et la description" onClick={() => setEdition(true)} className="text-icone-secondaire" />
               <BoutonIcone taille="mini" icone={<Icon name="trash-01" size={16} />} libelle="Retirer de la liste" onClick={() => setRetirer(true)} className="text-icone-secondaire" />
@@ -230,7 +377,10 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
           <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-ui-2xs text-texte-tertiaire">
             {projet && <span className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">{projet.name}</span>}
             {partage && (
-              <span title={partage.deMoi ? "Tu l’as partagé avec l’équipe" : `Partagé par ${partage.auteur.nom}`} className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">
+              <span
+                ref={vientDePartager ? apparition : undefined}
+                title={partage.deMoi ? "Tu l’as partagé avec l’équipe" : `Partagé par ${partage.auteur.nom}`}
+                className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">
                 Équipe
               </span>
             )}
@@ -247,18 +397,9 @@ function CarteArtefact({ artefact, session, version }: { artefact: Artefact; ses
           {retirer && (
             <Confirmation texte="Retirer de la liste ? L’artefact reste sur claude.ai." action="Retirer" onConfirmer={() => supprimerArtefact(artefact.id)} onAnnuler={() => setRetirer(false)} />
           )}
-          {partager && (
-            <Confirmation
-              texte="Partager avec l’équipe ? Chacun verra ce lien dans l’onglet Équipe ; pour l’ouvrir, il faut aussi que l’artefact soit partagé sur claude.ai."
-              action="Partager"
-              enCours={partager.enCours}
-              erreur={partager.erreur}
-              onConfirmer={() => void confirmerPartage()}
-              onAnnuler={() => setPartager(null)}
-            />
-          )}
         </div>
       )}
+      {fenetrePartage && <ModalePartageArtefact artefact={artefact} partage={partage} onFermer={fermerPartage} onPartage={partageFait} />}
     </li>
   );
 }
@@ -443,21 +584,27 @@ function CarteEquipe({ artefact, session, version }: { artefact: ArtefactEquipe;
   );
 }
 
-/** Ce que l'onglet Équipe dit quand la liste n'est pas là. */
-function EtatEquipe() {
-  const router = useRouter();
-  const equipe = useArtefactsEquipe();
-  const textes: Record<string, string> = {
+/** Ce qu'on dit des artefacts de l'équipe quand la liste n'est pas là (onglet Équipe, fenêtre de partage). */
+function texteEtatEquipe(etat: EtatArtefactsEquipe, message: string | null): string {
+  const textes: Record<EtatArtefactsEquipe, string> = {
     indisponible: "Le compte d’équipe n’est pas disponible sur ce poste.",
     deconnecte: "Connecte-toi à ton compte d’équipe pour voir les artefacts partagés.",
     retire: "Ce compte ne fait plus partie de l’équipe.",
     chargement: "Lecture des artefacts de l’équipe…",
     "hors-ligne": "Hors ligne : les artefacts de l’équipe reviendront avec le réseau.",
-    erreur: equipe.message ?? "Le serveur de l’équipe ne répond pas.",
+    erreur: message ?? "Le serveur de l’équipe ne répond pas.",
+    pret: "",
   };
+  return textes[etat];
+}
+
+/** Ce que l'onglet Équipe dit quand la liste n'est pas là. */
+function EtatEquipe() {
+  const router = useRouter();
+  const equipe = useArtefactsEquipe();
   return (
     <div className="flex flex-wrap items-center gap-3 p-4">
-      <p className="m-0 text-ui-s text-texte-secondaire">{textes[equipe.etat]}</p>
+      <p className="m-0 text-ui-s text-texte-secondaire">{texteEtatEquipe(equipe.etat, equipe.message)}</p>
       {equipe.etat === "deconnecte" && (
         <Bouton variant="sombre" taille="compact" onClick={() => router.push("/reglages?section=equipe")}>
           Me connecter

@@ -93,7 +93,8 @@ function ArtefactsEquipeConnectes({ moiId, surValeur }: { moiId: Id<"membres">; 
       try {
         await f();
       } catch (e) {
-        throw new Error(messageErreur(e));
+        /* L'erreur d'origine reste en `cause` : l'écran y lit le code (`deja_partage`). */
+        throw new Error(messageErreur(e), { cause: e });
       }
     };
     return {

@@ -188,7 +188,7 @@ const MESSAGES: Record<string, string> = {
 };
 
 /** Le code d'erreur renvoyé par une fonction Convex (`convex/model/valeurs.ts`), ou null. */
-function codeErreur(erreur: unknown): string | null {
+export function codeErreur(erreur: unknown): string | null {
   if (erreur instanceof ConvexError && typeof erreur.data === "string") return erreur.data;
   const message = erreur instanceof Error ? erreur.message : String(erreur);
   return Object.keys(MESSAGES).find((code) => message.includes(code)) ?? (message.includes("connexion_refusee") ? "connexion_refusee" : null);

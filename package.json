@@ -27,6 +27,7 @@
     "test:delegation": "node scripts/test-delegation.mjs",
     "test:maj-modeles": "node scripts/test-maj-modeles.mjs",
     "test:bibliotheque": "node scripts/test-bibliotheque.mjs",
+    "test:partage-artefact": "node scripts/test-partage-artefact.mjs",
     "test:conversation": "node scripts/test-conversation.mjs",
     "test:epinglage": "vitest run src/lib/epinglage.test.ts",
     "test:epingler": "node scripts/test-epinglage.mjs",
