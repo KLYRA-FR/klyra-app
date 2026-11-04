@@ -7,7 +7,7 @@ const COURBE = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 type Entree = { x?: number; y?: number; echelle?: number; duree?: number; delai?: number };
 
-function reduit(): boolean {
+export function reduit(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 

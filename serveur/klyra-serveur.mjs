@@ -595,6 +595,8 @@ export function creerGestionnaire(options) {
         }
         return repondre(res, 200, { ok: (await agents.coffre?.repondre(requestId, corps)) ?? false });
       }
+      /* Le PC rend la réponse d'un outil des workflows demandé par un agent d'ici (cf. workflows.mjs). */
+      if (action === "workflow") return repondre(res, 200, { ok: agents.workflows?.repondre(requestId, corps.resultat) ?? false });
       return repondre(res, 404, { erreur: "introuvable" });
     }
 

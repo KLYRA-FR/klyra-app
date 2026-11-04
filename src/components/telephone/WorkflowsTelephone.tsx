@@ -199,7 +199,7 @@ function FeuilleRenommer({ wf, onFermer, onFait }: { wf: { id: string; titre: st
   );
 }
 
-const RAISONS: Record<VersionLue["raison"], string> = { auto: "Enregistrée auto", execution: "Avant une exécution", restauration: "Avant une restauration" };
+const RAISONS: Record<VersionLue["raison"], string> = { auto: "Enregistrée auto", execution: "Avant une exécution", restauration: "Avant une restauration", agent: "Avant la modification d’un agent" };
 
 function FeuilleVersions({ id, onFermer, onChoisir }: { id: string; onFermer: () => void; onChoisir: (version: string) => void }) {
   const lecture = useLecturePoste<VersionLue[]>("workflows.versions", { id });

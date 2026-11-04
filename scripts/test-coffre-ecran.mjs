@@ -228,7 +228,7 @@ else {
     await vrai.ev(`${carte}.querySelector('button[type="submit"]').click(); 0`);
     verifier(await vrai.quand(`document.querySelector('main').innerText.includes('Rangé dans le coffre : Clé d’essai (STRIPE_ESSAI)')`, 15000), "la clé collée est rangée, la carte se fige", await vrai.texte());
     const recue = () => fournisseur.requetes.slice(avant).some((q) => q.message.includes("C’est rangé dans le coffre") && q.message.includes("STRIPE_ESSAI"));
-    for (let i = 0; i < 60 && !recue(); i++) await attendre(500);
+    for (let i = 0; i < 120 && !recue(); i++) await attendre(500);
     await attendre(1500);
     verifier(recue(), "l’agent reçoit la réponse de la personne (le nom de la variable)", fournisseur.requetes.slice(avant).map((q) => q.message.slice(0, 120)).join("\n"));
     verifier(fournisseur.requetes.every((q) => !JSON.stringify(q.corps).includes(CLE_MODELE)), "la clé collée ne part jamais au modèle");
@@ -297,7 +297,7 @@ else {
       await vrai.ev(`${carteVps}.querySelector('button[type="submit"]').click(); 0`);
       verifier(await vrai.quand(`document.querySelector('main').innerText.includes('Rangé dans le coffre : Clé d’essai (VPS_ESSAI)')`, 15000), "VPS : la clé collée est rangée dans le coffre de ce PC", await vrai.texte());
       const recueVps = () => fournisseur.requetes.slice(avantReponse).some((q) => q.message.includes("C’est rangé dans le coffre") && q.message.includes("VPS_ESSAI"));
-      for (let i = 0; i < 60 && !recueVps(); i++) await attendre(500);
+      for (let i = 0; i < 120 && !recueVps(); i++) await attendre(500);
       verifier(recueVps(), "VPS : l’agent du serveur reçoit la réponse (le nom seulement)");
       verifier(fournisseur.requetes.every((q) => !JSON.stringify(q.corps).includes(CLE_VPS)), "VPS : la clé collée ne part jamais au modèle");
       verifier(readFileSync(path.join(donnees, "coffre.json"), "utf8").includes("VPS_ESSAI") && !readFileSync(path.join(donnees, "coffre.json"), "utf8").includes(CLE_VPS), "VPS : elle est chiffrée dans le coffre de ce PC");

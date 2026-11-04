@@ -273,8 +273,8 @@ interface Processus {
   saisies: Map<number, { id: string; outil: string; json: string }>;
 }
 
-/** Les outils dont l'écran montre l'entrée pendant que le modèle l'écrit : la carte de l'atelier. */
-const OUTILS_EN_DIRECT = new Set(["mcp__klyra__proposer_agent"]);
+/** Les outils dont l’écran montre l’entrée pendant que le modèle l’écrit : la carte de l’atelier, le workflow qui se construit. */
+const OUTILS_EN_DIRECT = new Set(["mcp__klyra__proposer_agent", "mcp__klyra__construire_workflow"]);
 
 /** Les fils : comment l'agent confie une tâche à un coéquipier (outils du serveur MCP de l'app). */
 /** Composio Connect : le serveur MCP « composio », rejoint avec le compte de la personne. */

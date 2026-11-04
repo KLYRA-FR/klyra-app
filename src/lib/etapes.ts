@@ -89,6 +89,14 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return `Range ${court(entree.nom, 40) || court(entree.variable, 40) || "un secret"} dans le coffre`;
     case "mcp__klyra__coffre_ecrire_fichier":
       return `Écrit ${court(entree.variable, 40) || "un secret"} dans ${fichier(entree.chemin)}`;
+    case "mcp__klyra__lister_workflows":
+      return "Regarde les workflows";
+    case "mcp__klyra__lire_workflow":
+      return "Lit un workflow";
+    case "mcp__klyra__construire_workflow":
+      return entree.workflow ? `Modifie le workflow${entree.titre ? ` « ${court(entree.titre, 40)} »` : ""}` : `Construit le workflow${entree.titre ? ` « ${court(entree.titre, 40)} »` : ""}`;
+    case "mcp__klyra__lancer_workflow":
+      return "Lance un workflow";
     case "mcp__klyra__navigateur_aller":
       if (typeof entree.url === "string" && entree.url.trim()) return `Navigateur : ouvre ${court(siteOuMots(entree.url), 50)}`;
       return entree.historique === "retour" ? "Navigateur : page précédente" : entree.historique === "suivant" ? "Navigateur : page suivante" : "Navigateur : recharge la page";
@@ -141,6 +149,11 @@ export function iconeEtape(outil: string): IconName {
       return "lock-01";
     case "mcp__klyra__navigateur_agir":
       return "cursor-01";
+    case "mcp__klyra__lister_workflows":
+    case "mcp__klyra__lire_workflow":
+    case "mcp__klyra__construire_workflow":
+    case "mcp__klyra__lancer_workflow":
+      return "lightning-01";
     case "mcp__klyra__navigateur_aller":
     case "mcp__klyra__navigateur_lire":
     case "mcp__klyra__navigateur_capture":

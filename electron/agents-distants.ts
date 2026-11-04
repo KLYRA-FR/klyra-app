@@ -82,6 +82,8 @@ interface Liaison {
   jeton: (origine: string) => string | null;
   /** Un agent du VPS appelle un outil du navigateur de KLYRA : ce PC l'exécute et rend le résultat MCP. */
   navigateur?: (origine: string, appel: AppelNavigateur) => Promise<unknown>;
+  /** Un agent du VPS appelle un outil des workflows : ce PC (où ils vivent) répond. */
+  workflow?: (origine: string, appel: AppelNavigateur) => Promise<unknown>;
   /**
    * Un agent du VPS appelle un outil du Coffre (cf. coffre-outils.ts) : `lireValeur` demande au VPS la
    * valeur d'un secret que l'agent range ; `valeur` est rendue au VPS, qui l'écrit dans son fichier.
@@ -119,10 +121,10 @@ export interface AppelNavigateur {
   conversation: string;
 }
 
-export function appelNavigateurDe(event: unknown, maintenant = Date.now()): AppelNavigateur | null {
+export function appelNavigateurDe(event: unknown, maintenant = Date.now(), type: "navigateur" | "workflow" = "navigateur"): AppelNavigateur | null {
   const e = (event ?? {}) as Record<string, unknown>;
-  if (e.type !== "navigateur" || typeof e.id !== "string" || !/^[0-9a-f-]{36}$/.test(e.id)) return null;
-  if (typeof e.nom !== "string" || !/^navigateur_[a-z]+$/.test(e.nom)) return null;
+  if (e.type !== type || typeof e.id !== "string" || !/^[0-9a-f-]{36}$/.test(e.id)) return null;
+  if (typeof e.nom !== "string" || !(type === "navigateur" ? /^navigateur_[a-z]+$/ : /^(lister|lire|construire|lancer)_workflows?$/).test(e.nom)) return null;
   // Un appel relu après coup (reconnexion, redémarrage de l'app) a déjà abandonné côté VPS.
   if (typeof e.expire !== "number" || e.expire < maintenant) return null;
   if (typeof e.conversation !== "string" || !e.conversation || e.conversation.length > 120) return null;
@@ -259,6 +261,19 @@ function distribuer(origine: string, entree: Entree) {
       .coffre(origine, coffre, lireValeur)
       .catch((e: unknown) => ({ resultat: { texte: e instanceof Error ? e.message : String(e), erreur: true } }))
       .then((r) => requete(origine, "/klyra/v1/agent/coffre", "POST", { requestId: coffre.id, resultat: r.resultat, ...("valeur" in r && typeof r.valeur === "string" ? { valeur: r.valeur } : {}) }))
+      .catch(() => undefined);
+    return;
+  }
+  // Un outil des workflows appelé par un agent du VPS : les workflows vivent ici, la réponse repart au VPS.
+  const appelWorkflow = appelNavigateurDe(entree.event, Date.now(), "workflow");
+  if (appelWorkflow) {
+    if (appelsServis.has(appelWorkflow.id) || !liaison?.workflow) return;
+    appelsServis.add(appelWorkflow.id);
+    if (appelsServis.size > 500) appelsServis.delete(appelsServis.values().next().value!);
+    void liaison
+      .workflow(origine, appelWorkflow)
+      .catch((e: unknown) => ({ content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true }))
+      .then((resultat) => requete(origine, "/klyra/v1/agent/workflow", "POST", { requestId: appelWorkflow.id, resultat }))
       .catch(() => undefined);
     return;
   }

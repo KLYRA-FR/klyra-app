@@ -40,6 +40,7 @@ import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coffre.mjs";
+import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
 
@@ -96,7 +97,8 @@ const OUTIL_IA = "mcp__klyra__demander_ia";
 /** La conversation d'une session, pour suivre son atelier (cf. klyra-serveur.mjs, `cleConversation`). */
 const CONVERSATION = /^[A-Za-z0-9_.:@|-]{1,160}$/;
 /** L'entrée de cet outil est montrée pendant que le modèle l'écrit : la carte de l'atelier (cf. electron/claude.ts). */
-const OUTIL_EN_DIRECT = `mcp__klyra__${OUTIL_PROPOSER.name}`;
+/** Les outils dont l'app montre l'entrée pendant que le modèle l'écrit : la carte de l'atelier, le workflow qui se construit. */
+const OUTILS_EN_DIRECT = new Set([`mcp__klyra__${OUTIL_PROPOSER.name}`, "mcp__klyra__construire_workflow"]);
 
 const modeDe = (acces) => (acces === "demander" ? "manual" : acces === "projet" ? "auto" : "acceptEdits");
 
@@ -307,6 +309,9 @@ export function creerAgents(options) {
   /* Le Coffre de KLYRA, sur le PC de la personne : relayé par le journal, jamais une valeur dedans (cf. coffre.mjs). */
   const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees });
   options.ia?.surCoffre?.({ actif: () => configurationDe().coffre, appeler: coffre.appeler });
+  /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
+  const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
+  options.ia?.surWorkflows?.({ appeler: workflows.appeler });
   /** La configuration MCP d'une session : l'agent et la conversation en en-têtes (qui publie). */
   const mcpIa = (demande = {}) => options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation: demande.conversation ?? demande.contexte?.chatId ?? "" }) ?? null;
 
@@ -546,7 +551,7 @@ export function creerAgents(options) {
       /* La carte de l'atelier s'écrit pendant que le modèle remplit l'outil (comme dans l'app). */
       if (parent === null && typeof ev.index === "number") {
         const bloc = ev.content_block;
-        if (ev.type === "content_block_start" && bloc?.type === "tool_use" && bloc.id && bloc.name === OUTIL_EN_DIRECT) {
+        if (ev.type === "content_block_start" && bloc?.type === "tool_use" && bloc.id && OUTILS_EN_DIRECT.has(bloc.name)) {
           proc.saisies.set(ev.index, { id: bloc.id, outil: bloc.name, json: "" });
         } else if (ev.type === "content_block_delta" && ev.delta?.type === "input_json_delta" && ev.delta.partial_json) {
           const saisie = proc.saisies.get(ev.index);
@@ -798,6 +803,8 @@ export function creerAgents(options) {
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
           ...(mcp && configuration.coffre ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
+          // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
+          ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
         );
       if (mcp) args.push("--mcp-config", mcp);
       if (demande.agent) args.push("--agent", demande.agent);
@@ -862,5 +869,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, coffre, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex, grok };
 }

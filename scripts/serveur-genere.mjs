@@ -15,6 +15,7 @@
  * - `serveur/navigateur-definitions.mjs` : les outils du navigateur de KLYRA et leur consigne (electron/navigateur/definitions.ts) ;
  * - `serveur/coffre-regles.mjs`, `serveur/coffre-definitions.mjs` et `serveur/coffre-fichier.mjs` : le Coffre
  *   (règles, outils et leurs textes, écriture d'un secret dans un fichier hors de Git) ;
+ * - `serveur/workflows-outils.mjs` : les outils des workflows pour les agents (electron/workflows-outils.ts) ;
  * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
  *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture).
  * Un import entre fichiers générés (`./epreuve` ou `./epreuve.ts`) devient `./epreuve.mjs` ; tout autre import relatif est refusé.
@@ -44,6 +45,7 @@ const FICHIERS = [
   ["electron/coffre-regles.ts", "serveur/coffre-regles.mjs"],
   ["electron/coffre-definitions.ts", "serveur/coffre-definitions.mjs"],
   ["electron/coffre-fichier.ts", "serveur/coffre-fichier.mjs"],
+  ["electron/workflows-outils.ts", "serveur/workflows-outils.mjs"],
 ];
 
 /** Le nom d'un fichier généré, sans dossier ni extension (`epreuve`). */

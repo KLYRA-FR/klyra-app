@@ -1,7 +1,7 @@
 "use client";
 
 import { DIRECT, dansEspace, idDirect, lieuDeConversation, lieuDeHote, lieuParDefaut, lireIdDirect, retenirLieu, useLieuActif } from "./lieux";
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
 import { Bouton } from "@/components/ui/Bouton";
 import { createMockWorkspace, type MockWorkspace } from "@/data/mock";
@@ -28,6 +28,7 @@ import { COMMANDE_RESUME_AUTO, estCommandeCompacter, formaterJetons, nouvelleMes
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
+import { creerOutilsWorkflows } from "@/lib/workflows/outils-agents";
 import { extraitMarkdown } from "@/lib/apercu/extrait";
 import { texteBrut, type Inline } from "@/lib/apercu/markdown";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
@@ -732,12 +733,35 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const ecritureRegroupee = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rolesRef = useRef(roles);
   const metaAgentsRef = useRef(metaAgents);
-  useEffect(() => {
+  /* Dès la fin du rendu, avant tout autre événement : un rendu fini juste avant un appel d'outil (IPC) ne
+     doit pas écraser, en passant après lui, ce que cet appel vient d'y poser (la conversation d'un workflow). */
+  useLayoutEffect(() => {
     stateRef.current = state;
     rolesRef.current = roles;
     metaAgentsRef.current = metaAgents;
   });
   const ecouteurs = useRef(new Map<string, (event: AgentEvent) => void>());
+  /* Les outils des workflows pour les agents (cf. workflows/outils-agents.ts) : ils lisent l'état le plus
+     récent ; le lancement est branché plus bas, une fois défini. */
+  const lancerWorkflowRef = useRef<(id: string, o: { declencheurId?: string | null; source?: SourceExecution; charge?: string; lancePar?: { roleId: string; chatId: string } }) => string | null>(() => null);
+  const outilsWorkflowsRef = useRef<ReturnType<typeof creerOutilsWorkflows> | null>(null);
+  const outilsWorkflows = useCallback(
+    () =>
+      (outilsWorkflowsRef.current ??= creerOutilsWorkflows({
+        etat: () => ({ workflows: stateRef.current.workflows, executions: stateRef.current.executions, projets: stateRef.current.projects }),
+        agents: () => rolesRef.current.map((r) => ({ id: r.id, nom: r.name })),
+        enregistrer: (workflow) => {
+          dispatch({ type: "workflow/enregistrer", workflow });
+          const { workflows } = stateRef.current;
+          stateRef.current = {
+            ...stateRef.current,
+            workflows: workflows.some((w) => w.id === workflow.id) ? workflows.map((w) => (w.id === workflow.id ? workflow : w)) : [...workflows, workflow],
+          };
+        },
+        lancer: (id, o) => lancerWorkflowRef.current(id, o),
+      })),
+    [],
+  );
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const notifiesEquipe = useRef(new Set<string>());
 
@@ -1106,6 +1130,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           // La carte de l'atelier s'écrit pendant que l'assistant remplit l'outil.
           const enCours = event.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(event.entree) : null;
           if (enCours) maj((m) => ({ ...m, parts: poserAtelier(m.parts, event.id, enCours, true) }));
+          // Un workflow qui se construit : la page Workflows montre chaque étape posée.
+          if (event.outil === "mcp__klyra__construire_workflow") outilsWorkflows().apercu({ chatId, roleId }, event.id, event.entree);
           break;
         }
         case "etape-fin":
@@ -1113,6 +1139,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             ...m,
             parts: finirEtape(m.parts, event.id, event.ok),
           }));
+          if (!event.ok) outilsWorkflows().abandonner({ chatId, roleId }, event.id);
           break;
         case "autorisation": {
           const e = event.entree;
@@ -1153,6 +1180,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }));
           break;
         case "fin":
+          outilsWorkflows().abandonner({ chatId, roleId });
           maj((m) => {
             const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
             // Une carte restée en cours d'écriture (réponse arrêtée avant la fin de l'outil) n'est pas gardée.
@@ -1207,7 +1235,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       }
     });
     },
-    [suivant],
+    [suivant, outilsWorkflows],
   );
 
   /* Un agent d'un VPS a publié un livrable (publier_artefact, cf. serveur/rendus.mjs). Le fichier reste
@@ -2002,6 +2030,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           });
           return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans Mes artefacts de cet espace ; elle n’est pas partagée à l’équipe. Republier le même fichier remplace cette copie.`;
         }
+        case "lister_workflows":
+        case "lire_workflow":
+        case "construire_workflow":
+        case "lancer_workflow":
+          // Les workflows vivent ici : les agents de ce PC et ceux d'un VPS (relayés) passent par le même chemin.
+          return outilsWorkflows().executer(nom, args, appelant);
         case "proposer_agent":
         case "proposer_choix": {
           // Le même appel que sur un VPS (electron/atelier-agent.ts) : refus, carte suivie, ce que l'outil répond.
@@ -2023,7 +2057,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         }
       })();
     });
-  }, [bridge, creerFil, archiverFil, arreter, titrer]);
+  }, [bridge, creerFil, archiverFil, arreter, titrer, outilsWorkflows]);
 
   const nouvelleConversation = useCallback((chatId: string) => {
     if (stateRef.current.travail[chatId]) return;
@@ -2463,7 +2497,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, []);
 
   const lancerWorkflow = useCallback(
-    (id: string, options: { declencheurId?: string | null; source?: SourceExecution; charge?: string; seule?: string } = {}) => {
+    (
+      id: string,
+      options: { declencheurId?: string | null; source?: SourceExecution; charge?: string; seule?: string; lancePar?: { roleId: string; chatId: string } } = {},
+    ) => {
       const trouve = stateRef.current.workflows.find((w) => w.id === id);
       if (!trouve) return null;
       const wf = options.seule ? trouve : avecVersion(trouve, "execution");
@@ -2489,6 +2526,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         fin: null,
         etapes: [],
         chatId: `wf-${id}`,
+        ...(options.lancePar ? { lancePar: options.lancePar } : {}),
       };
       const maj = (e: ExecutionWorkflow) => {
         dispatch({ type: "execution/enregistrer", execution: e });
@@ -2507,6 +2545,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [outilsPour],
   );
+  useEffect(() => {
+    lancerWorkflowRef.current = lancerWorkflow;
+  }, [lancerWorkflow]);
   const arreterExecution = useCallback((id: string) => {
     controleurs.current.get(id)?.abort();
     const e = stateRef.current.executions.find((x) => x.id === id);
