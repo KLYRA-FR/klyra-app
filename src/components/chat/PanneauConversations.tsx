@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { LigneAgent, LigneConversation, SectionBarre } from "@/components/shell/LignesBarre";
@@ -13,9 +13,10 @@ import { useMenuContextuel } from "@/components/ui/MenuContextuel";
 import { useAgents } from "@/lib/agents";
 import { annoncer } from "@/lib/annonces";
 import { cn } from "@/lib/cn";
-import { decaler, deplacer, trierParRang } from "@/lib/rang-agents";
+import { decaler, trierParRang } from "@/lib/rang-agents";
 import { useChat, useIdDirect, useProjects, useRecentChats, useRoles } from "@/lib/workspace";
 import type { Chat, Role } from "@/types/domain";
+import { useGlisserAgents } from "./useGlisserAgents";
 
 /**
  * Panneau blanc des conversations, à côté du rail (comme celui d'un projet) :
@@ -58,21 +59,12 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const visibles = [assistant, ...epingles, ...suivants];
   const groupeDe = (id: string) => (epingles.some((r) => r.id === id) ? epingles : suivants.some((r) => r.id === id) ? suivants : null);
 
-  /* Glisser un agent dans son groupe (épinglés ou non) ; l'assistant reste en tête. */
-  const [glisse, setGlisse] = useState<string | null>(null);
-  const [cible, setCible] = useState<{ id: string; apres: boolean } | null>(null);
+  /* Glisser un agent dans son groupe (épinglés ou non) ; l'assistant reste en tête. La ligne
+     se soulève, les autres s'écartent, elle se pose (cf. useGlisserAgents). */
+  const liste = useRef<HTMLElement>(null);
   const ecrireOrdre = (ordre: string[]) =>
     void ranger(ordre).catch((e: unknown) => annoncer(e instanceof Error ? e.message : String(e)));
-  const poser = () => {
-    const groupe = glisse ? groupeDe(glisse) : null;
-    if (glisse && cible && groupe?.some((r) => r.id === cible.id)) {
-      const avant = groupe.map((r) => r.id);
-      const apres = deplacer(avant, glisse, cible.id, cible.apres);
-      if (apres.join() !== avant.join()) ecrireOrdre(apres);
-    }
-    setGlisse(null);
-    setCible(null);
-  };
+  const glisser = useGlisserAgents((id) => groupeDe(id)?.map((r) => r.id) ?? null, ecrireOrdre, liste);
   /* Au clavier : Alt + flèche haut ou bas déplace l'agent d'une place dans son groupe. */
   const auClavier = (role: Role) => (e: KeyboardEvent<HTMLDivElement>) => {
     if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
@@ -82,48 +74,19 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
     const avant = groupe.map((r) => r.id);
     const apres = decaler(avant, role.id, e.key === "ArrowUp" ? -1 : 1);
     if (apres.join() === avant.join()) return;
+    glisser.noter(avant, role.id);
     ecrireOrdre(apres);
     annoncer(`${role.name} : place ${apres.indexOf(role.id) + 1} sur ${apres.length}.`);
   };
   const deplacable = (role: Role, ligne: ReactNode) => {
     if (!groupeDe(role.id) || groupeDe(role.id)!.length < 2) return ligne;
-    const memeGroupe = !!glisse && groupeDe(glisse) === groupeDe(role.id);
     return (
       <div
         key={role.id}
-        draggable
         data-agent-barre={role.id}
         aria-roledescription="agent déplaçable"
         onKeyDown={auClavier(role)}
-        onDragStart={(e: DragEvent<HTMLDivElement>) => {
-          // Sans l'adresse du lien : lâché ailleurs, il n'ouvre rien.
-          e.dataTransfer.clearData();
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("application/x-klyra-agent", role.id);
-          setGlisse(role.id);
-        }}
-        onDragOver={(e) => {
-          if (!memeGroupe) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          const boite = e.currentTarget.getBoundingClientRect();
-          const apres = e.clientY > boite.top + boite.height / 2;
-          if (cible?.id !== role.id || cible.apres !== apres) setCible({ id: role.id, apres });
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          poser();
-        }}
-        onDragEnd={() => {
-          setGlisse(null);
-          setCible(null);
-        }}
-        className={cn(
-          "relative",
-          glisse === role.id && "opacity-50",
-          cible?.id === role.id && glisse !== role.id && "after:pointer-events-none after:absolute after:inset-x-2 after:h-0.5 after:rounded-full after:bg-fond-accent",
-          cible?.id === role.id && (cible.apres ? "after:-bottom-px" : "after:-top-px"),
-        )}
+        {...glisser.proprietes(role.id)}
       >
         {ligne}
       </div>
@@ -157,6 +120,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
 
       {/* Fondu en haut et en bas de la liste qui défile. */}
       <nav
+        ref={liste}
         data-liste-conversations
         aria-label="Agents et conversations"
         className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-3 [mask-image:linear-gradient(to_bottom,transparent,black_8px,black_calc(100%-16px),transparent)] [scrollbar-width:none]"
