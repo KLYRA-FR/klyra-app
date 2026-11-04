@@ -68,9 +68,11 @@ export function AgendaPlanningTelephone({
   const semaine = joursDeLaSemaine(jour);
   /* D-8 (C-1c) : « rien de prévu » seulement si l'ordinateur aussi a été lu (ou s'il n'y en a aucun). */
   const toutLu = lue(poste) && (vue === "mois" || lue(departs));
+  /* Les deux lectures gardées : un seul bandeau « Vus à… ». */
+  const deuxVues = departs.etat === "ferme" && !!departs.gardee && poste.etat === "ferme" && !!poste.gardee;
   const lignesPoste = (
     <>
-      {vue !== "mois" ? <LignePoste lecture={departs} ferme={`Départs des routines : visibles quand ${sur} est ouvert`} sur={sur} mot="Vus" /> : null}
+      {vue !== "mois" && !deuxVues ? <LignePoste lecture={departs} ferme={`Départs des routines : visibles quand ${sur} est ouvert`} sur={sur} mot="Vus" /> : null}
       <LignePoste lecture={poste} ferme={`Événements gardés sur ${sur} : visibles quand il est ouvert`} sur={sur} mot="Vus" />
     </>
   );
