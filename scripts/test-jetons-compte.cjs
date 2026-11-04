@@ -135,7 +135,11 @@ app
     echecs.push(String(e));
   })
   .finally(() => {
-    fs.rmSync(DONNEES, { recursive: true, force: true });
+    try {
+      fs.rmSync(DONNEES, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      /* Windows : Electron tient son dossier de session jusqu'à sa sortie ; le dossier temporaire reste. */
+    }
     console.log(echecs.length ? `\n${echecs.length} échec(s)` : "\nTout passe.");
     app.exit(echecs.length ? 1 : 0);
   });

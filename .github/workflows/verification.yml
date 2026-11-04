@@ -32,6 +32,7 @@ jobs:
       - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif
       - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime
       - name: Jetons de session du compte d'équipe, trousseau du Mac
+        timeout-minutes: 3
         run: env -u ELECTRON_RUN_AS_NODE pnpm test:jetons-compte
 
   verifier:
@@ -149,6 +150,7 @@ jobs:
           pnpm exec electron scripts/test-consommation.cjs
           if ($LASTEXITCODE -ne 0) { throw "Le test de consommation a échoué sous Windows." }
       - name: Jetons de session du compte d'équipe, coffre de Windows (fichier verrouillé, entrée illisible)
+        timeout-minutes: 3
         shell: pwsh
         run: |
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
