@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
 import { consigneNavigateur, signatureNavigateur } from "./navigateur/outils";
+import { CONSIGNE_COFFRE } from "./coffre-definitions";
 import { voirFin, voirOutil } from "./ordinateur/apercu";
 import { consigneOrdinateur, OUTILS_ORDINATEUR_INTERDITS, OUTILS_ORDINATEUR_LECTURE, serveurOrdinateur, signatureOrdinateur } from "./ordinateur/pilote";
 import { composioConnect, espaceComposio } from "./composio";
@@ -401,7 +402,7 @@ export function autoriser(requestId: string, demandeId: string, decision: Decisi
 const CONSIGNE_ARTEFACTS = "Où ranger : le code et les sources d'un projet vont dans le dossier du projet (son dépôt Git) ; tes essais hors projet, dans ton dossier de travail. Publie avec publier_artefact (chemin complet du fichier, ou du dossier d'une page avec index.html ; un titre court ; à quoi il sert) chaque fichier qu'on t'a demandé de produire, quel que soit son format (texte, tableur, document, page, image, capture, vidéo, PDF, présentation, petite app), que la demande vienne de la personne ou de l'agent qui t'a confié le travail, et tout rendu qu'elle doit voir : l'app en garde une copie dans Mes artefacts de cet espace, sans la partager à l'équipe. Publie-le avant de dire que c'est livré. Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet. N'ajoute pas de captures ou de vidéos au dépôt d'un projet sans qu'elle le demande : elle les y enregistre elle-même depuis Artefacts.";
 
 export function consignesApp(options: StreamOptions, mcp: string | null): string[] {
-  const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS, CONSIGNE_ARTEFACTS,
+  const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS, CONSIGNE_ARTEFACTS, CONSIGNE_COFFRE,
     composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
   ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp), consigneOrdinateur()];
   // Les consignes KLYRA adoptées par la personne (configuration-klyra.ts), pour Claude Code comme pour Codex.

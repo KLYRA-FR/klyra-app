@@ -15,6 +15,7 @@ import type { RenduVps } from "../../electron/agents-distants";
 import type { AjoutFiche } from "../../electron/atelier-agent";
 import type { CasEpreuve, ResultatCas } from "../../electron/epreuve";
 import type { EtatConsignesProjet } from "../../electron/consignes-projet";
+import type { GenreSecret } from "../../electron/coffre-regles";
 import type { Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
 export type { Competence, Competences as CompetencesAgent, Memoire as MemoireAgent, Souvenir } from "../../electron/connaissances-agent";
 
@@ -648,6 +649,18 @@ export interface KlyraBridge {
       deconnecter: () => Promise<Reponse<void>>;
     };
   };
+  /** Le Coffre de KLYRA (cf. electron/coffre.ts) : jamais une valeur dans ce sens. Absent avant la relance de l'app. */
+  coffre?: {
+    etat: () => Promise<Reponse<EtatCoffre>>;
+    /** `remplacer` : la personne remplace exprès le secret qui porte déjà ce nom de variable. */
+    ajouter: (entree: EntreeSecretCoffre, remplacer?: boolean) => Promise<Reponse<SecretCoffre>>;
+    modifier: (id: string, champs: { nom?: string; service?: string; note?: string; agents?: boolean; genre?: GenreSecret }) => Promise<Reponse<SecretCoffre>>;
+    remplacerValeur: (id: string, valeur: string) => Promise<Reponse<SecretCoffre>>;
+    retirer: (id: string) => Promise<Reponse<void>>;
+    /** Copie dans le presse-papiers du système, par le main ; vidé après `delai` ms. */
+    copier: (id: string) => Promise<Reponse<{ delai: number }>>;
+    surChangement: (callback: () => void) => () => void;
+  };
   /** Le navigateur de KLYRA (cf. electron/navigateur/). Absent avant la relance de l'app. */
   navigateur?: {
     etat: () => Promise<Reponse<OngletNavigateur[]>>;
@@ -774,6 +787,37 @@ export interface MenuNavigateur {
 }
 
 export type ActionMenuNavigateur = "retour" | "suivant" | "recharger" | "couper" | "copier" | "coller" | "tout" | "copier-lien" | "lien-onglet" | "lien-ailleurs" | "image-onglet" | "copier-image" | "chercher";
+
+/** Un secret du Coffre (cf. electron/coffre.ts) : tout sauf sa valeur. */
+export interface SecretCoffre {
+  id: string;
+  variable: string;
+  nom: string;
+  genre: GenreSecret;
+  service: string;
+  note: string;
+  agents: boolean;
+  origine: { par: "personne" } | { par: "agent"; roleId: string; chatId: string };
+  ajouteLe: number;
+  modifieLe: number;
+  utiliseLe: number | null;
+}
+
+export interface EntreeSecretCoffre {
+  variable: string;
+  nom: string;
+  genre: GenreSecret;
+  service?: string;
+  note?: string;
+  valeur: string;
+  agents: boolean;
+}
+
+export interface EtatCoffre {
+  secrets: SecretCoffre[];
+  connexions: ConnexionCoffre[];
+  chiffrement: boolean;
+}
 
 /** Une connexion du coffre du navigateur (cf. electron/navigateur/coffre.ts) : jamais le mot de passe. */
 export interface ConnexionCoffre {

@@ -65,7 +65,7 @@ export interface Equipe {
    * La configuration KLYRA adoptée sur ce PC (mémoire coupée, consignes), appliquée par le VPS à toutes
    * ses sessions : messages du PC, du téléphone PC fermé, routines du serveur.
    */
-  configuration: { memoireAgents: boolean; consignes: string | null; navigateur?: boolean };
+  configuration: { memoireAgents: boolean; consignes: string | null; navigateur?: boolean; coffre?: boolean };
   /** Skills reçues par chaque agent. Un ancien serveur ignore le champ : tout reste reçu. */
   skillsParAgent: SkillsParAgent;
   /**
@@ -84,6 +84,32 @@ interface Liaison {
   navigateur?: (origine: string, appel: AppelNavigateur) => Promise<unknown>;
   /** Un agent du VPS appelle un outil des workflows : ce PC (où ils vivent) répond. */
   workflow?: (origine: string, appel: AppelNavigateur) => Promise<unknown>;
+  /**
+   * Un agent du VPS appelle un outil du Coffre (cf. coffre-outils.ts) : `lireValeur` demande au VPS la
+   * valeur d'un secret que l'agent range ; `valeur` est rendue au VPS, qui l'écrit dans son fichier.
+   */
+  coffre?: (origine: string, appel: AppelCoffre, lireValeur: () => Promise<string>) => Promise<{ resultat: { texte: string; erreur?: boolean }; valeur?: string }>;
+}
+
+/** Un appel d'outil du Coffre venu d'un agent du VPS (cf. serveur/coffre.mjs) : jamais une valeur dans l'événement. */
+export interface AppelCoffre {
+  id: string;
+  nom: string;
+  arguments: Record<string, unknown>;
+  agent: string;
+  conversation: string;
+}
+
+export function appelCoffreDe(event: unknown, maintenant = Date.now()): AppelCoffre | null {
+  const e = (event ?? {}) as Record<string, unknown>;
+  if (e.type !== "coffre" || typeof e.id !== "string" || !/^[0-9a-f-]{36}$/.test(e.id)) return null;
+  if (typeof e.nom !== "string" || !["coffre_lister", "coffre_demander", "coffre_enregistrer", "coffre_ecrire_fichier"].includes(e.nom)) return null;
+  if (typeof e.expire !== "number" || e.expire < maintenant) return null;
+  if (typeof e.conversation !== "string" || !e.conversation || e.conversation.length > 120) return null;
+  const args = e.arguments && typeof e.arguments === "object" && !Array.isArray(e.arguments) ? { ...(e.arguments as Record<string, unknown>) } : {};
+  // La valeur d'un secret que l'agent range se lit à part, par la route du VPS.
+  delete args.valeur;
+  return { id: e.id, nom: e.nom, arguments: args, agent: typeof e.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(e.agent) ? e.agent : "principal", conversation: e.conversation };
 }
 
 /** Un appel d'outil du navigateur venu d'un agent du VPS (cf. serveur/navigateur.mjs), vérifié champ par champ. */
@@ -216,6 +242,25 @@ function distribuer(origine: string, entree: Entree) {
       .navigateur(origine, appel)
       .catch((e: unknown) => ({ content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true }))
       .then((resultat) => requete(origine, "/klyra/v1/agent/navigateur", "POST", { requestId: appel.id, resultat }))
+      .catch(() => undefined);
+    return;
+  }
+  // Un outil du Coffre appelé par un agent du VPS : le coffre est ici, le résultat (et, pour un fichier du VPS, la valeur) repart au VPS.
+  const coffre = appelCoffreDe(entree.event);
+  if (coffre) {
+    if (appelsServis.has(coffre.id) || !liaison?.coffre) return;
+    appelsServis.add(coffre.id);
+    if (appelsServis.size > 500) appelsServis.delete(appelsServis.values().next().value!);
+    const lireValeur = async () => {
+      const r = await requete(origine, "/klyra/v1/agent/coffre", "POST", { requestId: coffre.id, lire: true });
+      const valeur = (r.json as { valeur?: unknown } | null)?.valeur;
+      if (r.status !== 200 || typeof valeur !== "string") throw new Error("Le serveur n’a plus la valeur à ranger : réessaie.");
+      return valeur;
+    };
+    void liaison
+      .coffre(origine, coffre, lireValeur)
+      .catch((e: unknown) => ({ resultat: { texte: e instanceof Error ? e.message : String(e), erreur: true } }))
+      .then((r) => requete(origine, "/klyra/v1/agent/coffre", "POST", { requestId: coffre.id, resultat: r.resultat, ...("valeur" in r && typeof r.valeur === "string" ? { valeur: r.valeur } : {}) }))
       .catch(() => undefined);
     return;
   }

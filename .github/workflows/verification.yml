@@ -95,6 +95,10 @@ jobs:
         run: timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur
       - name: Navigateur de KLYRA, l'onglet du panneau dans l'app
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur-ecran
+      - name: Coffre, secrets chiffrés et outils des agents (profil temporaire)
+        run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:coffre
+      - name: Coffre, Réglages et carte sécurisée dans l'app
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:coffre-ecran
       - name: Computer Use, relais entre les agents et le pilote
         run: pnpm test:relais
       - name: Computer Use local, aperçu d'une fenêtre (sans le pilote)

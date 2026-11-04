@@ -179,6 +179,17 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
       return atelier ? vueAtelier(part.etapeId, atelier, net, r.atelierCompact) : null;
     case "choix":
       return { type: "choix", question: net(part.question, 300), options: part.options.slice(0, 6).map((o) => net(o, 120)), multiple: part.multiple };
+    // Un secret ne se colle jamais du téléphone (il passerait par le compte) : la demande part en une ligne.
+    case "coffre-demande":
+      return {
+        type: "text",
+        text: net(
+          part.reponse
+            ? `${part.reponse.etat === "refusee" ? "Refusé" : "Rangé dans le coffre"} : ${part.nom} (${part.variable}).`
+            : `Demande ${part.nom} (${part.variable}) : à coller sur l’ordinateur, dans la carte sécurisée de la conversation.`,
+          300,
+        ),
+      };
     case "tasks":
       return {
         type: "tasks",
@@ -260,7 +271,7 @@ export interface TravailCopie {
 }
 
 function poseUneQuestion(message: Message): boolean {
-  if (message.parts.some((p) => (p.type === "options" && p.options.length > 0) || (p.type === "actions" && p.actions.length > 0) || p.type === "choix")) return true;
+  if (message.parts.some((p) => (p.type === "options" && p.options.length > 0) || (p.type === "actions" && p.actions.length > 0) || p.type === "choix" || (p.type === "coffre-demande" && !p.reponse))) return true;
   const texte = message.parts
     .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
     .map((p) => p.text)

@@ -344,6 +344,20 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("computer-use:etat", listener);
     },
   },
+  /* Le Coffre (electron/coffre.ts) : une valeur part vers le main, jamais l'inverse. */
+  coffre: {
+    etat: () => ipcRenderer.invoke("coffre:etat"),
+    ajouter: (entree: unknown, remplacer?: boolean) => ipcRenderer.invoke("coffre:ajouter", entree, remplacer === true),
+    modifier: (id: string, champs: unknown) => ipcRenderer.invoke("coffre:modifier", id, champs),
+    remplacerValeur: (id: string, valeur: string) => ipcRenderer.invoke("coffre:valeur", id, valeur),
+    retirer: (id: string) => ipcRenderer.invoke("coffre:retirer", id),
+    copier: (id: string) => ipcRenderer.invoke("coffre:copier", id),
+    surChangement: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("coffre:change", listener);
+      return () => ipcRenderer.removeListener("coffre:change", listener);
+    },
+  },
   navigateur: {
     etat: () => ipcRenderer.invoke("navigateur:etat"),
     ouvrir: (chatId: string, url?: string) => ipcRenderer.invoke("navigateur:ouvrir", chatId, url),

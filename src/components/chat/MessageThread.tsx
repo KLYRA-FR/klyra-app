@@ -160,7 +160,7 @@ function RoleMessage({
   onAction: (label: string, roleId: RoleId) => void;
 }) {
   const role = useRole(roleId);
-  const { repondreAutorisation } = useWorkspace();
+  const { repondreAutorisation, repondreCoffre } = useWorkspace();
   // Conversation directe : l'avatar et le prénom ouvrent le panneau de l'agent.
   const panneau = chat.kind === "direct";
   const enCours = message.statut === "en-cours";
@@ -220,6 +220,10 @@ function RoleMessage({
             etatAtelier={(id) => ateliers.get(id)}
             choix={{ actif: derniere && repondu === null && !enCours, repondu, onRepondre: (texte) => onAction(texte, roleId) }}
             onAutorisation={(demandeId, decision) => repondreAutorisation(message.id, demandeId, decision)}
+            onCoffre={(etapeId, etat, texte) => {
+              repondreCoffre(message.id, etapeId, etat);
+              onAction(texte, roleId);
+            }}
             onAction={(label) => onAction(label, roleId)}
           />
         ))}
