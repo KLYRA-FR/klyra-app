@@ -13,6 +13,7 @@ import { analyserRequete, normaliser, surligner, type Morceau, type Portee, type
 import { retenirRequete } from "@/lib/recherche-session";
 import { agentDe, type ConversationLue } from "@/lib/telephone/chats";
 import { GrappeChat, RondAgent, useCartes } from "./AgentsChat";
+import { CHAMP_TELEPHONE } from "./Controles";
 
 const PORTEES: { id: Portee; libelle: string }[] = [
   { id: "tout", libelle: "Tout" },
@@ -110,7 +111,7 @@ export function RechercheTelephone() {
             placeholder="Rechercher dans les conversations"
             value={saisie}
             onChange={(e) => setSaisie(e.target.value)}
-            className="h-11 min-w-0 flex-1 rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal"
+            className={cn(CHAMP_TELEPHONE, "min-w-0 flex-1")}
           />
         </div>
         <div role="radiogroup" aria-label="Où chercher" className="flex gap-2 overflow-x-auto px-2 pb-2 [scrollbar-width:none]">

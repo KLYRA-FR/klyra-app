@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type TouchEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
@@ -8,7 +8,6 @@ import { cn } from "@/lib/cn";
 import { nomFichier } from "@/lib/fichiers";
 import { useLecturePoste, type LecturePoste } from "@/lib/poste/client";
 import {
-  etatTirage,
   filAriane,
   montrerDans,
   parentDe,
@@ -22,6 +21,7 @@ import { EnteteTelephone } from "./EnteteTelephone";
 import { MenuFeuille, type ActionMenu } from "./Feuille";
 import { NotePoste, SurLePoste, VueLecture } from "./etats";
 import { usePostes } from "./poste";
+import { useTirerPourRelire } from "./TirerPourRelire";
 
 /**
  * T-12 : le dossier d'un projet, un niveau par écran (spec § 6 : l'arbre du bureau devient une
@@ -127,39 +127,10 @@ function FilAriane({ projetId, nomProjet, chemin }: { projetId: string; nomProje
   );
 }
 
-/** Tirer la liste vers le bas, depuis son haut, la relit. « Relire » du menu fait la même chose (M-9). */
-function useTirerPourRelire(relire: () => void, actif: boolean) {
-  const [distance, setDistance] = useState(0);
-  const depart = useRef<number | null>(null);
-  const etat = etatTirage(distance);
-  const arreter = () => {
-    depart.current = null;
-    setDistance(0);
-  };
-  return {
-    ...etat,
-    gestes: {
-      onTouchStart: (e: TouchEvent<HTMLElement>) => {
-        depart.current = actif && e.currentTarget.scrollTop <= 0 ? e.touches[0].clientY : null;
-      },
-      onTouchMove: (e: TouchEvent<HTMLElement>) => {
-        if (depart.current === null) return;
-        if (e.currentTarget.scrollTop > 0) return arreter();
-        setDistance(e.touches[0].clientY - depart.current);
-      },
-      onTouchEnd: () => {
-        if (depart.current !== null && etat.pret) relire();
-        arreter();
-      },
-      onTouchCancel: arreter,
-    },
-  };
-}
-
-/** Les éléments d'un niveau, dossiers d'abord (l'ordre vient du poste), et ses cinq états. */
+/** Les éléments d'un niveau, dossiers d'abord (l'ordre vient du poste), et ses cinq états. Tirer la liste la relit. */
 export function ListeDossier({ projetId, niveau }: { projetId: string; niveau: Niveau }) {
   const { ouvert } = usePostes();
-  const tirage = useTirerPourRelire(niveau.relancer, ouvert);
+  const tirage = useTirerPourRelire(niveau.relancer, { actif: ouvert, enCours: niveau.relecture });
   const affiche = niveau.affiche;
   const vue = affiche ?? (niveau.lecture.etat === "ferme" ? (niveau.lecture.gardee?.data ?? null) : null);
   const coupure = vue ? texteCoupure(vue) : null;
@@ -175,12 +146,8 @@ export function ListeDossier({ projetId, niveau }: { projetId: string; niveau: N
     );
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-4" {...tirage.gestes}>
-      {tirage.hauteur > 0 ? (
-        <div style={{ height: tirage.hauteur }} className="flex items-end justify-center pb-2 text-ui-xs text-texte-secondaire">
-          {tirage.pret ? "Relâche pour relire" : "Tire pour relire"}
-        </div>
-      ) : null}
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-4" {...tirage.props}>
+      {tirage.indicateur}
       {niveau.relecture ? (
         <p role="status" className="px-4 pt-1 text-ui-xs text-texte-secondaire">
           Relecture…

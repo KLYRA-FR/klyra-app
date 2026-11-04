@@ -33,6 +33,8 @@ import { FeuillePersonnaliser } from "./FicheAgentTelephone";
 import { NotePoste, SurLePoste, VueLecture } from "./etats";
 import { NotificationsTelephone } from "./NotificationsTelephone";
 import { usePostes, useSupport } from "./poste";
+import { PisteInterrupteur } from "./Controles";
+import { jouer } from "@/lib/sons/sons";
 
 /**
  * Réglages sur le téléphone (spec mobile T-22) : `/reglages` liste les sections (« Ce téléphone »
@@ -184,16 +186,18 @@ function Bascule({ id, libelle, detail, actif, disabled, onChange }: { id?: stri
       aria-checked={actif}
       aria-label={libelle}
       disabled={disabled}
-      onClick={() => onChange(!actif)}
-      className="flex min-h-12 w-full scroll-mt-4 items-center gap-3 border-b border-bordure-subtile py-2 text-left active:bg-fond-survol disabled:opacity-60"
+      onClick={() => {
+        jouer(actif ? "desactive" : "active");
+        onChange(!actif);
+      }}
+      className="flex min-h-12 w-full scroll-mt-4 items-center gap-3 border-b border-bordure-subtile py-2 text-left active:bg-fond-survol disabled:[&>[aria-hidden]]:opacity-45"
     >
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-body-s text-texte-principal">{libelle}</span>
         {detail ? <span className="text-ui-xs text-texte-secondaire">{detail}</span> : null}
       </span>
-      <span aria-hidden="true" className={cn("relative inline-flex h-6 w-10 shrink-0 rounded-pill transition-colors duration-[220ms] ease-sortie", actif ? "bg-fond-accent" : "bg-gris-k2-500")}>
-        <span className={cn("absolute top-0.5 left-0.5 size-5 rounded-full bg-fond-surface shadow-ombre-sm transition-transform duration-[220ms] ease-sortie", actif && "translate-x-4")} />
-      </span>
+      {/* L'interrupteur du bureau (36 × 20) : toute la ligne est la cible (socle § 6.3). */}
+      <PisteInterrupteur actif={actif} />
     </button>
   );
 }

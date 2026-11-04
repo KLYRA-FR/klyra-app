@@ -253,8 +253,11 @@ try {
   verifier(await telephone.quand("!document.body.innerText.includes('Connecte-toi à KLYRA') && document.body.innerText.includes('Chats')", 30000), "téléphone connecté par le lien simulé");
 
   /* 4 bis. « Ce téléphone » et les écrans du téléphone : le vrai poste, jamais « ton Mac » en dur. */
+  /* La page change dans une transition de vue (socle mobile § 2.6) : dans cette fenêtre cachée, qui
+     dessine peu, elle peut prendre plus d'une seconde. On attend la nouvelle adresse, puis son rendu. */
   const allerTel = async (chemin) => {
     await telephone.ev(`window.next.router.push(${JSON.stringify(chemin)})`);
+    await telephone.quand(`location.pathname + location.search === ${JSON.stringify(chemin)}`, 10000);
     await attendre(1200);
   };
   /* `/reglages` liste les sections (T-22) ; « Ce téléphone » est la section Mobile. */
@@ -275,7 +278,9 @@ try {
   await telephone.ev(`[...document.querySelectorAll('header button')].find((b) => (b.getAttribute('aria-label') ?? '').includes('État des ordinateurs'))?.click()`);
   verifier(await telephone.quand("[...document.querySelectorAll('[role=dialog]')].some((d) => d.innerText.includes('Ordinateurs'))", 5000), "feuille des ordinateurs (T-23) ouverte");
   verifier(!(await telephone.texte()).includes("Me prévenir"), "feuille du poste : plus de « Me prévenir à l’ouverture »");
-  await telephone.cliquer("Fermer");
+  /* La feuille du socle se ferme par son ✕ (« Fermer », nom accessible). */
+  await telephone.ev(`document.querySelector('[role=dialog] button[aria-label="Fermer"]')?.click()`);
+  verifier(await telephone.quand("!document.querySelector('[role=dialog]')", 3000), "feuille des ordinateurs refermée par ✕");
 
   /* 5. Il apparaît sur le bureau sans recharger. */
   verifier(await bureau.quand(`${SECTION}?.innerText.includes('iPhone')`, 20000), "bureau : l'iPhone apparaît sans recharger");

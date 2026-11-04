@@ -16,7 +16,8 @@ import { cn } from "@/lib/cn";
 import { libelleFrequence, NOMS_JOURS } from "@/lib/planning";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { majuscule } from "@/lib/poste-texte";
-import { messageGeste, useLectureSuivie, useTirerPourRelire } from "@/lib/telephone/lecture-suivie";
+import { messageGeste, useLectureSuivie } from "@/lib/telephone/lecture-suivie";
+import { useTirerPourRelire } from "./TirerPourRelire";
 import {
   CHAMPS_ETAPE,
   enCoursExecution,
@@ -43,6 +44,7 @@ import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong } from "./Feuille";
 import { NotePoste, SurLePoste, VueLecture, useBandeau } from "./etats";
 import { usePostes, useSupport } from "./poste";
+import { CHAMP_KLYRA_UI } from "./Controles";
 
 /**
  * Automatisations › Workflows sur le téléphone (spec mobile T-18, T-19). Le canevas devient une
@@ -234,7 +236,7 @@ function FeuilleVersions({ id, onFermer, onChoisir }: { id: string; onFermer: ()
 export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
   const router = useRouter();
   const lecture = useLectureSuivie<LigneWorkflow[]>("workflows.liste", {}, { suivre: (l) => l.some((w) => w.derniere && enCoursExecution(w.derniere)) });
-  const tirer = useTirerPourRelire(lecture.relancer);
+  const tirer = useTirerPourRelire(lecture.relancer, { enCours: lecture.relecture });
   const actions = useActionsWorkflow({ relancer: lecture.relancer });
 
   return (
@@ -242,7 +244,7 @@ export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
       <EnteteTelephone titre="Automatisations" parent="/plus" />
       <div className="shrink-0 px-4 pb-2">{onglets}</div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6" {...tirer.props}>
-        {tirer.tire ? <p className="py-2 text-ui-xs text-texte-secondaire">Relâche pour relire</p> : null}
+        {tirer.indicateur}
         <div className="-mx-4">
           <VueLecture lecture={lecture} ferme={fermeWorkflows} lignes={4}>
             {(liste) => (
@@ -312,7 +314,7 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
     { garde: `${id}|${versionId}`, suivre: (w) => !!w.enCours, intervalle: 4000 },
   );
   const { relancer } = lecture;
-  const tirer = useTirerPourRelire(relancer);
+  const tirer = useTirerPourRelire(relancer, { enCours: lecture.relecture });
   const { faire, occupe } = useGestePoste();
   const [executions, setExecutions] = useState(false);
   const [etape, setEtape] = useState<{ noeud: NoeudLu; numero: number } | null>(null);
@@ -394,7 +396,7 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
         </div>
       ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto pb-6" {...tirer.props}>
-        {tirer.tire ? <p className="px-4 py-2 text-ui-xs text-texte-secondaire">Relâche pour relire</p> : null}
+        {tirer.indicateur}
         <VueLecture lecture={lecture} ferme={fermeWorkflows}>
           {(w) => (
             <div className="px-4 pt-2">
@@ -699,7 +701,7 @@ function FeuilleEtape({
             <span className="text-ui-s font-medium text-texte-principal">{c.libelle}</span>
             {c.genre === "texte" ? (
               c.lignes === 1 ? (
-                <Input size="lg" aria-label={c.libelle} value={valeurs[c.cle]} placeholder={placeholder(c)} onChange={(e) => choisir(c.cle, e.target.value)} className="rounded-md border-bordure-champ" />
+                <Input size="lg" aria-label={c.libelle} value={valeurs[c.cle]} placeholder={placeholder(c)} onChange={(e) => choisir(c.cle, e.target.value)} className={CHAMP_KLYRA_UI} />
               ) : (
                 <Textarea
                   size="lg"
@@ -708,7 +710,7 @@ function FeuilleEtape({
                   value={valeurs[c.cle]}
                   placeholder={placeholder(c)}
                   onChange={(e) => choisir(c.cle, e.target.value)}
-                  className={cn("rounded-md border-bordure-champ", c.lignes > 2 ? "min-h-[120px]" : "min-h-[72px]")}
+                  className={cn(CHAMP_KLYRA_UI, c.lignes > 2 ? "min-h-[120px]" : "min-h-[72px]")}
                 />
               )
             ) : c.genre === "choix" ? (

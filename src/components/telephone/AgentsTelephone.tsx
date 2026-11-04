@@ -14,10 +14,10 @@ import { ID_ASSISTANT, libelleRetour, texteConversations, type EtatsAgentsPoste,
 import type { ChiffresEquipe } from "@/lib/telephone/gestes-agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import { BibliothequeAgentsTelephone, DefinitionAgentTelephone } from "./BibliothequeAgentsTelephone";
-import { BoutonMenu, ErreurGeste, TitreGroupe, useCartesAgents } from "./CommunAgentsTelephone";
+import { BoutonMenu, ErreurGeste, ONGLETS_TELEPHONE, TitreGroupe, useCartesAgents } from "./CommunAgentsTelephone";
 import { ComparerFicheTelephone } from "./ComparerFicheTelephone";
 import { EditeurFicheTelephone } from "./EditeurFicheTelephone";
-import { EnteteTelephone } from "./EnteteTelephone";
+import { PageOnglet } from "./EnteteTelephone";
 import { FicheAgentTelephone, HistoriqueFicheTelephone } from "./FicheAgentTelephone";
 import { ConfirmationFeuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
 import { LouAgentTelephone } from "./LouAgentTelephone";
@@ -55,12 +55,11 @@ function ListeAgentsTelephone() {
   const vue: Vue = params.get("vue") === "bibliotheque" ? "bibliotheque" : "mes-agents";
   const [creer, setCreer] = useState(false);
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Agents" />
+    <PageOnglet titre="Agents">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <Onglets<Vue>
           libelle="Agents"
-          className="mt-1 flex w-full [&>button]:min-h-11 [&>button]:flex-1 [&>button]:justify-center [&>button]:text-ui"
+          className={ONGLETS_TELEPHONE}
           valeur={vue}
           onChange={(v) => router.replace(v === "bibliotheque" ? "/equipe?vue=bibliotheque" : "/equipe")}
           onglets={[
@@ -71,7 +70,7 @@ function ListeAgentsTelephone() {
         {vue === "bibliotheque" ? <BibliothequeAgentsTelephone /> : <MesAgentsTelephone onCreer={() => setCreer(true)} />}
       </div>
       {creer ? <FeuilleCreerAgent onFermer={() => setCreer(false)} /> : null}
-    </div>
+    </PageOnglet>
   );
 }
 

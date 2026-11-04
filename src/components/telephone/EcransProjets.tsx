@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
@@ -14,12 +14,14 @@ import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { texteErreurPoste } from "@/lib/poste-texte";
 import { libelleStatut, STATUTS, urlProjet, vueProjet, type ProjetModifiable } from "@/lib/telephone/dossiers";
 import { DossierTelephone, ListeDossier, useNiveau } from "./DossierTelephone";
-import { EnteteTelephone } from "./EnteteTelephone";
-import { MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
-import { NotePoste, SurLePoste, useBandeau, VueLecture } from "./etats";
+import { EnteteTelephone, PageOnglet } from "./EnteteTelephone";
+import { MenuFeuille, type ActionMenu } from "./Feuille";
+import { EtatEcran, NotePoste, Squelette, SurLePoste, useBandeau, VueLecture } from "./etats";
+import { Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { usePostes, useSupport } from "./poste";
 import { VisionneuseTelephone } from "./VisionneuseTelephone";
 import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
+import { CaseRonde, CHAMP_TELEPHONE } from "./Controles";
 
 /**
  * Projets, projet, dossier et visionneuse (spec mobile T-10 à T-13). Routes : /projets, puis
@@ -28,7 +30,7 @@ import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
  */
 
 const DOSSIER_SUR_POSTE = "le dossier d’un projet se choisit sur l’ordinateur.";
-const CHAMP = "mt-1 h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
+const CHAMP = cn("mt-1", CHAMP_TELEPHONE);
 
 /** Le menu « ⋯ » d'un projet : modifier (Poste, P-7 fermé) ; dossier et retrait restent sur l'ordinateur (P-8). */
 function actionsProjet(ouvert: boolean, modifier: () => void): ActionMenu[] {
@@ -53,30 +55,36 @@ export function ProjetsTelephone() {
   const chats = (origine: string) => (conversations ?? []).filter((c) => c.projetId === origine).length;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Projets" />
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+    <PageOnglet titre="Projets" sous={projets?.length ? `${projets.length} projet${projets.length > 1 ? "s" : ""} sur ${sur}` : undefined}>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {projets === undefined ? (
-          <div className="mt-2 flex flex-col gap-2" aria-busy="true">
-            {Array.from({ length: 4 }, (_, i) => (
-              <div key={i} className="h-[72px] rounded-md bg-fond-surface-grise" />
-            ))}
-          </div>
+          <Squelette lignes={4} />
         ) : liste.length === 0 ? (
-          <p className="mt-8 text-body-s text-texte-principal">Ajoute un projet sur {sur}</p>
+          <EtatEcran forme="encadre" icone="projets-dossier" titre={`Ajoute un projet sur ${sur}`} texte="Le dossier d’un projet se choisit sur l’ordinateur. Il s’affiche ici ensuite." />
         ) : (
-          <ul>
-            {liste.map((projet) => (
-              <LigneProjet key={projet.origine} projet={projet} chats={conversations ? chats(projet.origine) : null} onMenu={() => setMenu(projet)} />
-            ))}
-          </ul>
+          <SectionListe titre="Projets" compte={liste.length}>
+            <GroupeListe>
+              {liste.map((projet) => (
+                <LigneProjet key={projet.origine} projet={projet} chats={conversations ? chats(projet.origine) : null} onMenu={() => setMenu(projet)} />
+              ))}
+            </GroupeListe>
+          </SectionListe>
         )}
-        <SurLePoste titre="Nouveau projet" raison={DOSSIER_SUR_POSTE} />
+        <div className="px-1 pt-2">
+          <SurLePoste titre="Nouveau projet" raison={DOSSIER_SUR_POSTE} />
+        </div>
       </div>
-      {menu ? <MenuFeuille titre={menu.nom} actions={actionsProjet(ouvert, () => setModifier(menu))} onFermer={() => setMenu(null)} /> : null}
+      {menu ? (
+        <MenuFeuille
+          titre={menu.nom}
+          objet={{ visuel: <TuileIcone icone="folder" />, sous: "Projet" }}
+          actions={actionsProjet(ouvert, () => setModifier(menu))}
+          onFermer={() => setMenu(null)}
+        />
+      ) : null}
       {modifier ? <PageModifierProjet projetId={modifier.origine} nom={modifier.nom} onFermer={() => setModifier(null)} onEnregistre={() => dire("Enregistré")} /> : null}
       {bandeau}
-    </div>
+    </PageOnglet>
   );
 }
 
@@ -89,35 +97,19 @@ function LigneProjet({
   chats: number | null;
   onMenu: () => void;
 }) {
-  /* Après un appui long, le relâché n'ouvre pas le projet. */
-  const menuOuvert = useRef(false);
-  const appui = useAppuiLong(() => {
-    menuOuvert.current = true;
-    onMenu();
-  });
-  const details = [libelleStatut(projet.statut), chats === null ? null : `${chats} chat${chats > 1 ? "s" : ""}`].filter(Boolean).join(" · ");
+  const details = [projet.accroche, libelleStatut(projet.statut), chats === null ? null : `${chats} chat${chats > 1 ? "s" : ""}`].filter(Boolean).join(" · ");
+  /* D-7 : un projet a sa page ; son menu s'ouvre par l'appui long, le ⋯ de sa page, ou le bouton des lecteurs d'écran. */
   return (
-    <li className="flex items-center gap-1 border-b border-bordure-subtile">
-      <Link
-        href={urlProjet(projet.origine)}
-        {...appui}
-        onClick={(e) => {
-          if (!menuOuvert.current) return;
-          menuOuvert.current = false;
-          e.preventDefault();
-        }}
-        className="flex min-h-[72px] min-w-0 flex-1 flex-col justify-center gap-0.5 py-2 select-none [-webkit-touch-callout:none] active:bg-fond-survol"
-      >
-        <span className="flex items-center gap-2">
-          <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-[1px]", projet.epingle ? "bg-bleu-k1-500" : "border-[1.25px] border-gris-k1-300")} />
-          <span className="truncate text-body-s text-texte-principal">{projet.nom}</span>
-          {projet.epingle ? <span className="sr-only">, épinglé</span> : null}
-        </span>
-        {projet.accroche ? <span className="truncate text-ui-xs text-texte-secondaire">{projet.accroche}</span> : null}
-        {details ? <span className="text-ui-xs text-texte-secondaire">{details}</span> : null}
-      </Link>
-      <BoutonIcone variant="discret" taille="md" libelle={`Actions sur ${projet.nom}`} onClick={onMenu} icone={<Icon name="dot-horizontal" size={24} />} />
-    </li>
+    <LigneListe
+      href={urlProjet(projet.origine)}
+      debut={<TuileIcone icone="folder" />}
+      retrait="tuile"
+      nom={projet.nom}
+      etiquette={projet.epingle ? <Etiquette>Épinglé</Etiquette> : undefined}
+      ligne2={details}
+      fin="chevron"
+      onMenu={onMenu}
+    />
   );
 }
 
@@ -203,10 +195,18 @@ function FormulaireProjet({ projetId, initial, onFini }: { projetId: string; ini
             ))}
           </div>
         </fieldset>
-        <label className="mt-4 flex min-h-11 items-center gap-3 text-ui text-texte-principal">
-          <input type="checkbox" checked={valeurs.epingle} onChange={(e) => changer("epingle", e.target.checked)} className="size-5 accent-bleu-k1-500" />
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={valeurs.epingle}
+          onClick={() => changer("epingle", !valeurs.epingle)}
+          className="mt-4 flex min-h-11 items-center gap-3 text-left text-ui text-texte-principal"
+        >
+          <span className="flex size-6 shrink-0 items-center justify-center">
+            <CaseRonde faite={valeurs.epingle} />
+          </span>
           Épingler : la marque du projet est pleine dans le menu
-        </label>
+        </button>
         <SurLePoste titre="Dossier" raison={DOSSIER_SUR_POSTE} />
         {erreur ? (
           <p role="alert" className="mt-2 text-ui text-texte-erreur">

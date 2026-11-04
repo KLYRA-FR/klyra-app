@@ -537,3 +537,124 @@ body[data-glisse] iframe {
     opacity: 1;
   }
 }
+
+/* ─── Téléphone, socle (lot 1 de la refonte, spec d'Iris) ───────────── */
+
+/* Feuille (§ 4.1) : le voile en fondu (220 ms), la carte monte du bas (300 ms, ease-sortie) ;
+   à la sortie, la carte redescend et le voile s'efface (220 ms, ease-standard). Pendant le glisser,
+   la carte suit le doigt sans transition (`data-glisse`). */
+.klyra-feuille-voile {
+  animation: klyra-voile 220ms var(--ease-sortie) backwards;
+  transition: opacity 220ms var(--ease-standard);
+}
+.klyra-feuille-voile[data-sortie] { opacity: 0; }
+.klyra-feuille {
+  animation: klyra-monte 300ms var(--ease-sortie) backwards;
+  transition: transform 220ms var(--ease-sortie);
+}
+.klyra-feuille[data-sortie] {
+  transform: translateY(100%);
+  transition: transform 220ms var(--ease-standard);
+}
+.klyra-feuille[data-glisse] { transition: none; }
+/* À la tablette, la feuille est une fenêtre centrée : elle apparaît, elle ne monte pas. */
+[data-composition="tablette"] .klyra-feuille { animation-name: feuille; animation-duration: 220ms; }
+[data-composition="tablette"] .klyra-feuille[data-sortie] { transform: none; opacity: 0; }
+@keyframes klyra-monte {
+  from { transform: translateY(100%); }
+}
+
+/* Page pleine (§ 4.4) : monte du bas comme une feuille. */
+.klyra-page-pleine { animation: klyra-monte 300ms var(--ease-sortie) backwards; }
+
+/* Annonce (§ 6.1) : monte de 16 px en fondu (220 ms), s'efface en 120 ms. */
+.klyra-annonce {
+  animation: klyra-annonce 220ms var(--ease-sortie) backwards;
+  transition: opacity 120ms var(--ease-standard), transform 220ms var(--ease-sortie);
+}
+.klyra-annonce[data-sortie] { opacity: 0; }
+@keyframes klyra-annonce {
+  from { opacity: 0; transform: translateY(16px); }
+}
+
+/* Bandeau hors ligne (§ 5.5) : se replie quand le réseau revient. */
+.klyra-bandeau-reseau {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 220ms var(--ease-sortie);
+}
+.klyra-bandeau-reseau[data-replie] { grid-template-rows: 0fr; }
+
+/* Barre du haut d'une page d'onglet (§ 2.2) : au sommet ni flou ni filet ; défilée, le titre court
+   apparaît, le fond se floute et un filet bas se pose (120 ms). */
+.klyra-entete {
+  transition: background-color 120ms var(--ease-sortie), box-shadow 120ms var(--ease-sortie);
+}
+.klyra-entete[data-defilee] {
+  background-color: color-mix(in srgb, var(--color-fond-page) 92%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 -1px 0 var(--color-bordure-defaut);
+}
+.klyra-entete-titre { opacity: 0; transition: opacity 120ms var(--ease-sortie); }
+.klyra-entete[data-defilee] .klyra-entete-titre { opacity: 1; }
+
+/* Ligne, carte, bouton pressés (§ 7) : 120 ms, ease-sortie. Un appui long ne sélectionne pas le texte. */
+.klyra-appui-long {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Transitions de page (§ 2.6) : seule la zone de contenu bouge, la barre d'onglets reste. Pousser :
+   la nouvelle entre de la droite, l'ancienne recule de 30 % sous un voile de 8 % (300 ms) ;
+   retour : l'inverse ; changer d'onglet : fondu de 120 ms ; « réduire les animations » : fondu seul. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(.klyra-page) { animation-duration: 300ms; }
+:root[data-sens="avant"]::view-transition-new(.klyra-page) {
+  animation: klyra-entre-droite 300ms var(--ease-sortie) both;
+  box-shadow: var(--shadow-ombre-md);
+}
+:root[data-sens="avant"]::view-transition-old(.klyra-page) {
+  animation: klyra-recule 300ms var(--ease-sortie) both;
+}
+:root[data-sens="arriere"]::view-transition-new(.klyra-page) {
+  animation: klyra-revient 300ms var(--ease-sortie) both;
+}
+:root[data-sens="arriere"]::view-transition-old(.klyra-page) {
+  animation: klyra-sort-droite 300ms var(--ease-sortie) both;
+  box-shadow: var(--shadow-ombre-md);
+  z-index: 1;
+}
+:root[data-sens="onglet"]::view-transition-old(.klyra-page),
+:root[data-sens="onglet"]::view-transition-new(.klyra-page) {
+  animation-duration: 120ms;
+  animation-timing-function: var(--ease-standard);
+}
+:root[data-sens="aucun"]::view-transition-old(.klyra-page),
+:root[data-sens="aucun"]::view-transition-new(.klyra-page) {
+  animation: none;
+}
+@keyframes klyra-entre-droite { from { transform: translateX(100%); } }
+@keyframes klyra-sort-droite { to { transform: translateX(100%); } }
+@keyframes klyra-recule { to { transform: translateX(-30%); filter: brightness(0.92); } }
+@keyframes klyra-revient { from { transform: translateX(-30%); filter: brightness(0.92); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-feuille,
+  .klyra-page-pleine { animation: klyra-voile 120ms linear backwards; }
+  .klyra-feuille[data-sortie] { transform: none; opacity: 0; transition: opacity 120ms linear; }
+  .klyra-annonce { animation-name: klyra-voile; }
+  :root[data-sens]::view-transition-old(.klyra-page) {
+    animation: klyra-efface 120ms linear both;
+    box-shadow: none;
+  }
+  :root[data-sens]::view-transition-new(.klyra-page) {
+    animation: klyra-voile 120ms linear both;
+    box-shadow: none;
+  }
+}
+@keyframes klyra-efface { to { opacity: 0; } }

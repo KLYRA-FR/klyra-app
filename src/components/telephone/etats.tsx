@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
@@ -9,6 +9,7 @@ import { useCompte } from "@/lib/compte";
 import type { LecturePoste } from "@/lib/poste/client";
 import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
 import { libelleVue, type VueGardee } from "@/lib/telephone/vue-gardee";
+import { useAnnonce } from "./Annonce";
 import { PrevenirOuverture } from "./PastillePoste";
 import { usePostes, useSupport } from "./poste";
 import { usePushTelephone } from "./push";
@@ -386,21 +387,12 @@ export function VueLecture<T>({
   return <>{children(lecture.data)}</>;
 }
 
-/** Bandeau bas éphémère (« Enregistré », « Workflow lancé »), au-dessus de la barre du bas. */
+/**
+ * Une annonce éphémère (« Enregistré », « Workflow lancé ») : l'`Annonce` de la coque (§ 6.1), une seule
+ * à la fois. Le premier élément reste pour les écrans qui le posaient : il ne rend plus rien.
+ */
 export function useBandeau(): [ReactNode, (texte: string) => void] {
-  const [texte, setTexte] = useState<string | null>(null);
-  useEffect(() => {
-    if (!texte) return;
-    const minuteur = setTimeout(() => setTexte(null), 3000);
-    return () => clearTimeout(minuteur);
-  }, [texte]);
-  const bandeau = texte ? (
-    <p
-      role="status"
-      className="fixed inset-x-4 bottom-[calc(72px+env(safe-area-inset-bottom))] z-40 rounded-md bg-texte-principal px-4 py-3 text-ui text-texte-inverse shadow-ombre-flottante"
-    >
-      {texte}
-    </p>
-  ) : null;
-  return [bandeau, setTexte];
+  const annoncer = useAnnonce();
+  const montrer = useCallback((texte: string) => annoncer(texte), [annoncer]);
+  return [null, montrer];
 }

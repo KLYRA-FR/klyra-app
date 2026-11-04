@@ -10,6 +10,7 @@ import { actionsConversation, LIBELLES_CONVERSATION, type ConversationLue } from
 import { exporterDepuisLeCompte, partagerDocument } from "@/lib/telephone/export";
 import { Feuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
 import { useCartes } from "./AgentsChat";
+import { CHAMP_TELEPHONE } from "./Controles";
 
 /**
  * L'appui long d'une ligne ou d'une puce qui est aussi un lien : il ouvre le menu (M-9), et le
@@ -36,7 +37,7 @@ export function useAppuiMenu(onMenu: () => void) {
   };
 }
 
-export const CHAMP = "h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
+export const CHAMP = CHAMP_TELEPHONE;
 
 /** « Renommer » en feuille : le nom actuel, prêt à être changé (texte 16 px). */
 export function FeuilleRenommer({ titre, valeur, onValider, onFermer }: { titre: string; valeur: string; onValider: (titre: string) => void; onFermer: () => void }) {

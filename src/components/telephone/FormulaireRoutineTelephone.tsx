@@ -18,6 +18,7 @@ import type { Routine, RoutineInput, RoutineSchedule } from "@/types/routines";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { NotePoste } from "./etats";
 import { usePostes, useSupport } from "./poste";
+import { CHAMP_KLYRA_UI } from "./Controles";
 
 /**
  * T-16 : le formulaire d'une routine en page pleine. Mêmes champs et mêmes règles que
@@ -29,7 +30,7 @@ export type ContexteRoutine = Pick<RoutinesLues, "agents" | "projets" | "serveur
 
 const AIDE = "text-ui-xs leading-relaxed text-texte-secondaire";
 /** Les champs à 16 px : sous cette taille, Safari agrandit la page au focus (spec § 9). */
-const CHAMP_TELEPHONE = "rounded-md border-bordure-champ";
+const CHAMP_TELEPHONE = CHAMP_KLYRA_UI;
 
 function complet(input: RoutineInput, fuseau: string): Required<RoutineInput> {
   return {

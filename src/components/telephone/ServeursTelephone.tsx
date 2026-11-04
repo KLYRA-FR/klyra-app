@@ -31,8 +31,9 @@ import {
 } from "@/lib/serveur-vps";
 import { useSupport } from "./poste";
 import { EnteteTelephone } from "./EnteteTelephone";
+import { CHAMP_TELEPHONE, MessageErreur } from "./Controles";
 
-const CHAMP = "h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
+const CHAMP = CHAMP_TELEPHONE;
 
 /** Une commande à copier, sur une ligne qui peut se couper. */
 function Commande({ texte }: { texte: string }) {
@@ -307,11 +308,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
               />
             </label>
             {repris && saisie ? <p className="text-ui-xs text-texte-secondaire">Lien repris du presse-papiers.</p> : null}
-            {erreur ? (
-              <p role="alert" className="text-ui text-texte-principal">
-                {erreur}
-              </p>
-            ) : null}
+            {erreur ? <MessageErreur>{erreur}</MessageErreur> : null}
             <BoutonPrincipal type="submit" disabled={occupe}>
               {occupe ? "Connexion…" : "Rejoindre"}
             </BoutonPrincipal>
