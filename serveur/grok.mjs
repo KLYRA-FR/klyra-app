@@ -14,6 +14,7 @@ import { creerClientAcp, emailDeAuth, lireCodeAppareil, mcpPourAcp } from "./acp
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { corpsDeFiche } from "./codex-protocole.mjs";
 import { binaireGere, commande } from "./installation.mjs";
+import { lireUtilisationGrok } from "./utilisation.mjs";
 
 const CONNEXION_MAX_MS = 15 * 60 * 1000;
 const CODE_MAX_MS = 30_000;
@@ -87,6 +88,8 @@ export function creerGrok(options) {
       (event) => {
         if (event.type === "session") sessionId = event.sessionId;
         publier(requestId, event, sessionId);
+        /* Les crédits ont bougé : relus après chaque réponse (une lecture du compte, sans modèle). */
+        if (event.type === "fin") void utilisation(true);
       },
     );
   }
@@ -180,11 +183,28 @@ export function creerGrok(options) {
   }
 
   async function deconnecter() {
+    derniereUtilisation = null;
     rmSync(fichierCle, { force: true });
     const chemin = trouver();
     if (chemin && existsSync(path.join(grokHome(), "auth.json"))) await commande(chemin, ["logout"], 30_000, { env: environnement() });
     client.fermer();
     return compte();
+  }
+
+  /* ─── Utilisation de l'abonnement ─────────────────────────────── */
+
+  let derniereUtilisation = null;
+
+  /** La dernière connue ; `actualiser` : relue par `x.ai/billing` (crédits restants, ne consomme rien). Seulement connecté par l'abonnement. */
+  async function utilisation(actualiser) {
+    if (!actualiser && derniereUtilisation) return derniereUtilisation;
+    if (!trouver() || !existsSync(path.join(grokHome(), "auth.json"))) return derniereUtilisation;
+    try {
+      derniereUtilisation = lireUtilisationGrok(await client.facturation(), derniereUtilisation) ?? derniereUtilisation;
+    } catch {
+      /* Cette version de Grok ne donne pas sa facturation : pas d'anneau, rien d'inventé. */
+    }
+    return derniereUtilisation;
   }
 
   async function modeles() {
@@ -210,6 +230,7 @@ export function creerGrok(options) {
     connecterAvecCle,
     deconnecter,
     modeles,
+    utilisation,
     envoyer,
     autoriser: (requestId, demandeId, decision) => client.autoriser(requestId, demandeId, decision),
     annuler: (requestId) => client.arreter(requestId),
