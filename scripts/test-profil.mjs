@@ -316,7 +316,11 @@ try {
     await app.quand(`document.querySelector('input[aria-label="Adresse e-mail"]')`);
   }
 
-  verifier(JSON.stringify(reglagesSurDisque()) === JSON.stringify(REGLAGES), "les réglages de cet ordinateur n’ont pas changé");
+  const { skillsParAgent, configuration, navigateur, ...reglagesChoisis } = reglagesSurDisque();
+  verifier(JSON.stringify(reglagesChoisis) === JSON.stringify(REGLAGES), "les réglages choisis de cet ordinateur n’ont pas changé");
+  verifier(skillsParAgent?.fige === true, "le premier lancement fige le choix des skills, sans toucher au reste");
+  verifier(navigateur?.agents === true, "le navigateur des agents reste allumé, son défaut");
+  verifier(configuration?.memoireAgents === true && configuration?.proposition === "a-proposer" && configuration?.resumeAuto === false, "la configuration KLYRA absente du fichier reste celle par défaut");
   verifier(profilSurDisque().photo === PHOTO && profilSurDisque().id === ICI.id, "la photo et l’identifiant de cet ordinateur n’ont jamais changé");
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` (${app.erreurs.join(" | ")})` : ""}`);
 } catch (e) {

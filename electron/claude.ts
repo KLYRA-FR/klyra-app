@@ -9,7 +9,8 @@ import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { dossierHorsProjet } from "./atelier";
-import { competencesPrechargees, promptAvecSkill, skillsConnues } from "./connaissances-agent";
+import { competencesPrechargees, filtreSkills, promptAvecSkill, skillsConnues } from "./connaissances-agent";
+import { reglagesSession } from "./skills-par-agent";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, resultatEssai, TRAVAIL_SEUL, type CasEpreuve, type ResultatCas } from "./epreuve";
@@ -120,7 +121,8 @@ const running = new Map<string, ChildProcess>();
  * Les fiches elles-mêmes ne sont jamais touchées : d'autres outils les lisent.
  */
 const refusAgents = (cwd: string) => agentsARefuser(cwd).map((nom) => `Agent(${nom})`);
-const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent", "mcp__klyra__composio_executer"] } });
+/** Permissions de la session. Les skills coupées s'y ajoutent (`reglagesSession`) ; sans coupe, le JSON reste celui-ci. */
+const PERMISSIONS_AGENTS = { permissions: { ask: ["Agent", "mcp__klyra__composio_executer"] } };
 
 export const pasDansMesAgents = (agent: string) => `« ${agent} » n’est pas dans Mes agents : ajoute-le ou réactive-le dans Équipe pour lui écrire.`;
 
@@ -136,7 +138,9 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
 
   return new Promise((resolve) => {
     // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul, et le sait.
+    const coupes = filtreSkills(lireReglages().skillsParAgent, agent, CONFIG_CLAUDE(), null).coupes;
     const args = ["-p", "--agent", agent, "--output-format", "json", SECTIONS_DU_POSTE_A_PART, "--disallowedTools", ...OUTILS_INTERDITS, ...OUTILS_HORS_APP, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
+    if (coupes.length) args.push("--settings", reglagesSession({}, coupes));
     const child = spawn(bin, args, {
       cwd: HOME,
       env: environnementAgent(),
@@ -238,6 +242,8 @@ interface Processus {
   child: ChildProcess;
   /** Ce qui ne change pas en cours de route sans relancer Claude Code. */
   signature: string;
+  /** Skills coupées pour cet agent : un changement relance Claude Code, même au milieu de la conversation. */
+  skills: string;
   modele: string | null;
   acces: Acces;
   /** Les réponses attendues, dans l'ordre : la première est en cours. */
@@ -688,12 +694,13 @@ function lireLigne(proc: Processus, ligne: string) {
   }
 }
 
-function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
+function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, skills: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
   const child = spawn(bin, args, { cwd, env: environnementAgent(), windowsHide: true });
   const proc: Processus = {
     routineRun: options.routineRun,
     child,
     signature,
+    skills,
     modele: options.modele ?? null,
     acces,
     tours: [],
@@ -761,19 +768,23 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
      à un agent lancé seul, et `/<skill>` tapé par la personne, remis en tête du message. */
   const configClaude = CONFIG_CLAUDE();
   const ficheAgent = options.agent ? lireSiPresent(path.join(agentsDir(), `${options.agent}.md`)) : null;
-  const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd) : { noms: [], texte: null };
-  const prompt = promptAvecSkill(options.prompt, options.skill, skillsConnues(configClaude, cwd));
+  const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, configClaude, cwd);
+  const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
+  const connues = skillsConnues(configClaude, cwd);
+  for (const nom of filtre.coupes) connues.delete(nom);
+  const prompt = promptAvecSkill(options.prompt, options.skill, connues);
+  const skillsCle = filtre.coupes.join("\n");
   // Les dossiers des pièces jointes, pour que l'agent puisse les lire.
   const dossiersJoints = [...new Set((options.fichiers ?? []).filter((f) => path.isAbsolute(f) && existsSync(f)).map((f) => path.dirname(f)))].filter(
     (d) => !d.startsWith(cwd),
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
-  if (ouvert && vivant(ouvert) && (ouvert.signature === signature || (ouvert.tours.length && !options.routineRun && !ouvert.routineRun))) {
+  if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && (ouvert.signature === signature || (ouvert.tours.length && !options.routineRun && !ouvert.routineRun))) {
     /* La conversation a déjà son Claude Code : on lui écrit. Le modèle et l'accès changent en route. */
     proc = ouvert;
     proc.spontane = spontane;
@@ -813,7 +824,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       ...OUTILS_ORDINATEUR_INTERDITS,
       ...refusAgents(cwd),
       "--settings",
-      REGLE_AGENTS,
+      reglagesSession(PERMISSIONS_AGENTS, filtre.coupes),
     ];
     // Les outils de l'app (fils, autres IA ajoutées dans les Réglages), par son serveur MCP local.
     const capaciteComposio = espaceComposio.creerCapacite();
@@ -828,7 +839,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     for (const d of dossiersJoints) args.push("--add-dir", d);
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", [...consignesApp(options, mcp), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
 
-    proc = lancerProcessus(bin, args, cwd, signature, options, acces, spontane);
+    proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane);
   }
 
   ajouterTour(proc, nouveauTour(requestId, emit, acces));

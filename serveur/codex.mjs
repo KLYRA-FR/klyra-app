@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
-import { consigneSkillsCodex, promptAvecSkillCodex } from "./connaissances-agent.mjs";
+import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { binaireGere } from "./installation.mjs";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
@@ -18,6 +18,7 @@ const CONNEXION_MAX_MS = 15 * 60 * 1000;
 /**
  * @param {{ home: string, version: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
  *   consigne: (agent: string | null) => string, consignesKlyra?: () => string | null, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
+ *   skillsParAgent?: () => object | null,
  *   codex?: string | null }} options
  */
 export function creerCodex(options) {
@@ -202,8 +203,9 @@ export function creerCodex(options) {
     /* Les consignes KLYRA adoptées sur le PC (reçues avec l'équipe), données aussi à Codex, comme `consignesApp` dans l'app. */
     const consignesKlyra = options.consignesKlyra?.() ?? null;
     /* Les skills de Claude sur ce VPS, que Codex ne lit pas de lui-même (cf. electron/connaissances-agent.ts). */
-    const skills = consigneSkillsCodex(demande.agent ? ficheBrute(demande.agent) : null, path.join(home, ".claude"), cwd);
-    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms]);
+    const filtre = filtreSkills(options.skillsParAgent?.() ?? null, demande.agent ?? null, path.join(home, ".claude"), cwd);
+    const skills = consigneSkillsCodex(demande.agent ? ficheBrute(demande.agent) : null, path.join(home, ".claude"), cwd, filtre.garder);
+    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms, filtre.coupes]);
     const reglages = () => {
       const mcp = options.mcp(demande);
       return {
@@ -245,7 +247,7 @@ export function creerCodex(options) {
     try {
       const r = await requete("turn/start", {
         threadId,
-        input: [{ type: "text", text: promptAvecSkillCodex(demande.prompt, demande.skill ?? null, path.join(home, ".claude"), cwd), text_elements: [] }],
+        input: [{ type: "text", text: promptAvecSkillCodex(demande.prompt, demande.skill ?? null, path.join(home, ".claude"), cwd, filtre.garder), text_elements: [] }],
         cwd,
         approvalPolicy: politique.approvalPolicy,
         sandboxPolicy: politique.sandboxPolicy,

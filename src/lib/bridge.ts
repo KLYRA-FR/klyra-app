@@ -8,6 +8,8 @@ import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
 import type { EtatConnect } from "../../electron/composio-connect";
 import type { ConfigurationKlyra } from "../../electron/configuration-klyra";
+import type { SkillsParAgent } from "../../electron/skills-par-agent";
+export type { SkillsParAgent } from "../../electron/skills-par-agent";
 import type { DiagnosticPoste } from "../../electron/diagnostic-poste";
 import type { RenduVps } from "../../electron/agents-distants";
 import type { AjoutFiche } from "../../electron/atelier-agent";
@@ -596,6 +598,8 @@ export interface KlyraBridge {
     /** Ce que la configuration de Claude Code ajoute à chaque appel : de ce poste, ou du VPS `lieu`. */
     diagnosticPoste?: (lieu?: string | null) => Promise<Reponse<DiagnosticPoste>>;
     montrerDiagnostic?: (chemin: string) => Promise<Reponse<void>>;
+    /** Skills du poste, et du projet de ce PC s’il est ouvert. Absent avant la relance de l’app. */
+    skillsDisponibles?: (dossier: string | null) => Promise<Reponse<{ poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[] }>>;
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;
     ouvrirAutorisation: (type: "accessibilite" | "ecran") => Promise<Reponse<void>>;
@@ -729,6 +733,8 @@ export interface Reglages {
   navigateur: { agents: boolean };
   sons: PreferencesSons;
   configuration: ConfigurationKlyra;
+  /** Skills reçues par chaque agent. Absent avant la relance : tout est reçu. */
+  skillsParAgent: SkillsParAgent;
 }
 
 /** Le menu du clic droit dans une page (cf. electron/navigateur/navigateur.ts, `ParametresMenu`). */
