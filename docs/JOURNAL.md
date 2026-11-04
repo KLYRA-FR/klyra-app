@@ -3,7 +3,6 @@
 # Journal du projet — app KLYRA
 
 > Historique des décisions et de l’avancement, pour reprendre le travail depuis n’importe quel ordi.
-> **À Claude, en début de session : lis ce fichier et `CLAUDE.md` avant toute chose, puis mets à jour ce journal à la fin de chaque session.**
 
 ---
 
