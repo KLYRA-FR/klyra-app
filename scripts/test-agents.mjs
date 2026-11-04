@@ -30,9 +30,10 @@ function profil(nom) {
   const home = path.join(racine, "home");
   const agents = path.join(home, ".claude", "agents");
   const donnees = path.join(racine, "userdata");
+  const equipe = path.join(donnees, "equipe");
   mkdirSync(agents, { recursive: true });
   mkdirSync(donnees, { recursive: true });
-  return { home, agents, donnees, env: { HOME: home, KLYRA_USER_DATA: donnees } };
+  return { home, agents, donnees, equipe, env: { HOME: home, KLYRA_USER_DATA: donnees } };
 }
 
 /** Les cartes de Mes agents : nom, étiquettes et texte. */
@@ -119,12 +120,12 @@ try {
   verifier(await app.quand("document.querySelector('main')?.innerText.includes('Préparé par Sam')"), "l’éditeur s’ouvre, préparé par Sam");
   verifier((await app.ev("document.querySelector('main input')?.value")) === "Nina", "le nom proposé est pré-rempli");
   verifier(/Environ \d+ jetons, relus à chaque appel/.test(await app.ev("document.querySelector('main')?.innerText ?? ''")), "sous la fiche : son poids en jetons");
-  verifier(!existsSync(path.join(n.agents, "juriste.md")), "rien n’est écrit avant « Créer l’agent »");
+  verifier(!existsSync(path.join(n.agents, "juriste.md")) && !existsSync(path.join(n.equipe, "juriste.md")), "rien n’est écrit avant « Créer l’agent »");
   await app.cliquer("Créer l’agent");
   verifier(await app.quand("new URL(location.href).searchParams.get('agent') === 'juriste'"), "« Créer l’agent » ouvre sa fiche");
   mes = lireJson(path.join(n.donnees, "mes-agents.json"));
-  verifier(existsSync(path.join(n.agents, "juriste.md")) && mes.agents.juriste?.actif && mes.agents.juriste.origine.type === "local", "juriste.md écrit, actif dans Mes agents, à soi");
-  verifier(!/^memory:/m.test(readFileSync(path.join(n.agents, "juriste.md"), "utf8")), "nouvel agent : sans mémoire (« Aucune » par défaut)");
+  verifier(existsSync(path.join(n.equipe, "juriste.md")) && !existsSync(path.join(n.agents, "juriste.md")) && mes.agents.juriste?.actif && mes.agents.juriste.origine.type === "local", "juriste.md écrit dans le dossier de l’app, pas sur le poste, actif, à soi");
+  verifier(!/^memory:/m.test(readFileSync(path.join(n.equipe, "juriste.md"), "utf8")), "nouvel agent : sans mémoire (« Aucune » par défaut)");
 
   // Créer à la main : un nom pris, puis un identifiant pris.
   await app.aller("/equipe?nouveau=1");
@@ -144,7 +145,7 @@ try {
   await app.cliquer("Créer l’agent");
   verifier(await app.quand("new URL(location.href).searchParams.get('agent') === 'dev-2'"), "agent créé sous « dev-2 »");
   const apresCreation = empreintesDe(n.agents);
-  verifier(Object.keys(avantCreation).every((f) => avantCreation[f] === apresCreation[f]), "aucune autre fiche modifiée (dev.md compris)");
+  verifier(JSON.stringify(avantCreation) === JSON.stringify(apresCreation) && existsSync(path.join(n.equipe, "dev-2.md")) && !existsSync(path.join(n.agents, "dev-2.md")), "le poste est intact, dev-2.md est dans le dossier de l’app");
 
   // Un modèle KLYRA déjà sur l'ordinateur : remis tel quel dans Mes agents, sans « designer-2 ».
   await app.aller("/equipe?vue=bibliotheque");
@@ -154,7 +155,7 @@ try {
   await app.cliquer("Ajouter", "document.querySelector('[role=dialog]')");
   await app.quand("!document.querySelector('[role=dialog]')");
   mes = lireJson(path.join(n.donnees, "mes-agents.json"));
-  verifier(mes.agents.designer?.actif && !existsSync(path.join(n.agents, "designer-2.md")), "modèle Iris remis dans Mes agents, sans second exemplaire");
+  verifier(mes.agents.designer?.actif && !existsSync(path.join(n.agents, "designer-2.md")) && !existsSync(path.join(n.equipe, "designer-2.md")), "modèle Iris remis dans Mes agents, sans second exemplaire");
   verifier(empreinte(path.join(n.agents, "designer.md")) === avant["designer.md"], "designer.md inchangé");
 
   // Désactiver Nina : elle sort de partout, sa conversation reste lisible, elle revient telle quelle.
@@ -167,7 +168,7 @@ try {
   await app.cliquer("Désactiver", "document.querySelector('[role=alertdialog]')");
   await app.quand("document.querySelector('main')?.innerText.includes('n’est plus dans Mes agents depuis')");
   mes = lireJson(path.join(n.donnees, "mes-agents.json"));
-  verifier(mes.agents.juriste.actif === false && existsSync(path.join(n.agents, "juriste.md")), "désactivée : fichier gardé, inactif dans Mes agents");
+  verifier(mes.agents.juriste.actif === false && existsSync(path.join(n.equipe, "juriste.md")) && !existsSync(path.join(n.agents, "juriste.md")), "désactivée : fichier gardé dans l’app, inactif dans Mes agents, poste intact");
   verifier(!(await panneau(app)).includes("Nina"), "le panneau ne la propose plus");
   await app.aller("/chat?id=dm-juriste");
   verifier(await app.quand("document.querySelector('main')?.innerText.includes('Nina n’est plus dans Mes agents. Ses messages restent lisibles.')"), "sa conversation : la barre remplace le composeur");

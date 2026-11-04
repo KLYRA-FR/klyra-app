@@ -404,7 +404,7 @@ export function AgentEditor({ role, onReprendre }: { role: Role | null; onRepren
             ? "Enregistrement…"
             : modifie
               ? creation
-                ? `Crée ~/.claude/agents/${id || "identifiant"}.md`
+                ? `Crée la fiche ${id || "identifiant"}.md dans le dossier de l’app`
                 : "Modifications non enregistrées. L’ancienne version reste dans l’historique."
               : "Aucune modification."}
         </span>

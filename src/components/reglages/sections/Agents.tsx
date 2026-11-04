@@ -228,7 +228,7 @@ export function Agents() {
         <Ligne
           id="dossier-agents"
           libelle="Dossier des fiches"
-          description={dir ? <span className="klyra-mono">{dir.replace(/^\/(Users|home)\/[^/]+/, "~")}</span> : "~/.claude/agents, lu par Claude Code."}
+          description={dir ? <span className="klyra-mono">{dir.replace(/^\/(Users|home)\/[^/]+/, "~")}</span> : "Le dossier de l’app. Les sessions lancées ici lisent ces fiches."}
         >
           {pont ? (
             <Bouton
