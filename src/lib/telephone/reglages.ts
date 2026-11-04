@@ -110,6 +110,11 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "computer-use-actif": { type: "poste", elevation: RAISONS.computerUse },
   "autorisation-accessibilite": { type: "lecture", elevation: RAISONS.computerUse },
   "autorisation-ecran": { type: "lecture", elevation: RAISONS.computerUse },
+  /* Navigateur : le couper, oui ; l'allumer élargit ce que font les agents, devant l'ordinateur. Ses données sont sur l'ordinateur. */
+  "navigateur-agents": { type: "poste", elevation: RAISONS.computerUse },
+  "navigateur-donnees": sur(RAISONS.ordinateur),
+  "navigateur-telechargements": L,
+  "navigateur-coffre": sur(RAISONS.cles),
   /* Marketplace : les connexions et les clés des apps restent sur l'ordinateur. */
   composio: sur(RAISONS.composio),
   "apps-directes": sur(RAISONS.cles),

@@ -5,6 +5,7 @@ import path from "node:path";
 import { app, shell } from "electron";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { signatureOrdinateur } from "../ordinateur/pilote";
+import { signatureNavigateur } from "../navigateur/outils";
 import { espaceComposio } from "../composio";
 import { consigneSkillsCodex, promptAvecSkillCodex } from "../connaissances-agent";
 import { configMcp } from "../ia";
@@ -261,8 +262,8 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   /* Les skills de Claude, que Codex ne lit pas de lui-même (cf. connaissances-agent.ts) : présentées par leur
      fichier, celles que la fiche précharge avec leur texte, et `/<skill>` demandé en tête du message. */
   const skills = consigneSkillsCodex(options.agent ? ficheBrute(options.agent) : null, CONFIG_CLAUDE(), cwd);
-  // Mes agents, Composio ou les skills ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms]);
+  // Mes agents, Composio, les skills ou le navigateur ont changé : le fil est rechargé avec les consignes et les outils à jour.
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, signatureNavigateur()]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {

@@ -23,6 +23,7 @@ import { useExporterConversation } from "./useExporterConversation";
 import { OngletsConversations } from "./OngletsConversations";
 import { OngletsFils } from "./OngletsFils";
 import { OUVRIR_PANNEAU_AGENT, PanneauLateral, surReglages, usePanneauLateral } from "./PanneauLateral";
+import { useActiviteNavigateur } from "@/lib/navigateur";
 import type { DemandeApercu } from "@/components/ui/Lien";
 
 /** « Modifié par Dev · 09:52 » : dernier journal de travail du chat. */
@@ -175,6 +176,16 @@ export function ChatScreen() {
     return () => window.removeEventListener("klyra:apercu", prendre);
   }, [equipe]);
 
+  /* Un agent passe la main à la personne sur une page du navigateur : le panneau s'ouvre pour qu'elle la voie. */
+  const activiteNavigateur = useActiviteNavigateur(chat?.id ?? "");
+  const [attenteVue, setAttenteVue] = useState(false);
+  if ((activiteNavigateur === "attente") !== attenteVue) {
+    setAttenteVue(activiteNavigateur === "attente");
+    if (activiteNavigateur === "attente") {
+      setPanneauOuvert(true);
+      setPreviewOpen(true);
+    }
+  }
   /* Avatar ou prénom de l'agent cliqué : le panneau s'ouvre sur ses réglages. */
   useEffect(() => {
     const ouvrir = () => {

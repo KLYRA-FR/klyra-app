@@ -188,6 +188,23 @@ body {
   50%      { opacity: 0.55; }
 }
 
+/* Une page du navigateur de KLYRA qui charge : un trait d'accent qui court sous la barre d'adresse. */
+.klyra-chargement-navigateur {
+  background: linear-gradient(90deg, transparent, var(--color-bleu-k1-500) 40%, var(--color-bleu-k1-500) 60%, transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: klyra-chargement-navigateur 1100ms var(--ease-sortie) infinite;
+}
+
+@keyframes klyra-chargement-navigateur {
+  from { background-position: -50% 0; }
+  to   { background-position: 150% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-chargement-navigateur { animation: none; background: var(--color-bleu-k1-500); opacity: 0.5; }
+}
+
 /* Pendant la dictée, le champ garde son texte et son curseur, mais c'est
    MiroirDictee qui l'écrit par-dessus (le provisoire en gris). */
 .klyra-dictee-champ {

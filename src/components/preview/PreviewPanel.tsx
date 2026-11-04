@@ -16,8 +16,10 @@ import { getBridge } from "@/lib/bridge";
 import { ouvrirFichier } from "@/components/project/Visionneuse";
 import { BarreAdresse, noterAdresse } from "./BarreAdresse";
 import { Publier } from "./Publier";
+import { PanneauNavigateur } from "@/components/chat/navigateur/PanneauNavigateur";
+import { useActiviteNavigateur } from "@/lib/navigateur";
 
-type PreviewTab = "apercu" | "code" | "fichiers" | "taches";
+type PreviewTab = "apercu" | "code" | "fichiers" | "taches" | "navigateur";
 type Device = "desktop" | "mobile";
 
 const TABS: Onglet<PreviewTab>[] = [
@@ -25,6 +27,7 @@ const TABS: Onglet<PreviewTab>[] = [
   { id: "code", label: "Modifié", icone: <Icon name="code-01" size={16} /> },
   { id: "fichiers", label: "Fichiers", icone: <Icon name="file-code" size={16} /> },
   { id: "taches", label: "Tâches", icone: <Icon name="list" size={16} /> },
+  { id: "navigateur", label: "Navigateur", icone: <Icon name="computer" size={16} /> },
 ];
 
 const LARGEUR_DEFAUT = 480;
@@ -81,6 +84,13 @@ interface PreviewPanelProps {
 /** Panneau de droite d'une conversation de projet : le vrai site en aperçu, ses fichiers, et Publier. */
 export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: PreviewPanelProps) {
   const [tab, setTab] = useState<PreviewTab>("apercu");
+  /* Un agent passe la main à la personne sur une page : le Navigateur s'affiche. */
+  const activiteNavigateur = useActiviteNavigateur(chat.id);
+  const [attenteVue, setAttenteVue] = useState(false);
+  if ((activiteNavigateur === "attente") !== attenteVue) {
+    setAttenteVue(activiteNavigateur === "attente");
+    if (activiteNavigateur === "attente") setTab("navigateur");
+  }
   const [device, setDevice] = useState<Device>("desktop");
   const [largeur, setLargeur] = useLargeur();
   const [onglets, setOnglets] = useState<OngletApercu[]>(() => [nouvelOnglet(project?.previewUrl ?? "")]);
@@ -329,7 +339,13 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
           </div>
         </>
       )}
-      {tab !== "apercu" && project && (
+      {/* Le navigateur de KLYRA : les onglets que les agents de cette conversation utilisent. */}
+      {tab === "navigateur" && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <PanneauNavigateur chat={chat} />
+        </div>
+      )}
+      {tab !== "apercu" && tab !== "navigateur" && project && (
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           {tab === "fichiers" && <ArbreProjet project={project} />}
           {tab === "code" && <Modifies project={project} />}

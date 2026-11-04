@@ -622,6 +622,33 @@ export interface KlyraBridge {
       deconnecter: () => Promise<Reponse<void>>;
     };
   };
+  /** Le navigateur de KLYRA (cf. electron/navigateur/). Absent avant la relance de l'app. */
+  navigateur?: {
+    etat: () => Promise<Reponse<OngletNavigateur[]>>;
+    /** Un nouvel onglet dans cette conversation ; rend son id. */
+    ouvrir: (chatId: string, url?: string) => Promise<Reponse<string>>;
+    aller: (id: string, saisie: string) => Promise<Reponse<void>>;
+    historique: (id: string, geste: "retour" | "suivant" | "recharger" | "arreter") => Promise<Reponse<void>>;
+    fermer: (id: string) => Promise<Reponse<void>>;
+    /** Pose la page de l'onglet sur ce cadre (pixels CSS de la fenêtre) ; null : plus aucune page à l'écran. */
+    afficher: (id: string | null, cadre: { x: number; y: number; width: number; height: number } | null) => Promise<Reponse<void>>;
+    /** Prendre (true) ou rendre (false) la main sur un onglet. */
+    main: (id: string, prise: boolean) => Promise<Reponse<void>>;
+    ailleurs: (id: string) => Promise<Reponse<void>>;
+    montrerTelechargement: (chemin: string) => Promise<Reponse<void>>;
+    effacer: () => Promise<Reponse<void>>;
+    onEtat: (callback: (etat: OngletNavigateur[]) => void) => () => void;
+    /** Clic droit de la personne dans une page : l'écran dessine le menu de l'app. Absents avant la relance de l'app. */
+    onMenu?: (callback: (id: string, menu: MenuNavigateur) => void) => () => void;
+    actionMenu?: (id: string, action: ActionMenuNavigateur) => Promise<Reponse<void>>;
+    /** Le coffre : site et identifiant seulement ; le mot de passe va vers le main, jamais l'inverse. */
+    coffre?: () => Promise<Reponse<ConnexionCoffre[]>>;
+    ajouterAuCoffre?: (entree: { site: string; identifiant: string; motDePasse: string; agents: boolean }) => Promise<Reponse<ConnexionCoffre[]>>;
+    retirerDuCoffre?: (id: string) => Promise<Reponse<ConnexionCoffre[]>>;
+    agentsCoffre?: (id: string, agents: boolean) => Promise<Reponse<ConnexionCoffre[]>>;
+    /** Remplit la connexion de la page de cet onglet (la personne, d'un clic). */
+    remplir?: (id: string, idConnexion: string) => Promise<Reponse<string>>;
+  };
   /** La consommation de l'année (cf. electron/consommation.ts). */
   consommation?: {
     lire: () => Promise<Reponse<{ entrees: EntreeConsommation[]; depuis: number | null; historique?: EtatHistorique | null }>>;
@@ -689,8 +716,57 @@ export interface PreferencesSons {
 export interface Reglages {
   notifications: PreferencesNotifications;
   computerUse: { actif: boolean };
+  /** Le navigateur de KLYRA : outils donnés aux agents (cf. electron/navigateur/). */
+  navigateur: { agents: boolean };
   sons: PreferencesSons;
   configuration: ConfigurationKlyra;
+}
+
+/** Le menu du clic droit dans une page (cf. electron/navigateur/navigateur.ts, `ParametresMenu`). */
+export interface MenuNavigateur {
+  x: number;
+  y: number;
+  lien: string | null;
+  texteLien: string;
+  image: string | null;
+  selection: string;
+  editable: boolean;
+  peut: { couper: boolean; copier: boolean; coller: boolean; toutSelectionner: boolean };
+  peutReculer: boolean;
+  peutAvancer: boolean;
+}
+
+export type ActionMenuNavigateur = "retour" | "suivant" | "recharger" | "couper" | "copier" | "coller" | "tout" | "copier-lien" | "lien-onglet" | "lien-ailleurs" | "image-onglet" | "copier-image" | "chercher";
+
+/** Une connexion du coffre du navigateur (cf. electron/navigateur/coffre.ts) : jamais le mot de passe. */
+export interface ConnexionCoffre {
+  id: string;
+  hote: string;
+  identifiant: string;
+  agents: boolean;
+  ajouteLe: number;
+  utiliseLe: number | null;
+}
+
+/** Un onglet du navigateur de KLYRA (cf. electron/navigateur/navigateur.ts, `OngletPublic`). */
+export interface OngletNavigateur {
+  id: string;
+  chatId: string;
+  url: string;
+  titre: string;
+  chargement: boolean;
+  peutReculer: boolean;
+  peutAvancer: boolean;
+  erreur: string | null;
+  vignette: string | null;
+  endormi: boolean;
+  /** Sa page est à l'écran, dans le panneau. */
+  affiche: boolean;
+  pilote: { roleId: string; action: string; at: number } | null;
+  main: null | { type: "personne" } | { type: "demandee"; roleId: string; raison: string };
+  telechargements: { nom: string; chemin: string; etat: "en-cours" | "fini" | "annule" | "echec"; recus: number; total: number }[];
+  creeLe: number;
+  vuLe: number;
 }
 
 export type EtatAutorisation = "accordee" | "refusee" | "a-demander" | "sans-objet" | "inconnue";

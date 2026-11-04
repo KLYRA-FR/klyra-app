@@ -9,6 +9,7 @@ function poste(acces: Acces = "projet", computerUse = true) {
   let reglages: Reglages = {
     notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
     computerUse: { actif: computerUse },
+    navigateur: { agents: true },
     sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
     configuration: CONFIGURATION_PAR_DEFAUT,
   };

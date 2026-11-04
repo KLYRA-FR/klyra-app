@@ -10,23 +10,26 @@ import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
 import { useChatMessages, useRole, useWorkspace } from "@/lib/workspace";
 import type { Chat, TacheAgent } from "@/types/domain";
+import { useActiviteNavigateur } from "@/lib/navigateur";
+import { PanneauNavigateur } from "./navigateur/PanneauNavigateur";
 import { PastilleExtension } from "./PastilleExtension";
 import { ReglagesAgent } from "./reglages-agent/ReglagesAgent";
 
 /**
  * Panneau à droite d'une conversation, à onglets : les réglages de l'agent,
- * les fichiers de la conversation, ses tâches. On ferme un onglet, on le
+ * les fichiers de la conversation, ses tâches, le navigateur de ses agents. On ferme un onglet, on le
  * rouvre avec « + », on élargit le panneau à la poignée ou on l'agrandit.
  */
 
-export type Onglet = "reglages" | "fichiers" | "taches";
+export type Onglet = "reglages" | "fichiers" | "taches" | "navigateur";
 
 const ONGLETS: Record<Onglet, { nom: string; icone: IconName }> = {
   reglages: { nom: "Réglages", icone: "settings" },
   fichiers: { nom: "Fichiers", icone: "folder" },
   taches: { nom: "Tâches", icone: "list" },
+  navigateur: { nom: "Navigateur", icone: "computer" },
 };
-const ORDRE: Onglet[] = ["reglages", "fichiers", "taches"];
+const ORDRE: Onglet[] = ["reglages", "fichiers", "taches", "navigateur"];
 
 /** Demande d'ouvrir le panneau sur les réglages de l'agent (clic sur son avatar ou son prénom). */
 export const OUVRIR_PANNEAU_AGENT = "klyra:panneau-agent";
@@ -45,6 +48,8 @@ export interface EtatPanneau {
   ouverts: Onglet[];
   actif: Onglet;
   largeur: number;
+  /** Les onglets qui existaient à l'enregistrement : un onglet apparu depuis (Navigateur) s'ouvre une fois de lui-même. */
+  connus?: Onglet[];
 }
 
 /** L'état du panneau, gardé d'une session à l'autre (préférence de cet écran seulement). */
@@ -52,11 +57,15 @@ export function usePanneauLateral() {
   const [etat, setEtat] = useState<EtatPanneau>(() => {
     try {
       const brut = JSON.parse(localStorage.getItem(CLE) ?? "null") as EtatPanneau | null;
-      if (brut?.ouverts?.length) return brut;
+      if (brut?.ouverts?.length) {
+        const connus = brut.connus ?? ["reglages", "fichiers", "taches"];
+        const nouveaux = ORDRE.filter((o) => !connus.includes(o) && !brut.ouverts.includes(o));
+        return { ...brut, ouverts: ORDRE.filter((o) => brut.ouverts.includes(o) || nouveaux.includes(o)), connus: [...ORDRE] };
+      }
     } catch {
       /* stockage indisponible */
     }
-    return { ouverts: [...ORDRE], actif: "reglages", largeur: LARGEUR_DEFAUT };
+    return { ouverts: [...ORDRE], actif: "reglages", largeur: LARGEUR_DEFAUT, connus: [...ORDRE] };
   });
   useEffect(() => {
     try {
@@ -359,6 +368,12 @@ export function PanneauLateral({
   const ouvrirOnglet = (o: Onglet) =>
     setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === o || e.ouverts.includes(x)), actif: o }));
 
+  /* Un agent passe la main à la personne sur une page : le Navigateur s'ouvre de lui-même. */
+  const activite = useActiviteNavigateur(chat.id);
+  useEffect(() => {
+    if (activite === "attente") setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "navigateur" || e.ouverts.includes(x)), actif: "navigateur" }));
+  }, [activite, setEtat]);
+
   /* Plus aucun onglet : le panneau se ferme. */
   useEffect(() => {
     if (!etat.ouverts.length) onFermer();
@@ -442,6 +457,12 @@ export function PanneauLateral({
                 >
                   {ONGLETS[o].nom}
                 </button>
+                {o === "navigateur" && activite && (
+                  <span
+                    aria-label={activite === "attente" ? "Un agent t’attend dans le navigateur" : "Un agent utilise le navigateur"}
+                    className={cn("size-1.5 rounded-full bg-bleu-k1-500", activite === "pilote" && "klyra-respire")}
+                  />
+                )}
               </div>
             );
           })}
@@ -458,7 +479,7 @@ export function PanneauLateral({
               className="text-icone-secondaire"
             />
             {menuAjout && (
-              <div className="absolute top-full right-0 z-50 mt-1 flex w-44 flex-col rounded-md border border-bordure-subtile bg-fond-surface p-1 shadow-ombre-flottante">
+              <div data-flottant className="absolute top-full right-0 z-50 mt-1 flex w-44 flex-col rounded-md border border-bordure-subtile bg-fond-surface p-1 shadow-ombre-flottante">
                 {fermes.map((o) => (
                   <button
                     key={o}
@@ -494,10 +515,11 @@ export function PanneauLateral({
         />
       </div>
 
-      <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
+      <div role="tabpanel" className={cn("min-h-0 flex-1", actif === "navigateur" ? "flex flex-col" : "overflow-y-auto")}>
         {actif === "reglages" && <ReglagesAgent key={chat.id} chat={chat} />}
         {actif === "fichiers" && <Fichiers chat={chat} />}
         {actif === "taches" && <Taches chat={chat} />}
+        {actif === "navigateur" && <PanneauNavigateur key={chat.id} chat={chat} />}
       </div>
     </aside>
   );

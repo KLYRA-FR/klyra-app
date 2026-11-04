@@ -137,6 +137,8 @@ curl -fsSL "$SOURCE/consommation-ecart.mjs" -o "$CODE_DIR/consommation-ecart.mjs
 curl -fsSL "$SOURCE/diagnostic-poste.mjs" -o "$CODE_DIR/diagnostic-poste.mjs"
 curl -fsSL "$SOURCE/consignes-projet.mjs" -o "$CODE_DIR/consignes-projet.mjs"
 curl -fsSL "$SOURCE/rendus.mjs" -o "$CODE_DIR/rendus.mjs"
+curl -fsSL "$SOURCE/navigateur.mjs" -o "$CODE_DIR/navigateur.mjs"
+curl -fsSL "$SOURCE/navigateur-definitions.mjs" -o "$CODE_DIR/navigateur-definitions.mjs"
 curl -fsSL "$SOURCE/epreuve.mjs" -o "$CODE_DIR/epreuve.mjs"
 curl -fsSL "$SOURCE/json-partiel.mjs" -o "$CODE_DIR/json-partiel.mjs"
 curl -fsSL "$SOURCE/atelier-agent.mjs" -o "$CODE_DIR/atelier-agent.mjs"

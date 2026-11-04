@@ -128,6 +128,25 @@ import {
   type EvenementNotification,
 } from "./reglages";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
+import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
+import { executerPourServeur, navigateurActif } from "./navigateur/outils";
+import {
+  actionMenu,
+  afficherOnglet,
+  allerA,
+  brancherNavigateur,
+  effacerDonnees,
+  etatNavigateur,
+  fermerOnglet,
+  historique,
+  montrerTelechargement,
+  ouvrirAilleurs,
+  ouvrirOnglet,
+  prendreLaMain,
+  remplirParLaPersonne,
+  type ActionMenu,
+  type GesteHistorique,
+} from "./navigateur/navigateur";
 import { absolu, arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { etatGit, publier } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
@@ -882,7 +901,7 @@ function registerBridge() {
     const assistant = mesAgents().assistant.nom ?? null;
     /* La configuration KLYRA de ce PC, comme `environnementAgent` et `consignesApp` la donnent aux sessions locales. */
     const { configuration: reglage } = lireReglages();
-    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes) };
+    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes), navigateur: navigateurActif() };
     const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches, configuration])).digest("hex").slice(0, 16);
     return { fiches, assistant, configuration, empreinte };
   };
@@ -892,6 +911,58 @@ function registerBridge() {
       throw new Error("Accès au serveur refusé.");
     }
   };
+  /* Le navigateur de KLYRA (navigateur/) : ses pages vivent ici, l'onglet « Navigateur » du panneau les place et les commande. */
+  brancherNavigateur({
+    fenetre: () => fenetrePrincipale,
+    signaler: (etat) => {
+      const wc = fenetrePrincipale?.webContents;
+      if (wc && !wc.isDestroyed()) wc.send("navigateur:etat", etat);
+    },
+    menu: (id, menu) => {
+      const wc = fenetrePrincipale?.webContents;
+      if (wc && !wc.isDestroyed()) wc.send("navigateur:menu", id, menu);
+    },
+  });
+  const texteNav = (v: unknown, max = 4_096) => (typeof v === "string" ? v.slice(0, max) : "");
+  const navigateur = (canal: string, fn: (...args: unknown[]) => unknown) =>
+    ipcMain.handle(canal, (event, ...args: unknown[]) =>
+      repondre(async () => {
+        const win = fenetrePrincipale;
+        if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) throw new Error("Accès au navigateur refusé.");
+        return fn(...args);
+      }),
+    );
+  navigateur("navigateur:etat", () => etatNavigateur());
+  navigateur("navigateur:ouvrir", (chatId, url) => ouvrirOnglet(texteNav(chatId, 200), texteNav(url) || undefined).id);
+  navigateur("navigateur:aller", (id, saisie) => allerA(texteNav(id, 200), texteNav(saisie)));
+  navigateur("navigateur:historique", (id, geste) => {
+    if (!["retour", "suivant", "recharger", "arreter"].includes(String(geste))) throw new Error("Geste inconnu.");
+    historique(texteNav(id, 200), geste as GesteHistorique);
+  });
+  navigateur("navigateur:fermer", (id) => fermerOnglet(texteNav(id, 200)));
+  navigateur("navigateur:afficher", (id, cadre) => {
+    const c = cadre as { x?: unknown; y?: unknown; width?: unknown; height?: unknown } | null;
+    const n = (v: unknown) => (typeof v === "number" ? v : NaN);
+    afficherOnglet(texteNav(id, 200) || null, c ? { x: n(c.x), y: n(c.y), width: n(c.width), height: n(c.height) } : null);
+  });
+  navigateur("navigateur:main", (id, prise) => prendreLaMain(texteNav(id, 200), prise === true));
+  navigateur("navigateur:ailleurs", (id) => ouvrirAilleurs(texteNav(id, 200)));
+  navigateur("navigateur:telechargement", (chemin) => montrerTelechargement(texteNav(chemin)));
+  navigateur("navigateur:effacer", () => effacerDonnees());
+  const ACTIONS_MENU: ActionMenu[] = ["retour", "suivant", "recharger", "couper", "copier", "coller", "tout", "copier-lien", "lien-onglet", "lien-ailleurs", "image-onglet", "copier-image", "chercher"];
+  navigateur("navigateur:menu-action", (id, action) => {
+    if (!ACTIONS_MENU.includes(action as ActionMenu)) throw new Error("Action inconnue.");
+    return actionMenu(texteNav(id, 200), action as ActionMenu);
+  });
+  /* Le coffre : le mot de passe arrive une fois de l'écran, chiffré aussitôt ; il n'y retourne jamais. */
+  navigateur("navigateur:coffre", () => listerCoffre());
+  navigateur("navigateur:coffre:ajouter", (entree) => {
+    const e = (entree ?? {}) as Record<string, unknown>;
+    return ajouterAuCoffre({ site: e.site, identifiant: e.identifiant, motDePasse: e.motDePasse, agents: e.agents });
+  });
+  navigateur("navigateur:coffre:retirer", (id) => retirerDuCoffre(texteNav(id, 100)));
+  navigateur("navigateur:coffre:agents", (id, agents) => changerAgentsCoffre(texteNav(id, 100), agents === true));
+  navigateur("navigateur:coffre:remplir", (id, idConnexion) => remplirParLaPersonne(texteNav(id, 200), texteNav(idConnexion, 100)));
   const origineVps = (adresse: unknown) => (typeof adresse === "string" ? adresse : "");
   ipcMain.handle("serveur:interroger", (event, adresse: unknown) => repondre(() => {
     depuisFenetre(event);
@@ -925,6 +996,8 @@ function registerBridge() {
         },
         equipe: equipePourVps,
         jeton: jetonServeur,
+        /* Un agent du VPS utilise le navigateur de ce PC : seulement pour une conversation de ce serveur. */
+        navigateur: (origine, appel) => executerPourServeur(origine, appel),
       },
       originesServeurs(),
     );

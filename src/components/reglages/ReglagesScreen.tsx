@@ -14,6 +14,7 @@ import { Equipe } from "./sections/Equipe";
 import { Marketplace } from "@/components/marketplace/MarketplaceScreen";
 import { General } from "./sections/General";
 import { MisesAJour } from "./sections/MisesAJour";
+import { Navigateur } from "./sections/Navigateur";
 import { Mobile } from "./sections/Mobile";
 import { Notifications } from "./sections/Notifications";
 import { Profil } from "./sections/Profil";
@@ -35,6 +36,7 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
   notifications: () => <Notifications />,
   voix: () => <Voix />,
   "computer-use": () => <ComputerUse />,
+  navigateur: () => <Navigateur />,
   marketplace: () => <Marketplace />,
   "mises-a-jour": () => <MisesAJour />,
 };
