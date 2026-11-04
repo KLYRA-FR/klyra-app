@@ -38,6 +38,7 @@ export interface EtatIssue {
   pull: EtatPull | null;
   /** Le compte GitHub de la personne qui fait tourner ce poste. */
   moi: string;
+  poste: string;
   /** Un agent de ce poste travaille déjà sur cette Issue. */
   enCoursIci: boolean;
   maintenant: number;
@@ -63,7 +64,8 @@ export function prochaineAction(e: EtatIssue): Action {
   if (e.carte?.statut === "termine") return attendre("deja_terminee");
   if (e.pull?.fusionnee) return { type: "cloturer" };
   if (!e.ouverte) return e.branche || e.carte ? { type: "cloturer" } : attendre("fermee");
-  if (e.labels.includes(LABEL_BLOQUE) || e.carte?.statut === "bloque") return attendre("bloquee");
+  /* Le label seul bloque : une personne débloque en le retirant. */
+  if (e.labels.includes(LABEL_BLOQUE)) return attendre("bloquee");
   if (e.enCoursIci) return attendre("en_cours_ici");
 
   if (!e.branche) return e.labels.includes(LABEL_PRET) ? { type: "reserver" } : attendre("pas_prete");
@@ -74,7 +76,7 @@ export function prochaineAction(e: EtatIssue): Action {
     return ancienne ? { type: "reprendre", generation: 1 } : attendre("reservation_en_cours");
   }
 
-  const mienne = e.carte.responsable === e.moi;
+  const mienne = e.carte.responsable === e.moi && e.carte.poste === e.poste;
   if (!mienne) {
     return bailTermine(e.carte, e.maintenant) ? { type: "reprendre", generation: e.carte.generation + 1 } : attendre("a_un_autre_poste");
   }

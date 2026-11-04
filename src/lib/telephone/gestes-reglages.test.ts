@@ -8,6 +8,7 @@ import { RAISONS } from "./reglages";
 
 function poste(acces: Acces = "projet", computerUse = true) {
   let reglages: Reglages = {
+    collaboration: { compteGithub: "", poste: "", projets: [] },
     notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
     computerUse: { actif: computerUse },
     navigateur: { agents: true },

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getBridge, unwrap, type PreferencesNotifications, type PreferencesSons, type Reglages } from "@/lib/bridge";
 import { CONFIGURATION_PAR_DEFAUT, validerConfiguration, type ConfigurationKlyra } from "../../electron/configuration-klyra";
+import { COLLABORATION_PAR_DEFAUT, validerCollaboration, type ReglagesCollaboration } from "../../electron/collaboration/reglages";
 import { SKILLS_PAR_DEFAUT, validerSkillsParAgent, type SkillsParAgent } from "../../electron/skills-par-agent";
 
 /**
@@ -18,6 +19,7 @@ export const REGLAGES_PAR_DEFAUT: Reglages = {
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
   skillsParAgent: SKILLS_PAR_DEFAUT,
+  collaboration: COLLABORATION_PAR_DEFAUT,
 };
 
 const CLE_NAVIGATEUR = "klyra:reglages";
@@ -33,6 +35,7 @@ function completer(brut: Partial<Reglages> | null | undefined): Reglages {
     sons: { ...REGLAGES_PAR_DEFAUT.sons, ...brut?.sons },
     configuration: validerConfiguration(brut?.configuration),
     skillsParAgent: validerSkillsParAgent(brut?.skillsParAgent),
+    collaboration: validerCollaboration(brut?.collaboration),
   };
 }
 
@@ -129,6 +132,17 @@ export function useReglages() {
     }
   }, []);
 
+  /** Le circuit des Issues : compte GitHub, ce poste, projets activés. */
+  const changerCollaboration = useCallback(async (collaboration: ReglagesCollaboration) => {
+    const actuels = await reglagesActuels();
+    setErreur(null);
+    try {
+      await enregistrer({ ...actuels, collaboration });
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
   /** Les skills reçues par chaque agent. */
   const changerSkills = useCallback(async (skillsParAgent: SkillsParAgent) => {
     const actuels = await reglagesActuels();
@@ -140,5 +154,5 @@ export function useReglages() {
     }
   }, []);
 
-  return { reglages, erreur, changerNotification, changerComputerUse, changerNavigateur, changerSons, changerConfiguration, changerSkills, systeme: !!getBridge()?.reglages };
+  return { reglages, erreur, changerCollaboration, changerNotification, changerComputerUse, changerNavigateur, changerSons, changerConfiguration, changerSkills, systeme: !!getBridge()?.reglages };
 }

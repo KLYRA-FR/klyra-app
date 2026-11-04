@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { motifRefus } from "./carte.ts";
 
 /**
  * Un dossier de travail par Issue, hors du dossier du projet : deux agents ne se gênent jamais, et ce
@@ -83,4 +84,52 @@ export async function retirerWorktree(c: { dossierProjet: string; racine: string
   const chemin = cheminWorktree(c.racine, c.depot, c.numero);
   if (existsSync(chemin)) await git(c.dossierProjet, ["worktree", "remove", "--force", chemin], {});
   await git(c.dossierProjet, ["worktree", "prune"], {});
+}
+
+/** Au-delà, c'est presque toujours un dossier oublié dans le `.gitignore`. */
+export const FICHIERS_MAX = 1000;
+
+export type Envoi =
+  | { statut: "rien" }
+  | { statut: "pousse"; sha: string; fichiers: string[] }
+  | { statut: "refus"; motif: "secret" | "trop_de_fichiers" | "workflows" | "git"; detail: string };
+
+/**
+ * Le travail de l'agent part sur sa branche. L'agent n'a pas accès à GitHub : c'est ce code qui valide
+ * et pousse, avec l'identité de l'App. Un secret dans le changement arrête tout, avant le commit.
+ */
+export async function validerEtPousser(c: { chemin: string; branche: string; message: string; env: Record<string, string>; jeton: string }): Promise<Envoi> {
+  const propre = (texte: string) => texte.split(c.jeton).join("***").slice(0, 2000);
+  const refus = (motif: "git" | "workflows", sortie: string): Envoi => ({ statut: "refus", motif, detail: propre(sortie) });
+
+  const ajout = await git(c.chemin, ["add", "-A"], c.env);
+  if (ajout.code !== 0) return refus("git", ajout.sortie);
+  const noms = await git(c.chemin, ["diff", "--cached", "--name-only"], c.env);
+  if (noms.code !== 0) return refus("git", noms.sortie);
+  const fichiers = noms.sortie.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  if (fichiers.length > FICHIERS_MAX) {
+    await git(c.chemin, ["reset"], c.env);
+    return { statut: "refus", motif: "trop_de_fichiers", detail: `${fichiers.length} fichiers` };
+  }
+
+  if (fichiers.length > 0) {
+    const difference = await git(c.chemin, ["diff", "--cached", "--no-color", "-U0"], c.env);
+    const ajoutes = difference.sortie.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).join("\n");
+    if (motifRefus(ajoutes) === "secret") {
+      await git(c.chemin, ["reset"], c.env);
+      return { statut: "refus", motif: "secret", detail: "Le changement contient ce qui ressemble à un secret." };
+    }
+    const commit = await git(c.chemin, ["commit", "--no-verify", "-m", c.message], c.env);
+    if (commit.code !== 0) return refus("git", commit.sortie);
+  } else {
+    const enAvance = await git(c.chemin, ["rev-list", "--count", `origin/${c.branche}..HEAD`], c.env);
+    if (enAvance.code === 0 && enAvance.sortie === "0") return { statut: "rien" };
+  }
+
+  const envoi = await git(c.chemin, ["push", "origin", `HEAD:refs/heads/${c.branche}`], c.env);
+  if (envoi.code !== 0) return /workflow/i.test(envoi.sortie) ? refus("workflows", envoi.sortie) : refus("git", envoi.sortie);
+  const sha = await git(c.chemin, ["rev-parse", "HEAD"], c.env);
+  const tous = fichiers.length ? fichiers : (await git(c.chemin, ["diff", "--name-only", `origin/${c.branche}~1..HEAD`], c.env)).sortie.split("\n").filter(Boolean);
+  return { statut: "pousse", sha: sha.sortie, fichiers: tous };
 }
