@@ -3,15 +3,18 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { PuceSelect } from "@/components/ui/PuceSelect";
+import { AgentRond } from "@/components/roles/AgentRond";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
-import { useProjects, useWorkspace } from "@/lib/workspace";
+import { texteDe, useProjects, useRoles, useWorkspace } from "@/lib/workspace";
+import { useChantiers, type Chantier } from "@/lib/workflows/chantiers";
 import { estEtape, GRAPHE_VIDE, type ExecutionWorkflow, type Graphe, type VersionWorkflow, type Workflow } from "@/types/workflows";
 import { Canevas } from "./Canevas";
 import { LIBELLES_STATUT_EXECUTION, nouveauNoeud } from "./catalogue";
@@ -89,6 +92,8 @@ function Historique({
   onFermer: () => void;
 }) {
   const { arreterExecution, state } = useWorkspace();
+  const roles = useRoles();
+  const nomAgent = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
   const total = wf.graphe.noeuds.filter((n) => estEtape(n.type)).length;
   const [plus, setPlus] = useState(false);
   const visibles = plus ? executions : executions.slice(0, 12);
@@ -141,7 +146,14 @@ function Historique({
                       <span className="flex-1 text-ui-s font-medium text-texte-principal">
                         {e.seule ? "Étape seule" : `Exécution ${e.numero}`}
                       </span>
-                      <span className="text-ui-2xs text-texte-tertiaire">{e.source === "planifie" ? "Planifiée" : e.source === "webhook" ? "Webhook" : "Manuelle"}</span>
+                      {e.lancePar ? (
+                        <span className="flex items-center gap-1 text-ui-2xs text-texte-tertiaire">
+                          <AgentRond roleId={e.lancePar.roleId} taille={14} fondPastille="surface" />
+                          {nomAgent(e.lancePar.roleId)}
+                        </span>
+                      ) : (
+                        <span className="text-ui-2xs text-texte-tertiaire">{e.source === "planifie" ? "Planifiée" : e.source === "webhook" ? "Webhook" : "Manuelle"}</span>
+                      )}
                     </span>
                     <span className="text-ui-xs text-texte-tertiaire">
                       {quandCourt(e.debut)} · {enCours ? `${LIBELLES_STATUT_EXECUTION[e.statut]} · ${faits}/${total}` : issue}
@@ -189,8 +201,12 @@ function Historique({
 
 /* ─── Un workflow ouvert ───────────────────────────────────────── */
 
-function Editeur({ wf }: { wf: Workflow }) {
+function Editeur({ wf, chantier }: { wf: Workflow; chantier: Chantier | null }) {
   const { state, enregistrerWorkflow, lancerWorkflow, deciderApprobation } = useWorkspace();
+  const roles = useRoles();
+  /* Un agent construit ce workflow : le canevas montre son chantier, en lecture, jusqu'à l'enregistrement. */
+  const construit = chantier && chantier.workflowId === wf.id ? chantier : null;
+  const enTravaux = !!construit && construit.phase !== "fini";
   const [graphe, setGraphe] = useState<Graphe>(wf.graphe);
   const grapheRef = useRef(graphe);
   const passe = useRef<Graphe[]>([]);
@@ -248,8 +264,10 @@ function Editeur({ wf }: { wf: Workflow }) {
   useEffect(() => {
     const avant = grapheVu.current;
     grapheVu.current = wf.graphe;
-    if (wf.graphe !== avant && grapheRef.current === avant) poser(wf.graphe);
-  }, [wf.graphe]);
+    /* Un agent l'a modifié (sa version garde le graphe d'avant) : son graphe l'emporte. */
+    const parAgent = wf.versions[0]?.raison === "agent" && wf.versions[0].graphe === avant;
+    if (wf.graphe !== avant && (grapheRef.current === avant || parAgent)) poser(wf.graphe);
+  }, [wf.graphe, wf.versions]);
 
   /* Les adresses des webhooks déjà créés. */
   useEffect(() => {
@@ -262,6 +280,43 @@ function Editeur({ wf }: { wf: Workflow }) {
   const executions = useMemo(() => state.executions.filter((e) => e.workflowId === wf.id), [state.executions, wf.id]);
   const enCours = executions.find((e) => e.statut === "en-cours" || e.statut === "approbation");
   const total = graphe.noeuds.filter((n) => estEtape(n.type)).length;
+
+  /* L'exécution montrée sur le canevas : celle qu'on regarde, sinon celle qui tourne. */
+  const montree = (vue ? executions.find((e) => e.id === vue) : enCours) ?? null;
+  const parcours = useMemo(() => {
+    const faits = new Set<string>();
+    const actifs = new Set<string>();
+    if (!montree) return { faits, actifs };
+    const derniere = new Map<string, (typeof montree.etapes)[number]>();
+    for (const e of montree.etapes) derniere.set(e.noeudId, e);
+    for (const l of graphe.liens) {
+      const de = derniere.get(l.de);
+      const vers = derniere.get(l.vers);
+      if (de?.statut !== "fait" || !vers || (l.branche && de.branche !== l.branche)) continue;
+      if (vers.statut === "en-cours" || vers.statut === "approbation") actifs.add(l.id);
+      else if (vers.statut !== "ignore") faits.add(l.id);
+    }
+    return { faits, actifs };
+  }, [montree, graphe.liens]);
+  /* L'agent d'une étape en cours : ce qu'il écrit dans la conversation du workflow, en direct. */
+  const enDirect = useMemo(() => {
+    const direct: Record<string, { texte: string; etape: string | null }> = {};
+    if (!montree?.chatId || (montree.statut !== "en-cours" && montree.statut !== "approbation")) return direct;
+    for (const e of montree.etapes) {
+      if (e.statut !== "en-cours") continue;
+      const n = graphe.noeuds.find((x) => x.id === e.noeudId);
+      if (n?.type !== "agent") continue;
+      const roleId = String(n.champs.agent || "principal");
+      const m = state.messages.findLast(
+        (x) => x.chatId === montree.chatId && x.author.kind === "role" && x.author.roleId === roleId && x.createdAt >= e.debut && x.statut === "en-cours",
+      );
+      if (!m) continue;
+      const etapes = m.parts.flatMap((p) => (p.type === "etapes" ? p.etapes : []));
+      const enCoursEtape = etapes.findLast((x) => x.statut === "en-cours" && !x.parent) ?? null;
+      direct[n.id] = { texte: texteDe(m), etape: enCoursEtape?.libelle ?? null };
+    }
+    return direct;
+  }, [montree, graphe.noeuds, state.messages]);
 
   /* Les résultats d'un nœud, du plus récent au plus ancien. */
   const resultatDe = (noeudId: string) => {
@@ -306,7 +361,15 @@ function Editeur({ wf }: { wf: Workflow }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {/* L'état de l'exécution en cours, et l'aperçu d'une version. */}
       {(enCours || apercu) && (
-        <div className="flex items-center gap-3 border-b border-bordure-subtile bg-fond-teinte-bleue px-4 py-2 text-ui-s text-texte-principal">
+        <div className="relative flex items-center gap-3 border-b border-bordure-subtile bg-fond-teinte-bleue px-4 py-2 text-ui-s text-texte-principal">
+          {/* L'avancée de l'exécution, en bas du bandeau. */}
+          {enCours && !apercu && (
+            <span
+              aria-hidden="true"
+              className="absolute bottom-0 left-0 h-[2px] bg-bleu-k1-500 transition-[width] duration-500 ease-sortie"
+              style={{ width: `${Math.min(100, (enCours.etapes.filter((s) => s.statut === "fait").length / Math.max(1, total)) * 100)}%` }}
+            />
+          )}
           {apercu ? (
             <>
               <Icon name="clock-backward" size={16} className="text-icone-secondaire" />
@@ -335,10 +398,17 @@ function Editeur({ wf }: { wf: Workflow }) {
           ) : (
             enCours && (
               <>
-                <Icon name="loader-01" size={16} className="text-icone-accent motion-safe:animate-spin" />
+                {enCours.lancePar ? (
+                  <AgentRond roleId={enCours.lancePar.roleId} taille={20} statut={{ type: "travaille" }} />
+                ) : (
+                  <Icon name="loader-01" size={16} className="text-icone-accent motion-safe:animate-spin" />
+                )}
                 <span className="flex-1">
-                  <span className="font-medium">{LIBELLES_STATUT_EXECUTION[enCours.statut]}</span> · exécution {enCours.numero} ·{" "}
-                  {enCours.etapes.filter((s) => s.statut === "fait").length}/{total}
+                  <span className="font-medium">{LIBELLES_STATUT_EXECUTION[enCours.statut]}</span> · exécution {enCours.numero}
+                  {enCours.lancePar && <> · lancée par {roles.find((r) => r.id === enCours.lancePar?.roleId)?.name ?? enCours.lancePar.roleId}</>} ·{" "}
+                  <span className="klyra-mono tabular-nums">
+                    {enCours.etapes.filter((s) => s.statut === "fait").length}/{total}
+                  </span>
                 </span>
                 <Bouton variant="blanc" taille="mini" onClick={() => setHistorique(true)}>
                   Voir l’exécution
@@ -353,8 +423,11 @@ function Editeur({ wf }: { wf: Workflow }) {
         <Canevas
           key={apercu?.id ?? "actuel"}
           wf={wf}
-          graphe={apercu?.graphe ?? graphe}
-          lecture={!!apercu}
+          graphe={apercu?.graphe ?? (construit && enTravaux ? construit.graphe : graphe)}
+          lecture={!!apercu || enTravaux}
+          construction={apercu ? null : construit}
+          parcours={apercu || enTravaux ? undefined : parcours}
+          enDirect={apercu ? undefined : enDirect}
           changer={changer}
           annuler={annuler}
           retablir={retablir}
@@ -378,6 +451,8 @@ function Editeur({ wf }: { wf: Workflow }) {
         onApercu={setApercu}
         onLancer={() => lancer({ declencheurId: null })}
         enCours={!!enCours}
+        enTravaux={enTravaux}
+        virtuel={!!construit?.nouveau && !state.workflows.some((w) => w.id === wf.id)}
       />
     </div>
   );
@@ -392,6 +467,8 @@ function BarreEditeur(props: {
   onApercu: (v: VersionWorkflow) => void;
   onLancer: () => void;
   enCours: boolean;
+  enTravaux: boolean;
+  virtuel: boolean;
 }) {
   const [cibles, setCibles] = useState<{ outils: HTMLElement; lancement: HTMLElement } | null>(null);
   useEffect(() => {
@@ -413,6 +490,8 @@ function BarrePortail({
   onApercu,
   onLancer,
   enCours,
+  enTravaux,
+  virtuel,
 }: {
   cible: HTMLElement;
   cibleLancement: HTMLElement;
@@ -423,10 +502,15 @@ function BarrePortail({
   onApercu: (v: VersionWorkflow) => void;
   onLancer: () => void;
   enCours: boolean;
+  enTravaux: boolean;
+  virtuel: boolean;
 }) {
   const { enregistrerWorkflow } = useWorkspace();
   const projets = useProjects();
+  const roles = useRoles();
   const [versions, setVersions] = useState(false);
+  /* Un workflow encore en construction n'existe pas : rien à régler ni à lancer. */
+  if (virtuel) return createPortal(<BoutonPrincipal disabled>En construction…</BoutonPrincipal>, cibleLancement);
   const contenu = (
     <div className="flex items-center gap-2">
       <PuceSelect
@@ -459,7 +543,13 @@ function BarrePortail({
                   >
                     <span className="text-ui-s text-texte-principal">{quandCourt(v.at)}</span>
                     <span className="text-ui-2xs text-texte-tertiaire">
-                      {v.raison === "auto" ? "Enregistrée auto" : v.raison === "execution" ? "Avant une exécution" : "Avant une restauration"}
+                      {v.raison === "auto"
+                        ? "Enregistrée auto"
+                        : v.raison === "execution"
+                          ? "Avant une exécution"
+                          : v.raison === "agent"
+                            ? `Avant la modification de ${roles.find((r) => r.id === v.par)?.name ?? "l’agent"}`
+                            : "Avant une restauration"}
                     </span>
                   </button>
                 ))
@@ -475,8 +565,8 @@ function BarrePortail({
   );
   return <>
     {createPortal(contenu, cible)}
-    {createPortal(<BoutonPrincipal onClick={onLancer} disabled={enCours}>
-      {enCours ? "En cours…" : "Lancer le workflow"}
+    {createPortal(<BoutonPrincipal onClick={onLancer} disabled={enCours || enTravaux}>
+      {enTravaux ? "En construction…" : enCours ? "En cours…" : "Lancer le workflow"}
     </BoutonPrincipal>, cibleLancement)}
   </>;
 }
@@ -486,8 +576,36 @@ function BarrePortail({
 export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
   const { state, enregistrerWorkflow, supprimerWorkflow } = useWorkspace();
   const workflows = useMemo(() => [...state.workflows].sort((a, b) => b.majLe.localeCompare(a.majLe)), [state.workflows]);
-  const [ouvert, setOuvert] = useState<string | null>(null);
-  const wf = workflows.find((w) => w.id === ouvert) ?? workflows[0] ?? null;
+  const demande = useSearchParams().get("workflow");
+  const [ouvert, setOuvert] = useState<string | null>(demande);
+
+  /* Un agent construit un workflow : la page l'ouvre, et le montre avant même qu'il soit enregistré. */
+  const chantiers = useChantiers();
+  const chantier = chantiers.find((c) => c.phase !== "fini") ?? chantiers[0] ?? null;
+  const [suivis, setSuivis] = useState<{ chantier: string | null; execution: string | null; lien: string | null }>({ chantier: null, execution: null, lien: demande });
+  const cleChantier = chantier ? `${chantier.cle}|${chantier.workflowId}` : null;
+  /* Un agent lance un workflow : la page l'ouvre aussi, pour voir l'exécution passer. */
+  const lanceeParAgent = state.executions.find((e) => e.lancePar && (e.statut === "en-cours" || e.statut === "approbation")) ?? null;
+  if (cleChantier && cleChantier !== suivis.chantier) {
+    setSuivis({ ...suivis, chantier: cleChantier });
+    setOuvert(chantier!.workflowId);
+  } else if (lanceeParAgent && lanceeParAgent.id !== suivis.execution) {
+    setSuivis({ ...suivis, execution: lanceeParAgent.id });
+    setOuvert(lanceeParAgent.workflowId);
+  } else if (demande && demande !== suivis.lien) {
+    setSuivis({ ...suivis, lien: demande });
+    setOuvert(demande);
+  }
+  /* Le nouveau workflow, tant que l'agent l'écrit : il n'existe pas encore. */
+  const enConstruction = chantier?.nouveau && !state.workflows.some((w) => w.id === chantier.workflowId) ? chantier : null;
+  const titreVirtuel = enConstruction?.titre ?? "";
+  const idVirtuel = enConstruction?.workflowId ?? null;
+  const virtuel = useMemo<Workflow | null>(
+    () => (idVirtuel ? { id: idVirtuel, titre: titreVirtuel, graphe: GRAPHE_VIDE, projectId: null, creeLe: "", majLe: "", versions: [] } : null),
+    [idVirtuel, titreVirtuel],
+  );
+  const wf = workflows.find((w) => w.id === ouvert) ?? (virtuel && virtuel.id === ouvert ? virtuel : null) ?? workflows[0] ?? virtuel ?? null;
+  const estVirtuel = !!virtuel && wf?.id === virtuel.id;
   const [liste, setListe] = useState(false);
   const [renommer, setRenommer] = useState(false);
   const [confirmer, setConfirmer] = useState(false);
@@ -548,12 +666,19 @@ export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
               type="button"
               onClick={() => setListe(!liste)}
               aria-expanded={liste}
-              className="flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm border-0 bg-transparent px-2 hover:bg-fond-survol"
+              disabled={estVirtuel}
+              className="flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm border-0 bg-transparent px-2 hover:bg-fond-survol disabled:cursor-default disabled:hover:bg-transparent"
             >
               <Icon name="lightning-01" size={16} className="shrink-0 text-icone-secondaire" />
               <span className="truncate text-ui font-semibold text-texte-principal">{wf.titre}</span>
-              <Icon name="chevron-down" size={14} className="shrink-0 text-icone-secondaire" />
+              {!estVirtuel && <Icon name="chevron-down" size={14} className="shrink-0 text-icone-secondaire" />}
             </button>
+          )}
+          {chantier && chantier.workflowId === wf.id && chantier.phase !== "fini" && (
+            <span className="ml-1 inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-fond-teinte-bleue pr-2.5 pl-1 text-ui-2xs font-medium text-texte-accent">
+              <AgentRond roleId={chantier.roleId} taille={16} statut={{ type: "travaille" }} fondPastille="surface" />
+              En construction
+            </span>
           )}
           {liste && (
             <>
@@ -646,7 +771,7 @@ export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
           </Bouton>
         </div>
       )}
-      <Editeur key={wf.id} wf={wf} />
+      <Editeur key={wf.id} wf={wf} chantier={chantier} />
     </div>
   );
 }

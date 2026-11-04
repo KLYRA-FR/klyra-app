@@ -5,7 +5,8 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
-import { apparition } from "@/lib/mouvement";
+import { apparition, reduit } from "@/lib/mouvement";
+import type { Chantier } from "@/lib/workflows/chantiers";
 import { raccourciDuSysteme } from "@/lib/plateforme";
 import { portDe, texteSortie } from "@/lib/workflows/moteur";
 import type { Frequence, RoleTeinte } from "@/types/domain";
@@ -24,6 +25,7 @@ import {
   type Workflow,
 } from "@/types/workflows";
 import { ANCRE_NON, ANCRE_PORT, ENCRES, FICHES, FORMES, GROUPES, largeurNoeud, nomNoeud, nouveauNoeud, TEINTES } from "./catalogue";
+import { BandeauConstruction, CurseurAgent, useCouleurAgent } from "./Chantier";
 import { NoeudVue } from "./NoeudVue";
 
 /**
@@ -72,6 +74,12 @@ export interface ProprietesCanevas {
   auteur: string;
   /** Les sorties cherchables (recherche dans les résultats). */
   sorties: EtapeWorkflow[];
+  /** Un agent construit ce workflow : ses cartes en pointillés, son curseur, sa pastille. */
+  construction?: Chantier | null;
+  /** L'exécution montrée : les liens déjà parcourus, et ceux qui nourrissent une étape en cours. */
+  parcours?: { faits: Set<string>; actifs: Set<string> };
+  /** Ce qu'écrit l'agent d'une étape en cours, par nœud. */
+  enDirect?: Record<string, { texte: string; etape: string | null }>;
 }
 
 /* Un champ ou une liste déroulante a le focus : le clavier est à lui, pas aux raccourcis du canevas. */
@@ -208,11 +216,74 @@ export function Canevas(p: ProprietesCanevas) {
     majCam({ ...c, x: taille.l / 2 - (n.at.x + largeurNoeud(n) / 2) * c.z, y: taille.h / 3 - n.at.y * c.z });
   };
 
+  /* ─── Un agent construit : on suit son curseur, sauf si tu reprends la main sur la vue ─── */
+
+  const constr = p.construction ?? null;
+  const couleur = useCouleurAgent(constr?.roleId ?? "principal");
+  const [suivre, setSuivre] = useState(true);
+  const [cleSuivie, setCleSuivie] = useState<string | null>(constr?.cle ?? null);
+  const vol = useRef<number | null>(null);
+  /* Un nouveau chantier : on le suit, même si tu avais lâché le précédent. */
+  if ((constr?.cle ?? null) !== cleSuivie) {
+    setCleSuivie(constr?.cle ?? null);
+    setSuivre(true);
+  }
+  const lacherVue = () => {
+    if (vol.current) cancelAnimationFrame(vol.current);
+    vol.current = null;
+    if (constr && constr.phase !== "fini") setSuivre(false);
+  };
+  /** La caméra glisse jusqu'à `but` (560 ms, comme la courbe de sortie). */
+  const voler = (but: Camera) => {
+    if (vol.current) cancelAnimationFrame(vol.current);
+    if (reduit()) return majCam(but);
+    const depart = camRef.current;
+    let t0: number | null = null;
+    const pas = (t: number) => {
+      t0 ??= t;
+      const k = Math.min(1, (t - t0) / 560);
+      const e = 1 - Math.pow(1 - k, 4);
+      majCam({ x: depart.x + (but.x - depart.x) * e, y: depart.y + (but.y - depart.y) * e, z: depart.z + (but.z - depart.z) * e });
+      vol.current = k < 1 ? requestAnimationFrame(pas) : null;
+    };
+    vol.current = requestAnimationFrame(pas);
+  };
+  useEffect(() => () => {
+    if (vol.current) cancelAnimationFrame(vol.current);
+  }, []);
+  /** La carte que l'agent touche : celle qu'il écrit, la cible du lien qu'il trace, sinon sa dernière. */
+  const carteVisee = (() => {
+    if (!constr || constr.phase === "fini") return null;
+    const e = constr.enEcriture;
+    const lien = e ? graphe.liens.find((l) => l.id === e) : null;
+    const id = lien ? lien.vers : e && parId.has(e) ? e : (constr.nouveaux.at(-1) ?? constr.modifies.at(-1) ?? null);
+    return id ? (parId.get(id) ?? null) : null;
+  })();
+  useEffect(() => {
+    if (!carteVisee || !suivre || interaction) return;
+    const c = camRef.current;
+    const l = largeurNoeud(carteVisee);
+    const h = HAUTEUR_ESTIMEE;
+    const gauche = carteVisee.at.x * c.z + c.x;
+    const haut = carteVisee.at.y * c.z + c.y;
+    const marge = 72;
+    const visible = gauche > marge && gauche + l * c.z < taille.l - marge && haut > 112 && haut + h * c.z < taille.h - marge;
+    if (visible) return;
+    const z = Math.min(c.z, 1);
+    voler({ z, x: taille.l * 0.55 - (carteVisee.at.x + l / 2) * z, y: Math.max(120, taille.h * 0.42 - (carteVisee.at.y + h / 2) * z) });
+    // La caméra ne suit que la carte visée, pas chaque lettre écrite.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carteVisee?.id, carteVisee?.at.x, carteVisee?.at.y, suivre, taille.l, taille.h]);
+
   const dire = (texte: string) => {
     setAnnonce(texte);
     setTimeout(() => setAnnonce((a) => (a === texte ? null : a)), 2600);
   };
 
+  const lacherVueRef = useRef(lacherVue);
+  useEffect(() => {
+    lacherVueRef.current = lacherVue;
+  });
   /* Taille de la zone, et molette (non passive : on empêche le zoom de la page). */
   useEffect(() => {
     const el = vue.current;
@@ -222,6 +293,7 @@ export function Canevas(p: ProprietesCanevas) {
     const molette = (e: WheelEvent) => {
       if ((e.target as HTMLElement).closest("textarea, [data-defile]")) return;
       e.preventDefault();
+      lacherVueRef.current();
       const c = camRef.current;
       if (e.ctrlKey || e.metaKey) {
         const r = el.getBoundingClientRect();
@@ -411,6 +483,7 @@ export function Canevas(p: ProprietesCanevas) {
     e.currentTarget.setPointerCapture(e.pointerId);
     const m = versMonde(e.clientX, e.clientY);
     if (outil === "main" || espace.current || e.button === 1 || lecture) {
+      lacherVue();
       commencer({ type: "pan", px: e.clientX, py: e.clientY, cam: camRef.current });
       return;
     }
@@ -616,8 +689,35 @@ export function Canevas(p: ProprietesCanevas) {
           ? "cursor-crosshair"
           : "cursor-default";
 
+  /* Le curseur de l'agent : sur la carte qu'il écrit, ou au milieu du lien qu'il trace. */
+  const posCurseur = (() => {
+    if (!constr || constr.phase === "fini") return null;
+    const e = constr.enEcriture;
+    const lien = e ? graphe.liens.find((l) => l.id === e) : null;
+    const de = lien && parId.get(lien.de);
+    const vers = lien && parId.get(lien.vers);
+    if (lien && de && vers) {
+      const a = sortieDe(de, lien.branche);
+      const b = entreeDe(vers);
+      return { x: ((a.x + b.x) / 2) * cam.z + cam.x, y: ((a.y + b.y) / 2) * cam.z + cam.y - 6 };
+    }
+    if (carteVisee) return { x: (carteVisee.at.x + largeurNoeud(carteVisee) - 40) * cam.z + cam.x, y: (carteVisee.at.y + 28) * cam.z + cam.y };
+    return null;
+  })();
+  /** Ce que la construction fait d'une carte : posée (pas encore enregistrée), écrite à l'instant, modifiée, née. */
+  const etatChantier = (id: string): "fantome" | "ecrit" | "modif" | "ne" | null => {
+    if (!constr) return null;
+    const nouvelle = constr.nouveaux.includes(id);
+    if (!nouvelle && !constr.modifies.includes(id)) return null;
+    if (constr.phase === "fini") return "ne";
+    if (constr.enEcriture === id) return "ecrit";
+    return nouvelle ? "fantome" : "modif";
+  };
+  const rangement = constr && constr.phase === "ecrit" ? "klyra-wf-range" : undefined;
+  const mouvementReduit = reduit();
+
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden">
+    <div className="relative min-h-0 flex-1 overflow-hidden" style={couleur.style}>
       <div
         ref={vue}
         role="application"
@@ -643,9 +743,11 @@ export function Canevas(p: ProprietesCanevas) {
         <div className="absolute top-0 left-0 origin-top-left" style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})` }}>
           {/* Les annotations sous tout le reste. */}
           {annotations.map((n) => (
-            <div key={n.id} className="absolute" style={{ left: n.at.x, top: n.at.y }}>
+            <div key={n.id} className={cn("absolute", rangement)} style={{ left: n.at.x, top: n.at.y }}>
               <NoeudVue
                 noeud={n}
+                chantier={etatChantier(n.id)}
+                nouveau={!!constr?.nouveaux.includes(n.id)}
                 wf={p.wf}
                 choisi={selection.has(n.id)}
                 lecture={lecture || !!n.verrouille}
@@ -690,6 +792,9 @@ export function Canevas(p: ProprietesCanevas) {
               <marker id="wf-fleche-active" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
                 <path d="M0 0 L8 4 L0 8 z" className="fill-bleu-k1-500" />
               </marker>
+              <marker id="wf-fleche-agent" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0 0 L8 4 L0 8 z" style={{ fill: "var(--klyra-agent)" }} />
+              </marker>
             </defs>
             {graphe.liens.map((l) => {
               const de = parId.get(l.de);
@@ -700,6 +805,10 @@ export function Canevas(p: ProprietesCanevas) {
               const actif = lienChoisi === l.id;
               const boucle = boucles.has(l.id);
               const d = courbe(a, b);
+              /* Posé par l'agent qui construit : tracé de sa couleur. Une exécution : parcouru, ou qui nourrit l'étape en cours. */
+              const pose = !!constr && constr.phase !== "fini" && constr.liensNouveaux.includes(l.id);
+              const parcouru = !!p.parcours?.faits.has(l.id);
+              const flux = !!p.parcours?.actifs.has(l.id);
               return (
                 <g key={l.id} data-lien={l.id}>
                   <path
@@ -719,11 +828,27 @@ export function Canevas(p: ProprietesCanevas) {
                   <path
                     d={d}
                     fill="none"
-                    strokeWidth={actif ? 2.5 : 1.75}
+                    pathLength={pose && !boucle ? 1 : undefined}
+                    strokeWidth={actif || pose ? 2.25 : parcouru || flux ? 2 : 1.75}
                     strokeDasharray={boucle ? "6 5" : undefined}
-                    className={cn("pointer-events-none", actif ? "stroke-bleu-k1-500" : "stroke-texte-tertiaire")}
-                    markerEnd={actif ? "url(#wf-fleche-active)" : "url(#wf-fleche)"}
+                    className={cn(
+                      "pointer-events-none transition-[stroke,stroke-opacity] duration-300 ease-sortie",
+                      pose && !boucle && "klyra-wf-trace",
+                      actif || parcouru || flux ? "stroke-bleu-k1-500" : "stroke-texte-tertiaire",
+                    )}
+                    style={pose ? { stroke: "var(--klyra-agent)" } : parcouru && !actif && !flux ? { strokeOpacity: 0.5 } : undefined}
+                    markerEnd={pose ? "url(#wf-fleche-agent)" : actif || parcouru || flux ? "url(#wf-fleche-active)" : "url(#wf-fleche)"}
                   />
+                  {flux && (
+                    <>
+                      <path d={d} fill="none" strokeWidth={2.5} className="klyra-wf-flux pointer-events-none stroke-bleu-k2-500" />
+                      {!mouvementReduit && (
+                        <circle r={4.5} className="pointer-events-none fill-bleu-k2-500 stroke-fond-surface" strokeWidth={2}>
+                          <animateMotion dur="1.6s" repeatCount="indefinite" path={d} keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.22 1 0.36 1" />
+                        </circle>
+                      )}
+                    </>
+                  )}
                   {boucle && (
                     <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 8} textAnchor="middle" className="pointer-events-none fill-texte-tertiaire text-[11px] font-medium">
                       Boucle
@@ -747,9 +872,12 @@ export function Canevas(p: ProprietesCanevas) {
           {etapes.map((n) => {
             const r = p.resultatDe(n.id);
             return (
-              <div key={n.id} className="absolute" style={{ left: n.at.x, top: n.at.y }}>
+              <div key={n.id} className={cn("absolute", rangement)} style={{ left: n.at.x, top: n.at.y }}>
                 <NoeudVue
                   noeud={n}
+                  chantier={etatChantier(n.id)}
+                  nouveau={!!constr?.nouveaux.includes(n.id)}
+                  enDirect={p.enDirect?.[n.id] ?? null}
                   wf={p.wf}
                   choisi={selection.has(n.id)}
                   lecture={lecture || !!n.verrouille}
@@ -783,6 +911,10 @@ export function Canevas(p: ProprietesCanevas) {
             />
           )}
         </div>
+
+        {/* Un agent construit : sa pastille en haut, son curseur sur la carte qu'il touche. */}
+        {constr && <BandeauConstruction chantier={constr} suivre={suivre} onSuivre={() => setSuivre(true)} />}
+        {constr && posCurseur && <CurseurAgent roleId={constr.roleId} x={posCurseur.x} y={posCurseur.y} visible />}
 
         {/* La barre d'un nœud choisi : dupliquer, verrouiller, supprimer. */}
         {choisi && !lecture && interaction?.type !== "deplacer" && (

@@ -882,24 +882,36 @@ function registerBridge() {
     attentes.get(id)?.({ ok: !!ok, texte: String(texte ?? "") });
     attentes.delete(id);
   });
-  brancherRelaisFils(
-    (nom, args, appelant) =>
-      new Promise((resolve, reject) => {
-        const win = fenetrePrincipale;
-        if (!win) return reject(new Error("La fenêtre de l’app est fermée."));
-        const id = randomUUID();
-        const delai = setTimeout(() => {
-          attentes.delete(id);
-          reject(new Error("L’app n’a pas répondu."));
-        }, 30_000);
-        attentes.set(id, (r) => {
-          clearTimeout(delai);
-          if (r.ok) resolve(r.texte);
-          else reject(new Error(r.texte));
-        });
-        win.webContents.send("outils:appel", id, nom, args, appelant);
-      }),
-  );
+  /* Les outils que l'écran exécute (fils, workflows, atelier, artefacts) : un aller-retour par IPC. */
+  const relaisEcran = (nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }) =>
+    new Promise<string>((resolve, reject) => {
+      const win = fenetrePrincipale;
+      if (!win) return reject(new Error("La fenêtre de l’app est fermée."));
+      const id = randomUUID();
+      const delai = setTimeout(() => {
+        attentes.delete(id);
+        reject(new Error("L’app n’a pas répondu."));
+      }, 30_000);
+      attentes.set(id, (r) => {
+        clearTimeout(delai);
+        if (r.ok) resolve(r.texte);
+        else reject(new Error(r.texte));
+      });
+      win.webContents.send("outils:appel", id, nom, args, appelant);
+    });
+  brancherRelaisFils(relaisEcran);
+  /* Un agent d'un VPS construit ou lance un workflow : seulement pour une conversation de ce serveur. */
+  const workflowPourServeur = async (origine: string, appel: { nom: string; arguments: Record<string, unknown>; agent: string; conversation: string }) => {
+    const texte = (t: string, isError = false) => ({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
+    const donnees = (await readConversations().catch(() => null)) as { chats?: { id?: unknown; lieu?: unknown }[] } | null;
+    const chat = donnees?.chats?.find((c) => c.id === appel.conversation);
+    if (!chat || chat.lieu !== origine) return texte("Cette conversation n’est pas une conversation de ce serveur sur l’ordinateur de la personne.", true);
+    try {
+      return texte(await relaisEcran(appel.nom, appel.arguments, { chatId: appel.conversation, roleId: appel.agent }));
+    } catch (e) {
+      return texte(e instanceof Error ? e.message : String(e), true);
+    }
+  };
   /* Les IA à consulter de ce PC, ou d'un VPS relié (`lieu`) : la clé reste là où elle est ajoutée. */
   handle("ia:fournisseurs", (lieu?: string | null) => {
     const origine = typeof lieu === "string" && lieu ? lieu : null;
@@ -1066,6 +1078,7 @@ function registerBridge() {
         jeton: jetonServeur,
         /* Un agent du VPS utilise le navigateur de ce PC : seulement pour une conversation de ce serveur. */
         navigateur: (origine, appel) => executerPourServeur(origine, appel),
+        workflow: workflowPourServeur,
       },
       originesServeurs(),
     );

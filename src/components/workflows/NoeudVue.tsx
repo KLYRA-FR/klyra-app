@@ -44,6 +44,15 @@ export interface ProprietesNoeud {
   onDecider: (approuver: boolean) => void;
   onWebhook: () => void;
   adresseWebhook: string | null;
+  /**
+   * Un agent construit le workflow : fantome (posée, pas encore enregistrée), ecrit (il l'écrit en ce
+   * moment), modif (une carte déjà là qu'il change), ne (enregistrée à l'instant).
+   */
+  chantier?: "fantome" | "ecrit" | "modif" | "ne" | null;
+  /** Posée par cette construction : elle arrive floue puis nette. */
+  nouveau?: boolean;
+  /** L'agent de cette étape travaille : ce qu'il écrit, et ce qu'il fait. */
+  enDirect?: { texte: string; etape: string | null } | null;
 }
 
 const str = (v: Valeur | undefined) => (typeof v === "string" ? v : "");
@@ -407,6 +416,31 @@ function ChampsSortie({ p }: { p: ProprietesNoeud }) {
 
 /* ─── Le résultat ──────────────────────────────────────────────── */
 
+/** L'agent d'une étape en cours : ce qu'il fait, et la fin de ce qu'il écrit, qui défile. */
+function EnDirect({ noeud, direct }: { noeud: Noeud; direct: { texte: string; etape: string | null } }) {
+  const roleId = str(noeud.champs.agent) || "principal";
+  const fin = direct.texte.replace(/\s+/g, " ").trim().slice(-260);
+  return (
+    <div className="flex flex-col gap-1.5 rounded-sm bg-fond-teinte-bleue/60 px-2.5 py-2">
+      <span className="flex items-center gap-1.5 text-ui-2xs font-medium text-texte-secondaire">
+        <AgentRond roleId={roleId} taille={16} statut={{ type: "travaille" }} fondPastille="surface" />
+        <span className="min-w-0 flex-1 truncate">{direct.etape ?? "Réfléchit"}</span>
+        <span className="flex items-center gap-0.5" aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="klyra-point-travail size-1 rounded-full bg-bleu-k1-500" style={{ animationDelay: `${i * 150}ms` }} />
+          ))}
+        </span>
+      </span>
+      {fin && (
+        <p className="klyra-curseur-texte m-0 line-clamp-4 text-ui-xs leading-[1.5] text-texte-principal [overflow-wrap:anywhere]">
+          {fin.length === 260 ? "…" : ""}
+          {fin}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Resultat({ p }: { p: ProprietesNoeud }) {
   const e = p.etape;
   const [copie, setCopie] = useState(false);
@@ -452,6 +486,7 @@ function Resultat({ p }: { p: ProprietesNoeud }) {
         </span>
       </div>
       {e.erreur && <p className="m-0 text-ui-xs text-texte-erreur">{e.erreur}</p>}
+      {e.statut === "en-cours" && p.enDirect && <EnDirect noeud={p.noeud} direct={p.enDirect} />}
       {texte && (
         <p
           onPointerDown={(x) => x.stopPropagation()}
@@ -584,7 +619,17 @@ export function NoeudVue(p: ProprietesNoeud) {
 
   if (fiche.groupe === "annotations")
     return (
-      <div data-noeud={n.id} className={cn("rounded-xs", choisi && "outline-2 outline-offset-4 outline-bleu-k1-500 outline")}>
+      <div
+        data-noeud={n.id}
+        data-chantier={p.chantier ?? undefined}
+        className={cn(
+          "relative rounded-xs",
+          choisi && "outline-2 outline-offset-4 outline-bleu-k1-500 outline",
+          p.nouveau && "klyra-wf-pose",
+          (p.chantier === "ecrit" || p.chantier === "modif") && "klyra-wf-ecrit",
+          p.chantier === "ne" && "klyra-wf-ne",
+        )}
+      >
         <Annotation p={p} />
       </div>
     );
@@ -593,12 +638,22 @@ export function NoeudVue(p: ProprietesNoeud) {
   const entree = n.type !== "declencheur" && n.type !== "prompt" && n.type !== "ressource";
   const sortie = n.type !== "sortie";
 
+  const chantier = p.chantier ?? null;
   return (
     <div
       data-noeud={n.id}
+      data-chantier={chantier ?? undefined}
+      data-statut={statut}
       className={cn(
-        "relative flex flex-col rounded-lg border bg-fond-surface shadow-ombre-sm transition-[border-color,box-shadow] duration-[120ms] ease-sortie",
-        p.cible === "ok"
+        "relative flex flex-col rounded-lg border bg-fond-surface shadow-ombre-sm transition-[border-color,box-shadow,background-color] duration-[220ms] ease-sortie",
+        p.nouveau && "klyra-wf-pose",
+        (chantier === "fantome" || chantier === "ecrit") && "klyra-wf-fantome",
+        (chantier === "ecrit" || chantier === "modif") && "klyra-wf-ecrit",
+        chantier === "ne" && "klyra-wf-ne",
+        statut === "en-cours" && !chantier && "klyra-wf-actif",
+        chantier === "modif"
+          ? "border-[var(--klyra-agent)]"
+          : p.cible === "ok"
           ? "border-bleu-k1-500 ring-2 ring-bleu-k1-500/20"
           : p.cible === "refus"
             ? "border-bordure-erreur"
