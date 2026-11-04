@@ -6,6 +6,7 @@ import { enregistrerConsommation } from "./consommation";
 import { ligneValide } from "./consommation-ecart";
 import type { AgentEvent, StreamOptions } from "./moteurs/types";
 import { contexteDe, type ContexteReponse } from "./contexte-distant";
+import type { SkillEnvoyee } from "./preparation-fournisseur";
 import type { SkillsParAgent } from "./skills-par-agent";
 
 /**
@@ -67,6 +68,11 @@ export interface Equipe {
   configuration: { memoireAgents: boolean; consignes: string | null; navigateur?: boolean };
   /** Skills reçues par chaque agent. Un ancien serveur ignore le champ : tout reste reçu. */
   skillsParAgent: SkillsParAgent;
+  /**
+   * Dossiers des skills allumées pour au moins un agent. Un ancien serveur ignore le champ :
+   * il n'écrit rien dans sa bibliothèque.
+   */
+  skills?: SkillEnvoyee[];
   empreinte: string;
 }
 
@@ -333,7 +339,7 @@ export function oublierServeur(origine: string) {
   equipeEnvoyee.delete(origine);
 }
 
-/** Envoie au VPS les fiches des agents actifs, si elles ont changé depuis le dernier envoi. */
+/** Envoie au VPS les fiches des agents actifs et les dossiers des skills allumées, si cela a changé depuis le dernier envoi. */
 export async function synchroniserEquipe(origine: string): Promise<void> {
   const equipe = liaison?.equipe();
   if (!equipe || equipeEnvoyee.get(origine) === equipe.empreinte) return;

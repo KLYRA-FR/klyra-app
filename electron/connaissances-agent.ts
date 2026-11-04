@@ -319,7 +319,8 @@ export function lireSkillsPlugins(configClaude: string, dossierProjet: string | 
 
 /**
  * Les skills personnelles. La bibliothèque de l'app, une fois créée au premier lancement.
- * Sans elle (VPS, test, session d'avant la copie) : le dossier du poste passé par l'appelant.
+ * Sans elle (test, session d'avant la copie) : le dossier du poste passé par l'appelant.
+ * Sur le VPS, `KLYRA_USER_DATA` est le dossier de données du serveur : la bibliothèque reçue est lue comme sur le PC.
  */
 function dossierSkillsPersonnelles(configClaude: string): string {
   const donnees = process.env.KLYRA_USER_DATA;

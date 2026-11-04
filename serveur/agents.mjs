@@ -32,7 +32,7 @@ import {
   promptAvecSkill,
   skillsConnues,
 } from "./connaissances-agent.mjs";
-import { preparerSessionClaude } from "./preparation-fournisseur.mjs";
+import { ecrireBibliotheque, normaliserSkillsRecues, preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
 import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
@@ -102,6 +102,10 @@ const modeDe = (acces) => (acces === "demander" ? "manual" : acces === "projet" 
  */
 export function creerAgents(options) {
   const { home, donnees, nomServeur, publier } = options;
+  /* Les lecteurs de skills (filtre, catalogue, consigne Codex) regardent KLYRA_USER_DATA.
+     La bibliothèque reçue est celle de CE serveur. Sans le dossier, ils gardent ~/.claude/skills. */
+  const userDataAvant = process.env.KLYRA_USER_DATA;
+  process.env.KLYRA_USER_DATA = donnees;
   const atelier = path.join(home, "atelier");
   const dossierAgents = path.join(home, ".claude", "agents");
   const fichierEquipe = path.join(donnees, "equipe.json");
@@ -157,18 +161,25 @@ export function creerAgents(options) {
 
   /* ─── Fiches ────────────────────────────────────────────────────── */
 
-  /** Remplace les fiches du VPS par celles des agents actifs du PC. Le dossier n'a pas d'autre source. */
+  /**
+   * Remplace les fiches du VPS par celles des agents actifs du PC. Le dossier des fiches n'a pas d'autre source.
+   * Si `skills` est un tableau, la bibliothèque de l'app (`donnees/bibliotheque-skills`) devient exactement ces dossiers.
+   * Sans le champ (ancien PC) : cette bibliothèque n'est pas touchée. `~/.claude/skills` ne l'est jamais.
+   */
   function recevoirFiches(corps) {
     const fiches = Array.isArray(corps?.fiches) ? corps.fiches : null;
     if (!fiches || fiches.length > 100) throw new Error("fiches");
     const valides = fiches.filter((f) => f && typeof f.id === "string" && ID_AGENT.test(f.id) && typeof f.contenu === "string" && f.contenu.length <= 200_000);
     if (valides.length !== fiches.length) throw new Error("fiches");
+    if (corps.skills !== undefined && !Array.isArray(corps.skills)) throw new Error("fiches");
+    const skills = Array.isArray(corps.skills) ? normaliserSkillsRecues(corps.skills) : null;
     mkdirSync(dossierAgents, { recursive: true });
     const gardes = new Set(valides.map((f) => `${f.id}.md`));
     for (const nom of readdirSync(dossierAgents)) {
       if (nom.endsWith(".md") && !gardes.has(nom)) rmSync(path.join(dossierAgents, nom), { force: true });
     }
     for (const f of valides) writeFileSync(path.join(dossierAgents, `${f.id}.md`), f.contenu, { mode: 0o600 });
+    if (skills !== null) ecrireBibliotheque(path.join(donnees, "bibliotheque-skills"), skills);
     const actifs = valides.map((f) => ({ id: f.id, nom: typeof f.nom === "string" && f.nom.trim() ? f.nom.trim().slice(0, 80) : f.id }));
     const assistant = typeof corps.assistant === "string" ? corps.assistant.trim().slice(0, 80) || null : null;
     writeFileSync(
@@ -793,6 +804,10 @@ export function creerAgents(options) {
   function fermerTout() {
     for (const proc of new Set(processus.values())) proc.child.kill("SIGTERM");
     codex.fermer();
+    if (process.env.KLYRA_USER_DATA === donnees) {
+      if (userDataAvant === undefined) delete process.env.KLYRA_USER_DATA;
+      else process.env.KLYRA_USER_DATA = userDataAvant;
+    }
   }
 
   /** Ce que Réglages du serveur › Fournisseurs lit de Claude Code (cf. moteurs.mjs). */

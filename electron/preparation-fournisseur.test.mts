@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { nomsSkills } from "./connaissances-agent.ts";
 import { diagnostiquerPoste } from "./diagnostic-poste.ts";
-import { importerSkills, listerSkills, migrerCopies, preparerClaude, preparerSessionClaude } from "./preparation-fournisseur.ts";
+import { ecrireBibliotheque, importerSkills, listerSkills, migrerCopies, preparerClaude, preparerSessionClaude, skillsAEnvoyer } from "./preparation-fournisseur.ts";
 
 function posteVide() {
   const racine = mkdtempSync(path.join(tmpdir(), "klyra-prep-"));
@@ -221,6 +221,94 @@ test("un dossier choisi est copié dans la bibliothèque sans écraser et sans t
     assert.equal(readFileSync(path.join(dest, "relance", "SKILL.md"), "utf8"), avant);
     assert.deepEqual(importerSkills(path.join(racine, "absent"), dest).ignorees, ["absent"]);
   } finally {
+    rmSync(racine, { recursive: true, force: true });
+  }
+});
+
+test("seules les skills allumées pour au moins un agent partent, et le VPS les lit dans sa bibliothèque", () => {
+  const { racine, home, poste, userData } = posteVide();
+  const avantEnv = process.env.KLYRA_USER_DATA;
+  try {
+    const skillRangement = path.join(poste, "skills", "rangement", "SKILL.md");
+    const avant = readFileSync(skillRangement, "utf8");
+    mkdirSync(path.join(poste, "skills", "rangement", "node_modules", "secret"), { recursive: true });
+    writeFileSync(path.join(poste, "skills", "rangement", "node_modules", "secret", "cache.txt"), "SECRET-MODULE");
+    writeFileSync(path.join(poste, "skills", "rangement", "note.txt"), "note");
+    writeFileSync(path.join(poste, "skills", "rangement", "icone.bin"), Buffer.from([0, 1, 2, 255]));
+    symlinkSync(skillRangement, path.join(poste, "skills", "rangement", "lien.md"));
+    mkdirSync(path.join(poste, "skills", "ancienne"), { recursive: true });
+    writeFileSync(path.join(poste, "skills", "ancienne", "SKILL.md"), "---\nname: ancienne\n---\n\nPOSTE\n");
+    const choix = {
+      fige: true,
+      personnellesConnues: ["rangement"],
+      agentsConnus: ["principal", "iris", "hugo"],
+      coupees: {},
+      activees: { hugo: ["maquette"] },
+    };
+    const sources = listerSkills(path.join(poste, "skills"));
+    const envoyees = skillsAEnvoyer(choix, ["iris"], sources);
+    assert.deepEqual(envoyees.map((s) => s.dossier), ["maquette", "rangement"]);
+    assert.equal(envoyees.find((s) => s.dossier === "rangement")?.fichiers.some((f) => f.chemin.includes("node_modules") || f.chemin === "lien.md"), false);
+    assert.equal(envoyees.find((s) => s.dossier === "rangement")?.fichiers.some((f) => f.chemin === "note.txt"), true);
+    const toutCoupe = {
+      ...choix,
+      activees: {},
+      coupees: {
+        principal: ["rangement", "maquette", "ancienne"],
+        iris: ["rangement", "maquette", "ancienne"],
+        hugo: ["rangement", "maquette", "ancienne"],
+      },
+    };
+    assert.deepEqual(skillsAEnvoyer(toutCoupe, ["iris", "hugo"], sources), []);
+
+    const bibliotheque = path.join(userData, "bibliotheque-skills");
+    const dehors = path.join(racine, "dehors");
+    mkdirSync(dehors, { recursive: true });
+    writeFileSync(path.join(dehors, "secret.txt"), "SECRET");
+    mkdirSync(bibliotheque, { recursive: true });
+    symlinkSync(dehors, path.join(bibliotheque, "piege"));
+    ecrireBibliotheque(bibliotheque, envoyees);
+    assert.equal(readFileSync(skillRangement, "utf8"), avant);
+    assert.equal(readFileSync(path.join(poste, "skills", "ancienne", "SKILL.md"), "utf8").includes("POSTE"), true);
+    assert.equal(readFileSync(path.join(dehors, "secret.txt"), "utf8"), "SECRET");
+    assert.equal(existsSync(path.join(bibliotheque, "piege")), false);
+    assert.equal(readFileSync(path.join(bibliotheque, "rangement", "SKILL.md"), "utf8").includes("Range."), true);
+    assert.equal(readFileSync(path.join(bibliotheque, "rangement", "note.txt"), "utf8"), "note");
+    assert.equal(readFileSync(path.join(bibliotheque, "rangement", "icone.bin")).equals(Buffer.from([0, 1, 2, 255])), true);
+    assert.equal(existsSync(path.join(bibliotheque, "rangement", "node_modules")), false);
+    assert.equal(readFileSync(path.join(bibliotheque, "maquette", "SKILL.md"), "utf8").includes("Dessine."), true);
+    assert.equal(existsSync(path.join(bibliotheque, "ancienne")), false);
+    assert.throws(() => ecrireBibliotheque(bibliotheque, [{ dossier: "../sortie", fichiers: [{ chemin: "SKILL.md", contenu: "---\nname: x\n---\n\nX\n" }] }]));
+    assert.equal(existsSync(path.join(userData, "sortie")), false);
+    assert.throws(() =>
+      ecrireBibliotheque(bibliotheque, [{ dossier: "rangement", fichiers: [{ chemin: "../../secret.txt", contenu: "NON" }, { chemin: "SKILL.md", contenu: "---\nname: rangement\n---\n\nA\n" }] }]),
+    );
+    assert.equal(readFileSync(path.join(dehors, "secret.txt"), "utf8"), "SECRET");
+
+    process.env.KLYRA_USER_DATA = userData;
+    assert.deepEqual(nomsSkills(poste, null).poste.sort(), ["maquette", "rangement"]);
+    const session = preparerSessionClaude({
+      userData,
+      home,
+      agent: "iris",
+      dossierAgents: path.join(poste, "agents"),
+      idsActifs: ["iris", "hugo"],
+      garder: (nom) => nom === "rangement",
+      poste,
+    });
+    assert.ok(session);
+    assert.equal(readFileSync(path.join(session.dossier, "skills", "rangement", "SKILL.md"), "utf8").includes("Range."), true);
+    assert.equal(existsSync(path.join(session.dossier, "skills", "maquette")), false);
+    assert.equal(readFileSync(skillRangement, "utf8"), avant);
+
+    ecrireBibliotheque(bibliotheque, []);
+    assert.equal(existsSync(bibliotheque), true);
+    assert.equal(existsSync(path.join(bibliotheque, "rangement")), false);
+    assert.equal(readFileSync(skillRangement, "utf8"), avant);
+    assert.equal(readFileSync(path.join(dehors, "secret.txt"), "utf8"), "SECRET");
+  } finally {
+    if (avantEnv === undefined) delete process.env.KLYRA_USER_DATA;
+    else process.env.KLYRA_USER_DATA = avantEnv;
     rmSync(racine, { recursive: true, force: true });
   }
 });

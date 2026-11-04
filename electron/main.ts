@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
 import { consigneKlyra } from "./configuration-klyra";
 import { figerChoix } from "./skills-par-agent";
-import { importerSkills, lireReprise, migrerCopies } from "./preparation-fournisseur";
+import { empreinteSkills, importerSkills, lireReprise, listerSkills, migrerCopies, skillsAEnvoyer } from "./preparation-fournisseur";
 import { dossierHorsProjet } from "./atelier";
 import {
   catalogueSkills,
@@ -910,8 +910,16 @@ function registerBridge() {
     /* La configuration KLYRA de ce PC, comme `environnementAgent` et `consignesApp` la donnent aux sessions locales. */
     const { configuration: reglage, skillsParAgent } = lireReglages();
     const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes), navigateur: navigateurActif() };
-    const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches, configuration, skillsParAgent])).digest("hex").slice(0, 16);
-    return { fiches, assistant, configuration, skillsParAgent, empreinte };
+    const userData = app.getPath("userData");
+    const poste = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+    const bibliotheque = path.join(userData, "bibliotheque-skills");
+    const racineSkills = existsSync(bibliotheque) ? bibliotheque : path.join(poste, "skills");
+    const skills = skillsAEnvoyer(skillsParAgent, presentationActifs().map((a) => a.id), listerSkills(racineSkills));
+    const empreinte = createHash("sha256")
+      .update(JSON.stringify([generation(), assistant, fiches, configuration, skillsParAgent, empreinteSkills(skills)]))
+      .digest("hex")
+      .slice(0, 16);
+    return { fiches, assistant, configuration, skillsParAgent, skills, empreinte };
   };
   const depuisFenetre = (event: Electron.IpcMainInvokeEvent) => {
     const win = fenetrePrincipale;
