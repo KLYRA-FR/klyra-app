@@ -11,6 +11,12 @@ function reduit(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/** Une ligne qui change de place glisse de là où elle était (`dy` px plus bas) jusqu'à sa nouvelle place (220 ms). */
+export function glisserDepuis(el: HTMLElement, dy: number) {
+  if (reduit()) return;
+  el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 220, easing: COURBE });
+}
+
 export function entrer(el: HTMLElement | null, { x = 0, y = 8, echelle = 1, duree = 300, delai = 0 }: Entree = {}) {
   if (!el || reduit()) return;
   el.animate(
