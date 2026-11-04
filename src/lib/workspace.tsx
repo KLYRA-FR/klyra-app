@@ -14,6 +14,7 @@ import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCours } from "@/lib/atelier-agent";
+import { lireDemandeSecret } from "../../electron/coffre-regles";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
@@ -460,6 +461,9 @@ function ajouterEtape(
   // Des réponses toutes prêtes sous la question de l'assistant.
   const choix = etape.outil === "mcp__klyra__proposer_choix" ? lireChoix(entree) : null;
   if (choix) return [...parts, { type: "choix", etapeId: etape.id, ...choix }];
+  // Un secret demandé par l'agent : la carte sécurisée où la personne le colle (cf. CarteCoffre).
+  const demande = etape.outil === "mcp__klyra__coffre_demander" ? lireDemandeSecret(entree) : null;
+  if (demande) return [...parts, { type: "coffre-demande", etapeId: etape.id, ...demande }];
   // Toutes les étapes de la réponse vivent dans un seul bloc, en tête du message.
   const index = parts.findIndex((p) => p.type === "etapes");
   if (index === -1) return [{ type: "etapes", etapes: [etape] }, ...parts];
@@ -484,7 +488,7 @@ function poserAtelier(parts: MessagePart[], etapeId: string, maj: MajAtelier, pr
 function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[] {
   const statut = ok ? "fait" : "erreur";
   // Une carte ou des réponses refusées par l'app (prénom déjà pris…) ne restent pas dans le fil.
-  const gardees = ok ? parts : parts.filter((p) => !((p.type === "proposition-agent" || p.type === "atelier-agent" || p.type === "choix") && p.etapeId === id));
+  const gardees = ok ? parts : parts.filter((p) => !((p.type === "proposition-agent" || p.type === "atelier-agent" || p.type === "choix" || p.type === "coffre-demande") && p.etapeId === id));
   return gardees.map((p) => {
     if (p.type === "passation" && p.etapeId === id) return { ...p, statut };
     if (p.type === "etapes")
@@ -645,6 +649,8 @@ interface WorkspaceApi {
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
   /** La carte de l'atelier d'un agent : la couleur choisie, l'épreuve, les ajouts, puis l'agent créé depuis elle. */
   marquerAtelier: (messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => void;
+  /** La réponse de la personne à une demande de secret (carte du Coffre) : jamais la valeur. */
+  repondreCoffre: (messageId: string, etapeId: string, etat: "rangee" | "permise" | "refusee") => void;
   supprimerArtefact: (id: string) => void;
   /** Retire un rendu d'agent de la liste et supprime la copie de l'app ; l'original reste où il est. */
   retirerRendu: (id: string) => void;
@@ -2289,6 +2295,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const repondreCoffre = useCallback((messageId: string, etapeId: string, etat: "rangee" | "permise" | "refusee") => {
+    const le = new Date().toISOString();
+    dispatch({
+      type: "message/update",
+      id: messageId,
+      patch: (m) => ({ ...m, parts: m.parts.map((p) => (p.type === "coffre-demande" && p.etapeId === etapeId ? { ...p, reponse: { etat, le } } : p)) }),
+    });
+  }, []);
+
   /* Premier lancement : le profil part du nom de la session Mac. */
   useEffect(() => {
     if (!bridge || !state.charge || state.currentUser.name) return;
@@ -2628,6 +2643,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirAcces,
       repondreAutorisation,
       marquerAtelier,
+      repondreCoffre,
       reagir,
       enregistrerTache,
       supprimerTache,
@@ -2682,6 +2698,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirAcces,
       repondreAutorisation,
       marquerAtelier,
+      repondreCoffre,
       reagir,
       enregistrerTache,
       supprimerTache,

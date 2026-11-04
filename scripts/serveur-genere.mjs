@@ -13,6 +13,8 @@
  * - `serveur/diagnostic-poste.mjs` : ce que la configuration de Claude Code ajoute à chaque appel (electron/diagnostic-poste.ts) ;
  * - `serveur/consignes-projet.mjs` : les consignes KLYRA d'un projet, AGENTS.md et CLAUDE.md (electron/consignes-projet.ts) ;
  * - `serveur/navigateur-definitions.mjs` : les outils du navigateur de KLYRA et leur consigne (electron/navigateur/definitions.ts) ;
+ * - `serveur/coffre-regles.mjs`, `serveur/coffre-definitions.mjs` et `serveur/coffre-fichier.mjs` : le Coffre
+ *   (règles, outils et leurs textes, écriture d'un secret dans un fichier hors de Git) ;
  * - `serveur/workflows-outils.mjs` : les outils des workflows pour les agents (electron/workflows-outils.ts) ;
  * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
  *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture).
@@ -40,6 +42,9 @@ const FICHIERS = [
   ["electron/json-partiel.ts", "serveur/json-partiel.mjs"],
   ["electron/atelier-agent.ts", "serveur/atelier-agent.mjs"],
   ["electron/navigateur/definitions.ts", "serveur/navigateur-definitions.mjs"],
+  ["electron/coffre-regles.ts", "serveur/coffre-regles.mjs"],
+  ["electron/coffre-definitions.ts", "serveur/coffre-definitions.mjs"],
+  ["electron/coffre-fichier.ts", "serveur/coffre-fichier.mjs"],
   ["electron/workflows-outils.ts", "serveur/workflows-outils.mjs"],
 ];
 

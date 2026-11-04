@@ -6,7 +6,7 @@ import type { IconName } from "@/components/icons/Icon";
  * est l'ancre d'une `Ligne` de la section (cf. ui.tsx).
  */
 
-export type IdSection = "general" | "profil" | "equipe" | "mobile" | "claude" | "agents" | "autres-ia" | "notifications" | "voix" | "computer-use" | "navigateur" | "marketplace" | "mises-a-jour";
+export type IdSection = "general" | "profil" | "equipe" | "mobile" | "claude" | "agents" | "coffre" | "autres-ia" | "notifications" | "voix" | "computer-use" | "navigateur" | "marketplace" | "mises-a-jour";
 
 export interface EntreeReglage {
   id: string;
@@ -108,6 +108,18 @@ export const SECTIONS: SectionReglages[] = [
       { id: "modeles", titre: "Modèle de chaque agent", mots: "opus sonnet haiku role equipe fiche fournisseur chatgpt claude codex par defaut" },
       { id: "skills-par-agent", titre: "Skills de chaque agent", mots: "competences skill interrupteur couper allumer iris jetons importer dossier" },
       { id: "dossier-agents", titre: "Dossier des fiches", mots: "claude agents md fichiers" },
+    ],
+  },
+  {
+    id: "coffre",
+    titre: "Coffre",
+    icone: "lock-01",
+    description: "Tes mots de passe et tes clés API, chiffrés par le trousseau de ton ordinateur. Tes agents s’en servent sans jamais les voir.",
+    entrees: [
+      { id: "coffre-secrets", titre: "Clés et mots de passe", mots: "vault coffre-fort secrets cle api token jeton mot de passe password copier ajouter remplacer env trousseau" },
+      { id: "coffre-connexions", titre: "Connexions de sites", mots: "navigateur identifiants login mot de passe remplir site" },
+      { id: "coffre-agents", titre: "Ce que tes agents en font", mots: "agents demander carte securisee coller env gitignore fichier" },
+      { id: "coffre-demander", titre: "Donner une clé à un agent", mots: "coller cle api agent conversation securise" },
     ],
   },
   {

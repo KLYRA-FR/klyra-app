@@ -9,6 +9,7 @@ import { cheminDeplace, cheminServeur, DEPLACEES, SECTIONS_SERVEUR } from "@/com
 import { chercherDans, estSection, SECTIONS, type EntreeReglage, type IdSection } from "./catalogue";
 import { Agents } from "./sections/Agents";
 import { Claude } from "./sections/Claude";
+import { Coffre } from "./sections/Coffre";
 import { ComputerUse } from "./sections/ComputerUse";
 import { Equipe } from "./sections/Equipe";
 import { Marketplace } from "@/components/marketplace/MarketplaceScreen";
@@ -31,6 +32,7 @@ const CONTENU: Record<IdSection, () => ReactNode> = {
   mobile: () => <Mobile />,
   claude: () => <Claude />,
   agents: () => <Agents />,
+  coffre: () => <Coffre />,
   /* Partie dans Réglages du serveur › Fournisseurs (cf. DEPLACEES) ; jamais affichée ici. */
   "autres-ia": () => null,
   notifications: () => <Notifications />,

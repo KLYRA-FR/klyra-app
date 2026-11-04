@@ -436,6 +436,52 @@ test("la mémoire d'un agent du VPS, la configuration KLYRA reçue avec l'équip
   }
 });
 
+test("le Coffre des agents du VPS : relayé au PC par le journal, la valeur jamais dedans", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const journal = creerJournal();
+  const ia = creerIa({ donnees: dossier, version: "1" });
+  await ia.demarrer();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, ia, claude: null, ecouteurs: journal.ecouteurs });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents, ia });
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const equipe = (configuration, empreinte) => appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [], assistant: null, configuration, empreinte } });
+    const config = JSON.parse(ia.configMcp({ agent: "hugo", conversation: "dm-hugo" })).mcpServers.klyra;
+    const mcp = async (method, params = {}) => (await (await fetch(config.url, { method: "POST", headers: config.headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json()).result;
+    // Un PC qui ne sert pas son coffre (ancienne version) : pas d'outils.
+    assert.equal((await equipe({ memoireAgents: true, consignes: null }, "c0")).statut, 200);
+    assert.ok(!(await mcp("tools/list")).tools.some((t) => t.name.startsWith("coffre_")));
+    assert.equal((await equipe({ memoireAgents: true, consignes: null, coffre: true }, "c1")).statut, 200);
+    assert.deepEqual((await mcp("tools/list")).tools.filter((t) => t.name.startsWith("coffre_")).map((t) => t.name), ["coffre_lister", "coffre_demander", "coffre_enregistrer", "coffre_ecrire_fichier"]);
+    // Sans PC à l'écoute : dit tout de suite.
+    const seul = await mcp("tools/call", { name: "coffre_lister", arguments: {} });
+    assert.equal(seul.isError, true);
+    assert.match(seul.content[0].text, /pas ouverte/);
+
+    // Le PC suit le journal : l'appel y arrive, sans la valeur ; le PC la lit une fois par la route, puis répond.
+    const VALEUR = "ghp_JamaisDansLeJournal_7";
+    const flux = lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.event?.type === "coffre"));
+    await new Promise((r) => setTimeout(r, 200));
+    const reponse = mcp("tools/call", { name: "coffre_enregistrer", arguments: { variable: "GITHUB_TOKEN", nom: "Jeton GitHub", valeur: VALEUR } });
+    const { recus } = await flux;
+    const evenement = recus.find((e) => e.event?.type === "coffre").event;
+    assert.deepEqual([evenement.nom, evenement.agent, evenement.conversation, evenement.arguments.variable], ["coffre_enregistrer", "hugo", "dm-hugo", "GITHUB_TOKEN"]);
+    assert.ok(!JSON.stringify(recus).includes(VALEUR), "la valeur n'est pas dans le journal");
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", corps: { requestId: evenement.id, lire: true } })).statut, 401, "un appareil inconnu ne lit rien");
+    const lue = await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, lire: true } });
+    assert.deepEqual([lue.statut, lue.json.valeur], [200, VALEUR]);
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, lire: true } })).statut, 404, "lue une seule fois");
+    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, resultat: { texte: "Rangé dans le coffre : GITHUB_TOKEN" } } })).json.ok, true);
+    assert.match((await reponse).content[0].text, /Rangé dans le coffre : GITHUB_TOKEN/);
+  } finally {
+    await ecoute.fermer();
+    ia.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("les livrables des agents du VPS : publiés par l'outil MCP, annoncés à l'app, servis seuls", async () => {
   const dossier = dossierJetable();
   const home = dossierJetable();

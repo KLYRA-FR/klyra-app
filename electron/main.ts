@@ -134,7 +134,9 @@ import {
 import { etatApercu, poserApercuTest, surApercu } from "./ordinateur/apercu";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
 import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
+import { ajouterSecret, copierSecret, etatCoffre, modifierSecret, remplacerValeurSecret, retirerSecret, signalerCoffre, surChangementCoffre } from "./coffre";
 import { executerPourServeur, navigateurActif } from "./navigateur/outils";
+import { executerCoffrePourServeur } from "./coffre-outils";
 import {
   actionMenu,
   afficherOnglet,
@@ -966,7 +968,8 @@ function registerBridge() {
     const assistant = mesAgents().assistant.nom ?? null;
     /* La configuration KLYRA de ce PC, comme `environnementAgent` et `consignesApp` la donnent aux sessions locales. */
     const { configuration: reglage, skillsParAgent } = lireReglages();
-    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes), navigateur: navigateurActif() };
+    /* `coffre` : ce PC sert le Coffre aux agents du VPS (une version plus ancienne ne le fait pas). */
+    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes), navigateur: navigateurActif(), coffre: true };
     const userData = app.getPath("userData");
     const poste = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
     const bibliotheque = path.join(userData, "bibliotheque-skills");
@@ -1038,10 +1041,40 @@ function registerBridge() {
   navigateur("navigateur:coffre", () => listerCoffre());
   navigateur("navigateur:coffre:ajouter", (entree) => {
     const e = (entree ?? {}) as Record<string, unknown>;
-    return ajouterAuCoffre({ site: e.site, identifiant: e.identifiant, motDePasse: e.motDePasse, agents: e.agents });
+    return ajouterAuCoffre({ site: e.site, identifiant: e.identifiant, motDePasse: e.motDePasse, agents: e.agents }).then((r) => {
+      signalerCoffre();
+      return r;
+    });
   });
-  navigateur("navigateur:coffre:retirer", (id) => retirerDuCoffre(texteNav(id, 100)));
-  navigateur("navigateur:coffre:agents", (id, agents) => changerAgentsCoffre(texteNav(id, 100), agents === true));
+  /* Le Coffre (Réglages › Coffre, carte sécurisée d'une conversation) : une valeur arrive de l'écran, chiffrée
+     aussitôt ; elle n'y retourne jamais (« Copier » passe par le presse-papiers du système, depuis ici). */
+  surChangementCoffre(() => {
+    const wc = fenetrePrincipale?.webContents;
+    if (wc && !wc.isDestroyed()) wc.send("coffre:change");
+  });
+  const champsSecret = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+  navigateur("coffre:etat", () => etatCoffre());
+  navigateur("coffre:ajouter", (entree, remplacer) => {
+    const e = champsSecret(entree);
+    return ajouterSecret({ variable: e.variable, nom: e.nom, genre: e.genre, service: e.service, note: e.note, valeur: e.valeur, agents: e.agents }, { par: "personne" }, remplacer === true);
+  });
+  navigateur("coffre:modifier", (id, champs) => {
+    const c = champsSecret(champs);
+    return modifierSecret(texteNav(id, 100), { nom: c.nom, service: c.service, note: c.note, agents: c.agents, genre: c.genre });
+  });
+  navigateur("coffre:valeur", (id, valeur) => remplacerValeurSecret(texteNav(id, 100), valeur));
+  navigateur("coffre:retirer", (id) => retirerSecret(texteNav(id, 100)));
+  navigateur("coffre:copier", (id) => copierSecret(texteNav(id, 100)));
+  navigateur("navigateur:coffre:retirer", async (id) => {
+    const r = await retirerDuCoffre(texteNav(id, 100));
+    signalerCoffre();
+    return r;
+  });
+  navigateur("navigateur:coffre:agents", async (id, agents) => {
+    const r = await changerAgentsCoffre(texteNav(id, 100), agents === true);
+    signalerCoffre();
+    return r;
+  });
   navigateur("navigateur:coffre:remplir", (id, idConnexion) => remplirParLaPersonne(texteNav(id, 200), texteNav(idConnexion, 100)));
   const origineVps = (adresse: unknown) => (typeof adresse === "string" ? adresse : "");
   ipcMain.handle("serveur:interroger", (event, adresse: unknown) => repondre(() => {
@@ -1078,6 +1111,8 @@ function registerBridge() {
         jeton: jetonServeur,
         /* Un agent du VPS utilise le navigateur de ce PC : seulement pour une conversation de ce serveur. */
         navigateur: (origine, appel) => executerPourServeur(origine, appel),
+        /* Un agent du VPS utilise le Coffre de ce PC : seulement pour une conversation de ce serveur. */
+        coffre: (origine, appel, lireValeur) => executerCoffrePourServeur(origine, appel, lireValeur),
         workflow: workflowPourServeur,
       },
       originesServeurs(),

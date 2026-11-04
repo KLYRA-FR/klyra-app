@@ -316,6 +316,21 @@ export type MessagePart =
     }
   /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
   | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }
+  /**
+   * Un agent demande un secret (outil `coffre_demander`) : la carte sécurisée où la personne le colle.
+   * La valeur va droit au Coffre ; le message ne garde que ce qui est demandé et la réponse.
+   */
+  | {
+      type: "coffre-demande";
+      etapeId: string;
+      variable: string;
+      nom: string;
+      genre: "cle-api" | "jeton" | "mot-de-passe" | "autre";
+      service: string;
+      raison: string;
+      ouTrouver: string;
+      reponse?: { etat: "rangee" | "permise" | "refusee"; le: string };
+    }
   | { type: "tasks"; tasks: Task[] }
   | { type: "options"; options: DeliverableOption[] }
   | { type: "worklog"; durationMin: number; files: ChangedFile[] }

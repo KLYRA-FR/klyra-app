@@ -89,6 +89,11 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   assistant: P,
   modeles: P,
   "dossier-agents": sur(RAISONS.montrer),
+  /* Coffre : les secrets ne quittent pas l'ordinateur, et ne passent jamais par le compte. */
+  "coffre-secrets": sur(RAISONS.cles),
+  "coffre-connexions": sur(RAISONS.cles),
+  "coffre-agents": L,
+  "coffre-demander": L,
   /* Autres IA */
   "autres-ia": sur(RAISONS.cles),
   /* Notifications de l'ordinateur ; ses sons d'interface restent les siens (ceux du téléphone sont dans Ce téléphone). */

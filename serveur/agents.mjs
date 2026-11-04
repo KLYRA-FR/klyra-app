@@ -39,6 +39,7 @@ import { lireUtilisation } from "./utilisation.mjs";
 import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
+import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coffre.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
@@ -60,6 +61,8 @@ function configurationValide(c) {
     consignes: typeof c?.consignes === "string" && c.consignes.trim() && c.consignes.length <= 20_000 ? c.consignes.trim() : null,
     /** Le PC donne son navigateur aux agents (Réglages › Navigateur) : ceux du VPS l'ont aussi, par lui. */
     navigateur: c?.navigateur === true,
+    /** Le PC sert son Coffre aux agents du VPS (une version plus ancienne ne le fait pas). */
+    coffre: c?.coffre === true,
   };
 }
 
@@ -276,7 +279,7 @@ export function creerAgents(options) {
 
   const listeAgents = (agents) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
   const ici = () =>
-    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}`;
+    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}${configurationDe().coffre ? `\n\n${CONSIGNE_COFFRE} Le coffre est sur l'ordinateur de la personne ; un fichier où tu écris un secret est sur ce VPS, sous ton dossier.` : ""}`;
 
   function consigneAssistant() {
     const { assistant, actifs } = lireEquipe();
@@ -303,6 +306,9 @@ export function creerAgents(options) {
   /* Le navigateur de KLYRA, sur le PC de la personne : les appels lui sont relayés par le journal (cf. navigateur.mjs). */
   const navigateur = creerRelaisNavigateur({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
   options.ia?.surNavigateur?.({ actif: () => configurationDe().navigateur, appeler: navigateur.appeler });
+  /* Le Coffre de KLYRA, sur le PC de la personne : relayé par le journal, jamais une valeur dedans (cf. coffre.mjs). */
+  const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees });
+  options.ia?.surCoffre?.({ actif: () => configurationDe().coffre, appeler: coffre.appeler });
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
   const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
   options.ia?.surWorkflows?.({ appeler: workflows.appeler });
@@ -795,6 +801,8 @@ export function creerAgents(options) {
           ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, ...(assistant ? OUTILS_ATELIER : [])] : []),
           // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
+          // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
+          ...(mcp && configuration.coffre ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
           // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
           ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
         );
@@ -861,5 +869,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, workflows, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex, grok };
 }
