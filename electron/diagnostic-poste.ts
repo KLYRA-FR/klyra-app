@@ -10,8 +10,9 @@ import path from "node:path";
  * Une session Claude lancée par l'app lit un dossier préparé (`CLAUDE_CONFIG_DIR`) :
  * les agents actifs, et seulement les skills allumées pour cet agent. Le poste n'est pas modifié.
  * `--setting-sources project,local` retire aussi ce dossier : on ne le combine pas.
- * Ce diagnostic lit encore le poste (ce que la personne a), pas le dossier d'une session.
- * Les plugins du poste n'entrent pas dans ce dossier. Les interrupteurs sont dans Réglages › Agents.
+ * Les skills et les fiches comptées sont celles de l'app (`bibliotheque-skills`, `equipe`)
+ * dès que ces dossiers existent. Le CLAUDE.md, les plugins et les MCP restent ceux du poste.
+ * Les plugins du poste n'entrent pas dans le dossier préparé. Les interrupteurs sont dans Réglages › Agents.
  */
 
 export const CARACTERES_PAR_JETON = 2.75;
@@ -93,9 +94,16 @@ function claudeMd(dossierClaude: string): ElementPoste {
   };
 }
 
+/** Un dossier de l'app s'il existe, sinon celui du poste. */
+function dossierApp(nom: string, sinon: string): string {
+  const donnees = process.env.KLYRA_USER_DATA;
+  if (!donnees) return sinon;
+  const candidat = path.join(donnees, nom);
+  return existsSync(candidat) ? candidat : sinon;
+}
+
 /** Les skills personnelles : leur nom et leur description sont listés à chaque appel. */
-function skills(dossierClaude: string): ElementPoste {
-  const dossier = path.join(dossierClaude, "skills");
+function skills(dossier: string): ElementPoste {
   const noms: string[] = [];
   let caracteres = 0;
   for (const nom of lister(dossier)) {
@@ -116,11 +124,11 @@ function skills(dossierClaude: string): ElementPoste {
 }
 
 /** Les agents actifs : l'assistant reçoit le nom et la description de chacun à chaque appel. */
-function agents(dossierClaude: string, actifs: string[]): ElementPoste {
+function agents(dossierAgents: string, actifs: string[]): ElementPoste {
   let caracteres = 0;
   let longues = 0;
   for (const id of actifs) {
-    const d = description(lire(path.join(dossierClaude, "agents", `${id}.md`)) ?? "");
+    const d = description(lire(path.join(dossierAgents, `${id}.md`)) ?? "");
     caracteres += id.length + d.length + 4;
     if (d.length > 300) longues += 1;
   }
@@ -130,7 +138,7 @@ function agents(dossierClaude: string, actifs: string[]): ElementPoste {
     detail: actifs.length ? `${actifs.length} agent${actifs.length > 1 ? "s" : ""} actif${actifs.length > 1 ? "s" : ""}, présenté${actifs.length > 1 ? "s" : ""} à l’assistant à chaque appel. Les agents désactivés ne coûtent rien.` : "Aucun agent actif : l’assistant travaille seul.",
     jetons: jetons(caracteres),
     conseil: longues ? `${longues} description${longues > 1 ? "s" : ""} dépasse${longues > 1 ? "nt" : ""} 300 caractères : quelques phrases suffisent pour que l’assistant sache quand appeler l’agent.` : null,
-    chemin: actifs.length ? path.join(dossierClaude, "agents") : null,
+    chemin: actifs.length ? dossierAgents : null,
   };
 }
 
@@ -167,7 +175,13 @@ function mcp(fichierClaudeJson: string): ElementPoste {
  * (`CLAUDE_CONFIG_DIR`, sinon ~/.claude) ; `actifs` : les agents actifs de Mes agents.
  */
 export function diagnostiquerPoste(home: string, actifs: string[], dossierClaude = path.join(home, ".claude")): DiagnosticPoste {
-  const elements = [claudeMd(dossierClaude), skills(dossierClaude), agents(dossierClaude, actifs), plugins(dossierClaude), mcp(path.join(home, ".claude.json"))];
+  const elements = [
+    claudeMd(dossierClaude),
+    skills(dossierApp("bibliotheque-skills", path.join(dossierClaude, "skills"))),
+    agents(dossierApp("equipe", path.join(dossierClaude, "agents")), actifs),
+    plugins(dossierClaude),
+    mcp(path.join(home, ".claude.json")),
+  ];
   return { elements, total: elements.reduce((s, e) => s + (e.jetons ?? 0), 0) };
 }
 

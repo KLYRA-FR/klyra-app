@@ -14,6 +14,8 @@ import path from "node:path";
  *
  * La connexion et les sessions restent celles du poste : un lien vers `.credentials.json`,
  * `projects` et `sessions`, jamais une copie, jamais une suppression.
+ * Les skills personnelles copiées viennent de `userData/bibliotheque-skills` dès que ce dossier
+ * existe (la copie du premier lancement). Sans lui, elles viennent encore du poste.
  * Rien ici n'écrit dans le dossier du poste.
  */
 
@@ -194,7 +196,7 @@ export function preparerSessionClaude(session: SessionClaude): { dossier: string
       /* fiche absente : on ne l'invente pas */
     }
   }
-  const skills = listerSkills(path.join(poste, "skills")).filter((s) => session.garder(s.nom));
+  const skills = listerSkills(dossierSkillsSession(session.userData, poste)).filter((s) => session.garder(s.nom));
   const claudeMd = path.join(poste, "CLAUDE.md");
   preparerClaude(dossier, {
     fiches,
@@ -205,6 +207,12 @@ export function preparerSessionClaude(session: SessionClaude): { dossier: string
     sessions: path.join(poste, "sessions"),
   });
   return { dossier, skills: skills.map((s) => s.nom) };
+}
+
+/** La bibliothèque de l'app si elle existe, sinon les skills du poste. */
+function dossierSkillsSession(userData: string, poste: string): string {
+  const bibliotheque = path.join(userData, "bibliotheque-skills");
+  return existsSync(bibliotheque) ? bibliotheque : path.join(poste, "skills");
 }
 
 function copierSiAbsent(source: string, dest: string): boolean {
@@ -238,6 +246,7 @@ export function migrerCopies(opts: { fichesPoste: string; skillsPoste: string; f
     if (copierSiAbsent(path.join(opts.fichesPoste, nom), dest)) fiches.push(id);
   }
   const skills: string[] = [];
+  mkdirSync(opts.skillsDest, { recursive: true });
   for (const skill of listerSkills(opts.skillsPoste)) {
     const base = path.basename(skill.source);
     const dest = path.join(opts.skillsDest, base);

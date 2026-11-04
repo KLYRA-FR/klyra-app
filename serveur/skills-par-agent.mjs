@@ -12,7 +12,8 @@
  * Claude Code lit, au lancement, un dossier préparé par l'app (`CLAUDE_CONFIG_DIR`,
  * electron/preparation-fournisseur.ts) : les fiches actives du dossier de l'app
  * (`userData/equipe`, copiées une fois depuis le poste) et seulement les skills
- * personnelles allumées. Le poste n'est pas modifié. `skillOverrides` retire encore
+ * personnelles allumées, lues dans `userData/bibliotheque-skills` (la même copie).
+ * Le poste n'est pas modifié. `skillOverrides` retire encore
  * ce qui resterait listé (skills de projet, skills livrées avec l'outil). La valeur
  * s'applique à toute la session : un agent appelé dedans reçoit le catalogue de celui
  * qui l'a lancé. Codex garde un seul processus : le filtre reste la consigne.

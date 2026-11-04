@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { nomsSkills } from "./connaissances-agent.ts";
+import { diagnostiquerPoste } from "./diagnostic-poste.ts";
 import { listerSkills, migrerCopies, preparerClaude, preparerSessionClaude } from "./preparation-fournisseur.ts";
 
 function posteVide() {
@@ -78,6 +80,59 @@ test("une session prépare le dossier de l'agent et laisse le poste intact", () 
   }
 });
 
+test("la session lit la bibliothèque de l'app, pas une skill ajoutée ensuite sur le poste", () => {
+  const { racine, home, poste, userData } = posteVide();
+  const avant = readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8");
+  const avantEnv = process.env.KLYRA_USER_DATA;
+  try {
+    const skillsDest = path.join(userData, "bibliotheque-skills");
+    const equipe = path.join(userData, "equipe");
+    migrerCopies({
+      fichesPoste: path.join(poste, "agents"),
+      skillsPoste: path.join(poste, "skills"),
+      fichesDest: equipe,
+      skillsDest,
+    });
+    writeFileSync(path.join(skillsDest, "rangement", "SKILL.md"), "---\nname: rangement\ndescription: Range.\n---\n\nBIBLIOTHEQUE\n");
+    mkdirSync(path.join(skillsDest, "klyra-seule"), { recursive: true });
+    writeFileSync(path.join(skillsDest, "klyra-seule", "SKILL.md"), "---\nname: klyra-seule\ndescription: Ici.\n---\n\nAPP\n");
+    mkdirSync(path.join(poste, "skills", "nouvelle"), { recursive: true });
+    writeFileSync(path.join(poste, "skills", "nouvelle", "SKILL.md"), "---\nname: nouvelle\ndescription: Tard.\n---\n\nPOSTE\n");
+    writeFileSync(path.join(equipe, "iris.md"), `---\nname: iris\ndescription: ${"A".repeat(400)}\n---\n\nIris.\n`);
+    writeFileSync(path.join(poste, "agents", "iris.md"), "---\nname: iris\ndescription: Court.\n---\n\nIris.\n");
+    const session = preparerSessionClaude({
+      userData,
+      home,
+      agent: "iris",
+      dossierAgents: equipe,
+      idsActifs: ["iris"],
+      garder: () => true,
+    });
+    assert.ok(session);
+    assert.deepEqual(session.skills, ["klyra-seule", "maquette", "rangement"]);
+    assert.equal(readFileSync(path.join(session.dossier, "skills", "rangement", "SKILL.md"), "utf8").includes("BIBLIOTHEQUE"), true);
+    assert.throws(() => readFileSync(path.join(session.dossier, "skills", "nouvelle", "SKILL.md")));
+    assert.equal(readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8"), avant);
+    assert.equal(readFileSync(path.join(poste, "skills", "nouvelle", "SKILL.md"), "utf8").includes("POSTE"), true);
+    assert.equal(readFileSync(path.join(poste, "agents", "iris.md"), "utf8").includes("Court."), true);
+    process.env.KLYRA_USER_DATA = userData;
+    assert.deepEqual(nomsSkills(poste, null).poste, ["klyra-seule", "maquette", "rangement"]);
+    const diagnostic = diagnostiquerPoste(home, ["iris"]);
+    const ligneSkills = diagnostic.elements.find((e) => e.cle === "skills");
+    const ligneAgents = diagnostic.elements.find((e) => e.cle === "agents");
+    assert.ok(ligneSkills);
+    assert.match(ligneSkills.detail, /klyra-seule/);
+    assert.doesNotMatch(ligneSkills.detail, /nouvelle/);
+    assert.equal(ligneSkills.chemin, skillsDest);
+    assert.ok(ligneAgents?.conseil);
+    assert.equal(ligneAgents?.chemin, equipe);
+  } finally {
+    if (avantEnv === undefined) delete process.env.KLYRA_USER_DATA;
+    else process.env.KLYRA_USER_DATA = avantEnv;
+    rmSync(racine, { recursive: true, force: true });
+  }
+});
+
 test("la reprise copie sans écraser et sans toucher au poste", () => {
   const { racine, poste } = posteVide();
   try {
@@ -94,6 +149,11 @@ test("la reprise copie sans écraser et sans toucher au poste", () => {
     assert.deepEqual(deux, { fiches: [], skills: [] });
     symlinkSync(path.join(poste, "agents", "hugo.md"), path.join(poste, "skills", "lien"));
     assert.equal(listerSkills(path.join(poste, "skills")).some((s) => s.nom === "lien"), false);
+    const vide = path.join(racine, "sans-skill");
+    const destVide = path.join(racine, "dest-vide");
+    mkdirSync(vide);
+    migrerCopies({ fichesPoste: vide, skillsPoste: vide, fichesDest: path.join(racine, "fiches-vides"), skillsDest: destVide });
+    assert.equal(existsSync(destVide), true);
   } finally {
     rmSync(racine, { recursive: true, force: true });
   }

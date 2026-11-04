@@ -58,7 +58,7 @@ export function SkillsParAgent() {
   const lecture = !pont ? null : catalogue ? echec : "Lecture des skills…";
   const poste = catalogue?.poste ?? [];
   const lignes: SkillVue[] = [
-    ...poste.map((s) => ({ ...s, origine: "poste" as const, lieu: "Poste" })),
+    ...poste.map((s) => ({ ...s, origine: "poste" as const, lieu: "KLYRA" })),
     ...(catalogue?.projet ?? [])
       .filter((s) => !poste.some((p) => p.nom === s.nom))
       .map((s) => ({ ...s, origine: "projet" as const, lieu: projet?.name ?? "Projet" })),
@@ -74,12 +74,12 @@ export function SkillsParAgent() {
   return (
     <Groupe
       titre="Skills de chaque agent"
-      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Au lancement, KLYRA prépare pour Claude un dossier à part : les fiches de l’app (copiées une fois depuis le poste, puis lues et écrites ici) et seulement ces skills. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
+      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Au lancement, KLYRA prépare pour Claude un dossier à part : les fiches de l’app et les skills de l’app, copiées une fois depuis le poste, puis lues ici. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Une skill ajoutée ensuite dans ~/.claude/skills n’est pas reprise. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
     >
       <Ligne
         id="skills-par-agent"
         libelle="Ce que reçoit chaque agent"
-        description="Les skills d’un projet apparaissent quand un projet de ce PC est ouvert. Un même nom, au poste et dans le projet, n’a qu’un interrupteur."
+        description="Les skills d’un projet apparaissent quand un projet de ce PC est ouvert. Un même nom, dans l’app et dans le projet, n’a qu’un interrupteur."
         pile
       >
         {!pont ? (
