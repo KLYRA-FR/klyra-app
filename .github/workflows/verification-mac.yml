@@ -90,10 +90,10 @@ jobs:
 
       # La session du compte d'équipe à travers une mise à jour : la version 1, installée au même endroit, écrit un
       # jeton (trousseau du Mac, electron/compte.ts), le relit, puis est remplacée par la version 2 comme le fait
-      # electron/maj.ts (rm -rf puis ditto) ; la version 2 doit le relire sans demande du trousseau.
-      # Pas encore bloquant : le résultat est dans le résumé du job (bug « déconnectée après chaque mise à jour », 04/11).
+      # electron/maj.ts (rm -rf puis ditto) ; la version 2 doit le relire sans demande du trousseau (vérifié le 04/11 :
+      # même certificat, même exigence désignée, aucune demande). Le résultat est aussi dans le résumé du job.
       - name: Session gardée à travers une mise à jour (trousseau du Mac)
-        continue-on-error: true
+        timeout-minutes: 6
         run: |
           # Un trousseau neuf, seul dans la liste de recherche : « KLYRA Safe Storage » y est créée par la version 1
           # (le smoke test précédent a lancé la version 2 sur le trousseau de session).
