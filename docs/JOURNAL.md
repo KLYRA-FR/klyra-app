@@ -17,6 +17,7 @@ Remplacer VS Code par **notre propre outil** pour travailler avec l’IA, en plu
 
 | Date | Décision | Pourquoi |
 |---|---|---|
+| 04/11/2026 | **Computer Use local : le navigateur par défaut, dans une nouvelle fenêtre.** Outil `ordinateur_fenetre_navigateur` (ce PC seulement, pas le VPS, qui garde `navigateur_*`). Chrome, Edge, Firefox, Safari ou Brave, profil habituel, sans chemin de profil et sans onglet ajouté. Un autre navigateur : message à la personne, rien n'est ouvert. Linux : pas de détection. | Précision de Corentin sur #118 |
 | 07/10/2026 | Desktop uniquement, noir et blanc pour l’instant | On valide la structure avant la couleur |
 | 08/10/2026 | **App de bureau** (validé par le patron) | Elle doit piloter des terminaux en local (Claude Code, etc.), impossible en web |
 | 08/10/2026 | **Electron** plutôt que Tauri | Les terminaux et le SDK Claude sont en JavaScript/Node : tout en TypeScript, pas de Rust |

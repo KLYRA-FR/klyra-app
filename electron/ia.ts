@@ -7,6 +7,7 @@ import path from "node:path";
 import { enregistrerAppelIa } from "./consommation";
 import { composioConnect, espaceComposio, OUTILS_COMPOSIO } from "./composio";
 import { serveursMcpDirects } from "./mcp-direct";
+import { OUTIL_FENETRE_NAVIGATEUR, ouvrirFenetreNavigateurDefaut } from "./ordinateur/fenetre-navigateur";
 import { serveurOrdinateur } from "./ordinateur/pilote";
 import { estOutilNavigateur, executerOutilNavigateur, navigateurActif, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur/outils";
 import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
@@ -323,13 +324,17 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : [])] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       /* Le navigateur de KLYRA : seulement les onglets de la conversation de l'agent (cf. navigateur/). */
       if (estOutilNavigateur(nom)) return resultat(await executerOutilNavigateur(nom, args, appelant));
+      if (nom === OUTIL_FENETRE_NAVIGATEUR.name) {
+        if (!serveurOrdinateur()) return texte("Computer Use n'est pas prêt : rien n'a été ouvert.", true);
+        return texte(await ouvrirFenetreNavigateurDefaut(args.url, appelant.chatId));
+      }
       if (OUTILS_COMPOSIO.some((o) => o.name === nom)) {
         try {
           const donnees = nom === "composio_etat" ? await espaceComposio.comptesChoisis(composio) : nom === "composio_rechercher"
