@@ -683,24 +683,23 @@ function CarteEquipe({ artefact, session, version }: { artefact: ArtefactEquipe;
 
 /** Vignette d'une page partagée. Le HTML ne reste pas dans l'état de la carte. */
 function useVignetteDocument(id: string, majLe: number, version: number) {
-  const documents = useDocumentsKlyra();
+  const { vignette } = useDocumentsKlyra();
   const cle = `${id}:${majLe}:${version}`;
-  const [image, setImage] = useState<string | null | undefined>(() => vignettes.get(cle));
+  /* La vignette vit dans le cache du module : l'état ne sert qu'à redessiner la carte quand elle arrive. */
+  const [, redessiner] = useState(0);
+  const image = vignettes.get(cle);
   const carte = useRef<HTMLLIElement>(null);
   useEffect(() => {
-    if (vignettes.has(cle)) {
-      setImage(vignettes.get(cle) ?? null);
-      return;
-    }
+    if (vignettes.has(cle)) return;
     const el = carte.current;
     if (!el) return;
     let vivant = true;
     const observer = new IntersectionObserver(([e]) => {
       if (!e?.isIntersecting) return;
       observer.disconnect();
-      void documents.vignette(id, majLe, version > 0).then((v) => {
+      void vignette(id, majLe, version > 0).then((v) => {
         vignettes.set(cle, v);
-        if (vivant) setImage(v);
+        if (vivant) redessiner((n) => n + 1);
       });
     });
     observer.observe(el);
@@ -708,7 +707,7 @@ function useVignetteDocument(id: string, majLe: number, version: number) {
       vivant = false;
       observer.disconnect();
     };
-  }, [documents.vignette, id, majLe, version, cle]);
+  }, [vignette, id, majLe, version, cle]);
   return { image, carte };
 }
 

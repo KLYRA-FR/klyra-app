@@ -161,15 +161,14 @@ function creerFenetre(id: string, titre: string, horsEcran: boolean): BrowserWin
 function charger(win: BrowserWindow, id: string): Promise<void> {
   return new Promise((resolve, reject) => {
     let regle = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const fin = (erreur?: Error) => {
       if (regle) return;
       regle = true;
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
       if (erreur) reject(erreur);
       else resolve();
     };
-    timer = setTimeout(() => fin(new Error("Le document ne s’affiche pas.")), ATTENTE_MS);
+    const timer = setTimeout(() => fin(new Error("Le document ne s’affiche pas.")), ATTENTE_MS);
     /* Une image ou une police refusée ne fait pas échouer la page. Seul le cadre principal compte. */
     win.webContents.on("did-finish-load", () => fin());
     win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {

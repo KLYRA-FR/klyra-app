@@ -3,6 +3,7 @@
  * Écrit deux PNG si KLYRA_CAPTURES est un dossier (la fenêtre, puis la vignette).
  *   pnpm build:electron && xvfb-run -a electron scripts/test-fenetre-document.cjs --no-sandbox
  */
+/* eslint-disable @typescript-eslint/no-require-imports -- lancé par Electron en CommonJS */
 const { app, BrowserWindow, protocol } = require("electron");
 const { mkdirSync, mkdtempSync, writeFileSync } = require("node:fs");
 const os = require("node:os");
