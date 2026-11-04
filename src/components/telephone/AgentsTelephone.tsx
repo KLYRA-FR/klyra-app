@@ -21,7 +21,7 @@ import { EnteteTelephone } from "./EnteteTelephone";
 import { FicheAgentTelephone, HistoriqueFicheTelephone } from "./FicheAgentTelephone";
 import { ConfirmationFeuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
 import { LouAgentTelephone } from "./LouAgentTelephone";
-import { NotePoste, VueLecture } from "./etats";
+import { AucunPoste, NotePoste, VueLecture } from "./etats";
 import { usePostes } from "./poste";
 
 /**
@@ -81,6 +81,8 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
   const { liste } = useCartesAgents();
   const etats = useLecturePoste<EtatsAgentsPoste>("agents.etats", {});
   const { agir, occupe, ouvert, bandeau, erreur } = useGesteTelephone();
+  const { postes } = usePostes();
+  const aucunPoste = postes?.length === 0;
   const [menu, setMenu] = useState<LigneAgent | null>(null);
   const [desactiver, setDesactiver] = useState<LigneAgent | null>(null);
   const etatDe = (id: string) => (etats.etat === "ok" ? etats.data.agents.find((a) => a.id === id) : undefined);
@@ -116,18 +118,20 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
 
   return (
     <>
-      {vide ? (
-        <div className="mt-8">
-          <p className="text-body-s text-texte-principal">Aucun agent pour l’instant</p>
-          <p className="mt-1 text-ui text-texte-secondaire">Pour l’instant, {assistant.nom} travaille seul.</p>
-        </div>
-      ) : null}
       <ul className="mt-3">
         <LigneAgentTelephone agent={assistant} detail={`Ton assistant · ${texteConversations(assistant.conversations)}`} onMenu={() => setMenu(assistant)} />
         {liste.actifs.map((agent) => (
           <LigneAgentTelephone key={agent.id} agent={agent} detail={`${agent.roleCourt} · ${texteConversations(agent.conversations)}`} onMenu={() => setMenu(agent)} />
         ))}
       </ul>
+      {/* C-1d : jamais « Aucun agent » au-dessus de la ligne de l'assistant ; sans ordinateur, comment le relier. */}
+      {vide ? (
+        aucunPoste ? (
+          <AucunPoste forme="encadre" className="mt-4 px-0" phrase={(sur) => `tes agents et leurs fiches sont sur ${sur}. Ils s’affichent quand KLYRA y est ouverte.`} />
+        ) : (
+          <p className="mt-2 text-ui text-texte-secondaire">Pour l’instant, {assistant.nom} travaille seul.</p>
+        )
+      ) : null}
       <Bouton variant="blanc" taille="md" className="mt-4 w-full" iconeGauche={<Icon name="users-profiles-plus" size={20} />} onClick={onCreer}>
         Créer un agent
       </Bouton>

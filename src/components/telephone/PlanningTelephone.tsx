@@ -13,7 +13,7 @@ import { messageErreur, useCompte, useEquipe } from "@/lib/compte";
 import { aujourdhui as cleAujourdhui, depuisCle, libellePeriode } from "@/lib/dates";
 import { useGestePoste, useLecturePoste, type LecturePoste, type ResultatPoste } from "@/lib/poste/client";
 import type { DepartRoutine, PlanningDuPoste } from "@/lib/poste/gestes/planning";
-import { majuscule, supportOuOrdinateur } from "@/lib/poste-texte";
+import { texteErreurPoste } from "@/lib/poste-texte";
 import type { Report } from "@/lib/report";
 import { jouer } from "@/lib/sons/sons";
 import {
@@ -34,7 +34,8 @@ import { FicheEvenementTelephone } from "./FicheEvenementTelephone";
 import { PageFiche } from "./FichePlanningTelephone";
 import { FicheRappelTelephone } from "./FicheRappelTelephone";
 import { FeuilleCategorie, MenuRappels, RappelsTelephone } from "./RappelsTelephone";
-import { usePostes } from "./poste";
+import { usePostes, useSupport } from "./poste";
+import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 
 type Onglet = "agenda" | "rappels";
 
@@ -45,9 +46,7 @@ const BANDEAU_MS = 3000;
 const titreCourt = (titre: string) => (titre.length > 60 ? `${titre.slice(0, 59)}…` : titre);
 
 function texteResultat(resultat: ResultatPoste<unknown>, sur: string): string {
-  if (resultat.ok) return "";
-  if (resultat.code === "delai") return `${majuscule(sur)} ne répond pas.`;
-  return resultat.message || "Le geste a échoué sur l’ordinateur.";
+  return resultat.ok ? "" : texteErreurPoste(resultat, sur);
 }
 
 /**
@@ -77,8 +76,8 @@ export function PlanningTelephone() {
 
   const { moi } = useCompte();
   const moiId = moi?._id ?? null;
-  const { principal, ouvert } = usePostes();
-  const sur = supportOuOrdinateur(principal);
+  const { ouvert } = usePostes();
+  const sur = useSupport();
   const fenetre = useMemo(() => fenetreAgenda(vue, jour), [vue, jour]);
   const occurrences = useQuery(api.evenements.entre, fenetre);
   const mes = useQuery(api.rappels.mes, {});
@@ -94,7 +93,9 @@ export function PlanningTelephone() {
   const { faire } = useGestePoste();
   const { relancer: relirePoste } = poste;
   const { relancer: relireDeparts } = departs;
-  const donnees = poste.etat === "ok" ? poste.data : null;
+  /* Ordinateur fermé : sa dernière vue lue sur ce téléphone (socle § 5.4), en lecture seule. */
+  const vueGardee = poste.etat === "ferme" ? poste.gardee : null;
+  const donnees = poste.etat === "ok" ? poste.data : (vueGardee?.data ?? null);
 
   /* Le Weekly existe dans le compte même si aucun ordinateur ne l'a encore créé, comme au bureau. */
   useEffect(() => {
@@ -201,7 +202,17 @@ export function PlanningTelephone() {
     [assignes, moiId, enSuppression],
   );
   const categories = donnees?.categories ?? null;
-  const sections = sectionsRappels({ mes: rappelsMes, assignes: rappelsAssignes, categories, voirFaits, gardes });
+  /* Vue gardée (S-22) : le compte d'abord, puis ce que l'ordinateur gardait, à part et daté. */
+  const sections = sectionsRappels({
+    mes: vueGardee ? rappelsMes.filter((r) => r.source === "compte") : rappelsMes,
+    assignes: rappelsAssignes,
+    categories,
+    voirFaits,
+    gardes,
+  });
+  const surPosteGarde = vueGardee
+    ? { lu: vueGardee.lu, rappels: sectionsRappels({ mes: rappelsMes.filter((r) => r.source === "poste"), assignes: [], categories: null, voirFaits, gardes }).flatMap((s) => s.rappels) }
+    : null;
   const aFaire = rappelsMes.filter((r) => !r.faite).length;
   const faits = [...rappelsMes, ...rappelsAssignes].filter((r) => r.faite).length;
 
@@ -434,7 +445,7 @@ export function PlanningTelephone() {
             ]}
             valeur={onglet}
             onChange={(o) => router.replace(o === "rappels" ? "/planning?onglet=rappels" : "/planning")}
-            className="flex w-full [&>[role=tab]]:min-h-10 [&>[role=tab]]:flex-1 [&>[role=tab]]:justify-center [&>[role=tab]]:text-ui"
+            className={ONGLETS_TELEPHONE}
           />
         </div>
 
@@ -452,8 +463,13 @@ export function PlanningTelephone() {
           />
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24">
-            <RappelsTelephone sections={sections} charge={mes !== undefined && assignes !== undefined} />
-            <LignePoste lecture={poste} ferme={`Catégories et rappels gardés sur ${sur} : visibles quand il est ouvert`} sur={sur} />
+            <RappelsTelephone
+              sections={sections}
+              charge={mes !== undefined && assignes !== undefined}
+              toutLu={poste.etat === "ok" || poste.etat === "aucun"}
+              surPoste={surPosteGarde}
+            />
+            {surPosteGarde ? null : <LignePoste lecture={poste} ferme={`Catégories et rappels gardés sur ${sur} : visibles quand il est ouvert`} sur={sur} />}
           </div>
         )}
 

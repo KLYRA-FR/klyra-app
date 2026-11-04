@@ -84,7 +84,7 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Automatisations" retour={() => router.push("/plus")} />
+      <EnteteTelephone titre="Automatisations" parent="/plus" />
       <div className="shrink-0 px-4 pb-2">{onglets}</div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-4" {...tirer.props}>
         <Relache visible={tirer.tire} />
@@ -343,7 +343,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone
         titre={data ? `Routines de ${agent.name} · ${liste.length}` : "Routines"}
-        retour={() => router.push(urlRoutines())}
+        parent={urlRoutines()}
         droite={
           data && choisie ? (
             <Bouton variant="discret" taille="compact" className="min-h-11" iconeGauche={<Icon name="list" size={16} />} onClick={() => setExecutions(choisie)}>

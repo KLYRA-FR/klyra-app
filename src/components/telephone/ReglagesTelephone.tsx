@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { chercher, estSection, SECTIONS, type IdSection } from "@/components/reglages/catalogue";
@@ -56,7 +56,6 @@ export function ReglagesTelephone() {
 
 /** La liste des sections, et la recherche des réglages en haut. */
 function ListeReglages() {
-  const router = useRouter();
   const [requete, setRequete] = useState("");
   const resultats = useMemo(() => chercher(requete), [requete]);
   const ligne = (href: string, icone: (typeof SECTIONS)[number]["icone"], titre: string, detail: string) => (
@@ -73,7 +72,7 @@ function ListeReglages() {
   );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Réglages" retour={() => router.push("/plus")} />
+      <EnteteTelephone titre="Réglages" parent="/plus" />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <Input
           size="lg"
@@ -108,7 +107,6 @@ function ListeReglages() {
 
 /** Une section : sa description, puis ses lignes. */
 function PageSection({ id, reglage }: { id: IdSection; reglage: string | null }) {
-  const router = useRouter();
   const section = SECTIONS.find((s) => s.id === id)!;
   /* Une ligne cherchée : elle défile à l'écran. */
   useEffect(() => {
@@ -118,7 +116,7 @@ function PageSection({ id, reglage }: { id: IdSection; reglage: string | null })
   }, [reglage]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre={titreSection(id)} retour={() => router.push("/reglages")} />
+      <EnteteTelephone titre={titreSection(id)} parent="/reglages" />
       <div className="min-h-0 flex-1 overflow-y-auto pb-6">
         <p className="px-4 text-ui text-texte-secondaire">{id === "mobile" ? DESCRIPTION_TELEPHONE : section.description}</p>
         <div className="mt-2">{contenu(id)}</div>

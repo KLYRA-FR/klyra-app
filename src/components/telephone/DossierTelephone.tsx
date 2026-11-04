@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type TouchEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
@@ -78,7 +77,6 @@ export function useNiveau(projetId: string, chemin: string, actif = true): Nivea
 
 /** L'écran d'un dossier : « ‹ » remonte d'un niveau, le chemin en haut ramène à n'importe lequel. */
 export function DossierTelephone({ projetId, nomProjet, chemin }: { projetId: string; nomProjet: string; chemin: string }) {
-  const router = useRouter();
   const [menu, setMenu] = useState(false);
   const niveau = useNiveau(projetId, chemin);
   const nom = nomFichier(chemin);
@@ -86,7 +84,7 @@ export function DossierTelephone({ projetId, nomProjet, chemin }: { projetId: st
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone
         titre={nom}
-        retour={() => router.push(urlDossier(projetId, parentDe(chemin) ?? ""))}
+        parent={urlDossier(projetId, parentDe(chemin) ?? "")}
         droite={<BoutonIcone variant="discret" taille="md" libelle="Actions du dossier" onClick={() => setMenu(true)} icone={<Icon name="dot-horizontal" size={24} />} />}
       />
       <FilAriane projetId={projetId} nomProjet={nomProjet} chemin={chemin} />
@@ -163,7 +161,18 @@ export function ListeDossier({ projetId, niveau }: { projetId: string; niveau: N
   const { ouvert } = usePostes();
   const tirage = useTirerPourRelire(niveau.relancer, ouvert);
   const affiche = niveau.affiche;
-  const coupure = affiche ? texteCoupure(affiche) : null;
+  const vue = affiche ?? (niveau.lecture.etat === "ferme" ? (niveau.lecture.gardee?.data ?? null) : null);
+  const coupure = vue ? texteCoupure(vue) : null;
+  const elements = (n: NiveauDossier) =>
+    n.elements.length === 0 ? (
+      <p className="px-4 pt-8 text-body-s text-texte-principal">Dossier vide</p>
+    ) : (
+      <ul className="px-4">
+        {n.elements.map((element) => (
+          <LigneElement key={element.chemin} projetId={projetId} element={element} />
+        ))}
+      </ul>
+    );
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-4" {...tirage.gestes}>
@@ -178,18 +187,11 @@ export function ListeDossier({ projetId, niveau }: { projetId: string; niveau: N
         </p>
       ) : null}
       {affiche ? (
-        affiche.elements.length === 0 ? (
-          <p className="px-4 pt-8 text-body-s text-texte-principal">Dossier vide</p>
-        ) : (
-          <ul className="px-4">
-            {affiche.elements.map((element) => (
-              <LigneElement key={element.chemin} projetId={projetId} element={element} />
-            ))}
-          </ul>
-        )
+        elements(affiche)
       ) : (
-        <VueLecture lecture={niveau.lecture} ferme={FERME} lignes={6}>
-          {() => null}
+        /* Ordinateur fermé : la vue gardée du niveau (ses liens mènent aux niveaux gardés eux aussi). */
+        <VueLecture lecture={niveau.lecture} ferme={FERME} lignes={6} verrou={false} gestes="Relire">
+          {elements}
         </VueLecture>
       )}
       {coupure ? (

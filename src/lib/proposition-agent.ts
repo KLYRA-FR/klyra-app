@@ -9,7 +9,12 @@ import type { PropositionAgent } from "@/types/domain";
 const texte = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 export function lireProposition(entree: Record<string, unknown>): PropositionAgent | null {
-  const proposition = {
+  const proposition = normaliser(entree);
+  return proposition.nom && proposition.consignes ? proposition : null;
+}
+
+function normaliser(entree: Record<string, unknown>): PropositionAgent {
+  return {
     id: texte(entree.id, 64)
       .toLowerCase()
       .normalize("NFD")
@@ -21,7 +26,6 @@ export function lireProposition(entree: Record<string, unknown>): PropositionAge
     description: texte(entree.description, 1200),
     consignes: texte(entree.consignes, 40_000),
   };
-  return proposition.nom && proposition.consignes ? proposition : null;
 }
 
 const CLE = "klyra:proposition-agent";
@@ -40,6 +44,20 @@ export function reprendreDansEditeur(): PropositionAgent | null {
   try {
     const brut = sessionStorage.getItem(CLE);
     return brut ? lireProposition(JSON.parse(brut) as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sur le téléphone (C-5) : la copie du compte ne porte pas les consignes d'une proposition. Un
+ * brouillon avec un nom suffit ; l'éditeur part de ce qu'il a (nom, rôle, description).
+ */
+export function reprendreBrouillonTelephone(): PropositionAgent | null {
+  try {
+    const brut = sessionStorage.getItem(CLE);
+    const proposition = brut ? normaliser(JSON.parse(brut) as Record<string, unknown>) : null;
+    return proposition?.nom ? proposition : null;
   } catch {
     return null;
   }

@@ -69,7 +69,8 @@ export function posteRetenu(): Pick<PosteLu, "systeme" | "nom"> | null {
   }
 }
 
-/** « ton PC », « ton Mac », le nom du poste, ou « ton ordinateur » tant qu'aucun ne s'est signalé. */
+/** « ton PC », « ton Mac », « ton ordinateur », ou le nom du poste s'il y en a plusieurs. */
 export function useSupport(): string {
-  return supportOuOrdinateur(usePostes().principal);
+  const { principal, postes } = usePostes();
+  return supportOuOrdinateur(principal, (postes?.length ?? 0) > 1);
 }

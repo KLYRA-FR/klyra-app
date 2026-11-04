@@ -8,7 +8,7 @@ import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { messageErreur } from "@/lib/compte";
-import { activiteDe, idDirect, nouvelIdFil, parentDe, type ConversationLue } from "@/lib/telephone/chats";
+import { activiteDe, idDirect, libelleArchive, nouvelIdFil, parentDe, type ConversationLue } from "@/lib/telephone/chats";
 import { Feuille, MenuFeuille, type ActionMenu } from "./Feuille";
 import { FeuilleRenommer, useAppuiMenu } from "./MenuChat";
 
@@ -117,7 +117,7 @@ export function FilsPuces({
                   }}
                 >
                   <span className="truncate text-body-s text-texte-principal">{c.titre}</span>
-                  <span className="truncate text-ui-xs text-texte-secondaire">{c.origine}</span>
+                  <span className="truncate text-ui-xs text-texte-secondaire">{c.archiveLe ? libelleArchive(c.archiveLe) : "Archivé"}</span>
                 </button>
               </li>
             ))}

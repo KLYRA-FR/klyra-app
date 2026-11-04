@@ -52,6 +52,13 @@ export function ChampTelephone({ label, aide, erreur, children, className }: { l
 /** Classes d'un `Input` ou d'un `Textarea` de klyra-ui sur le téléphone : 16 px, sinon Safari zoome au focus. */
 export const CHAMP_TELEPHONE = "rounded-md border-bordure-champ text-body-s";
 
+/**
+ * Des `Onglets` segmentés sur le téléphone (socle § 6.3, C-6) : segments de 40 px dans le rail de 2 px,
+ * chacun touché sur les 44 px du rail (un pseudo-élément prolonge la cible en haut et en bas).
+ */
+export const ONGLETS_TELEPHONE =
+  "flex w-full [&>[role=tab]]:relative [&>[role=tab]]:min-h-10 [&>[role=tab]]:flex-1 [&>[role=tab]]:justify-center [&>[role=tab]]:text-ui [&>[role=tab]]:after:absolute [&>[role=tab]]:after:inset-x-0 [&>[role=tab]]:after:-inset-y-0.5";
+
 /** L'erreur d'un geste, sous ce qui l'a déclenché. */
 export function ErreurGeste({ message, className }: { message: string | null | undefined; className?: string }) {
   if (!message) return null;

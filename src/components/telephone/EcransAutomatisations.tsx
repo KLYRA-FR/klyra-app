@@ -5,6 +5,7 @@ import { Icon } from "@/components/icons/Icon";
 import { Onglets } from "@/components/ui/Onglets";
 import { AgentsRoutinesTelephone, RoutinesAgentTelephone } from "./RoutinesTelephone";
 import { WorkflowsListeTelephone, WorkflowTelephone } from "./WorkflowsTelephone";
+import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 
 /**
  * Automatisations : routines et workflows (T-14 à T-19). Route : /routines, mêmes paramètres qu'au
@@ -21,7 +22,7 @@ export function AutomatisationsTelephone() {
       libelle="Automatisations"
       valeur={vue}
       onChange={(o) => router.replace(`/routines?vue=${o}`)}
-      className="flex w-full [&>button]:min-h-10 [&>button]:flex-1 [&>button]:justify-center [&>button]:text-ui"
+      className={ONGLETS_TELEPHONE}
       onglets={[
         { id: "routines", label: "Routines", icone: <Icon name="calendar-01" size={16} /> },
         { id: "workflows", label: "Workflows", icone: <Icon name="lightning-01" size={16} /> },

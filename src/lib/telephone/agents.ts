@@ -1,4 +1,5 @@
 import { PRINCIPAL } from "@/data/agents";
+import { texteErreurPoste } from "@/lib/poste-texte";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
 
 /**
@@ -63,6 +64,15 @@ export function teinteSure(teinte: string | null | undefined, repli: RoleTeinte 
   return (ROLE_TEINTES as string[]).includes(teinte ?? "") ? (teinte as RoleTeinte) : repli;
 }
 
+/**
+ * Le rôle court affichable (socle § 8, C-2a) : jamais l'id de l'agent, que l'ordinateur prenait en
+ * repli (« redaction », « dev »). Vide plutôt qu'un identifiant.
+ */
+export function roleLisible(roleCourt: string | null | undefined, id: string): string {
+  const role = roleCourt?.trim() ?? "";
+  return role && role !== id ? role : "";
+}
+
 /** « 1 conversation », « 4 conversations », « Aucune conversation ». */
 export function texteConversations(n: number): string {
   if (n <= 0) return "Aucune conversation";
@@ -82,7 +92,7 @@ export function listeMesAgents(
     id: c.origine,
     nom: c.nom,
     teinte: teinteSure(c.teinte),
-    roleCourt: c.roleCourt,
+    roleCourt: roleLisible(c.roleCourt, c.origine),
     actif: c.actif,
     conversations: compter(c.origine),
   });
@@ -115,5 +125,5 @@ export function agentDeLaBibliotheque(etats: EtatAgentPoste[] | undefined, sourc
 export function texteErreurFiche(code: string, message: string, sur: string): string {
   if (code === "conflit") return `La fiche a changé sur ${sur} depuis son ouverture`;
   if (code === "introuvable") return `Cette fiche n’existe plus sur ${sur}.`;
-  return message || "Le geste a échoué sur l’ordinateur.";
+  return texteErreurPoste({ code, message }, sur);
 }
