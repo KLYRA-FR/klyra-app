@@ -6,21 +6,25 @@ import { DESCRIPTION_MAX } from "./model/artefacts";
 import { nettoyerNom } from "./model/valeurs";
 
 /**
- * Documents HTML de KLYRA, stockés par l'app. Un agent les enregistre en privé : seul le membre
- * qui les a déposés les reçoit. « Partager à l'équipe » (l'auteur, à la main) les passe à `equipe`.
- * Le filtre est ici, pas dans l'écran. Aucun plafond de taille : l'espace sert à suivre le coût.
+ * HTML partagés avec l'équipe. Un document privé ne passe pas ici : il reste dans l'espace
+ * où il a été créé (copie `~/.klyra/rendus` sur ce PC, fichier du VPS sur le serveur).
+ * `lieu` est celui du sélecteur : null pour Ce PC, l'adresse du VPS sinon. Une lecture d'un
+ * autre espace est introuvable. L'auteur seul retire le fichier de Convex.
+ * Aucun plafond : `espace` additionne les octets encore dans Convex, pour suivre le coût.
  */
 
 const AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const LISTE_MAX = 500;
 const ESPACE_MAX = 2000;
 
+const vLieu = v.union(v.string(), v.null());
+
 const vDocument = v.object({
   _id: v.id("documentsKlyra"),
   titre: v.string(),
   description: v.string(),
   agent: v.union(v.string(), v.null()),
-  visibilite: v.union(v.literal("prive"), v.literal("equipe")),
+  lieu: vLieu,
   taille: v.number(),
   version: v.number(),
   majLe: v.number(),
@@ -42,6 +46,14 @@ function origineValide(origine: string): string {
   return propre;
 }
 
+/** null : Ce PC. Une adresse vide ne compte pas comme ce PC. */
+function lieuValide(lieu: string | null): string | null {
+  if (lieu === null) return null;
+  const propre = lieu.trim();
+  if (!propre || propre.length > 300 || propre.includes("\0") || /\s/.test(propre)) throw erreur("document_invalide");
+  return propre;
+}
+
 function agentValide(agent: string | null): string | null {
   if (agent === null) return null;
   const propre = agent.trim();
@@ -56,7 +68,7 @@ async function resume(ctx: QueryCtx, doc: Doc<"documentsKlyra">, moi: Id<"membre
     titre: doc.titre,
     description: doc.description,
     agent: doc.agent,
-    visibilite: doc.visibilite,
+    lieu: doc.lieu,
     taille: doc.taille,
     version: doc.version,
     majLe: doc.majLe,
@@ -65,17 +77,15 @@ async function resume(ctx: QueryCtx, doc: Doc<"documentsKlyra">, moi: Id<"membre
   };
 }
 
-/** Le document encore là, ou une erreur. Un privé qui n'est pas à soi est introuvable. */
-async function visible(ctx: QueryCtx, id: Id<"documentsKlyra">, moi: Id<"membres">): Promise<Doc<"documentsKlyra">> {
+/** Le document partagé de cet espace, ou introuvable. Un autre espace ne se distingue pas d'une absence. */
+async function dansCetEspace(ctx: QueryCtx, id: Id<"documentsKlyra">, lieu: string | null): Promise<Doc<"documentsKlyra">> {
   const doc = await ctx.db.get("documentsKlyra", id);
-  if (doc === null || doc.retireLe !== null) throw erreur("introuvable");
-  if (doc.visibilite === "prive" && doc.auteurId !== moi) throw erreur("introuvable");
+  if (doc === null || doc.retireLe !== null || doc.lieu !== lieu) throw erreur("introuvable");
   return doc;
 }
 
-async function aLAuteur(ctx: QueryCtx, id: Id<"documentsKlyra">, moi: Id<"membres">): Promise<Doc<"documentsKlyra">> {
-  const doc = await ctx.db.get("documentsKlyra", id);
-  if (doc === null || doc.retireLe !== null) throw erreur("introuvable");
+async function aLAuteur(ctx: QueryCtx, id: Id<"documentsKlyra">, moi: Id<"membres">, lieu: string | null): Promise<Doc<"documentsKlyra">> {
+  const doc = await dansCetEspace(ctx, id, lieu);
   if (doc.auteurId !== moi) throw erreur("reserve_a_l_auteur");
   return doc;
 }
@@ -91,7 +101,13 @@ async function fichierHtml(ctx: MutationCtx, fichier: Id<"_storage">) {
   return meta;
 }
 
-/** Adresse pour déposer le HTML avant `enregistrer`. */
+async function retirer(ctx: MutationCtx, id: Id<"documentsKlyra">, moi: Id<"membres">, lieu: string | null) {
+  const doc = await aLAuteur(ctx, id, moi, lieu);
+  await ctx.storage.delete(doc.fichier);
+  await ctx.db.patch("documentsKlyra", doc._id, { retireLe: Date.now() });
+}
+
+/** Adresse pour déposer le HTML avant `partager`. */
 export const preparerDepot = mutation({
   args: {},
   returns: v.string(),
@@ -102,16 +118,17 @@ export const preparerDepot = mutation({
 });
 
 /**
- * Enregistre un HTML en privé. Republier la même origine (même auteur) remplace le fichier
- * et garde la visibilité : l'agent ne peut pas la passer à l'équipe.
+ * Partage un HTML avec l'équipe, dans un seul espace. Republier le même original au même endroit
+ * remplace le fichier. Il n'y a pas d'argument pour viser un autre espace que `lieu`.
  */
-export const enregistrer = mutation({
+export const partager = mutation({
   args: {
     fichier: v.id("_storage"),
     titre: v.string(),
     description: v.string(),
     origine: v.string(),
     agent: v.union(v.string(), v.null()),
+    lieu: vLieu,
   },
   returns: v.id("documentsKlyra"),
   handler: async (ctx, args) => {
@@ -120,10 +137,11 @@ export const enregistrer = mutation({
     const { titre, description } = controler(args.titre, args.description);
     const origine = origineValide(args.origine);
     const agent = agentValide(args.agent);
+    const lieu = lieuValide(args.lieu);
     const deja = (
       await ctx.db
         .query("documentsKlyra")
-        .withIndex("by_auteurId_and_origine", (q) => q.eq("auteurId", moi._id).eq("origine", origine))
+        .withIndex("by_auteurId_and_lieu_and_origine", (q) => q.eq("auteurId", moi._id).eq("lieu", lieu).eq("origine", origine))
         .take(20)
     ).find((doc) => doc.retireLe === null);
     const maintenant = Date.now();
@@ -152,50 +170,36 @@ export const enregistrer = mutation({
       empreinte: meta.sha256,
       version: 1,
       origine,
-      visibilite: "prive",
+      lieu,
       majLe: maintenant,
       retireLe: null,
     });
   },
 });
 
-/** Les documents du membre, privés et déjà partagés, du plus récent au plus ancien. */
-export const listerMes = query({
-  args: {},
-  returns: v.object({ pour: v.id("membres"), documents: v.array(vDocument) }),
-  handler: async (ctx) => {
+/** Les documents partagés de cet espace, du plus récent au plus ancien. Un autre espace n'y est pas. */
+export const lister = query({
+  args: { lieu: vLieu },
+  returns: v.object({ pour: v.id("membres"), lieu: vLieu, documents: v.array(vDocument) }),
+  handler: async (ctx, { lieu }) => {
     const moi = await exigerMembre(ctx);
+    const espace = lieuValide(lieu);
     const liste = await ctx.db
       .query("documentsKlyra")
-      .withIndex("by_auteurId_and_retireLe_and_majLe", (q) => q.eq("auteurId", moi._id).eq("retireLe", null))
+      .withIndex("by_lieu_and_retireLe_and_majLe", (q) => q.eq("lieu", espace).eq("retireLe", null))
       .order("desc")
       .take(LISTE_MAX);
-    return { pour: moi._id, documents: await Promise.all(liste.map((doc) => resume(ctx, doc, moi._id))) };
+    return { pour: moi._id, lieu: espace, documents: await Promise.all(liste.map((doc) => resume(ctx, doc, moi._id))) };
   },
 });
 
-/** Les documents passés à l'équipe. Un privé n'y est jamais. */
-export const listerEquipe = query({
-  args: {},
-  returns: v.object({ pour: v.id("membres"), documents: v.array(vDocument) }),
-  handler: async (ctx) => {
-    const moi = await exigerMembre(ctx);
-    const liste = await ctx.db
-      .query("documentsKlyra")
-      .withIndex("by_visibilite_and_retireLe_and_majLe", (q) => q.eq("visibilite", "equipe").eq("retireLe", null))
-      .order("desc")
-      .take(LISTE_MAX);
-    return { pour: moi._id, documents: await Promise.all(liste.map((doc) => resume(ctx, doc, moi._id))) };
-  },
-});
-
-/** L'adresse du HTML, pour qui a le droit de le lire. Un privé d'un autre membre est introuvable. */
+/** L'adresse du HTML partagé dans cet espace. Un document d'un autre espace est introuvable. */
 export const lire = query({
-  args: { documentId: v.id("documentsKlyra") },
+  args: { documentId: v.id("documentsKlyra"), lieu: vLieu },
   returns: v.object({ url: v.string() }),
-  handler: async (ctx, { documentId }) => {
-    const moi = await exigerMembre(ctx);
-    const doc = await visible(ctx, documentId, moi._id);
+  handler: async (ctx, { documentId, lieu }) => {
+    await exigerMembre(ctx);
+    const doc = await dansCetEspace(ctx, documentId, lieuValide(lieu));
     const url = await ctx.storage.getUrl(doc.fichier);
     if (url === null) throw erreur("introuvable");
     return { url };
@@ -203,8 +207,9 @@ export const lire = query({
 });
 
 /**
- * Octets de tous les documents encore là, privés compris, sans leur contenu.
- * `complet` est faux si la lecture s'est arrêtée à `ESPACE_MAX` : le chiffre est alors un minimum.
+ * Octets de tous les HTML encore partagés, tous espaces confondus, sans leur contenu.
+ * C'est le coût Convex, pas la liste d'un espace. `complet` est faux au-delà de `ESPACE_MAX` :
+ * le chiffre est alors un minimum.
  */
 export const espace = query({
   args: {},
@@ -221,39 +226,24 @@ export const espace = query({
   },
 });
 
-/** L'auteur montre le document à l'équipe. */
-export const partager = mutation({
-  args: { documentId: v.id("documentsKlyra") },
-  returns: v.null(),
-  handler: async (ctx, { documentId }) => {
-    const moi = await exigerMembre(ctx);
-    const doc = await aLAuteur(ctx, documentId, moi._id);
-    if (doc.visibilite !== "equipe") await ctx.db.patch("documentsKlyra", doc._id, { visibilite: "equipe", majLe: Date.now() });
-    return null;
-  },
-});
-
-/** L'auteur le reprend : il redevient privé, le fichier reste. */
+/** L'auteur retire le partage. Le fichier quitte Convex. La copie de l'espace, s'il y en a une, n'est pas ici. */
 export const reprendre = mutation({
-  args: { documentId: v.id("documentsKlyra") },
+  args: { documentId: v.id("documentsKlyra"), lieu: vLieu },
   returns: v.null(),
-  handler: async (ctx, { documentId }) => {
+  handler: async (ctx, { documentId, lieu }) => {
     const moi = await exigerMembre(ctx);
-    const doc = await aLAuteur(ctx, documentId, moi._id);
-    if (doc.visibilite !== "prive") await ctx.db.patch("documentsKlyra", doc._id, { visibilite: "prive", majLe: Date.now() });
+    await retirer(ctx, documentId, moi._id, lieuValide(lieu));
     return null;
   },
 });
 
-/** L'auteur le supprime. Le fichier part avec. */
+/** L'auteur supprime le partage. Même effet dans Convex que `reprendre` : le fichier part. */
 export const supprimer = mutation({
-  args: { documentId: v.id("documentsKlyra") },
+  args: { documentId: v.id("documentsKlyra"), lieu: vLieu },
   returns: v.null(),
-  handler: async (ctx, { documentId }) => {
+  handler: async (ctx, { documentId, lieu }) => {
     const moi = await exigerMembre(ctx);
-    const doc = await aLAuteur(ctx, documentId, moi._id);
-    await ctx.storage.delete(doc.fichier);
-    await ctx.db.patch("documentsKlyra", doc._id, { retireLe: Date.now() });
+    await retirer(ctx, documentId, moi._id, lieuValide(lieu));
     return null;
   },
 });

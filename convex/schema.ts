@@ -106,8 +106,9 @@ export default defineSchema({
     .index("by_url_and_retireLe", ["url", "retireLe"]),
 
   /**
-   * Un document HTML de KLYRA (cf. `documentsKlyra.ts`). Stocké ici, pas un lien claude.ai.
-   * `prive` : seul son auteur le reçoit. `equipe` : tout membre actif. L'auteur seul change ça ou le supprime.
+   * Un HTML KLYRA partagé avec l'équipe (cf. `documentsKlyra.ts`). Un privé n'est pas ici :
+   * il reste sur la machine de son espace. `lieu` null : Ce PC. Sinon l'adresse du VPS,
+   * la même que l'espace actif. Une liste ne mélange pas les espaces.
    */
   documentsKlyra: defineTable({
     auteurId: v.id("membres"),
@@ -121,18 +122,18 @@ export default defineSchema({
     taille: v.number(),
     /** Empreinte du fichier, donnée par le stockage. */
     empreinte: v.string(),
-    /** 1 à la création, +1 quand le même original est enregistré à nouveau. */
+    /** 1 au premier partage, +1 quand le même original est partagé à nouveau dans le même espace. */
     version: v.number(),
-    /** Clé de remplacement (chemin d'origine). Deux membres peuvent avoir la même. */
+    /** Clé de remplacement (chemin d'origine), dans un espace. Deux membres peuvent avoir la même. */
     origine: v.string(),
-    visibilite: v.union(v.literal("prive"), v.literal("equipe")),
+    /** null : Ce PC. Sinon l'adresse du VPS. Jamais recopié d'un espace à l'autre. */
+    lieu: v.union(v.string(), v.null()),
     majLe: v.number(),
-    /** null : encore là. La suppression efface aussi le fichier. */
+    /** null : encore partagé. Le retrait efface le fichier de Convex. La copie locale, s'il y en a une, n'est pas ici. */
     retireLe: v.union(v.number(), v.null()),
   })
-    .index("by_auteurId_and_retireLe_and_majLe", ["auteurId", "retireLe", "majLe"])
-    .index("by_visibilite_and_retireLe_and_majLe", ["visibilite", "retireLe", "majLe"])
-    .index("by_auteurId_and_origine", ["auteurId", "origine"])
+    .index("by_lieu_and_retireLe_and_majLe", ["lieu", "retireLe", "majLe"])
+    .index("by_auteurId_and_lieu_and_origine", ["auteurId", "lieu", "origine"])
     .index("by_retireLe_and_majLe", ["retireLe", "majLe"]),
 
   /**
