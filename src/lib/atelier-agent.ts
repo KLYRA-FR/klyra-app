@@ -1,4 +1,4 @@
-import type { Message, RoleTeinte } from "@/types/domain";
+import type { Message, MessagePart, RoleTeinte } from "@/types/domain";
 import type { RoutineInput, RoutineSchedule } from "@/types/routines";
 import {
   appliquerAjouts,
@@ -10,7 +10,7 @@ import {
   type Pilier,
   type RoutineProposee,
 } from "../../electron/atelier-agent";
-import type { ResultatCas } from "../../electron/epreuve";
+import type { ResultatCas, TypeCas } from "../../electron/epreuve";
 
 export * from "../../electron/atelier-agent";
 
@@ -63,13 +63,18 @@ export interface EtatAtelier {
   ajouts: AjoutFiche[];
   /** La dernière épreuve passée dans la série. */
   resultats: ResultatCas[] | null;
+  /** Les essais de l'épreuve qui tournent en ce moment (lancés du bureau ou du téléphone). */
+  essais: TypeCas[];
 }
+
+type PartAtelier = Extract<MessagePart, { type: "atelier-agent" }>;
+const estAtelier = (p: { type: string }): p is PartAtelier => p.type === "atelier-agent";
 
 /**
  * Tous les appels de l'atelier d'une conversation, pliés dans l'ordre. Une série repart de zéro
  * après un agent créé, ou quand l'assistant demande une carte neuve (`nouveau`).
  */
-export function plierAteliers(messages: Message[]): Map<string, EtatAtelier> {
+export function plierAteliers(messages: readonly { parts: readonly { type: string }[] }[]): Map<string, EtatAtelier> {
   const etats = new Map<string, EtatAtelier>();
   let serie: EtatAtelier[] = [];
   let derniere: EtatAtelier[] = [];
@@ -80,10 +85,12 @@ export function plierAteliers(messages: Message[]): Map<string, EtatAtelier> {
     const teinte = serie.reduce<RoleTeinte | null>((t, e) => e.teinte ?? t, null);
     const cree = serie.reduce<string | null>((c, e) => e.cree ?? c, null);
     const resultats = serie.reduce<ResultatCas[] | null>((r, e) => e.resultats ?? r, null);
+    const essais = [...new Set(serie.flatMap((e) => e.essais))];
     serie.forEach((e, i) => {
       e.teinte = teinte;
       e.cree = cree;
       e.resultats = resultats;
+      e.essais = essais;
       e.ajouts = ajouts;
       e.dernier = i === serie.length - 1;
     });
@@ -93,7 +100,7 @@ export function plierAteliers(messages: Message[]): Map<string, EtatAtelier> {
   };
   for (const message of messages) {
     for (const part of message.parts) {
-      if (part.type !== "atelier-agent") continue;
+      if (!estAtelier(part)) continue;
       if (part.maj.nouveau || serie.some((e) => e.cree)) clore();
       const avant = serie.at(-1)?.apres ?? BROUILLON_VIDE;
       courant = appliquerMaj(courant, part.maj);
@@ -109,6 +116,7 @@ export function plierAteliers(messages: Message[]): Map<string, EtatAtelier> {
         provisoire: !!part.provisoire,
         ajouts: [],
         resultats: part.resultats ?? null,
+        essais: part.essais ?? [],
       };
       serie.push(etat);
       etats.set(part.etapeId, etat);
@@ -134,3 +142,9 @@ export function piliersNouveaux(etat: Pick<EtatAtelier, "avant" | "apres">): Pil
   return [...piliersRemplis(etat.apres)].filter((p) => !avant.has(p));
 }
 
+
+/** Au chargement : un essai de l'épreuve coupé par la fermeture de l'app ne tourne plus. */
+export function sansEssaisEnCours(message: Message): Message {
+  if (!message.parts.some((p) => p.type === "atelier-agent" && p.essais?.length)) return message;
+  return { ...message, parts: message.parts.map((p) => (p.type === "atelier-agent" && p.essais ? { ...p, essais: undefined } : p)) };
+}

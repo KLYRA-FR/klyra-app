@@ -9,8 +9,10 @@ import {
   messageCompte,
   partiesReduites,
   sansCheminNiSecret,
+  type ContexteAtelier,
 } from "./copie-compte";
-import type { Chat, Message, Project } from "@/types/domain";
+import { plierAteliers } from "./atelier-agent";
+import type { Chat, Message, MessagePart, Project } from "@/types/domain";
 
 const DOSSIER = "/Users/corentin/Projets/klyra-fr";
 
@@ -174,5 +176,91 @@ describe("copie incrémentale", () => {
     for (const [k, v] of premiers.empreintes) envoyes.set(k, v);
     const ensuite = changements([{ origine: "a", v: 1 }, { origine: "b", v: 2 }], (x) => x.origine, envoyes);
     expect(ensuite.lot).toEqual([{ origine: "b", v: 2 }]);
+  });
+});
+
+describe("l'atelier d'un agent copié pour le téléphone", () => {
+  const EPREUVE = { normal: "Fais la veille de la semaine.", floue: "Regarde un peu.", horsMetier: "Réserve-moi un train." };
+  const fil = (): Message[] => [
+    message([{ type: "atelier-agent", etapeId: "e1", maj: { nom: "Zoé", role: "Veille", mission: `Lit ${DOSSIER}/veille.md chaque lundi.`, epreuve: EPREUVE } }], { id: "m1", chatId: "dm-principal" }),
+    message([{ type: "text", text: "Oui" }], { id: "m2", chatId: "dm-principal", author: { kind: "user" } }),
+    message(
+      [
+        { type: "atelier-agent", etapeId: "e2", maj: { limites: ["Ne publie rien."], consignes: `# Zoé\n\nClé : sk-ant-api03-abcdefghijklmnopqrstuvwx\n\n## Ce que je ne fais pas\n\n- Publier.` }, teinte: "violet" },
+        { type: "choix", etapeId: "c1", question: "Quand l'appeler ?", options: ["Chaque lundi", "À la demande"], multiple: false },
+      ],
+      { id: "m3", chatId: "dm-principal" },
+    ),
+  ];
+  const contexte = (messages: Message[], roles: { id: string; name: string; tag: string; teinte: "vert" }[] = []): ContexteAtelier => ({
+    etats: plierAteliers(messages),
+    roles,
+    teinteDe: () => "ocre",
+    vps: false,
+  });
+
+  test("le dernier appel porte la carte calculée par l'ordinateur, les précédents une ligne ; sans le fil plié, rien ne part", () => {
+    const messages = fil();
+    const ctx = contexte(messages);
+    const [ligne] = lireParties(messageCompte(messages[0], DOSSIER, ctx).parties);
+    expect(ligne).toMatchObject({ type: "atelier-agent", etapeId: "e1", ligne: { id: "zoe", nom: "Zoé", teinte: "violet", nouveaux: ["mission"] } });
+    const [carte, choix] = lireParties(messageCompte(messages[2], DOSSIER, ctx).parties);
+    expect(carte).toMatchObject({
+      type: "atelier-agent",
+      etapeId: "e2",
+      carte: { id: "zoe", nom: "Zoé", role: "Veille", teinte: "violet", manques: [], pris: null, cree: null, remplacee: false, epreuve: { essais: [], resultats: [] } },
+    });
+    expect(choix).toEqual({ type: "choix", question: "Quand l'appeler ?", options: ["Chaque lundi", "À la demande"], multiple: false });
+    expect(lireParties(messageCompte(messages[2], DOSSIER).parties).map((p) => p.type)).toEqual(["choix"]);
+  });
+
+  test("ni chemin absolu ni secret dans la carte ni dans la fiche", () => {
+    const messages = fil();
+    const copie = messageCompte(messages[2], DOSSIER, contexte(messages)).parties + messageCompte(messages[0], DOSSIER, contexte(messages)).parties;
+    expect(copie).not.toContain("/Users/");
+    expect(copie).not.toContain("sk-ant-");
+    const [carte] = lireParties(messageCompte(messages[0], DOSSIER, contexte([messages[0]])).parties);
+    expect(carte.type === "atelier-agent" && carte.carte?.mission).toBe("Lit veille.md chaque lundi.");
+  });
+
+  test("prénom déjà pris, agent créé, carte remplacée", () => {
+    const messages = fil();
+    const [pris] = lireParties(messageCompte(messages[2], null, contexte(messages, [{ id: "zoe-1", name: "Zoé", tag: "", teinte: "vert" }])).parties);
+    expect(pris).toMatchObject({ carte: { pris: "Zoé" } });
+    const cree = fil();
+    (cree[2].parts[0] as Extract<MessagePart, { type: "atelier-agent" }>).cree = "zoe";
+    const [nee] = lireParties(messageCompte(cree[2], null, contexte(cree, [{ id: "zoe", name: "Zoé", tag: "Veille", teinte: "vert" }])).parties);
+    expect(nee).toMatchObject({ carte: { cree: "zoe", pris: null, remplacee: false, alerte: [] } });
+    const remplacee = [...fil(), message([{ type: "atelier-agent", etapeId: "e3", maj: { nouveau: true, nom: "Max" } }], { id: "m4", chatId: "dm-principal" })];
+    const [ancienne] = lireParties(messageCompte(remplacee[2], null, contexte(remplacee)).parties);
+    expect(ancienne).toMatchObject({ carte: { remplacee: true } });
+  });
+
+  test("une épreuve longue tient dans ce que le compte garde : la carte passe en version courte", () => {
+    const messages = fil();
+    const long = "Réponse détaillée. ".repeat(400);
+    const atelier = messages[2].parts[0] as Extract<MessagePart, { type: "atelier-agent" }>;
+    atelier.maj = { ...atelier.maj, consignes: `# Zoé\n\n${"Une consigne précise. ".repeat(500)}` };
+    atelier.resultats = (["normal", "floue", "hors-metier"] as const).map((type) => ({
+      type,
+      demande: "Demande",
+      reponse: long,
+      verdict: "ko" as const,
+      raison: "Raison",
+      correction: { pilier: "limites" as const, texte: "Une limite." },
+      jetons: 100,
+      empreinte: "ancienne",
+    }));
+    messages[2].parts.unshift({ type: "text", text: "Voilà sa carte. ".repeat(500) });
+    const parties = messageCompte(messages[2], null, contexte(messages)).parties;
+    expect(parties.length).toBeLessThanOrEqual(20_000);
+    const carte = lireParties(parties).find((p) => p.type === "atelier-agent");
+    expect(carte?.type === "atelier-agent" && carte.carte?.epreuve?.resultats).toHaveLength(3);
+    expect(carte?.type === "atelier-agent" && carte.carte?.epreuve?.resultats[0]).toMatchObject({ ancien: true, ajoutee: false, correction: { pilier: "limites" } });
+  });
+
+  test("des réponses toutes prêtes : « Attend ta réponse »", () => {
+    const question = message([{ type: "choix", etapeId: "c1", question: "", options: ["A", "B"], multiple: false }], { statut: "fait" });
+    expect(activiteDe([question], null, 1)).toMatchObject({ etat: "question" });
   });
 });

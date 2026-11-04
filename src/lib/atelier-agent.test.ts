@@ -24,6 +24,7 @@ import {
   piliersRemplis,
   plierAteliers,
   retourAtelier,
+  sansEssaisEnCours,
   texteDuChoix,
 } from "./atelier-agent";
 
@@ -110,6 +111,23 @@ describe("plier les appels", () => {
     expect(etats.get("e2")?.apres.role).toBe("");
     expect(brouillonEnCours(messages).nom).toBe("Elio");
     expect(brouillonEnCours(messages.slice(0, 1))).toEqual(BROUILLON_VIDE);
+  });
+});
+
+describe("l'épreuve en cours, vue du bureau et du téléphone", () => {
+  it("les essais qui tournent valent pour toute la série, et ne survivent pas à un redémarrage", () => {
+    const messages = [
+      message("m1", [{ type: "atelier-agent", etapeId: "e1", maj: { nom: "Zoé" }, essais: ["normal"] }]),
+      message("m2", [{ type: "atelier-agent", etapeId: "e2", maj: { role: "Veille" }, essais: ["floue"] }]),
+    ];
+    const etats = plierAteliers(messages);
+    expect(etats.get("e2")?.essais).toEqual(["normal", "floue"]);
+    expect(etats.get("e1")?.essais).toEqual(["normal", "floue"]);
+    const relu = sansEssaisEnCours(messages[0]);
+    expect(JSON.parse(JSON.stringify(relu)).parts[0]).not.toHaveProperty("essais");
+    expect(sansEssaisEnCours(messages[0]) === messages[0]).toBe(false);
+    const sans = message("m3", [{ type: "text", text: "Bonjour" }]);
+    expect(sansEssaisEnCours(sans)).toBe(sans);
   });
 });
 

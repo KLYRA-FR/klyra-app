@@ -7,7 +7,9 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { EFFORTS, MODELES } from "@/components/chat/ChoixModele";
 import { lireClePoste } from "./SignalPoste";
 import { carteAgent, carteProjet, changements, conversationCompte, decoupages, messageCompte } from "@/lib/copie-compte";
-import { useAgents } from "@/lib/agents";
+import { teinteNouvelAgent, useAgents } from "@/lib/agents";
+import { plierAteliers } from "@/lib/atelier-agent";
+import type { ContexteAtelier } from "@/lib/copie-compte";
 import { getBridge } from "@/lib/bridge";
 import { FORMATS_IMAGE } from "@/lib/collage";
 import { findMention } from "@/lib/mentions";
@@ -216,8 +218,25 @@ export function SyncCompte({ actif }: { actif: boolean }) {
         memo.origines = origines.join("\n");
       }
 
+      /* L'atelier d'un agent : la carte de chaque appel dépend de toute la conversation (et des agents
+         actifs) ; ces messages-là sont recalculés à chaque copie, seuls les changés repartent. */
+      const ateliers = new Map<string, ContexteAtelier>();
+      const atelierDe = (chatId: string): ContexteAtelier => {
+        let contexte = ateliers.get(chatId);
+        if (!contexte) {
+          contexte = {
+            etats: plierAteliers(parChat.get(chatId) ?? []),
+            roles: a.roles,
+            teinteDe: teinteNouvelAgent,
+            vps: !!chats.find((c) => c.id === chatId)?.lieu,
+          };
+          ateliers.set(chatId, contexte);
+        }
+        return contexte;
+      };
       const copiesMessages = messages.map((m) => {
         const dossier = dossiers.get(m.chatId) ?? null;
+        if (m.parts.some((p) => p.type === "atelier-agent")) return messageCompte(m, dossier, atelierDe(m.chatId));
         const deja = copies.current.get(m);
         if (deja && deja.dossier === dossier) return deja.copie;
         const copie = messageCompte(m, dossier);

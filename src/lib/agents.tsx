@@ -73,6 +73,9 @@ function ficheLocale(partage: string, id: string, valeurs: Record<string, string
 }
 
 /** Construit un agent à partir du texte de sa fiche et des préférences de la personne. */
+/** La couleur qu'un agent pas encore créé recevra (carte de l'atelier, au bureau comme sur le téléphone). */
+export const teinteNouvelAgent = (id: string): RoleTeinte => roleFromContent(id, "", {}, null).teinte;
+
 export function roleFromContent(name: string, content: string, meta: AgentsMeta, file: RoleFile | null): Role {
   const { frontmatter, body } = parseAgentFile(content);
   const reglage = meta[name] ?? {};

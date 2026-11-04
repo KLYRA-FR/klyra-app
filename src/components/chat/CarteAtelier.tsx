@@ -10,10 +10,9 @@ import { AgentFormes } from "@/components/team/AgentFormes";
 import { fondCarte } from "@/components/team/AgentVisuel";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
-import { Infobulle } from "@/components/ui/Infobulle";
 import { useConfirmation } from "@/components/ui/Modale";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
-import { roleFromContent, useAgents } from "@/lib/agents";
+import { teinteNouvelAgent, useAgents } from "@/lib/agents";
 import { annoncer } from "@/lib/annonces";
 import {
   appliquerAjouts,
@@ -35,12 +34,13 @@ import {
   type Pilier,
 } from "@/lib/atelier-agent";
 import { useBibliotheque } from "@/lib/bibliotheque";
+import { Etoiles, Jauge } from "./EtoilesAtelier";
+import { jouerEpreuve } from "@/lib/epreuve-atelier";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
 import { eclatDePoints, envoler } from "@/lib/naissance-agent";
 import { comparable, nomDejaPris, nomPropre } from "@/lib/noms-agents";
-import { SEUIL_FICHE_LONGUE } from "@/lib/poids-fiche";
 import { confierAEditeur } from "@/lib/proposition-agent";
 import { CLE_BROUILLON_ROUTINE, libellePlanning } from "@/lib/routines-affichage";
 import { jouer } from "@/lib/sons/sons";
@@ -57,70 +57,7 @@ import { empreinteFiche, LIBELLES_CAS, type ResultatCas } from "../../../electro
  */
 
 const MODELES: Record<string, string> = { opus: "Opus", sonnet: "Sonnet", haiku: "Haiku" };
-const teinteParDefaut = (id: string): RoleTeinte => roleFromContent(id, "", {}, null).teinte;
-
-/* ─── Les cinq étoiles et la jauge ─────────────────────────────── */
-
-/**
- * Les cinq piliers. `animer` : ceux qui viennent de s'allumer (l'étoile tourne en s'allumant) ;
- * `alerte` : ceux qu'un essai raté de l'épreuve met en doute (l'étoile clignote, orange).
- */
-export function Etoiles({ remplis, animer, alerte, taille = 16 }: { remplis: Set<Pilier>; animer?: Set<Pilier>; alerte?: Set<Pilier>; taille?: number }) {
-  const libelle = `${remplis.size} pilier${remplis.size > 1 ? "s" : ""} sur 5${remplis.size ? ` : ${PILIERS.filter((p) => remplis.has(p.cle)).map((p) => p.titre.toLowerCase()).join(", ")}` : ""}`;
-  return (
-    <span role="img" aria-label={libelle} className="flex items-center gap-0.5">
-      {PILIERS.map((p, i) => {
-        const allume = remplis.has(p.cle);
-        const enAlerte = !!alerte?.has(p.cle);
-        return (
-          <Infobulle key={p.cle} texte={`${p.titre}${enAlerte ? " : à corriger après l’épreuve" : allume ? "" : " : à remplir"}`} cote="haut">
-            {/* La clé suit l'état : une étoile qui s'allume repart de zéro, son animation aussi. */}
-            <span
-              key={allume ? "allumee" : "eteinte"}
-              aria-hidden="true"
-              className={cn(
-                "flex",
-                enAlerte ? "klyra-etoile-alerte text-texte-accent-orange" : allume ? "text-icone-accent" : "text-bordure-forte",
-                allume && animer?.has(p.cle) && "klyra-etoile-allumee",
-              )}
-              style={allume && animer?.has(p.cle) ? { animationDelay: `${i * 60}ms` } : undefined}
-            >
-              <Icon name="stars" size={taille} />
-            </span>
-          </Infobulle>
-        );
-      })}
-    </span>
-  );
-}
-
-/** Le poids de la fiche, relue à chaque appel ; le trait marque les 1 500 jetons conseillés. */
-export function Jauge({ jetons, fond = "bg-white/70" }: { jetons: number; fond?: string }) {
-  const lourde = jetons > SEUIL_FICHE_LONGUE;
-  const echelle = SEUIL_FICHE_LONGUE / 0.6;
-  return (
-    <span className="flex w-[112px] flex-col gap-1">
-      <span className={cn("klyra-mono text-right text-ui-2xs", lourde ? "text-texte-accent-orange" : "text-texte-secondaire")}>
-        ~{jetons.toLocaleString("fr-FR")} jetons
-      </span>
-      <span
-        role="meter"
-        aria-label="Poids de la fiche, relue à chaque appel de l’agent"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(echelle)}
-        aria-valuenow={jetons}
-        aria-valuetext={`Environ ${jetons.toLocaleString("fr-FR")} jetons${lourde ? ", au-delà des 1 500 conseillés" : ""}`}
-        className={cn("relative h-1.5 rounded-pill", fond)}
-      >
-        <span
-          className={cn("absolute inset-y-0 left-0 rounded-pill transition-[width] duration-[480ms] ease-sortie", lourde ? "bg-orange-k1-500" : "bg-bleu-k1-500")}
-          style={{ width: `${Math.min(jetons / echelle, 1) * 100}%` }}
-        />
-        <span aria-hidden="true" className="absolute -top-[3px] -bottom-[3px] left-[60%] w-0.5 rounded-pill bg-texte-principal/35" />
-      </span>
-    </span>
-  );
-}
+const teinteParDefaut = teinteNouvelAgent;
 
 /* ─── Un appel plus ancien de la série : une ligne ─────────────── */
 
@@ -428,9 +365,10 @@ function Epreuve({
   lectureSeule: boolean;
 }) {
   const { marquerAtelier } = useWorkspace();
-  const [enCours, setEnCours] = useState<string[]>([]);
   const [lues, setLues] = useState<string[]>([]);
   const [indisponible, setIndisponible] = useState<string | null>(null);
+  // Les essais qui tournent sont notés sur la carte : lancés d'ici ou du téléphone, les deux le voient.
+  const enCours: string[] = etat.essais;
   const cas = casEpreuve(b);
   if (!cas) return null;
   const empreinte = empreinteFiche(ficheAgent(b, id));
@@ -450,26 +388,11 @@ function Epreuve({
       return;
     }
     setIndisponible(null);
-    setEnCours((e) => [...new Set([...e, ...types])]);
-    const fiche = ficheAgent(brouillon, id);
-    const depart = etat.resultats ?? [];
-    await Promise.all(
-      cas
-        .filter((c) => types.includes(c.type))
-        .map(async (c) => {
-          const r = await essayer(
-            crypto.randomUUID(),
-            { id, description: descriptionFiche(brouillon), corps: corpsFiche(brouillon), modele: brouillon.modele || "opus", fiche },
-            c,
-            { lieu, conversation: chatId, ajouts },
-          );
-          const resultat: ResultatCas = r.ok
-            ? r.data
-            : { ...c, reponse: "", verdict: null, raison: "", correction: null, jetons: 0, empreinte: empreinteFiche(fiche), erreur: r.message };
-          marquerAtelier(messageId, etapeId, (part) => ({ resultats: [...(part.resultats ?? depart).filter((x) => x.type !== c.type), resultat] }));
-          jouer(resultat.verdict === "ok" ? "validation" : "desactive");
-          setEnCours((e) => e.filter((x) => x !== c.type));
-        }),
+    await jouerEpreuve(
+      essayer,
+      marquerAtelier,
+      { b: brouillon, id, cas: cas.filter((c) => types.includes(c.type) && !enCours.includes(c.type)), ajouts, lieu, conversation: chatId, messageId, etapeId, depart: etat.resultats ?? [] },
+      (resultat) => jouer(resultat.verdict === "ok" ? "validation" : "desactive"),
     );
   };
 

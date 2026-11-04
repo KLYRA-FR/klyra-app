@@ -23,6 +23,7 @@ import { NotePoste } from "./etats";
 import { usePostes, useSupport } from "./poste";
 import { RondAgent, useCartes } from "./AgentsChat";
 import { CarteAccordChat } from "./CarteAccordChat";
+import { CarteAtelierTelephone, ChoixTelephone, LigneAtelierTelephone } from "./AtelierTelephone";
 import { ActionsMessage, arreterLecture } from "./ActionsMessage";
 import type { MessageEnAttente } from "@/lib/telephone/chats";
 
@@ -233,12 +234,15 @@ function PartieFil({
   ton,
   contexte,
   remplacee,
+  choix,
 }: {
   partie: PartieCompte;
   message: MessageLu;
   ton: "user" | "role";
   contexte: ContexteFil;
   remplacee: boolean;
+  /** Les réponses toutes prêtes : actives sur la dernière réponse, figées une fois répondues. */
+  choix?: { actif: boolean; repondu: string | null };
 }) {
   const sur = useSupport();
   const local = () => contexte.onBandeau(`Sur ${sur} : l’aperçu est servi par ton ordinateur.`);
@@ -305,6 +309,21 @@ function PartieFil({
           {partie.files.length > 1 ? "fichiers modifiés" : "fichier modifié"}
         </p>
       );
+    case "atelier-agent":
+      return partie.carte ? (
+        <CarteAtelierTelephone etapeId={partie.etapeId} carte={partie.carte} conversation={contexte.origine} />
+      ) : partie.ligne ? (
+        <LigneAtelierTelephone ligne={partie.ligne} />
+      ) : null;
+    case "choix":
+      return (
+        <ChoixTelephone
+          partie={partie}
+          actif={choix?.actif ?? false}
+          repondu={choix?.repondu ?? null}
+          onRepondre={(texte) => contexte.envoyer(texte, message.auteurId ? { a: message.auteurId } : {})}
+        />
+      );
     case "actions":
       return (
         <div className="flex flex-wrap gap-2">
@@ -357,11 +376,13 @@ function MessageAgent({
   suite,
   contexte,
   propositionCourante,
+  choix,
 }: {
   message: MessageLu;
   suite: boolean;
   contexte: ContexteFil;
   propositionCourante: string | null;
+  choix: { actif: boolean; repondu: string | null };
 }) {
   const { nom, encre, carte } = useCartes();
   const [actions, setActions] = useState(false);
@@ -393,6 +414,7 @@ function MessageAgent({
             ton="role"
             contexte={contexte}
             remplacee={partie.type === "proposition-agent" && partie.etapeId !== propositionCourante}
+            choix={choix}
           />
         ))}
         {/* Ordinateur fermé, l'activité tombe : une réponse interrompue ne « réfléchit » pas indéfiniment. */}
@@ -578,6 +600,17 @@ export function MessagesFil({
     return null;
   }, [messages]);
 
+  /* Les réponses toutes prêtes : ce que la personne a répondu ensuite (un message, ou un envoi qui attend l'ordinateur). */
+  const reponses = useMemo(() => {
+    const apres = new Map<string, string>();
+    let suivante: string | null = enFile[0]?.texte ?? null;
+    for (const m of [...(messages ?? [])].reverse()) {
+      if (m.auteurKind === "user") suivante = m.texte;
+      else if (suivante !== null) apres.set(m.origine, suivante);
+    }
+    return apres;
+  }, [messages, enFile]);
+
   const allerEnBas = () => {
     const el = zone.current;
     if (!el) return;
@@ -622,7 +655,16 @@ export function MessagesFil({
                     {message.auteurKind === "user" ? (
                       <MessageMoi message={message} suite={suite} contexte={contexte} />
                     ) : (
-                      <MessageAgent message={message} suite={suite} contexte={contexte} propositionCourante={propositionCourante} />
+                      <MessageAgent
+                        message={message}
+                        suite={suite}
+                        contexte={contexte}
+                        propositionCourante={propositionCourante}
+                        choix={{
+                          actif: i === messages.length - 1 && message.statut !== "en-cours" && !reponses.has(message.origine),
+                          repondu: reponses.get(message.origine) ?? null,
+                        }}
+                      />
                     )}
                   </div>
                 </Fragment>
