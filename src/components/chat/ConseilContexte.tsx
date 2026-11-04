@@ -33,7 +33,7 @@ export function ConseilContexte({ chat }: { chat: Chat }) {
     : `${nom} relit ${taille} jetons à chaque étape de cette conversation.`;
   const conseilFil = conseil.filPossible ? " Pour un nouveau sujet, un fil neuf repart léger." : "";
   const conseilResume = conseil.raison === "lourde" ? " Pour continuer ici, un résumé allège la suite." : "";
-  const nouveauFil = () => router.push(`/chat?id=${encodeURIComponent(creerFil(conseil.roleId))}`);
+  const nouveauFil = () => router.push(`/chat?id=${encodeURIComponent(creerFil(conseil.roleId, undefined, null, undefined, { lieu: chat.lieu ?? null }))}`);
 
   return (
     <div className="mx-auto w-full max-w-[880px] px-5" data-conseil-contexte={conseil.raison}>

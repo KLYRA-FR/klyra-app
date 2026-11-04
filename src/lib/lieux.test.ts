@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chat } from "@/types/domain";
-import { dansEspace, hoteDe, idDirect, lireIdDirect } from "./lieux";
+import { dansEspace, hoteDe, idDirect, lieuDeConversation, lireIdDirect } from "./lieux";
 
 const VPS = "https://klyra-vps.exemple.ts.net:8791";
 
@@ -45,5 +45,19 @@ describe("idDirect", () => {
     expect(lireIdDirect("dm-hugo@pc")).toEqual({ roleId: "hugo", hote: null });
     expect(lireIdDirect(idDirect("hugo", VPS))).toEqual({ roleId: "hugo", hote: hoteDe(VPS) });
     expect(lireIdDirect("klyra-fil-1a2b")).toBeNull();
+  });
+});
+
+describe("lieuDeConversation", () => {
+  it("donne la machine d'une conversation, celle d'où part un nouveau fil", () => {
+    const chats = [chat({ id: "dm-hugo@pc", roleIds: ["hugo"] }), chat({ id: "dm-hugo", roleIds: ["hugo"], lieu: VPS })];
+    expect(lieuDeConversation(chats, "dm-hugo")).toBe(VPS);
+    expect(lieuDeConversation(chats, "dm-hugo@pc")).toBeNull();
+  });
+
+  it("lit à son id une conversation directe pas encore enregistrée", () => {
+    expect(lieuDeConversation([], "dm-iris")).toBeNull();
+    expect(lieuDeConversation([], `dm-iris@${hoteDe(VPS)}`)).toBe(`https://${hoteDe(VPS)}`);
+    expect(lieuDeConversation([], "klyra-fil-1a2b3c4d")).toBeNull();
   });
 });
