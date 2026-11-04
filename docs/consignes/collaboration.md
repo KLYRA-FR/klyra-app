@@ -2,7 +2,20 @@
 
 Une Issue est une unité de travail. GitHub suffit pour reprendre : un agent de n'importe quel membre doit pouvoir continuer sans la conversation d'origine.
 
-Ce circuit vaut pour tout projet de KLYRA-FR. Sa logique est dans `electron/collaboration/` et ne suppose ni langage ni CI particulière. Le runner qui l'exécute n'existe pas encore : ces conventions s'appliquent à la main.
+Ce circuit vaut pour tout projet de KLYRA-FR. Sa logique est dans `electron/collaboration/` et ne suppose ni langage ni CI particulière.
+
+## Comment ça tourne
+
+Sur l'écran d'un projet, une personne active le circuit. Son poste vérifie alors toutes les 2 minutes, tant que l'app est ouverte, sans appel de modèle. Une personne pose le label `agent:prêt` sur une Issue, et le poste :
+
+1. réserve l'Issue et prépare son dossier de travail ;
+2. lance un agent dans un fil, à ce dossier, avec l'accès « projet » (l'assistant, ou celui d'un label `executant:<id>`) ;
+3. à la fin de l'agent, valide, pousse et ouvre la PR avec l'identité `klyra-agents[bot]` ;
+4. à la fin des vérifications, demande à la personne de décider. **Le circuit ne fusionne jamais.**
+
+**L'agent n'a ni jeton ni accès à GitHub** : il modifie son dossier et rend un bloc `<resultat>`, le reste est du code. Il n'y a donc rien à voler en piégeant une Issue.
+
+Pas encore : la review automatique, la correction automatique après une CI rouge, les projets sur un VPS, le journal super-agent. Une PR qui demanderait une review ou une correction revient à la personne.
 
 ## Trois cas
 
@@ -24,7 +37,9 @@ Il dépend des fichiers touchés. On peut le relever, jamais le baisser.
 
 Le calcul est dans `electron/collaboration/risque.ts`.
 
-## Déroulé
+## Déroulé à la main
+
+Si tu travailles sans le runner, dans une session ordinaire :
 
 1. Lis l'Issue et sa carte. Ne charge pas tout le dépôt : cherche d'abord les chemins et les symboles.
 2. Réserve : crée la branche `agent/issue-<n>`. Si elle existe, quelqu'un a déjà la tâche : ne travaille pas dessus sans son accord. Écris aussitôt la carte, avec un bail de 2 h, prolongé à chaque mise à jour.
@@ -32,7 +47,7 @@ Le calcul est dans `electron/collaboration/risque.ts`.
 4. Vérifie (`verification.md`), puis ouvre une PR avec `Closes #<n>` : ce qui change, pourquoi, ce qui est vérifié, les limites.
 5. Réécris la carte avant de finir.
 
-Deux essais pour un même défaut, puis statut bloqué avec la preuve. Pas de délégation depuis une délégation, pas de force-push. Une PR d'agent est fusionnée par Corentin.
+Deux essais pour un même défaut, puis statut bloqué avec la preuve. Retirer le label `agent:bloqué` relance l'Issue. Pas de délégation depuis une délégation, pas de force-push. Une PR d'agent est fusionnée par Corentin.
 
 ## La carte de passation
 

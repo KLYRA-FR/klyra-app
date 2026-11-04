@@ -20,10 +20,10 @@ async function poser(client: ClientGithub, numero: number, carte: Carte, moi: st
   await client.assigner(numero, moi);
 }
 
-export async function reserver(client: ClientGithub, c: { numero: number; moi: string; agent: string; maintenant: number }): Promise<Prise> {
+export async function reserver(client: ClientGithub, c: { numero: number; moi: string; poste: string; agent: string; maintenant: number }): Promise<Prise> {
   const sha = await client.shaBrancheParDefaut();
   if (!(await client.creerBranche(brancheIssue(c.numero), sha))) return { statut: "deja_prise" };
-  const carte = nouvelleCarte({ responsable: c.moi, agent: c.agent, maintenant: c.maintenant });
+  const carte = nouvelleCarte({ responsable: c.moi, poste: c.poste, agent: c.agent, maintenant: c.maintenant });
   await poser(client, c.numero, carte, c.moi);
   return { statut: "prise", carte };
 }
@@ -31,13 +31,14 @@ export async function reserver(client: ClientGithub, c: { numero: number; moi: s
 /** Reprend le travail d'un autre poste. Ce qui est déjà sur la branche et dans la carte est gardé. */
 export async function reprendre(
   client: ClientGithub,
-  c: { numero: number; moi: string; agent: string; maintenant: number; generation: number; carte: Carte | null },
+  c: { numero: number; moi: string; poste: string; agent: string; maintenant: number; generation: number; carte: Carte | null },
 ): Promise<Prise> {
   const sha = await client.shaBrancheParDefaut();
   if (!(await client.creerBranche(brancheReprise(c.numero, c.generation), sha))) return { statut: "deja_prise" };
   const carte: Carte = {
-    ...prolongerBail(c.carte ?? nouvelleCarte({ responsable: c.moi, agent: c.agent, maintenant: c.maintenant }), c.maintenant),
+    ...prolongerBail(c.carte ?? nouvelleCarte({ responsable: c.moi, poste: c.poste, agent: c.agent, maintenant: c.maintenant }), c.maintenant),
     responsable: c.moi,
+    poste: c.poste,
     agent: c.agent,
     statut: "en-cours",
     generation: c.generation,
