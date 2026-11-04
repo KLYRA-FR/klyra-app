@@ -42,7 +42,7 @@ export function MenuMessage({ chat, cible, x, y, onFermer }: { chat: Chat; cible
   const quand = `${isSameDay(message.createdAt, new Date().toISOString()) ? "Aujourd’hui" : formatDaySeparator(message.createdAt)}, ${formatTime(message.createdAt)}`;
 
   const enFil = (roleId: string) => {
-    const id = creerFil(roleId, titreDe(passage) || undefined);
+    const id = creerFil(roleId, titreDe(passage) || undefined, null, undefined, { lieu: chat.lieu ?? null });
     ajouterAuBrouillon(id, citer(passage));
     router.push(`/chat?id=${encodeURIComponent(id)}`);
   };

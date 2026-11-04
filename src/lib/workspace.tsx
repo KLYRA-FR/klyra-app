@@ -1,6 +1,6 @@
 "use client";
 
-import { DIRECT, dansEspace, idDirect, lieuDeHote, lireIdDirect, retenirLieu, useLieuActif } from "./lieux";
+import { DIRECT, dansEspace, idDirect, lieuDeConversation, lieuDeHote, lieuParDefaut, lireIdDirect, retenirLieu, useLieuActif } from "./lieux";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
 import { Bouton } from "@/components/ui/Bouton";
@@ -532,6 +532,9 @@ const SIMULATED_REPLIES: Record<string, string> = {
 };
 
 /** Les façons de refaire une réponse, depuis le menu sous le message. */
+/** Options d'un fil : l'id imposé (créé depuis le téléphone) et la machine où il tourne (`null` : ce PC). */
+export type OptionsFil = { id?: string; lieu?: string | null };
+
 export type FaconReessai = "reessayer" | "details" | "concis" | "web";
 
 export { DIRECT, idDirect };
@@ -591,7 +594,11 @@ interface WorkspaceApi {
   /** Arrête l'agent qui travaille dans cette conversation. */
   arreter: (chatId: string) => void;
   /** Ouvre un fil (une tâche) dans le chat de l'agent ; renvoie son id (`id` : celui choisi sur le téléphone). */
-  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, id?: string) => string;
+  /**
+   * Ouvre un fil de l'agent. Son lieu : `options.lieu` s'il est donné (la conversation d'où il part),
+   * sinon celui de la conversation qui l'a lancé, sinon la machine affichée.
+   */
+  creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, options?: OptionsFil) => string;
   /** Confie un rappel à un agent : un fil s'ouvre avec le rappel pour brief ; renvoie son id. */
   confierRappel: (rappel: RappelAConfier, roleId: RoleId) => string;
   /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
@@ -1723,10 +1730,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [bridge],
   );
 
-  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, idImpose?: string) => {
+  const creerFil = useCallback((roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, options: OptionsFil = {}) => {
     const maintenant = new Date().toISOString();
+    // Le fil tourne sur la machine de la conversation d'où il part (un fil ouvert depuis un VPS reste sur ce VPS).
+    const lieu =
+      options.lieu !== undefined ? options.lieu : lancePar ? lieuDeConversation(stateRef.current.chats, lancePar.chatId) : lieuParDefaut();
     const chat: Chat = {
-      id: idImpose ?? `${FIL}${crypto.randomUUID().slice(0, 8)}`,
+      id: options.id ?? `${FIL}${crypto.randomUUID().slice(0, 8)}`,
       kind: "direct",
       projectId: null,
       title: titre?.trim() ? chatTitle(titre) : FIL_SANS_TITRE,
@@ -1735,6 +1745,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       sessions: {},
       luJusqua: null,
       fil: { roleId, statut: "ouvert", creeLe: maintenant, lancePar: lancePar ?? null, etape: "a-faire", ...ticket },
+      ...(lieu ? { lieu } : {}),
     };
     // Le fil part avec le fournisseur de l'agent qui le reçoit.
     const fournisseurAgent = rolesRef.current.find((r) => r.id === roleId)?.fournisseur;
