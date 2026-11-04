@@ -15,7 +15,8 @@ import { useServeursRelies } from "@/lib/lieux";
 import { useGestePoste } from "@/lib/poste/client";
 import { dureeRun, libellePlanning, libelleRun, lienRun, quandRoutine, runActif } from "@/lib/routines-affichage";
 import { roleLisible } from "@/lib/telephone/agents";
-import { messageGeste, useLectureSuivie, useTirerPourRelire } from "@/lib/telephone/lecture-suivie";
+import { messageGeste, useLectureSuivie } from "@/lib/telephone/lecture-suivie";
+import { useTirerPourRelire } from "./TirerPourRelire";
 import {
   ecrireBrouillon,
   initialeDe,
@@ -63,10 +64,6 @@ function MoteurArrete({ erreur, relancer }: { erreur: string | null; relancer: (
   );
 }
 
-function Relache({ visible }: { visible: boolean }) {
-  return visible ? <p className="px-4 py-2 text-ui-xs text-texte-secondaire">Relâche pour relire</p> : null;
-}
-
 /* ─── T-14 : les agents ────────────────────────────────────────── */
 
 export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets: ReactNode; routineDemandee: string | null }) {
@@ -74,7 +71,7 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
   const sur = useSupport();
   const ferme = usePhraseFermee();
   const lecture = useLectureSuivie<RoutinesLues>("routines.liste", {}, { suivre: (d) => d.enCours.some(runActif) });
-  const tirer = useTirerPourRelire(lecture.relancer);
+  const tirer = useTirerPourRelire(lecture.relancer, { enCours: lecture.relecture });
   const [brouillon] = useState(lireBrouillon);
   const data = lecture.etat === "ok" ? lecture.data : null;
   /* Un lien vers une routine sans son agent (notification) mène à son agent, comme au bureau. */
@@ -88,7 +85,7 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
       <EnteteTelephone titre="Automatisations" parent="/plus" />
       <div className="shrink-0 px-4 pb-2">{onglets}</div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-4" {...tirer.props}>
-        <Relache visible={tirer.tire} />
+        {tirer.indicateur}
         <VueLecture lecture={lecture} ferme={ferme} lignes={5}>
           {(d) =>
             !d.actif ? (
@@ -179,7 +176,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
   const ferme = usePhraseFermee();
   const lecture = useLectureSuivie<RoutinesLues>("routines.liste", { agentId }, { suivre: (d) => d.enCours.some((r) => r.agentId === agentId && runActif(r)) });
   const { relancer } = lecture;
-  const tirer = useTirerPourRelire(relancer);
+  const tirer = useTirerPourRelire(relancer, { enCours: lecture.relecture });
   const { faire, occupe } = useGestePoste();
   const [bandeau, annoncer] = useBandeau();
   const [brouillon, setBrouillon] = useState<BrouillonRoutine | null>(lireBrouillon);
@@ -356,7 +353,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto pb-6" {...tirer.props}>
-        <Relache visible={tirer.tire} />
+        {tirer.indicateur}
         <VueLecture lecture={lecture} ferme={ferme}>
           {(d) =>
             !d.actif ? (

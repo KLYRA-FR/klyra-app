@@ -247,6 +247,8 @@ const TIRAGE_MAX = 96;
 
 /** Le doigt descend de `distance` px depuis le haut de la liste : la hauteur de l'indicateur, et s'il suffit pour relire. */
 export function etatTirage(distance: number): { hauteur: number; pret: boolean } {
-  const hauteur = Math.min(TIRAGE_MAX, Math.max(0, distance) * 0.5);
+  /* Socle § 7 : le doigt 1:1 jusqu'au seuil (64 px), résistance 0,5 au-delà, 96 px au plus. */
+  const tire = Math.max(0, distance);
+  const hauteur = Math.min(TIRAGE_MAX, tire <= SEUIL_TIRAGE ? tire : SEUIL_TIRAGE + (tire - SEUIL_TIRAGE) * 0.5);
   return { hauteur, pret: hauteur >= SEUIL_TIRAGE };
 }

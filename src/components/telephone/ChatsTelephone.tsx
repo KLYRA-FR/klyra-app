@@ -12,7 +12,7 @@ import { formatListDate } from "@/lib/format";
 import { attenteEnvoi } from "@/lib/poste-texte";
 import { roleLisible } from "@/lib/telephone/agents";
 import { aTraiter, etatLigne, idDirect, sections, type ConversationLue, type ElementATraiter } from "@/lib/telephone/chats";
-import { EnteteTelephone } from "./EnteteTelephone";
+import { PageOnglet } from "./EnteteTelephone";
 import { useBandeau } from "./etats";
 import { usePostes } from "./poste";
 import { GrappeChat, RondAgent, useCartes } from "./AgentsChat";
@@ -197,16 +197,15 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone
-        titre="Chats"
-        droite={
-          <>
-            <BoutonIcone variant="discret" className="size-11" libelle="Rechercher" icone={<Icon name="search-01" size={22} />} onClick={() => router.push("/chats?vue=recherche")} />
-            <BoutonIcone variant="discret" className="size-11" libelle="Nouveau chat" icone={<Icon name="pencil-01" size={22} />} aria-haspopup="dialog" onClick={() => setNouveau(true)} />
-          </>
-        }
-      />
+    <PageOnglet
+      titre="Chats"
+      droite={
+        <>
+          <BoutonIcone variant="discret" className="size-11" libelle="Rechercher" icone={<Icon name="search-01" size={24} />} onClick={() => router.push("/chats?vue=recherche")} />
+          <BoutonIcone variant="discret" className="size-11" libelle="Nouveau chat" icone={<Icon name="pencil-01" size={24} />} aria-haspopup="dialog" onClick={() => setNouveau(true)} />
+        </>
+      }
+    >
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {!charge ? (
           squelette ? (
@@ -309,6 +308,6 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
       ) : null}
       {menu.rendu}
       {bandeau}
-    </div>
+    </PageOnglet>
   );
 }

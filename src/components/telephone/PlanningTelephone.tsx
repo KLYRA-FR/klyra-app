@@ -29,19 +29,19 @@ import {
 import type { Categorie } from "@/types/domain";
 import { AgendaPlanningTelephone } from "./AgendaPlanningTelephone";
 import { ContextePlanning, LignePoste, type ElementAgenda, type EvenementTelephone, type PlanningTelephoneApi } from "./ContextePlanningTelephone";
-import { EnteteTelephone } from "./EnteteTelephone";
+import { PageOnglet } from "./EnteteTelephone";
 import { FicheEvenementTelephone } from "./FicheEvenementTelephone";
 import { PageFiche } from "./FichePlanningTelephone";
 import { FicheRappelTelephone } from "./FicheRappelTelephone";
 import { FeuilleCategorie, MenuRappels, RappelsTelephone } from "./RappelsTelephone";
 import { usePostes, useSupport } from "./poste";
 import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
+import { useAnnonce } from "./Annonce";
 
 type Onglet = "agenda" | "rappels";
 
 /** Le temps pour annuler une suppression, comme `MessageSuppression` au bureau. */
 const ANNULATION_MS = 8000;
-const BANDEAU_MS = 3000;
 
 const titreCourt = (titre: string) => (titre.length > 60 ? `${titre.slice(0, 59)}…` : titre);
 
@@ -120,14 +120,10 @@ export function PlanningTelephone() {
     };
   }, [relirePoste, relireDeparts]);
 
-  /* ─── Bandeau bas (« Rappel reporté : … ») ─── */
+  /* ─── Annonce (« Rappel reporté : … ») : celle de la coque, une seule à la fois (§ 6.1) ─── */
 
-  const [bandeau, setBandeau] = useState<string | null>(null);
-  useEffect(() => {
-    if (!bandeau) return;
-    const minuteur = setTimeout(() => setBandeau(null), BANDEAU_MS);
-    return () => clearTimeout(minuteur);
-  }, [bandeau]);
+  const annoncer = useAnnonce();
+  const setBandeau = useCallback((texte: string) => annoncer(texte), [annoncer]);
 
   /* Cochés sur un rappel de l'ordinateur : affichés tout de suite, jusqu'à la lecture suivante. */
   const [coches, setCoches] = useState<{ pour: PlanningDuPoste | null; faites: ReadonlyMap<string, boolean> }>({ pour: null, faites: new Map() });
@@ -160,7 +156,7 @@ export function PlanningTelephone() {
         if (!r.ok) setBandeau(texteResultat(r, sur));
       });
     }
-  }, [supprimerRappel, surPoste, sur]);
+  }, [supprimerRappel, surPoste, sur, setBandeau]);
   const confirmerRef = useRef(confirmerSuppression);
   useEffect(() => {
     confirmerRef.current = confirmerSuppression;
@@ -172,7 +168,7 @@ export function PlanningTelephone() {
     confirmerRef.current();
     suppression.current = { rappel, minuteur: setTimeout(() => confirmerRef.current(), ANNULATION_MS) };
     setEnSuppression(rappel);
-    setBandeau(null);
+    annoncer({ texte: "Rappel supprimé", action: { libelle: "Annuler", onChoisir: () => annulerRef.current() } });
   };
   const annulerSuppression = () => {
     const enCours = suppression.current;
@@ -183,6 +179,10 @@ export function PlanningTelephone() {
     setBandeau(`Rappel restauré : ${titreCourt(enCours.rappel.titre)}.`);
     eclairerEcheance(enCours.rappel.id);
   };
+  const annulerRef = useRef(annulerSuppression);
+  useEffect(() => {
+    annulerRef.current = annulerSuppression;
+  });
 
   /* ─── Les données, compte et ordinateur réunis ─── */
 
@@ -424,19 +424,19 @@ export function PlanningTelephone() {
 
   return (
     <ContextePlanning.Provider value={contexte}>
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <EnteteTelephone
-          titre={onglet === "rappels" ? (mes === undefined ? "Rappels" : `Rappels · ${aFaire} à faire`) : "Planning"}
-          droite={
-            onglet === "agenda" ? (
-              <Bouton variant="discret" className="h-11" onClick={() => setJour(cleAujourdhui())}>
-                Aujourd’hui
-              </Bouton>
-            ) : (
-              <BoutonIcone taille="md" libelle="Options des rappels" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => setMenu(true)} />
-            )
-          }
-        />
+      <PageOnglet
+        titre="Planning"
+        sous={onglet === "rappels" && mes !== undefined ? `${aFaire} à faire` : undefined}
+        droite={
+          onglet === "agenda" ? (
+            <Bouton variant="discret" className="h-11" onClick={() => setJour(cleAujourdhui())}>
+              Aujourd’hui
+            </Bouton>
+          ) : (
+            <BoutonIcone variant="discret" className="size-11" libelle="Options des rappels" icone={<Icon name="dot-horizontal" size={24} />} onClick={() => setMenu(true)} />
+          )
+        }
+      >
         <div className="shrink-0 px-4 pb-2">
           <Onglets<Onglet>
             libelle="Planning"
@@ -484,25 +484,6 @@ export function PlanningTelephone() {
           {onglet === "rappels" ? "Rappel" : "Événement"}
         </Bouton>
 
-        {/* Au-dessus du bouton flottant et de la barre du bas. */}
-        {enSuppression || bandeau ? (
-          <div className="absolute inset-x-4 bottom-[70px] z-20 flex flex-col gap-2">
-            {bandeau ? (
-              <p role="status" className="rounded-md bg-texte-principal px-4 py-3 text-ui text-texte-inverse shadow-ombre-flottante">
-                {bandeau}
-              </p>
-            ) : null}
-            {enSuppression ? (
-              <div role="status" className="flex items-center gap-3 rounded-md bg-texte-principal py-1 pr-1 pl-4 text-ui text-texte-inverse shadow-ombre-flottante">
-                <span className="min-w-0 flex-1 truncate">Rappel supprimé</span>
-                <button type="button" onClick={annulerSuppression} className="min-h-11 shrink-0 rounded-xs px-3 font-medium text-texte-inverse">
-                  Annuler
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
         {menu ? <MenuRappels voirFaits={voirFaits} faits={faits} onVoirFaits={setVoirFaits} onFermer={() => setMenu(false)} /> : null}
         {categorieEditee ? (
           <FeuilleCategorie
@@ -512,7 +493,7 @@ export function PlanningTelephone() {
           />
         ) : null}
         {page}
-      </div>
+      </PageOnglet>
     </ContextePlanning.Provider>
   );
 }

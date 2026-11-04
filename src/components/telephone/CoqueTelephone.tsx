@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useLayoutEffect, useRef, useState, ViewTransition, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ongletDe, rangDansLApp } from "@/lib/telephone/retour";
+import { FournisseurAnnonce } from "./Annonce";
+import { FournisseurReseau } from "./BandeauReseau";
 import { useCompte, useSocketOuvert } from "@/lib/compte";
 import { AgentsTelephone } from "./AgentsTelephone";
 import { ArtefactsTelephone } from "./ArtefactsTelephone";
@@ -22,7 +25,6 @@ import Image from "next/image";
 import { lienValable } from "../../../convex/model/push";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { getBridge } from "@/lib/bridge";
-import { cn } from "@/lib/cn";
 import { composition, lireDerniereDonnee, retenirDerniereDonnee, texteHorsLigne, type Composition } from "@/lib/coque";
 import { estIphone, lireNavigateur } from "@/lib/push";
 import { SERVICE_WORKER, useSynchroPush } from "./push";
@@ -296,6 +298,7 @@ function PageInstallation({ installation, tablette }: { installation: ReturnType
  */
 export function CoqueTelephone() {
   const pathname = usePathname();
+  const params = useSearchParams();
   const router = useRouter();
   const compte = useCompte();
   useRetenirPoste();
@@ -310,36 +313,59 @@ export function CoqueTelephone() {
   useEffect(() => {
     if (pathname === "/") router.replace("/chats");
   }, [pathname, router]);
+  const sens = useSensDeNavigation();
 
-  const fil = pathname === "/chat";
+  /* La barre d'onglets se cache dans le fil et dans la visionneuse (§ 2.1) ; une page pleine la couvre. */
+  const visionneuse = pathname === "/projet" && params.has("fichier");
+  const sansBarre = pathname === "/chat" || visionneuse;
   const serveurs = pathname === "/serveurs";
   const tablette = disposition === "tablette";
   const connecte = compte.etat === "connecte";
   const navigation = connecte && !installation.aProposer;
+  const barre = navigation && !tablette && !sansBarre;
 
   return (
-    <div className="flex h-full bg-fond-page">
-      {tablette && navigation ? <BarreOnglets vertical /> : null}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {installation.aProposer ? (
-          <PageInstallation installation={installation} tablette={tablette} />
-        ) : connecte || serveurs ? (
-          tablette ? (
-            <EcranTablette pathname={pathname} />
-          ) : (
-            ecran(pathname)
-          )
-        ) : (
-          <ConnexionTelephone />
-        )}
-        {/* P-12, sous le contenu : en haut, il passerait sous l'encoche avec l'en-tête. */}
-        {horsLigne ? (
-          <p role="status" className={cn("shrink-0 bg-fond-surface-grise px-4 py-2 text-ui-xs text-texte-secondaire", !(navigation && !tablette && !fil) && "pb-[calc(8px+env(safe-area-inset-bottom))]")}>
-            {horsLigne}
-          </p>
-        ) : null}
-        {navigation && !tablette && !fil ? <BarreOnglets /> : null}
-      </div>
-    </div>
+    <FournisseurReseau horsLigne={horsLigne}>
+      <FournisseurAnnonce barreOnglets={barre}>
+        <div className="flex h-full bg-fond-page">
+          {tablette && navigation ? <BarreOnglets vertical /> : null}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {installation.aProposer ? (
+              <PageInstallation installation={installation} tablette={tablette} />
+            ) : connecte || serveurs ? (
+              /* Seule la zone de contenu glisse ou se fond (§ 2.6) ; la barre d'onglets ne bouge pas. Une
+                 page par chemin : un paramètre remplacé (onglet segmenté, fiche ouverte) ne remonte pas l'écran. */
+              <ViewTransition key={pathname} enter={sens} exit={sens} default="none">
+                <div data-contenu-telephone className="flex min-h-0 flex-1 flex-col">
+                  {tablette ? <EcranTablette pathname={pathname} /> : ecran(pathname)}
+                </div>
+              </ViewTransition>
+            ) : (
+              <ConnexionTelephone />
+            )}
+            {barre ? <BarreOnglets /> : null}
+          </div>
+        </div>
+      </FournisseurAnnonce>
+    </FournisseurReseau>
   );
+}
+
+/**
+ * Le sens d'une navigation (§ 2.6), posé sur la racine (`data-sens`) avant que la transition ne joue :
+ * changer d'onglet, avancer dans un onglet (rang d'historique qui monte), revenir (rang qui descend),
+ * ou rien (même page, paramètres remplacés). Renvoie la classe de la transition de page.
+ */
+function useSensDeNavigation(): "klyra-page" | "none" {
+  const pathname = usePathname();
+  const avant = useRef<{ onglet: string; rang: number } | null>(null);
+  useLayoutEffect(() => {
+    const ici = { onglet: ongletDe(pathname), rang: rangDansLApp(window.history.state) };
+    const precedent = avant.current;
+    avant.current = ici;
+    if (!precedent) return;
+    document.documentElement.dataset.sens =
+      precedent.onglet !== ici.onglet ? "onglet" : ici.rang > precedent.rang ? "avant" : ici.rang < precedent.rang ? "arriere" : "aucun";
+  }, [pathname]);
+  return typeof document !== "undefined" && "startViewTransition" in document ? "klyra-page" : "none";
 }

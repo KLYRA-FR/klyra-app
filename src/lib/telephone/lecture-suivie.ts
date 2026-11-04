@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type TouchEvent } from "react";
+import { useEffect, useState } from "react";
 import { useLecturePoste, type LecturePoste } from "@/lib/poste/client";
 import { texteErreurPoste } from "@/lib/poste-texte";
 
@@ -48,26 +48,4 @@ export function useLectureSuivie<T>(
   }, [relancer]);
 
   return vue;
-}
-
-/** Tirer la liste vers le bas la relit (spec mobile § 3). `tire` : le doigt est assez descendu pour relire. */
-export function useTirerPourRelire(relancer: () => void) {
-  const depart = useRef<number | null>(null);
-  const [tire, setTire] = useState(false);
-  return {
-    tire,
-    props: {
-      onTouchStart: (e: TouchEvent<HTMLElement>) => {
-        depart.current = e.currentTarget.scrollTop <= 0 ? e.touches[0].clientY : null;
-      },
-      onTouchMove: (e: TouchEvent<HTMLElement>) => {
-        if (depart.current !== null) setTire(e.touches[0].clientY - depart.current > 72);
-      },
-      onTouchEnd: () => {
-        if (tire) relancer();
-        depart.current = null;
-        setTire(false);
-      },
-    },
-  };
 }

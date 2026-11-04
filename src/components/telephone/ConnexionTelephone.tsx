@@ -7,8 +7,9 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { formaterAttente, useCompte } from "@/lib/compte";
 import { texteDeconnecte } from "@/lib/poste-texte";
 import { posteRetenu } from "./poste";
+import { CHAMP_TELEPHONE, MessageErreur } from "./Controles";
 
-const CHAMP = "h-12 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 text-body-s text-texte-principal";
+const CHAMP = CHAMP_TELEPHONE;
 
 /** T-00. Le champ « Lien de connexion » reste visible : l'app installée peut ne pas partager le stockage de Safari. */
 export function ConnexionTelephone() {
@@ -88,11 +89,7 @@ export function ConnexionTelephone() {
           </p>
         ) : null}
         {attente > 0 ? <p className="text-ui-xs text-texte-secondaire">Renvoyer dans {formaterAttente(attente)}</p> : null}
-        {compte.erreur ? (
-          <p role="alert" className="text-ui text-texte-principal">
-            {compte.erreur}
-          </p>
-        ) : null}
+        {compte.erreur ? <MessageErreur>{compte.erreur}</MessageErreur> : null}
       </form>
       <form
         className="flex flex-col gap-3 border-t border-bordure-subtile pt-6"

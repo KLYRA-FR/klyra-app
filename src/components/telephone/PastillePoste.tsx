@@ -92,8 +92,7 @@ export function PastillePoste() {
         <span className="max-w-[112px] truncate">{libellePastille(poste, plusieurs)}</span>
       </button>
       {ouverte ? (
-        <Feuille titre="Ordinateurs" onFermer={() => setOuverte(false)}>
-          <p className="-mt-1 pb-3 text-ui-xs text-texte-secondaire">Ce que voit ce téléphone</p>
+        <Feuille titre="Ordinateurs" sousTitre="Ce que voit ce téléphone" onFermer={() => setOuverte(false)}>
           {postes.length === 0 ? (
             /* P-13. */
             <div className="pt-2">

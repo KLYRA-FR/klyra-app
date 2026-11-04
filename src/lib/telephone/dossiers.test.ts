@@ -203,8 +203,9 @@ describe("affichage", () => {
 
   test("tirer vers le bas : résistance, plafond, seuil", () => {
     expect(etatTirage(-20)).toEqual({ hauteur: 0, pret: false });
-    expect(etatTirage(100).pret).toBe(false);
-    expect(etatTirage(SEUIL_TIRAGE * 2).pret).toBe(true);
+    expect(etatTirage(40)).toEqual({ hauteur: 40, pret: false });
+    expect(etatTirage(SEUIL_TIRAGE)).toEqual({ hauteur: SEUIL_TIRAGE, pret: true });
+    expect(etatTirage(100).hauteur).toBe(82);
     expect(etatTirage(1000).hauteur).toBe(96);
   });
 });
