@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState, type TouchEvent } from "react";
 import { useLecturePoste, type LecturePoste } from "@/lib/poste/client";
-import { majuscule } from "@/lib/poste-texte";
+import { texteErreurPoste } from "@/lib/poste-texte";
 
-/** Ce que dit un geste qui n'a pas abouti : P-10 sans réponse, sinon la phrase de l'ordinateur. */
+/** Ce que dit un geste qui n'a pas abouti : P-10 sans réponse, sinon la phrase de l'ordinateur (C-1f). */
 export function messageGeste(r: { code: string; message: string }, sur: string): string {
-  if (r.code === "delai") return `${majuscule(sur)} ne répond pas.`;
-  return r.message || "Le geste a échoué sur l’ordinateur.";
+  return texteErreurPoste(r, sur);
 }
 
 /**

@@ -26,6 +26,8 @@ const fmtJourCourt = new Intl.DateTimeFormat("fr-FR", { weekday: "short" });
 const fmtMois = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const INITIALES = ["L", "M", "M", "J", "V", "S", "D"];
 const capitaliser = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** Une lecture de l'ordinateur dont on connaît tout : lue en direct, ou aucun ordinateur à lire. */
+const lue = (lecture: LecturePoste<unknown>) => lecture.etat === "ok" || lecture.etat === "aucun";
 
 const VUES: { id: VueAgenda; libelle: string }[] = [
   { id: "jour", libelle: "Jour" },
@@ -64,10 +66,14 @@ export function AgendaPlanningTelephone({
   const { sur, aujourdhui } = usePlanningTelephone();
   const occupes = useMemo(() => joursOccupes(elements.filter((e) => e.genre === "evenement"), rappels), [elements, rappels]);
   const semaine = joursDeLaSemaine(jour);
+  /* D-8 (C-1c) : « rien de prévu » seulement si l'ordinateur aussi a été lu (ou s'il n'y en a aucun). */
+  const toutLu = lue(poste) && (vue === "mois" || lue(departs));
+  /* Les deux lectures gardées : un seul bandeau « Vus à… ». */
+  const deuxVues = departs.etat === "ferme" && !!departs.gardee && poste.etat === "ferme" && !!poste.gardee;
   const lignesPoste = (
     <>
-      {vue !== "mois" ? <LignePoste lecture={departs} ferme={`Départs des routines : visibles quand ${sur} est ouvert`} sur={sur} /> : null}
-      <LignePoste lecture={poste} ferme={`Événements gardés sur ${sur} : visibles quand il est ouvert`} sur={sur} />
+      {vue !== "mois" && !deuxVues ? <LignePoste lecture={departs} ferme={`Départs des routines : visibles quand ${sur} est ouvert`} sur={sur} mot="Vus" /> : null}
+      <LignePoste lecture={poste} ferme={`Événements gardés sur ${sur} : visibles quand il est ouvert`} sur={sur} mot="Vus" />
     </>
   );
 
@@ -150,7 +156,7 @@ export function AgendaPlanningTelephone({
             ))}
           </ul>
         ) : vue === "jour" ? (
-          <VueJour cle={jour} elements={elements} rappels={rappels} lignesPoste={lignesPoste} />
+          <VueJour cle={jour} elements={elements} rappels={rappels} lignesPoste={lignesPoste} toutLu={toutLu} />
         ) : vue === "semaine" ? (
           <>
             {regrouperParJour(elements, semaine).map(({ cle, elements: duJour }) => (
@@ -168,7 +174,7 @@ export function AgendaPlanningTelephone({
                     <JoursSpeciaux cle={cle} />
                   </button>
                 </h2>
-                <ListeDuJour cle={cle} elements={duJour} rappels={rappelsDuJour(rappels, cle, aujourdhui)} vide="Rien de prévu." />
+                <ListeDuJour cle={cle} elements={duJour} rappels={rappelsDuJour(rappels, cle, aujourdhui)} vide={toutLu ? "Rien de prévu." : null} />
               </section>
             ))}
             <div className="pt-2">{lignesPoste}</div>
@@ -182,7 +188,19 @@ export function AgendaPlanningTelephone({
 }
 
 /** Jour : « Ta journée », les événements et départs dans l'ordre des heures, puis « À faire aujourd'hui ». */
-function VueJour({ cle, elements, rappels, lignesPoste }: { cle: string; elements: ElementAgenda[]; rappels: RappelTelephone[]; lignesPoste: ReactNode }) {
+function VueJour({
+  cle,
+  elements,
+  rappels,
+  lignesPoste,
+  toutLu,
+}: {
+  cle: string;
+  elements: ElementAgenda[];
+  rappels: RappelTelephone[];
+  lignesPoste: ReactNode;
+  toutLu: boolean;
+}) {
   const { aujourdhui } = usePlanningTelephone();
   const duJour = trierJour(elements.filter((e) => e.jour === cle));
   const aFaire = rappelsDuJour(rappels, cle, aujourdhui);
@@ -195,9 +213,11 @@ function VueJour({ cle, elements, rappels, lignesPoste }: { cle: string; element
         <JoursSpeciaux cle={cle} />
       </h2>
       {vide ? (
-        <p className="py-2 text-body-s text-texte-secondaire">
-          {estAujourdhui ? "Rien d’imposé aujourd’hui : la journée est à toi." : "Rien de prévu ce jour-là."}
-        </p>
+        toutLu ? (
+          <p className="py-2 text-body-s text-texte-secondaire">
+            {estAujourdhui ? "Rien d’imposé aujourd’hui : la journée est à toi." : "Rien de prévu ce jour-là."}
+          </p>
+        ) : null
       ) : (
         <ul className="flex flex-col">
           {duJour.map((element) => (
@@ -221,8 +241,8 @@ function VueJour({ cle, elements, rappels, lignesPoste }: { cle: string; element
 }
 
 /** Un jour de la semaine : ses événements et départs, puis ses rappels. */
-function ListeDuJour({ cle, elements, rappels, vide }: { cle: string; elements: ElementAgenda[]; rappels: RappelTelephone[]; vide: string }) {
-  if (elements.length === 0 && rappels.length === 0) return <p className="pb-2 text-ui text-texte-secondaire">{vide}</p>;
+function ListeDuJour({ cle, elements, rappels, vide }: { cle: string; elements: ElementAgenda[]; rappels: RappelTelephone[]; vide: string | null }) {
+  if (elements.length === 0 && rappels.length === 0) return vide ? <p className="pb-2 text-ui text-texte-secondaire">{vide}</p> : null;
   return (
     <ul className="flex flex-col pb-2" aria-label={libelleJour(cle)}>
       {elements.map((element) => (

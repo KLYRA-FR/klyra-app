@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { lireParties, type Activite, type PartieCompte } from "@/lib/copie-compte";
 import { formatDaySeparator, formatJourHeure, formatTime, isSameDay } from "@/lib/format";
 import { attenteEnvoi } from "@/lib/poste-texte";
+import { confierAEditeur } from "@/lib/proposition-agent";
 import { requeteRetenue } from "@/lib/recherche-session";
 import { idDirect } from "@/lib/telephone/chats";
 import type { MessageLu } from "@/lib/telephone/export";
@@ -167,7 +168,12 @@ function Proposition({ partie, remplacee }: { partie: Extract<PartieCompte, { ty
       {remplacee ? (
         <span className="text-ui-xs">Remplacée par la proposition suivante</span>
       ) : ouvert ? (
-        <Link href="/equipe?creer=1" className="flex h-11 items-center justify-center self-start rounded-xs px-4 text-ui font-medium text-texte-inverse no-underline klyra-surface-sombre">
+        /* C-5 : l'éditeur ne reprend la proposition qu'avec `&proposition=1`, et le brouillon confié avant. */
+        <Link
+          href="/equipe?creer=1&proposition=1"
+          onClick={() => confierAEditeur({ id: "", nom: partie.nom, role: partie.role, description: partie.description, consignes: "" })}
+          className="flex h-11 items-center justify-center self-start rounded-xs px-4 text-ui font-medium text-texte-inverse no-underline klyra-surface-sombre"
+        >
           Ouvrir pour ajuster
         </Link>
       ) : (

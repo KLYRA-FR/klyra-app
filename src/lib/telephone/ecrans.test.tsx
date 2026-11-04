@@ -89,14 +89,42 @@ describe("T-10 et T-11", () => {
     expect(lu.indexOf("Offres")).toBeLessThan(lu.indexOf("Hero"));
     expect(lu).not.toContain("Ailleurs");
     expect(lu).toContain("Nouveau chat dans Site…");
-    expect(html).toContain('href="/chat?nouveau=1&amp;projet=site"');
+    /* C-5 : le fil prend l'id du projet dans `nouveau`. */
+    expect(html).toContain('href="/chat?nouveau=site"');
   });
 
   test("onglet Fichiers, poste fermé : P-6", () => {
     simule.params = new URLSearchParams("id=site&onglet=fichiers");
     simule.ouvert = false;
-    simule.lecture = { etat: "ferme" };
-    expect(texte(renderToStaticMarkup(<ProjetTelephone />))).toContain("Ton Mac est fermé Les fichiers de ce projet sont sur ton Mac. Ils s’affichent quand KLYRA y est ouverte.");
+    simule.lecture = { etat: "ferme", gardee: null };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu).toContain("Ton Mac est fermé Les fichiers de ce projet sont sur ton Mac. Ils s’affichent quand KLYRA y est ouverte.");
+    expect(lu).toContain("Tu peux quand même écrire à un agent");
+  });
+
+  test("onglet Fichiers, aucun ordinateur relié : P-13, jamais « fermé » (C-1a)", () => {
+    simule.params = new URLSearchParams("id=site&onglet=fichiers");
+    simule.lecture = { etat: "aucun" };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu).toContain("Aucun ordinateur relié Les fichiers de ce projet sont sur ton ordinateur. Relie-le une fois à ton compte :");
+    expect(lu).toContain("Va dans Réglages › Équipe.");
+    expect(lu).not.toContain("est fermé");
+  });
+
+  test("onglet Fichiers, ordinateur fermé avec une vue gardée : la liste en lecture seule, datée (S-20)", () => {
+    simule.params = new URLSearchParams("id=site&onglet=fichiers");
+    simule.ouvert = false;
+    const lu = new Date();
+    lu.setHours(18, 42, 0, 0);
+    simule.lecture = {
+      etat: "ferme",
+      gardee: { lu: lu.getTime(), data: { total: 1, elements: [{ nom: "devis.md", chemin: "devis.md", type: "fichier", modifie: false, contientModifies: false }] } },
+    };
+    const html = renderToStaticMarkup(<ProjetTelephone />);
+    expect(texte(html)).toContain("Vue à 18:42 · ton Mac est fermé");
+    expect(texte(html)).toContain("devis.md");
+    expect(texte(html)).toContain("Relire : possible quand ton Mac est ouvert.");
+    expect(texte(html)).not.toContain("Ton Mac est fermé Les fichiers");
   });
 });
 
@@ -126,7 +154,9 @@ describe("T-12", () => {
     simule.lecture = { etat: "ok", data: { total: 0, elements: [] } };
     expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain("Dossier vide");
     simule.lecture = { etat: "delai" };
-    expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain("Ton Mac ne répond pas. Réessayer");
+    expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain(
+      "Ton Mac ne répond pas KLYRA y est ouverte, mais la réponse n’est pas venue. L’ordinateur est peut-être en veille. Réessayer",
+    );
     simule.lecture = { etat: "erreur", code: "introuvable", message: "Ce dossier n’existe plus sur ton Mac." };
     expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain("Ce dossier n’existe plus sur ton Mac.");
   });

@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { RondApercu, VisuelAgent } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
+import { roleLisible } from "@/lib/telephone/agents";
 import type { CarteAgentLue } from "@/lib/telephone/chats";
 
 /**
@@ -18,11 +19,12 @@ const teinteSure = (teinte: string | undefined): RoleTeinte => (ROLE_TEINTES as 
 export function useCartes() {
   const cartes = useQuery(api.conversationsCompte.agents, {});
   return useMemo(() => {
-    const parId = new Map((cartes ?? []).map((c) => [c.origine, c]));
+    /* C-2a : un rôle court qui n'est que l'id de l'agent (« redaction ») ne s'affiche pas. */
+    const parId = new Map((cartes ?? []).map((c) => [c.origine, { ...c, roleCourt: roleLisible(c.roleCourt, c.origine) }]));
     return {
       cartes,
       carte: (id: string): CarteAgentLue | undefined => parId.get(id),
-      nom: (id: string) => parId.get(id)?.nom ?? (id === "principal" ? "Ton assistant" : id),
+      nom: (id: string) => parId.get(id)?.nom ?? (id === "principal" ? "Ton assistant" : "Un agent"),
       teinte: (id: string) => teinteSure(parId.get(id)?.teinte),
       /** Le prénom dans la couleur foncée de l'agent, comme dans le fil du bureau. */
       encre: (id: string) => AGENT_PASTELS[teinteSure(parId.get(id)?.teinte)].encre,

@@ -10,6 +10,8 @@ import { ReglagesTelephone } from "./ReglagesTelephone";
 import { AutomatisationsTelephone } from "./EcransAutomatisations";
 import { ProjetsTelephone, ProjetTelephone } from "./EcransProjets";
 import { useRetenirPoste } from "./poste";
+import { useNumeroterNavigation } from "./retour";
+import { effacerVues } from "@/lib/telephone/vue-gardee";
 import { BarreOnglets } from "./BarreOnglets";
 import { ChatsTelephone } from "./ChatsTelephone";
 import { ConnexionTelephone } from "./ConnexionTelephone";
@@ -39,7 +41,28 @@ function ecran(pathname: string): ReactNode {
   if (pathname === "/routines") return <AutomatisationsTelephone />;
   if (pathname === "/artefacts") return <ArtefactsTelephone />;
   if (pathname === "/projet" || pathname === "/fichiers") return <ProjetTelephone />;
-  return <EcranPoste titre="KLYRA" phrase={(sur) => `cet écran se lit sur ${sur}.`} />;
+  /* C-3 : plus d'impasse sans retour. Tickets arrive au téléphone au lot 4 de la refonte. */
+  if (pathname === "/tickets") {
+    return (
+      <EcranPoste
+        titre="Tickets"
+        icone="list"
+        phrase={(sur) => `les tickets s’utilisent sur ${sur}`}
+        raison="Leur suivi depuis ce téléphone arrive dans une prochaine version de KLYRA."
+      />
+    );
+  }
+  if (pathname === "/marketplace") {
+    return (
+      <EcranPoste
+        titre="Marketplace"
+        icone="boutique-01"
+        phrase={(sur) => `le Marketplace s’utilise sur ${sur}`}
+        raison="Connecter une app ouvre sa page de connexion dans le navigateur de l’ordinateur, et ses clés y restent."
+      />
+    );
+  }
+  return <EcranPoste titre="KLYRA" icone="computer" phrase={(sur) => `cet écran s’utilise sur ${sur}`} raison="Il n’a pas encore de version pour le téléphone." />;
 }
 
 /* ─── Composition ────────────────────────────────────────────────── */
@@ -126,6 +149,24 @@ function useHorsLigne(): string | null {
   }, [socket]);
 
   return !reseau || (!socket && coupe) ? texteHorsLigne(lireDerniereDonnee()) : null;
+}
+
+/* ─── Vue gardée (socle § 5.4) ───────────────────────────────────── */
+
+/**
+ * Ce que le téléphone a gardé des lectures de l'ordinateur ne survit pas à la déconnexion : session
+ * fermée sur ce téléphone ou à distance, compte retiré, ou un autre compte connecté. Un démarrage sans
+ * réseau n'efface rien (le compte n'a pas encore répondu).
+ */
+function useEffacerVuesGardees() {
+  const { etat, moi, sessionFermee } = useCompte();
+  const membre = etat === "connecte" && moi ? (moi._id as string) : null;
+  const [etaitConnecte, setEtaitConnecte] = useState(false);
+  if (etat === "connecte" && !etaitConnecte) setEtaitConnecte(true);
+  useEffect(() => {
+    if (membre) effacerVues(undefined, membre);
+    else if (etat === "retire" || sessionFermee || (etat === "deconnecte" && etaitConnecte)) effacerVues();
+  }, [membre, etat, sessionFermee, etaitConnecte]);
 }
 
 /* ─── Service worker et notifications touchées ───────────────────── */
@@ -258,6 +299,8 @@ export function CoqueTelephone() {
   const router = useRouter();
   const compte = useCompte();
   useRetenirPoste();
+  useNumeroterNavigation();
+  useEffacerVuesGardees();
   useServiceWorker();
   useSynchroPush();
   const disposition = useComposition();

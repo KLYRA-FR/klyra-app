@@ -10,6 +10,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { messageErreur, useEquipe } from "@/lib/compte";
+import { texteErreurPoste } from "@/lib/poste-texte";
 import { usePlanningTelephone, type EvenementTelephone } from "./ContextePlanningTelephone";
 import { ConfirmationFeuille } from "./Feuille";
 import { CHAMP_TELEPHONE, CaseFiche, ChampFiche, ErreurFiche, PageFiche } from "./FichePlanningTelephone";
@@ -37,7 +38,7 @@ export function FicheEvenementTelephone({
   /** Avec l'élément à éclairer et son jour, après un enregistrement. */
   onFermer: (enregistre?: { eclairage: string; jour: string }) => void;
 }) {
-  const { moiId, posteOuvert, surPoste } = usePlanningTelephone();
+  const { moiId, posteOuvert, surPoste, sur } = usePlanningTelephone();
   const creer = useMutation(api.evenements.creer);
   const modifier = useMutation(api.evenements.modifier);
   const supprimerCompte = useMutation(api.evenements.supprimer);
@@ -88,7 +89,7 @@ export function FicheEvenementTelephone({
       });
       setOccupe(false);
       if (resultat.ok) onFermer({ eclairage: local.id, jour });
-      else setErreur(resultat.code === "delai" ? "Pas de réponse de l’ordinateur. Réessaie." : resultat.message || "Le geste a échoué sur l’ordinateur.");
+      else setErreur(texteErreurPoste(resultat, sur));
       return;
     }
 
@@ -122,7 +123,7 @@ export function FicheEvenementTelephone({
       const resultat = await surPoste("planning.supprimerEvenement", { id: local.id });
       setOccupe(false);
       if (resultat.ok) onFermer();
-      else setErreur(resultat.message || "Le geste a échoué sur l’ordinateur.");
+      else setErreur(texteErreurPoste(resultat, sur));
       return;
     }
     if (!occurrence) return;

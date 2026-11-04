@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { RondApercu } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
@@ -272,7 +271,6 @@ function FeuilleCollection({ onFermer, onFait }: { onFermer: () => void; onFait:
 
 /** La fiche d'une définition de la bibliothèque (`?definition=<id>`, `klyra:<nom>` pour un modèle), lue sur le compte. */
 export function DefinitionAgentTelephone({ id }: { id: string }) {
-  const router = useRouter();
   const sur = useSupport();
   const biblio = useBibliotheque();
   const { local, relancer } = useEtatsBibliotheque();
@@ -310,7 +308,7 @@ export function DefinitionAgentTelephone({ id }: { id: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre={nom} retour={() => router.push("/equipe?vue=bibliotheque")} />
+      <EnteteTelephone titre={nom} parent="/equipe?vue=bibliotheque" />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {!role ? (
           <p className="pt-6 text-ui text-texte-secondaire">

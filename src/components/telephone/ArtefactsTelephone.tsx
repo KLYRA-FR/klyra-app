@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
@@ -13,16 +12,14 @@ import { useGesteTelephone } from "@/lib/telephone/geste";
 import { BoutonMenu, CHAMP_TELEPHONE, ChampTelephone, ErreurGeste } from "./CommunAgentsTelephone";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
-import { NotePoste, PosteFerme, VueLecture } from "./etats";
+import { NotePoste, VueLecture } from "./etats";
 import { usePostes } from "./poste";
 
 /**
- * Artefacts sur le téléphone (spec mobile T-20) : la liste est sur l'ordinateur (Poste). Une fois
- * lue, elle reste en mémoire le temps de la session : « Ouvrir dans le navigateur » n'a plus besoin de
- * l'ordinateur (§ 10). Elle n'est jamais gardée ailleurs (M-7).
+ * Artefacts sur le téléphone (spec mobile T-20) : la liste est sur l'ordinateur (Poste). Ordinateur
+ * fermé, sa dernière vue lue sur ce téléphone (socle § 5.4, C-1e) : « Ouvrir dans le navigateur »
+ * n'a pas besoin de l'ordinateur et reste actif. Rien n'est gardé dans le compte (M-7).
  */
-
-let derniereListe: ListeArtefacts | null = null;
 
 const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 
@@ -32,7 +29,6 @@ function ouvrir(url: string) {
 }
 
 export function ArtefactsTelephone() {
-  const router = useRouter();
   const { ouvert } = usePostes();
   const lecture = useLecturePoste<ListeArtefacts>("artefacts.liste", {});
   const { agir, occupe, bandeau, erreur } = useGesteTelephone();
@@ -41,11 +37,7 @@ export function ArtefactsTelephone() {
   const [menu, setMenu] = useState(false);
   const [lien, setLien] = useState(false);
   const [sync, setSync] = useState(false);
-  const lue = lecture.etat === "ok" ? lecture.data : null;
-  useEffect(() => {
-    if (lue) derniereListe = lue;
-  }, [lue]);
-  const memoire = lecture.etat === "ok" ? lecture.data : derniereListe;
+  const memoire = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
 
   const apres = (ok: unknown) => {
     if (ok) lecture.relancer();
@@ -69,7 +61,7 @@ export function ArtefactsTelephone() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Artefacts" retour={() => router.push("/plus")} droite={<BoutonMenu libelle="Plus d’options" onClick={() => setMenu(true)} />} />
+      <EnteteTelephone titre="Artefacts" parent="/plus" droite={<BoutonMenu libelle="Plus d’options" onClick={() => setMenu(true)} />} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-6">
         {sync ? (
           <p role="status" className="px-4 pb-2 text-ui text-texte-secondaire">
@@ -77,17 +69,16 @@ export function ArtefactsTelephone() {
           </p>
         ) : null}
         <ErreurGeste message={erreur?.message} className="px-4 pb-2" />
-        {lecture.etat === "ferme" && memoire ? (
-          <>
-            <PosteFerme phrase={(sur) => `la liste des artefacts est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`} />
-            <p className="px-4 pt-3 pb-2 text-ui text-texte-secondaire">Lue tout à l’heure : tu peux encore ouvrir ces artefacts dans le navigateur.</p>
-            <ListeArtefactsTelephone liste={memoire} recherche={recherche} setRecherche={setRecherche} projet={projet} setProjet={setProjet} onChange={apres} />
-          </>
-        ) : (
-          <VueLecture lecture={lecture} lignes={5} ferme={(sur) => `la liste des artefacts est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`}>
-            {(liste) => <ListeArtefactsTelephone liste={liste} recherche={recherche} setRecherche={setRecherche} projet={projet} setProjet={setProjet} onChange={apres} />}
-          </VueLecture>
-        )}
+        {/* Vue gardée ou « fermé », jamais les deux (C-1e). Ses gestes sur l'ordinateur sont déjà désactivés (P-7) : la liste reste ouvrable. */}
+        <VueLecture
+          lecture={lecture}
+          lignes={5}
+          verrou={false}
+          gestes="Modifier et retirer"
+          ferme={(sur) => `la liste des artefacts est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`}
+        >
+          {(liste) => <ListeArtefactsTelephone liste={liste} recherche={recherche} setRecherche={setRecherche} projet={projet} setProjet={setProjet} onChange={apres} />}
+        </VueLecture>
       </div>
       {menu ? <MenuFeuille titre="Artefacts" actions={actions} onFermer={() => setMenu(false)} /> : null}
       {lien ? <FeuilleLien projets={memoire?.projets ?? []} onFermer={() => setLien(false)} onFait={() => lecture.relancer()} /> : null}

@@ -11,7 +11,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { Onglets } from "@/components/ui/Onglets";
 import { cn } from "@/lib/cn";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
-import { majuscule } from "@/lib/poste-texte";
+import { texteErreurPoste } from "@/lib/poste-texte";
 import { libelleStatut, STATUTS, urlProjet, vueProjet, type ProjetModifiable } from "@/lib/telephone/dossiers";
 import { DossierTelephone, ListeDossier, useNiveau } from "./DossierTelephone";
 import { EnteteTelephone } from "./EnteteTelephone";
@@ -19,6 +19,7 @@ import { MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
 import { NotePoste, SurLePoste, useBandeau, VueLecture } from "./etats";
 import { usePostes, useSupport } from "./poste";
 import { VisionneuseTelephone } from "./VisionneuseTelephone";
+import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 
 /**
  * Projets, projet, dossier et visionneuse (spec mobile T-10 à T-13). Routes : /projets, puis
@@ -159,7 +160,7 @@ function FormulaireProjet({ projetId, initial, onFini }: { projetId: string; ini
     setErreur(null);
     const r = await faire<ProjetModifiable>("projets.modifier", { projetId, ...valeurs });
     if (r.ok) return onFini(true);
-    setErreur(r.code === "delai" ? `${majuscule(sur)} ne répond pas.` : r.message || "Le geste a échoué sur l’ordinateur.");
+    setErreur(texteErreurPoste(r, sur));
   };
 
   return (
@@ -258,7 +259,7 @@ function OngletsProjet({ projetId, nom, onglet }: { projetId: string; nom: strin
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone
         titre={nom}
-        retour={() => router.push("/projets")}
+        parent="/projets"
         droite={<BoutonIcone variant="discret" taille="md" libelle="Actions du projet" onClick={() => setMenu(true)} icone={<Icon name="dot-horizontal" size={24} />} />}
       />
       <div className="shrink-0 px-4 pb-2">
@@ -270,7 +271,7 @@ function OngletsProjet({ projetId, nom, onglet }: { projetId: string; nom: strin
           ]}
           valeur={onglet}
           onChange={(id) => router.replace(urlProjet(projetId, id))}
-          className="flex w-full [&>button]:min-h-10 [&>button]:flex-1 [&>button]:justify-center [&>button]:text-ui"
+          className={ONGLETS_TELEPHONE}
         />
       </div>
       {onglet === "chats" ? <ChatsDuProjet projetId={projetId} nom={nom} /> : <ListeDossier projetId={projetId} niveau={niveau} />}
@@ -312,7 +313,8 @@ function ChatsDuProjet({ projetId, nom }: { projetId: string; nom: string }) {
         </ul>
       )}
       <Link
-        href={`/chat?${new URLSearchParams({ nouveau: "1", projet: projetId })}`}
+        /* C-5 : le fil lit l'id du projet dans `nouveau` (`FilTelephone`). */
+        href={`/chat?${new URLSearchParams({ nouveau: projetId })}`}
         className="mt-3 flex min-h-11 items-center gap-2 text-ui text-texte-principal"
       >
         <Icon name="plus-01" size={20} className="text-icone-secondaire" />

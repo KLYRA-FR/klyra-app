@@ -6,6 +6,7 @@ import { useCompteClaude } from "@/lib/compte-claude";
 import { calculer } from "@/lib/consommation";
 import { poste } from "@/lib/plateforme";
 import { reglagesActuels, useReglages } from "@/lib/reglages";
+import { tagLisible } from "@/lib/telephone/agents";
 import { gestesReglages } from "@/lib/telephone/gestes-reglages";
 import { useWorkspace } from "@/lib/workspace";
 import type { Gestes } from "../types";
@@ -66,7 +67,7 @@ export function useGestesReglages(): Gestes {
     agents: () => ({
       acces: state.acces,
       assistant: { nom: roles[0].name, teinte: roles[0].teinte },
-      agents: roles.slice(1).map((r) => ({ id: r.id, nom: r.name, tag: r.tag, teinte: r.teinte, modele: r.model || "inherit" })),
+      agents: roles.slice(1).map((r) => ({ id: r.id, nom: r.name, tag: tagLisible(r), teinte: r.teinte, modele: r.model || "inherit" })),
     }),
     changerModele,
   });

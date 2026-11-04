@@ -134,8 +134,13 @@ export function useMenuChat({ onDetails, onBandeau }: { onDetails?: () => void; 
       }
     });
 
+  /* C-2h : le titre de la conversation ou le nom de l'agent, jamais son identifiant (« c-relances »). */
   const titreDe = (origine: string, conversation: ConversationLue | undefined) =>
-    conversation && (conversation.kind === "equipe" || conversation.parent) ? conversation.titre : nom(origine.replace(/^dm-/, ""));
+    conversation && (conversation.kind === "equipe" || conversation.parent)
+      ? conversation.titre
+      : origine.startsWith("dm-")
+        ? nom(origine.slice(3))
+        : conversation?.titre || "Cette conversation";
 
   const rendu: ReactNode = (
     <>
