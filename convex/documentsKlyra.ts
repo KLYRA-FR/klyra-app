@@ -121,8 +121,9 @@ export const preparerDepot = mutation({
 });
 
 /**
- * Partage un HTML avec l'équipe, dans un seul espace. Republier le même original au même endroit
- * remplace le fichier. Il n'y a pas d'argument pour viser un autre espace que `lieu`.
+ * Partage un HTML avec l'équipe, dans un seul espace. Le même original au même endroit
+ * ne fait qu'une carte : le fichier est remplacé, et l'auteur devient le membre connecté.
+ * Il n'y a pas d'argument pour viser un autre espace que `lieu`.
  */
 export const partager = mutation({
   args: {
@@ -141,16 +142,20 @@ export const partager = mutation({
     const origine = origineValide(args.origine);
     const agent = agentValide(args.agent);
     const lieu = lieuValide(args.lieu);
-    const deja = (
-      await ctx.db
-        .query("documentsKlyra")
-        .withIndex("by_auteurId_and_lieu_and_origine", (q) => q.eq("auteurId", moi._id).eq("lieu", lieu).eq("origine", origine))
-        .take(20)
-    ).find((doc) => doc.retireLe === null);
+    const actifs = await ctx.db
+      .query("documentsKlyra")
+      .withIndex("by_lieu_and_origine_and_retireLe", (q) => q.eq("lieu", lieu).eq("origine", origine).eq("retireLe", null))
+      .take(20);
     const maintenant = Date.now();
+    const [deja, ...doublons] = actifs;
+    for (const doublon of doublons) {
+      if (doublon.fichier !== args.fichier) await ctx.storage.delete(doublon.fichier);
+      await ctx.db.patch("documentsKlyra", doublon._id, { retireLe: maintenant });
+    }
     if (deja) {
       if (deja.fichier !== args.fichier) await ctx.storage.delete(deja.fichier);
       await ctx.db.patch("documentsKlyra", deja._id, {
+        auteurId: moi._id,
         titre,
         description,
         agent,
@@ -192,7 +197,13 @@ export const lister = query({
       .withIndex("by_lieu_and_retireLe_and_majLe", (q) => q.eq("lieu", espace).eq("retireLe", null))
       .order("desc")
       .take(LISTE_MAX);
-    return { pour: moi._id, lieu: espace, documents: await Promise.all(liste.map((doc) => resume(ctx, doc, moi._id))) };
+    const deja = new Set<string>();
+    const uniques = liste.filter((doc) => {
+      if (deja.has(doc.origine)) return false;
+      deja.add(doc.origine);
+      return true;
+    });
+    return { pour: moi._id, lieu: espace, documents: await Promise.all(uniques.map((doc) => resume(ctx, doc, moi._id))) };
   },
 });
 
