@@ -2,15 +2,17 @@
  * Les skills de Claude pour un agent qui travaille avec ChatGPT : le vrai Codex, lancé par le vrai serveur
  * KLYRA (serveur/agents.mjs, serveur/codex.mjs), face au faux serveur « Responses » d'OpenAI. Aucun compte,
  * aucune dépense ; dossier de klyra et CODEX_HOME jetables.
- * Codex ne lit pas `.claude/skills` (seulement `.codex/skills` et `.agents/skills`, vérifié avec Codex
- * 0.166) : l'app les lui présente comme il présente les siennes. Vérifie :
- * - sans l'app, Codex ne voit pas la skill de Claude ; avec l'app, elle est présentée avec son fichier ;
- * - la skill que la fiche de l'agent précharge arrive avec son texte ;
+ * Codex ne lit pas `.claude/skills` (seulement `CODEX_HOME/skills` et `.agents/skills`, vérifié avec Codex
+ * 0.166). Chaque agent a son processus et son dossier préparé : seulement ses skills allumées.
+ * Vérifie :
+ * - la skill allumée est dans le dossier préparé et dans les skills de Codex ;
+ * - une skill coupée pour un agent n'y est pas, et son processus est distinct ;
+ * - la skill que la fiche précharge arrive avec son texte ;
  * - `/rangement` demandé : Codex reçoit d'abord la consigne de lire ce fichier, puis le message.
  *   KLYRA_CODEX_PATH=/chemin/codex node scripts/test-skills-codex.mjs
  */
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -81,11 +83,13 @@ try {
   const r1 = await reponse("c1", { agent: null, prompt: "bonjour", conversation: "chat-1" });
   assert.equal(r1.at(-1).ok, true, r1.at(-1).erreur);
   const a = lu(openai.requetes.at(-1));
-  assert.match(a.consignes, /<skills_instructions>/, "Codex ne présente plus ses propres skills");
-  assert.doesNotMatch(a.consignes.split("<skills_instructions>")[1].split("</skills_instructions>")[0], /rangement/, "Codex lit maintenant .claude/skills tout seul");
+  const blocSkills = (consignes) => consignes.split("<skills_instructions>")[1]?.split("</skills_instructions>")[0] ?? "";
+  assert.match(a.consignes, /<skills_instructions>/);
+  assert.match(blocSkills(a.consignes), /rangement/, "la skill allumée est dans le dossier préparé de Codex");
   assert.match(a.consignes, /- rangement: Range les fichiers par type\. \(fichier : .*\.claude\/skills\/rangement\/SKILL\.md\)/);
   assert.doesNotMatch(a.consignes, /TEXTE-RANGEMENT/);
-  ok("Codex ne lit pas .claude/skills ; l’app lui présente la skill de Claude par son fichier");
+  assert.equal(existsSync(path.join(DONNEES, "preparation-codex", "principal", "skills", "rangement", "SKILL.md")), true);
+  ok("l’assistant a son dossier Codex, avec seulement la skill allumée");
 
   /* Hugo : la skill que sa fiche précharge arrive avec son texte. */
   const r2 = await reponse("c2", { agent: "hugo", prompt: "bonjour", conversation: "chat-2" });
@@ -99,6 +103,44 @@ try {
   assert.equal(r3.at(-1).ok, true, r3.at(-1).erreur);
   assert.match(lu(openai.requetes.at(-1)).demande, /^\[La personne demande la compétence « rangement » : lis .*rangement\/SKILL\.md avant de répondre, et suis-la\.\]\n\n\[Contexte\] Essai\./);
   ok("/rangement : Codex reçoit d’abord la compétence à lire, puis le message");
+
+  /* Iris a la skill coupée : son processus et son dossier ne la reçoivent pas. Hugo la garde. */
+  const choix = {
+    fige: true,
+    personnellesConnues: ["rangement"],
+    agentsConnus: ["principal", "hugo", "iris"],
+    coupees: { iris: ["rangement"] },
+    activees: {},
+  };
+  const ficheIris = "---\nname: iris\n---\nTu es Iris.";
+  assert.equal((await appel("/klyra/v1/agents/fiches", "PUT", {
+    fiches: [{ id: "hugo", nom: "Hugo", contenu: fiche }, { id: "iris", nom: "Iris", contenu: ficheIris }],
+    assistant: "Sam",
+    skillsParAgent: choix,
+    empreinte: "e2",
+  })).status, 200);
+  const r4 = await reponse("c4", { agent: "iris", prompt: "bonjour", conversation: "chat-4" });
+  assert.equal(r4.at(-1).ok, true, r4.at(-1).erreur);
+  const iris = lu(openai.requetes.at(-1));
+  assert.doesNotMatch(blocSkills(iris.consignes), /rangement/);
+  assert.doesNotMatch(iris.consignes, /fichier : .*rangement\/SKILL\.md/);
+  assert.equal(existsSync(path.join(DONNEES, "preparation-codex", "iris", "skills", "rangement")), false);
+  assert.equal(existsSync(path.join(DONNEES, "preparation-codex", "hugo", "skills", "rangement", "SKILL.md")), true);
+  const homes = new Set();
+  for (const pid of readdirSync("/proc")) {
+    if (!/^\d+$/.test(pid)) continue;
+    try {
+      const cmd = readFileSync(`/proc/${pid}/cmdline`).toString();
+      if (!cmd.includes("app-server")) continue;
+      const env = readFileSync(`/proc/${pid}/environ`).toString().split("\0");
+      const dossier = env.find((ligne) => ligne.startsWith("CODEX_HOME="))?.slice("CODEX_HOME=".length);
+      if (dossier?.includes(`${path.sep}preparation-codex${path.sep}`)) homes.add(dossier);
+    } catch {
+      /* processus déjà terminé */
+    }
+  }
+  assert.ok(homes.size >= 2, `un processus Codex par agent, trouvés : ${[...homes].join(", ")}`);
+  ok("Iris n’a pas la skill coupée ; Hugo et Iris n’ont pas le même processus");
   console.log("\nSkills de Claude pour Codex : tout est vérifié.");
 } finally {
   agents.fermerTout();

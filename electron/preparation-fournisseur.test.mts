@@ -3,9 +3,9 @@ import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSy
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { nomsSkills } from "./connaissances-agent.ts";
+import { filtreSkills, nomsSkills } from "./connaissances-agent.ts";
 import { diagnostiquerPoste } from "./diagnostic-poste.ts";
-import { ecrireBibliotheque, importerSkills, listerSkills, migrerCopies, preparerClaude, preparerSessionClaude, skillsAEnvoyer } from "./preparation-fournisseur.ts";
+import { ecrireBibliotheque, importerSkills, listerSkills, migrerCopies, preparerClaude, preparerSessionClaude, preparerSessionCodex, skillsAEnvoyer } from "./preparation-fournisseur.ts";
 
 function posteVide() {
   const racine = mkdtempSync(path.join(tmpdir(), "klyra-prep-"));
@@ -309,6 +309,49 @@ test("seules les skills allumées pour au moins un agent partent, et le VPS les 
   } finally {
     if (avantEnv === undefined) delete process.env.KLYRA_USER_DATA;
     else process.env.KLYRA_USER_DATA = avantEnv;
+    rmSync(racine, { recursive: true, force: true });
+  }
+});
+
+test("Codex : un dossier préparé par agent, avec ses seules skills allumées", () => {
+  const { racine, poste, userData } = posteVide();
+  const avant = readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8");
+  const codexPoste = path.join(racine, "codex-poste");
+  const secret = path.join(codexPoste, "skills", "secrete");
+  mkdirSync(secret, { recursive: true });
+  writeFileSync(path.join(secret, "SKILL.md"), "---\nname: secrete\n---\n\nSECRET-CODEX\n");
+  writeFileSync(path.join(codexPoste, "config.toml"), 'model = "faux"\n');
+  const choix = {
+    fige: true,
+    personnellesConnues: ["rangement", "maquette"],
+    agentsConnus: ["principal", "iris", "hugo"],
+    coupees: { iris: ["maquette"], hugo: ["rangement"] },
+    activees: {},
+  };
+  try {
+    const iris = filtreSkills(choix, "iris", poste, null);
+    const hugo = filtreSkills(choix, "hugo", poste, null);
+    assert.deepEqual(iris.dossiers.map((d) => d.nom), ["rangement"]);
+    assert.deepEqual(hugo.dossiers.map((d) => d.nom), ["maquette"]);
+    const dossierIris = preparerSessionCodex({ userData, agent: "iris", dossiers: iris.dossiers, codexPoste });
+    const dossierHugo = preparerSessionCodex({ userData, agent: "hugo", dossiers: hugo.dossiers, codexPoste });
+    assert.notEqual(dossierIris.codexHome, dossierHugo.codexHome);
+    assert.equal(readFileSync(path.join(dossierIris.codexHome, "skills", "rangement", "SKILL.md"), "utf8"), avant);
+    assert.equal(existsSync(path.join(dossierIris.codexHome, "skills", "maquette")), false);
+    assert.equal(existsSync(path.join(dossierIris.codexHome, "skills", "secrete")), false);
+    assert.equal(existsSync(path.join(dossierHugo.codexHome, "skills", "rangement")), false);
+    assert.equal(readFileSync(path.join(dossierHugo.codexHome, "skills", "maquette", "SKILL.md"), "utf8").includes("Dessine."), true);
+    assert.equal(lstatSync(path.join(dossierIris.codexHome, "config.toml")).isSymbolicLink(), true);
+    assert.equal(readFileSync(path.join(dossierIris.codexHome, "config.toml"), "utf8"), 'model = "faux"\n');
+    assert.equal(readFileSync(path.join(secret, "SKILL.md"), "utf8").includes("SECRET-CODEX"), true);
+    assert.equal(readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8"), avant);
+    assert.equal(existsSync(path.join(dossierIris.home, ".agents")), false);
+
+    preparerSessionCodex({ userData, agent: "iris", dossiers: [], codexPoste });
+    assert.equal(existsSync(path.join(dossierIris.codexHome, "skills", "rangement")), false);
+    assert.equal(readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8"), avant);
+    assert.equal(readFileSync(path.join(codexPoste, "config.toml"), "utf8"), 'model = "faux"\n');
+  } finally {
     rmSync(racine, { recursive: true, force: true });
   }
 });

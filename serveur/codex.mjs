@@ -1,6 +1,7 @@
 /**
  * ChatGPT par Codex, sur le VPS : comme dans l'app (electron/moteurs/codex.ts), un `codex app-server`
- * pour toute la machine, gardé ouvert, et un fil de Codex par conversation. Ses messages sont traduits
+ * par agent, gardé ouvert, et un fil de Codex par conversation. Le processus du compte n'a pas
+ * le dossier préparé d'un agent. Ses messages sont traduits
  * par codex-protocole.mjs (généré depuis l'app) ; les événements partent dans le journal du serveur.
  * Sans navigateur ici : on se connecte avec un code d'appareil (lien + code à saisir sur le PC) ou une clé.
  */
@@ -10,8 +11,10 @@ import path from "node:path";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { binaireGere } from "./installation.mjs";
+import { preparerSessionCodex } from "./preparation-fournisseur.mjs";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ARRET_MAX_MS = 5000;
 const CONNEXION_MAX_MS = 15 * 60 * 1000;
 
@@ -32,6 +35,8 @@ export function creerCodex(options) {
 
   /* ─── Le serveur de Codex ──────────────────────────────────────── */
 
+  /** Un `codex app-server`. `isolement` null : le compte du VPS, sans dossier d'agent. */
+  function creerProcessus(isolement) {
   let child = null;
   let bin = null;
   let demarrage = null;
@@ -137,7 +142,9 @@ export function creerCodex(options) {
     fermer();
     bin = chemin;
     stderr = "";
-    const processus = spawn(chemin, ["app-server"], { cwd: home, env: { ...process.env, HOME: home }, stdio: ["pipe", "pipe", "pipe"] });
+    const env = { ...process.env, HOME: isolement?.home ?? home };
+    if (isolement) env.CODEX_HOME = isolement.codexHome;
+    const processus = spawn(chemin, ["app-server"], { cwd: isolement?.home ?? home, env, stdio: ["pipe", "pipe", "pipe"] });
     child = processus;
     let tampon = "";
     processus.stdout.on("data", (d) => {
@@ -165,10 +172,51 @@ export function creerCodex(options) {
     return demarrage;
   }
 
+  return { demarrer, requete, fermer, ecrire, finir, fils, enCours, parRequete, jetons, ecouteurs, get version() { return version; }, empreinte: "" };
+  }
+
+  /** Connexion et modèles : le Codex du VPS, sans dossier d'agent. */
+  const processusCompte = creerProcessus(null);
+  /** Un processus par agent. La clé est l'id, ou `principal`. */
+  const parAgent = new Map();
+  const ecouteurs = processusCompte.ecouteurs;
+  const requete = (method, params) => processusCompte.requete(method, params);
+
+  function fermer() {
+    processusCompte.fermer();
+    for (const proc of parAgent.values()) proc.fermer();
+    parAgent.clear();
+  }
+
+  function idDe(agent) {
+    return agent && ID_AGENT.test(agent) ? agent : "principal";
+  }
+
+  function processusAgent(id, prepare) {
+    const deja = parAgent.get(id);
+    if (deja && deja.empreinte !== prepare.empreinte) {
+      deja.fermer();
+      parAgent.delete(id);
+    }
+    let proc = parAgent.get(id);
+    if (!proc) {
+      proc = creerProcessus({ home: prepare.home, codexHome: prepare.codexHome });
+      proc.empreinte = prepare.empreinte;
+      parAgent.set(id, proc);
+    }
+    return proc;
+  }
+
+  function processusDeRequete(requestId) {
+    for (const proc of parAgent.values()) if (proc.parRequete.has(requestId)) return proc;
+    return null;
+  }
+
   async function pret() {
     const chemin = trouver();
     if (!chemin) throw new Error("ChatGPT n’est pas installé sur ce VPS : installe Codex dans Réglages du serveur › Fournisseurs.");
-    await demarrer(chemin);
+    await processusCompte.demarrer(chemin);
+    return chemin;
   }
 
   /* ─── Consignes ────────────────────────────────────────────────── */
@@ -197,14 +245,24 @@ export function creerCodex(options) {
   }
 
   async function demarrerTour(requestId, demande, cwd) {
-    await pret();
+    const chemin = trouver();
+    if (!chemin) throw new Error("ChatGPT n’est pas installé sur ce VPS : installe Codex dans Réglages du serveur › Fournisseurs.");
     const acces = demande.acces ?? "projet";
     const politique = accesCodex(acces);
     /* Les consignes KLYRA adoptées sur le PC (reçues avec l'équipe), données aussi à Codex, comme `consignesApp` dans l'app. */
     const consignesKlyra = options.consignesKlyra?.() ?? null;
-    /* Les skills de Claude sur ce VPS, que Codex ne lit pas de lui-même (cf. electron/connaissances-agent.ts). */
+    /* Les skills de Claude sur ce VPS : le dossier préparé de cet agent n'a que les allumées. */
     const filtre = filtreSkills(options.skillsParAgent?.() ?? null, demande.agent ?? null, path.join(home, ".claude"), cwd);
     const skills = consigneSkillsCodex(demande.agent ? ficheBrute(demande.agent) : null, path.join(home, ".claude"), cwd, filtre.garder);
+    const id = idDe(demande.agent ?? null);
+    const prepare = preparerSessionCodex({
+      userData: process.env.KLYRA_USER_DATA || path.join(home, ".klyra"),
+      agent: demande.agent ?? null,
+      dossiers: filtre.dossiers,
+      codexPoste: process.env.CODEX_HOME || path.join(home, ".codex"),
+    });
+    const proc = processusAgent(id, prepare);
+    await proc.demarrer(chemin);
     const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms, filtre.coupes]);
     const reglages = () => {
       const mcp = options.mcp(demande);
@@ -219,33 +277,34 @@ export function creerCodex(options) {
     };
     let emitSession = null;
     const nouveauFil = async () => {
-      const r = await requete("thread/start", { ...reglages(), serviceName: "KLYRA" });
-      fils.set(r.thread.id, signature);
+      const r = await proc.requete("thread/start", { ...reglages(), serviceName: "KLYRA" });
+      proc.fils.set(r.thread.id, signature);
       emitSession = r.thread.id;
       return r.thread.id;
     };
 
     let threadId = demande.sessionId;
+    if (threadId && [...parAgent.entries()].some(([cle, autre]) => cle !== id && autre.fils.has(threadId))) threadId = null;
     if (!threadId) threadId = await nouveauFil();
-    else if (fils.get(threadId) !== signature) {
-      if (fils.has(threadId)) await requete("thread/unsubscribe", { threadId }).catch(() => undefined);
+    else if (proc.fils.get(threadId) !== signature) {
+      if (proc.fils.has(threadId)) await proc.requete("thread/unsubscribe", { threadId }).catch(() => undefined);
       try {
-        await requete("thread/resume", { threadId, ...reglages(), excludeTurns: true });
-        fils.set(threadId, signature);
+        await proc.requete("thread/resume", { threadId, ...reglages(), excludeTurns: true });
+        proc.fils.set(threadId, signature);
       } catch {
         /* Une session d'un autre moteur, ou un fil effacé : la conversation repart sur un nouveau fil. */
         threadId = await nouveauFil();
       }
     }
-    if (enCours.has(threadId)) throw new Error("Une réponse est déjà en cours dans cette conversation.");
+    if (proc.enCours.has(threadId)) throw new Error("Une réponse est déjà en cours dans cette conversation.");
 
     const emit = (event) => publier(requestId, event, threadId);
     if (emitSession) emit({ type: "session", sessionId: emitSession });
-    const reponse = { requestId, threadId, acces, tour: new TourCodex(threadId, emit, jetons.get(threadId) ?? 0), emit, demandes: new Map() };
-    enCours.set(threadId, reponse);
-    parRequete.set(requestId, threadId);
+    const reponse = { requestId, threadId, acces, tour: new TourCodex(threadId, emit, proc.jetons.get(threadId) ?? 0), emit, demandes: new Map() };
+    proc.enCours.set(threadId, reponse);
+    proc.parRequete.set(requestId, threadId);
     try {
-      const r = await requete("turn/start", {
+      const r = await proc.requete("turn/start", {
         threadId,
         input: [{ type: "text", text: promptAvecSkillCodex(demande.prompt, demande.skill ?? null, path.join(home, ".claude"), cwd, filtre.garder), text_elements: [] }],
         cwd,
@@ -257,32 +316,34 @@ export function creerCodex(options) {
       reponse.tour.turnId ??= r.turn.id;
       if (reponse.tour.arrete) annuler(requestId);
     } catch (error) {
-      finir(reponse);
+      proc.finir(reponse);
       throw error;
     }
   }
 
   function annuler(requestId) {
-    const threadId = parRequete.get(requestId);
-    const r = threadId ? enCours.get(threadId) : undefined;
-    if (!r) return false;
+    const proc = processusDeRequete(requestId);
+    const threadId = proc?.parRequete.get(requestId);
+    const r = threadId ? proc.enCours.get(threadId) : undefined;
+    if (!proc || !r) return false;
     r.tour.arrete = true;
     if (!r.tour.turnId) return true;
-    void requete("turn/interrupt", { threadId: r.threadId, turnId: r.tour.turnId }).catch(() => undefined);
+    void proc.requete("turn/interrupt", { threadId: r.threadId, turnId: r.tour.turnId }).catch(() => undefined);
     setTimeout(() => {
-      if (enCours.get(r.threadId) !== r) return;
-      finir(r);
+      if (proc.enCours.get(r.threadId) !== r) return;
+      proc.finir(r);
       r.emit({ type: "fin", ok: false, texte: "", erreur: "Arrêté par toi.", sessionId: r.threadId });
     }, ARRET_MAX_MS);
     return true;
   }
 
   function autoriser(requestId, demandeId, decision) {
-    const threadId = parRequete.get(requestId);
-    const r = threadId ? enCours.get(threadId) : undefined;
+    const proc = processusDeRequete(requestId);
+    const threadId = proc?.parRequete.get(requestId);
+    const r = threadId ? proc.enCours.get(threadId) : undefined;
     const attente = r?.demandes.get(demandeId);
-    if (!r || !attente || !["oui", "toujours", "non"].includes(decision)) return false;
-    ecrire({ id: attente.rpcId, result: reponseAutorisation(attente.method, attente.params, decision) });
+    if (!proc || !r || !attente || !["oui", "toujours", "non"].includes(decision)) return false;
+    proc.ecrire({ id: attente.rpcId, result: reponseAutorisation(attente.method, attente.params, decision) });
     r.demandes.delete(demandeId);
     r.emit({ type: "autorisation-fin", id: demandeId, accepte: decision !== "non" });
     return true;
@@ -295,11 +356,11 @@ export function creerCodex(options) {
     const chemin = trouver();
     const vide = { installe: !!chemin, chemin, version: null, connecte: false, methode: null, email: null, organisation: null, abonnement: null, verifieLe: Date.now() };
     if (!chemin) return vide;
-    await demarrer(chemin);
+    await processusCompte.demarrer(chemin);
     const { account, requiresOpenaiAuth } = await requete("account/read", { refreshToken: false });
     return {
       ...vide,
-      version,
+      version: processusCompte.version,
       connecte: !!account || !requiresOpenaiAuth,
       methode: account?.type === "chatgpt" ? "chatgpt" : account?.type === "apiKey" ? "cle-api" : account ? account.type : requiresOpenaiAuth ? null : "config",
       email: account?.email ?? null,

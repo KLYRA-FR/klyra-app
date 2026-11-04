@@ -9,6 +9,7 @@ import { signatureOrdinateur } from "../ordinateur/pilote";
 import { signatureNavigateur } from "../navigateur/outils";
 import { espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
+import { preparerSessionCodex } from "../preparation-fournisseur";
 import { lireReglages } from "../reglages";
 import { configMcp } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
@@ -17,8 +18,9 @@ import { binaireGere, commande, derniereVersionNpm, estGere, installerDepuisNpm 
 import type { AgentEvent, CompteMoteur, Decision, ModeleMoteur, Moteur, Progression, StreamOptions } from "./types";
 
 /**
- * ChatGPT, par Codex : un `codex app-server` pour tout le poste, gardé ouvert, et un fil de Codex
- * par conversation. Ses messages sont traduits en `AgentEvent` (codex-protocole.ts), comme ceux
+ * ChatGPT, par Codex : un `codex app-server` par agent, gardé ouvert, et un fil de Codex
+ * par conversation. Le processus du compte (connexion, modèles) n'a pas de `CODEX_HOME` d'agent.
+ * Ses messages sont traduits en `AgentEvent` (codex-protocole.ts), comme ceux
  * de Claude Code : l'interface ne voit pas la différence.
  */
 
@@ -101,7 +103,12 @@ interface Reponse {
   demandes: Map<string, { rpcId: number | string; method: string; params: Params }>;
 }
 
+const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
 class ServeurCodex {
+  /** Posé : ce processus ne sert qu'à un agent, avec son dossier préparé. Absent : le compte du poste. */
+  private readonly isole: { home: string; codexHome: string } | null;
+  empreinte: string;
   private child: ChildProcess | null = null;
   private bin: string | null = null;
   private demarrage: Promise<void> | null = null;
@@ -117,11 +124,22 @@ class ServeurCodex {
   readonly enCours = new Map<string, Reponse>();
   readonly parRequete = new Map<string, string>();
 
+  constructor(isole: { home: string; codexHome: string; empreinte: string } | null = null) {
+    this.isole = isole ? { home: isole.home, codexHome: isole.codexHome } : null;
+    this.empreinte = isole?.empreinte ?? "";
+  }
+
   demarrer(bin: string): Promise<void> {
     if (this.demarrage && this.bin === bin && this.child) return this.demarrage;
     this.fermer();
     this.bin = bin;
-    const child = spawn(bin, ["app-server"], { cwd: HOME, env: environnementAgent(), windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    const env = environnementAgent();
+    if (this.isole) {
+      env.HOME = this.isole.home;
+      env.USERPROFILE = this.isole.home;
+      env.CODEX_HOME = this.isole.codexHome;
+    }
+    const child = spawn(bin, ["app-server"], { cwd: this.isole?.home ?? HOME, env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     let tampon = "";
     child.stdout!.on("data", (d: Buffer) => {
@@ -240,7 +258,38 @@ class ServeurCodex {
   }
 }
 
-const serveur = new ServeurCodex();
+/** Connexion et modèles : le Codex du poste, sans dossier d'agent. */
+const processusCompte = new ServeurCodex(null);
+/** Un processus par agent. La clé est l'id, ou `principal`. */
+const parAgent = new Map<string, ServeurCodex>();
+
+function idAgent(agent: string | null): string {
+  return agent && ID_AGENT.test(agent) ? agent : "principal";
+}
+
+function serveurAgent(id: string, prepare: { home: string; codexHome: string; empreinte: string }): ServeurCodex {
+  const deja = parAgent.get(id);
+  if (deja && deja.empreinte !== prepare.empreinte) {
+    deja.fermer();
+    parAgent.delete(id);
+  }
+  const courant = parAgent.get(id);
+  if (courant) return courant;
+  const cree = new ServeurCodex({ home: prepare.home, codexHome: prepare.codexHome, empreinte: prepare.empreinte });
+  parAgent.set(id, cree);
+  return cree;
+}
+
+function serveurDeRequete(requestId: string): ServeurCodex | null {
+  for (const serveur of parAgent.values()) if (serveur.parRequete.has(requestId)) return serveur;
+  return null;
+}
+
+function fermerCodex(): void {
+  processusCompte.fermer();
+  for (const serveur of parAgent.values()) serveur.fermer();
+  parAgent.clear();
+}
 
 /* ─── Une réponse ──────────────────────────────────────────────── */
 
@@ -259,12 +308,20 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
 }
 
 async function demarrerTour(requestId: string, options: StreamOptions, emit: (event: AgentEvent) => void, bin: string, cwd: string) {
-  await serveur.demarrer(bin);
   const acces = accesCodex(options.acces ?? "projet");
-  /* Les skills de Claude, que Codex ne lit pas de lui-même (cf. connaissances-agent.ts) : présentées par leur
-     fichier, celles que la fiche précharge avec leur texte, et `/<skill>` demandé en tête du message. */
+  /* Les skills de Claude, que Codex ne lit pas de lui-même (cf. connaissances-agent.ts) : le dossier préparé
+     de cet agent n'a que les allumées. La consigne garde le texte préchargé et le chemin du fichier. */
   const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, CONFIG_CLAUDE(), cwd);
   const skills = consigneSkillsCodex(options.agent ? ficheBrute(options.agent) : null, CONFIG_CLAUDE(), cwd, filtre.garder);
+  const id = idAgent(options.agent);
+  const prepare = preparerSessionCodex({
+    userData: process.env.KLYRA_USER_DATA || app.getPath("userData"),
+    agent: options.agent,
+    dossiers: filtre.dossiers,
+    codexPoste: process.env.CODEX_HOME || path.join(HOME, ".codex"),
+  });
+  const serveur = serveurAgent(id, prepare);
+  await serveur.demarrer(bin);
   // Mes agents, Composio, les skills ou le navigateur ont changé : le fil est rechargé avec les consignes et les outils à jour.
   const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur()]);
   const reglages = () => {
@@ -280,6 +337,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   };
 
   let threadId = options.sessionId;
+  if (threadId && [...parAgent.entries()].some(([cle, autre]) => cle !== id && autre.fils.has(threadId!))) threadId = null;
   if (!threadId) {
     const r = await serveur.requete<{ thread: { id: string } }>("thread/start", { ...reglages(), serviceName: "KLYRA" });
     threadId = r.thread.id;
@@ -321,9 +379,10 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
 }
 
 function arreter(requestId: string): void {
-  const threadId = serveur.parRequete.get(requestId);
-  const r = threadId ? serveur.enCours.get(threadId) : undefined;
-  if (!r) return;
+  const serveur = serveurDeRequete(requestId);
+  const threadId = serveur?.parRequete.get(requestId);
+  const r = threadId ? serveur?.enCours.get(threadId) : undefined;
+  if (!serveur || !r) return;
   r.tour.arrete = true;
   if (!r.tour.turnId) return;
   void serveur.requete("turn/interrupt", { threadId: r.threadId, turnId: r.tour.turnId }).catch(() => undefined);
@@ -336,10 +395,11 @@ function arreter(requestId: string): void {
 }
 
 function autoriser(requestId: string, demandeId: string, decision: Decision): boolean {
-  const threadId = serveur.parRequete.get(requestId);
-  const r = threadId ? serveur.enCours.get(threadId) : undefined;
+  const serveur = serveurDeRequete(requestId);
+  const threadId = serveur?.parRequete.get(requestId);
+  const r = threadId ? serveur?.enCours.get(threadId) : undefined;
   const demande = r?.demandes.get(demandeId);
-  if (!r || !demande) return false;
+  if (!serveur || !r || !demande) return false;
   serveur.ecrire({ id: demande.rpcId, result: reponseAutorisation(demande.method, demande.params, decision) });
   r.demandes.delete(demandeId);
   r.emit({ type: "autorisation-fin", id: demandeId, accepte: decision !== "non" });
@@ -354,11 +414,11 @@ async function compte(): Promise<CompteMoteur> {
   const bin = trouverCodex();
   const vide: CompteMoteur = { installe: !!bin, chemin: bin, version: null, connecte: false, methode: null, email: null, organisation: null, abonnement: null, verifieLe: Date.now() };
   if (!bin) return vide;
-  await serveur.demarrer(bin);
-  const { account, requiresOpenaiAuth } = await serveur.requete<{ account: Compte; requiresOpenaiAuth: boolean }>("account/read", { refreshToken: false });
+  await processusCompte.demarrer(bin);
+  const { account, requiresOpenaiAuth } = await processusCompte.requete<{ account: Compte; requiresOpenaiAuth: boolean }>("account/read", { refreshToken: false });
   return {
     ...vide,
-    version: serveur.version,
+    version: processusCompte.version,
     // Un fournisseur réglé dans la config de Codex (clé, serveur compatible) répond sans compte OpenAI.
     connecte: !!account || !requiresOpenaiAuth,
     methode: account?.type === "chatgpt" ? "chatgpt" : account?.type === "apiKey" ? "cle-api" : account ? account.type : requiresOpenaiAuth ? null : "config",
@@ -371,15 +431,15 @@ async function compte(): Promise<CompteMoteur> {
 async function connecter(): Promise<CompteMoteur> {
   const bin = trouverCodex();
   if (!bin) return compte();
-  await serveur.demarrer(bin);
-  const { loginId, authUrl } = await serveur.requete<{ loginId: string; authUrl: string }>("account/login/start", { type: "chatgpt" });
+  await processusCompte.demarrer(bin);
+  const { loginId, authUrl } = await processusCompte.requete<{ loginId: string; authUrl: string }>("account/login/start", { type: "chatgpt" });
   const fini = new Promise<void>((resolve) => {
     const delai = setTimeout(() => {
       arreterDEcouter();
-      void serveur.requete("account/login/cancel", { loginId }).catch(() => undefined);
+      void processusCompte.requete("account/login/cancel", { loginId }).catch(() => undefined);
       resolve();
     }, CONNEXION_MAX_MS);
-    const arreterDEcouter = serveur.ecouter((method, params) => {
+    const arreterDEcouter = processusCompte.ecouter((method, params) => {
       if (method !== "account/login/completed" || (params.loginId && params.loginId !== loginId)) return;
       clearTimeout(delai);
       arreterDEcouter();
@@ -395,16 +455,16 @@ async function connecterAvecCle(cle: string): Promise<CompteMoteur> {
   const bin = trouverCodex();
   if (!bin) return compte();
   if (!/^\S{10,400}$/.test(cle)) throw new Error("Cette clé ne ressemble pas à une clé API.");
-  await serveur.demarrer(bin);
-  await serveur.requete("account/login/start", { type: "apiKey", apiKey: cle });
+  await processusCompte.demarrer(bin);
+  await processusCompte.requete("account/login/start", { type: "apiKey", apiKey: cle });
   return compte();
 }
 
 async function deconnecter(): Promise<CompteMoteur> {
   const bin = trouverCodex();
   if (!bin) return compte();
-  await serveur.demarrer(bin);
-  await serveur.requete("account/logout", {});
+  await processusCompte.demarrer(bin);
+  await processusCompte.requete("account/logout", {});
   return compte();
 }
 
@@ -413,11 +473,11 @@ type ModeleCodex = { id: string; displayName: string; hidden: boolean; isDefault
 async function modeles(): Promise<ModeleMoteur[]> {
   const bin = trouverCodex();
   if (!bin) return [];
-  await serveur.demarrer(bin);
+  await processusCompte.demarrer(bin);
   const liste: ModeleMoteur[] = [];
   let cursor: string | null = null;
   do {
-    const page: { data: ModeleCodex[]; nextCursor: string | null } = await serveur.requete("model/list", cursor ? { cursor } : {});
+    const page: { data: ModeleCodex[]; nextCursor: string | null } = await processusCompte.requete("model/list", cursor ? { cursor } : {});
     for (const m of page.data) {
       if (m.hidden) continue;
       liste.push({ id: m.id, nom: m.displayName, efforts: m.supportedReasoningEfforts.map((e) => e.reasoningEffort), effortParDefaut: m.defaultReasoningEffort, parDefaut: m.isDefault });
@@ -431,7 +491,7 @@ async function modeles(): Promise<ModeleMoteur[]> {
 async function installer(progression: (p: Progression) => void): Promise<CompteMoteur> {
   await installerDepuisNpm({ moteur: "codex", paquet: "@openai/codex", executable: EXE, progression });
   // Le serveur ouvert garde l'ancien programme : le prochain appel lance le nouveau.
-  if (estGere(trouverCodex())) serveur.fermer();
+  if (estGere(trouverCodex())) fermerCodex();
   return compte();
 }
 
@@ -439,7 +499,7 @@ async function mettreAJour(progression: (p: Progression) => void): Promise<Compt
   const bin = trouverCodex();
   if (!bin || estGere(bin)) return installer(progression);
   progression({ etape: "mise-a-jour", recu: 0, total: null });
-  serveur.fermer();
+  fermerCodex();
   const r = await commande(bin, ["update"], 10 * 60_000);
   if (r.code !== 0) throw new Error(r.sortie.trim().split("\n").filter((l) => !/^WARNING/.test(l)).slice(-3).join(" ").slice(0, 400) || "La mise à jour de Codex a échoué.");
   return compte();
@@ -461,5 +521,5 @@ export const codex: Moteur = {
   lancer,
   arreter,
   autoriser,
-  fermer: () => serveur.fermer(),
+  fermer: fermerCodex,
 };
