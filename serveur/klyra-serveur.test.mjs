@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { creerAgents } from "./agents.mjs";
+import { filtreSkills, nomsSkills } from "./connaissances-agent.mjs";
+import { preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { creerIa } from "./ia.mjs";
 import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, CHEMIN_RENDUS, DUREE_CODE_MS, cleConversation, contexteTelephone, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
@@ -542,6 +544,98 @@ test("les projets du VPS : arbre, lecture et création sous le dossier de klyra 
     assert.deepEqual((await consignes("POST")).json.consignes.propositions, []);
     assert.equal(readFileSync(path.join(projet, "AGENTS.md"), "utf8"), "Mes consignes.\n");
     assert.equal((await appel(ecoute.port, `/klyra/v1/fichiers/consignes?dossier=${encodeURIComponent("/etc")}&nom=x`, { jeton })).statut, 400);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("le VPS écrit les skills allumées dans sa bibliothèque et les sessions préparées les lisent", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  mkdirSync(path.join(home, ".claude", "skills", "ancienne"), { recursive: true });
+  writeFileSync(path.join(home, ".claude", "skills", "ancienne", "SKILL.md"), "---\nname: ancienne\n---\n\nPOSTE\n");
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, claude: null });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  const skill = (nom, texte) => ({ nom, dossier: nom, fichiers: [{ chemin: "SKILL.md", contenu: `---\nname: ${nom}\n---\n\n${texte}\n` }] });
+  const choix = {
+    fige: true,
+    personnellesConnues: ["rangement"],
+    agentsConnus: ["principal", "iris", "hugo"],
+    coupees: {},
+    activees: { hugo: ["maquette"] },
+  };
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const fiches = [
+      { id: "iris", nom: "Iris", contenu: "---\nname: iris\n---\nIris." },
+      { id: "hugo", nom: "Hugo", contenu: "---\nname: hugo\n---\nHugo." },
+    ];
+    const sansFichiers = await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches, assistant: "Cicco", skillsParAgent: choix, empreinte: "e0" } });
+    assert.equal(sansFichiers.statut, 200);
+    assert.equal(existsSync(path.join(dossier, "bibliotheque-skills")), false);
+    assert.equal(readFileSync(path.join(home, ".claude", "skills", "ancienne", "SKILL.md"), "utf8").includes("POSTE"), true);
+
+    const avec = await appel(ecoute.port, CHEMIN_FICHES, {
+      methode: "PUT",
+      jeton,
+      corps: { fiches, assistant: "Cicco", skillsParAgent: choix, skills: [skill("rangement", "RANGE"), skill("maquette", "DESSINE")], empreinte: "e1" },
+    });
+    assert.equal(avec.statut, 200);
+    assert.equal(readFileSync(path.join(dossier, "bibliotheque-skills", "rangement", "SKILL.md"), "utf8").includes("RANGE"), true);
+    assert.equal(readFileSync(path.join(dossier, "bibliotheque-skills", "maquette", "SKILL.md"), "utf8").includes("DESSINE"), true);
+    assert.equal(existsSync(path.join(dossier, "bibliotheque-skills", "ancienne")), false);
+    assert.equal(readFileSync(path.join(home, ".claude", "skills", "ancienne", "SKILL.md"), "utf8").includes("POSTE"), true);
+    assert.equal(process.env.KLYRA_USER_DATA, dossier);
+    assert.deepEqual(nomsSkills(path.join(home, ".claude"), null).poste.sort(), ["maquette", "rangement"]);
+
+    const filtreIris = filtreSkills(choix, "iris", path.join(home, ".claude"), null);
+    const session = preparerSessionClaude({
+      userData: dossier,
+      home,
+      agent: "iris",
+      dossierAgents: path.join(home, ".claude", "agents"),
+      idsActifs: ["iris", "hugo"],
+      garder: filtreIris.garder,
+    });
+    assert.ok(session);
+    assert.equal(readFileSync(path.join(session.dossier, "skills", "rangement", "SKILL.md"), "utf8").includes("RANGE"), true);
+    assert.equal(existsSync(path.join(session.dossier, "skills", "maquette")), false);
+    const filtreHugo = filtreSkills(choix, "hugo", path.join(home, ".claude"), null);
+    const sessionHugo = preparerSessionClaude({
+      userData: dossier,
+      home,
+      agent: "hugo",
+      dossierAgents: path.join(home, ".claude", "agents"),
+      idsActifs: ["iris", "hugo"],
+      garder: filtreHugo.garder,
+    });
+    assert.ok(sessionHugo);
+    assert.equal(existsSync(path.join(sessionHugo.dossier, "skills", "maquette", "SKILL.md")), true);
+
+    const encore = await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches, assistant: "Cicco", skillsParAgent: choix, empreinte: "e2" } });
+    assert.equal(encore.statut, 200);
+    assert.equal(readFileSync(path.join(dossier, "bibliotheque-skills", "rangement", "SKILL.md"), "utf8").includes("RANGE"), true);
+
+    const vide = await appel(ecoute.port, CHEMIN_FICHES, {
+      methode: "PUT",
+      jeton,
+      corps: { fiches, assistant: "Cicco", skillsParAgent: choix, skills: [], empreinte: "e3" },
+    });
+    assert.equal(vide.statut, 200);
+    assert.equal(existsSync(path.join(dossier, "bibliotheque-skills", "rangement")), false);
+    assert.equal(readFileSync(path.join(home, ".claude", "skills", "ancienne", "SKILL.md"), "utf8").includes("POSTE"), true);
+
+    const sortie = await appel(ecoute.port, CHEMIN_FICHES, {
+      methode: "PUT",
+      jeton,
+      corps: { fiches, assistant: "Cicco", skills: [{ dossier: "../sortie", fichiers: [{ chemin: "SKILL.md", contenu: "x" }] }], empreinte: "e4" },
+    });
+    assert.equal(sortie.statut, 400);
+    assert.equal(existsSync(path.join(dossier, "sortie")), false);
+    assert.equal(existsSync(path.join(home, ".claude", "skills", "sortie")), false);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

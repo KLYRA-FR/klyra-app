@@ -39,6 +39,8 @@ const CORPS_MAX = 2048;
 const CORPS_RETOUR_MAX = 10_000;
 const CORPS_AGENT_MAX = 1_000_000;
 const CORPS_FICHES_MAX = 5_000_000;
+/** Fiches et dossiers des skills allumées (texte ou base64). Les routines gardent CORPS_FICHES_MAX. */
+const CORPS_EQUIPE_MAX = 20_000_000;
 const JOURNAL_MAX = 5000;
 const JOURNAL_DUREE_MS = 24 * 60 * 60 * 1000;
 const APPAREILS_MAX = 20;
@@ -494,7 +496,7 @@ export function creerGestionnaire(options) {
       }
       if (action === "fiches") {
         if (req.method !== "PUT") return repondre(res, 405, { erreur: "methode" });
-        const corps = await lireCorpsRequete(req, CORPS_FICHES_MAX);
+        const corps = await lireCorpsRequete(req, CORPS_EQUIPE_MAX);
         try {
           agents.recevoirFiches(corps);
         } catch {

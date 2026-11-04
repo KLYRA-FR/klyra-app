@@ -1,6 +1,8 @@
 // Généré par scripts/serveur-genere.mjs depuis electron/preparation-fournisseur.ts : ne pas modifier à la main.
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { skillRecue } from "./skills-par-agent.mjs";
 /**
  * Ce que KLYRA prépare pour un fournisseur, à part du poste.
  *
@@ -18,6 +20,11 @@ import path from "node:path";
  * existe (la copie du premier lancement). Sans lui, elles viennent encore du poste.
  * Les plugins et `settings.json` du poste sont des liens : Claude Code les charge comme avant.
  * Rien ici n'écrit dans le dossier du poste.
+ *
+ * Le PC envoie au VPS les dossiers des skills allumées pour au moins un agent.
+ * Le VPS les écrit dans sa bibliothèque (`donnees/bibliotheque-skills`). Une skill
+ * éteinte pour tout le monde ne part pas. Rien n'est supprimé sur le poste, ni dans
+ * `~/.claude` du VPS : seule cette bibliothèque est remplacée par l'envoi.
  */
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const NOM_DOSSIER = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$/;
@@ -351,6 +358,226 @@ export function importerSkills(source, dest) {
         dossiers.add(base);
     }
     return { ajoutees: triNoms(ajoutees), dejaLa: triNoms(dejaLa), ignorees: triNoms(ignorees) };
+}
+const NOM_FICHIER = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}$/;
+const FICHIER_MAX = 400_000;
+const FICHIERS_MAX = 40;
+const SKILLS_MAX = 80;
+const TOTAL_MAX = 4_000_000;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+function cheminRelatif(chemin) {
+    if (!chemin || chemin.includes("\\") || chemin.startsWith("/") || chemin.includes("\0"))
+        return null;
+    const parts = chemin.split("/");
+    if (!parts.length || parts.some((p) => !NOM_FICHIER.test(p) || p === "." || p === ".."))
+        return null;
+    return parts;
+}
+/** Les fichiers d'un dossier de skill. null : pas de SKILL.md, ou ce fichier ne tient pas dans l'envoi. */
+function lireFichiersSkill(racine) {
+    const fichiers = [];
+    const visiter = (absolu, relatif) => {
+        let noms;
+        try {
+            noms = readdirSync(absolu).sort((a, b) => a.localeCompare(b, "en"));
+        }
+        catch {
+            return relatif !== "";
+        }
+        for (const nom of noms) {
+            if (nom.startsWith(".") || nom === "node_modules" || nom === ".git")
+                continue;
+            if (!NOM_FICHIER.test(nom))
+                continue;
+            const chemin = relatif ? `${relatif}/${nom}` : nom;
+            const cible = path.join(absolu, nom);
+            let st;
+            try {
+                st = lstatSync(cible);
+            }
+            catch {
+                continue;
+            }
+            if (st.isSymbolicLink())
+                continue;
+            if (st.isDirectory()) {
+                if (!visiter(cible, chemin))
+                    return false;
+                continue;
+            }
+            if (!st.isFile())
+                continue;
+            if (fichiers.length >= FICHIERS_MAX)
+                return false;
+            let buf;
+            try {
+                buf = readFileSync(cible);
+            }
+            catch {
+                continue;
+            }
+            const binaire = buf.includes(0);
+            const contenu = binaire ? buf.toString("base64") : buf.toString("utf8");
+            if (contenu.length > FICHIER_MAX) {
+                if (chemin === "SKILL.md")
+                    return false;
+                continue;
+            }
+            fichiers.push(binaire ? { chemin, contenu, binaire: true } : { chemin, contenu });
+        }
+        return true;
+    };
+    if (!visiter(racine, ""))
+        return null;
+    if (!fichiers.some((f) => f.chemin === "SKILL.md" && !f.binaire && f.contenu.length > 0))
+        return null;
+    fichiers.sort((a, b) => a.chemin.localeCompare(b.chemin, "en"));
+    return fichiers;
+}
+/**
+ * Les dossiers à envoyer : une skill du poste (ou de la bibliothèque) allumée pour
+ * au moins un agent. `actifs` : les agents actifs, en plus de ceux déjà connus du choix.
+ * Une skill éteinte pour tout le monde n'est pas dans la liste. Un lien, `node_modules`
+ * ou `.git` n'est pas lu. Si `SKILL.md` ne tient pas, la skill ne part pas.
+ */
+export function skillsAEnvoyer(choix, actifs, sources) {
+    const ids = new Set(["principal"]);
+    for (const id of [...actifs, ...choix.agentsConnus, ...Object.keys(choix.activees), ...Object.keys(choix.coupees)]) {
+        if (id === "principal" || ID_AGENT.test(id))
+            ids.add(id);
+    }
+    const envoyees = [];
+    let total = 0;
+    for (const source of sources) {
+        if (![...ids].some((id) => skillRecue(choix, id === "principal" ? null : id, source.nom, "poste")))
+            continue;
+        if (envoyees.length >= SKILLS_MAX)
+            break;
+        const dossier = path.basename(source.source);
+        if (!NOM_DOSSIER.test(dossier))
+            continue;
+        const fichiers = lireFichiersSkill(source.source);
+        if (!fichiers)
+            continue;
+        const poids = fichiers.reduce((n, f) => n + f.contenu.length, 0);
+        if (total + poids > TOTAL_MAX)
+            continue;
+        envoyees.push({ nom: source.nom, dossier, fichiers });
+        total += poids;
+    }
+    return envoyees.sort((a, b) => a.dossier.localeCompare(b.dossier, "en") || a.nom.localeCompare(b.nom, "fr"));
+}
+/** Empreinte du contenu envoyé : une édition de SKILL.md change l'envoi, sans changer le choix des interrupteurs. */
+export function empreinteSkills(skills) {
+    return createHash("sha256").update(JSON.stringify(skills)).digest("hex");
+}
+function octetsDe(fichier) {
+    if (!fichier.binaire)
+        return Buffer.from(fichier.contenu, "utf8");
+    const contenu = fichier.contenu;
+    if (contenu.length % 4 !== 0 || !BASE64.test(contenu))
+        throw new Error("skills");
+    const octets = Buffer.from(contenu, "base64");
+    if (octets.length > FICHIER_MAX || octets.toString("base64") !== contenu)
+        throw new Error("skills");
+    return octets;
+}
+/** Vérifie l'envoi. Lève si un chemin sort du dossier, ou si un fichier est trop gros. N'écrit rien. */
+export function normaliserSkillsRecues(brut) {
+    if (!Array.isArray(brut) || brut.length > SKILLS_MAX)
+        throw new Error("skills");
+    const vus = new Set();
+    const skills = [];
+    let total = 0;
+    for (const entree of brut) {
+        const e = (entree ?? {});
+        const dossier = typeof e.dossier === "string" ? e.dossier : "";
+        const nom = typeof e.nom === "string" && e.nom.length <= 80 ? e.nom : dossier;
+        if (!NOM_DOSSIER.test(dossier) || vus.has(dossier) || !Array.isArray(e.fichiers) || e.fichiers.length > FICHIERS_MAX)
+            throw new Error("skills");
+        const chemins = new Set();
+        const fichiers = [];
+        for (const fichier of e.fichiers) {
+            const f = (fichier ?? {});
+            if (typeof f.chemin !== "string" || typeof f.contenu !== "string" || !cheminRelatif(f.chemin) || chemins.has(f.chemin))
+                throw new Error("skills");
+            if (f.contenu.length > FICHIER_MAX || (f.binaire !== undefined && f.binaire !== true))
+                throw new Error("skills");
+            const recu = f.binaire === true ? { chemin: f.chemin, contenu: f.contenu, binaire: true } : { chemin: f.chemin, contenu: f.contenu };
+            octetsDe(recu);
+            chemins.add(f.chemin);
+            fichiers.push(recu);
+            total += f.contenu.length;
+        }
+        if (total > TOTAL_MAX)
+            throw new Error("skills");
+        if (!fichiers.some((f) => f.chemin === "SKILL.md" && !f.binaire && f.contenu.length > 0))
+            throw new Error("skills");
+        vus.add(dossier);
+        skills.push({ nom, dossier, fichiers });
+    }
+    return skills;
+}
+/**
+ * Écrit la bibliothèque de l'app : exactement les dossiers reçus.
+ * Un dossier absent de l'envoi est retiré de CETTE bibliothèque seulement.
+ * Un lien est retiré, pas la cible. Le poste et `~/.claude` ne sont pas des arguments ici.
+ */
+export function ecrireBibliotheque(dest, brut) {
+    const skills = normaliserSkillsRecues(brut);
+    const bibliotheque = path.resolve(dest);
+    try {
+        if (lstatSync(bibliotheque).isSymbolicLink())
+            throw new Error("skills");
+    }
+    catch (error) {
+        if (error.code !== "ENOENT" && error.message !== "skills")
+            throw error;
+        if (error.message === "skills")
+            throw error;
+    }
+    mkdirSync(bibliotheque, { recursive: true, mode: 0o700 });
+    const gardes = new Set();
+    for (const skill of skills) {
+        const cible = path.join(bibliotheque, skill.dossier);
+        if (!dans(bibliotheque, cible))
+            throw new Error("skills");
+        try {
+            const st = lstatSync(cible);
+            if (st.isSymbolicLink())
+                rmSync(cible, { force: true });
+            else
+                rmSync(cible, { recursive: true, force: true });
+        }
+        catch (error) {
+            if (error.code !== "ENOENT")
+                throw error;
+        }
+        mkdirSync(cible, { recursive: true, mode: 0o700 });
+        for (const fichier of skill.fichiers) {
+            const parts = cheminRelatif(fichier.chemin);
+            if (!parts)
+                throw new Error("skills");
+            const fichierCible = path.join(cible, ...parts);
+            if (!dans(cible, fichierCible))
+                throw new Error("skills");
+            mkdirSync(path.dirname(fichierCible), { recursive: true, mode: 0o700 });
+            writeFileSync(fichierCible, octetsDe(fichier), { mode: 0o600 });
+        }
+        gardes.add(skill.dossier);
+    }
+    for (const nom of readdirSync(bibliotheque)) {
+        if (gardes.has(nom))
+            continue;
+        const cible = path.join(bibliotheque, nom);
+        if (!dans(bibliotheque, cible))
+            continue;
+        const st = lstatSync(cible);
+        if (st.isSymbolicLink())
+            rmSync(cible, { force: true });
+        else
+            rmSync(cible, { recursive: true, force: true });
+    }
 }
 /** Le compte rendu déjà écrit, ou null. */
 export function lireReprise(fichier) {
