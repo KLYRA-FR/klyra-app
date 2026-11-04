@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, shell } from "electron";
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { artefactsDuJson, fusionnerGalerie, LIEN_ARTEFACT as LIEN, type ArtefactClaude } from "./artefacts-liste";
 
@@ -233,6 +234,60 @@ export async function vignetteArtefact(url: string, forcer = false): Promise<str
       return `data:image/png;base64,${png.toString("base64")}`;
     } catch {
       return null;
+    } finally {
+      win.destroy();
+    }
+  });
+}
+
+/* ─── Lecture par les agents ───────────────────────────────────── */
+
+/** Le code des artefacts lus par les agents (`lire_artefact`) : un fichier par artefact, remplacé à chaque lecture. */
+export const DOSSIER_ARTEFACTS_LUS = path.join(os.homedir(), ".klyra", "artefacts-lus");
+const DELAI_LECTURE_MS = 20_000;
+/** Au-delà, ce n'est plus une page à relire. */
+const TAILLE_MAX_LECTURE = 5 * 1024 * 1024;
+
+/**
+ * Le code d'un artefact claude.ai, pour un agent : l'outil Artifact de Claude Code n'existe que dans VS Code
+ * et Claude Desktop (vérifié le 04/11/2026, Claude Code 2.1.318). L'app ouvre la page hors écran avec sa
+ * session claude.ai, prend le document de l'artefact (le cadre le plus fourni, sinon la page) et l'écrit
+ * dans `DOSSIER_ARTEFACTS_LUS`. C'est la page telle qu'elle s'affiche, scripts exécutés. Lecture seule.
+ */
+export async function lireArtefact(url: string): Promise<{ chemin: string; taille: number }> {
+  if (!LIEN.test(url)) throw new Error("Lien d’artefact invalide : il faut un lien https://claude.ai/artifact/….");
+  if (!(await etatClaudeAi())) throw new Error("claude.ai n’est pas connecté dans l’app : la personne doit le connecter depuis l’écran Artefacts.");
+  const id = url.replace(/\/$/, "").split("/").pop() ?? "artefact";
+  return aTour(async () => {
+    const win = new BrowserWindow({
+      show: false,
+      width: 1280,
+      height: 900,
+      webPreferences: { session: sessionClaude(), contextIsolation: true, nodeIntegration: false, sandbox: true, offscreen: true },
+    });
+    win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    try {
+      await win.loadURL(url);
+      if (/\/login|\/logout/.test(win.webContents.getURL())) throw new Error("La session claude.ai de l’app a expiré : la personne doit reconnecter claude.ai.");
+      const lire = "'<!doctype html>\\n' + document.documentElement.outerHTML";
+      // L'artefact se dessine après le chargement, dans un cadre : on relève jusqu'à ce qu'il ne bouge plus.
+      let code = "";
+      let stable = 0;
+      const fin = Date.now() + DELAI_LECTURE_MS;
+      while (Date.now() < fin && stable < 2) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const cadres = win.webContents.mainFrame.framesInSubtree.filter((f) => f !== win.webContents.mainFrame);
+        const textes = await Promise.all(cadres.map((f) => f.executeJavaScript(lire).then(String).catch(() => "")));
+        const meilleur = textes.reduce((a, b) => (b.length > a.length ? b : a), "");
+        stable = meilleur.length > 200 && meilleur.length === code.length ? stable + 1 : 0;
+        code = meilleur;
+      }
+      if (code.length <= 200) code = String(await win.webContents.executeJavaScript(lire));
+      if (code.length > TAILLE_MAX_LECTURE) throw new Error("Cet artefact dépasse 5 Mo : trop gros pour être relu.");
+      mkdirSync(DOSSIER_ARTEFACTS_LUS, { recursive: true });
+      const chemin = path.join(DOSSIER_ARTEFACTS_LUS, `${id}.html`);
+      await writeFile(chemin, code, "utf8");
+      return { chemin, taille: Buffer.byteLength(code) };
     } finally {
       win.destroy();
     }

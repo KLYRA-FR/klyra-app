@@ -33,6 +33,8 @@ import path from "node:path";
 const HOME = os.homedir();
 /** Les copies des rendus publiés par les agents (cf. `RACINE_RENDUS`, electron/rendus.ts). */
 const DOSSIER_RENDUS = path.join(HOME, ".klyra", "rendus");
+/** Le code des artefacts claude.ai lus par `lire_artefact` (cf. `DOSSIER_ARTEFACTS_LUS`, electron/artefacts.ts). */
+const DOSSIER_ARTEFACTS_LUS = path.join(HOME, ".klyra", "artefacts-lus");
 
 /** Outils retirés à l'agent : il lit et cherche, il n'écrit rien. */
 const OUTILS_INTERDITS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"];
@@ -870,6 +872,9 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     for (const d of dossiersJoints) args.push("--add-dir", d);
     // Les rendus publiés (écran Artefacts) : le fichier de planning donne leurs chemins, l'agent doit pouvoir les lire.
     if (existsSync(DOSSIER_RENDUS)) args.push("--add-dir", DOSSIER_RENDUS);
+    // Créé d'avance : l'agent lit le fichier que `lire_artefact` y écrit pendant sa réponse.
+    mkdirSync(DOSSIER_ARTEFACTS_LUS, { recursive: true });
+    args.push("--add-dir", DOSSIER_ARTEFACTS_LUS);
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", [...consignesApp(options, mcp), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane, prepare?.dossier ?? null);

@@ -10,6 +10,7 @@ import { serveursMcpDirects } from "./mcp-direct";
 import { OUTIL_FENETRE_NAVIGATEUR, ouvrirFenetreNavigateurDefaut } from "./ordinateur/fenetre-navigateur";
 import { serveurOrdinateur } from "./ordinateur/pilote";
 import { estOutilNavigateur, executerOutilNavigateur, navigateurActif, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur/outils";
+import { lireArtefact } from "./artefacts";
 import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
 
 /**
@@ -267,6 +268,18 @@ const OUTIL_PUBLIER = {
   },
 };
 
+/** Lire un artefact claude.ai : l'outil Artifact de Claude Code n'existe pas dans l'app (cf. `lireArtefact`). */
+const OUTIL_LIRE_ARTEFACT = {
+  name: "lire_artefact",
+  description:
+    "Lit un artefact claude.ai de la personne (lien https://claude.ai/artifact/…, ceux de son fichier de planning ou qu'elle te donne) avec la connexion claude.ai de l'app, et enregistre son code HTML dans un fichier que tu lis ensuite avec Read. C'est la page telle qu'elle s'affiche (scripts exécutés). Lecture seule : rien n'est publié ni modifié sur claude.ai.",
+  inputSchema: {
+    type: "object",
+    properties: { url: { type: "string", description: "Le lien de l'artefact, https://claude.ai/artifact/…" } },
+    required: ["url"],
+  },
+};
+
 function repondre(res: ServerResponse, statut: number, corps?: unknown) {
   res.writeHead(statut, corps === undefined ? {} : { "Content-Type": "application/json" });
   res.end(corps === undefined ? undefined : JSON.stringify(corps));
@@ -324,7 +337,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : [])] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
@@ -353,6 +366,14 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           outilsRoutines.signaler(appelant, failure ? "failed" : "no-update", failure ? String(args.reason).trim() : undefined);
           return texte(failure ? "Échec enregistré pour cette exécution." : "Rien à signaler enregistré pour cette exécution.");
         } catch (e) { return texte(e instanceof Error ? e.message : String(e), true); }
+      }
+      if (nom === OUTIL_LIRE_ARTEFACT.name) {
+        try {
+          const { chemin, taille } = await lireArtefact(String(args.url ?? "").trim());
+          return texte(`Code de l'artefact enregistré dans ${chemin} (${Math.ceil(taille / 1024)} Ko). Lis-le avec Read.`);
+        } catch (e) {
+          return texte(e instanceof Error ? e.message : String(e), true);
+        }
       }
       if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
       if (nom === OUTIL_CHOIX.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des réponses toutes prêtes.", true);
@@ -418,7 +439,7 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
 /** Les outils de l'app qu'un agent peut utiliser sans demander, en accès « projet ». */
 export const OUTILS_APP = () => [
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
-  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_CHOIX, OUTIL_PUBLIER].map((o) => `mcp__klyra__${o.name}`),
+  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_CHOIX, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT].map((o) => `mcp__klyra__${o.name}`),
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
   // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme Computer Use).
   ...(navigateurActif() ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
