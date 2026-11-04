@@ -79,6 +79,8 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return "Propose des réponses";
     case "mcp__klyra__publier_artefact":
       return `Publie dans Artefacts : ${court(entree.titre, 50) || "un rendu"}`;
+    case "mcp__klyra__lire_artefact":
+      return "Lit un artefact claude.ai";
     case "mcp__klyra__navigateur_aller":
       if (typeof entree.url === "string" && entree.url.trim()) return `Navigateur : ouvre ${court(siteOuMots(entree.url), 50)}`;
       return entree.historique === "retour" ? "Navigateur : page précédente" : entree.historique === "suivant" ? "Navigateur : page suivante" : "Navigateur : recharge la page";
@@ -121,6 +123,7 @@ export function iconeEtape(outil: string): IconName {
     case "mcp__klyra__proposer_choix":
       return "list";
     case "mcp__klyra__publier_artefact":
+    case "mcp__klyra__lire_artefact":
     case "Skill":
       return "layers-01";
     case "mcp__klyra__navigateur_agir":
