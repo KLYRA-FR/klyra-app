@@ -25,6 +25,11 @@ import { skillRecue, type SkillsParAgent } from "./skills-par-agent";
  * Le VPS les écrit dans sa bibliothèque (`donnees/bibliotheque-skills`). Une skill
  * éteinte pour tout le monde ne part pas. Rien n'est supprimé sur le poste, ni dans
  * `~/.claude` du VPS : seule cette bibliothèque est remplacée par l'envoi.
+ *
+ * Codex ne lit pas `.claude/skills`. Chaque agent a son `CODEX_HOME`
+ * (`userData/preparation-codex/<agent>`) : les skills allumées pour lui, et des liens
+ * vers `config.toml` et `auth.json` du Codex du poste. Son `HOME` est vide de skills,
+ * pour que `~/.agents/skills` du poste ne passe pas. Le processus du compte n'a pas ce dossier.
  */
 
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -241,6 +246,41 @@ export function preparerSessionClaude(session: SessionClaude): { dossier: string
     reglagesLocaux: path.join(poste, "settings.local.json"),
   });
   return { dossier, skills: skills.map((s) => s.nom) };
+}
+
+export interface SessionCodex {
+  userData: string;
+  agent: string | null;
+  /** Skills allumées pour cet agent (`filtreSkills(...).dossiers`). */
+  dossiers: { nom: string; source: string }[];
+  /** Dossier Codex du poste (`CODEX_HOME` ou `~/.codex`). On y lie la config et l'auth, jamais les skills. */
+  codexPoste: string | null;
+}
+
+/**
+ * Prépare le `CODEX_HOME` de cet agent : seulement ses skills allumées.
+ * Ne modifie ni le poste, ni le dossier Codex d'origine.
+ */
+export function preparerSessionCodex(session: SessionCodex): { codexHome: string; home: string; skills: string[]; empreinte: string } {
+  const id = session.agent && ID_AGENT.test(session.agent) ? session.agent : "principal";
+  const codexHome = path.join(session.userData, "preparation-codex", id);
+  const home = path.join(codexHome, "home");
+  mkdirSync(home, { recursive: true });
+  const skills = session.dossiers.filter((d) => {
+    const base = path.basename(d.source);
+    return NOM_DOSSIER.test(base) && existsSync(path.join(d.source, "SKILL.md"));
+  });
+  ecrireSkills(
+    codexHome,
+    skills.map((d) => ({ nom: d.nom, source: d.source })),
+  );
+  const poste = session.codexPoste ? path.resolve(session.codexPoste) : null;
+  if (poste && poste !== path.resolve(codexHome) && !dans(codexHome, poste) && !dans(poste, codexHome)) {
+    lier(path.join(poste, "config.toml"), path.join(codexHome, "config.toml"));
+    lier(path.join(poste, "auth.json"), path.join(codexHome, "auth.json"));
+  }
+  const noms = skills.map((d) => path.basename(d.source)).sort((a, b) => a.localeCompare(b, "fr"));
+  return { codexHome, home, skills: skills.map((d) => d.nom), empreinte: noms.join("\n") };
 }
 
 /** La bibliothèque de l'app si elle existe, sinon les skills du poste. */

@@ -15,7 +15,8 @@
  * Le poste n'est pas modifié. `skillOverrides` retire encore
  * ce qui resterait listé (skills de projet, skills livrées avec l'outil). La valeur
  * s'applique à toute la session : un agent appelé dedans reçoit le catalogue de celui
- * qui l'a lancé. Codex garde un seul processus : le filtre reste la consigne.
+ * qui l'a lancé. Codex a un processus par agent : son dossier préparé ne reçoit
+ * que les skills que ce filtre laisse allumées.
  */
 
 export interface SkillsParAgent {

@@ -391,16 +391,26 @@ export function catalogueSkills(configClaude: string, dossier: string | null): {
 }
 
 /**
- * Ce que cet agent reçoit vraiment, parmi les skills du poste et du projet.
- * `garder` sert au préchargement, à Codex et à la commande `/<skill>`.
+ * Ce que cet agent reçoit vraiment, parmi les skills du poste, du projet et des plugins.
+ * `garder` sert au préchargement, à la commande `/<skill>` et au dossier Codex.
+ * `dossiers` sont les skills allumées, copiées dans le `CODEX_HOME` de cet agent.
  */
-export function filtreSkills(choix: SkillsParAgent | null | undefined, agent: string | null, configClaude: string, dossier: string | null): { coupes: string[]; garder: (nom: string) => boolean } {
+export function filtreSkills(
+  choix: SkillsParAgent | null | undefined,
+  agent: string | null,
+  configClaude: string,
+  dossier: string | null,
+): { coupes: string[]; garder: (nom: string) => boolean; dossiers: { nom: string; source: string }[] } {
   const etat = validerSkillsParAgent(choix ?? null);
   const { poste, projet } = nomsSkills(configClaude, dossier);
   const duPoste = new Set(poste);
+  const garder = (nom: string) => skillRecue(etat, agent, nom, duPoste.has(nom) ? "poste" : "projet");
   return {
     coupes: nomsCoupes(etat, agent, poste, projet),
-    garder: (nom) => skillRecue(etat, agent, nom, duPoste.has(nom) ? "poste" : "projet"),
+    garder,
+    dossiers: skillsDeClaude(configClaude, dossier)
+      .filter((s) => s.dossier && garder(s.nom))
+      .map((s) => ({ nom: s.nom, source: s.dossier as string })),
   };
 }
 
@@ -462,11 +472,12 @@ export function competencesPrechargees(
 /* ─── Skills pour Codex ───────────────────────────────────────── */
 
 /*
- * Codex a ses propres skills (vérifié avec Codex 0.166, le 03/11/2026) : il lit `.codex/skills` et
- * `.agents/skills` du projet et du dossier personnel, mais pas `.claude/skills`, et `[[skills.config]]`
- * n'ajoute pas de dossier. Il présente chaque skill au modèle par son nom, sa description et son fichier,
- * que le modèle lit quand la tâche s'y prête. L'app présente donc les skills de Claude de la même façon,
- * sans rien écrire dans les dossiers de la personne.
+ * Codex a ses propres skills (vérifié avec Codex 0.166, le 03/11/2026) : il lit `CODEX_HOME/skills`
+ * (ou `~/.codex/skills` sans `CODEX_HOME`) et `.agents/skills` du projet et du dossier personnel,
+ * mais pas `.claude/skills`. `HOME/.agents/skills` est lu même si `CODEX_HOME` est posé.
+ * Chaque agent a donc son processus et son dossier préparé (`preparerSessionCodex`) : seulement
+ * les skills que `filtreSkills` laisse allumées. La consigne reste pour le texte préchargé par
+ * la fiche et pour le chemin du fichier. Rien n'est écrit dans les dossiers de la personne.
  */
 
 /** Les skills de Claude (poste, puis projet) que l'app présente à un agent qui travaille avec Codex. */
