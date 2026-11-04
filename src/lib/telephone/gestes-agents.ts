@@ -157,7 +157,8 @@ function traduire(e: unknown, ton: string): never {
     throw new ErreurPoste("conflit", `La fiche a changé sur ${ton} depuis son ouverture`);
   }
   if (e instanceof BridgeError && e.code === "existe-deja") throw new ErreurPoste("existe-deja", e.message);
-  throw new ErreurPoste("erreur", (e instanceof Error ? e.message : String(e)).slice(0, 300) || "Le geste a échoué sur l’ordinateur.");
+  /* Sans phrase, le téléphone dit lui-même qui n'a pas pu le faire (`texteErreurPoste`). */
+  throw new ErreurPoste("erreur", (e instanceof Error ? e.message : String(e)).slice(0, 300));
 }
 
 const abreger = (chemin: string) => chemin.replace(/^(?:\/(?:Users|home)\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)/, "~");

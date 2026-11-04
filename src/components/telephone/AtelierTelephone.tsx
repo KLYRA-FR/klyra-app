@@ -198,7 +198,7 @@ export function CarteAtelierTelephone({ etapeId, carte, conversation }: { etapeI
       ) : null}
 
       {fiche ? (
-        <Feuille titre={`Sa fiche · ${carte.id}.md`} onFermer={() => setFiche(false)} haute>
+        <Feuille titre="Sa fiche" onFermer={() => setFiche(false)} haute>
           <p className="klyra-mono mb-2 text-ui-xs text-texte-secondaire">~{carte.jetons.toLocaleString("fr-FR")} jetons, relus à chaque appel</p>
           <pre className="m-0 font-sans text-ui-xs leading-[1.55] break-words whitespace-pre-wrap text-texte-secondaire">{carte.fiche}</pre>
         </Feuille>

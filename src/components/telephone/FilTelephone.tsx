@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Icon } from "@/components/icons/Icon";
@@ -60,7 +60,6 @@ export function FilTelephone() {
   const params = useSearchParams();
   const id = params.get("id") ?? "";
   const nouveauProjet = params.get("nouveau");
-  const router = useRouter();
   const conversations = useQuery(api.conversationsCompte.liste, {});
   const fil = useQuery(api.conversationsCompte.messages, id ? { origine: id } : "skip");
   const attente = useQuery(api.conversationsCompte.enAttente, {});
@@ -85,7 +84,8 @@ export function FilTelephone() {
     ? (conversation?.titre ?? (projetNouveau ? `Nouvelle conversation · ${projetNouveau.nom}` : "Nouvelle conversation"))
     : agent
       ? `${nom(agent)}${carte(agent)?.roleCourt ? ` · ${carte(agent)?.roleCourt}` : ""}`
-      : "Conversation";
+      : /* C-2b : jamais « Conversation » ; le fil d'un agent porte son nom (l'assistant par défaut). */
+        nom(conversation?.roleIds[0] ?? "principal");
   const enFile = (attente ?? []).filter((m) => m.conversationOrigine === id);
   /* Envoyés au VPS ordinateur fermé : affichés ici jusqu'à ce que le compte les ait repris. */
   const repris = useMemo(() => new Set((fil?.messages ?? []).map((m) => m.origine)), [fil?.messages]);
@@ -141,7 +141,7 @@ export function FilTelephone() {
     <div className="flex min-h-0 flex-1 flex-col bg-fond-page" style={cadre}>
       <EnteteTelephone
         titre={titre}
-        retour={() => router.push("/chats")}
+        parent="/chats"
         droite={
           <BoutonIcone
             variant="discret"

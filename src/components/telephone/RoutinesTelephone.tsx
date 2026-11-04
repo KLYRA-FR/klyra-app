@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { useServeursRelies } from "@/lib/lieux";
 import { useGestePoste } from "@/lib/poste/client";
 import { dureeRun, libellePlanning, libelleRun, lienRun, quandRoutine, runActif } from "@/lib/routines-affichage";
+import { roleLisible } from "@/lib/telephone/agents";
 import { messageGeste, useLectureSuivie, useTirerPourRelire } from "@/lib/telephone/lecture-suivie";
 import {
   ecrireBrouillon,
@@ -84,7 +85,7 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Automatisations" retour={() => router.push("/plus")} />
+      <EnteteTelephone titre="Automatisations" parent="/plus" />
       <div className="shrink-0 px-4 pb-2">{onglets}</div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-4" {...tirer.props}>
         <Relache visible={tirer.tire} />
@@ -108,7 +109,9 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
                               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                                 <span className="flex min-w-0 items-center gap-1.5">
                                   <span className="truncate text-body-s font-medium text-texte-principal">{a.name}</span>
-                                  {a.tag ? <span className="shrink-0 rounded-sm bg-fond-surface-grise px-1.5 text-ui-xs text-texte-secondaire">{a.tag}</span> : null}
+                                  {roleLisible(a.tag, a.id) ? (
+                                    <span className="shrink-0 rounded-sm bg-fond-surface-grise px-1.5 text-ui-xs text-texte-secondaire">{roleLisible(a.tag, a.id)}</span>
+                                  ) : null}
                                 </span>
                                 <span className="truncate text-ui-xs text-texte-secondaire">{apercuAgent(a, d.routines, d.enCours, brouillon?.valeurs.agentId, true)}</span>
                               </span>
@@ -343,7 +346,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone
         titre={data ? `Routines de ${agent.name} · ${liste.length}` : "Routines"}
-        retour={() => router.push(urlRoutines())}
+        parent={urlRoutines()}
         droite={
           data && choisie ? (
             <Bouton variant="discret" taille="compact" className="min-h-11" iconeGauche={<Icon name="list" size={16} />} onClick={() => setExecutions(choisie)}>
@@ -495,7 +498,7 @@ function CarteAgentTelephone({ agent, sur }: { agent: AgentLu; sur: string }) {
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-body-s font-medium text-texte-principal">{agent.name}</span>
           <span className="truncate text-ui-xs text-texte-secondaire">
-            {[agent.tag, agent.actif ? "Actif" : agent.connu ? "Désactivé" : `Absent de ${sur}`].filter(Boolean).join(" · ")}
+            {[roleLisible(agent.tag, agent.id), agent.actif ? "Actif" : agent.connu ? "Désactivé" : `Absent de ${sur}`].filter(Boolean).join(" · ")}
           </span>
         </span>
       </header>

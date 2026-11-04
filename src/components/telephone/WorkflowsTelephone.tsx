@@ -239,7 +239,7 @@ export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Automatisations" retour={() => router.push("/plus")} />
+      <EnteteTelephone titre="Automatisations" parent="/plus" />
       <div className="shrink-0 px-4 pb-2">{onglets}</div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6" {...tirer.props}>
         {tirer.tire ? <p className="py-2 text-ui-xs text-texte-secondaire">Relâche pour relire</p> : null}
@@ -348,7 +348,7 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone
         titre={data?.titre ?? "Workflow"}
-        retour={() => router.push(versionId ? urlWorkflows(id) : urlWorkflows())}
+        parent={versionId ? urlWorkflows(id) : urlWorkflows()}
         droite={
           data && !lectureSeule ? (
             <BoutonIcone variant="discret" taille="md" libelle="Actions du workflow" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => actions.ouvrir(data)} />

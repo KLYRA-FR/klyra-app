@@ -9,7 +9,7 @@ import { cn } from "@/lib/cn";
 import { messageErreur } from "@/lib/compte";
 import type { Activite } from "@/lib/copie-compte";
 import { useGestePoste } from "@/lib/poste/client";
-import { bandeauComposeur, majuscule, support } from "@/lib/poste-texte";
+import { bandeauComposeur, majuscule, support, supportOuOrdinateur } from "@/lib/poste-texte";
 import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { jetonAppareil } from "@/lib/serveur-vps";
 import { ASSISTANT, mentionDans, mentionEnCours, type ConversationLue } from "@/lib/telephone/chats";
@@ -178,7 +178,7 @@ export function ComposeurFil({
   const bandeau = ouvert
     ? null
     : directVps && principal
-      ? `${majuscule(support(principal))} est fermé : ton message part directement à ${nomLieu(lieu, serveurs)}.`
+      ? `${majuscule(supportOuOrdinateur(principal))} est fermé : ton message part directement à ${nomLieu(lieu, serveurs)}.`
       : bandeauComposeur(principal);
 
   const joindre = (liste: FileList | File[] | null) => {
@@ -319,7 +319,7 @@ export function ComposeurFil({
               <Icon name="users-profiles-01" size={18} className="text-icone-secondaire" />
               {destinataire ? nom(destinataire) : nom(ASSISTANT)}
             </button>
-            <button type="button" className={PUCE} aria-label="Mentionner un agent" aria-haspopup="dialog" onClick={() => setFeuille("mention")}>
+            <button type="button" className={cn(PUCE, "min-w-11 justify-center")} aria-label="Mentionner un agent" aria-haspopup="dialog" onClick={() => setFeuille("mention")}>
               @
             </button>
           </>

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConvex } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { messageErreur, useCompte } from "@/lib/compte";
 import { usePostes } from "@/components/telephone/poste";
+import { cleVue, garderVue, lireVue, type VueGardee } from "@/lib/telephone/vue-gardee";
 import { DELAI_REPONSE_MS } from "./types";
 
 /**
@@ -78,22 +79,41 @@ export function useDemandePoste() {
 }
 
 export type LecturePoste<T> =
-  | { etat: "ferme" }
+  | { etat: "aucun" }
+  | { etat: "ferme"; gardee: VueGardee<T> | null }
   | { etat: "attente"; lent: boolean }
   | { etat: "delai" }
   | { etat: "erreur"; code: string; message: string }
   | { etat: "ok"; data: T };
 
 /**
- * Une lecture sur l'ordinateur pour un écran (dossier, routines…). Ordinateur fermé : « ferme »
- * sans rien envoyer (P-6). Relue quand il se rouvre, et par `relancer` (tirer vers le bas, Réessayer).
- * `args` à null : rien à lire pour l'instant.
+ * Une lecture sur l'ordinateur pour un écran (dossier, routines…). Aucun ordinateur relié au compte :
+ * « aucun » (P-13), jamais « fermé ». Ordinateur fermé : « ferme » sans rien envoyer (P-6), avec la
+ * dernière réponse lue sur ce téléphone s'il y en a une (vue gardée, socle § 5.4). Relue quand il se
+ * rouvre, et par `relancer` (tirer vers le bas, Réessayer). `args` à null : rien à lire pour l'instant.
+ * `garder: false` : une lecture qui ne vaut que sur le moment (un aperçu calculé), jamais gardée.
  */
-export function useLecturePoste<T>(type: string, args: unknown | null, options: { delai?: number } = {}): LecturePoste<T> & { relancer: () => void } {
+export function useLecturePoste<T>(
+  type: string,
+  args: unknown | null,
+  options: { delai?: number; garder?: boolean } = {},
+): LecturePoste<T> & { relancer: () => void } {
   const demander = useDemandePoste();
-  const { etat: compte } = useCompte();
-  const { ouvert, charge } = usePostes();
+  const { etat: compte, moi } = useCompte();
+  const { postes, principal, ouvert, charge } = usePostes();
   const cle = args === null ? null : JSON.stringify(args);
+  const garder = options.garder ?? true;
+  const membre = compte === "connecte" && moi ? (moi._id as string) : null;
+  const vueDe = (poste: string | null | undefined) => (garder && membre && poste && cle !== null ? cleVue(membre, poste, type, cle) : null);
+  /* La vue se range sous le poste qui a répondu (le premier ouvert), relue sous le dernier vu (`principal`). */
+  const ouRanger = useRef<string | null>(null);
+  const rangement = vueDe(postes?.find((p) => p.ouvert)?.cle);
+  useEffect(() => {
+    ouRanger.current = rangement;
+  }, [rangement]);
+  const ferme = cle !== null && !charge && !ouvert && (postes?.length ?? 0) > 0;
+  const ouRelire = ferme ? vueDe(principal?.cle) : null;
+  const gardee = useMemo(() => (ouRelire ? lireVue<T>(ouRelire) : null), [ouRelire]);
   const [tour, setTour] = useState(0);
   /* La lecture vaut pour une demande (type, arguments, tour) : une autre demande repart de « attente ». */
   const demande = `${type}|${cle}|${tour}`;
@@ -115,6 +135,7 @@ export function useLecturePoste<T>(type: string, args: unknown | null, options: 
           ? { etat: "delai" }
           : { etat: "erreur", code: r.code, message: r.message };
       setLu({ demande, lecture });
+      if (r.ok && ouRanger.current) garderVue(ouRanger.current, r.data, Date.now());
     });
     return () => {
       actuelle = false;
@@ -123,7 +144,8 @@ export function useLecturePoste<T>(type: string, args: unknown | null, options: 
   }, [type, cle, compte, ouvert, charge, demande, demander, delai]);
 
   const relancer = useCallback(() => setTour((n) => n + 1), []);
-  if (cle !== null && !charge && !ouvert) return { etat: "ferme", relancer };
+  if (cle !== null && !charge && postes?.length === 0) return { etat: "aucun", relancer };
+  if (ferme) return { etat: "ferme", gardee, relancer };
   if (lu?.demande === demande) return { ...lu.lecture, relancer };
   return { etat: "attente", lent: false, relancer };
 }

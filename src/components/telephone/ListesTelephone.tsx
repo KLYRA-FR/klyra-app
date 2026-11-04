@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { majuscule, texteRoutines } from "@/lib/poste-texte";
 import { EnteteTelephone } from "./EnteteTelephone";
+import { EtatEcran } from "./etats";
 import { usePostes, useSupport } from "./poste";
 
 /**
@@ -27,15 +28,28 @@ export function PlusTelephone() {
   );
 }
 
-/** Un écran dont le contenu reste sur l'ordinateur : « Sur ton PC », « Sur ton Mac », jamais deviné. */
-export function EcranPoste({ titre, phrase }: { titre: string; phrase: (sur: string) => string }) {
+/**
+ * Un écran qui s'utilise sur l'ordinateur (P-8, S-29, C-3) : jamais une impasse, « ‹ » vers Plus. Il
+ * dit où le faire (« sur ton Mac », jamais deviné) et pourquoi.
+ */
+export function EcranPoste({
+  titre,
+  icone,
+  phrase,
+  raison,
+}: {
+  titre: string;
+  icone: IconName;
+  /** « Le Marketplace s'utilise sur ton Mac ». */
+  phrase: (sur: string) => string;
+  raison: string;
+}) {
   const sur = useSupport();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre={titre} />
-      <div className="px-4 pt-6">
-        <h2 className="text-body-s font-medium text-texte-principal">Sur {sur}</h2>
-        <p className="mt-2 text-ui text-texte-secondaire">{majuscule(phrase(sur))}</p>
+      <EnteteTelephone titre={titre} parent="/plus" pastille={false} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <EtatEcran icone={icone} titre={majuscule(phrase(sur))} texte={raison} />
       </div>
     </div>
   );
