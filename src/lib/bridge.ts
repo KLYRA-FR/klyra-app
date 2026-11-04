@@ -128,6 +128,8 @@ export interface FenetreUtilisation {
 export interface Utilisation {
   session: FenetreUtilisation | null;
   semaine: FenetreUtilisation | null;
+  /** Crédits du mois (Grok). */
+  mois?: FenetreUtilisation | null;
   statut: string;
   misAJour: number;
 }

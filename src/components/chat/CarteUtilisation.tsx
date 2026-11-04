@@ -8,19 +8,21 @@ import { useLieuActif } from "@/lib/lieux";
 import { pret, useMoteurs, type EtatMoteur } from "@/lib/moteurs";
 
 /**
- * Utilisation de l'abonnement d'un fournisseur (Claude, ChatGPT), en anneaux concentriques : dehors la
- * semaine, dedans la session de 5 h. L'arc montre ce qui reste. Le détail s'ouvre au survol, un clic
- * met à jour. Dans le rail, un bouton par fournisseur connecté du serveur affiché (`UtilisationRail`).
+ * Utilisation de l'abonnement d'un fournisseur (Claude, ChatGPT, Grok), en anneaux concentriques : dehors
+ * la semaine, dedans la session de 5 h ; Grok, un seul anneau, les crédits du mois. L'arc montre ce qui
+ * reste. Le détail s'ouvre au survol, un clic met à jour. Dans le rail, un bouton par fournisseur connecté
+ * du serveur affiché (`UtilisationRail`).
  */
 
 /** Les fournisseurs dont on sait lire les limites d'abonnement, par moteur (cf. electron/utilisation.ts). */
 const FOURNISSEURS = {
   claude: { nom: "Claude", programme: "Claude Code", fond: COULEUR_CLAUDE, logo: "/brand/claude-logo-blanc.svg" },
   codex: { nom: "ChatGPT", programme: "Codex", fond: "#FFFFFF", logo: "/brand/openai-logo-noir.svg" },
+  grok: { nom: "Grok", programme: "Grok Build", fond: "#FFFFFF", logo: "/logos/ia/grok.svg" },
 } as const;
 type IdFournisseur = keyof typeof FOURNISSEURS;
 
-/** Relire les limites d'un VPS ou de Codex ne consomme rien : au plus une fois par minute, au survol. */
+/** Relire les limites d'un VPS, de Codex ou de Grok ne consomme rien : au plus une fois par minute, au survol. */
 const RELECTURE_MS = 60_000;
 
 /**
@@ -34,7 +36,7 @@ function useUtilisation(moteur: IdFournisseur, lieu: string | null) {
   const [enCours, setEnCours] = useState(false);
   const lueLe = useRef(0);
   /* Relire ne coûte rien, sauf Claude Code sur ce PC (une requête au modèle). */
-  const gratuit = moteur === "codex" || lieu !== null;
+  const gratuit = moteur !== "claude" || lieu !== null;
 
   const lire = useCallback(
     async (actualiser: boolean) => {
@@ -82,13 +84,16 @@ function avantRemise(ms: number | null, maintenant: number): string | null {
   return `${Math.floor(h / 24)} j ${h % 24} h`;
 }
 
-/** Les deux anneaux. `sombre` : posés sur le rail noir. */
+/** Les deux anneaux (Grok : un seul, le mois). `sombre` : posés sur le rail noir. */
 function Anneaux({ moteur, utilisation, sombre, taille = 34 }: { moteur: IdFournisseur; utilisation: Utilisation | null; sombre: boolean; taille?: number }) {
   const { fond, logo } = FOURNISSEURS[moteur];
-  const anneaux = [
-    { f: utilisation?.semaine ?? null, r: 15.875 },
-    { f: utilisation?.session ?? null, r: 11.375 },
-  ];
+  const anneaux =
+    moteur === "grok"
+      ? [{ f: utilisation?.mois ?? null, r: 15.875 }]
+      : [
+          { f: utilisation?.semaine ?? null, r: 15.875 },
+          { f: utilisation?.session ?? null, r: 11.375 },
+        ];
   return (
     <svg viewBox="0 0 34 34" width={taille} height={taille} aria-hidden="true">
       {/* Les arcs partent de midi : seuls les anneaux tournent, pas le logo au centre. */}
@@ -126,8 +131,8 @@ function Anneaux({ moteur, utilisation, sombre, taille = 34 }: { moteur: IdFourn
         );
       })}
       </g>
-      {/* Au centre, le logo du fournisseur sur un rond de sa couleur (Claude : fichier officiel de l'extension Claude Code ; ChatGPT : public/logos/ia). */}
-      <circle cx="17" cy="17" r="8" fill={fond} className={!sombre && moteur === "codex" ? "stroke-bordure-subtile" : undefined} strokeWidth={0.75} />
+      {/* Au centre, le logo du fournisseur sur un rond de sa couleur (Claude : fichier officiel de l'extension Claude Code ; ChatGPT et Grok : public/logos/ia). */}
+      <circle cx="17" cy="17" r="8" fill={fond} className={!sombre && moteur !== "claude" ? "stroke-bordure-subtile" : undefined} strokeWidth={0.75} />
       <image href={logo} x="11.5" y="11.5" width="11" height="11" />
     </svg>
   );
@@ -151,7 +156,7 @@ function Detail({
 }) {
   const { nom, programme } = FOURNISSEURS[moteur];
   /* Claude Code sur un VPS : la dernière reçue d'une session, le clic ne la redemande pas. */
-  const relisible = lieu === null || moteur === "codex";
+  const relisible = lieu === null || moteur !== "claude";
   const [maintenant, setMaintenant] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setMaintenant(Date.now()), 30_000);
@@ -192,11 +197,13 @@ function Detail({
             ? "Lecture…"
             : moteur === "codex"
               ? "ChatGPT n’a pas encore donné ses limites (rien à lire avec une clé API). Clic pour réessayer."
-              : relisible
+              : moteur === "grok"
+                ? "Grok n’a pas encore donné ses crédits du mois. Clic pour réessayer."
+                : relisible
                 ? "Elle s’affiche à la première réponse d’un agent. Clic pour la lire maintenant."
                 : "Elle s’affiche à la première réponse d’un agent sur ce serveur."}
         </p>
-      ) : !utilisation.session && !utilisation.semaine ? (
+      ) : !utilisation.session && !utilisation.semaine && !utilisation.mois ? (
         <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
           {enCours ? "Lecture…" : `${programme} n’a pas encore donné le détail des limites.${relisible ? " Clic pour réessayer." : ""}`}
         </p>
@@ -204,11 +211,12 @@ function Detail({
         <>
           {utilisation.statut === "rejected" && (
             <p role="alert" className="m-0 text-ui-xs font-medium text-texte-erreur">
-              Limite atteinte : les agents reprennent à la remise à zéro.
+              {moteur === "grok" ? "Crédits du mois épuisés : les agents reprennent à la remise à zéro." : "Limite atteinte : les agents reprennent à la remise à zéro."}
             </p>
           )}
           {ligne("5 heures", utilisation.session)}
           {ligne("Semaine", utilisation.semaine)}
+          {ligne("Mois", utilisation.mois ?? null)}
           <span className="text-ui-3xs text-texte-tertiaire">
             {enCours ? "Mise à jour…" : relisible ? "Clic pour mettre à jour" : gratuit ? "Mise à jour à chaque réponse d’un agent" : null}
           </span>
@@ -245,7 +253,11 @@ function BoutonAnneaux({
   useEffect(() => () => clearTimeout(minuteur.current), []);
 
   const resume = utilisation
-    ? [utilisation.session && `5 h : ${reste(utilisation.session)} % restant`, utilisation.semaine && `semaine : ${reste(utilisation.semaine)} %`]
+    ? [
+        utilisation.session && `5 h : ${reste(utilisation.session)} % restant`,
+        utilisation.semaine && `semaine : ${reste(utilisation.semaine)} %`,
+        utilisation.mois && `mois : ${reste(utilisation.mois)} % des crédits restant`,
+      ]
         .filter(Boolean)
         .join(", ")
     : "pas encore lue";
@@ -292,14 +304,15 @@ function BoutonAnneaux({
 
 /**
  * Les fournisseurs du serveur affiché dont l'abonnement a des limites à montrer : Claude dès qu'il est
- * prêt, ChatGPT connecté par son compte (une clé API n'a pas de limites). Tant que rien n'est lu, ou que
- * rien n'est prêt, Claude seul, comme avant.
+ * prêt, ChatGPT connecté par son compte et Grok par son abonnement (une clé API n'a pas de limites).
+ * Tant que rien n'est lu, ou que rien n'est prêt, Claude seul, comme avant.
  */
 function fournisseursAffiches(moteurs: EtatMoteur[] | null): IdFournisseur[] {
   const prets = (moteurs ?? []).filter(pret);
   const liste: IdFournisseur[] = [];
   if (prets.some((m) => m.moteur.id === "claude")) liste.push("claude");
   if (prets.some((m) => m.moteur.id === "codex" && m.compte?.methode === "chatgpt")) liste.push("codex");
+  if (prets.some((m) => m.moteur.id === "grok" && m.compte?.methode === "grok.com")) liste.push("grok");
   return liste.length ? liste : ["claude"];
 }
 

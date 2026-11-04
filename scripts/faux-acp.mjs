@@ -141,6 +141,19 @@ if (process.argv[2] === "agent") process.stdin.on("data", (d) => {
       case "session/cancel":
         sessions.get(params.sessionId)?.annuler?.();
         break;
+      /* La facturation de l'abonnement, dans la forme de Grok Build 1.0.70 (`BillingConfigResponse`). FAUX_ACP_SANS_FACTURATION : une version qui ne la connaît pas. */
+      case "x.ai/billing":
+        if (process.env.FAUX_ACP_SANS_FACTURATION) ecrire({ id, error: { code: -32601, message: `Méthode inconnue : ${method}` } });
+        else
+          ecrire({
+            id,
+            result: {
+              config: { creditUsagePercent: 37.5, currentPeriod: { start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z" }, monthlyLimit: 300, onDemandCap: 0, onDemandUsed: 0, prepaidBalance: 0, isUnifiedBillingUser: true },
+              on_demand_enabled: false,
+              subscription_tier: "SuperGrok",
+            },
+          });
+        break;
       default:
         if (id !== undefined) ecrire({ id, error: { code: -32601, message: `Méthode inconnue : ${method}` } });
     }

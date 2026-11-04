@@ -1,8 +1,9 @@
 /**
- * L'utilisation de l'abonnement d'un fournisseur (Claude par Claude Code, ChatGPT par Codex), dans une
- * seule forme : une fenêtre de 5 h, une de 7 jours, et si la limite est atteinte. Module pur, sans
- * processus ni Electron : le PC (electron/claude.ts, electron/moteurs/codex.ts) et le VPS
- * (`serveur/utilisation.mjs`, généré par scripts/serveur-genere.mjs) lisent les mêmes événements avec lui.
+ * L'utilisation de l'abonnement d'un fournisseur (Claude par Claude Code, ChatGPT par Codex, Grok par
+ * Grok Build), dans une seule forme : une fenêtre de 5 h, une de 7 jours, les crédits du mois (Grok), et
+ * si la limite est atteinte. Module pur, sans processus ni Electron : le PC (electron/claude.ts,
+ * electron/moteurs/codex.ts, electron/moteurs/grok.ts) et le VPS (`serveur/utilisation.mjs`, généré par
+ * scripts/serveur-genere.mjs) lisent les mêmes réponses avec lui.
  * Jamais de chiffre estimé : une fenêtre que le fournisseur n'a pas donnée reste null.
  */
 
@@ -18,6 +19,8 @@ export interface Utilisation {
   session: FenetreUtilisation | null;
   /** Fenêtre de 7 jours. */
   semaine: FenetreUtilisation | null;
+  /** Crédits du mois (Grok : l'abonnement donne des crédits par période de facturation, pas de fenêtre 5 h ni semaine). */
+  mois?: FenetreUtilisation | null;
   /** « allowed », « allowed_warning » ou « rejected » (limite atteinte). */
   statut: string;
   misAJour: number;
@@ -98,4 +101,39 @@ export function lireUtilisationCodex(brut: unknown, precedente: Utilisation | nu
   const pleine = (f: FenetreUtilisation | null) => !!f && f.utilise >= 1 && (f.reinitialiseA === null || f.reinitialiseA > maintenant);
   const statut = atteinte || pleine(fusion.session) || pleine(fusion.semaine) ? "rejected" : "allowed";
   return { ...fusion, statut, misAJour: maintenant };
+}
+
+/* ─── Grok (SuperGrok, X Premium+) ─────────────────────────────── */
+
+/** Une date de Grok en millisecondes : texte ISO, ou nombre en secondes ou en millisecondes. */
+function dateGrok(brut: unknown): number | null {
+  if (typeof brut === "string" && brut.trim()) {
+    const ms = Date.parse(brut);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof brut === "number" && Number.isFinite(brut) && brut > 0) return brut < 1e12 ? brut * 1000 : brut;
+  return null;
+}
+
+/**
+ * Lit la réponse de `x.ai/billing` de Grok Build (`BillingConfigResponse` : `config`, `on_demand_enabled`,
+ * `subscription_tier`). L'abonnement donne des crédits par période de facturation : `config.creditUsagePercent`
+ * (part utilisée, de 0 à 100) et `config.currentPeriod.end` (remise à zéro) font la fenêtre du mois. Sans
+ * pourcentage lisible (connecté par une clé API, réponse d'une autre forme), rien n'est inventé : la
+ * précédente reste. La limite n'est atteinte que si le paiement à l'usage n'est pas activé : sinon les agents
+ * continuent, facturés à part.
+ */
+export function lireUtilisationGrok(brut: unknown, precedente: Utilisation | null, maintenant = Date.now()): Utilisation | null {
+  const reponse = brut as { config?: unknown; on_demand_enabled?: unknown; onDemandEnabled?: unknown } | null | undefined;
+  if (!reponse || typeof reponse !== "object") return precedente;
+  const config = (reponse.config && typeof reponse.config === "object" ? reponse.config : reponse) as {
+    creditUsagePercent?: unknown;
+    currentPeriod?: { end?: unknown } | null;
+  };
+  const pourcent = config.creditUsagePercent;
+  if (typeof pourcent !== "number" || !Number.isFinite(pourcent)) return precedente;
+  const mois: FenetreUtilisation = { utilise: Math.max(0, Math.min(1, pourcent / 100)), reinitialiseA: dateGrok(config.currentPeriod?.end) };
+  const aLUsage = reponse.on_demand_enabled === true || reponse.onDemandEnabled === true;
+  const pleine = mois.utilise >= 1 && (mois.reinitialiseA === null || mois.reinitialiseA > maintenant);
+  return { session: null, semaine: null, mois, statut: pleine && !aLUsage ? "rejected" : "allowed", misAJour: maintenant };
 }
