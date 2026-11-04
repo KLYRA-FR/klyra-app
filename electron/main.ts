@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
 import { consigneKlyra } from "./configuration-klyra";
 import { figerChoix } from "./skills-par-agent";
-import { lireReprise, migrerCopies } from "./preparation-fournisseur";
+import { importerSkills, lireReprise, migrerCopies } from "./preparation-fournisseur";
 import { dossierHorsProjet } from "./atelier";
 import {
   catalogueSkills,
@@ -1115,6 +1115,14 @@ function registerBridge() {
       ...catalogueSkills(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), projet),
       reprise: lireReprise(path.join(app.getPath("userData"), "reprise-equipe.json")),
     };
+  });
+  /* Dossier choisi par la personne. N'écrase pas la bibliothèque et n'écrit pas sur le poste. */
+  handle("reglages:skills-importer", async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const options = { properties: ["openDirectory" as const], title: "Importer des skills", buttonLabel: "Importer" };
+    const choix = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    if (choix.canceled || !choix.filePaths[0]) return null;
+    return importerSkills(choix.filePaths[0], path.join(app.getPath("userData"), "bibliotheque-skills"));
   });
   handle("reglages:diagnostic-poste:montrer", (chemin: string) => {
     // Seulement un chemin que le diagnostic vient de trouver.

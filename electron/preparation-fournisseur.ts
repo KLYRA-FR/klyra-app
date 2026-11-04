@@ -256,6 +256,90 @@ export function migrerCopies(opts: { fichesPoste: string; skillsPoste: string; f
   return { fiches, skills };
 }
 
+export interface ImportSkills {
+  ajoutees: string[];
+  dejaLa: string[];
+  ignorees: string[];
+}
+
+const triNoms = (noms: string[]) => [...noms].sort((a, b) => a.localeCompare(b, "fr"));
+
+/**
+ * Copie dans la bibliothèque de l'app les skills d'un dossier choisi.
+ * Si ce dossier contient `SKILL.md`, c'est une skill. Sinon, ce sont ses sous-dossiers.
+ * Un nom ou un dossier déjà présent n'est pas écrasé. Rien n'est supprimé, ni à la source, ni dans la bibliothèque.
+ * Un lien n'est pas pris comme dossier de skill.
+ */
+export function importerSkills(source: string, dest: string): ImportSkills {
+  const ajoutees: string[] = [];
+  const dejaLa: string[] = [];
+  const ignorees: string[] = [];
+  const racine = path.resolve(source);
+  let info: ReturnType<typeof lstatSync>;
+  try {
+    info = lstatSync(racine);
+  } catch {
+    return { ajoutees, dejaLa, ignorees: [path.basename(racine) || racine] };
+  }
+  if (!info.isDirectory() || info.isSymbolicLink()) return { ajoutees, dejaLa, ignorees: [path.basename(racine) || racine] };
+
+  const garder: SkillSource[] = [];
+  const enfants = listerSkills(racine);
+  if (enfants.length) {
+    garder.push(...enfants);
+  } else {
+    const fiche = path.join(racine, "SKILL.md");
+    try {
+      const fichier = lstatSync(fiche);
+      if (fichier.isFile() && !fichier.isSymbolicLink()) {
+        const base = path.basename(racine);
+        if (!NOM_DOSSIER.test(base)) ignorees.push(base);
+        else garder.push({ nom: nomSkill(readFileSync(fiche, "utf8"), racine), source: racine });
+      }
+    } catch {
+      /* ce dossier n'est pas une skill */
+    }
+  }
+
+  const bibliotheque = path.resolve(dest);
+  mkdirSync(bibliotheque, { recursive: true });
+  const presentes = listerSkills(bibliotheque);
+  const noms = new Set(presentes.map((s) => s.nom));
+  const dossiers = new Set(presentes.map((s) => path.basename(s.source)));
+  for (const skill of garder) {
+    const base = path.basename(skill.source);
+    const cible = path.join(bibliotheque, base);
+    if (!NOM_DOSSIER.test(base) || !dans(bibliotheque, cible)) {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    if (path.resolve(skill.source) === path.resolve(cible) || existsSync(cible) || noms.has(skill.nom) || dossiers.has(base)) {
+      dejaLa.push(skill.nom);
+      continue;
+    }
+    if (dans(skill.source, cible)) {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    let st: ReturnType<typeof lstatSync>;
+    try {
+      st = lstatSync(skill.source);
+    } catch {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    if (st.isSymbolicLink() || !st.isDirectory()) {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    cpSync(skill.source, cible, { recursive: true, dereference: true });
+    ajoutees.push(skill.nom);
+    noms.add(skill.nom);
+    dossiers.add(base);
+  }
+  return { ajoutees: triNoms(ajoutees), dejaLa: triNoms(dejaLa), ignorees: triNoms(ignorees) };
+}
+
 /** Le compte rendu déjà écrit, ou null. */
 export function lireReprise(fichier: string): RepriseEquipe | null {
   try {

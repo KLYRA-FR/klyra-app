@@ -197,7 +197,7 @@ export function VueCompetences({
             <Note>
               {surServeur
                 ? "Aucune compétence sur le serveur pour l’instant. Une skill de Claude Code rangée dans le dossier .claude/skills de l’utilisateur klyra du VPS apparaîtra ici."
-                : "Aucune compétence dans l’app pour l’instant. Celles de .claude/skills sont reprises au premier lancement. Une skill ajoutée ensuite dans ce dossier n’apparaît pas ici."}
+                : "Aucune compétence dans l’app pour l’instant. Celles de .claude/skills sont reprises au premier lancement. Une skill ajoutée ensuite dans ce dossier n’apparaît pas ici : elle s’importe depuis Réglages › Agents."}
             </Note>
           )}
           {surServeur && attribuer && (

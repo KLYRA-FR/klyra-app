@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { nomsSkills } from "./connaissances-agent.ts";
 import { diagnostiquerPoste } from "./diagnostic-poste.ts";
-import { listerSkills, migrerCopies, preparerClaude, preparerSessionClaude } from "./preparation-fournisseur.ts";
+import { importerSkills, listerSkills, migrerCopies, preparerClaude, preparerSessionClaude } from "./preparation-fournisseur.ts";
 
 function posteVide() {
   const racine = mkdtempSync(path.join(tmpdir(), "klyra-prep-"));
@@ -154,6 +154,47 @@ test("la reprise copie sans écraser et sans toucher au poste", () => {
     mkdirSync(vide);
     migrerCopies({ fichesPoste: vide, skillsPoste: vide, fichesDest: path.join(racine, "fiches-vides"), skillsDest: destVide });
     assert.equal(existsSync(destVide), true);
+  } finally {
+    rmSync(racine, { recursive: true, force: true });
+  }
+});
+
+test("un dossier choisi est copié dans la bibliothèque sans écraser et sans toucher la source", () => {
+  const racine = mkdtempSync(path.join(tmpdir(), "klyra-import-"));
+  try {
+    const source = path.join(racine, "apport");
+    const dest = path.join(racine, "bibliotheque-skills");
+    mkdirSync(path.join(source, "facture"), { recursive: true });
+    mkdirSync(path.join(source, "vide"), { recursive: true });
+    mkdirSync(path.join(dest, "facture"), { recursive: true });
+    writeFileSync(path.join(source, "facture", "SKILL.md"), "---\nname: facture\n---\n\nSOURCE\n");
+    writeFileSync(path.join(source, "note.txt"), "pas une skill\n");
+    writeFileSync(path.join(dest, "facture", "SKILL.md"), "---\nname: facture\n---\n\nDEJA\n");
+    mkdirSync(path.join(source, "relance"), { recursive: true });
+    writeFileSync(path.join(source, "relance", "SKILL.md"), "---\nname: relance\n---\n\nRELANCE\n");
+    symlinkSync(path.join(source, "relance"), path.join(source, "lien-relance"));
+    const une = importerSkills(source, dest);
+    assert.deepEqual(une.ajoutees, ["relance"]);
+    assert.deepEqual(une.dejaLa, ["facture"]);
+    assert.equal(readFileSync(path.join(dest, "relance", "SKILL.md"), "utf8").includes("RELANCE"), true);
+    assert.equal(readFileSync(path.join(dest, "facture", "SKILL.md"), "utf8").includes("DEJA"), true);
+    assert.equal(readFileSync(path.join(source, "facture", "SKILL.md"), "utf8").includes("SOURCE"), true);
+    assert.equal(existsSync(path.join(dest, "lien-relance")), false);
+    assert.equal(existsSync(path.join(dest, "vide")), false);
+    assert.equal(existsSync(path.join(dest, "note.txt")), false);
+    const deux = importerSkills(source, dest);
+    assert.deepEqual(deux.ajoutees, []);
+    assert.deepEqual(deux.dejaLa, ["facture", "relance"]);
+    const seule = path.join(racine, "seule");
+    mkdirSync(seule);
+    writeFileSync(path.join(seule, "SKILL.md"), "---\nname: seule\n---\n\nSEULE\n");
+    assert.deepEqual(importerSkills(seule, dest).ajoutees, ["seule"]);
+    assert.equal(readFileSync(path.join(dest, "seule", "SKILL.md"), "utf8").includes("SEULE"), true);
+    assert.equal(readFileSync(path.join(seule, "SKILL.md"), "utf8").includes("SEULE"), true);
+    const avant = readFileSync(path.join(dest, "relance", "SKILL.md"), "utf8");
+    importerSkills(dest, dest);
+    assert.equal(readFileSync(path.join(dest, "relance", "SKILL.md"), "utf8"), avant);
+    assert.deepEqual(importerSkills(path.join(racine, "absent"), dest).ignorees, ["absent"]);
   } finally {
     rmSync(racine, { recursive: true, force: true });
   }
