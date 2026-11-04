@@ -1,18 +1,13 @@
 # Jetons GitHub des agents
 
-Quand un projet de l'app passe par le circuit des Issues, ses agents n'utilisent pas le compte de la personne : ils demandent un jeton d'une heure, limité au dépôt de ce projet. Cela vaut pour tout projet relié à GitHub, pas seulement pour klyra-app.
+Quand un projet de KLYRA-FR passe par le circuit des Issues, ses agents n'utilisent pas le compte de la personne : ils demandent un jeton d'une heure, limité au dépôt de ce projet. Cela vaut pour tout projet de l'organisation, pas seulement pour klyra-app.
 
 | App | Rôle | App ID | Code |
 |---|---|---|---|
 | `klyra-agents` | Exécuter : code, Issues, PR | 5618456 | Écriture |
 | `klyra-reviewer` | Relire : Issues, PR | 5618483 | Lecture |
 
-Aucune n'a `administration`, `workflows` ni `secrets`. Deux conditions pour qu'un jeton soit émis :
-
-1. L'App est installée sur le compte qui possède le dépôt.
-2. `accesDepots` accorde ce dépôt à la personne.
-
-**La limite vient donc du code** : quelle que soit l'installation, chaque jeton ne vaut que pour un dépôt.
+Aucune n'a `administration`, `workflows` ni `secrets`. Les Apps sont installées sur tous les dépôts de KLYRA-FR : un nouveau projet de l'organisation est joignable sans rien réinstaller. **La limite vient du code** : chaque jeton ne vaut que pour un dépôt, et seulement si `accesDepots` l'accorde à la personne.
 
 ## Poser les clés
 
@@ -43,7 +38,7 @@ npx convex run --prod jetonsDepot:retirer '{"email":"prenom@klyra.design","depot
 
 | Refus | Sens |
 |---|---|
-| `depot_invalide` | Pas un nom de dépôt GitHub |
+| `depot_invalide` | Pas un dépôt de KLYRA-FR |
 | `depot_non_autorise` | Accès non accordé à cette personne |
 | `jetons_non_configures` | Clé absente, invalide, ou refusée par GitHub |
 | `app_non_installee` | L'App n'a pas accès à ce dépôt |

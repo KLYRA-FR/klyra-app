@@ -1,11 +1,10 @@
 import { v } from "convex/values";
 
 /**
- * Les jetons GitHub des agents, pour tout projet de l'app relié à GitHub (`docs/JETONS-GITHUB.md`) :
- * deux GitHub Apps, un rôle pour chacune, car GitHub refuse qu'un auteur approuve sa propre PR. Module
- * pur. Les identifiants d'App ne sont pas des secrets ; les clés privées sont dans l'env Convex. Ce
- * qu'une App peut atteindre dépend de ses installations : la limite par personne et par dépôt est
- * `accesDepots`.
+ * Les jetons GitHub des agents, pour tout projet de KLYRA-FR (`docs/JETONS-GITHUB.md`) : deux GitHub
+ * Apps, un rôle pour chacune, car GitHub refuse qu'un auteur approuve sa propre PR. Module pur. Les
+ * identifiants d'App ne sont pas des secrets ; les clés privées sont dans l'env Convex. Les Apps sont
+ * installées sur tous les dépôts de l'organisation : la limite par personne et par dépôt est `accesDepots`.
  */
 export type RoleDepot = "agents" | "reviewer";
 
@@ -28,17 +27,18 @@ export const APPS_DEPOT: Record<
   },
 };
 
+const PROPRIETAIRE = "klyra-fr";
 const DEPOT = /^([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\/([a-z0-9._-]{1,100})$/;
 
 /** Un jeton vaut une heure : trente demandes par heure laissent une large marge à une équipe d'agents. */
 export const JETONS_PAR_HEURE = 30;
 export const HEURE_MS = 3_600_000;
 
-/** `proprietaire/nom`, en minuscules, ou null si ce n'est pas un nom de dépôt GitHub. */
+/** `klyra-fr/nom`, en minuscules, ou null : seuls les dépôts de l'organisation sont acceptés. */
 export function normaliserDepot(depot: string): { complet: string; proprietaire: string; nom: string } | null {
   const complet = depot.trim().toLowerCase();
   const lu = DEPOT.exec(complet);
-  if (lu === null || lu[2] === "." || lu[2] === "..") return null;
+  if (lu === null || lu[1] !== PROPRIETAIRE || lu[2] === "." || lu[2] === "..") return null;
   return { complet, proprietaire: lu[1], nom: lu[2] };
 }
 

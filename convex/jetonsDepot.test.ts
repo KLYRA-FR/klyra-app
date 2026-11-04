@@ -57,10 +57,10 @@ afterEach(() => {
 });
 
 describe("les règles pures", () => {
-  test("un dépôt se lit propriétaire/nom, sur n'importe quel compte", () => {
+  test("seuls les dépôts de KLYRA-FR sont acceptés, quel que soit le projet", () => {
     expect(normaliserDepot(" KLYRA-FR/Klyra-App ")?.complet).toBe("klyra-fr/klyra-app");
-    expect(normaliserDepot("CorentinQueuche/plateau")).toEqual({ complet: "corentinqueuche/plateau", proprietaire: "corentinqueuche", nom: "plateau" });
-    for (const d of ["klyra-fr", "klyra-fr/", "klyra-fr/a/b", "klyra-fr/..", "klyra-fr/a b", "../klyra-fr/a", "-a/b", "a-/b", "a/b?x=1"]) {
+    expect(normaliserDepot("KLYRA-FR/projet-client")).toEqual({ complet: "klyra-fr/projet-client", proprietaire: "klyra-fr", nom: "projet-client" });
+    for (const d of ["CorentinQueuche/plateau", "klyra-fr", "klyra-fr/", "klyra-fr/a/b", "klyra-fr/..", "klyra-fr/a b", "../klyra-fr/a", "klyra-fr/a?x=1"]) {
       expect(normaliserDepot(d)).toBeNull();
     }
   });
@@ -133,22 +133,27 @@ describe("demander un jeton", () => {
     const sansAcces = await connecter(t, PEL);
     await expect(sansAcces.action(api.jetonsDepotEnvoi.demander, { depot: DEPOT, role: "agents" })).rejects.toSatisfy(refuse("depot_non_autorise"));
     await expect(avecAcces.action(api.jetonsDepotEnvoi.demander, { depot: "KLYRA-FR/klyra-app-versions", role: "agents" })).rejects.toSatisfy(refuse("depot_non_autorise"));
-    await expect(avecAcces.action(api.jetonsDepotEnvoi.demander, { depot: "CorentinQueuche/plateau", role: "agents" })).rejects.toSatisfy(refuse("depot_non_autorise"));
-    await expect(avecAcces.action(api.jetonsDepotEnvoi.demander, { depot: "pas un dépôt", role: "agents" })).rejects.toSatisfy(refuse("depot_invalide"));
+    await expect(avecAcces.action(api.jetonsDepotEnvoi.demander, { depot: "CorentinQueuche/plateau", role: "agents" })).rejects.toSatisfy(refuse("depot_invalide"));
 
     expect(appels).toEqual([]);
   });
 
-  test("un dépôt d'un autre compte marche dès que l'accès est accordé, pour ce seul dépôt", async () => {
+  test("un autre projet de KLYRA-FR marche dès que l'accès est accordé, pour ce seul dépôt", async () => {
     const t = nouvelEssai();
     const client = await equipe(t);
-    await t.mutation(internal.jetonsDepot.accorder, { email: COR, depot: "CorentinQueuche/plateau" });
+    await t.mutation(internal.jetonsDepot.accorder, { email: COR, depot: "KLYRA-FR/projet-client" });
     const appels = simulerGithub();
 
-    await client.action(api.jetonsDepotEnvoi.demander, { depot: "CorentinQueuche/plateau", role: "agents" });
+    await client.action(api.jetonsDepotEnvoi.demander, { depot: "KLYRA-FR/projet-client", role: "agents" });
 
-    expect(appels[0].url).toBe("https://api.github.com/repos/corentinqueuche/plateau/installation");
-    expect(appels[1].corps?.repositories).toEqual(["plateau"]);
+    expect(appels[0].url).toBe("https://api.github.com/repos/klyra-fr/projet-client/installation");
+    expect(appels[1].corps?.repositories).toEqual(["projet-client"]);
+  });
+
+  test("accorder un dépôt hors de KLYRA-FR est refusé", async () => {
+    const t = nouvelEssai();
+    await equipe(t);
+    await expect(t.mutation(internal.jetonsDepot.accorder, { email: COR, depot: "CorentinQueuche/plateau" })).rejects.toSatisfy(refuse("depot_invalide"));
   });
 
   test("un accès retiré ne donne plus de jeton, et chacun ne voit que ses dépôts", async () => {

@@ -379,7 +379,7 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_endpoint", ["endpoint"]),
 
-  /** Qui peut demander un jeton GitHub, pour quel dépôt (`proprietaire/nom` en minuscules). Cf. `jetonsDepot.ts`. */
+  /** Qui peut demander un jeton GitHub, pour quel dépôt (`klyra-fr/nom` en minuscules). Cf. `jetonsDepot.ts`. */
   accesDepots: defineTable({
     membreId: v.id("membres"),
     depot: v.string(),

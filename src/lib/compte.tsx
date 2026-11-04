@@ -153,7 +153,7 @@ export function formaterAttente(ms: number): string {
 const MESSAGES: Record<string, string> = {
   non_connecte: "Ta session a pris fin : reconnecte-toi.",
   reserve_aux_admins: "Réservé aux admins de l’équipe.",
-  depot_invalide: "Ce nom de dépôt GitHub n’est pas valable.",
+  depot_invalide: "Ce dépôt n’est pas un dépôt de KLYRA-FR.",
   depot_non_autorise: "Tu n’as pas accès à ce dépôt pour les agents.",
   jetons_non_configures: "Les clés GitHub des agents ne sont pas posées sur le compte d’équipe, ou GitHub les refuse.",
   app_non_installee: "L’App GitHub des agents n’est pas installée sur ce dépôt.",
