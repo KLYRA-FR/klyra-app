@@ -122,9 +122,9 @@ export default defineSchema({
     taille: v.number(),
     /** Empreinte du fichier, donnée par le stockage. */
     empreinte: v.string(),
-    /** 1 au premier partage, +1 quand le même original est partagé à nouveau dans le même espace. */
+    /** 1 au premier partage, +1 quand le même auteur repartage le même original dans le même espace. */
     version: v.number(),
-    /** Clé de remplacement, avec `lieu`. Une seule ligne active par espace : le dernier partage en est l'auteur. */
+    /** Clé de remplacement avec l'auteur et `lieu`. Deux membres peuvent avoir la même origine. */
     origine: v.string(),
     /** null : Ce PC. Sinon l'adresse du VPS. Jamais recopié d'un espace à l'autre. */
     lieu: v.union(v.string(), v.null()),
@@ -133,7 +133,7 @@ export default defineSchema({
     retireLe: v.union(v.number(), v.null()),
   })
     .index("by_lieu_and_retireLe_and_majLe", ["lieu", "retireLe", "majLe"])
-    .index("by_lieu_and_origine_and_retireLe", ["lieu", "origine", "retireLe"])
+    .index("by_auteurId_and_lieu_and_origine", ["auteurId", "lieu", "origine"])
     .index("by_retireLe_and_majLe", ["retireLe", "majLe"]),
 
   /**

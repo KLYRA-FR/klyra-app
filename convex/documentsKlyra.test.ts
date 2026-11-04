@@ -123,16 +123,32 @@ describe("documents KLYRA", () => {
 
     const trois = await deposer(t, "<p>bruno</p>");
     const pris = await partager(t, b, trois, PC, origine);
-    expect(pris).toBe(id);
-    const pourBruno = (await b.query(api.documentsKlyra.lister, { lieu: PC })).documents;
-    expect(pourBruno).toHaveLength(1);
-    expect(pourBruno[0]).toMatchObject({ _id: id, deMoi: true, version: 3, origine, auteur: { nom: "Bruno" } });
+    expect(pris).not.toBe(id);
     const pourAlice = (await a.query(api.documentsKlyra.lister, { lieu: PC })).documents;
-    expect(pourAlice).toHaveLength(1);
-    expect(pourAlice[0]).toMatchObject({ _id: id, deMoi: false, origine: null, auteur: { nom: "Bruno" } });
-    await expect(a.mutation(api.documentsKlyra.reprendre, { documentId: id, lieu: PC })).rejects.toThrow(/reserve_a_l_auteur/);
-    expect(await existe(t, second)).toBe(false);
-    expect((await b.query(api.documentsKlyra.espace, {})).nombre).toBe(1);
+    expect(pourAlice).toHaveLength(2);
+    expect(pourAlice.find((doc) => doc._id === id)).toMatchObject({
+      deMoi: true,
+      version: 2,
+      origine,
+      auteur: { nom: "Alice" },
+    });
+    expect(pourAlice.find((doc) => doc._id === pris)).toMatchObject({
+      deMoi: false,
+      origine: null,
+      auteur: { nom: "Bruno" },
+    });
+    const pourBruno = (await b.query(api.documentsKlyra.lister, { lieu: PC })).documents;
+    expect(pourBruno.find((doc) => doc._id === pris)).toMatchObject({
+      deMoi: true,
+      version: 1,
+      origine,
+      auteur: { nom: "Bruno" },
+    });
+    await expect(b.mutation(api.documentsKlyra.reprendre, { documentId: id, lieu: PC })).rejects.toThrow(/reserve_a_l_auteur/);
+    await expect(a.mutation(api.documentsKlyra.reprendre, { documentId: pris, lieu: PC })).rejects.toThrow(/reserve_a_l_auteur/);
+    expect(await existe(t, second)).toBe(true);
+    expect(await existe(t, trois)).toBe(true);
+    expect((await a.query(api.documentsKlyra.espace, {})).nombre).toBe(2);
   });
 
   test("repartager le même original remplace le fichier, sans toucher l'autre espace", async () => {
