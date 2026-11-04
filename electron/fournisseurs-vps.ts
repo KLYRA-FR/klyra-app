@@ -1,6 +1,7 @@
 import { net, shell } from "electron";
 import { createServer } from "node:http";
 import type { CompteMoteur, ModeleMoteur, Progression } from "./moteurs/types";
+import type { Utilisation } from "./utilisation";
 
 /**
  * Les fournisseurs d'un VPS relié (serveur/moteurs.mjs et serveur/ia.mjs), pour Réglages du serveur ›
@@ -70,6 +71,15 @@ export async function compteVps(origine: string, jeton: string | null, id: strin
 
 export async function modelesVps(origine: string, jeton: string | null, id: string): Promise<ModeleMoteur[]> {
   return (await appel(origine, jeton, `/klyra/v1/moteurs/${idValide(id)}/modeles`)).modeles as ModeleMoteur[];
+}
+
+/**
+ * Les limites de l'abonnement d'un moteur du VPS (serveur/utilisation.mjs) ; null si le VPS ne les connaît pas.
+ * `actualiser` : le VPS les relit (Codex : lecture du compte ; Claude Code : la dernière reçue, sans requête).
+ */
+export async function utilisationVps(origine: string, jeton: string | null, id: string, actualiser: boolean): Promise<Utilisation | null> {
+  const json = await appel(origine, jeton, `/klyra/v1/moteurs/${idValide(id)}/utilisation${actualiser ? "?actualiser=1" : ""}`);
+  return (json.utilisation as Utilisation | null) ?? null;
 }
 
 export async function versionDisponibleVps(origine: string, jeton: string | null, id: string): Promise<string | null> {

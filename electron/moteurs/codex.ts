@@ -15,6 +15,7 @@ import { configMcp } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
 import { binaireGere, commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation";
+import { lireUtilisationCodex, type Utilisation } from "../utilisation";
 import type { AgentEvent, CompteMoteur, Decision, ModeleMoteur, Moteur, Progression, StreamOptions } from "./types";
 
 /**
@@ -242,6 +243,8 @@ class ServeurCodex {
         this.finir(r);
       }
     }
+    // Les limites de l'abonnement ChatGPT, envoyées par Codex pendant le travail des agents (n'importe quel processus).
+    if (method === "account/rateLimits/updated") noterUtilisation(params);
     for (const ecouteur of this.ecouteurs) ecouteur(method, params);
   }
 
@@ -406,6 +409,37 @@ function autoriser(requestId: string, demandeId: string, decision: Decision): bo
   return true;
 }
 
+/* ─── Utilisation de l'abonnement ChatGPT ──────────────────────── */
+
+let derniereUtilisation: Utilisation | null = null;
+const abonnesUtilisation = new Set<(u: Utilisation) => void>();
+
+function noterUtilisation(brut: unknown): void {
+  const u = lireUtilisationCodex(brut, derniereUtilisation);
+  if (!u || u === derniereUtilisation) return;
+  derniereUtilisation = u;
+  abonnesUtilisation.forEach((cb) => cb(u));
+}
+
+/** La dernière connue ; `actualiser` : la relit dans le compte (`account/rateLimits/read`, ne consomme rien). */
+async function utilisation(actualiser: boolean): Promise<Utilisation | null> {
+  if (!actualiser && derniereUtilisation) return derniereUtilisation;
+  const bin = trouverCodex();
+  if (!bin) return derniereUtilisation;
+  await processusCompte.demarrer(bin);
+  try {
+    noterUtilisation(await processusCompte.requete("account/rateLimits/read", { excludeResetCreditDetails: true }));
+  } catch {
+    /* Connecté par une clé API (facturation à l'usage) : pas de limites à lire. */
+  }
+  return derniereUtilisation;
+}
+
+function surUtilisation(callback: (u: Utilisation) => void): () => void {
+  abonnesUtilisation.add(callback);
+  return () => abonnesUtilisation.delete(callback);
+}
+
 /* ─── Compte et modèles ────────────────────────────────────────── */
 
 type Compte = { type: string; email?: string | null; planType?: string | null } | null;
@@ -465,6 +499,8 @@ async function deconnecter(): Promise<CompteMoteur> {
   if (!bin) return compte();
   await processusCompte.demarrer(bin);
   await processusCompte.requete("account/logout", {});
+  // Les limites étaient celles de ce compte.
+  derniereUtilisation = null;
   return compte();
 }
 
@@ -521,5 +557,7 @@ export const codex: Moteur = {
   lancer,
   arreter,
   autoriser,
+  utilisation,
+  surUtilisation,
   fermer: fermerCodex,
 };

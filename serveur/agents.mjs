@@ -35,6 +35,7 @@ import {
 import { ecrireBibliotheque, normaliserSkillsRecues, preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
+import { lireUtilisation } from "./utilisation.mjs";
 import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
@@ -417,6 +418,8 @@ export function creerAgents(options) {
   const processus = new Map();
   const parRequete = new Map();
   const demandes = new Map();
+  /** La dernière utilisation de l'abonnement Claude reçue d'une session (null : aucune encore). */
+  let utilisationClaude = null;
 
   const vivant = (proc) => proc.child.exitCode === null && proc.child.signalCode === null && !proc.child.stdin?.writableEnded;
   const ecrire = (proc, message) => proc.child.stdin?.write(`${JSON.stringify(message)}\n`);
@@ -497,6 +500,11 @@ export function creerAgents(options) {
       proc.sessionId = msg.session_id;
       processus.set(msg.session_id, proc);
       courant?.emit({ type: "session", sessionId: msg.session_id });
+      return;
+    }
+    /* Les limites de l'abonnement Claude de ce VPS (anneaux du rail de l'app), comme dans electron/claude.ts. */
+    if (msg.type === "rate_limit_event") {
+      utilisationClaude = lireUtilisation(msg.rate_limit_info, utilisationClaude) ?? utilisationClaude;
       return;
     }
     if (msg.type === "system" && msg.subtype === "thinking_tokens" && typeof msg.estimated_tokens_delta === "number") {
@@ -819,6 +827,7 @@ export function creerAgents(options) {
     etat,
     methode: () => (jetonClaude() ? "jeton" : "claude.ai"),
     env: environnement,
+    utilisation: () => utilisationClaude,
   };
 
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */

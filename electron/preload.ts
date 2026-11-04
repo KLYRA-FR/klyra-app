@@ -55,6 +55,12 @@ contextBridge.exposeInMainWorld("klyra", {
     versionDisponible: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:version-disponible", id, lieu ?? null),
     installer: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:installer", id, lieu ?? null),
     mettreAJour: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:mettre-a-jour", id, lieu ?? null),
+    utilisation: (id: string, lieu?: string | null, actualiser?: boolean) => ipcRenderer.invoke("moteurs:utilisation", id, lieu ?? null, actualiser === true),
+    onUtilisation: (callback: (id: string, u: unknown) => void) => {
+      const listener = (_e: unknown, id: string, u: unknown) => callback(id, u);
+      ipcRenderer.on("moteurs:utilisation", listener);
+      return () => ipcRenderer.removeListener("moteurs:utilisation", listener);
+    },
     onProgression: (callback: (id: string, p: unknown, lieu: string | null) => void) => {
       const listener = (_e: unknown, id: string, p: unknown, lieu: string | null) => callback(id, p, lieu ?? null);
       ipcRenderer.on("moteurs:progression", listener);

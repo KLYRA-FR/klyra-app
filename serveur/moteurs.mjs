@@ -9,7 +9,7 @@
 import { commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation.mjs";
 
 /**
- * @param {{ home: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string> },
+ * @param {{ home: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string>, utilisation?: () => object | null },
  *   codex: ReturnType<typeof import("./codex.mjs").creerCodex> }} options
  */
 export function creerMoteurs(options) {
@@ -60,6 +60,8 @@ export function creerMoteurs(options) {
   }
 
   const modeles = (id) => (connu(id).id === "codex" ? codex.modeles() : Promise.resolve([]));
+  /** Les limites de l'abonnement : Codex les relit dans le compte ; Claude Code, la dernière reçue d'une session (sans requête). */
+  const utilisation = async (id, actualiser) => (connu(id).id === "codex" ? codex.utilisation(actualiser === true) : (claude.utilisation?.() ?? null));
   const versionDisponible = (id) => derniereVersionNpm(connu(id).paquet);
 
   /** Lance l'installation (Codex) ou la mise à jour ; un seul travail à la fois par moteur. */
@@ -119,5 +121,5 @@ export function creerMoteurs(options) {
     return codex.deconnecter();
   };
 
-  return { liste, compte, modeles, versionDisponible, lancerTravail, connecter, relayerRetour, etatConnexion: codex.etatConnexion, connecterAvecCle, deconnecter };
+  return { liste, compte, modeles, utilisation, versionDisponible, lancerTravail, connecter, relayerRetour, etatConnexion: codex.etatConnexion, connecterAvecCle, deconnecter };
 }

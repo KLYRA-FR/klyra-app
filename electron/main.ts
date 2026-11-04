@@ -182,6 +182,7 @@ import {
   retirerIaVps,
   testerIaVps,
   travailVps,
+  utilisationVps,
   versionDisponibleVps,
 } from "./fournisseurs-vps";
 import { competencesVps, creerSouvenirVps, diagnosticVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
@@ -677,6 +678,18 @@ function registerBridge() {
     const origine = vps(lieu);
     return origine ? modelesVps(origine, jetonServeur(origine), id) : (moteurConnu(id).modeles?.() ?? []);
   });
+  /* Les limites de l'abonnement de chaque moteur (anneaux du rail) : la dernière connue, ou relue (`actualiser`).
+     Celles de ce PC arrivent aussi d'elles-mêmes sur `moteurs:utilisation` pendant le travail des agents. */
+  handle("moteurs:utilisation", (id: string, lieu?: string | null, actualiser?: unknown) => {
+    const origine = vps(lieu);
+    if (origine) return utilisationVps(origine, jetonServeur(origine), id, actualiser === true);
+    return moteurConnu(id).utilisation?.(actualiser === true) ?? null;
+  });
+  for (const m of moteurs.liste()) {
+    m.surUtilisation?.((u) => {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("moteurs:utilisation", m.id, u);
+    });
+  }
   handle("moteurs:version-disponible", (id: string, lieu?: string | null) => {
     const origine = vps(lieu);
     return origine ? versionDisponibleVps(origine, jetonServeur(origine), id) : (moteurConnu(id).versionDisponible?.() ?? null);

@@ -4,6 +4,8 @@
  * son flux en `AgentEvent` : l'interface des conversations ne connaît que lui.
  */
 
+import type { Utilisation } from "../utilisation";
+
 /** Les moteurs que l'app sait lancer : Claude Code, et Codex pour ChatGPT. */
 export type IdMoteur = "claude" | "codex";
 
@@ -131,6 +133,13 @@ export interface Moteur {
   arreter(requestId: string): void;
   /** Transmet ta réponse à une demande d'autorisation ; false si elle n'est pas à ce moteur. */
   autoriser(requestId: string, demandeId: string, decision: Decision): boolean;
+  /**
+   * Les limites de l'abonnement (5 h, semaine), telles que le moteur les donne ; null si on ne les connaît pas.
+   * `actualiser` : les redemander (Claude Code : une toute petite requête, qui compte un peu ; Codex : une lecture, gratuite).
+   */
+  utilisation?(actualiser: boolean): Promise<Utilisation | null>;
+  /** Prévient à chaque nouvelle utilisation reçue pendant le travail des agents. */
+  surUtilisation?(callback: (u: Utilisation) => void): () => void;
   /** Arrête ce que le moteur garde ouvert, quand l'app se ferme. */
   fermer?(): void;
 }

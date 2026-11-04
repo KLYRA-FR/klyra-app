@@ -118,7 +118,7 @@ export type AgentEvent =
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean };
 
-/** Utilisation de l'abonnement Claude (cf. electron/claude.ts). */
+/** Utilisation d'un abonnement (Claude, ChatGPT), cf. electron/utilisation.ts. */
 export interface FenetreUtilisation {
   /** Part utilisée, de 0 à 1. */
   utilise: number;
@@ -353,6 +353,10 @@ export interface KlyraBridge {
     versionDisponible: (id: string, lieu?: string | null) => Promise<Reponse<string | null>>;
     installer: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
     mettreAJour: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
+    /** Les limites de l'abonnement d'un moteur (5 h, semaine) ; `actualiser` : les relire. */
+    utilisation?: (id: string, lieu?: string | null, actualiser?: boolean) => Promise<Reponse<Utilisation | null>>;
+    /** Celles de ce PC, reçues pendant le travail des agents. */
+    onUtilisation?: (callback: (id: string, u: Utilisation) => void) => () => void;
     onProgression: (callback: (id: string, p: ProgressionMoteur, lieu: string | null) => void) => () => void;
     onCode?: (callback: (id: string, lieu: string, code: { url: string; code: string }) => void) => () => void;
   };

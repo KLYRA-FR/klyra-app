@@ -77,7 +77,7 @@
     "test:skills-codex": "node scripts/test-skills-codex.mjs",
     "test:consignes-projet": "node --experimental-strip-types --test electron/consignes-projet.test.mts && node scripts/test-consignes-projet.mjs",
     "test:serveur-fournisseurs": "node scripts/test-serveur-fournisseurs.mjs",
-    "test:moteurs": "node --experimental-strip-types --test electron/moteurs/registre.test.mts electron/moteurs/codex-protocole.test.mts electron/moteurs/installation.test.mts",
+    "test:moteurs": "node --experimental-strip-types --test electron/moteurs/registre.test.mts electron/moteurs/codex-protocole.test.mts electron/moteurs/installation.test.mts electron/utilisation.test.mts",
     "test:moteur-codex": "electron scripts/test-moteur-codex.cjs",
     "test:fournisseurs": "vitest run src/lib/fournisseurs.test.ts",
     "test:contexte": "vitest run src/lib/contexte.test.ts",

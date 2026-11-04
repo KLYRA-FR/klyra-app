@@ -4,7 +4,7 @@
  * Aucun compte, aucune dépense ; dossier de klyra, CODEX_HOME et données jetables.
  * Vérifie : routes Fournisseurs (moteurs, compte, modèles), IA à consulter (ajout, clé gardée sur le VPS,
  * test, retrait), conversation avec Codex (texte, session reprise par conversation, outil demander_ia
- * proposé, autorisation, arrêt).
+ * proposé, autorisation, arrêt), limites de l'abonnement reçues pendant une réponse (route `utilisation`).
  *   KLYRA_CODEX_PATH=/chemin/codex node scripts/test-serveur-fournisseurs.mjs
  */
 import assert from "node:assert/strict";
@@ -163,6 +163,20 @@ try {
   assert.equal(sessions["chat-essai|principal|codex"], session);
   assert.equal(sessions["chat-essai|principal"], undefined);
   ok("session de Codex retenue par conversation, à part de celle de Claude Code");
+
+  /* 5 bis. Les limites de l'abonnement : rien d'inventé avant, puis celles que Codex a reçues pendant une réponse. */
+  assert.equal((await appel("/klyra/v1/moteurs/claude/utilisation")).json.utilisation, null);
+  assert.equal((await appel("/klyra/v1/moteurs/codex/utilisation?actualiser=1")).json.utilisation, null);
+  const limitee = await reponse("r2b", { prompt: "TEXTE LIMITES", conversation: "chat-limites" });
+  assert.equal(limitee.at(-1).ok, true, limitee.at(-1).erreur);
+  let utilisation = null;
+  for (let i = 0; i < 40 && !utilisation; i++) {
+    utilisation = (await appel("/klyra/v1/moteurs/codex/utilisation")).json.utilisation;
+    if (!utilisation) await new Promise((f) => setTimeout(f, 50));
+  }
+  assert.ok(utilisation, "Codex n’a pas transmis les limites de la réponse");
+  assert.deepEqual([utilisation.session, utilisation.semaine, utilisation.statut], [{ utilise: 0.25, reinitialiseA: 1_900_000_000_000 }, { utilise: 0.6, reinitialiseA: 1_900_500_000_000 }, "allowed"]);
+  ok("limites de l’abonnement ChatGPT reçues pendant une réponse et servies par le VPS (5 h 25 %, semaine 60 %)");
 
   /* 6. Une session inconnue (d'un autre moteur) : un nouveau fil, sans erreur. */
   const etrangere = await reponse("r3", { prompt: "TEXTE trois", sessionId: "00000000-0000-4000-8000-000000000000", conversation: "chat-autre" });

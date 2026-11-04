@@ -136,6 +136,7 @@ curl -fsSL "$SOURCE/connaissances-agent.mjs" -o "$CODE_DIR/connaissances-agent.m
 curl -fsSL "$SOURCE/skills-par-agent.mjs" -o "$CODE_DIR/skills-par-agent.mjs"
 curl -fsSL "$SOURCE/preparation-fournisseur.mjs" -o "$CODE_DIR/preparation-fournisseur.mjs"
 curl -fsSL "$SOURCE/consommation-ecart.mjs" -o "$CODE_DIR/consommation-ecart.mjs"
+curl -fsSL "$SOURCE/utilisation.mjs" -o "$CODE_DIR/utilisation.mjs"
 curl -fsSL "$SOURCE/diagnostic-poste.mjs" -o "$CODE_DIR/diagnostic-poste.mjs"
 curl -fsSL "$SOURCE/consignes-projet.mjs" -o "$CODE_DIR/consignes-projet.mjs"
 curl -fsSL "$SOURCE/rendus.mjs" -o "$CODE_DIR/rendus.mjs"

@@ -415,6 +415,7 @@ export function creerGestionnaire(options) {
         if (!id && req.method === "GET") return repondre(res, 200, { moteurs: moteurs.liste() });
         if (action === "compte" && req.method === "GET") return repondre(res, 200, { compte: await moteurs.compte(id), connexion: id === "codex" ? moteurs.etatConnexion() : null });
         if (action === "modeles" && req.method === "GET") return repondre(res, 200, { modeles: await moteurs.modeles(id) });
+        if (action === "utilisation" && req.method === "GET") return repondre(res, 200, { utilisation: await moteurs.utilisation(id, url.searchParams.get("actualiser") === "1") });
         if (action === "version-disponible" && req.method === "GET") return repondre(res, 200, { version: await moteurs.versionDisponible(id) });
         if ((action === "installer" || action === "mettre-a-jour") && req.method === "POST") return repondre(res, 202, { travail: moteurs.lancerTravail(id, action) });
         if (action === "connecter" && req.method === "POST") return repondre(res, 200, await moteurs.connecter(id, (await lireCorpsRequete(req))?.mode));

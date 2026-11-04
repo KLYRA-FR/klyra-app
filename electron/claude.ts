@@ -20,6 +20,7 @@ import { CONSIGNE_ATELIER } from "./atelier-agent";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
+import { lireUtilisation, type Utilisation } from "./utilisation";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -888,23 +889,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
 
 /* ─── Utilisation de Claude ────────────────────────────────────── */
 
-/** Une fenêtre de limite : la part utilisée (0 à 1) et quand elle repart à zéro. */
-export interface FenetreUtilisation {
-  utilise: number;
-  /** Date de remise à zéro, en millisecondes. */
-  reinitialiseA: number | null;
-}
-
-/** L'utilisation de l'abonnement Claude, telle que Claude Code la renvoie à chaque réponse. */
-export interface Utilisation {
-  /** Fenêtre de 5 h. */
-  session: FenetreUtilisation | null;
-  /** Fenêtre de 7 jours. */
-  semaine: FenetreUtilisation | null;
-  /** « allowed », « allowed_warning » ou « rejected » (limite atteinte). */
-  statut: string;
-  misAJour: number;
-}
+export type { FenetreUtilisation, Utilisation } from "./utilisation";
 
 let derniere: Utilisation | null = null;
 const abonnes = new Set<(u: Utilisation) => void>();
@@ -921,32 +906,6 @@ export function restaurerUtilisation(u: Utilisation | null): void {
 export function surUtilisation(callback: (u: Utilisation) => void): () => void {
   abonnes.add(callback);
   return () => abonnes.delete(callback);
-}
-
-function fenetre(brut: unknown): FenetreUtilisation | null {
-  const f = brut as { utilization?: unknown; resetsAt?: unknown } | undefined;
-  if (!f || typeof f.utilization !== "number") return null;
-  return { utilise: f.utilization, reinitialiseA: typeof f.resetsAt === "number" ? f.resetsAt * 1000 : null };
-}
-
-/**
- * Lit un `rate_limit_info` de Claude Code. Deux formes : `unifiedWindows`
- * (les deux fenêtres d'un coup, champ interne que toutes les versions
- * n'envoient pas) et la forme publique, une seule fenêtre nommée par
- * `rateLimitType`. Une fenêtre absente de l'événement garde sa dernière
- * valeur connue : un événement sans chiffre n'efface rien.
- */
-export function lireUtilisation(info: unknown, precedente: Utilisation | null, maintenant = Date.now()): Utilisation | null {
-  const i = info as { status?: unknown; rateLimitType?: unknown; unifiedWindows?: Record<string, unknown> } | undefined;
-  if (!i || typeof i !== "object") return precedente;
-  const seule = fenetre(i);
-  const lue = (type: string) => fenetre(i.unifiedWindows?.[type]) ?? (i.rateLimitType === type ? seule : null);
-  return {
-    session: lue("five_hour") ?? precedente?.session ?? null,
-    semaine: lue("seven_day") ?? precedente?.semaine ?? null,
-    statut: typeof i.status === "string" ? i.status : (precedente?.statut ?? "allowed"),
-    misAJour: maintenant,
-  };
 }
 
 function noterUtilisation(info: unknown): void {
