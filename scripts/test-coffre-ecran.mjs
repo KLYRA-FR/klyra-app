@@ -8,8 +8,8 @@
  * Prérequis : `pnpm build && pnpm build:electron`.
  *   xvfb-run -a pnpm test:coffre-ecran -- --no-sandbox
  */
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -234,6 +234,77 @@ else {
     verifier(fournisseur.requetes.every((q) => !JSON.stringify(q.corps).includes(CLE_MODELE)), "la clé collée ne part jamais au modèle");
     verifier(!readFileSync(path.join(donnees, "conversations.json"), "utf8").includes(CLE_MODELE), "ni dans les conversations enregistrées");
     verifier(vrai.erreurs.length === 0, "aucune erreur dans la page (vrai Claude Code)", vrai.erreurs.join("\n"));
+
+    /* Sur un VPS : un vrai serveur KLYRA local avec ce Claude Code. Le coffre reste sur ce PC, la carte dans son fil. */
+    const vps = path.join(TMP, "vps");
+    const vpsHome = path.join(vps, "home");
+    mkdirSync(path.join(vpsHome, ".local", "bin"), { recursive: true });
+    mkdirSync(path.join(vpsHome, ".claude"), { recursive: true });
+    symlinkSync(CLAUDE, path.join(vpsHome, ".local", "bin", "claude"));
+    writeFileSync(path.join(vpsHome, ".claude", ".credentials.json"), "{}");
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    const SERVEUR = path.resolve(import.meta.dirname, "..", "serveur", "klyra-serveur.mjs");
+    const envServeur = {
+      ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|ANTHROPIC)/.test(k))),
+      HOME: vpsHome,
+      KLYRA_SERVEUR_DONNEES: path.join(vps, "donnees"),
+      KLYRA_SERVEUR_PORT: String(port),
+      KLYRA_SERVEUR_HOTE: "127.0.0.1",
+      KLYRA_SERVEUR_NOM: "Klyra-VPS",
+      ANTHROPIC_BASE_URL: fournisseur.url,
+      ANTHROPIC_API_KEY: "sk-faux-essai",
+    };
+    const serveur = spawn(process.execPath, [SERVEUR], { env: envServeur, stdio: "ignore" });
+    try {
+      const adresse = `http://127.0.0.1:${port}`;
+      for (let i = 0; i < 40 && !(await fetch(`${adresse}/`).then(() => true, () => false)); i++) await attendre(250);
+      const code = execFileSync(process.execPath, [SERVEUR, "appairer"], { env: envServeur }).toString().trim();
+      const lien = `klyra://rejoindre?adresse=${encodeURIComponent(adresse)}&code=${encodeURIComponent(code)}`;
+      const bouton = `document.querySelector('nav button[aria-haspopup="menu"][aria-label*="Serveur : "]')`;
+      const ligneServeurs = `document.querySelector('[role="menu"][aria-label="Compte"] [aria-haspopup="menu"]')`;
+      const ouvrir = async () => {
+        if ((await vrai.ev(`${bouton}?.getAttribute('aria-expanded')`)) !== "true") await vrai.ev(`${bouton}.click()`);
+        await vrai.quand(`document.querySelector('[role="menu"][aria-label="Compte"]')`);
+        if ((await vrai.ev(`${ligneServeurs}?.getAttribute('aria-expanded')`)) !== "true") await vrai.ev(`${ligneServeurs}.click()`);
+        return vrai.quand(`document.querySelector('[role="menu"][aria-label="Serveurs"]')`);
+      };
+      await ouvrir();
+      await vrai.cliquer("Ajouter un serveur");
+      await vrai.quand(`document.querySelector('input[aria-label="Lien d’invitation"]')`);
+      await vrai.saisir('input[aria-label="Lien d’invitation"]', lien);
+      await vrai.cliquer("Rejoindre");
+      verifier(await vrai.quand(`document.querySelector('main')?.innerText.includes("Klyra-VPS")`), "VPS : Klyra-VPS rejoint par le lien");
+      await vrai.aller("/chat?id=dm-principal");
+      await ouvrir();
+      await vrai.quand(`[...document.querySelectorAll('[role="menuitemradio"]')].some((b) => b.innerText.includes("Répond"))`);
+      await vrai.ev(`[...document.querySelectorAll('[role="menuitemradio"]')].find((x) => x.innerText.split("\\n")[0].trim() === "Klyra-VPS")?.click(); 0`);
+      const hote = new URL(adresse).host;
+      verifier(await vrai.quand(`new URLSearchParams(location.search).get("id") === ${JSON.stringify(`dm-principal@${hote}`)}`), "VPS : la conversation de l’assistant sur Klyra-VPS");
+      await vrai.touche("Escape", "Escape", 27);
+
+      const CLE_VPS = "sk-DuVpsJamaisAuModele_314";
+      const carteVps = `document.querySelector('section[aria-label$="Clé d’essai"]')`;
+      const avantVps = fournisseur.requetes.length;
+      await vrai.saisir("main textarea", "coffre vps-essai");
+      await vrai.ev("document.querySelector('main textarea')?.focus(); 0");
+      await vrai.touche("Enter", "Enter", 13);
+      verifier(await vrai.quand(`${carteVps}?.innerText.includes('VPS_ESSAI')`, 90000), "VPS : Claude Code du serveur → coffre_demander : la carte sécurisée s’affiche dans le fil de ce PC", await vrai.texte());
+      verifier(await vrai.quand(`[...document.querySelectorAll('[data-auteur="role"]')].at(-1)?.innerText.includes('fin OK')`, 60000), "VPS : l’outil, relayé au coffre de ce PC, répond sans erreur", await vrai.texte());
+      verifier(fournisseur.requetes.slice(avantVps).some((q) => q.systeme.includes("coffre_demander") && q.systeme.includes("sur l'ordinateur de la personne")), "VPS : la consigne du coffre arrive au modèle du serveur");
+      const avantReponse = fournisseur.requetes.length;
+      await vrai.ev(`${carteVps}.querySelector('input').focus(); 0`);
+      await vrai.send("Input.insertText", { text: CLE_VPS });
+      await vrai.ev(`${carteVps}.querySelector('button[type="submit"]').click(); 0`);
+      verifier(await vrai.quand(`document.querySelector('main').innerText.includes('Rangé dans le coffre : Clé d’essai (VPS_ESSAI)')`, 15000), "VPS : la clé collée est rangée dans le coffre de ce PC", await vrai.texte());
+      const recueVps = () => fournisseur.requetes.slice(avantReponse).some((q) => q.message.includes("C’est rangé dans le coffre") && q.message.includes("VPS_ESSAI"));
+      for (let i = 0; i < 60 && !recueVps(); i++) await attendre(500);
+      verifier(recueVps(), "VPS : l’agent du serveur reçoit la réponse (le nom seulement)");
+      verifier(fournisseur.requetes.every((q) => !JSON.stringify(q.corps).includes(CLE_VPS)), "VPS : la clé collée ne part jamais au modèle");
+      verifier(readFileSync(path.join(donnees, "coffre.json"), "utf8").includes("VPS_ESSAI") && !readFileSync(path.join(donnees, "coffre.json"), "utf8").includes(CLE_VPS), "VPS : elle est chiffrée dans le coffre de ce PC");
+      verifier(vrai.erreurs.length === 0, "VPS : aucune erreur dans la page", vrai.erreurs.join("\n"));
+    } finally {
+      serveur.kill();
+    }
   } catch (e) {
     verifier(false, "la partie avec le vrai Claude Code s’est déroulée sans erreur", e.stack);
   } finally {

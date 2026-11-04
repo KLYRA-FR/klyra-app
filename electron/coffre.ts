@@ -1,21 +1,10 @@
 import { app, clipboard, safeStorage } from "electron";
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { chmod, lstat, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
-import {
-  ecrireDansEnv,
-  estGenreSecret,
-  normaliserVariable,
-  remplacerModele,
-  texteCourt,
-  validerValeur,
-  marqueModele,
-  type FormatFichier,
-  type GenreSecret,
-} from "./coffre-regles";
+import { ecrireCible, verifierCible } from "./coffre-fichier";
+import { estGenreSecret, normaliserVariable, texteCourt, validerValeur, type GenreSecret } from "./coffre-regles";
 import { listerCoffre, type ConnexionCoffre } from "./navigateur/coffre";
 
 /**
@@ -27,7 +16,7 @@ import { listerCoffre, type ConnexionCoffre } from "./navigateur/coffre";
  *
  * Une valeur ne quitte jamais ce process vers l'écran ni vers un agent : la personne la copie par le
  * presse-papiers du système (vidé après 30 s), un agent l'écrit dans un fichier hors de Git
- * (`ecrireSecretDansFichier`) ou remplit une connexion du navigateur. L'écran l'envoie une seule fois,
+ * (`ecrireSecretDansFichier`, ou par un VPS qui l'écrit chez lui) ou remplit une connexion du navigateur. L'écran l'envoie une seule fois,
  * quand la personne la tape ou la colle, et elle est chiffrée aussitôt.
  */
 
@@ -241,106 +230,28 @@ export function copierSecret(id: string): { delai: number } {
 
 /* ─── Un agent écrit un secret dans un fichier ─────────────────── */
 
-const executer = promisify(execFile);
-
 /**
- * Le fichier est-il suivi par Git (ou le serait-il au prochain `git add`) ? Hors d'un dépôt (ou
- * sans git) : non, il n'y a rien à protéger d'un commit. Dans un dépôt, `git check-ignore` doit
- * répondre 0 (ignoré) et le fichier ne pas être déjà suivi.
+ * La valeur d'un secret permis aux agents, pour l'écrire là où un agent en a besoin : dans un fichier
+ * de ce PC (`ecrireSecretDansFichier`), ou dans un fichier d'un VPS, qui l'écrit lui-même
+ * (`coffre-outils.ts`, `executerCoffrePourServeur`). Ne va jamais dans la réponse d'un outil.
  */
-async function exposeAGit(chemin: string): Promise<boolean> {
-  const dossier = path.dirname(chemin);
-  try {
-    await executer("git", ["-C", dossier, "rev-parse", "--is-inside-work-tree"], { timeout: 5_000 });
-  } catch {
-    return false;
-  }
-  try {
-    await executer("git", ["-C", dossier, "check-ignore", "-q", "--no-index", "--", chemin], { timeout: 5_000 });
-    // Ignoré par le .gitignore, mais peut-être déjà suivi (ajouté avant la règle).
-    try {
-      const { stdout } = await executer("git", ["-C", dossier, "ls-files", "--", chemin], { timeout: 5_000 });
-      return stdout.trim().length > 0;
-    } catch {
-      return false;
-    }
-  } catch {
-    // 1 : pas ignoré ; une autre erreur dans un dépôt : dans le doute, le secret n'y va pas.
-    return true;
-  }
-}
-
-/** Les dossiers où un agent n'écrit jamais un secret : les données de l'app (dont ce coffre). */
-function dossierInterdit(chemin: string): boolean {
-  const donnees = path.resolve(app.getPath("userData"));
-  return chemin === donnees || chemin.startsWith(donnees + path.sep);
-}
-
-/**
- * Écrit un secret dans un fichier, pour un agent qui ne voit jamais la valeur. Refusé : un secret
- * que la personne n'a pas permis aux agents, un chemin relatif, un fichier suivi par Git (ou qui le
- * serait), les données de l'app, un lien symbolique, un fichier de plus de 1 Mo.
- * - `env` : ajoute ou remplace la ligne VARIABLE=valeur ;
- * - `modele` : remplace chaque {{coffre:VARIABLE}} du fichier (il doit en avoir une) ;
- * - `brut` : un fichier qui ne contient que la valeur (absent ou vide avant).
- * Le fichier écrit est en 600 (lisible par son propriétaire seulement).
- */
-export async function ecrireSecretDansFichier(entree: { variable: unknown; chemin: unknown; format: unknown }): Promise<string> {
-  const variable = normaliserVariable(entree.variable);
-  const format: FormatFichier = entree.format === "modele" || entree.format === "brut" ? entree.format : "env";
-  const brut = typeof entree.chemin === "string" ? entree.chemin.trim() : "";
-  if (!brut || !path.isAbsolute(brut)) throw new Error("Donne le chemin complet du fichier.");
-  const chemin = path.resolve(brut);
-  if (dossierInterdit(chemin)) throw new Error("Ce dossier est celui des données de l’app : un secret n’y est pas écrit.");
-  try {
-    const dossier = await stat(path.dirname(chemin));
-    if (!dossier.isDirectory()) throw new Error();
-  } catch {
-    throw new Error(`Le dossier ${path.dirname(chemin)} n’existe pas.`);
-  }
-  let avant = "";
-  let existe = false;
-  try {
-    const infos = await lstat(chemin);
-    if (infos.isSymbolicLink()) throw new Error("Ce chemin est un lien symbolique : donne le vrai fichier.");
-    if (!infos.isFile()) throw new Error("Ce chemin n’est pas un fichier.");
-    if (infos.size > 1024 * 1024) throw new Error("Ce fichier dépasse 1 Mo : ce n’est pas un fichier de configuration.");
-    avant = await readFile(chemin, "utf8");
-    existe = true;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-  if (await exposeAGit(chemin)) {
-    throw new Error(`${path.basename(chemin)} est (ou serait) suivi par Git : le secret partirait dans un commit. Ajoute ce fichier au .gitignore, puis réessaie.`);
-  }
-
+export function valeurPourAgents(variable: unknown): string {
   const liste = lire();
-  const secret = permisAuxAgents(liste, variable);
+  const secret = permisAuxAgents(liste, normaliserVariable(variable));
   const valeur = dechiffrer(secret);
-  let apres: string;
-  let bilan: string;
-  if (format === "env") {
-    const r = ecrireDansEnv(avant, variable, valeur);
-    apres = r.contenu;
-    bilan = r.remplace ? `ligne ${variable}= remplacée` : `ligne ${variable}= ajoutée`;
-  } else if (format === "modele") {
-    if (!existe) throw new Error(`Le fichier n’existe pas : écris d’abord ${marqueModele(variable)} là où va le secret.`);
-    const r = remplacerModele(avant, variable, valeur);
-    if (!r.n) throw new Error(`Le fichier n’a aucune marque ${marqueModele(variable)} à remplacer.`);
-    apres = r.contenu;
-    bilan = `${r.n} marque${r.n > 1 ? "s" : ""} ${marqueModele(variable)} remplacée${r.n > 1 ? "s" : ""}`;
-  } else {
-    if (avant.trim()) throw new Error("Le format « brut » écrit un fichier qui ne contient que le secret : ce fichier n’est pas vide.");
-    apres = valeur;
-    bilan = "fichier qui ne contient que la valeur";
-  }
-  const tmp = `${chemin}.klyra-${randomUUID().slice(0, 8)}.tmp`;
-  await writeFile(tmp, apres, { encoding: "utf8", mode: 0o600 });
-  await rename(tmp, chemin);
-  await chmod(chemin, 0o600).catch(() => undefined);
   void modifier((l) => {
     const e = l.find((x) => x.id === secret.id);
     if (e) e.utiliseLe = Date.now();
   }).catch(() => undefined);
-  return `${variable} écrit dans ${chemin} (${bilan}, fichier lisible par son propriétaire seulement, hors de Git). N’affiche pas ce fichier ni la variable : lis-la depuis tes commandes (ex. source, dotenv).`;
+  return valeur;
+}
+
+/**
+ * Écrit un secret dans un fichier de ce PC (règles de `coffre-fichier.ts`), pour un agent qui ne voit
+ * jamais la valeur. Refusé aussi pour un secret que la personne n'a pas permis aux agents, et dans les
+ * données de l'app.
+ */
+export async function ecrireSecretDansFichier(entree: { variable: unknown; chemin: unknown; format: unknown }): Promise<string> {
+  const cible = await verifierCible(entree, { interdits: [app.getPath("userData")] });
+  return ecrireCible(cible, valeurPourAgents(cible.variable));
 }

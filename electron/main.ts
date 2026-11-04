@@ -136,6 +136,7 @@ import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./o
 import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
 import { ajouterSecret, copierSecret, etatCoffre, modifierSecret, remplacerValeurSecret, retirerSecret, signalerCoffre, surChangementCoffre } from "./coffre";
 import { executerPourServeur, navigateurActif } from "./navigateur/outils";
+import { executerCoffrePourServeur } from "./coffre-outils";
 import {
   actionMenu,
   afficherOnglet,
@@ -955,7 +956,8 @@ function registerBridge() {
     const assistant = mesAgents().assistant.nom ?? null;
     /* La configuration KLYRA de ce PC, comme `environnementAgent` et `consignesApp` la donnent aux sessions locales. */
     const { configuration: reglage, skillsParAgent } = lireReglages();
-    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes), navigateur: navigateurActif() };
+    /* `coffre` : ce PC sert le Coffre aux agents du VPS (une version plus ancienne ne le fait pas). */
+    const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes), navigateur: navigateurActif(), coffre: true };
     const userData = app.getPath("userData");
     const poste = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
     const bibliotheque = path.join(userData, "bibliotheque-skills");
@@ -1097,6 +1099,8 @@ function registerBridge() {
         jeton: jetonServeur,
         /* Un agent du VPS utilise le navigateur de ce PC : seulement pour une conversation de ce serveur. */
         navigateur: (origine, appel) => executerPourServeur(origine, appel),
+        /* Un agent du VPS utilise le Coffre de ce PC : seulement pour une conversation de ce serveur. */
+        coffre: (origine, appel, lireValeur) => executerCoffrePourServeur(origine, appel, lireValeur),
       },
       originesServeurs(),
     );

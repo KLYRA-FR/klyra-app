@@ -14,6 +14,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
 import { FOURNISSEURS } from "./ia-catalogue.mjs";
+import { estOutilCoffre, OUTILS_COFFRE } from "./coffre-definitions.mjs";
 import { estOutilNavigateur, OUTILS_NAVIGATEUR } from "./navigateur-definitions.mjs";
 
 export { FOURNISSEURS };
@@ -48,6 +49,8 @@ export function creerIa(options) {
   /** Qui reçoit les publications (serveur/rendus.mjs, branché par agents.mjs) ; sans lui, l'outil n'est pas proposé. */
   let publication = null;
   let navigateur = null;
+  /** Le Coffre de KLYRA, sur le PC (cf. coffre.mjs) : `actif()`, `appeler(appelant, nom, arguments)`. */
+  let coffre = null;
 
   function lire() {
     try {
@@ -184,12 +187,14 @@ export function creerIa(options) {
               },
             ]
           : [];
-        return resultat({ tools: [...outils, ...publier, ...(outilsApp?.lister(appelant) ?? []), ...(navigateur?.actif() ? OUTILS_NAVIGATEUR : [])] });
+        return resultat({ tools: [...outils, ...publier, ...(outilsApp?.lister(appelant) ?? []), ...(navigateur?.actif() ? OUTILS_NAVIGATEUR : []), ...(coffre?.actif() ? OUTILS_COFFRE : [])] });
       }
       case "tools/call": {
         const nom = String(msg.params?.name ?? "");
         /* Le navigateur de KLYRA : relayé au PC de la personne (cf. navigateur.mjs). */
         if (estOutilNavigateur(nom) && navigateur?.actif()) return resultat(await navigateur.appeler(appelant, nom, msg.params?.arguments ?? {}));
+        /* Le Coffre de KLYRA : relayé au PC de la personne, jamais une valeur dans la réponse (cf. coffre.mjs). */
+        if (estOutilCoffre(nom) && coffre?.actif()) return resultat(await coffre.appeler(appelant, nom, msg.params?.arguments ?? {}));
         if (nom === OUTIL_PUBLIER.name && publication) {
           /* L'agent et la conversation de la session, posés dans sa configuration MCP (cf. configMcp). */
           try {
@@ -243,7 +248,7 @@ export function creerIa(options) {
   function configMcp(appelant = {}) {
     if (!serveur) return null;
     const autres = typeof appelant.agent === "string" ? (outilsApp?.lister({ agent: appelant.agent, conversation: appelant.conversation ?? "" }).length ?? 0) : 0;
-    if (!lire().length && !publication && !autres && !navigateur?.actif()) return null;
+    if (!lire().length && !publication && !autres && !navigateur?.actif() && !coffre?.actif()) return null;
     const qui = {
       ...(typeof appelant.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(appelant.agent) ? { "X-Klyra-Agent": appelant.agent } : {}),
       ...(typeof appelant.conversation === "string" && /^[A-Za-z0-9_.:@-]{1,120}$/.test(appelant.conversation) ? { "X-Klyra-Conversation": appelant.conversation } : {}),
@@ -267,6 +272,10 @@ export function creerIa(options) {
     /** Branche les outils du navigateur de KLYRA : `actif()` (le PC les donne), `appeler(appelant, nom, arguments)`. */
     surNavigateur: (relais) => {
       navigateur = relais;
+    },
+    /** Branche les outils du Coffre de KLYRA : `actif()` (le PC le sert), `appeler(appelant, nom, arguments)`. */
+    surCoffre: (relais) => {
+      coffre = relais;
     },
     /** Change à chaque ajout ou retrait : un agent ouvert est relancé avec la liste à jour. */
     generation: () => generation,

@@ -584,6 +584,17 @@ export function creerGestionnaire(options) {
       if (action === "annuler") return repondre(res, 200, { ok: agents.annuler(requestId) });
       /* Le PC rend le résultat d'un outil du navigateur de KLYRA demandé par un agent d'ici (cf. navigateur.mjs). */
       if (action === "navigateur") return repondre(res, 200, { ok: agents.navigateur?.repondre(requestId, corps.resultat) ?? false });
+      /*
+       * Le Coffre de KLYRA, sur le PC (cf. coffre.mjs) : `lire` rend une fois la valeur qu'un agent d'ici range ;
+       * sinon, le PC rend le résultat (et, pour un fichier de ce VPS, la valeur, écrite ici).
+       */
+      if (action === "coffre") {
+        if (corps.lire === true) {
+          const valeur = agents.coffre?.lireValeur(requestId) ?? null;
+          return valeur === null ? repondre(res, 404, { erreur: "introuvable" }) : repondre(res, 200, { valeur });
+        }
+        return repondre(res, 200, { ok: (await agents.coffre?.repondre(requestId, corps)) ?? false });
+      }
       return repondre(res, 404, { erreur: "introuvable" });
     }
 

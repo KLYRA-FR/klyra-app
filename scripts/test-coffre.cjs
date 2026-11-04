@@ -7,7 +7,9 @@
  * - un agent range un secret, n'en écrase jamais un ;
  * - écrire dans un fichier : refusé dans un fichier suivi par Git, hors du .gitignore, dans les
  *   données de l'app, par un lien, pour un secret non permis ; .env, modèle et brut, en 600 ;
- * - « Copier » met la valeur dans le presse-papiers depuis le main, puis le vide.
+ * - « Copier » met la valeur dans le presse-papiers depuis le main, puis le vide ;
+ * - un agent d'un VPS, par le vrai serveur KLYRA local : il liste, demande, range (la valeur lue par la
+ *   route, jamais dans le journal) et écrit un fichier du serveur ; une conversation d'ailleurs est refusée.
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- lancé par Electron en CommonJS */
 const { app, clipboard, safeStorage } = require("electron");
@@ -162,6 +164,57 @@ app.whenReady().then(async () => {
     verifier(!coffre.listerSecrets().some((x) => x.id === s.id), "retirer efface le secret du coffre");
     const apres = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "coffre.json"), "utf8"));
     verifier(apres.length === 1 && apres[0].variable === "GITHUB_TOKEN", "le fichier ne garde que ce qui reste");
+
+
+    /* Un agent d'un VPS : l'appel passe par le vrai serveur KLYRA (journal, route, relais) jusqu'au coffre de ce PC. */
+    const { pathToFileURL } = require("node:url");
+    const srv = await import(pathToFileURL(path.join(__dirname, "..", "serveur", "klyra-serveur.mjs")).href);
+    const { creerRelaisCoffre } = await import(pathToFileURL(path.join(__dirname, "..", "serveur", "coffre.mjs")).href);
+    const dossierVps = path.join(TMP, "vps");
+    const homeVps = path.join(TMP, "vps-home");
+    fs.mkdirSync(dossierVps, { recursive: true });
+    fs.mkdirSync(homeVps, { recursive: true });
+    const journal = srv.creerJournal();
+    const relaisVps = creerRelaisCoffre({ publier: journal.publier, ecouteurs: journal.ecouteurs, home: homeVps, donnees: dossierVps });
+    const ecoute = await srv.ecouter({ dossier: dossierVps, port: 0, journal, agents: { coffre: relaisVps, fermerTout: () => undefined } });
+    const origine = `http://127.0.0.1:${ecoute.port}`;
+    const VALEUR_VPS = "xoxb-RangeDepuisLeVps_31";
+    const vps = (conversation, nom, args) => relaisVps.appeler({ agent: "dev", conversation }, nom, args).then((x) => ({ texte: x.content.map((c) => c.text).join("\n"), erreur: !!x.isError }));
+    try {
+      const appaire = await fetch(`${origine}${srv.CHEMIN_APPAIRER}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: srv.creerCode(dossierVps), appareil: "PC de test" }) }).then((x) => x.json());
+      fs.writeFileSync(path.join(app.getPath("userData"), "conversations.json"), JSON.stringify({ version: 1, chats: [{ id: "chat-vps", kind: "direct", roleIds: ["dev"], lieu: origine }, { id: "chat-a", kind: "direct", roleIds: ["dev"] }], messages: [], projects: [] }));
+      const distants = require(path.join(dist, "agents-distants.js"));
+      const { executerCoffrePourServeur } = require(path.join(dist, "coffre-outils.js"));
+      distants.brancherAgentsDistants(
+        {
+          fenetre: () => ({ evenement: () => undefined, spontane: () => undefined, rendu: () => undefined }),
+          equipe: () => ({ fiches: [], assistant: null, configuration: { memoireAgents: true, consignes: null, coffre: true }, skillsParAgent: {}, empreinte: "test" }),
+          jeton: () => appaire.jeton,
+          coffre: (o, appel, lireValeur) => executerCoffrePourServeur(o, appel, lireValeur),
+        },
+        [origine],
+      );
+      for (let i = 0; i < 50 && !journal.ecouteurs(); i++) await new Promise((x) => setTimeout(x, 100));
+      r = await vps("chat-vps", "coffre_lister", {});
+      verifier(!r.erreur && /GITHUB_TOKEN : Jeton GitHub/.test(r.texte) && !r.texte.includes(VALEUR_AGENT), "VPS : l'agent liste le coffre de ce PC, sans valeur", r.texte);
+      r = await vps("chat-vps", "coffre_demander", { variable: "SLACK_BOT_TOKEN", nom: "Jeton Slack", raison: "Pour poster le rapport" });
+      verifier(!r.erreur && /carte sécurisée/.test(r.texte), "VPS : demander un secret affiche la carte dans la conversation de ce PC", r.texte);
+      r = await vps("chat-vps", "coffre_enregistrer", { variable: "VPS_TOKEN", nom: "Jeton créé sur le VPS", genre: "jeton", valeur: VALEUR_VPS });
+      const range = coffre.listerSecrets().find((x) => x.variable === "VPS_TOKEN");
+      verifier(!r.erreur && range && range.origine.par === "agent" && range.origine.roleId === "dev" && range.origine.chatId === "chat-vps", "VPS : l'agent range un secret dans le coffre de ce PC", r.texte);
+      verifier(!fs.readFileSync(path.join(app.getPath("userData"), "coffre.json"), "utf8").includes(VALEUR_VPS) && !r.texte.includes(VALEUR_VPS), "VPS : la valeur rangée est chiffrée ici et n'est pas répétée à l'agent");
+      const envVps = path.join(homeVps, ".env");
+      r = await vps("chat-vps", "coffre_ecrire_fichier", { variable: "GITHUB_TOKEN", chemin: envVps });
+      verifier(!r.erreur && fs.readFileSync(envVps, "utf8") === `GITHUB_TOKEN=${VALEUR_AGENT}\n` && !r.texte.includes(VALEUR_AGENT), "VPS : le secret est écrit dans le fichier du serveur, sans être dit à l'agent", r.texte);
+      r = await vps("chat-vps", "coffre_ecrire_fichier", { variable: "VPS_TOKEN", chemin: path.join(TMP, "hors-du-home.env") });
+      verifier(r.erreur && /doit être sous/.test(r.texte), "VPS : un fichier hors du dossier de klyra est refusé", r.texte);
+      r = await vps("chat-a", "coffre_lister", {});
+      verifier(r.erreur && /pas une conversation de ce serveur/.test(r.texte), "VPS : une conversation de ce PC lui est refusée", r.texte);
+      distants.oublierServeur(origine);
+    } finally {
+      journal.fermerTout();
+      await ecoute.fermer();
+    }
   } catch (e) {
     verifier(false, "le test s'est déroulé sans erreur", e.stack);
   }
