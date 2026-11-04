@@ -799,7 +799,7 @@ export interface OngletNavigateur {
   erreur: string | null;
   vignette: string | null;
   endormi: boolean;
-  /** Sa page est à l'écran (plein écran de la fenêtre). */
+  /** Sa page est à l’écran (dans le panneau de la conversation). */
   affiche: boolean;
   pilote: { roleId: string; action: string; at: number } | null;
   main: null | { type: "personne" } | { type: "demandee"; roleId: string; raison: string };

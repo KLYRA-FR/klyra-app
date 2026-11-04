@@ -1,11 +1,11 @@
 /**
  * L'onglet « Navigateur » du panneau d'une conversation, dans l'app de bureau
  * (export statique), sur un profil temporaire et une page servie en local :
- * ouvrir un onglet, taper une adresse, voir la page en plein écran dans la
- * fenêtre (pas dans le tiroir), la voir s'effacer sous une fenêtre de l'app,
+ * ouvrir un onglet, taper une adresse, voir la page dans le panneau de la
+ * conversation (la conversation reste à côté), la voir s'effacer sous une fenêtre de l'app,
  * prendre et rendre la main, revenir aux vignettes (bouton et Échap), retrouver
  * l'onglet après un redémarrage. Puis la fenêtre du Computer Use local : une
- * image injectée (pas le pilote), en plein écran, masquée, ou refusée si c'est
+ * image injectée (pas le pilote), dans le panneau, masquée, ou refusée si c'est
  * tout l'écran.
  * Prérequis : `pnpm build && pnpm build:electron`.
  *   pnpm test:navigateur-ecran      (Linux : xvfb-run -a … -- --no-sandbox)
@@ -129,7 +129,7 @@ async function lancer() {
 const ongletsApp = (a) => a.ev("window.klyra.navigateur.etat().then((r) => r.ok ? r.data : [])");
 const zone = (a) =>
   a.ev(`(() => {
-    const z = document.querySelector('[data-plein-ecran-navigateur] [data-zone-navigateur]');
+    const z = document.querySelector('[data-page-navigateur] [data-zone-navigateur]');
     if (!z) return null;
     const r = z.getBoundingClientRect();
     return { l: Math.round(r.width), h: Math.round(r.height), dansTiroir: !!z.closest('aside'), fenetreL: innerWidth, fenetreH: innerHeight };
@@ -186,20 +186,20 @@ try {
   const z = await zone(app);
   const vue = page && (await page.ev("({ l: innerWidth, h: innerHeight })"));
   verifier(
-    !!z && !z.dansTiroir && z.l >= z.fenetreL - 2 && z.h >= z.fenetreH * 0.6 && vue && Math.abs(vue.l - z.l) <= 1 && Math.abs(vue.h - z.h) <= 1 && (await ongletsApp(app))[0].affiche,
-    "la page est en plein écran dans la fenêtre, pas dans le tiroir",
+    !!z && z.dansTiroir && z.l < z.fenetreL - 200 && z.h >= z.fenetreH * 0.6 && vue && Math.abs(vue.l - z.l) <= 1 && Math.abs(vue.h - z.h) <= 1 && (await ongletsApp(app))[0].affiche,
+    "la page s’ouvre dans le panneau, la conversation reste visible",
     { z, vue },
   );
   await capture("119-apres-plein-ecran.png");
 
-  /* Une fenêtre de l'app par-dessus : la page s'efface, puis revient. Échap ferme la fenêtre, pas le plein écran. */
+  /* Une fenêtre de l'app par-dessus : la page s'efface, puis revient. Échap ferme la fenêtre, pas la page. */
   await app.ev(`window.dispatchEvent(new CustomEvent("klyra:recherche"))`);
   await attendre(600);
   const ouverte = await app.ev(`!!document.querySelector('[role="dialog"]')`);
   const cachee = !(await ongletsApp(app))[0].affiche;
   verifier(ouverte && cachee, "une fenêtre de l’app par-dessus : la page s’efface", { ouverte, cachee });
   await echap(app);
-  verifier((await ongletsApp(app))[0].affiche && (await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "fenêtre fermée : la page plein écran revient");
+  verifier((await ongletsApp(app))[0].affiche && (await app.ev(`!!document.querySelector('[data-page-navigateur]')`)), "fenêtre fermée : la page revient");
 
   /* Prendre et rendre la main. */
   await app.cliquer('button[aria-label="Prendre la main sur cet onglet"]');
@@ -213,14 +213,14 @@ try {
   await app.cliquer('button[aria-label="Retour au panneau"]');
   await attendre(1800);
   const texte = await app.ev("document.body.innerText");
-  verifier(/1 onglet/.test(texte) && /Page d’essai/.test(texte) && !(await ongletsApp(app))[0].affiche && !(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "le bouton Retour ramène aux vignettes et la page s’efface", texte.slice(0, 300));
+  verifier(/1 onglet/.test(texte) && /Page d’essai/.test(texte) && !(await ongletsApp(app))[0].affiche && !(await app.ev(`!!document.querySelector('[data-page-navigateur]')`)), "le bouton Retour ramène aux vignettes et la page s’efface", texte.slice(0, 300));
   await capture("119-apres-retour.png");
   verifier(!!(await ongletsApp(app))[0].vignette, "la carte a sa vignette");
   await app.cliquerTexte("Page d’essai");
   await attendre(800);
-  verifier(!!(await ongletsApp(app))[0].affiche, "un clic sur la vignette rouvre le plein écran");
+  verifier(!!(await ongletsApp(app))[0].affiche, "un clic sur la vignette rouvre la page");
   await echapPage(app);
-  verifier(!(await ongletsApp(app))[0].affiche && !(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "Échap dans la page ramène aux vignettes");
+  verifier(!(await ongletsApp(app))[0].affiche && !(await app.ev(`!!document.querySelector('[data-page-navigateur]')`)), "Échap dans la page ramène aux vignettes");
 
   /* Computer Use local : la fenêtre pilotée, injectée (le pilote n'est pas lancé). */
   const poserApercu = async (mode) => {
@@ -236,21 +236,21 @@ try {
   await app.cliquer("[data-apercu-fenetre]");
   await attendre(500);
   const za = await app.ev(`(() => {
-    const z = document.querySelector('[data-plein-ecran-navigateur] [data-zone-apercu]');
+    const z = document.querySelector('[data-page-navigateur] [data-zone-apercu]');
     if (!z) return null;
     const r = z.getBoundingClientRect();
     return { l: Math.round(r.width), h: Math.round(r.height), dansTiroir: !!z.closest("aside"), img: !!z.querySelector("img"), fenetreL: innerWidth, fenetreH: innerHeight };
   })()`);
-  verifier(!!za && !za.dansTiroir && za.img && za.l >= za.fenetreL - 2 && za.h >= za.fenetreH * 0.6, "la fenêtre pilotée s’ouvre en plein écran, pas dans le tiroir", za);
+  verifier(!!za && za.dansTiroir && za.img && za.l < za.fenetreL - 200 && za.h >= za.fenetreH * 0.6, "la fenêtre pilotée s’ouvre dans le panneau", za);
   await capture("118-apres-plein-ecran.png");
   await app.cliquer('button[aria-label="Retour au panneau"]');
   await attendre(400);
-  verifier(!(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)) && !!(await app.ev(`!!document.querySelector('[data-apercu-fenetre]')`)), "Retour ramène à la carte de la fenêtre");
+  verifier(!(await app.ev(`!!document.querySelector('[data-page-navigateur]')`)) && !!(await app.ev(`!!document.querySelector('[data-apercu-fenetre]')`)), "Retour ramène à la carte de la fenêtre");
   await capture("118-apres-retour.png");
   await app.cliquer("[data-apercu-fenetre]");
   await attendre(400);
   await echap(app);
-  verifier(!(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "Échap quitte le plein écran de la fenêtre pilotée");
+  verifier(!(await app.ev(`!!document.querySelector('[data-page-navigateur]')`)), "Échap quitte la fenêtre pilotée");
   await poserApercu("masquee");
   verifier(/Fenêtre masquée ou réduite/.test(await app.ev("document.body.innerText")) && !(await app.ev(`!!document.querySelector('[data-apercu-fenetre] img')`)), "fenêtre masquée ou réduite : pas d’image");
   await poserApercu("bureau");

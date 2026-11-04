@@ -32,8 +32,8 @@ import {
 
 /**
  * Le navigateur de KLYRA : de vraies pages Chromium (WebContentsView) posées
- * dans la fenêtre de l'app. L'écran les montre en plein écran (le tiroir ne
- * garde que les vignettes), sur le modèle d'OpenBot (`browser-host.ts`).
+ * dans la fenêtre de l'app. L'écran les montre dans le panneau de la conversation
+ * (comme l’aperçu, la conversation reste à côté), sur le modèle d’OpenBot (`browser-host.ts`).
  *
  * - Chaque onglet appartient à une conversation : son agent ne voit et ne pilote
  *   que ceux-là, la personne les voit dans le panneau de cette conversation.
@@ -71,7 +71,7 @@ export interface OngletPublic {
   vignette: string | null;
   /** Pas de page en mémoire : l'onglet se réveille quand on l'ouvre. */
   endormi: boolean;
-  /** Sa page est à l'écran (plein écran de la fenêtre). */
+  /** Sa page est à l’écran (dans le panneau de la conversation). */
   affiche: boolean;
   /** L'agent qui l'utilise en ce moment, et sa dernière action. */
   pilote: { roleId: string; action: string; at: number } | null;
