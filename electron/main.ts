@@ -142,6 +142,7 @@ import {
   etatNavigateur,
   fermerOnglet,
   historique,
+  injecterEchap,
   montrerTelechargement,
   ouvrirAilleurs,
   ouvrirOnglet,
@@ -948,6 +949,7 @@ function registerBridge() {
     const n = (v: unknown) => (typeof v === "number" ? v : NaN);
     afficherOnglet(texteNav(id, 200) || null, c ? { x: n(c.x), y: n(c.y), width: n(c.width), height: n(c.height) } : null);
   });
+  navigateur("navigateur:tester-echap", () => injecterEchap());
   navigateur("navigateur:main", (id, prise) => prendreLaMain(texteNav(id, 200), prise === true));
   navigateur("navigateur:ailleurs", (id) => ouvrirAilleurs(texteNav(id, 200)));
   navigateur("navigateur:telechargement", (chemin) => montrerTelechargement(texteNav(chemin)));

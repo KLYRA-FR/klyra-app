@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
@@ -16,11 +17,15 @@ import type { Chat } from "@/types/domain";
 /**
  * L'onglet « Navigateur » du panneau d'une conversation : les pages que
  * l'agent ouvre pour travailler (et celles que la personne ouvre pour lui),
- * en vignettes, puis la page elle-même, vivante, à l'endroit de la zone
- * réservée. La page est une vue native posée par le process principal
+ * en vignettes. Un clic sur une vignette ouvre la page en plein écran dans
+ * la fenêtre de l'app (pas dans le tiroir) : Échap ou « Retour » ramène aux
+ * vignettes. La page est une vue native posée par le process principal
  * (electron/navigateur/) : rien de l'écran ne peut passer par-dessus, donc
  * elle s'efface derrière sa vignette dès qu'une fenêtre ou un menu s'ouvre.
  */
+
+/** Une fenêtre ou un menu de l'app est ouvert : Échap le ferme, il ne quitte pas le plein écran. */
+const RECOUVRE_ECHAP = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
 
 const pont = () => getBridge()?.navigateur;
 
@@ -194,6 +199,38 @@ function MenuPage({ onglet, menu, x, y, onFermer }: { onglet: OngletNavigateur; 
   );
 }
 
+/**
+ * La page ouverte, en plein écran sur la fenêtre. La barre reste au-dessus de
+ * la vue native (elle ne peut rien laisser passer par-dessus). Échap quitte,
+ * sauf si une fenêtre ou un menu de l'app l'utilise déjà.
+ */
+function PleinEcran({ ongletId, onFermer, children }: { ongletId: string; onFermer: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (document.querySelector(RECOUVRE_ECHAP)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onFermer();
+    };
+    window.addEventListener("keydown", onKey, true);
+    const off = pont()?.onEchap?.((id) => {
+      if (id === ongletId && !document.querySelector(RECOUVRE_ECHAP)) onFermer();
+    });
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      off?.();
+    };
+  }, [ongletId, onFermer]);
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div data-plein-ecran-navigateur className="fixed inset-0 z-40 flex min-h-0 flex-col bg-fond-surface">
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 /** Une page ouverte : sa barre, ce qui s'y passe, la page elle-même, ses téléchargements. */
 function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigateur; chat: Chat; nombre: number; retour: () => void; nouveau: boolean }) {
   const zone = useRef<HTMLDivElement>(null);
@@ -223,10 +260,11 @@ function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigat
         {/* Au bord de la barre : la page native couvre toute la zone en dessous. */}
         {onglet.chargement && <span className="klyra-chargement-navigateur absolute inset-x-0 -bottom-px h-0.5" aria-hidden />}
         <div className="flex items-center gap-0.5">
-          <Bouton variant="discret" taille="mini" iconeGauche={<Icon name="chevron-left" size={14} />} onClick={retour} className="px-1.5">
-            Onglets
-            <span className="klyra-mono text-texte-tertiaire">{nombre}</span>
+          <Bouton variant="sombre" taille="mini" iconeGauche={<Icon name="chevron-left" size={14} />} onClick={retour} aria-keyshortcuts="Escape" aria-label="Retour au panneau">
+            Retour
           </Bouton>
+          <span className="px-1 text-ui-2xs text-texte-tertiaire">Échap</span>
+          <span className="klyra-mono text-ui-2xs text-texte-tertiaire">{nombre}</span>
           <span className="mx-1 h-4 w-px bg-bordure-subtile" />
           <BoutonIcone taille="mini" cote="haut" icone={<Icon name="arrow-rotate-left-01" size={14} />} libelle="Page précédente" disabled={!onglet.peutReculer} onClick={() => void p?.historique(onglet.id, "retour")} />
           <BoutonIcone taille="mini" cote="haut" icone={<Icon name="arrow-rotate-right-01" size={14} />} libelle="Page suivante" disabled={!onglet.peutAvancer} onClick={() => void p?.historique(onglet.id, "suivant")} />
@@ -344,6 +382,7 @@ export function PanneauNavigateur({ chat }: { chat: Chat }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const agent = useRole(chat.roleIds[0] ?? "principal");
   const p = pont();
+  const retour = useCallback(() => setVu(null), [setVu]);
   /* Un agent attend la personne sur une page : elle s'ouvre (une fois par demande). */
   const enAttente = onglets.find((o) => o.main?.type === "demandee");
   const demande = enAttente?.main?.type === "demandee" ? `${enAttente.id}:${enAttente.main.raison}` : null;
@@ -370,11 +409,14 @@ export function PanneauNavigateur({ chat }: { chat: Chat }) {
   };
 
   const ongletVu = onglets.find((o) => o.id === vu);
-  if (ongletVu) return <Page key={ongletVu.id} onglet={ongletVu} chat={chat} nombre={onglets.length} retour={() => setVu(null)} nouveau={nouveau === ongletVu.id} />;
-
   const surServeur = !!chat.lieu;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+      {ongletVu && (
+        <PleinEcran ongletId={ongletVu.id} onFermer={retour}>
+          <Page key={ongletVu.id} onglet={ongletVu} chat={chat} nombre={onglets.length} retour={retour} nouveau={nouveau === ongletVu.id} />
+        </PleinEcran>
+      )}
       <div className="flex items-center justify-between gap-2 px-1.5 pt-1">
         <span className="text-ui-xs font-semibold text-texte-principal">
           {onglets.length ? `${onglets.length} onglet${onglets.length > 1 ? "s" : ""}` : "Navigateur"}

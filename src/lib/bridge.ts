@@ -644,6 +644,10 @@ export interface KlyraBridge {
     onEtat: (callback: (etat: OngletNavigateur[]) => void) => () => void;
     /** Clic droit de la personne dans une page : l'écran dessine le menu de l'app. Absents avant la relance de l'app. */
     onMenu?: (callback: (id: string, menu: MenuNavigateur) => void) => () => void;
+    /** Échap frappé dans la page (la vue native a le focus) : revenir aux vignettes. */
+    onEchap?: (callback: (id: string) => void) => () => void;
+    /** Présent pour le test d'écran : envoie Échap à la page affichée. Refusé sinon. */
+    testerEchap?: () => Promise<Reponse<boolean>>;
     actionMenu?: (id: string, action: ActionMenuNavigateur) => Promise<Reponse<void>>;
     /** Le coffre : site et identifiant seulement ; le mot de passe va vers le main, jamais l'inverse. */
     coffre?: () => Promise<Reponse<ConnexionCoffre[]>>;
@@ -766,7 +770,7 @@ export interface OngletNavigateur {
   erreur: string | null;
   vignette: string | null;
   endormi: boolean;
-  /** Sa page est à l'écran, dans le panneau. */
+  /** Sa page est à l'écran (plein écran de la fenêtre). */
   affiche: boolean;
   pilote: { roleId: string; action: string; at: number } | null;
   main: null | { type: "personne" } | { type: "demandee"; roleId: string; raison: string };
