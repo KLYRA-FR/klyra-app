@@ -189,7 +189,7 @@ import type { AjoutFiche } from "./atelier-agent";
 import { essayerVps } from "./epreuve-vps";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
-import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
+import { adresseConvex, ecrireJeton, enregistrerProtocole, jetonsEcrits, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 import { recevoirPiece } from "./pieces-telephone";
 
@@ -1294,9 +1294,9 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   quitteApresEcriture = true;
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send("app:avant-fermeture");
-  // Le temps que l'interface envoie son état, puis que le fichier soit écrit (2 s au plus).
+  // Le temps que l'interface envoie son état, puis que les fichiers soient écrits, jetons de session compris (2 s au plus).
   setTimeout(() => {
-    void Promise.race([ecrituresTerminees(), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
+    void Promise.race([Promise.all([ecrituresTerminees(), jetonsEcrits()]), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
   }, 300);
 });
 
