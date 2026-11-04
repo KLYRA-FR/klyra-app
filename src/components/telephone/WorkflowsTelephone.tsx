@@ -44,6 +44,7 @@ import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong } from "./Feuille";
 import { NotePoste, SurLePoste, VueLecture, useBandeau } from "./etats";
 import { usePostes, useSupport } from "./poste";
+import { CHAMP_KLYRA_UI } from "./Controles";
 
 /**
  * Automatisations › Workflows sur le téléphone (spec mobile T-18, T-19). Le canevas devient une
@@ -700,7 +701,7 @@ function FeuilleEtape({
             <span className="text-ui-s font-medium text-texte-principal">{c.libelle}</span>
             {c.genre === "texte" ? (
               c.lignes === 1 ? (
-                <Input size="lg" aria-label={c.libelle} value={valeurs[c.cle]} placeholder={placeholder(c)} onChange={(e) => choisir(c.cle, e.target.value)} className="rounded-md border-bordure-champ" />
+                <Input size="lg" aria-label={c.libelle} value={valeurs[c.cle]} placeholder={placeholder(c)} onChange={(e) => choisir(c.cle, e.target.value)} className={CHAMP_KLYRA_UI} />
               ) : (
                 <Textarea
                   size="lg"
@@ -709,7 +710,7 @@ function FeuilleEtape({
                   value={valeurs[c.cle]}
                   placeholder={placeholder(c)}
                   onChange={(e) => choisir(c.cle, e.target.value)}
-                  className={cn("rounded-md border-bordure-champ", c.lignes > 2 ? "min-h-[120px]" : "min-h-[72px]")}
+                  className={cn(CHAMP_KLYRA_UI, c.lignes > 2 ? "min-h-[120px]" : "min-h-[72px]")}
                 />
               )
             ) : c.genre === "choix" ? (
