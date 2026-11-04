@@ -19,6 +19,8 @@ import { identifiantDe } from "@/lib/noms-agents";
 import { poste } from "@/lib/plateforme";
 import { confierAEditeur } from "@/lib/proposition-agent";
 import { useIdDirect, useRole } from "@/lib/workspace";
+import type { EtatAtelier } from "@/lib/atelier-agent";
+import { CarteAtelier, ChoixReponses } from "./CarteAtelier";
 import { PastilleExtension } from "./PastilleExtension";
 import type {
   ChangedFile,
@@ -26,6 +28,7 @@ import type {
   Etape,
   MessageAction,
   MessagePart,
+  RoleId,
   Task,
   TaskStatus,
 } from "@/types/domain";
@@ -56,6 +59,26 @@ export function TextBubble({ text, tone }: { text: string; tone: "user" | "role"
     <div data-cherchable className="w-fit max-w-[680px] min-w-0 rounded-xl bg-fond-survol px-3.5 py-2.5 [overflow-wrap:anywhere]">
       <Markdown source={text} className="gap-2 text-ui leading-[1.6] text-texte-principal" />
     </div>
+  );
+}
+
+/**
+ * Au-dessus de ta bulle : le message d'agent auquel tu réponds (« Répondre »).
+ * Un clic le ramène au centre du fil, s'il y est encore.
+ */
+function CarteCitation({ messageId, roleId, extrait }: { messageId: string; roleId: RoleId; extrait: string }) {
+  const role = useRole(roleId);
+  const montrer = () => document.querySelector(`[data-message="${CSS.escape(messageId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  return (
+    <button
+      type="button"
+      onClick={montrer}
+      title="Voir le message"
+      className="flex w-fit max-w-[560px] cursor-pointer flex-col items-start gap-0.5 rounded-lg border-0 border-l-2 border-solid border-l-bordure-forte bg-fond-survol px-3 py-1.5 text-left hover:bg-fond-surface-grise"
+    >
+      <span className="text-ui-2xs font-medium text-texte-tertiaire">Réponse à {role.name}</span>
+      <span className="line-clamp-2 text-ui-xs leading-[1.45] text-texte-secondaire">{extrait}</span>
+    </button>
   );
 }
 
@@ -444,6 +467,11 @@ export function MessagePartView({
   nomAgent = "L’agent",
   onAutorisation,
   remplacee = false,
+  messageId = "",
+  chatId = "",
+  lieu = null,
+  etatAtelier,
+  choix,
 }: {
   part: MessagePart;
   tone: "user" | "role";
@@ -457,10 +485,20 @@ export function MessagePartView({
   onAutorisation?: (demandeId: string, decision: "oui" | "toujours" | "non") => void;
   /** Une proposition d'agent suivie d'une autre dans la même conversation. */
   remplacee?: boolean;
+  messageId?: string;
+  /** La conversation et sa machine (un VPS, ou null : ce PC), pour l'épreuve d'un agent. */
+  chatId?: string;
+  lieu?: string | null;
+  /** L'atelier d'un agent plié sur toute la conversation (cf. plierAteliers). */
+  etatAtelier?: (etapeId: string) => EtatAtelier | undefined;
+  /** Les réponses toutes prêtes : encore ouvertes, ou ce que la personne a répondu. */
+  choix?: { actif: boolean; repondu: string | null; onRepondre: (texte: string) => void };
 }) {
   switch (part.type) {
     case "text":
       return part.text.trim() ? <TextBubble text={part.text} tone={tone} /> : null;
+    case "citation":
+      return <CarteCitation messageId={part.messageId} roleId={part.roleId} extrait={part.extrait} />;
     case "fichiers":
       return <FichiersJoints chemins={part.chemins} />;
     case "autorisation":
@@ -471,6 +509,10 @@ export function MessagePartView({
       return <PassationView roleId={part.roleId} consigne={part.consigne} statut={part.statut} etapes={etapesDe(part.etapeId)} />;
     case "proposition-agent":
       return <CartePropositionAgent part={part} remplacee={remplacee} />;
+    case "atelier-agent":
+      return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} chatId={chatId} lieu={lieu} enDirect={enCours} />;
+    case "choix":
+      return <ChoixReponses part={part} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onRepondre={(t) => choix?.onRepondre(t)} />;
     case "tasks":
       return <TaskList tasks={part.tasks} />;
     case "options":

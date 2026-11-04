@@ -8,6 +8,7 @@ import { lireClePoste } from "./SignalPoste";
 import { ErreurPoste, type Gestes } from "@/lib/poste/types";
 import { useGestesAgents } from "@/lib/poste/gestes/agents";
 import { useGestesArtefacts } from "@/lib/poste/gestes/artefacts";
+import { useGestesAtelier } from "@/lib/poste/gestes/atelier";
 import { useGestesAutomatisations } from "@/lib/poste/gestes/automatisations";
 import { useGestesFichiers } from "@/lib/poste/gestes/fichiers";
 import { useGestesFil } from "@/lib/poste/gestes/fil";
@@ -67,6 +68,7 @@ export function ServicePoste({ actif }: { actif: boolean }) {
     ...useGestesAutomatisations(),
     ...useGestesFil(),
     ...useGestesAgents(),
+    ...useGestesAtelier(),
     ...useGestesArtefacts(),
     ...useGestesReglages(),
     ...useGestesPlanning(),

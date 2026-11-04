@@ -19,7 +19,7 @@ app.setPath("userData", path.join(TMP, "donnees"));
 app.setPath("sessionData", path.join(TMP, "session"));
 
 const MICRO = ["clic", "ouvrir", "fermer", "selection"];
-const EVENEMENTS = [...MICRO, "envoi", "fin-de-tache", "erreur", "notification", "dictee-debut", "dictee-fin", "maj-prete", "active", "desactive", "validation"];
+const EVENEMENTS = [...MICRO, "envoi", "fin-de-tache", "erreur", "notification", "dictee-debut", "dictee-fin", "maj-prete", "active", "desactive", "validation", "atelier-etoile", "agent-ne"];
 const THEMES = ["chaleureux", "mecanique", "petillant", "clavier"];
 /** Une microinteraction s'éteint (40 dB sous sa crête) en moins de ce temps. */
 const AUDIBLE_MAX_MICRO = 0.2;

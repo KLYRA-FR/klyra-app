@@ -22,7 +22,7 @@ import { MessageExport } from "./MessageExport";
 import { useExporterConversation } from "./useExporterConversation";
 import { OngletsConversations } from "./OngletsConversations";
 import { OngletsFils } from "./OngletsFils";
-import { PanneauLateral, usePanneauLateral } from "./PanneauLateral";
+import { OUVRIR_PANNEAU_AGENT, PanneauLateral, surReglages, usePanneauLateral } from "./PanneauLateral";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 import type { DemandeApercu } from "@/components/ui/Lien";
 
@@ -186,6 +186,15 @@ export function ChatScreen() {
       setPreviewOpen(true);
     }
   }
+  /* Avatar ou prénom de l'agent cliqué : le panneau s'ouvre sur ses réglages. */
+  useEffect(() => {
+    const ouvrir = () => {
+      setPanneauOuvert(true);
+      setEtatPanneau(surReglages);
+    };
+    window.addEventListener(OUVRIR_PANNEAU_AGENT, ouvrir);
+    return () => window.removeEventListener(OUVRIR_PANNEAU_AGENT, ouvrir);
+  }, [setEtatPanneau]);
 
   const fermerPanneau = useCallback(() => {
     setPanneauOuvert(false);

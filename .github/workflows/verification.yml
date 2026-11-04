@@ -99,6 +99,7 @@ jobs:
       # Le vrai pilote (cua-driver épinglé) ; openbox, parce que le clic au premier plan veut un gestionnaire de fenêtres.
       - name: Computer Use, pilote, outils MCP, clic et frappe
         run: |
+          sudo apt-get update
           sudo apt-get install -y --no-install-recommends openbox
           pnpm cua-driver
           timeout 150 xvfb-run -a -s "-screen 0 1600x1000x24" sh -c 'openbox & sleep 2; env -u ELECTRON_RUN_AS_NODE pnpm test:ordinateur'

@@ -50,7 +50,7 @@
 
 - **Fiches d'agents (PR 4)** : le PC reste la source. À la connexion et à chaque modification, l'app envoie au VPS les fiches de Mes agents **actifs** (le même `preparerPublication` que la Bibliothèque : chemins personnels retirés, secret = refus). Le VPS les écrit dans `~klyra/.claude/agents`. Le refus des agents inactifs (`--disallowedTools Agent(…)`) s'applique de la même façon.
 - **Projets (PR 5)** : un projet est soit un dossier du PC, soit un dossier du VPS. L'arbre et la visionneuse d'un projet du VPS passent par le serveur (lecture seule au départ). Aucun fichier n'est recopié d'une machine à l'autre.
-- **Pas dans les premières versions** : outils des fils (`lister_fils`, `ecrire_dans_fil`…) et `proposer_agent`, Composio, Computer Use, dictée. Ils passent par le serveur MCP local de l'app (`demarrerServeurMcp`, `127.0.0.1`), que Claude Code sur le VPS ne peut pas joindre. Un agent du VPS les voit absents et le dit.
+- **Pas dans les premières versions** : outils des fils (`lister_fils`, `ecrire_dans_fil`…), Composio, Computer Use, dictée. (Depuis le 03/11, `proposer_agent` et `proposer_choix`, l’atelier d’un agent, sont servis par le serveur MCP du VPS, cf. `serveur/ia.mjs`.) Ils passent par le serveur MCP local de l'app (`demarrerServeurMcp`, `127.0.0.1`), que Claude Code sur le VPS ne peut pas joindre. Un agent du VPS les voit absents et le dit.
 - **Routines (PR 6)** : c'est le vrai gain d'un VPS, qui tourne quand le PC dort. Une routine choisit sa machine. Celles du VPS sont tenues par le serveur, avec le même modèle de réservation que `electron/routines/`. À détailler dans un plan à part avant la PR.
 
 ## 6. Étapes (6 PR)

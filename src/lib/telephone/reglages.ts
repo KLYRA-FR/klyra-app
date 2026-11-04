@@ -115,12 +115,16 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "navigateur-donnees": sur(RAISONS.ordinateur),
   "navigateur-telechargements": L,
   "navigateur-coffre": sur(RAISONS.cles),
-  /* Mises à jour : l'état se lit, l'installation reste devant l'ordinateur. */
+  /* Marketplace : les connexions et les clés des apps restent sur l'ordinateur. */
+  composio: sur(RAISONS.composio),
+  "apps-directes": sur(RAISONS.cles),
+  /* Mises à jour : l'état se lit, l'installation reste devant l'ordinateur ; les liens publics s'ouvrent d'ici. */
   "version-installee": L,
   "version-disponible": L,
   "derniere-verification": L,
   "rechercher-maj": P,
   "installer-maj": sur(RAISONS.maj),
+  changelog: T,
   "depot-versions": T,
 };
 

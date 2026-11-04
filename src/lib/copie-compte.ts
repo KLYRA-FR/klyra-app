@@ -1,4 +1,7 @@
 import type { Chat, Etape, Message, MessagePart, Project, Role } from "@/types/domain";
+import { vueAtelier, type ContexteAtelier, type PartieAtelierCompte } from "./atelier-compte";
+
+export type { CarteAtelierCompte, ContexteAtelier, LigneAtelierCompte, ResultatCompte } from "./atelier-compte";
 
 const TEXTE_MAX = 8000;
 const PARTIES_MAX = 20_000;
@@ -97,17 +100,31 @@ export type PartieCompte =
   | { type: "tasks"; tasks: { label: string; status: "fait" | "en-cours" | "a-venir"; roleId?: string }[] }
   | { type: "options"; options: { label: string; layout: "texte" | "texte-media"; selected: boolean }[] }
   | { type: "worklog"; durationMin: number; files: { path: string; added: number; removed: number }[] }
-  | { type: "actions"; actions: { label: string; primary: boolean }[] };
+  | { type: "actions"; actions: { label: string; primary: boolean }[] }
+  /** L'atelier d'un agent : la carte calculée par l'ordinateur (cf. atelier-compte.ts). */
+  | PartieAtelierCompte
+  /** Les réponses toutes prêtes sous une question de l'assistant (outil `proposer_choix`). */
+  | { type: "choix"; question: string; options: string[]; multiple: boolean };
 
 function source(etape: Etape): Exclude<SourceFichier, "joint"> {
   return etape.outil === "Write" ? "cree" : etape.outil === "Read" ? "lu" : "modifie";
 }
 
-function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null, avecFichiers: boolean): PartieCompte {
+/** Le niveau de réduction : tout, sans les listes de fichiers, puis l'atelier en version courte. */
+interface Reduction {
+  avecFichiers: boolean;
+  atelierCompact: boolean;
+}
+
+function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null, r: Reduction, atelier: ContexteAtelier | null): PartieCompte | null {
+  const { avecFichiers } = r;
   const net = (texte: string, max: number) => sansCheminNiSecret(texte, dossier).slice(0, max);
   switch (part.type) {
     case "text":
       return { type: "text", text: net(part.text, TEXTE_MAX) };
+    // Le téléphone ne connaît pas les citations : l'extrait part comme une ligne de texte.
+    case "citation":
+      return { type: "text", text: net(`En réponse : ${part.extrait}`, 300) };
     case "fichiers":
       return avecFichiers
         ? { type: "fichiers", fichiers: part.chemins.slice(0, 10).map((c) => ({ nom: nomDe(c).slice(0, 160), chemin: relatifAuProjet(c, dossier) })) }
@@ -158,6 +175,10 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
         role: part.proposition.role.slice(0, 120),
         description: net(part.proposition.description, 400),
       };
+    case "atelier-agent":
+      return atelier ? vueAtelier(part.etapeId, atelier, net, r.atelierCompact) : null;
+    case "choix":
+      return { type: "choix", question: net(part.question, 300), options: part.options.slice(0, 6).map((o) => net(o, 120)), multiple: part.multiple };
     case "tasks":
       return {
         type: "tasks",
@@ -178,14 +199,21 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
 
 /**
  * Parties gardées dans le compte : la forme de chaque bloc (texte, étapes repliées, accord, passation,
- * tâches, options…), sans chemin absolu ni secret ni session. Trop long : d'abord sans les listes de
- * fichiers, puis le texte seul.
+ * tâches, options, carte de l'atelier…), sans chemin absolu ni secret ni session. Trop long : d'abord
+ * sans les listes de fichiers, puis l'atelier en version courte, puis le texte seul. Sans `atelier`
+ * (la conversation pliée par l'ordinateur), les cartes de l'atelier ne partent pas.
  */
-export function partiesReduites(parts: MessagePart[], dossier: string | null = null): string {
-  const json = JSON.stringify(parts.map((p) => reduire(p, parts, dossier, true)));
-  if (json.length <= PARTIES_MAX) return json;
-  const sansListes = JSON.stringify(parts.map((p) => reduire(p, parts, dossier, false)));
-  if (sansListes.length <= PARTIES_MAX) return sansListes;
+export function partiesReduites(tout: MessagePart[], dossier: string | null = null, atelier: ContexteAtelier | null = null): string {
+  const parts = tout;
+  const essai = (r: Reduction) => JSON.stringify(parts.flatMap((p) => reduire(p, parts, dossier, r, atelier) ?? []));
+  for (const r of [
+    { avecFichiers: true, atelierCompact: false },
+    { avecFichiers: false, atelierCompact: false },
+    { avecFichiers: false, atelierCompact: true },
+  ]) {
+    const json = essai(r);
+    if (json.length <= PARTIES_MAX) return json;
+  }
   const texte = parts
     .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
     .map((p) => p.text)
@@ -232,7 +260,7 @@ export interface TravailCopie {
 }
 
 function poseUneQuestion(message: Message): boolean {
-  if (message.parts.some((p) => (p.type === "options" && p.options.length > 0) || (p.type === "actions" && p.actions.length > 0))) return true;
+  if (message.parts.some((p) => (p.type === "options" && p.options.length > 0) || (p.type === "actions" && p.actions.length > 0) || p.type === "choix")) return true;
   const texte = message.parts
     .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
     .map((p) => p.text)
@@ -330,7 +358,7 @@ export function conversationCompte(chat: Chat, duFil: Message[], projets: Projec
   };
 }
 
-export function messageCompte(message: Message, dossier: string | null = null) {
+export function messageCompte(message: Message, dossier: string | null = null, atelier: ContexteAtelier | null = null) {
   const texte = sansCheminNiSecret(
     message.parts
       .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
@@ -345,7 +373,7 @@ export function messageCompte(message: Message, dossier: string | null = null) {
     auteurId: message.author.kind === "role" ? message.author.roleId : null,
     creeLe: message.createdAt,
     texte,
-    parties: partiesReduites(message.parts, dossier),
+    parties: partiesReduites(message.parts, dossier, atelier),
     statut: message.statut ?? null,
   };
 }

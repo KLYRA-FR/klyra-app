@@ -1,3 +1,8 @@
+import type { AjoutFiche, MajAtelier } from "../../electron/atelier-agent";
+import type { ResultatCas, TypeCas } from "../../electron/epreuve";
+
+export type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, RoutineProposee, VoisinAgent } from "../../electron/atelier-agent";
+
 /**
  * Modèle de données de l'app. Les données factices (src/data/mock.ts) et le
  * futur back-end partagent exactement ces formes : brancher le back revient à
@@ -265,6 +270,8 @@ export interface Etape {
 
 export type MessagePart =
   | { type: "text"; text: string }
+  /** Ton message répond à un message d'agent (« Répondre ») : son extrait, au-dessus de ta bulle. */
+  | ({ type: "citation" } & Citation)
   /** Fichiers joints par l'utilisateur (chemins complets). */
   | { type: "fichiers"; chemins: string[] }
   | { type: "etapes"; etapes: Etape[] }
@@ -284,10 +291,42 @@ export type MessagePart =
   | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur" }
   /** L'assistant propose la fiche d'un nouvel agent : la personne l'ouvre, l'ajuste et l'enregistre (ou non). */
   | { type: "proposition-agent"; etapeId: string; proposition: PropositionAgent }
+  /**
+   * L'atelier d'un agent (outil `proposer_agent`) : ce que cet appel a appris. La carte plie tous
+   * les appels de la conversation (`src/lib/atelier-agent.ts`). `teinte` : la couleur choisie par la
+   * personne sur la carte ; `cree` : l'id de l'agent créé depuis cette carte.
+   */
+  | {
+      type: "atelier-agent";
+      etapeId: string;
+      maj: MajAtelier;
+      teinte?: RoleTeinte;
+      cree?: string;
+      /** L'entrée encore en cours d'écriture par le modèle (carte qui s'écrit en direct). */
+      provisoire?: boolean;
+      /** L'épreuve passée sur cette carte (cf. electron/epreuve.ts). */
+      resultats?: ResultatCas[];
+      /** Les phrases que la personne a ajoutées à la fiche (corrections de l'épreuve). */
+      ajouts?: AjoutFiche[];
+      /**
+       * Les essais de l'épreuve en train de tourner (lancés du bureau ou du téléphone), pour que les
+       * deux le voient. Retirés au chargement : un essai coupé par la fermeture de l'app ne reprend pas.
+       */
+      essais?: TypeCas[];
+    }
+  /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
+  | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }
   | { type: "tasks"; tasks: Task[] }
   | { type: "options"; options: DeliverableOption[] }
   | { type: "worklog"; durationMin: number; files: ChangedFile[] }
   | { type: "actions"; actions: MessageAction[] };
+
+/** Le message d'agent auquel on répond : son id, son auteur et le début de son texte, sans Markdown. */
+export interface Citation {
+  messageId: string;
+  roleId: RoleId;
+  extrait: string;
+}
 
 /** Une fiche d'agent proposée par l'assistant (outil `proposer_agent`), pas encore enregistrée. */
 export interface PropositionAgent {
@@ -315,6 +354,8 @@ export interface Message {
   compaction?: boolean;
   /** Résumé lancé par l'app (configuration KLYRA) : avant un message, ou pendant une pause. Sans notification. */
   compactionAuto?: "envoi" | "pause";
+  /** Tes réactions à une réponse d'agent (émojis), pour le plaisir : rien n'est envoyé à l'agent. */
+  reactions?: string[];
 }
 
 /* ─── Planning ─────────────────────────────────────────────────── */

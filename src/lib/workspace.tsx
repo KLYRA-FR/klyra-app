@@ -13,7 +13,7 @@ import { libelleEtape } from "@/lib/etapes";
 import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
-import { lireProposition } from "@/lib/proposition-agent";
+import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCours } from "@/lib/atelier-agent";
 import { lirePublication, nomDuFichier, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
@@ -27,13 +27,17 @@ import { COMMANDE_RESUME_AUTO, estCommandeCompacter, formaterJetons, nouvelleMes
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
+import { extraitMarkdown } from "@/lib/apercu/extrait";
+import { texteBrut, type Inline } from "@/lib/apercu/markdown";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
   Artefact,
   Rendu,
   Chat,
+  Citation,
   Etape,
   EtapeTicket,
+  MajAtelier,
   Message,
   MessagePart,
   Project,
@@ -47,6 +51,10 @@ import type {
   Categorie,
   User,
 } from "@/types/domain";
+
+/** Une carte de l'atelier, et ce que l'écran peut y noter. */
+type PartAtelier = Extract<MessagePart, { type: "atelier-agent" }>;
+type PatchAtelier = Partial<Pick<PartAtelier, "teinte" | "cree" | "resultats" | "ajouts" | "essais">>;
 
 /** Les catégories de rappels à la première ouverture. */
 const CATEGORIES_DE_DEPART: Categorie[] = [
@@ -89,6 +97,8 @@ export interface EnAttente {
   text: string;
   to: RoleId | null;
   fichiers: string[];
+  /** « Répondre » à un message d'agent : il repart avec le message. */
+  citation?: Citation;
   /** Une exécution de routine qui attend son tour (cf. `useLivraisonRoutines`). */
   routineRun?: string;
 }
@@ -443,19 +453,37 @@ function ajouterEtape(
       },
     ];
   }
-  // L'assistant propose un nouvel agent : une carte à ouvrir dans l'éditeur, après ses étapes.
-  const proposition = etape.outil === "mcp__klyra__proposer_agent" ? lireProposition(entree) : null;
-  if (proposition) return [...parts, { type: "proposition-agent", etapeId: etape.id, proposition }];
+  // L'atelier d'un agent : la carte se complète dans le fil (cf. atelier-agent.ts), après ses étapes.
+  const maj = etape.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(entree) : null;
+  if (maj) return poserAtelier(parts, etape.id, maj, false);
+  // Des réponses toutes prêtes sous la question de l'assistant.
+  const choix = etape.outil === "mcp__klyra__proposer_choix" ? lireChoix(entree) : null;
+  if (choix) return [...parts, { type: "choix", etapeId: etape.id, ...choix }];
   // Toutes les étapes de la réponse vivent dans un seul bloc, en tête du message.
   const index = parts.findIndex((p) => p.type === "etapes");
   if (index === -1) return [{ type: "etapes", etapes: [etape] }, ...parts];
   return parts.map((p, i) => (i === index && p.type === "etapes" ? { ...p, etapes: [...p.etapes, etape] } : p));
 }
 
+/**
+ * La carte de l'atelier pour cet appel : ajoutée, ou mise à jour si elle s'écrivait déjà en direct
+ * (`provisoire`, cf. l'événement `etape-partielle`). Ce que la personne y a déjà fait reste.
+ */
+function poserAtelier(parts: MessagePart[], etapeId: string, maj: MajAtelier, provisoire: boolean): MessagePart[] {
+  const i = parts.findIndex((p) => p.type === "atelier-agent" && p.etapeId === etapeId);
+  if (i === -1) return [...parts, { type: "atelier-agent", etapeId, maj, ...(provisoire ? { provisoire } : {}) }];
+  return parts.map((p, j) => {
+    if (j !== i || p.type !== "atelier-agent") return p;
+    const { provisoire: _ancien, ...reste } = p;
+    void _ancien;
+    return { ...reste, maj, ...(provisoire ? { provisoire } : {}) };
+  });
+}
+
 function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[] {
   const statut = ok ? "fait" : "erreur";
-  // Une proposition d'agent refusée par l'app (identifiant déjà pris…) ne devient pas une carte.
-  const gardees = ok ? parts : parts.filter((p) => !(p.type === "proposition-agent" && p.etapeId === id));
+  // Une carte ou des réponses refusées par l'app (prénom déjà pris…) ne restent pas dans le fil.
+  const gardees = ok ? parts : parts.filter((p) => !((p.type === "proposition-agent" || p.type === "atelier-agent" || p.type === "choix") && p.etapeId === id));
   return gardees.map((p) => {
     if (p.type === "passation" && p.etapeId === id) return { ...p, statut };
     if (p.type === "etapes")
@@ -544,7 +572,9 @@ const VERSION_STOCKAGE = 1;
 interface WorkspaceApi {
   state: WorkspaceState;
   /** Envoie un message ; sans destinataire, c'est le Principal (ou l'agent de la conversation directe) qui répond. */
-  sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[]) => void;
+  sendMessage: (chatId: string, text: string, to: RoleId | null, fichiers?: string[], citation?: Citation) => void;
+  /** Ajoute ou retire ta réaction (un émoji) à un message. */
+  reagir: (messageId: string, emoji: string) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
   /** « Plus tard » sur le conseil de résumer : il revient quand la conversation dépasse `jusqua` jetons. */
@@ -605,6 +635,8 @@ interface WorkspaceApi {
   changerCategories: (categories: Categorie[]) => void;
   /** Ta réponse à une demande d'autorisation d'un agent. */
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
+  /** La carte de l'atelier d'un agent : la couleur choisie, l'épreuve, les ajouts, puis l'agent créé depuis elle. */
+  marquerAtelier: (messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => void;
   supprimerArtefact: (id: string) => void;
   /** Retire un rendu d'agent de la liste et supprime la copie de l'app ; l'original reste où il est. */
   retirerRendu: (id: string) => void;
@@ -726,14 +758,16 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       const valide = data?.version === VERSION_STOCKAGE;
       if (data !== null && !valide) { setErreurChargement("Le format des conversations n’est pas reconnu. Les données existantes sont conservées."); return; }
       const messages = (valide ? (data.messages ?? []) : []).map((m) =>
-        // Une réponse coupée par la fermeture de l'app ne reprendra pas.
-        m.statut === "en-cours"
-          ? {
-              ...m,
-              statut: "erreur" as const,
-              erreur: "Interrompu : l’app a été fermée.",
-            }
-          : m,
+        // Une réponse coupée par la fermeture de l'app ne reprendra pas, ni un essai de l'épreuve d'un agent.
+        sansEssaisEnCours(
+          m.statut === "en-cours"
+            ? {
+                ...m,
+                statut: "erreur" as const,
+                erreur: "Interrompu : l’app a été fermée.",
+              }
+            : m,
+        ),
       );
       const artefactsCharges = valide ? (data.artefacts ?? []).filter((a) => a.id !== ANCIEN_ARTEFACT_DE_DEPART) : [];
       dispatch({
@@ -892,7 +926,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     if (depuis.length) lignes.push(`${jamaisRepondu ? "[La conversation jusqu’ici]" : "[Depuis ta dernière réponse]"}\n${depuis.join("\n\n")}`);
     // Le retour d'un fil arrive au nom de l'agent qui l'a fait, pas de la personne.
     const de = messageUtilisateur.author.kind === "role" ? `Retour du fil, de ${nom(messageUtilisateur.author.roleId)}` : `Message de ${personne.name}`;
-    lignes.push(`${lignes.length || messageUtilisateur.author.kind === "role" ? `[${de}]\n` : ""}${texteDe(messageUtilisateur)}`);
+    // « Répondre » : l'agent sait à quel message on répond.
+    const citation = messageUtilisateur.parts.find((p) => p.type === "citation");
+    const enReponse = citation?.type === "citation" ? `[En réponse à ce message de ${nom(citation.roleId)}]\n> ${citation.extrait}\n\n` : "";
+    lignes.push(`${lignes.length || messageUtilisateur.author.kind === "role" ? `[${de}]\n` : ""}${enReponse}${texteDe(messageUtilisateur)}`);
     const joints = messageUtilisateur.parts.find((p) => p.type === "fichiers");
     if (joints?.type === "fichiers" && joints.chemins.length) {
       lignes.push(`[Fichiers joints, à lire]\n${joints.chemins.map((c) => `- ${c}`).join("\n")}`);
@@ -903,7 +940,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /** `lancer`, pour ce qui est déclaré avant lui (retours des fils). */
   const lancerTot = useRef<(chatId: string, roleId: RoleId, message: Message) => void>(() => {});
   const envoyerRef = useRef<
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean, routineRun?: string, idImpose?: string) => void
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile?: boolean, routineRun?: string, idImpose?: string, citation?: Citation) => void
   >(() => {});
 
   /** La suite de la file d'attente, quand l'agent a fini. */
@@ -919,7 +956,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     dispatch({ type: "file/retirer", chatId, id: prochain.id });
     // L'état « travail » est libéré au rendu suivant : le message part juste après.
     timers.current.push(
-      setTimeout(() => envoyerRef.current(chatId, prochain.text, prochain.to, prochain.fichiers, true, prochain.routineRun), 0),
+      setTimeout(() => envoyerRef.current(chatId, prochain.text, prochain.to, prochain.fichiers, true, prochain.routineRun, undefined, prochain.citation), 0),
     );
   }, []);
 
@@ -1052,6 +1089,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }
           break;
         }
+        case "etape-partielle": {
+          // La carte de l'atelier s'écrit pendant que l'assistant remplit l'outil.
+          const enCours = event.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(event.entree) : null;
+          if (enCours) maj((m) => ({ ...m, parts: poserAtelier(m.parts, event.id, enCours, true) }));
+          break;
+        }
         case "etape-fin":
           maj((m) => ({
             ...m,
@@ -1099,7 +1142,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "fin":
           maj((m) => {
             const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
-            const parts = !aDuTexte && event.texte ? ajouterTexte(m.parts, event.texte, true) : m.parts;
+            // Une carte restée en cours d'écriture (réponse arrêtée avant la fin de l'outil) n'est pas gardée.
+            const finies = m.parts.filter((p) => !(p.type === "atelier-agent" && p.provisoire));
+            const parts = !aDuTexte && event.texte ? ajouterTexte(finies, event.texte, true) : finies;
             return event.ok
               ? { ...m, parts, statut: "fait" }
               : { ...m, parts, statut: "erreur", erreur: event.erreur };
@@ -1463,7 +1508,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /** `horsFile` : le message sort de la file, l'agent vient de finir (l'état n'est peut-être pas encore à jour). */
   const envoyer = useCallback(
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false, routineRun?: string, idImpose?: string) => {
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[], horsFile = false, routineRun?: string, idImpose?: string, citation?: Citation) => {
       const chat = assurerChat(chatId);
       if (!chat) return;
 
@@ -1474,7 +1519,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         dispatch({
           type: "file/ajouter",
           chatId,
-          message: { id: idFile, text, to, fichiers, ...(routineRun ? { routineRun } : {}) },
+          message: { id: idFile, text, to, fichiers, ...(routineRun ? { routineRun } : {}), ...(citation ? { citation } : {}) },
         });
         return idFile;
       }
@@ -1483,7 +1528,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       const cible = chat.kind === "direct" ? chat.roleIds[0] : (to ?? (chat.roleIds.includes("principal") ? "principal" : chat.roleIds[0]));
       if (!horsFile && !routineRun && configurationRef.current.resumeAuto && !estCommandeCompacter(text) && resumeAvantEnvoi(chat, cible)) {
         const idFile = idImpose ?? crypto.randomUUID();
-        dispatch({ type: "file/ajouter", chatId, message: { id: idFile, text, to, fichiers } });
+        dispatch({ type: "file/ajouter", chatId, message: { id: idFile, text, to, fichiers, ...(citation ? { citation } : {}) } });
         compacterAuto(chatId, cible, "envoi");
         return idFile;
       }
@@ -1499,12 +1544,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         chatId,
         author: { kind: "user" },
         createdAt: new Date().toISOString(),
-        parts: fichiers.length
-          ? [
-              { type: "text", text },
-              { type: "fichiers", chemins: fichiers },
-            ]
-          : [{ type: "text", text }],
+        parts: [
+          ...(citation ? [{ type: "citation" as const, ...citation }] : []),
+          { type: "text", text },
+          ...(fichiers.length ? [{ type: "fichiers" as const, chemins: fichiers }] : []),
+        ],
         ...(routineRun ? { routineRun } : {}),
       };
       dispatch({ type: "message/add", message });
@@ -1531,9 +1575,22 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     }
   }, [state.travail, state.file]);
   const sendMessage = useCallback(
-    (chatId: string, text: string, to: RoleId | null, fichiers: string[] = []) => envoyer(chatId, text, to, fichiers),
+    (chatId: string, text: string, to: RoleId | null, fichiers: string[] = [], citation?: Citation) =>
+      envoyer(chatId, text, to, fichiers, false, undefined, undefined, citation),
     [envoyer],
   );
+
+  const reagir = useCallback((messageId: string, emoji: string) => {
+    dispatch({
+      type: "message/update",
+      id: messageId,
+      patch: (m) => {
+        const avant = m.reactions ?? [];
+        const reactions = avant.includes(emoji) ? avant.filter((e) => e !== emoji) : [...avant, emoji];
+        return { ...m, reactions: reactions.length ? reactions : undefined };
+      },
+    });
+  }, []);
 
   const choisirModele = useCallback(
     (chatId: string, modele: string | null, effort: string | null) => {
@@ -1946,11 +2003,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           });
           return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans ton espace de livrables ; republier le même fichier remplace cette copie.`;
         }
-        case "proposer_agent": {
-          const proposition = lireProposition(args);
-          if (!proposition) throw new Error("Il manque le prénom ou les consignes de l’agent proposé.");
-          if (roles.some((r) => r.id === proposition.id)) throw new Error(`« ${proposition.id} » est déjà dans Mes agents : propose un autre identifiant, ou un changement de sa fiche.`);
-          return `Proposition affichée à la personne : ${proposition.nom} (${proposition.role || "sans rôle"}). Elle l’ouvre dans l’éditeur, l’ajuste et l’enregistre elle-même ; rien n’est créé tant qu’elle n’a pas enregistré.`;
+        case "proposer_agent":
+        case "proposer_choix": {
+          // Le même appel que sur un VPS (electron/atelier-agent.ts) : refus, carte suivie, ce que l'outil répond.
+          const equipe = roles.map((r) => ({ id: r.id, noms: [r.name, r.tag] }));
+          const r = appelAtelier(nom, args, atelierEnCours(messages.filter((m) => m.chatId === appelant.chatId)), equipe);
+          if (r.erreur) throw new Error(r.texte);
+          return r.texte;
         }
         default:
           throw new Error("Outil inconnu.");
@@ -2191,6 +2250,17 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [bridge],
   );
+
+  const marquerAtelier = useCallback((messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => {
+    dispatch({
+      type: "message/update",
+      id: messageId,
+      patch: (m) => ({
+        ...m,
+        parts: m.parts.map((p) => (p.type === "atelier-agent" && p.etapeId === etapeId ? { ...p, ...(typeof patch === "function" ? patch(p) : patch) } : p)),
+      }),
+    });
+  }, []);
 
   /* Premier lancement : le profil part du nom de la session Mac. */
   useEffect(() => {
@@ -2523,6 +2593,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       moi,
       choisirAcces,
       repondreAutorisation,
+      marquerAtelier,
+      reagir,
       enregistrerTache,
       supprimerTache,
       restaurerTaches,
@@ -2575,6 +2647,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       enregistrerProfil,
       choisirAcces,
       repondreAutorisation,
+      marquerAtelier,
+      reagir,
       enregistrerTache,
       supprimerTache,
       restaurerTaches,
@@ -2717,7 +2791,10 @@ export function useRecentChats(limit?: number): Chat[] {
 export interface ChatPreview {
   /** Rôle à afficher en avatar : auteur du dernier message, ou le Principal. */
   roleId: RoleId;
+  /** Le dernier message en texte seul, sur une ligne (Markdown retiré). */
   text: string;
+  /** Le même, avec sa mise en forme en ligne (gras, italique, code…), pour la barre. */
+  contenu: Inline[];
   /** Date du dernier message, null si la conversation est vide. */
   at: string | null;
 }
@@ -2729,17 +2806,15 @@ export function useChatPreview(chatId: string): ChatPreview {
   return useMemo(() => {
     const direct = chatId.startsWith(DIRECT);
     const last = messages.findLast((m) => m.chatId === chatId && (m.statut !== "en-cours" || texteDe(m)));
-    if (!last) return { roleId: "principal", text: "", at: null };
-    const text = texteDe(last).replace(/\s+/g, " ") || (last.statut === "erreur" ? "Arrêté sur une erreur" : "…");
-    if (last.author.kind === "user") return { roleId: "principal", text: `Toi : ${text}`, at: last.createdAt };
-    const { roleId } = last.author;
-    const name = roles.find((r) => r.id === roleId)?.name ?? "";
+    if (!last) return { roleId: "principal", text: "", contenu: [], at: null };
+    const extrait = extraitMarkdown(texteDe(last));
+    const vide = !texteBrut(extrait).trim();
+    const contenu: Inline[] = vide ? [{ type: "texte", texte: last.statut === "erreur" ? "Arrêté sur une erreur" : "…" }] : extrait;
     // Conversation directe : pas besoin de répéter le prénom de l'agent.
-    return {
-      roleId,
-      text: direct ? text : `${name} : ${text}`,
-      at: last.createdAt,
-    };
+    const roleId = last.author.kind === "user" ? "principal" : last.author.roleId;
+    const prefixe = last.author.kind === "user" ? "Toi : " : direct ? "" : `${roles.find((r) => r.id === roleId)?.name ?? ""} : `;
+    const avecPrefixe: Inline[] = prefixe ? [{ type: "texte", texte: prefixe }, ...contenu] : contenu;
+    return { roleId, text: texteBrut(avecPrefixe), contenu: avecPrefixe, at: last.createdAt };
   }, [messages, roles, chatId]);
 }
 

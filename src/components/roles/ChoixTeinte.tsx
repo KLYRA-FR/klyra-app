@@ -31,9 +31,12 @@ export function ChoixTeinte({
   onChange,
   libelle,
   libelleId,
+  desactive = false,
 }: {
   valeur: RoleTeinte;
   onChange: (teinte: RoleTeinte) => void;
+  /** Pas de choix possible pour l'instant (téléphone, ordinateur fermé). */
+  desactive?: boolean;
   /** Le nom du groupe, s'il n'a pas de titre visible (sinon `libelleId`). */
   libelle?: string;
   libelleId?: string;
@@ -54,7 +57,7 @@ export function ChoixTeinte({
             : e.key === "End"
               ? n - 1
               : null;
-    if (cible === null) return;
+    if (cible === null || desactive) return;
     e.preventDefault();
     onChange(ROLE_TEINTES[cible]);
     groupe.current?.querySelectorAll<HTMLElement>('[role="radio"]')[cible]?.focus();
@@ -80,9 +83,10 @@ export function ChoixTeinte({
             aria-label={NOMS_TEINTES[t]}
             title={NOMS_TEINTES[t]}
             tabIndex={choisie || (rang === -1 && i === 0) ? 0 : -1}
+            disabled={desactive}
             onClick={() => onChange(t)}
             className={cn(
-              "flex size-8 cursor-pointer items-center justify-center rounded-xs border bg-fond-surface p-0",
+              "flex size-8 cursor-pointer items-center justify-center rounded-xs border bg-fond-surface p-0 disabled:cursor-default disabled:opacity-45",
               choisie ? "border-focus" : "border-bordure-subtile hover:border-bordure-forte",
             )}
           >

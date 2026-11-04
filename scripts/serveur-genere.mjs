@@ -8,7 +8,10 @@
  * - `serveur/consommation-ecart.mjs` : ce qu'un tour de Claude Code a consommé (electron/consommation-ecart.ts) ;
  * - `serveur/diagnostic-poste.mjs` : ce que la configuration de Claude Code ajoute à chaque appel (electron/diagnostic-poste.ts) ;
  * - `serveur/consignes-projet.mjs` : les consignes KLYRA d'un projet, AGENTS.md et CLAUDE.md (electron/consignes-projet.ts) ;
- * - `serveur/navigateur-definitions.mjs` : les outils du navigateur de KLYRA et leur consigne (electron/navigateur/definitions.ts).
+ * - `serveur/navigateur-definitions.mjs` : les outils du navigateur de KLYRA et leur consigne (electron/navigateur/definitions.ts) ;
+ * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
+ *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture).
+ * Un import entre fichiers générés (`./epreuve`) devient `./epreuve.mjs` ; tout autre import relatif est refusé.
  *   node scripts/serveur-genere.mjs           → écrit les fichiers
  *   node scripts/serveur-genere.mjs --verifier → échoue si l'un n'est plus à jour (test:serveur)
  */
@@ -24,14 +27,24 @@ const FICHIERS = [
   ["electron/consommation-ecart.ts", "serveur/consommation-ecart.mjs"],
   ["electron/diagnostic-poste.ts", "serveur/diagnostic-poste.mjs"],
   ["electron/consignes-projet.ts", "serveur/consignes-projet.mjs"],
+  ["electron/epreuve.ts", "serveur/epreuve.mjs"],
+  ["electron/json-partiel.ts", "serveur/json-partiel.mjs"],
+  ["electron/atelier-agent.ts", "serveur/atelier-agent.mjs"],
   ["electron/navigateur/definitions.ts", "serveur/navigateur-definitions.mjs"],
 ];
+
+/** Le nom d'un fichier généré, sans dossier ni extension (`epreuve`). */
+const GENERES = new Set(FICHIERS.map(([, vers]) => vers.replace(/^serveur\//, "").replace(/\.mjs$/, "")));
 
 let perime = false;
 for (const [depuis, vers] of FICHIERS) {
   const source = readFileSync(new URL(`../${depuis}`, import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, removeComments: false, verbatimModuleSyntax: false } });
-  const contenu = `// Généré par scripts/serveur-genere.mjs depuis ${depuis} : ne pas modifier à la main.\n${outputText}`;
+  const code = outputText.replace(/(from\s+")\.\/([^"]+)(")/g, (_, avant, nom, apres) => {
+    if (!GENERES.has(nom)) throw new Error(`${depuis} importe ./${nom}, qui n’est pas généré pour le serveur.`);
+    return `${avant}./${nom}.mjs${apres}`;
+  });
+  const contenu = `// Généré par scripts/serveur-genere.mjs depuis ${depuis} : ne pas modifier à la main.\n${code}`;
   const cible = new URL(`../${vers}`, import.meta.url);
   if (!process.argv.includes("--verifier")) writeFileSync(cible, contenu);
   else if (readFileSync(cible, "utf8") !== contenu) {

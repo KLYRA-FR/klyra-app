@@ -12,7 +12,7 @@ import { useAgents } from "@/lib/agents";
 import { apparition } from "@/lib/mouvement";
 import { lireCreneau } from "@/lib/planning-routines";
 import { useRoutines } from "@/lib/routines";
-import { libellePlanning, libelleRun, runActif } from "@/lib/routines-affichage";
+import { CLE_BROUILLON_ROUTINE, libellePlanning, libelleRun, runActif } from "@/lib/routines-affichage";
 import type { Routine, RoutineInput, RoutinePatch, RoutineRun } from "@/types/routines";
 import { FormulaireRoutine } from "./FormulaireRoutine";
 import { ColonneAgents, apercuAgent, type AgentRoutine } from "./ColonneAgents";
@@ -23,7 +23,7 @@ import { PanneauExecutions } from "./PanneauExecutions";
 
 interface Edition { initiale: Routine | null; valeurs?: RoutineInput; cle: number; champAgent?: boolean }
 type Echec = { message: string; reessayer: () => void };
-const BROUILLON = "klyra:routine-brouillon";
+const BROUILLON = CLE_BROUILLON_ROUTINE;
 function lireBrouillon(): Edition | null {
   try { const b = JSON.parse(localStorage.getItem(BROUILLON) ?? "null"); return b?.valeurs && typeof b.valeurs.name === "string" && typeof b.valeurs.instruction === "string" && b.valeurs.schedule?.kind && typeof b.valeurs.agentId === "string" ? b : null; } catch { return null; }
 }
@@ -191,6 +191,17 @@ export function RoutinesVue({ onglets, garderSortie }: { onglets: ReactNode; gar
     // Révision publiée par le moteur, aucun polling.
   }, [routine?.id, api.revision, actifChoisi?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const reprendreBrouillon = () => { if (!brouillon) return; origineFormulaire.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setEdition({ ...brouillon, cle: Date.now() }); setExecutions(false); setFocusCarte(null); };
+  /* Ouvert par l'atelier d'un agent (`&reprendre=1`) : le brouillon qu'il a posé s'ouvre dans le formulaire, à relire avant d'enregistrer. */
+  const [reprendreDemande] = useState(() => recherche.get("reprendre") === "1");
+  const repris = useRef(false);
+  useEffect(() => {
+    if (!reprendreDemande || repris.current || !api.charge || !brouillon || edition) return;
+    const frame = requestAnimationFrame(() => {
+      repris.current = true;
+      setEdition({ ...brouillon, cle: Date.now() });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [reprendreDemande, api.charge, brouillon, edition]);
   const abandonnerBrouillon = async () => { if (await demander({ titre: "Abandonner ce brouillon ?", confirmer: "Abandonner" })) { effacerBrouillon(); setBrouillon(null); } };
   const cartes: CarteCanevas[] = liste.map((r) => {
     const actif = api.enCours.find((run) => run.routineId === r.id && runActif(run));
