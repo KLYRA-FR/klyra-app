@@ -71,7 +71,12 @@ export function Modale({ titre, children, actions, onFermer, role = "dialog", cl
   return createPortal(
     <div
       role="presentation"
-      onMouseDown={(e) => e.target === e.currentTarget && onFermer()}
+      onMouseDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        /* Sans quoi le navigateur, après la fermeture, retire le focus rendu (clic hors de tout bouton). */
+        e.preventDefault();
+        onFermer();
+      }}
       className="klyra-voile fixed inset-0 z-[60] flex items-center justify-center bg-fond-inverse-fort/40 p-4"
     >
       <div
