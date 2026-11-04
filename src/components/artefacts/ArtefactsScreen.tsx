@@ -681,11 +681,48 @@ function CarteEquipe({ artefact, session, version }: { artefact: ArtefactEquipe;
   );
 }
 
-/** Une page HTML partagée depuis cet espace. Pas d'ouverture : l'adresse Convex ne sort pas de l'écran. */
-function CarteDocument({ document }: { document: DocumentKlyra }) {
+/** Vignette d'une page partagée. Le HTML ne reste pas dans l'état de la carte. */
+function useVignetteDocument(id: string, majLe: number, version: number) {
   const documents = useDocumentsKlyra();
+  const cle = `${id}:${majLe}:${version}`;
+  const [image, setImage] = useState<string | null | undefined>(() => vignettes.get(cle));
+  const carte = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (vignettes.has(cle)) {
+      setImage(vignettes.get(cle) ?? null);
+      return;
+    }
+    const el = carte.current;
+    if (!el) return;
+    let vivant = true;
+    const observer = new IntersectionObserver(([e]) => {
+      if (!e?.isIntersecting) return;
+      observer.disconnect();
+      void documents.vignette(id, majLe, version > 0).then((v) => {
+        vignettes.set(cle, v);
+        if (vivant) setImage(v);
+      });
+    });
+    observer.observe(el);
+    return () => {
+      vivant = false;
+      observer.disconnect();
+    };
+  }, [documents.vignette, id, majLe, version, cle]);
+  return { image, carte };
+}
+
+/** Une page HTML partagée depuis cet espace. L'ouverture ne reçoit pas l'adresse Convex. */
+function CarteDocument({ document, version }: { document: DocumentKlyra; version: number }) {
+  const documents = useDocumentsKlyra();
+  const { image, carte } = useVignetteDocument(document._id, document.majLe, version);
   const [reprendre, setReprendre] = useState(false);
+  const [ouverture, setOuverture] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
+  const ouvrir = () => {
+    setOuverture(null);
+    void documents.ouvrir(document._id, document.titre).catch((e: unknown) => setOuverture(e instanceof Error ? e.message : String(e)));
+  };
   const envoyer = async () => {
     setEnvoi({ enCours: true, erreur: null });
     try {
@@ -697,15 +734,8 @@ function CarteDocument({ document }: { document: DocumentKlyra }) {
     }
   };
   return (
-    <li className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2">
-      <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-lg border border-white bg-fond-page text-texte-tertiaire shadow-ombre-sm">
-        <span className="flex flex-col items-center gap-2">
-          <span className="klyra-orbe flex size-10 items-center justify-center rounded-full">
-            <Icon name="globe-01" size={20} />
-          </span>
-          <span className="text-ui-2xs">Page HTML</span>
-        </span>
-      </div>
+    <li ref={carte} className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2 transition-[box-shadow,translate] duration-[300ms] ease-sortie hover:-translate-y-0.5 hover:shadow-ombre-ambiante">
+      <Apercu titre={document.titre} image={image} icone="globe-01" onOuvrir={ouvrir} />
       <div className="flex flex-1 flex-col gap-1.5 rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm">
         <div className="flex items-start gap-2">
           <span className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{document.titre}</span>
@@ -715,6 +745,7 @@ function CarteDocument({ document }: { document: DocumentKlyra }) {
           <span>{document.deMoi ? "Partagé par toi" : `Partagé par ${document.auteur.nom}`}</span>
           <span>{date.format(new Date(document.majLe))}</span>
         </div>
+        {ouverture && <p className="m-0 text-ui-xs text-texte-erreur">{ouverture}</p>}
         {document.deMoi && (
           <button type="button" onClick={() => setReprendre(true)} className="m-0 w-fit cursor-pointer border-0 bg-transparent p-0 text-left text-ui-2xs text-texte-tertiaire underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
             Ne plus partager
@@ -1026,7 +1057,7 @@ function Ecran() {
               <EtatDocuments />
             ) : nombreEquipe ? (
               <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 p-0">
-                {documents.etat === "pret" && visiblesDocuments.map((d) => <CarteDocument key={d._id} document={d} />)}
+                {documents.etat === "pret" && visiblesDocuments.map((d) => <CarteDocument key={`${d._id}-${version}`} document={d} version={version} />)}
                 {visiblesEquipe.map((a) => (
                   <CarteEquipe key={`${a._id}-${version}`} artefact={a} session={session} version={version} />
                 ))}

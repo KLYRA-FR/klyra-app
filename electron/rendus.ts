@@ -5,15 +5,18 @@ import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { aTour } from "./artefacts";
+import { PAGE_ISOLEE } from "./document-isole";
+import { imageDeChemin, ouvrirChemin } from "./fenetre-document";
 
 /**
  * Les rendus des agents (outil `publier_artefact`) : des fichiers de ce PC, montrés dans l'écran Artefacts.
  * - Publier copie le fichier (ou le dossier d'une page avec ses ressources) dans l'espace de l'agent,
  *   `~/.klyra/rendus/<agent>/` : le livrable ne casse pas si l'agent range son dossier, change de branche
  *   ou efface ses essais. L'app gère ces copies ; l'original reste où l'agent l'a mis.
- * - Vignette : l'image elle-même, ou la page (HTML, SVG, image que Node ne lit pas) dessinée hors écran,
- *   dans une fenêtre isolée qui ne navigue nulle part. Gardée tant que le fichier ne change pas.
- * - Ouverture : par l'app du système, seulement pour les types qu'on sait montrer ; le reste, dans le dossier.
+ * - Vignette : l'image elle-même, ou la page (HTML, SVG) dessinée hors écran dans la fenêtre isolée.
+ *   Gardée tant que le fichier ne change pas.
+ * - Ouverture : une page HTML ou SVG dans la fenêtre isolée. Le reste, par l'app du système ;
+ *   un type qu'on ne sait pas montrer s'ouvre dans son dossier.
  */
 
 const DOSSIER_VIGNETTES = () => path.join(app.getPath("userData"), "vignettes-rendus");
@@ -147,24 +150,10 @@ export async function ouvrirDossierAgent(agent: unknown, quoi: unknown): Promise
   if (erreur) throw new Error(erreur);
 }
 
-/** Dessine le fichier dans une fenêtre hors écran, isolée, sans navigation ni nouvelle fenêtre. */
-async function dessiner(fichier: string): Promise<Electron.NativeImage> {
-  const win = new BrowserWindow({
-    show: false,
-    width: 1280,
-    height: 800,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, offscreen: true, partition: "rendus" },
-  });
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.webContents.on("will-navigate", (e) => e.preventDefault());
-  try {
-    await win.loadFile(fichier);
-    // Une petite app se dessine après le chargement : on lui laisse le temps.
-    await new Promise((r) => setTimeout(r, 1500));
-    return await win.webContents.capturePage();
-  } finally {
-    win.destroy();
-  }
+/** Dessine la page dans la fenêtre isolée. Un dossier sert aussi ses fichiers, pas le reste du disque. */
+function dessiner(chemin: unknown): Promise<Electron.NativeImage> {
+  const complet = absolu(chemin);
+  return imageDeChemin(statSync(complet).isDirectory() ? complet : fichierDuRendu(chemin));
 }
 
 /** La vignette d'un rendu (data URL PNG), ou null pour une vidéo, un PDF, un document. */
@@ -179,7 +168,7 @@ export async function vignetteRendu(chemin: unknown, forcer = false): Promise<st
   return aTour(async () => {
     try {
       const lue = IMAGES.test(fichier) ? nativeImage.createFromPath(fichier) : null;
-      const image = lue && !lue.isEmpty() ? lue : await dessiner(fichier);
+      const image = lue && !lue.isEmpty() ? lue : await dessiner(chemin);
       if (image.isEmpty()) return null;
       const png = (image.getSize().width > 640 ? image.resize({ width: 640 }) : image).toPNG();
       mkdirSync(DOSSIER_VIGNETTES(), { recursive: true });
@@ -199,9 +188,14 @@ export async function htmlDuRendu(chemin: unknown): Promise<string> {
   return (await readFile(fichier)).toString("base64");
 }
 
-/** Ouvre le rendu avec l'app du système ; un type qu'on ne sait pas montrer est montré dans son dossier. */
+/** Ouvre une page dans la fenêtre isolée. Le reste, avec l'app du système ; sinon, dans le dossier. */
 export async function ouvrirRendu(chemin: unknown): Promise<void> {
+  const complet = absolu(chemin);
   const fichier = fichierDuRendu(chemin);
+  if (PAGE_ISOLEE.test(fichier)) {
+    await ouvrirChemin(statSync(complet).isDirectory() ? complet : fichier);
+    return;
+  }
   if (!OUVRABLES.test(fichier)) return shell.showItemInFolder(fichier);
   const erreur = await shell.openPath(fichier);
   if (erreur) throw new Error(erreur);
