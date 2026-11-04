@@ -18,7 +18,8 @@ export function messageGeste(r: { code: string; message: string }, sur: string):
 export function useLectureSuivie<T>(
   type: string,
   args: unknown | null,
-  options: { suivre?: (data: T) => boolean; intervalle?: number; garde?: string } = {},
+  /* `intervalle` : fixe, ou d'après ce qui vient d'être lu (plus vite pendant qu'un agent construit un workflow). */
+  options: { suivre?: (data: T) => boolean; intervalle?: number | ((data: T) => number); garde?: string } = {},
 ): LecturePoste<T> & { relancer: () => void; relecture: boolean } {
   const lecture = useLecturePoste<T>(type, args);
   const { relancer } = lecture;
@@ -31,8 +32,8 @@ export function useLectureSuivie<T>(
     relecture && gardee ? { etat: "ok", data: gardee.data, relancer, relecture: true } : { ...lecture, relecture: false };
 
   const suivre = lecture.etat === "ok" && !!options.suivre?.(lecture.data);
-  const intervalle = options.intervalle ?? 5000;
   const donnees = lecture.etat === "ok" ? lecture.data : null;
+  const intervalle = typeof options.intervalle === "function" ? (donnees === null ? 5000 : options.intervalle(donnees)) : (options.intervalle ?? 5000);
   useEffect(() => {
     if (!suivre) return;
     const minuteur = setTimeout(relancer, intervalle);

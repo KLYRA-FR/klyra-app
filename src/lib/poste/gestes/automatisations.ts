@@ -17,15 +17,18 @@ import {
   type ExecutionsLues,
   type RoutinesLues,
 } from "@/lib/telephone/routines-telephone";
+import { lireChantiers } from "@/lib/workflows/chantiers";
 import {
   appliquerPatch,
+  chantierDuWorkflow,
+  chantierLu,
   conflitEtape,
   copieWorkflow,
   enCoursExecution,
   etapeLue,
-  ligneWorkflow,
+  grapheLu,
+  listeWorkflows,
   lirePatchEtape,
-  noeudLu,
   restaurerVersion,
   resumeExecution,
   type AgentWorkflow,
@@ -75,6 +78,19 @@ export function useGestesAutomatisations(): Gestes {
     const wf = state.workflows.find((w) => w.id === id);
     if (!wf) throw new ErreurPoste("introuvable", `Ce workflow n’existe plus sur ${poste.ton}.`);
     return wf;
+  };
+  /** Les agents que le téléphone affiche : l'équipe active, et ceux d'une étape qui ne le sont plus. */
+  const agentsDuGraphe = (noeuds: Workflow["graphe"]["noeuds"]): AgentWorkflow[] => {
+    const cites = new Set(noeuds.filter((n) => n.type === "agent").map((n) => String(n.champs.agent ?? "")));
+    return [
+      ...roles.map((r) => ({ id: r.id, name: r.name, tag: tagLisible(r), teinte: r.teinte, actif: true })),
+      ...tous.filter((a) => cites.has(a.role.id) && !agentActif(a.role.id)).map(({ role: r }) => ({ id: r.id, name: r.name, tag: tagLisible(r), teinte: r.teinte, actif: false })),
+    ];
+  };
+  /** Le nom et la teinte de l'agent qui construit, pour la bannière du téléphone. */
+  const agentDe = (id: string) => {
+    const r = roles.find((x) => x.id === id) ?? tous.find((a) => a.role.id === id)?.role;
+    return r ? { name: r.name, teinte: r.teinte } : null;
   };
   const executionsDe = (id: string) => state.executions.filter((e) => e.workflowId === id).sort((a, b) => b.debut.localeCompare(a.debut));
   /* « Voir la conversation » seulement si elle existe encore, comme au bureau. */
@@ -195,13 +211,31 @@ export function useGestesAutomatisations(): Gestes {
 
     /* ─── Workflows ─── */
 
-    /** T-18 : « Tes workflows », le dernier modifié en tête. */
+    /** T-18 : « Tes workflows », le dernier modifié en tête ; en tête aussi, celui qu'un agent crée en ce moment. */
     "workflows.liste": async (): Promise<LigneWorkflow[]> =>
-      [...state.workflows].sort((a, b) => b.majLe.localeCompare(a.majLe)).map((wf) => ligneWorkflow(wf, state.executions)),
+      listeWorkflows(state.workflows, state.executions, Object.values(lireChantiers()), agentDe, new Date().toISOString()),
 
-    /** T-19 : le graphe sans le dessin, les exécutions, et le détail de celle regardée. */
+    /** T-19 : le graphe sans le dessin, les exécutions, et le détail de celle regardée. Un agent le construit : son graphe en cours. */
     "workflows.lire": async (brut): Promise<WorkflowLu> => {
       const args = objet(brut);
+      const c = chantierDuWorkflow(Object.values(lireChantiers()), chaine(args, "id", 200));
+      const enConstruction = c && c.nouveau && !state.workflows.some((w) => w.id === c.workflowId) ? c : null;
+      if (enConstruction) {
+        return {
+          id: enConstruction.workflowId,
+          titre: enConstruction.titre,
+          majLe: new Date().toISOString(),
+          ...grapheLu(enConstruction.graphe),
+          prochaines: {},
+          version: null,
+          executions: [],
+          plus: 0,
+          vue: null,
+          enCours: null,
+          agents: agentsDuGraphe(enConstruction.graphe.noeuds),
+          chantier: chantierLu(enConstruction, agentDe(enConstruction.roleId)),
+        };
+      }
       const wf = workflowDe(args);
       const versionId = chaineOuNull(args, "version", 200);
       const executionId = chaineOuNull(args, "execution", 200);
@@ -213,24 +247,22 @@ export function useGestesAutomatisations(): Gestes {
       const enCours = siennes.find(enCoursExecution) ?? null;
       const choisie = executionId ? siennes.find((e) => e.id === executionId) : (enCours ?? siennes[0] ?? null);
       if (executionId && !choisie) throw new ErreurPoste("introuvable", "Cette exécution n’existe plus.");
-      const cites = new Set(graphe.noeuds.filter((n) => n.type === "agent").map((n) => String(n.champs.agent ?? "")));
-      const agents: AgentWorkflow[] = [
-        ...roles.map((r) => ({ id: r.id, name: r.name, tag: tagLisible(r), teinte: r.teinte, actif: true })),
-        ...tous.filter((a) => cites.has(a.role.id) && !agentActif(a.role.id)).map(({ role: r }) => ({ id: r.id, name: r.name, tag: tagLisible(r), teinte: r.teinte, actif: false })),
-      ];
+      /* Un agent le modifie : le téléphone voit son graphe en cours (pas sur une version d'avant). */
+      const construit = !version && c ? c : null;
+      const montre = construit && construit.phase !== "fini" ? construit.graphe : graphe;
       return {
         id: wf.id,
-        titre: wf.titre,
+        titre: construit && construit.phase !== "fini" ? construit.titre : wf.titre,
         majLe: wf.majLe,
-        noeuds: graphe.noeuds.map(noeudLu),
-        liens: graphe.liens.map((l) => ({ id: l.id, de: l.de, vers: l.vers, ...(l.branche ? { branche: l.branche } : {}) })),
+        ...grapheLu(montre),
         prochaines: wf.prochaines ?? {},
         version: version ? { id: version.id, at: version.at, raison: version.raison } : null,
         executions: siennes.slice(0, limite).map((e) => avecChat(resumeExecution(e, wf.graphe.noeuds))),
         plus: Math.max(0, siennes.length - limite),
         vue: version || !choisie ? null : { ...avecChat(resumeExecution(choisie, wf.graphe.noeuds)), etapes: choisie.etapes.map(etapeLue) },
         enCours: enCours?.id ?? null,
-        agents,
+        agents: agentsDuGraphe(montre.noeuds),
+        ...(construit ? { chantier: chantierLu(construit, agentDe(construit.roleId)) } : {}),
       };
     },
 
