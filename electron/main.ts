@@ -265,7 +265,27 @@ async function runSmokeTest(win: BrowserWindow) {
     "document.querySelector('main')?.innerText.replace(/\\s+/g, ' ').slice(0, 200) ?? ''",
   );
   console.log(text ? `OK — ${text}` : "ÉCHEC — rien n'est affiché");
+  if (process.env.KLYRA_SMOKE_JETON === "1") console.log(await essaiJeton());
   app.exit(text ? 0 : 1);
+}
+
+/**
+ * `KLYRA_SMOKE_JETON=1` (avec le smoke test) : un faux jeton de session, écrit par une version de l'app
+ * et relu par la suivante, par le même chemin que la vraie session (electron/compte.ts, trousseau).
+ * C'est ce que la vérification Mac contrôle à travers une mise à jour (verification-mac.yml).
+ */
+async function essaiJeton(): Promise<string> {
+  const cle = "__convexAuthJWT_essaimiseajour";
+  const lu = lireJeton(cle);
+  if (lu === "jeton-essai") return "JETON RELU";
+  if (lu !== null) return "JETON DIFFÉRENT";
+  if (existsSync(path.join(app.getPath("userData"), "compte.json"))) {
+    return `JETON PERDU (trousseau ${safeStorage.isEncryptionAvailable() ? "disponible, déchiffrement refusé" : "indisponible"})`;
+  }
+  if (!safeStorage.isEncryptionAvailable()) return "JETON NON ÉCRIT (trousseau indisponible)";
+  await ecrireJeton(cle, "jeton-essai");
+  await jetonsEcrits();
+  return "JETON ÉCRIT";
 }
 
 /** Un serveur de dev sur ce Mac. */
