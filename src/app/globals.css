@@ -658,3 +658,172 @@ body[data-glisse] iframe {
   }
 }
 @keyframes klyra-efface { to { opacity: 0; } }
+
+/* ─── Workflows : un agent construit, une exécution passe ───────────
+   `--klyra-agent` : la couleur de l'agent (accent de sa teinte), posée par l'écran.
+   Une carte se pose floue puis nette ; tant qu'elle n'est pas enregistrée, elle est en
+   pointillés de la couleur de l'agent ; enregistrée, un halo part d'elle. Les liens se
+   tracent. Pendant une exécution, un anneau tourne autour de l'étape en cours et une
+   perle suit le lien qui la nourrit. Rien ne bouge si l'on demande moins d'animations. */
+@property --klyra-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.klyra-wf-pose {
+  animation: klyra-wf-pose 620ms var(--ease-sortie) backwards;
+}
+
+@keyframes klyra-wf-pose {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.94); filter: blur(8px); }
+  55%  { filter: blur(0); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+/* Les cartes se rangent quand les liens arrivent. */
+.klyra-wf-range {
+  transition: left 560ms var(--ease-sortie), top 560ms var(--ease-sortie);
+}
+
+.klyra-wf-fantome {
+  border-style: dashed;
+  border-color: var(--klyra-agent, var(--color-bleu-k1-500));
+  background-color: color-mix(in srgb, var(--color-fond-surface) 86%, transparent);
+  box-shadow: var(--shadow-ombre-xs);
+}
+
+/* Un reflet passe sur la carte qui s'écrit. */
+.klyra-wf-fantome::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--klyra-agent, var(--color-bleu-k1-500)) 10%, transparent) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: klyra-wf-reflet 1600ms linear infinite;
+}
+
+@keyframes klyra-wf-reflet {
+  from { background-position: 120% 0; }
+  to   { background-position: -120% 0; }
+}
+
+.klyra-wf-ecrit {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--klyra-agent, var(--color-bleu-k1-500)) 16%, transparent),
+    var(--shadow-ombre-levee);
+}
+
+.klyra-wf-ne {
+  animation: klyra-wf-ne 1500ms var(--ease-sortie);
+}
+
+@keyframes klyra-wf-ne {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--klyra-agent, var(--color-bleu-k1-500)) 45%, transparent), var(--shadow-ombre-sm); }
+  100% { box-shadow: 0 0 0 18px transparent, var(--shadow-ombre-sm); }
+}
+
+/* Un lien posé par l'agent se trace de sa source à sa cible. */
+.klyra-wf-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: klyra-wf-trace 760ms var(--ease-sortie) 80ms forwards;
+}
+
+@keyframes klyra-wf-trace {
+  to { stroke-dashoffset: 0; }
+}
+
+/* L'étape en cours : un anneau de lumière fait le tour de la carte. */
+.klyra-wf-actif::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: conic-gradient(from var(--klyra-angle), transparent 0 50%, var(--color-bleu-k2-500) 72%, var(--color-bleu-k1-500) 88%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: klyra-wf-tourne 1800ms linear infinite;
+}
+
+@keyframes klyra-wf-tourne {
+  to { --klyra-angle: 360deg; }
+}
+
+/* Le lien qui nourrit l'étape en cours : des tirets qui avancent. */
+.klyra-wf-flux {
+  stroke-dasharray: 3 9;
+  animation: klyra-wf-flux 640ms linear infinite;
+}
+
+@keyframes klyra-wf-flux {
+  to { stroke-dashoffset: -12; }
+}
+
+/* Le curseur de l'agent glisse d'une carte à l'autre. */
+.klyra-wf-curseur {
+  transition: transform 560ms var(--ease-sortie), opacity 240ms var(--ease-sortie);
+}
+
+/* L'avatar de l'agent qui construit (carré arrondi au quart, 30 px) : un anneau de sa couleur en fait le tour. */
+.klyra-wf-anneau {
+  position: relative;
+  display: inline-flex;
+  border-radius: 8px;
+}
+
+.klyra-wf-anneau::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 11px;
+  padding: 2px;
+  background: conic-gradient(from var(--klyra-angle), transparent 0 40%, var(--klyra-agent, var(--color-bleu-k1-500)) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: klyra-wf-tourne 1100ms linear infinite;
+}
+
+/* La barre de la pastille, tant que l'agent travaille : un trait de sa couleur qui court. */
+.klyra-wf-luit {
+  background: linear-gradient(90deg, transparent, var(--klyra-agent, var(--color-bleu-k1-500)) 40%, var(--klyra-agent, var(--color-bleu-k1-500)) 60%, transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: klyra-chargement-navigateur 1300ms var(--ease-sortie) infinite;
+}
+
+/* Le journal de la construction : la ligne nouvelle arrive par le bas. */
+.klyra-wf-geste {
+  animation: klyra-wf-geste 420ms var(--ease-sortie) backwards;
+}
+
+@keyframes klyra-wf-geste {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-wf-pose,
+  .klyra-wf-ne,
+  .klyra-wf-geste,
+  .klyra-wf-fantome::after,
+  .klyra-wf-actif::before,
+  .klyra-wf-anneau::before,
+  .klyra-wf-flux,
+  .klyra-wf-luit {
+    animation: none;
+  }
+  .klyra-wf-trace {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .klyra-wf-range,
+  .klyra-wf-curseur {
+    transition: none;
+  }
+}

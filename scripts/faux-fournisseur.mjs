@@ -6,10 +6,13 @@
  * - « liste <agent> » : il liste les fils ouverts de cet agent (outil `lister_fils`) ;
  * - « atelier <prénom> » : il complète la carte d'un agent à créer (outil `proposer_agent`) ;
  * - « choix <mot> » : il propose des réponses toutes prêtes (outil `proposer_choix`) ;
+ * - « workflow <mot> » : il construit un workflow de trois étapes (outil `construire_workflow`) ;
+ * - « lance <mot> » : il lance le dernier workflow construit dans la conversation (outil `lancer_workflow`) ;
  * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> ».
  * - l'épreuve de l'atelier : l'agent en essai répond d'après la demande (il prend un bug pour lui tant
  *   que sa fiche ne dit pas de passer la main), et le juge rend un verdict JSON.
- * L'entrée de `proposer_agent` arrive par morceaux, comme d'un vrai modèle (carte écrite en direct).
+ * L'entrée de `proposer_agent` et de `construire_workflow` arrive par morceaux, comme d'un vrai modèle
+ * (carte écrite en direct, workflow construit sous les yeux).
  * Les fiches d'essai portent `SOUS-AGENT-TEST-<nom>` dans leur consigne pour être reconnues.
  * Chaque requête est notée : sous-agent, agents listés au modèle, résultats d'outils.
  */
@@ -19,8 +22,35 @@ import { createServer } from "node:http";
 const texteDe = (contenu) => (typeof contenu === "string" ? contenu : (contenu ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n"));
 
 /** Les outils de l'app appelés par un ordre, et ce qu'ils reçoivent. */
-const OUTILS_ORDRES = { fil: "mcp__klyra__ouvrir_fil", liste: "mcp__klyra__lister_fils", atelier: "mcp__klyra__proposer_agent", choix: "mcp__klyra__proposer_choix" };
-function entreeOrdre(verbe, cible) {
+const OUTILS_ORDRES = {
+  fil: "mcp__klyra__ouvrir_fil",
+  liste: "mcp__klyra__lister_fils",
+  atelier: "mcp__klyra__proposer_agent",
+  choix: "mcp__klyra__proposer_choix",
+  workflow: "mcp__klyra__construire_workflow",
+  lance: "mcp__klyra__lancer_workflow",
+};
+/** Les outils dont l'entrée arrive par petits morceaux, lentement : l'app la montre en direct. */
+const EN_DIRECT = new Set(["mcp__klyra__proposer_agent", "mcp__klyra__construire_workflow"]);
+function entreeOrdre(verbe, cible, corps) {
+  if (verbe === "workflow")
+    return {
+      titre: `Bonjour ${cible}`,
+      etapes: [
+        { id: "depart", type: "declencheur", nom: "Départ", declencheur: "manuel" },
+        { id: "salut", type: "agent", nom: "Salut", agent: "principal", tache: "Dis bonjour à l’équipe, en une phrase." },
+        { id: "fin", type: "sortie", nom: "Prévenir", cible: "notification", titre: "Bonjour envoyé" },
+      ],
+      liens: [
+        { de: "depart", vers: "salut" },
+        { de: "salut", vers: "fin" },
+      ],
+    };
+  if (verbe === "lance") {
+    // Le workflow construit plus tôt dans la conversation : son id est dans la réponse de l'outil.
+    const id = JSON.stringify(corps?.messages ?? []).match(/Workflow créé : [^(]*\(id ([0-9a-f-]{36})\)/)?.[1] ?? "inconnu";
+    return { workflow: id, entree: "Pour lundi" };
+  }
   if (verbe === "fil") return { agent: cible, titre: "Essai", brief: "Brief d’essai." };
   if (verbe === "atelier")
     return {
@@ -65,8 +95,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
     const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|workflow|lance) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|workflow|lance) ([a-z0-9-]+)/m) : null;
     requetes.push({
       message: texteDe(dernier?.content ?? ""),
       sousAgent,
@@ -85,7 +115,7 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Les outils de l'app : « fil » ouvre un fil, « liste » liste ceux de l'agent ; « atelier » et « choix » pour créer un agent.
     const nomOutil = ordre ? (OUTILS_ORDRES[ordre[1]] ?? null) : null;
     const outilFil = !!nomOutil && (corps.tools ?? []).some((t) => t.name === nomOutil);
-    const filDemande = () => [{ type: "tool_use", id: `toolu_${randomUUID().slice(0, 8)}`, name: nomOutil, input: entreeOrdre(ordre[1], ordre[2]) }];
+    const filDemande = () => [{ type: "tool_use", id: `toolu_${randomUUID().slice(0, 8)}`, name: nomOutil, input: entreeOrdre(ordre[1], ordre[2], corps) }];
     // Les outils de l'app sont chargés à la demande (ToolSearch) : une fois trouvés, on s'en sert.
     if (resultats.some((r) => recherches.has(r.tool_use_id)) && nomOutil && outilFil) return filDemande();
     if (resultats.length) {
@@ -111,7 +141,7 @@ export async function demarrerFournisseur(agentsSurveilles) {
       else {
         // La carte de l'atelier s'écrit en direct : son entrée arrive par morceaux, comme d'un vrai modèle.
         const json = JSON.stringify(b.input);
-        const taille = b.name === "mcp__klyra__proposer_agent" ? 48 : json.length || 1;
+        const taille = EN_DIRECT.has(b.name) ? (b.name === "mcp__klyra__construire_workflow" ? 32 : 48) : json.length || 1;
         for (let k = 0; k < json.length; k += taille) ev.push({ type: "content_block_delta", index: i, delta: { type: "input_json_delta", partial_json: json.slice(k, k + taille) }, pause: taille < json.length ? 120 : 0 });
       }
       ev.push({ type: "content_block_stop", index: i });

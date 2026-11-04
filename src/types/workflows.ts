@@ -87,8 +87,10 @@ export interface Graphe {
 export interface VersionWorkflow {
   id: string;
   at: string;
-  /** auto : toutes les 5 min d'édition ; restauration : avant de rendre une version actuelle ; execution : avant un lancement. */
-  raison: "auto" | "restauration" | "execution";
+  /** auto : toutes les 5 min d'édition ; restauration : avant de rendre une version actuelle ; execution : avant un lancement ; agent : avant qu'un agent le modifie. */
+  raison: "auto" | "restauration" | "execution" | "agent";
+  /** L'agent qui a modifié le workflow juste après (raison agent). */
+  par?: string;
   graphe: Graphe;
 }
 
@@ -109,7 +111,7 @@ export interface Workflow {
 
 export type StatutExecution = "en-cours" | "approbation" | "fait" | "erreur" | "arrete";
 export type StatutEtape = "en-cours" | "approbation" | "fait" | "erreur" | "arrete" | "ignore";
-export type SourceExecution = "manuel" | "planifie" | "webhook";
+export type SourceExecution = "manuel" | "planifie" | "webhook" | "agent";
 
 /** Un essai d'un nœud. */
 export interface EtapeWorkflow {
@@ -143,6 +145,8 @@ export interface ExecutionWorkflow {
   etapes: EtapeWorkflow[];
   /** La conversation où ses agents ont travaillé. */
   chatId: string | null;
+  /** L'agent qui l'a lancée (outil `lancer_workflow`), et depuis quelle conversation. */
+  lancePar?: { roleId: string; chatId: string };
 }
 
 /** Les types de port que chaque nœud reçoit et envoie. */
