@@ -127,6 +127,8 @@ function fixture() {
       serveurOrdinateur: () => null,
       signatureOrdinateur: () => "",
     },
+    // L'aperçu de la fenêtre pilotée (electron/ordinateur/apercu.ts) : aucun pilote dans ce banc.
+    "./ordinateur/apercu": { voirOutil: () => undefined, voirFin: () => undefined },
     "./ia": {
       configMcp: (contexte, composio) => JSON.stringify({ contexte, composio }),
       OUTILS_APP: () => [],

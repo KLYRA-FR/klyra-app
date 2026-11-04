@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { app, shell } from "electron";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
+import { voirFin, voirOutil } from "../ordinateur/apercu";
 import { signatureOrdinateur } from "../ordinateur/pilote";
 import { signatureNavigateur } from "../navigateur/outils";
 import { espaceComposio } from "../composio";
@@ -291,7 +292,13 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   }
   if (serveur.enCours.has(threadId)) throw new Error("Une réponse est déjà en cours dans cette conversation.");
 
-  const reponse: Reponse = { requestId, threadId, tour: new TourCodex(threadId, emit, serveur.jetons.get(threadId) ?? 0), emit, demandes: new Map() };
+  const chatId = options.chatId ?? "";
+  const emitSuivi = (event: AgentEvent) => {
+    if (event.type === "etape" && event.outil.startsWith("mcp__ordinateur__")) voirOutil(chatId, event.outil, event.entree);
+    if (event.type === "fin") voirFin(chatId);
+    emit(event);
+  };
+  const reponse: Reponse = { requestId, threadId, tour: new TourCodex(threadId, emitSuivi, serveur.jetons.get(threadId) ?? 0), emit, demandes: new Map() };
   serveur.enCours.set(threadId, reponse);
   serveur.parRequete.set(requestId, threadId);
   try {

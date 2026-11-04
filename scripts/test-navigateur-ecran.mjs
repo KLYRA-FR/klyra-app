@@ -1,9 +1,12 @@
 /**
  * L'onglet « Navigateur » du panneau d'une conversation, dans l'app de bureau
  * (export statique), sur un profil temporaire et une page servie en local :
- * ouvrir un onglet, taper une adresse, voir la page posée exactement sur la zone
- * du panneau, la voir s'effacer sous une fenêtre de l'app, prendre et rendre la
- * main, revenir aux vignettes, retrouver l'onglet après un redémarrage.
+ * ouvrir un onglet, taper une adresse, voir la page en plein écran dans la
+ * fenêtre (pas dans le tiroir), la voir s'effacer sous une fenêtre de l'app,
+ * prendre et rendre la main, revenir aux vignettes (bouton et Échap), retrouver
+ * l'onglet après un redémarrage. Puis la fenêtre du Computer Use local : une
+ * image injectée (pas le pilote), en plein écran, masquée, ou refusée si c'est
+ * tout l'écran.
  * Prérequis : `pnpm build && pnpm build:electron`.
  *   pnpm test:navigateur-ecran      (Linux : xvfb-run -a … -- --no-sandbox)
  */
@@ -45,7 +48,7 @@ writeFileSync(
   }),
 );
 
-const env = { ...process.env, HOME: path.join(TMP, "home"), KLYRA_USER_DATA: DONNEES };
+const env = { ...process.env, HOME: path.join(TMP, "home"), KLYRA_USER_DATA: DONNEES, KLYRA_NAVIGATEUR_TEST: "1" };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.KLYRA_DEV_URL;
 
@@ -57,6 +60,7 @@ async function client(cible) {
   const attente = {};
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
+    if (m.id != null && m.error) console.error("CDP", JSON.stringify(m.error).slice(0, 400));
     attente[m.id]?.(m.result);
   };
   const send = (method, params = {}) =>
@@ -64,7 +68,11 @@ async function client(cible) {
       attente[++id] = r;
       ws.send(JSON.stringify({ id, method, params }));
     });
-  const ev = async (x) => (await send("Runtime.evaluate", { expression: x, returnByValue: true, awaitPromise: true })).result?.value;
+  const ev = async (x) => {
+    const r = await send("Runtime.evaluate", { expression: x, returnByValue: true, awaitPromise: true });
+    if (!r) throw new Error(`CDP sans résultat pour ${String(x).slice(0, 160)}`);
+    return r.result?.value;
+  };
   return { send, ev, fermer: () => ws.close() };
 }
 
@@ -119,7 +127,31 @@ async function lancer() {
 }
 
 const ongletsApp = (a) => a.ev("window.klyra.navigateur.etat().then((r) => r.ok ? r.data : [])");
-const zone = (a) => a.ev(`(() => { const z = document.querySelector('[data-zone-navigateur]'); if (!z) return null; const r = z.getBoundingClientRect(); return { l: Math.round(r.width), h: Math.round(r.height) }; })()`);
+const zone = (a) =>
+  a.ev(`(() => {
+    const z = document.querySelector('[data-plein-ecran-navigateur] [data-zone-navigateur]');
+    if (!z) return null;
+    const r = z.getBoundingClientRect();
+    return { l: Math.round(r.width), h: Math.round(r.height), dansTiroir: !!z.closest('aside'), fenetreL: innerWidth, fenetreH: innerHeight };
+  })()`);
+async function capture(nom) {
+  const dir = process.env.KLYRA_CAPTURES;
+  if (!dir || !app) return;
+  mkdirSync(dir, { recursive: true });
+  const image = await app.send("Page.captureScreenshot", { format: "png" });
+  if (image?.data) writeFileSync(path.join(dir, nom), Buffer.from(image.data, "base64"));
+}
+const echap = async (cible) => {
+  await cible.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await cible.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await attendre(700);
+};
+/** Échap sur la page affichée, par une vraie frappe (le débogueur ne la déclenche pas). */
+const echapPage = async (application) => {
+  const ok = await application.ev("window.klyra.navigateur.testerEchap().then((r) => r.ok && r.data)");
+  if (!ok) throw new Error("la frappe Échap de test n’a pas été envoyée");
+  await attendre(700);
+};
 async function pageDuSite() {
   for (let i = 0; i < 30; i++) {
     const t = (await cibles()).find((x) => x.type === "page" && x.url.startsWith(SITE));
@@ -137,6 +169,7 @@ try {
   await app.ev(`[...document.querySelectorAll('[role="tab"]')].find((t) => t.innerText.trim() === "Navigateur").click()`);
   await attendre(400);
   verifier(/Aucun onglet dans cette conversation/.test(await app.ev("document.body.innerText")), "sans onglet : l’état vide l’explique");
+  await capture("118-avant-aucun-onglet.png");
 
   await app.cliquerTexte("Nouvel onglet");
   await attendre(600);
@@ -152,18 +185,21 @@ try {
   verifier(!!page, "la page est une vraie page Chromium");
   const z = await zone(app);
   const vue = page && (await page.ev("({ l: innerWidth, h: innerHeight })"));
-  verifier(!!z && vue && Math.abs(vue.l - z.l) <= 1 && Math.abs(vue.h - z.h) <= 1 && (await ongletsApp(app))[0].affiche, "la page est posée exactement sur la zone du panneau", { z, vue });
+  verifier(
+    !!z && !z.dansTiroir && z.l >= z.fenetreL - 2 && z.h >= z.fenetreH * 0.6 && vue && Math.abs(vue.l - z.l) <= 1 && Math.abs(vue.h - z.h) <= 1 && (await ongletsApp(app))[0].affiche,
+    "la page est en plein écran dans la fenêtre, pas dans le tiroir",
+    { z, vue },
+  );
+  await capture("119-apres-plein-ecran.png");
 
-  /* Une fenêtre de l'app par-dessus : la page s'efface, puis revient. */
+  /* Une fenêtre de l'app par-dessus : la page s'efface, puis revient. Échap ferme la fenêtre, pas le plein écran. */
   await app.ev(`window.dispatchEvent(new CustomEvent("klyra:recherche"))`);
   await attendre(600);
   const ouverte = await app.ev(`!!document.querySelector('[role="dialog"]')`);
   const cachee = !(await ongletsApp(app))[0].affiche;
   verifier(ouverte && cachee, "une fenêtre de l’app par-dessus : la page s’efface", { ouverte, cachee });
-  await app.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  await app.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  await attendre(600);
-  verifier((await ongletsApp(app))[0].affiche, "fenêtre fermée : la page revient");
+  await echap(app);
+  verifier((await ongletsApp(app))[0].affiche && (await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "fenêtre fermée : la page plein écran revient");
 
   /* Prendre et rendre la main. */
   await app.cliquer('button[aria-label="Prendre la main sur cet onglet"]');
@@ -173,12 +209,58 @@ try {
   await attendre(400);
   verifier((await ongletsApp(app))[0].main === null, "rendre la main");
 
-  /* Retour aux vignettes : la page native n'est plus à l'écran. */
-  await app.cliquerTexte("Onglets");
+  /* Retour aux vignettes : le bouton, puis Échap dans la page. */
+  await app.cliquer('button[aria-label="Retour au panneau"]');
   await attendre(1800);
   const texte = await app.ev("document.body.innerText");
-  verifier(/1 onglet/.test(texte) && /Page d’essai/.test(texte) && !(await ongletsApp(app))[0].affiche, "retour aux onglets : une carte par onglet, la page s’efface", texte.slice(0, 300));
+  verifier(/1 onglet/.test(texte) && /Page d’essai/.test(texte) && !(await ongletsApp(app))[0].affiche && !(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "le bouton Retour ramène aux vignettes et la page s’efface", texte.slice(0, 300));
+  await capture("119-apres-retour.png");
   verifier(!!(await ongletsApp(app))[0].vignette, "la carte a sa vignette");
+  await app.cliquerTexte("Page d’essai");
+  await attendre(800);
+  verifier(!!(await ongletsApp(app))[0].affiche, "un clic sur la vignette rouvre le plein écran");
+  await echapPage(app);
+  verifier(!(await ongletsApp(app))[0].affiche && !(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "Échap dans la page ramène aux vignettes");
+
+  /* Computer Use local : la fenêtre pilotée, injectée (le pilote n'est pas lancé). */
+  const poserApercu = async (mode) => {
+    const ok = await app.ev(`window.klyra.navigateur.testerApercu("dm-principal", ${JSON.stringify(mode)}).then((r) => r.ok && r.data)`);
+    if (!ok) throw new Error(`aperçu de test refusé (${mode})`);
+    await attendre(400);
+  };
+  await poserApercu("image");
+  verifier(
+    !!(await app.ev(`!!document.querySelector('[data-apercu-fenetre] img')`)) && /Fenêtre d’essai/.test(await app.ev("document.body.innerText")),
+    "la fenêtre pilotée remplace l’état vide",
+  );
+  await app.cliquer("[data-apercu-fenetre]");
+  await attendre(500);
+  const za = await app.ev(`(() => {
+    const z = document.querySelector('[data-plein-ecran-navigateur] [data-zone-apercu]');
+    if (!z) return null;
+    const r = z.getBoundingClientRect();
+    return { l: Math.round(r.width), h: Math.round(r.height), dansTiroir: !!z.closest("aside"), img: !!z.querySelector("img"), fenetreL: innerWidth, fenetreH: innerHeight };
+  })()`);
+  verifier(!!za && !za.dansTiroir && za.img && za.l >= za.fenetreL - 2 && za.h >= za.fenetreH * 0.6, "la fenêtre pilotée s’ouvre en plein écran, pas dans le tiroir", za);
+  await capture("118-apres-plein-ecran.png");
+  await app.cliquer('button[aria-label="Retour au panneau"]');
+  await attendre(400);
+  verifier(!(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)) && !!(await app.ev(`!!document.querySelector('[data-apercu-fenetre]')`)), "Retour ramène à la carte de la fenêtre");
+  await capture("118-apres-retour.png");
+  await app.cliquer("[data-apercu-fenetre]");
+  await attendre(400);
+  await echap(app);
+  verifier(!(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "Échap quitte le plein écran de la fenêtre pilotée");
+  await poserApercu("masquee");
+  verifier(/Fenêtre masquée ou réduite/.test(await app.ev("document.body.innerText")) && !(await app.ev(`!!document.querySelector('[data-apercu-fenetre] img')`)), "fenêtre masquée ou réduite : pas d’image");
+  await poserApercu("bureau");
+  verifier(/tout l’écran/.test(await app.ev("document.body.innerText")) && !(await app.ev(`!!document.querySelector('[data-apercu-fenetre] img')`)), "l’écran entier n’est pas montré");
+  await poserApercu("image");
+  await poserApercu("fin");
+  const carte = await app.ev(`document.querySelector('[data-apercu-fenetre]')?.innerText ?? ""`);
+  verifier(/Fenêtre d’essai/.test(carte) && /dernière image/.test(carte) && !/En direct/.test(carte), "la fin du tour garde l’image et arrête le direct", carte);
+  await poserApercu("oubli");
+  verifier(!(await app.ev(`!!document.querySelector('[data-apercu-fenetre]')`)), "l’arrêt du Computer Use retire la fenêtre");
   page?.fermer();
   await app.fermer();
 

@@ -32,8 +32,8 @@ import {
 
 /**
  * Le navigateur de KLYRA : de vraies pages Chromium (WebContentsView) posées
- * dans la fenêtre de l'app, à l'endroit que l'onglet « Navigateur » du panneau
- * d'une conversation leur réserve, sur le modèle d'OpenBot (`browser-host.ts`).
+ * dans la fenêtre de l'app. L'écran les montre en plein écran (le tiroir ne
+ * garde que les vignettes), sur le modèle d'OpenBot (`browser-host.ts`).
  *
  * - Chaque onglet appartient à une conversation : son agent ne voit et ne pilote
  *   que ceux-là, la personne les voit dans le panneau de cette conversation.
@@ -71,7 +71,7 @@ export interface OngletPublic {
   vignette: string | null;
   /** Pas de page en mémoire : l'onglet se réveille quand on l'ouvre. */
   endormi: boolean;
-  /** Sa page est à l'écran, dans le panneau. */
+  /** Sa page est à l'écran (plein écran de la fenêtre). */
   affiche: boolean;
   /** L'agent qui l'utilise en ce moment, et sa dernière action. */
   pilote: { roleId: string; action: string; at: number } | null;
@@ -380,6 +380,15 @@ function creerVue(o: Onglet): WebContents {
   wc.on("will-navigate", bloquer);
   wc.on("will-redirect", bloquer);
   wc.on("will-frame-navigate", bloquer);
+  /* Échap dans la page : retour aux vignettes. La page ne le reçoit pas. */
+  wc.on("before-input-event", (event, input) => {
+    if ((input.type !== "keyDown" && input.type !== "rawKeyDown") || input.key !== "Escape" || input.isAutoRepeat) return;
+    if (input.alt || input.control || input.meta || input.shift) return;
+    if (affiche?.id !== o.id) return;
+    event.preventDefault();
+    const cible = fenetre()?.webContents;
+    if (cible && !cible.isDestroyed()) cible.send("navigateur:echap", o.id);
+  });
   /* Le clic droit de la personne : le menu de l'app, dessiné par l'écran (pas celui d'un clic droit de l'agent). */
   wc.on("context-menu", (_e, p) => {
     if (o.pilote && Date.now() - o.pilote.at < 2_000) return;
@@ -466,6 +475,22 @@ function appliquerAffichage(): void {
       planifierVignette(o, 0);
     }
   }
+}
+
+/**
+ * Le test d'écran envoie Échap comme une vraie frappe sur la page affichée.
+ * Le protocole de débogage ne passe pas par `before-input-event` : seul cet
+ * envoi-là le fait. Refusé hors du test.
+ */
+export function injecterEchap(): boolean {
+  if (process.env.KLYRA_NAVIGATEUR_TEST !== "1") return false;
+  const o = affiche ? onglets.get(affiche.id) : undefined;
+  const wc = o?.vue?.webContents;
+  if (!wc || wc.isDestroyed()) return false;
+  wc.focus();
+  wc.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+  wc.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  return true;
 }
 
 /** L'écran montre cet onglet dans ce cadre (en pixels CSS de la fenêtre), ou plus aucun. */
