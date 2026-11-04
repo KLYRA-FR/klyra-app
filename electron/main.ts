@@ -130,6 +130,7 @@ import {
   type DossierApp,
   type EvenementNotification,
 } from "./reglages";
+import { etatApercu, poserApercuTest, surApercu } from "./ordinateur/apercu";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
 import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
 import { executerPourServeur, navigateurActif } from "./navigateur/outils";
@@ -916,6 +917,10 @@ function registerBridge() {
     }
   };
   /* Le navigateur de KLYRA (navigateur/) : ses pages vivent ici, l'onglet « Navigateur » du panneau les place et les commande. */
+  surApercu((etat) => {
+    const wc = fenetrePrincipale?.webContents;
+    if (wc && !wc.isDestroyed()) wc.send("ordinateur:apercu", etat);
+  });
   brancherNavigateur({
     fenetre: () => fenetrePrincipale,
     signaler: (etat) => {
@@ -950,6 +955,8 @@ function registerBridge() {
     afficherOnglet(texteNav(id, 200) || null, c ? { x: n(c.x), y: n(c.y), width: n(c.width), height: n(c.height) } : null);
   });
   navigateur("navigateur:tester-echap", () => injecterEchap());
+  navigateur("ordinateur:apercu", () => etatApercu());
+  navigateur("ordinateur:tester-apercu", (chatId, mode) => poserApercuTest(texteNav(chatId, 200), String(mode ?? "")));
   navigateur("navigateur:main", (id, prise) => prendreLaMain(texteNav(id, 200), prise === true));
   navigateur("navigateur:ailleurs", (id) => ouvrirAilleurs(texteNav(id, 200)));
   navigateur("navigateur:telechargement", (chemin) => montrerTelechargement(texteNav(chemin)));

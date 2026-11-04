@@ -5,7 +5,7 @@ import { connect, createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { ajouterCopieJson, Relais } from "./relais.ts";
+import { ajouterCopieJson, definirObservateurRelais, Relais } from "./relais.ts";
 
 const reponse = (result: unknown) => JSON.stringify({ ok: true, result });
 
@@ -88,6 +88,56 @@ test("le relais transmet tout, et ne complète que les réponses aux appels", { 
     assert.equal(JSON.parse(lignes[1]).result.content.length, 1, "le reste passe tel quel");
     agent.destroy();
   } finally {
+    await relais.fermer();
+    demon.close();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("l'aperçu reçoit l'image d'une fenêtre, et le bureau sans ses pixels", { skip: process.platform === "win32" }, async () => {
+  const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-relais-apercu-"));
+  const adresseDemon = path.join(dossier, "d.sock");
+  const adresseRelais = path.join(dossier, "r.sock");
+  const image = "A".repeat(2000);
+  const demon = createServer((s) => {
+    let tampon = "";
+    s.on("data", (d) => {
+      tampon += d;
+      let fl;
+      while ((fl = tampon.indexOf("\n")) >= 0) {
+        const ligne = tampon.slice(0, fl);
+        tampon = tampon.slice(fl + 1);
+        const nom = (JSON.parse(ligne) as { name?: string }).name;
+        if (nom === "get_desktop_state") {
+          s.write("pas du json, et ce n'est pas une fenêtre\n");
+          continue;
+        }
+        s.write(`${reponse({ content: [{ type: "image", data: image, mimeType: "image/png" }], structuredContent: { window_id: 42, pid: 7, title: "Brave" } })}\n`);
+      }
+    });
+  });
+  demon.listen(adresseDemon);
+  await once(demon, "listening");
+  const vus: { bureau: boolean; base64: string | null; windowId: number | null }[] = [];
+  definirObservateurRelais((e) => vus.push({ bureau: e.bureau, base64: e.base64, windowId: e.windowId }));
+  const relais = new Relais();
+  await relais.ecouter(adresseDemon, adresseRelais);
+  try {
+    const agent = connect(adresseRelais);
+    await once(agent, "connect");
+    agent.on("data", () => undefined);
+    agent.write(`${JSON.stringify({ method: "call", name: "get_window_state", args: { pid: 7, window_id: 42 } })}\n`);
+    agent.write(`${JSON.stringify({ method: "call", name: "get_desktop_state", args: {} })}\n`);
+    for (let i = 0; i < 40 && vus.length < 2; i++) await new Promise((r) => setTimeout(r, 15));
+    assert.equal(vus.length, 2);
+    assert.equal(vus[0].bureau, false);
+    assert.equal(vus[0].base64, image);
+    assert.equal(vus[0].windowId, 42);
+    assert.equal(vus[1].bureau, true);
+    assert.equal(vus[1].base64, null);
+    agent.destroy();
+  } finally {
+    definirObservateurRelais(null);
     await relais.fermer();
     demon.close();
     rmSync(dossier, { recursive: true, force: true });
