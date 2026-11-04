@@ -143,7 +143,7 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
   return new Promise((resolve) => {
     // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul, et le sait.
     const filtre = filtreSkills(lireReglages().skillsParAgent, agent, CONFIG_CLAUDE(), null);
-    const prepare = preparationClaude(agent, filtre.garder);
+    const prepare = preparationClaude(agent, filtre.garder, null);
     const args = ["-p", "--agent", agent, "--output-format", "json", SECTIONS_DU_POSTE_A_PART, "--disallowedTools", ...OUTILS_INTERDITS, ...OUTILS_HORS_APP, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
     if (filtre.coupes.length) args.push("--settings", reglagesSession({}, filtre.coupes));
     const child = spawn(bin, args, {
@@ -700,7 +700,7 @@ function lireLigne(proc: Processus, ligne: string) {
 }
 
 /** Le dossier préparé pour cet agent, ou null (la session reste alors sur le poste). */
-function preparationClaude(agent: string | null, garder: (nom: string) => boolean): { dossier: string; skills: string[] } | null {
+function preparationClaude(agent: string | null, garder: (nom: string) => boolean, projet: string | null): { dossier: string; skills: string[]; catalogue: string } | null {
   /* Sur Mac, la connexion d'un compte Claude est dans le trousseau, sous un nom tiré du dossier de
      config : un autre `CLAUDE_CONFIG_DIR` ne la trouve pas (« Not logged in », vérifié le 04/11/2026,
      Claude Code 2.1.318). Sans `.credentials.json` du poste à lier, la session reste sur le poste. */
@@ -715,6 +715,9 @@ function preparationClaude(agent: string | null, garder: (nom: string) => boolea
       garder,
       /* Le dossier du poste, pas celui qu'on prépare : le process parent ne pose pas CLAUDE_CONFIG_DIR. */
       poste: process.env.CLAUDE_CONFIG_DIR || null,
+      choix: lireReglages().skillsParAgent,
+      configClaude: CONFIG_CLAUDE(),
+      dossierProjet: projet,
     });
   } catch (error) {
     console.error("Préparation de l’agent non faite :", error);
@@ -799,12 +802,12 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const configClaude = CONFIG_CLAUDE();
   const ficheAgent = options.agent ? lireSiPresent(path.join(agentsDir(), `${options.agent}.md`)) : null;
   const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, configClaude, cwd);
-  const prepare = preparationClaude(options.agent, filtre.garder);
+  const prepare = preparationClaude(options.agent, filtre.garder, cwd);
   const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
   const connues = skillsConnues(configClaude, cwd);
   for (const nom of filtre.coupes) connues.delete(nom);
   const prompt = promptAvecSkill(options.prompt, options.skill, connues);
-  const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}` : filtre.coupes.join("\n");
+  const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
   // Les dossiers des pièces jointes, pour que l'agent puisse les lire.
   const dossiersJoints = [...new Set((options.fichiers ?? []).filter((f) => path.isAbsolute(f) && existsSync(f)).map((f) => path.dirname(f)))].filter(
     (d) => !d.startsWith(cwd),

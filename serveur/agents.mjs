@@ -709,6 +709,9 @@ export function creerAgents(options) {
         dossierAgents,
         idsActifs: lireEquipe().actifs.map((a) => a.id).filter((id) => typeof id === "string"),
         garder: filtre.garder,
+        choix: lireEquipe().skillsParAgent,
+        configClaude,
+        dossierProjet: cwd,
       });
     } catch (error) {
       console.error("Préparation de l’agent non faite :", error);
@@ -718,7 +721,7 @@ export function creerAgents(options) {
     for (const nom of filtre.coupes) connues.delete(nom);
     const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, connues);
     const configuration = configurationDe();
-    const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}` : filtre.coupes.join("\n");
+    const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
     const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
