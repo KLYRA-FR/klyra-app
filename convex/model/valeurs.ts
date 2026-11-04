@@ -52,7 +52,13 @@ export type CodeErreur =
   | "deja_partage"
   | "description_trop_longue"
   // Documents KLYRA (cf. `convex/documentsKlyra.ts`).
-  | "document_invalide";
+  | "document_invalide"
+  // Jetons GitHub des agents (cf. `convex/jetonsDepot.ts`).
+  | "depot_invalide"
+  | "depot_non_autorise"
+  | "jetons_non_configures"
+  | "app_non_installee"
+  | "github_indisponible";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

@@ -24,6 +24,9 @@ const app = defineApp({
     VAPID_PUBLIC_KEY: v.optional(v.string()),
     VAPID_PRIVATE_KEY: v.optional(v.string()),
     VAPID_SUJET: v.optional(v.string()),
+    /** Clés privées des deux GitHub Apps des agents (`jetonsDepotEnvoi.ts`). Sans elles, aucun jeton n'est émis. */
+    GITHUB_APP_AGENTS_CLE: v.optional(v.string()),
+    GITHUB_APP_REVIEWER_CLE: v.optional(v.string()),
   },
 });
 /* Les e-mails (liens de connexion, rappels) : file durable, nouvelles tentatives, limite horaire. */

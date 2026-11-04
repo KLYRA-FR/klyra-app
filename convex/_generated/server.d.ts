@@ -30,6 +30,8 @@ import type { DataModel } from "./dataModel.js";
 type Env = {
   readonly CONVEX_CLOUD_URL: string;
   readonly CONVEX_SITE_URL: string;
+  readonly GITHUB_APP_AGENTS_CLE: string | undefined;
+  readonly GITHUB_APP_REVIEWER_CLE: string | undefined;
   readonly KLYRA_APP_URL: string | undefined;
   readonly KLYRA_COURRIEL_SIMULE: string | undefined;
   readonly POSTSHIBA_API_KEY: string | undefined;
