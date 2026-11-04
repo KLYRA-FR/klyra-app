@@ -14,6 +14,10 @@
 
 Jamais de push direct sur `main`, jamais de secret dans le code ni dans la PR.
 
+## Le travail des agents
+
+Un agent suit les mêmes règles, avec [ses conventions](consignes/collaboration.md). Pendant le pilote, **une PR ouverte par un agent est fusionnée par Corentin**.
+
 ## Fusionner, c’est publier
 
 Chaque fusion sur `main` lance l’action **App** : elle fabrique l’app pour Mac et pour Windows, vérifie qu’elle démarre et que la dictée se lance, puis publie la version `0.1.<n>` dans [KLYRA-FR/klyra-app-versions](https://github.com/KLYRA-FR/klyra-app-versions/releases). **Toutes les apps installées la téléchargent dans l’heure** et l’installent quand on les quitte.

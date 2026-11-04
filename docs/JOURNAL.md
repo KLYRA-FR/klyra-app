@@ -1,3 +1,5 @@
+> **Historique, fermé le 04/11/2026.** Ne pas le lire en entier : y chercher un mot au besoin. Les décisions qui portent encore sont dans [DECISIONS.md](DECISIONS.md).
+
 # Journal du projet — app KLYRA
 
 > Historique des décisions et de l’avancement, pour reprendre le travail depuis n’importe quel ordi.
