@@ -312,6 +312,7 @@ contextBridge.exposeInMainWorld("klyra", {
     ouvrirDossier: (nom: string) => ipcRenderer.invoke("reglages:ouvrir-dossier", nom),
     diagnosticPoste: (lieu?: string | null) => ipcRenderer.invoke("reglages:diagnostic-poste", lieu ?? null),
     montrerDiagnostic: (chemin: string) => ipcRenderer.invoke("reglages:diagnostic-poste:montrer", chemin),
+    skillsDisponibles: (dossier: string | null) => ipcRenderer.invoke("reglages:skills-disponibles", dossier),
     essaiNotification: () => ipcRenderer.invoke("reglages:essai-notification"),
     autorisationsComputerUse: () => ipcRenderer.invoke("reglages:computer-use:autorisations"),
     ouvrirAutorisation: (type: string) => ipcRenderer.invoke("reglages:computer-use:ouvrir", type),

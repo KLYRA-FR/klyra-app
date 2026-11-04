@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { Acces, Reglages } from "@/lib/bridge";
 import { ErreurPoste } from "@/lib/poste/types";
 import { CONFIGURATION_PAR_DEFAUT } from "../../../electron/configuration-klyra";
+import { SKILLS_PAR_DEFAUT } from "../../../electron/skills-par-agent";
 import { gestesReglages, type DepsReglages } from "./gestes-reglages";
 import { RAISONS } from "./reglages";
 
@@ -11,6 +12,7 @@ function poste(acces: Acces = "projet", computerUse = true) {
     computerUse: { actif: computerUse },
     sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
     configuration: CONFIGURATION_PAR_DEFAUT,
+    skillsParAgent: SKILLS_PAR_DEFAUT,
   };
   const deps = {
     ton: "ton Mac",

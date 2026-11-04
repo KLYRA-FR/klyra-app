@@ -106,6 +106,7 @@ export const SECTIONS: SectionReglages[] = [
       { id: "acces", titre: "Accès des agents", mots: "permissions autorisations autonomie demander tout accepter" },
       { id: "assistant", titre: "Ton assistant", mots: "assistant principal nom renommer couleur" },
       { id: "modeles", titre: "Modèle de chaque agent", mots: "opus sonnet haiku role equipe fiche fournisseur chatgpt claude codex par defaut" },
+      { id: "skills-par-agent", titre: "Skills de chaque agent", mots: "competences skill interrupteur couper allumer iris jetons" },
       { id: "dossier-agents", titre: "Dossier des fiches", mots: "claude agents md fichiers" },
     ],
   },

@@ -24,6 +24,7 @@ import {
   creerSouvenir as creerSouvenirDans,
   dossierMemoire,
   ecrireSouvenir as ecrireSouvenirDans,
+  filtreSkills,
   lireCompetences,
   lireMemoire,
   lireSouvenir,
@@ -31,6 +32,7 @@ import {
   promptAvecSkill,
   skillsConnues,
 } from "./connaissances-agent.mjs";
+import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
 import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
@@ -41,7 +43,8 @@ const OUTILS_BLOQUANTS = ["AskUserQuestion", "EnterPlanMode"];
 /** Outils de Claude Code sans usage ici (~4 900 jetons à chaque appel) : les mêmes que dans l'app (electron/claude.ts). */
 const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext", "ListAgents"];
 const AGENTS_DE_CLAUDE = ["general-purpose", "Explore", "Plan", "statusline-setup", "claude", "claude-code-guide", "output-style-setup"];
-const REGLE_AGENTS = JSON.stringify({ permissions: { ask: ["Agent"] } });
+/** Permissions de la session. Les skills coupées s'y ajoutent ; sans coupe, le JSON reste celui-ci. */
+const PERMISSIONS_AGENTS = { permissions: { ask: ["Agent"] } };
 const VEILLE_MS = 30 * 60 * 1000;
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -107,10 +110,11 @@ export function creerAgents(options) {
         assistant: typeof equipe.assistant === "string" ? equipe.assistant : null,
         actifs: Array.isArray(equipe.actifs) ? equipe.actifs : [],
         configuration: configurationValide(equipe.configuration),
+        skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
         empreinte: equipe.empreinte ?? "",
       };
     } catch {
-      return { assistant: null, actifs: [], configuration: configurationValide(null), empreinte: "" };
+      return { assistant: null, actifs: [], configuration: configurationValide(null), skillsParAgent: validerSkillsParAgent(null), empreinte: "" };
     }
   };
 
@@ -163,7 +167,17 @@ export function creerAgents(options) {
     for (const f of valides) writeFileSync(path.join(dossierAgents, `${f.id}.md`), f.contenu, { mode: 0o600 });
     const actifs = valides.map((f) => ({ id: f.id, nom: typeof f.nom === "string" && f.nom.trim() ? f.nom.trim().slice(0, 80) : f.id }));
     const assistant = typeof corps.assistant === "string" ? corps.assistant.trim().slice(0, 80) || null : null;
-    writeFileSync(fichierEquipe, JSON.stringify({ assistant, actifs, configuration: configurationValide(corps.configuration), empreinte: String(corps.empreinte ?? "").slice(0, 80) }), { mode: 0o600 });
+    writeFileSync(
+      fichierEquipe,
+      JSON.stringify({
+        assistant,
+        actifs,
+        configuration: configurationValide(corps.configuration),
+        skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
+        empreinte: String(corps.empreinte ?? "").slice(0, 80),
+      }),
+      { mode: 0o600 },
+    );
   }
 
   /**
@@ -374,6 +388,7 @@ export function creerAgents(options) {
     estActif,
     mcp: mcpIa,
     generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
+    skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.codex !== undefined ? { codex: options.codex } : {}),
   });
 
@@ -580,10 +595,10 @@ export function creerAgents(options) {
     }
   }
 
-  function lancer(bin, args, cwd, signature, demande, acces) {
+  function lancer(bin, args, cwd, signature, skills, demande, acces) {
     const child = spawn(bin, args, { cwd, env: environnement(configurationDe()), stdio: ["pipe", "pipe", "pipe"] });
     /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
-    const proc = { child, signature, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map() };
+    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map() };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
     let tampon = "";
     let stderr = "";
@@ -664,13 +679,17 @@ export function creerAgents(options) {
     } catch {
       fiche = null;
     }
-    const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd) : { noms: [], texte: null };
-    const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, skillsConnues(configClaude, cwd));
+    const filtre = filtreSkills(lireEquipe().skillsParAgent, demande.agent ?? null, configClaude, cwd);
+    const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
+    const connues = skillsConnues(configClaude, cwd);
+    for (const nom of filtre.coupes) connues.delete(nom);
+    const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, connues);
     const configuration = configurationDe();
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation]);
+    const skillsCle = filtre.coupes.join("\n");
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
-    if (ouvert && vivant(ouvert) && (ouvert.signature === signature || ouvert.tours.length)) {
+    if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && (ouvert.signature === signature || ouvert.tours.length)) {
       proc = ouvert;
       if ((demande.modele ?? null) !== proc.modele) {
         controle(proc, { subtype: "set_model", ...(demande.modele ? { model: demande.modele } : {}) });
@@ -700,7 +719,7 @@ export function creerAgents(options) {
         ...OUTILS_BLOQUANTS,
         ...OUTILS_HORS_APP,
         "--settings",
-        REGLE_AGENTS,
+        reglagesSession(PERMISSIONS_AGENTS, filtre.coupes),
       ];
       if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, ...(assistant ? OUTILS_ATELIER : [])] : []));
       if (mcp) args.push("--mcp-config", mcp);
@@ -710,7 +729,7 @@ export function creerAgents(options) {
       if (demande.effort) args.push("--effort", demande.effort);
       const consigne = demande.agent === null ? consigneAssistant() : consigneAgent(demande.agent);
       args.push("--append-system-prompt", [ici(), consigne, ...(configuration.consignes ? [configuration.consignes] : []), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
-      proc = lancer(bin, args, cwd, signature, demande, acces);
+      proc = lancer(bin, args, cwd, signature, skillsCle, demande, acces);
     }
     ajouterTour(proc, nouveauTour(proc, requestId, acces));
     ecrire(proc, { type: "user", message: { role: "user", content: prompt } });

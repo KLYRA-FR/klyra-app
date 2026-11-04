@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getBridge, unwrap, type PreferencesNotifications, type PreferencesSons, type Reglages } from "@/lib/bridge";
 import { CONFIGURATION_PAR_DEFAUT, validerConfiguration, type ConfigurationKlyra } from "../../electron/configuration-klyra";
+import { SKILLS_PAR_DEFAUT, validerSkillsParAgent, type SkillsParAgent } from "../../electron/skills-par-agent";
 
 /**
  * Les réglages de l'app gardés par le process principal (electron/reglages.ts).
@@ -15,6 +16,7 @@ export const REGLAGES_PAR_DEFAUT: Reglages = {
   computerUse: { actif: false },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
+  skillsParAgent: SKILLS_PAR_DEFAUT,
 };
 
 const CLE_NAVIGATEUR = "klyra:reglages";
@@ -28,6 +30,7 @@ function completer(brut: Partial<Reglages> | null | undefined): Reglages {
     computerUse: { actif: brut?.computerUse?.actif === true },
     sons: { ...REGLAGES_PAR_DEFAUT.sons, ...brut?.sons },
     configuration: validerConfiguration(brut?.configuration),
+    skillsParAgent: validerSkillsParAgent(brut?.skillsParAgent),
   };
 }
 
@@ -114,5 +117,16 @@ export function useReglages() {
     }
   }, []);
 
-  return { reglages, erreur, changerNotification, changerComputerUse, changerSons, changerConfiguration, systeme: !!getBridge()?.reglages };
+  /** Les skills reçues par chaque agent. */
+  const changerSkills = useCallback(async (skillsParAgent: SkillsParAgent) => {
+    const actuels = await reglagesActuels();
+    setErreur(null);
+    try {
+      await enregistrer({ ...actuels, skillsParAgent });
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  return { reglages, erreur, changerNotification, changerComputerUse, changerSons, changerConfiguration, changerSkills, systeme: !!getBridge()?.reglages };
 }

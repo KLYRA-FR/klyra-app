@@ -7,8 +7,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
 import { consigneKlyra } from "./configuration-klyra";
+import { figerChoix } from "./skills-par-agent";
 import { dossierHorsProjet } from "./atelier";
 import {
+  catalogueSkills,
+  cheminSouvenir,
   creerSouvenir,
   dossierMemoire,
   ecrireSouvenir,
@@ -16,7 +19,7 @@ import {
   lireCompetences,
   lireMemoire,
   lireSouvenir,
-  cheminSouvenir,
+  nomsSkills,
   porteeDeLaFiche,
   type PorteeMemoire,
 } from "./connaissances-agent";
@@ -881,10 +884,10 @@ function registerBridge() {
     });
     const assistant = mesAgents().assistant.nom ?? null;
     /* La configuration KLYRA de ce PC, comme `environnementAgent` et `consignesApp` la donnent aux sessions locales. */
-    const { configuration: reglage } = lireReglages();
+    const { configuration: reglage, skillsParAgent } = lireReglages();
     const configuration = { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes) };
-    const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches, configuration])).digest("hex").slice(0, 16);
-    return { fiches, assistant, configuration, empreinte };
+    const empreinte = createHash("sha256").update(JSON.stringify([generation(), assistant, fiches, configuration, skillsParAgent])).digest("hex").slice(0, 16);
+    return { fiches, assistant, configuration, skillsParAgent, empreinte };
   };
   const depuisFenetre = (event: Electron.IpcMainInvokeEvent) => {
     const win = fenetrePrincipale;
@@ -1015,6 +1018,16 @@ function registerBridge() {
     }
     return diagnostic();
   });
+  handle("reglages:skills-disponibles", (dossier: unknown) => {
+    let projet: string | null = null;
+    if (dossier !== null && dossier !== undefined && dossier !== "") {
+      if (typeof dossier !== "string" || !path.isAbsolute(dossier)) throw new Error("Dossier invalide.");
+      const abs = path.resolve(dossier);
+      if (!existsSync(abs)) throw new Error("Dossier introuvable.");
+      projet = abs;
+    }
+    return catalogueSkills(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), projet);
+  });
   handle("reglages:diagnostic-poste:montrer", (chemin: string) => {
     // Seulement un chemin que le diagnostic vient de trouver.
     if (!diagnostic().elements.some((e) => e.chemin === chemin) || !existe(chemin)) throw new Error("Ce fichier n’est plus là.");
@@ -1087,10 +1100,21 @@ app.on("second-instance", (_event, argv) => {
 });
 ouvrirLienKlyra(lienDans(process.argv));
 
+/** Fige le choix des skills une fois : ce qui est déjà là reste reçu. Une skill ou un agent apparu après ne l'est pas. */
+async function figerSkillsPersonnelles(): Promise<void> {
+  const actuels = lireReglages();
+  if (actuels.skillsParAgent.fige) return;
+  const personnelles = nomsSkills(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), null).poste;
+  const agents = ["principal", ...presentationActifs().map((a) => a.id)];
+  await ecrireReglages({ ...actuels, skillsParAgent: figerChoix(actuels.skillsParAgent, agents, personnelles) });
+}
+
 void app.whenReady().then(async () => {
   /* Mes agents d'abord : sa première création décide entre reprise et nouveau profil,
      avant que l'interface écrive ses propres données. */
   await chargerMesAgents(MODELES_KLYRA).catch((e) => console.error("Mes agents illisible :", e));
+  /* Premier lancement de cette version : les skills personnelles déjà là restent reçues par les agents déjà là. */
+  await figerSkillsPersonnelles().catch((e) => console.error("Choix des skills non figé :", e));
   // Sans version installée, macOS prend l'icône d'Electron : on la remplace dans le Dock.
   if (process.platform === "darwin") app.dock?.setIcon(ICONE);
   app.setAboutPanelOptions({ applicationName: "KLYRA", iconPath: ICONE });

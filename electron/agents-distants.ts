@@ -6,6 +6,7 @@ import { enregistrerConsommation } from "./consommation";
 import { ligneValide } from "./consommation-ecart";
 import type { AgentEvent, StreamOptions } from "./moteurs/types";
 import { contexteDe, type ContexteReponse } from "./contexte-distant";
+import type { SkillsParAgent } from "./skills-par-agent";
 
 /**
  * Les agents d'un VPS relié (serveur/agents.mjs), vus par l'app comme ceux du PC :
@@ -64,6 +65,8 @@ export interface Equipe {
    * ses sessions : messages du PC, du téléphone PC fermé, routines du serveur.
    */
   configuration: { memoireAgents: boolean; consignes: string | null };
+  /** Skills reçues par chaque agent. Un ancien serveur ignore le champ : tout reste reçu. */
+  skillsParAgent: SkillsParAgent;
   empreinte: string;
 }
 

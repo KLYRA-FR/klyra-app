@@ -6,7 +6,8 @@ import { app, shell } from "electron";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { signatureOrdinateur } from "../ordinateur/pilote";
 import { espaceComposio } from "../composio";
-import { consigneSkillsCodex, promptAvecSkillCodex } from "../connaissances-agent";
+import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
+import { lireReglages } from "../reglages";
 import { configMcp } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
@@ -260,9 +261,10 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   const acces = accesCodex(options.acces ?? "projet");
   /* Les skills de Claude, que Codex ne lit pas de lui-même (cf. connaissances-agent.ts) : présentées par leur
      fichier, celles que la fiche précharge avec leur texte, et `/<skill>` demandé en tête du message. */
-  const skills = consigneSkillsCodex(options.agent ? ficheBrute(options.agent) : null, CONFIG_CLAUDE(), cwd);
+  const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, CONFIG_CLAUDE(), cwd);
+  const skills = consigneSkillsCodex(options.agent ? ficheBrute(options.agent) : null, CONFIG_CLAUDE(), cwd, filtre.garder);
   // Mes agents, Composio ou les skills ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms]);
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {
@@ -294,7 +296,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   try {
     const r = await serveur.requete<{ turn: { id: string } }>("turn/start", {
       threadId,
-      input: [{ type: "text", text: promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd), text_elements: [] }],
+      input: [{ type: "text", text: promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd, filtre.garder), text_elements: [] }],
       cwd,
       approvalPolicy: acces.approvalPolicy,
       sandboxPolicy: acces.sandboxPolicy,
