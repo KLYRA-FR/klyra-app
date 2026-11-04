@@ -1,0 +1,12 @@
+# Risque élevé : validation humaine. Voir docs/consignes/collaboration.md.
+# Ce fichier demande une review ; il ne bloque une fusion que si la règle de la branche l'exige.
+/.github/                @CorentinQueuche
+/convex/schema.ts        @CorentinQueuche
+/convex/auth*            @CorentinQueuche
+/convex/model/acces.ts   @CorentinQueuche
+/electron/coffre*        @CorentinQueuche
+/electron/maj.ts         @CorentinQueuche
+/serveur/coffre*         @CorentinQueuche
+/serveur/lancer.sh       @CorentinQueuche
+/package.json            @CorentinQueuche
+/pnpm-lock.yaml          @CorentinQueuche
