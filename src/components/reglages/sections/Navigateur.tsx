@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ListeCoffre } from "@/components/chat/navigateur/Coffre";
+import { useRouter } from "next/navigation";
+import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { useConfirmation } from "@/components/ui/Modale";
 import { getBridge } from "@/lib/bridge";
@@ -15,6 +16,7 @@ import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau } from "../ui";
 export function Navigateur() {
   const { reglages, erreur, changerNavigateur } = useReglages();
   const pont = getBridge()?.navigateur;
+  const router = useRouter();
   const [demander, fenetre] = useConfirmation();
   const [efface, setEfface] = useState<"non" | "en-cours" | "fait">("non");
   const [erreurEffacer, setErreurEffacer] = useState<string | null>(null);
@@ -74,10 +76,12 @@ export function Navigateur() {
 
       <Groupe
         titre="Mots de passe"
-        description="Le coffre du navigateur : chiffré par le trousseau de ton ordinateur, jamais montré à un agent. « Remplir » est aussi dans la barre de chaque onglet ; un agent que tu y autorises remplit la page de connexion sans voir le mot de passe."
+        description="Les connexions des sites sont rangées dans le Coffre, avec tes clés API : chiffrées par le trousseau de ton ordinateur, jamais montrées à un agent. « Remplir » est aussi dans la barre de chaque onglet ; un agent que tu y autorises remplit la page de connexion sans voir le mot de passe."
       >
-        <Ligne id="navigateur-coffre" libelle="Connexions enregistrées" pile>
-          {pont ? <ListeCoffre /> : <SeulementBureau />}
+        <Ligne id="navigateur-coffre" libelle="Connexions enregistrées" description="Elles se gèrent dans Réglages › Coffre.">
+          <Bouton variant="blanc" taille="compact" iconeGauche={<Icon name="lock-01" size={16} />} onClick={() => router.push("/reglages?section=coffre")}>
+            Ouvrir le coffre
+          </Bouton>
         </Ligne>
       </Groupe>
       {fenetre}

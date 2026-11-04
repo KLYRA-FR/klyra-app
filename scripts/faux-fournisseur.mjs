@@ -6,6 +6,7 @@
  * - « liste <agent> » : il liste les fils ouverts de cet agent (outil `lister_fils`) ;
  * - « atelier <prénom> » : il complète la carte d'un agent à créer (outil `proposer_agent`) ;
  * - « choix <mot> » : il propose des réponses toutes prêtes (outil `proposer_choix`) ;
+ * - « coffre <variable> » : il demande un secret à la personne (outil `coffre_demander`) ;
  * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> ».
  * - l'épreuve de l'atelier : l'agent en essai répond d'après la demande (il prend un bug pour lui tant
  *   que sa fiche ne dit pas de passer la main), et le juge rend un verdict JSON.
@@ -19,7 +20,7 @@ import { createServer } from "node:http";
 const texteDe = (contenu) => (typeof contenu === "string" ? contenu : (contenu ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n"));
 
 /** Les outils de l'app appelés par un ordre, et ce qu'ils reçoivent. */
-const OUTILS_ORDRES = { fil: "mcp__klyra__ouvrir_fil", liste: "mcp__klyra__lister_fils", atelier: "mcp__klyra__proposer_agent", choix: "mcp__klyra__proposer_choix" };
+const OUTILS_ORDRES = { fil: "mcp__klyra__ouvrir_fil", liste: "mcp__klyra__lister_fils", atelier: "mcp__klyra__proposer_agent", choix: "mcp__klyra__proposer_choix", coffre: "mcp__klyra__coffre_demander" };
 function entreeOrdre(verbe, cible) {
   if (verbe === "fil") return { agent: cible, titre: "Essai", brief: "Brief d’essai." };
   if (verbe === "atelier")
@@ -32,6 +33,7 @@ function entreeOrdre(verbe, cible) {
       voisins: [{ id: "nina", raison: "Elle suit déjà les propositions commerciales." }],
       routine: { nom: "Note de veille", consigne: "Rends la note de veille de la semaine.", quand: { type: "semaine", jour: 5, heure: "08:30" } },
     };
+  if (verbe === "coffre") return { variable: cible, nom: "Clé d’essai", genre: "cle-api", service: "essai.klyra.fr", raison: "Pour l’essai du coffre." };
   if (verbe === "choix") return { question: "Quand l’appeler ?", options: ["Chaque vendredi", "Avant un rendez-vous", "Quand je cite un concurrent"], multiple: true };
   return { agent: cible };
 }
@@ -65,8 +67,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
     const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|coffre) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|coffre) ([a-z0-9-]+)/m) : null;
     requetes.push({
       message: texteDe(dernier?.content ?? ""),
       sousAgent,

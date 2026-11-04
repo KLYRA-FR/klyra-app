@@ -21,6 +21,7 @@ import { confierAEditeur } from "@/lib/proposition-agent";
 import { useIdDirect, useRole } from "@/lib/workspace";
 import type { EtatAtelier } from "@/lib/atelier-agent";
 import { CarteAtelier, ChoixReponses } from "./CarteAtelier";
+import { CarteCoffre } from "./CarteCoffre";
 import { PastilleExtension } from "./PastilleExtension";
 import type {
   ChangedFile,
@@ -472,6 +473,7 @@ export function MessagePartView({
   lieu = null,
   etatAtelier,
   choix,
+  onCoffre,
 }: {
   part: MessagePart;
   tone: "user" | "role";
@@ -493,6 +495,8 @@ export function MessagePartView({
   etatAtelier?: (etapeId: string) => EtatAtelier | undefined;
   /** Les réponses toutes prêtes : encore ouvertes, ou ce que la personne a répondu. */
   choix?: { actif: boolean; repondu: string | null; onRepondre: (texte: string) => void };
+  /** La réponse à une demande de secret : notée sur la carte, puis écrite à l'agent (jamais la valeur). */
+  onCoffre?: (etapeId: string, etat: "rangee" | "permise" | "refusee", message: string) => void;
 }) {
   switch (part.type) {
     case "text":
@@ -513,6 +517,8 @@ export function MessagePartView({
       return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} chatId={chatId} lieu={lieu} enDirect={enCours} />;
     case "choix":
       return <ChoixReponses part={part} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onRepondre={(t) => choix?.onRepondre(t)} />;
+    case "coffre-demande":
+      return <CarteCoffre part={part} nomAgent={nomAgent ?? "L’agent"} onRepondre={(etat, message) => onCoffre?.(part.etapeId, etat, message)} />;
     case "tasks":
       return <TaskList tasks={part.tasks} />;
     case "options":

@@ -81,6 +81,14 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return `Publie dans Artefacts : ${court(entree.titre, 50) || "un rendu"}`;
     case "mcp__klyra__lire_artefact":
       return "Lit un artefact claude.ai";
+    case "mcp__klyra__coffre_lister":
+      return "Regarde le coffre";
+    case "mcp__klyra__coffre_demander":
+      return `Te demande ${court(entree.nom, 50) || "un secret"}`;
+    case "mcp__klyra__coffre_enregistrer":
+      return `Range ${court(entree.nom, 40) || court(entree.variable, 40) || "un secret"} dans le coffre`;
+    case "mcp__klyra__coffre_ecrire_fichier":
+      return `Écrit ${court(entree.variable, 40) || "un secret"} dans ${fichier(entree.chemin)}`;
     case "mcp__klyra__navigateur_aller":
       if (typeof entree.url === "string" && entree.url.trim()) return `Navigateur : ouvre ${court(siteOuMots(entree.url), 50)}`;
       return entree.historique === "retour" ? "Navigateur : page précédente" : entree.historique === "suivant" ? "Navigateur : page suivante" : "Navigateur : recharge la page";
@@ -126,6 +134,11 @@ export function iconeEtape(outil: string): IconName {
     case "mcp__klyra__lire_artefact":
     case "Skill":
       return "layers-01";
+    case "mcp__klyra__coffre_lister":
+    case "mcp__klyra__coffre_demander":
+    case "mcp__klyra__coffre_enregistrer":
+    case "mcp__klyra__coffre_ecrire_fichier":
+      return "lock-01";
     case "mcp__klyra__navigateur_agir":
       return "cursor-01";
     case "mcp__klyra__navigateur_aller":

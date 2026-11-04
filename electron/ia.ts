@@ -27,6 +27,7 @@ import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
  * 127.0.0.1 seulement, avec un jeton tiré au hasard à chaque ouverture de l'app.
  */
 
+import { estOutilCoffre, executerOutilCoffre, OUTILS_COFFRE, OUTILS_COFFRE_LIBRES } from "./coffre-outils";
 export { FOURNISSEURS, type Fournisseur } from "./ia-catalogue";
 import { FOURNISSEURS, type Fournisseur } from "./ia-catalogue";
 
@@ -337,13 +338,18 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : [])] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
       /* Le navigateur de KLYRA : seulement les onglets de la conversation de l'agent (cf. navigateur/). */
       if (estOutilNavigateur(nom)) return resultat(await executerOutilNavigateur(nom, args, appelant));
+      /* Le Coffre : jamais une valeur dans la réponse (cf. coffre-outils.ts). */
+      if (estOutilCoffre(nom)) {
+        const r = await executerOutilCoffre(nom, args, appelant);
+        return texte(r.texte, r.erreur);
+      }
       if (nom === OUTIL_FENETRE_NAVIGATEUR.name) {
         if (!serveurOrdinateur()) return texte("Computer Use n'est pas prêt : rien n'a été ouvert.", true);
         return texte(await ouvrirFenetreNavigateurDefaut(args.url, appelant.chatId));
@@ -445,4 +451,6 @@ export const OUTILS_APP = () => [
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
   // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme Computer Use).
   ...(navigateurActif() ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
+  // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès.
+  ...OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`),
 ];
