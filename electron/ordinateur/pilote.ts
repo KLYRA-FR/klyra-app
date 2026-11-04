@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { lireReglages } from "../reglages";
+import { brancherApercu, couperApercu } from "./apercu";
 import { Relais } from "./relais";
 
 /**
@@ -190,6 +191,7 @@ async function demarrerDemon(): Promise<void> {
   enfant.once("exit", (code) => {
     if (demon !== enfant) return;
     demon = null;
+    couperApercu();
     void relais.fermer();
     publier({ statut: "erreur", autorisations: null, message: `Le pilote s’est arrêté (code ${code ?? "inconnu"}).`, version: VERSION });
   });
@@ -212,11 +214,19 @@ async function demarrerDemon(): Promise<void> {
   await relais.fermer();
   if (dossier) rmSync(adresseRelais, { force: true });
   await relais.ecouter(adresse, adresseRelais).catch((e: unknown) => console.error("Relais Computer Use :", e));
+  /* Une fenêtre à la fois, jamais l'écran. Le relais réutilise la capture déjà faite par l'agent. */
+  brancherApercu(async (pid, windowId) => {
+    const args: Record<string, unknown> = { include_screenshot: true };
+    if (pid != null) args.pid = pid;
+    if (windowId != null) args.window_id = windowId;
+    return demander(adresse, { method: "call", name: "get_window_state", args }, 8_000);
+  });
 }
 
 function arreterDemon(): void {
   const enfant = demon;
   demon = null;
+  couperApercu();
   void relais.fermer();
   if (enfant && enfant.exitCode === null) {
     enfant.stdin?.end();

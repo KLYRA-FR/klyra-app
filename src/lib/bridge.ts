@@ -644,6 +644,11 @@ export interface KlyraBridge {
     onEchap?: (callback: (id: string) => void) => () => void;
     /** Présent pour le test d'écran : envoie Échap à la page affichée. Refusé sinon. */
     testerEchap?: () => Promise<Reponse<boolean>>;
+    /** La fenêtre pilotée sur cet ordinateur (Computer Use). Vide quand rien n'est piloté. */
+    apercu?: () => Promise<Reponse<ApercuFenetre[]>>;
+    onApercu?: (callback: (etat: ApercuFenetre[]) => void) => () => void;
+    /** Présent pour le test d'écran. Refusé sinon. */
+    testerApercu?: (chatId: string, mode: "image" | "masquee" | "bureau" | "fin" | "oubli") => Promise<Reponse<boolean>>;
     actionMenu?: (id: string, action: ActionMenuNavigateur) => Promise<Reponse<void>>;
     /** Le coffre : site et identifiant seulement ; le mot de passe va vers le main, jamais l'inverse. */
     coffre?: () => Promise<Reponse<ConnexionCoffre[]>>;
@@ -750,6 +755,20 @@ export interface ConnexionCoffre {
   agents: boolean;
   ajouteLe: number;
   utiliseLe: number | null;
+}
+
+/** La fenêtre qu'un agent pilote sur cet ordinateur (Computer Use). Pas un onglet du navigateur de KLYRA. */
+export interface ApercuFenetre {
+  chatId: string;
+  titre: string;
+  /** JPEG réduit, en data:. Null : rien à montrer (fenêtre masquée, écran entier, ou pas encore d'image). */
+  image: string | null;
+  masquee: boolean;
+  absente: boolean;
+  /** L'agent vise tout l'écran : le panneau ne l'affiche pas. */
+  bureau: boolean;
+  /** Une lecture est en cours. Faux : la dernière image reste, sans nouveau coût. */
+  actif: boolean;
 }
 
 /** Un onglet du navigateur de KLYRA (cf. electron/navigateur/navigateur.ts, `OngletPublic`). */

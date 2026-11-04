@@ -4,7 +4,9 @@
  * ouvrir un onglet, taper une adresse, voir la page en plein écran dans la
  * fenêtre (pas dans le tiroir), la voir s'effacer sous une fenêtre de l'app,
  * prendre et rendre la main, revenir aux vignettes (bouton et Échap), retrouver
- * l'onglet après un redémarrage.
+ * l'onglet après un redémarrage. Puis la fenêtre du Computer Use local : une
+ * image injectée (pas le pilote), en plein écran, masquée, ou refusée si c'est
+ * tout l'écran.
  * Prérequis : `pnpm build && pnpm build:electron`.
  *   pnpm test:navigateur-ecran      (Linux : xvfb-run -a … -- --no-sandbox)
  */
@@ -167,6 +169,7 @@ try {
   await app.ev(`[...document.querySelectorAll('[role="tab"]')].find((t) => t.innerText.trim() === "Navigateur").click()`);
   await attendre(400);
   verifier(/Aucun onglet dans cette conversation/.test(await app.ev("document.body.innerText")), "sans onglet : l’état vide l’explique");
+  await capture("118-avant-aucun-onglet.png");
 
   await app.cliquerTexte("Nouvel onglet");
   await attendre(600);
@@ -218,6 +221,46 @@ try {
   verifier(!!(await ongletsApp(app))[0].affiche, "un clic sur la vignette rouvre le plein écran");
   await echapPage(app);
   verifier(!(await ongletsApp(app))[0].affiche && !(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "Échap dans la page ramène aux vignettes");
+
+  /* Computer Use local : la fenêtre pilotée, injectée (le pilote n'est pas lancé). */
+  const poserApercu = async (mode) => {
+    const ok = await app.ev(`window.klyra.navigateur.testerApercu("dm-principal", ${JSON.stringify(mode)}).then((r) => r.ok && r.data)`);
+    if (!ok) throw new Error(`aperçu de test refusé (${mode})`);
+    await attendre(400);
+  };
+  await poserApercu("image");
+  verifier(
+    !!(await app.ev(`!!document.querySelector('[data-apercu-fenetre] img')`)) && /Fenêtre d’essai/.test(await app.ev("document.body.innerText")),
+    "la fenêtre pilotée remplace l’état vide",
+  );
+  await app.cliquer("[data-apercu-fenetre]");
+  await attendre(500);
+  const za = await app.ev(`(() => {
+    const z = document.querySelector('[data-plein-ecran-navigateur] [data-zone-apercu]');
+    if (!z) return null;
+    const r = z.getBoundingClientRect();
+    return { l: Math.round(r.width), h: Math.round(r.height), dansTiroir: !!z.closest("aside"), img: !!z.querySelector("img"), fenetreL: innerWidth, fenetreH: innerHeight };
+  })()`);
+  verifier(!!za && !za.dansTiroir && za.img && za.l >= za.fenetreL - 2 && za.h >= za.fenetreH * 0.6, "la fenêtre pilotée s’ouvre en plein écran, pas dans le tiroir", za);
+  await capture("118-apres-plein-ecran.png");
+  await app.cliquer('button[aria-label="Retour au panneau"]');
+  await attendre(400);
+  verifier(!(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)) && !!(await app.ev(`!!document.querySelector('[data-apercu-fenetre]')`)), "Retour ramène à la carte de la fenêtre");
+  await capture("118-apres-retour.png");
+  await app.cliquer("[data-apercu-fenetre]");
+  await attendre(400);
+  await echap(app);
+  verifier(!(await app.ev(`!!document.querySelector('[data-plein-ecran-navigateur]')`)), "Échap quitte le plein écran de la fenêtre pilotée");
+  await poserApercu("masquee");
+  verifier(/Fenêtre masquée ou réduite/.test(await app.ev("document.body.innerText")) && !(await app.ev(`!!document.querySelector('[data-apercu-fenetre] img')`)), "fenêtre masquée ou réduite : pas d’image");
+  await poserApercu("bureau");
+  verifier(/tout l’écran/.test(await app.ev("document.body.innerText")) && !(await app.ev(`!!document.querySelector('[data-apercu-fenetre] img')`)), "l’écran entier n’est pas montré");
+  await poserApercu("image");
+  await poserApercu("fin");
+  const carte = await app.ev(`document.querySelector('[data-apercu-fenetre]')?.innerText ?? ""`);
+  verifier(/Fenêtre d’essai/.test(carte) && /dernière image/.test(carte) && !/En direct/.test(carte), "la fin du tour garde l’image et arrête le direct", carte);
+  await poserApercu("oubli");
+  verifier(!(await app.ev(`!!document.querySelector('[data-apercu-fenetre]')`)), "l’arrêt du Computer Use retire la fenêtre");
   page?.fermer();
   await app.fermer();
 
