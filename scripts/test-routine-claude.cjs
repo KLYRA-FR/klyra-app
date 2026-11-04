@@ -115,6 +115,8 @@ function fixture() {
     "./skills-par-agent": {
       reglagesSession: (base, coupes) => JSON.stringify(coupes?.length ? { ...base, skillOverrides: Object.fromEntries(coupes.map((nom) => [nom, "off"])) } : base),
     },
+    /* Pas de dossier d'app dans ce profil fictif : la session reste sur le poste, sans CLAUDE_CONFIG_DIR. */
+    "./preparation-fournisseur": { preparerSessionClaude: () => null },
     // Le navigateur de KLYRA coupé pour les agents : ni consigne ni changement de signature.
     "./navigateur/outils": { consigneNavigateur: () => null, signatureNavigateur: () => "" },
     // Computer Use coupé, comme sur un profil qui ne l'a jamais allumé : pas d'outils « ordinateur ».

@@ -9,6 +9,7 @@ import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, ge
 import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { dossierHorsProjet } from "./atelier";
 import { competencesPrechargees, filtreSkills, promptAvecSkill, skillsConnues } from "./connaissances-agent";
+import { preparerSessionClaude } from "./preparation-fournisseur";
 import { reglagesSession } from "./skills-par-agent";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
@@ -137,12 +138,13 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
 
   return new Promise((resolve) => {
     // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul, et le sait.
-    const coupes = filtreSkills(lireReglages().skillsParAgent, agent, CONFIG_CLAUDE(), null).coupes;
+    const filtre = filtreSkills(lireReglages().skillsParAgent, agent, CONFIG_CLAUDE(), null);
+    const prepare = preparationClaude(agent, filtre.garder);
     const args = ["-p", "--agent", agent, "--output-format", "json", SECTIONS_DU_POSTE_A_PART, "--disallowedTools", ...OUTILS_INTERDITS, ...OUTILS_HORS_APP, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
-    if (coupes.length) args.push("--settings", reglagesSession({}, coupes));
+    if (filtre.coupes.length) args.push("--settings", reglagesSession({}, filtre.coupes));
     const child = spawn(bin, args, {
       cwd: HOME,
-      env: environnementAgent(),
+      env: envClaude(prepare?.dossier ?? null),
       windowsHide: true,
     });
     running.set(requestId, child);
@@ -689,8 +691,29 @@ function lireLigne(proc: Processus, ligne: string) {
   }
 }
 
-function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, skills: string, options: StreamOptions, acces: Acces, spontane: Spontane): Processus {
-  const child = spawn(bin, args, { cwd, env: environnementAgent(), windowsHide: true });
+/** Le dossier préparé pour cet agent, ou null (la session reste alors sur le poste). */
+function preparationClaude(agent: string | null, garder: (nom: string) => boolean): { dossier: string; skills: string[] } | null {
+  try {
+    return preparerSessionClaude({
+      userData: process.env.KLYRA_USER_DATA ?? null,
+      home: HOME,
+      agent,
+      dossierAgents: agentsDir(),
+      idsActifs: presentationActifs().map((a) => a.id),
+      garder,
+      /* Le dossier du poste, pas celui qu'on prépare : le process parent ne pose pas CLAUDE_CONFIG_DIR. */
+      poste: process.env.CLAUDE_CONFIG_DIR || null,
+    });
+  } catch (error) {
+    console.error("Préparation de l’agent non faite :", error);
+    return null;
+  }
+}
+
+const envClaude = (dossier: string | null) => ({ ...environnementAgent(), ...(dossier ? { CLAUDE_CONFIG_DIR: dossier } : {}) });
+
+function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, skills: string, options: StreamOptions, acces: Acces, spontane: Spontane, dossier: string | null): Processus {
+  const child = spawn(bin, args, { cwd, env: envClaude(dossier), windowsHide: true });
   const proc: Processus = {
     routineRun: options.routineRun,
     child,
@@ -763,11 +786,12 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const configClaude = CONFIG_CLAUDE();
   const ficheAgent = options.agent ? lireSiPresent(path.join(agentsDir(), `${options.agent}.md`)) : null;
   const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, configClaude, cwd);
+  const prepare = preparationClaude(options.agent, filtre.garder);
   const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
   const connues = skillsConnues(configClaude, cwd);
   for (const nom of filtre.coupes) connues.delete(nom);
   const prompt = promptAvecSkill(options.prompt, options.skill, connues);
-  const skillsCle = filtre.coupes.join("\n");
+  const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}` : filtre.coupes.join("\n");
   // Les dossiers des pièces jointes, pour que l'agent puisse les lire.
   const dossiersJoints = [...new Set((options.fichiers ?? []).filter((f) => path.isAbsolute(f) && existsSync(f)).map((f) => path.dirname(f)))].filter(
     (d) => !d.startsWith(cwd),
@@ -833,7 +857,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     for (const d of dossiersJoints) args.push("--add-dir", d);
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", [...consignesApp(options, mcp), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
 
-    proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane);
+    proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane, prepare?.dossier ?? null);
   }
 
   ajouterTour(proc, nouveauTour(requestId, emit, acces));

@@ -30,7 +30,7 @@ export function SkillsParAgent() {
   const projet = projets.find((p) => p.id === projetId) ?? projets[0] ?? null;
   const [agentId, setAgentId] = useState("principal");
   const agent = roles.some((r) => r.id === agentId) ? agentId : (roles[0]?.id ?? "principal");
-  const [lu, setLu] = useState<{ dossier: string | null; poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[] } | null>(null);
+  const [lu, setLu] = useState<{ dossier: string | null; poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[]; reprise?: { fiches: string[]; skills: string[] } | null } | null>(null);
   const [echec, setEchec] = useState<string | null>(null);
 
   useEffect(() => {
@@ -74,7 +74,7 @@ export function SkillsParAgent() {
   return (
     <Groupe
       titre="Skills de chaque agent"
-      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
+      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Au lancement, KLYRA prépare pour Claude un dossier à part : les agents actifs, et seulement ces skills. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
     >
       <Ligne
         id="skills-par-agent"
@@ -106,6 +106,11 @@ export function SkillsParAgent() {
                 />
               )}
             </div>
+            {catalogue?.reprise && (
+              <span className="text-ui-xs text-texte-tertiaire">
+                Reprises dans KLYRA, sans rien supprimer du poste : {catalogue.reprise.fiches.length} fiche{catalogue.reprise.fiches.length > 1 ? "s" : ""}, {catalogue.reprise.skills.length} skill{catalogue.reprise.skills.length > 1 ? "s" : ""}.
+              </span>
+            )}
             {lecture && <span className="text-ui-xs text-texte-tertiaire">{lecture}</span>}
             {erreur && <Erreur>{erreur}</Erreur>}
             {!lecture && lignes.length === 0 && (

@@ -7,10 +7,11 @@ import path from "node:path";
  * ses agents actifs. Lecture seule. Les tailles sont estimées d'après les fichiers : une mesure exacte
  * demanderait un appel au modèle. Calibré le 03/11/2026 : un CLAUDE.md de 6 164 octets ajoute 2 391 jetons
  * réels (Claude Code l'entoure d'un peu de texte) ; 2,75 caractères par jeton, comme `pnpm mesure:socle --reel`.
- * Une skill personnelle se retire d'un agent sans retirer ses agents ni son CLAUDE.md :
- * `skillOverrides` à `off` dans le `--settings` de la session (prouvé le 04/11/2026).
- * `--setting-sources project,local` retire aussi les agents du poste : on ne l'utilise pas.
- * Les interrupteurs sont dans Réglages › Agents. Le diagnostic reste une lecture.
+ * Une session Claude lancée par l'app lit un dossier préparé (`CLAUDE_CONFIG_DIR`) :
+ * les agents actifs, et seulement les skills allumées pour cet agent. Le poste n'est pas modifié.
+ * `--setting-sources project,local` retire aussi ce dossier : on ne le combine pas.
+ * Ce diagnostic lit encore le poste (ce que la personne a), pas le dossier d'une session.
+ * Les plugins du poste n'entrent pas dans ce dossier. Les interrupteurs sont dans Réglages › Agents.
  */
 
 export const CARACTERES_PAR_JETON = 2.75;
@@ -141,9 +142,9 @@ function plugins(dossierClaude: string): ElementPoste {
   return {
     cle: "plugins",
     libelle: "Plugins de Claude Code",
-    detail: actives.length ? `${actives.length} activé${actives.length > 1 ? "s" : ""} : ${actives.slice(0, 6).join(", ")}${actives.length > 6 ? "…" : ""}.` : "Aucun.",
+    detail: actives.length ? `${actives.length} activé${actives.length > 1 ? "s" : ""} : ${actives.slice(0, 6).join(", ")}${actives.length > 6 ? "…" : ""}. Une session lancée par KLYRA ne les charge pas.` : "Aucun.",
     jetons: null,
-    conseil: actives.length ? "Chaque plugin peut ajouter des skills, des agents et des serveurs MCP à chaque session. Désactive ceux qui ne servent pas à tes agents (/plugin dans Claude Code)." : null,
+    conseil: actives.length ? "Ces plugins valent pour Claude Code hors de KLYRA. Une session de l’app lit un dossier préparé, sans eux." : null,
     chemin: actives.length ? path.join(dossierClaude, "settings.json") : null,
   };
 }

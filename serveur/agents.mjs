@@ -32,6 +32,7 @@ import {
   promptAvecSkill,
   skillsConnues,
 } from "./connaissances-agent.mjs";
+import { preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
 import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
@@ -601,8 +602,10 @@ export function creerAgents(options) {
     }
   }
 
-  function lancer(bin, args, cwd, signature, skills, demande, acces) {
-    const child = spawn(bin, args, { cwd, env: environnement(configurationDe()), stdio: ["pipe", "pipe", "pipe"] });
+  function lancer(bin, args, cwd, signature, skills, demande, acces, dossierPrepare) {
+    const env = environnement(configurationDe());
+    if (dossierPrepare) env.CLAUDE_CONFIG_DIR = dossierPrepare;
+    const child = spawn(bin, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
     const proc = { child, signature, skills, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map() };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
@@ -686,12 +689,25 @@ export function creerAgents(options) {
       fiche = null;
     }
     const filtre = filtreSkills(lireEquipe().skillsParAgent, demande.agent ?? null, configClaude, cwd);
+    let prepare = null;
+    try {
+      prepare = preparerSessionClaude({
+        userData: donnees,
+        home,
+        agent: demande.agent ?? null,
+        dossierAgents,
+        idsActifs: lireEquipe().actifs.map((a) => a.id).filter((id) => typeof id === "string"),
+        garder: filtre.garder,
+      });
+    } catch (error) {
+      console.error("Préparation de l’agent non faite :", error);
+    }
     const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
     const connues = skillsConnues(configClaude, cwd);
     for (const nom of filtre.coupes) connues.delete(nom);
     const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, connues);
     const configuration = configurationDe();
-    const skillsCle = filtre.coupes.join("\n");
+    const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}` : filtre.coupes.join("\n");
     const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
@@ -742,7 +758,7 @@ export function creerAgents(options) {
       if (demande.effort) args.push("--effort", demande.effort);
       const consigne = demande.agent === null ? consigneAssistant() : consigneAgent(demande.agent);
       args.push("--append-system-prompt", [ici(), consigne, ...(configuration.consignes ? [configuration.consignes] : []), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
-      proc = lancer(bin, args, cwd, signature, skillsCle, demande, acces);
+      proc = lancer(bin, args, cwd, signature, skillsCle, demande, acces, prepare?.dossier ?? null);
     }
     ajouterTour(proc, nouveauTour(proc, requestId, acces));
     ecrire(proc, { type: "user", message: { role: "user", content: prompt } });

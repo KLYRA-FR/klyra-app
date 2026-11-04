@@ -599,7 +599,7 @@ export interface KlyraBridge {
     diagnosticPoste?: (lieu?: string | null) => Promise<Reponse<DiagnosticPoste>>;
     montrerDiagnostic?: (chemin: string) => Promise<Reponse<void>>;
     /** Skills du poste, et du projet de ce PC s’il est ouvert. Absent avant la relance de l’app. */
-    skillsDisponibles?: (dossier: string | null) => Promise<Reponse<{ poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[] }>>;
+    skillsDisponibles?: (dossier: string | null) => Promise<Reponse<{ poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[]; reprise: { fiches: string[]; skills: string[] } | null }>>;
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;
     ouvrirAutorisation: (type: "accessibilite" | "ecran") => Promise<Reponse<void>>;
