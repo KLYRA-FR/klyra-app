@@ -584,6 +584,8 @@ export function creerGestionnaire(options) {
       if (action === "annuler") return repondre(res, 200, { ok: agents.annuler(requestId) });
       /* Le PC rend le résultat d'un outil du navigateur de KLYRA demandé par un agent d'ici (cf. navigateur.mjs). */
       if (action === "navigateur") return repondre(res, 200, { ok: agents.navigateur?.repondre(requestId, corps.resultat) ?? false });
+      /* Le PC rend la réponse d'un outil des workflows demandé par un agent d'ici (cf. workflows.mjs). */
+      if (action === "workflow") return repondre(res, 200, { ok: agents.workflows?.repondre(requestId, corps.resultat) ?? false });
       return repondre(res, 404, { erreur: "introuvable" });
     }
 
