@@ -10,6 +10,7 @@ import { useConfirmation } from "@/components/ui/Modale";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { useAgents } from "@/lib/agents";
 import { apparition } from "@/lib/mouvement";
+import { ordreBarre } from "@/lib/ordre-barre";
 import { lireCreneau } from "@/lib/planning-routines";
 import { useRoutines } from "@/lib/routines";
 import { CLE_BROUILLON_ROUTINE, libellePlanning, libelleRun, runActif } from "@/lib/routines-affichage";
@@ -37,7 +38,7 @@ function nouvelle(agentId: string): RoutineInput { return { agentId, name: "", i
 /** Seule la présentation change : données et mutations restent celles du moteur de routines. */
 export function RoutinesVue({ onglets, garderSortie }: { onglets: ReactNode; garderSortie: (garde: () => Promise<boolean>) => () => void }) {
   const api = useRoutines();
-  const { roles, tous } = useAgents();
+  const { roles, tous, meta } = useAgents();
   const router = useRouter();
   const recherche = useSearchParams();
   const selection = recherche.get("routine");
@@ -62,7 +63,7 @@ export function RoutinesVue({ onglets, garderSortie }: { onglets: ReactNode; gar
   const nomAgent = (id: string) => roles.find((a) => a.id === id)?.name ?? tous.find((a) => a.role.id === id)?.role.name ?? id;
   const agentActif = (id: string) => roles.some((a) => a.id === id);
   const agents: AgentRoutine[] = [
-    ...roles.map((r) => ({ id: r.id, name: r.name, tag: r.tag, title: r.title, actif: true, connu: true })),
+    ...ordreBarre(roles, (id) => meta[id]).map((r) => ({ id: r.id, name: r.name, tag: r.tag, title: r.title, actif: true, connu: true })),
     ...[...new Set(api.routines.map((r) => r.agentId))].filter((id) => !agentActif(id)).map((id) => {
       const local = tous.find((a) => a.role.id === id);
       return { id, name: local?.role.name ?? id, tag: local?.role.tag ?? "", title: local?.role.title ?? "", actif: false, connu: !!local };
