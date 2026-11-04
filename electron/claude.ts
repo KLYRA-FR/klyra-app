@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
+import { consigneNavigateur, signatureNavigateur } from "./navigateur/outils";
 import { consigneOrdinateur, OUTILS_ORDINATEUR_INTERDITS, OUTILS_ORDINATEUR_LECTURE, serveurOrdinateur, signatureOrdinateur } from "./ordinateur/pilote";
 import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
@@ -395,6 +396,9 @@ export function consignesApp(options: StreamOptions, mcp: string | null): string
   // Les consignes KLYRA adoptées par la personne (configuration-klyra.ts), pour Claude Code comme pour Codex.
   const klyra = consigneKlyra(lireReglages().configuration.consignes);
   if (klyra) consignes.push(klyra);
+  // Le navigateur de KLYRA, par le serveur MCP de l'app (cf. navigateur/outils.ts).
+  const navigateur = mcp ? consigneNavigateur() : null;
+  if (navigateur) consignes.push(navigateur);
   if (options.routineRun && mcp) consignes.push("Ce tour est une exécution de routine. Si la tâche n’a pas pu être accomplie, appelle routine_report_failure avec le motif puis rends une réponse courte. Si elle a été accomplie mais qu’il n’y a rien à signaler, appelle routine_no_update. Ces deux outils ne concernent que cette exécution. Une autorisation en attente n’est pas une réussite.");
   return consignes;
 }
@@ -770,7 +774,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;

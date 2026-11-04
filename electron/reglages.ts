@@ -45,6 +45,8 @@ export interface Reglages {
   notifications: PreferencesNotifications;
   /** Les agents peuvent-ils piloter l'ordinateur ? Coupé par défaut ; rien ne pilote sans lui. */
   computerUse: { actif: boolean };
+  /** Le navigateur de KLYRA (navigateur/) : les agents en ont-ils les outils ? Allumé par défaut ; la personne s'en sert dans tous les cas. */
+  navigateur: { agents: boolean };
   sons: PreferencesSons;
   /** Consignes KLYRA et mémoire des agents, proposées en un clic (configuration-klyra.ts). */
   configuration: ConfigurationKlyra;
@@ -57,6 +59,7 @@ export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "
 const PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
   computerUse: { actif: false },
+  navigateur: { agents: true },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
   skillsParAgent: SKILLS_PAR_DEFAUT,
@@ -68,7 +71,7 @@ let courants: Reglages | null = null;
 
 /** Garde seulement les clés connues, de bon type ; le reste reprend la valeur par défaut. */
 function valider(brut: unknown): Reglages {
-  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; sons?: Record<string, unknown>; configuration?: unknown; skillsParAgent?: unknown } | null;
+  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; navigateur?: { agents?: unknown }; sons?: Record<string, unknown>; configuration?: unknown; skillsParAgent?: unknown } | null;
   const n = b?.notifications ?? {};
   const notifications = { ...PAR_DEFAUT.notifications };
   for (const cle of Object.keys(notifications) as (keyof PreferencesNotifications)[]) {
@@ -80,7 +83,14 @@ function valider(brut: unknown): Reglages {
     theme: THEMES_SONS.find((t) => t === s.theme) ?? PAR_DEFAUT.sons.theme,
     volume: typeof s.volume === "number" && Number.isFinite(s.volume) ? Math.min(1, Math.max(0, s.volume)) : PAR_DEFAUT.sons.volume,
   };
-  return { notifications, computerUse: { actif: b?.computerUse?.actif === true }, sons, configuration: validerConfiguration(b?.configuration), skillsParAgent: validerSkillsParAgent(b?.skillsParAgent) };
+  return {
+    notifications,
+    computerUse: { actif: b?.computerUse?.actif === true },
+    navigateur: { agents: b?.navigateur?.agents !== false },
+    sons,
+    configuration: validerConfiguration(b?.configuration),
+    skillsParAgent: validerSkillsParAgent(b?.skillsParAgent),
+  };
 }
 
 export function lireReglages(): Reglages {

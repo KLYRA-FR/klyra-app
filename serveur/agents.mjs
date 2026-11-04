@@ -36,6 +36,7 @@ import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
 import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
+import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { creerCodex } from "./codex.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
@@ -53,6 +54,8 @@ function configurationValide(c) {
   return {
     memoireAgents: c?.memoireAgents !== false,
     consignes: typeof c?.consignes === "string" && c.consignes.trim() && c.consignes.length <= 20_000 ? c.consignes.trim() : null,
+    /** Le PC donne son navigateur aux agents (Réglages › Navigateur) : ceux du VPS l'ont aussi, par lui. */
+    navigateur: c?.navigateur === true,
   };
 }
 
@@ -257,7 +260,7 @@ export function creerAgents(options) {
 
   const listeAgents = (agents) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
   const ici = () =>
-    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.`;
+    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}`;
 
   function consigneAssistant() {
     const { assistant, actifs } = lireEquipe();
@@ -281,6 +284,9 @@ export function creerAgents(options) {
   /* Les livrables des agents (outil publier_artefact du serveur MCP local) : retenus ici, recopiés par l'app. */
   const rendus = creerRendus({ home, donnees, publier });
   options.ia?.surPublication((appelant, args) => rendus.publier(appelant, args));
+  /* Le navigateur de KLYRA, sur le PC de la personne : les appels lui sont relayés par le journal (cf. navigateur.mjs). */
+  const navigateur = creerRelaisNavigateur({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
+  options.ia?.surNavigateur?.({ actif: () => configurationDe().navigateur, appeler: navigateur.appeler });
   /** La configuration MCP d'une session : l'agent et la conversation en en-têtes (qui publie). */
   const mcpIa = (demande = {}) => options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation: demande.conversation ?? demande.contexte?.chatId ?? "" }) ?? null;
 
@@ -721,7 +727,14 @@ export function creerAgents(options) {
         "--settings",
         reglagesSession(PERMISSIONS_AGENTS, filtre.coupes),
       ];
-      if (acces === "projet") args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, ...(assistant ? OUTILS_ATELIER : [])] : []));
+      if (acces === "projet")
+        args.push(
+          "--allowedTools",
+          ...COMMANDES_AUTORISEES,
+          ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, ...(assistant ? OUTILS_ATELIER : [])] : []),
+          // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
+          ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
+        );
       if (mcp) args.push("--mcp-config", mcp);
       if (demande.agent) args.push("--agent", demande.agent);
       if (demande.sessionId) args.push("--resume", demande.sessionId);
@@ -777,5 +790,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
 }

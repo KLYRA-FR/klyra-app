@@ -5,6 +5,7 @@ import path from "node:path";
 import { app, shell } from "electron";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { signatureOrdinateur } from "../ordinateur/pilote";
+import { signatureNavigateur } from "../navigateur/outils";
 import { espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
 import { lireReglages } from "../reglages";
@@ -263,8 +264,8 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
      fichier, celles que la fiche précharge avec leur texte, et `/<skill>` demandé en tête du message. */
   const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, CONFIG_CLAUDE(), cwd);
   const skills = consigneSkillsCodex(options.agent ? ficheBrute(options.agent) : null, CONFIG_CLAUDE(), cwd, filtre.garder);
-  // Mes agents, Composio ou les skills ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes]);
+  // Mes agents, Composio, les skills ou le navigateur ont changé : le fil est rechargé avec les consignes et les outils à jour.
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur()]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {

@@ -157,6 +157,14 @@ try {
   const horsApp = ["CronCreate", "Workflow", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "SendToProject", "ListAgents"];
   const outilsSam = vues?.outils ?? [];
   verifier(outilsSam.length > 0 && !outilsSam.some((o) => horsApp.includes(o)), `l’assistant n’a pas les outils de Claude Code sans usage dans l’app (${outilsSam.filter((o) => horsApp.includes(o)).join(", ") || "aucun"})`);
+  // Le navigateur de KLYRA : ses outils (directs ou différés) et sa consigne arrivent au modèle.
+  const corpsSam = JSON.stringify(vues?.corps ?? {});
+  verifier(
+    ["navigateur_aller", "navigateur_lire", "navigateur_agir"].every((o) => outilsSam.includes(`mcp__klyra__${o}`) || corpsSam.includes(`mcp__klyra__${o}`)) &&
+      consigneSam.includes("Navigateur de KLYRA") &&
+      consigneAlpha.includes("Navigateur de KLYRA"),
+    "les outils du navigateur de KLYRA et leur consigne arrivent au modèle",
+  );
   // Les skills livrées avec Claude Code ne sont plus listées au modèle (CLAUDE_CODE_DISABLE_BUNDLED_SKILLS).
   const listees = JSON.stringify(vues?.corps?.messages ?? []);
   verifier(!/- (dataviz|update-config|code-review|claude-api):/.test(listees), "les skills livrées avec Claude Code ne sont pas listées au modèle");  verifier(consigneAlpha.includes("on confie un travail dans un fil de l'app ou en appelant un agent actif"), "l’agent : on confie par les fils ou un agent actif, pas par les outils d’une fiche ancienne");
