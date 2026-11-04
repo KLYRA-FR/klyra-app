@@ -46,7 +46,9 @@ export function ConnexionTelephone() {
     return (
       <div className="m-auto flex max-w-sm flex-col gap-4 px-6">
         <p className="text-body-s text-texte-principal">Ce compte ne fait plus partie de l’équipe.</p>
-        <Bouton onClick={() => void compte.seDeconnecter()}>Se déconnecter de ce téléphone</Bouton>
+        <Bouton taille="md" onClick={() => void compte.seDeconnecter()}>
+          Se déconnecter de ce téléphone
+        </Bouton>
       </div>
     );
   }

@@ -46,7 +46,7 @@ function Commande({ texte }: { texte: string }) {
   return (
     <div className="flex items-start gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
       <code className="min-w-0 flex-1 text-ui-xs leading-[1.6] [overflow-wrap:anywhere] text-texte-principal">{texte}</code>
-      <Bouton variant="blanc" taille="mini" onClick={copier}>
+      <Bouton variant="blanc" taille="compact" onClick={copier} className="relative after:absolute after:inset-x-0 after:-inset-y-1.5">
         {copie ? "Copiée" : "Copier"}
       </Bouton>
     </div>
@@ -235,7 +235,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
         <EnteteTelephone
           titre="Serveurs"
           pastille={connecte}
-          retour={connecte ? () => router.push("/plus") : undefined}
+          parent={connecte ? "/plus" : undefined}
         />
       ) : (
         <h1 className="text-h3 font-medium text-texte-principal">Serveurs</h1>

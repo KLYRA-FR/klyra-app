@@ -33,7 +33,20 @@ export function agentDe(origine: string, conversation?: Pick<ConversationLue, "r
   return null;
 }
 
-export const activiteDe = (c: Pick<ConversationLue, "activite"> | undefined): Activite | null => lireActivite(c?.activite);
+const jourMois = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
+
+/** Sous un fil archivé (C-2e) : « Archivé aujourd'hui », « Archivé hier », « Archivé le 7 oct. », jamais son identifiant. */
+export function libelleArchive(iso: string, maintenant: Date = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Archivé";
+  const jour = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const ecart = Math.round((jour(maintenant) - jour(d)) / 86_400_000);
+  if (ecart <= 0) return "Archivé aujourd’hui";
+  if (ecart === 1) return "Archivé hier";
+  return `Archivé le ${jourMois.format(d)}`;
+}
+
+export const activiteDe =(c: Pick<ConversationLue, "activite"> | undefined): Activite | null => lireActivite(c?.activite);
 
 /** Ce qui attend une action de la personne : un accord, ou une question de l'agent (pastille de la barre du bas). */
 export function attendUneAction(c: Pick<ConversationLue, "activite" | "archiveLe">): boolean {

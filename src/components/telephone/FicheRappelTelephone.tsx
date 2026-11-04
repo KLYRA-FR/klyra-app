@@ -11,6 +11,7 @@ import { ListeDeroulante, type OptionListe } from "@/components/ui/ListeDeroulan
 import { cn } from "@/lib/cn";
 import { messageErreur, useEquipe } from "@/lib/compte";
 import { aujourdhui } from "@/lib/dates";
+import { texteErreurPoste } from "@/lib/poste-texte";
 import { echeanceLocale } from "@/lib/rappel-compte";
 import type { RappelTelephone } from "@/lib/telephone/planning";
 import { usePlanningTelephone } from "./ContextePlanningTelephone";
@@ -98,7 +99,7 @@ export function FicheRappelTelephone({
       });
       setOccupe(false);
       if (resultat.ok) onFermer({ eclairage: rappel.id });
-      else setErreur(resultat.code === "delai" ? "Pas de réponse de l’ordinateur. Réessaie." : resultat.message || "Le geste a échoué sur l’ordinateur.");
+      else setErreur(texteErreurPoste(resultat, sur));
       return;
     }
 

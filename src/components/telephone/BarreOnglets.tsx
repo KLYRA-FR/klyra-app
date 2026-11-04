@@ -9,6 +9,7 @@ import { api } from "../../../convex/_generated/api";
 import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
 import { nombreATraiter } from "@/lib/telephone/chats";
+import { ongletDe } from "@/lib/telephone/retour";
 
 const ONGLETS: { href: string; label: string; icon: IconName }[] = [
   { href: "/chats", label: "Chats", icon: "message-square" },
@@ -18,11 +19,8 @@ const ONGLETS: { href: string; label: string; icon: IconName }[] = [
   { href: "/plus", label: "Plus", icon: "dot-horizontal" },
 ];
 
-function actif(pathname: string, href: string): boolean {
-  if (href === "/chats") return pathname === "/chats" || pathname === "/chat" || pathname === "/";
-  if (href === "/equipe") return pathname === "/equipe";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
+/** L'onglet qui contient la page reste allumé sur ses pages poussées (socle § 2.1, C-4). */
+const actif = (pathname: string, href: string): boolean => ongletDe(pathname) === href;
 
 /**
  * Barre du bas, cinq entrées. Cachée par la coque dans un fil ouvert. `vertical` : la tablette

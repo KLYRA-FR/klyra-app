@@ -4,7 +4,8 @@ import { createContext, useContext } from "react";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../../convex/_generated/api";
 import type { LecturePoste, ResultatPoste } from "@/lib/poste/client";
-import { majuscule } from "@/lib/poste-texte";
+import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
+import { BandeauVueGardee } from "./etats";
 import type { Report } from "@/lib/report";
 import type { ElementJour, RappelTelephone } from "@/lib/telephone/planning";
 import type { Categorie, Evenement } from "@/types/domain";
@@ -68,25 +69,32 @@ export function usePlanningTelephone(): PlanningTelephoneApi {
 }
 
 /**
- * Ce qui vient de l'ordinateur dans une liste du compte, en une ligne grise : fermé (le texte
- * donné), demande en cours (« Demande à ton Mac… », après 300 ms), sans réponse ou en erreur
- * (« Réessayer »). Rien quand la lecture est là.
+ * Ce qui vient de l'ordinateur dans une liste du compte, en une ligne : fermé avec sa vue gardée
+ * (« Vus à 18:42 · ton Mac est fermé »), fermé sans vue (le texte donné), demande en cours
+ * (« Demande à ton Mac… », après 300 ms), sans réponse ou en erreur (« Réessayer »). Rien quand la
+ * lecture est là, ni sans aucun ordinateur relié (il n'y a rien d'autre à lire).
  */
 export function LignePoste({
   lecture,
   ferme,
   sur,
+  mot,
 }: {
   lecture: LecturePoste<unknown> & { relancer: () => void };
   ferme: string;
   sur: string;
+  /** L'accord de « Vue » (« Vus » pour des rappels, « Vus » pour des événements). */
+  mot?: string;
 }) {
-  if (lecture.etat === "ok") return null;
+  if (lecture.etat === "ok" || lecture.etat === "aucun") return null;
   if (lecture.etat === "attente") {
     return lecture.lent ? <p className="flex min-h-11 items-center text-ui text-texte-secondaire">Demande à {sur}…</p> : null;
   }
-  if (lecture.etat === "ferme") return <p className="flex min-h-11 items-center text-ui text-texte-secondaire">{ferme}</p>;
-  const texte = lecture.etat === "delai" ? `${majuscule(sur)} ne répond pas.` : lecture.message || "Le geste a échoué sur l’ordinateur.";
+  if (lecture.etat === "ferme") {
+    if (lecture.gardee) return <BandeauVueGardee lu={lecture.gardee.lu} mot={mot} className="my-2" />;
+    return <p className="flex min-h-11 items-center text-ui text-texte-secondaire">{ferme}</p>;
+  }
+  const texte = lecture.etat === "delai" ? `${majuscule(sur)} ne répond pas.` : texteErreurPoste(lecture, sur);
   return (
     <p role="alert" className="flex min-h-11 flex-wrap items-center gap-x-2 text-ui text-texte-secondaire">
       {texte}
