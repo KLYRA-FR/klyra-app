@@ -106,6 +106,36 @@ export default defineSchema({
     .index("by_url_and_retireLe", ["url", "retireLe"]),
 
   /**
+   * Un document HTML de KLYRA (cf. `documentsKlyra.ts`). Stocké ici, pas un lien claude.ai.
+   * `prive` : seul son auteur le reçoit. `equipe` : tout membre actif. L'auteur seul change ça ou le supprime.
+   */
+  documentsKlyra: defineTable({
+    auteurId: v.id("membres"),
+    /** Slug de l'agent qui l'a produit, ou null : déposé par la personne. */
+    agent: v.union(v.string(), v.null()),
+    titre: v.string(),
+    description: v.string(),
+    /** Pour l'instant seulement une page HTML. */
+    type: v.literal("html"),
+    fichier: v.id("_storage"),
+    taille: v.number(),
+    /** Empreinte du fichier, donnée par le stockage. */
+    empreinte: v.string(),
+    /** 1 à la création, +1 quand le même original est enregistré à nouveau. */
+    version: v.number(),
+    /** Clé de remplacement (chemin d'origine). Deux membres peuvent avoir la même. */
+    origine: v.string(),
+    visibilite: v.union(v.literal("prive"), v.literal("equipe")),
+    majLe: v.number(),
+    /** null : encore là. La suppression efface aussi le fichier. */
+    retireLe: v.union(v.number(), v.null()),
+  })
+    .index("by_auteurId_and_retireLe_and_majLe", ["auteurId", "retireLe", "majLe"])
+    .index("by_visibilite_and_retireLe_and_majLe", ["visibilite", "retireLe", "majLe"])
+    .index("by_auteurId_and_origine", ["auteurId", "origine"])
+    .index("by_retireLe_and_majLe", ["retireLe", "majLe"]),
+
+  /**
    * Un rappel partagé (cf. `docs/CONVEX-PLAN.md`, § 2). Visible par qui l'a créé et par
    * la personne à qui il est assigné. `liste` est la catégorie de l'assigné, sur son
    * ordinateur ; null : la colonne « Assignés par l'équipe ».
