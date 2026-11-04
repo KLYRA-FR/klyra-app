@@ -29,7 +29,7 @@ Avant de modifier une zone, lis sa consigne. Pas les autres. `docs/JOURNAL.md` e
 | Coffre | `coffre.md` |
 | Routines, workflows, `electron/superagent/` | `automatisations.md` |
 | `convex/`, compte d’équipe, Bibliothèque | `compte-equipe.md` |
-| Travail venu d’une Issue, PR d’agent | `collaboration.md` |
+| Travail venu d’une Issue, PR d’agent, `electron/collaboration/` | `collaboration.md` |
 
 ## Règles pour tout le dépôt
 
