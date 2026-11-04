@@ -49,6 +49,8 @@ jobs:
       - run: pnpm build:electron
       # Après le build : les types des routes sont générés par next build.
       - run: pnpm typecheck
+      - name: Origine du téléphone, le 502 du tunnel se relance
+        run: pnpm test:origine-telephone
       - name: Composio, API et sélection de comptes simulées
         run: pnpm test:composio
       - name: Composio, IPC natif et serveur MCP réels, sans fournisseur externe
