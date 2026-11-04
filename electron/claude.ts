@@ -31,6 +31,8 @@ import path from "node:path";
  */
 
 const HOME = os.homedir();
+/** Les copies des rendus publiés par les agents (cf. `RACINE_RENDUS`, electron/rendus.ts). */
+const DOSSIER_RENDUS = path.join(HOME, ".klyra", "rendus");
 
 /** Outils retirés à l'agent : il lit et cherche, il n'écrit rien. */
 const OUTILS_INTERDITS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"];
@@ -699,6 +701,10 @@ function lireLigne(proc: Processus, ligne: string) {
 
 /** Le dossier préparé pour cet agent, ou null (la session reste alors sur le poste). */
 function preparationClaude(agent: string | null, garder: (nom: string) => boolean): { dossier: string; skills: string[] } | null {
+  /* Sur Mac, la connexion d'un compte Claude est dans le trousseau, sous un nom tiré du dossier de
+     config : un autre `CLAUDE_CONFIG_DIR` ne la trouve pas (« Not logged in », vérifié le 04/11/2026,
+     Claude Code 2.1.318). Sans `.credentials.json` du poste à lier, la session reste sur le poste. */
+  if (process.platform === "darwin" && !existsSync(path.join(process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude"), ".credentials.json"))) return null;
   try {
     return preparerSessionClaude({
       userData: process.env.KLYRA_USER_DATA ?? null,
@@ -862,6 +868,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (options.modele) args.push("--model", options.modele);
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);
+    // Les rendus publiés (écran Artefacts) : le fichier de planning donne leurs chemins, l'agent doit pouvoir les lire.
+    if (existsSync(DOSSIER_RENDUS)) args.push("--add-dir", DOSSIER_RENDUS);
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", [...consignesApp(options, mcp), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane, prepare?.dossier ?? null);
