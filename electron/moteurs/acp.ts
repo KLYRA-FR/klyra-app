@@ -255,6 +255,7 @@ export function reponseAutorisationAcp(params: Json, decision: Decision): { outc
 
 const ID_SESSION = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ARRET_MAX_MS = 5000;
+const FACTURATION_MAX_MS = 15_000;
 
 /** Ce que le client demande à la machine qui le lance (le PC ou le VPS). */
 export interface OptionsAcp {
@@ -320,6 +321,29 @@ export function creerClientAcp(o: OptionsAcp) {
     const id = ++suivant;
     return new Promise<T>((resolve, reject) => {
       attentes.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      ecrire({ id, method, params });
+    });
+  }
+
+  /** Une requête qui n'attend pas plus de `ms` : une extension que cette version de Grok ne connaît pas ne doit rien bloquer. */
+  function requeteBornee<T>(method: string, params: Json, ms: number): Promise<T> {
+    if (!child) return Promise.reject(new Error("Grok n’est pas lancé."));
+    const id = ++suivant;
+    return new Promise<T>((resolve, reject) => {
+      const delai = setTimeout(() => {
+        attentes.delete(id);
+        reject(new Error(`Grok n’a pas répondu à « ${method} ».`));
+      }, ms);
+      attentes.set(id, {
+        resolve: (v: unknown) => {
+          clearTimeout(delai);
+          resolve(v as T);
+        },
+        reject: (e: Error) => {
+          clearTimeout(delai);
+          reject(e);
+        },
+      });
       ecrire({ id, method, params });
     });
   }
@@ -556,11 +580,28 @@ export function creerClientAcp(o: OptionsAcp) {
     return modelesConnus ?? [];
   }
 
+  /**
+   * La facturation de l'abonnement : `x.ai/billing`, l'extension de Grok Build qui donne à son interface
+   * les crédits restants (`BillingConfigResponse`, lue par `lireUtilisationGrok`). Une lecture du compte,
+   * sans modèle. Sans paramètre d'abord ; si Grok la refuse, avec la dernière session ouverte.
+   */
+  async function facturation(): Promise<unknown> {
+    await pret();
+    try {
+      return await requeteBornee("x.ai/billing", {}, FACTURATION_MAX_MS);
+    } catch (erreur) {
+      const sessionId = [...sessions.keys()].at(-1);
+      if (!sessionId) throw erreur;
+      return requeteBornee("x.ai/billing", { sessionId }, FACTURATION_MAX_MS);
+    }
+  }
+
   return {
     lancer,
     arreter,
     autoriser,
     modeles,
+    facturation,
     fermer,
     demarrer: pret,
     get version() {

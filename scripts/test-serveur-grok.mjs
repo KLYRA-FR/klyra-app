@@ -88,6 +88,8 @@ try {
     assert.equal(statSync(path.join(DONNEES, "grok.json")).mode & 0o777, 0o600);
     assert.equal((await appel("/klyra/v1/moteurs/grok/connecter-cle", "POST", { cle: "court" })).status, 400);
     ok("clé API de console.x.ai gardée sur le VPS (600), jamais renvoyée");
+    assert.equal((await appel("/klyra/v1/moteurs/grok/utilisation?actualiser=1")).json.utilisation, null, "une clé API n’a pas de crédits du mois");
+    ok("connecté par une clé API : pas d’anneau d’utilisation");
   }
 
   /* 3. Les modèles annoncés par Grok. */
@@ -149,6 +151,10 @@ try {
     }
     assert.deepEqual([compte.connecte, compte.methode, compte.email], [true, "grok.com", "essai@exemple.fr"]);
     assert.ok(!JSON.stringify(compte).includes("jeton-secret"), "un jeton de Grok revient à l’app");
+    const utilisation = (await appel("/klyra/v1/moteurs/grok/utilisation?actualiser=1")).json.utilisation;
+    assert.deepEqual(utilisation?.mois, { utilise: 0.375, reinitialiseA: Date.parse("2026-12-01T00:00:00Z") });
+    assert.deepEqual([utilisation.session, utilisation.semaine, utilisation.statut], [null, null, "allowed"]);
+    ok("abonnement Grok : crédits du mois servis par le VPS (x.ai/billing)");
     const deconnecte = (await appel("/klyra/v1/moteurs/grok/deconnecter", "POST", {})).json.compte;
     assert.equal(deconnecte.connecte, false);
     ok("abonnement Grok par code d’appareil (lien + code), e-mail lu sans jeton ; déconnexion");

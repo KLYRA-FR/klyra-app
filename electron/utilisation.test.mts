@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lireUtilisation, lireUtilisationCodex } from "./utilisation.ts";
+import { lireUtilisation, lireUtilisationCodex, lireUtilisationGrok } from "./utilisation.ts";
 
 const T = 1_800_000_000_000;
 
@@ -58,4 +58,32 @@ test("Codex : rien de lisible, rien d'effacé, aucun chiffre inventé", () => {
   assert.equal(lireUtilisationCodex(null, avant, T + 1), avant);
   assert.equal(lireUtilisationCodex({ rateLimits: { primary: null, secondary: null } }, avant, T + 1), avant);
   assert.equal(lireUtilisationCodex({ rateLimits: { primary: { usedPercent: "beaucoup" } } }, null, T), null);
+});
+
+/** La forme de `BillingConfigResponse` (x.ai/billing), d'après les champs de Grok Build 1.0.70. */
+const facturation = (pourcent: unknown, fin: unknown, aLUsage = false) => ({
+  config: { creditUsagePercent: pourcent, currentPeriod: { start: "2026-11-01T00:00:00Z", end: fin }, monthlyLimit: 100, onDemandCap: 0, onDemandUsed: 0, prepaidBalance: 0, isUnifiedBillingUser: true },
+  on_demand_enabled: aLUsage,
+  subscription_tier: "SuperGrok",
+});
+
+test("Grok : les crédits du mois, en part de 0 à 1, remise à zéro à la fin de la période", () => {
+  const u = lireUtilisationGrok(facturation(42, "2026-12-01T00:00:00Z"), null, T);
+  assert.deepEqual(u, { session: null, semaine: null, mois: { utilise: 0.42, reinitialiseA: Date.parse("2026-12-01T00:00:00Z") }, statut: "allowed", misAJour: T });
+  assert.equal(lireUtilisationGrok(facturation(10, 1_800_500_000), null, T)?.mois?.reinitialiseA, 1_800_500_000_000);
+  assert.equal(lireUtilisationGrok(facturation(10, 1_800_500_000_000), null, T)?.mois?.reinitialiseA, 1_800_500_000_000);
+  assert.equal(lireUtilisationGrok(facturation(10, null), null, T)?.mois?.reinitialiseA, null);
+});
+
+test("Grok : crédits épuisés, sauf si le paiement à l'usage est activé", () => {
+  assert.equal(lireUtilisationGrok(facturation(100, 1_900_000_000), null, T)?.statut, "rejected");
+  assert.equal(lireUtilisationGrok(facturation(100, 1_900_000_000, true), null, T)?.statut, "allowed");
+  assert.equal(lireUtilisationGrok(facturation(130, 1_900_000_000), null, T)?.mois?.utilise, 1);
+});
+
+test("Grok : rien de lisible (clé API, autre forme), rien d'effacé, aucun chiffre inventé", () => {
+  const avant = lireUtilisationGrok(facturation(42, null), null, T);
+  assert.equal(lireUtilisationGrok(null, avant, T + 1), avant);
+  assert.equal(lireUtilisationGrok({ config: {} }, avant, T + 1), avant);
+  assert.equal(lireUtilisationGrok({ config: { creditUsagePercent: "beaucoup" } }, null, T), null);
 });
