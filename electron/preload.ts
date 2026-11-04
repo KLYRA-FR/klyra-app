@@ -139,6 +139,12 @@ contextBridge.exposeInMainWorld("klyra", {
     enregistrer: (chemin: string, dossier: string | null) => ipcRenderer.invoke("rendus:enregistrer", chemin, dossier),
     dossierAgent: (agent: string, quoi: "rendus" | "atelier") => ipcRenderer.invoke("rendus:dossier-agent", agent, quoi),
   },
+  documents: {
+    /** Ouvre le HTML dans la fenêtre isolée. Pas d'adresse de stockage. */
+    ouvrir: (html: string, titre: string) => ipcRenderer.invoke("documents:ouvrir", html, titre),
+    /** Vignette PNG (data URL). `cle` est l'identifiant et la date, pas une adresse. */
+    vignette: (cle: string, html: string, forcer: boolean) => ipcRenderer.invoke("documents:vignette", cle, html, forcer),
+  },
   fenetres: {
     ouvrir: (url: string) => ipcRenderer.invoke("fenetres:ouvrir", url),
   },

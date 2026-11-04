@@ -58,6 +58,10 @@ interface DocumentsKlyraApi {
   partager: (source: SourcePartage) => Promise<void>;
   reprendre: (documentId: string) => Promise<void>;
   supprimer: (documentId: string) => Promise<void>;
+  /** Ouvre la page dans la fenêtre isolée. L'écran ne reçoit pas l'adresse de stockage. */
+  ouvrir: (documentId: string, titre: string) => Promise<void>;
+  /** Vignette PNG (data URL), ou null si elle n'a pas pu être dessinée. */
+  vignette: (documentId: string, majLe: number, forcer: boolean) => Promise<string | null>;
 }
 
 const nonDisponible = (etat: EtatDocuments): DocumentsKlyraApi => ({
@@ -75,6 +79,10 @@ const nonDisponible = (etat: EtatDocuments): DocumentsKlyraApi => ({
   supprimer: async () => {
     throw new Error("Connecte-toi à ton compte d’équipe.");
   },
+  ouvrir: async () => {
+    throw new Error("Connecte-toi à ton compte d’équipe.");
+  },
+  vignette: async () => null,
 });
 
 const DocumentsKlyraContext = createContext<DocumentsKlyraApi>(nonDisponible("indisponible"));
@@ -131,6 +139,40 @@ function DocumentsConnectes({
   const etat: EtatDocuments = erreur ? "erreur" : horsLigne ? "hors-ligne" : documents && espace ? "pret" : "chargement";
   const reessayer = useCallback(() => setTour((t) => t + 1), []);
 
+  const lireHtml = useCallback(
+    async (documentId: string) => {
+      let recu: { html: string };
+      try {
+        recu = await convex.action(api.documentsKlyra.contenu, { documentId: documentId as Id<"documentsKlyra">, lieu });
+      } catch (e) {
+        throw new Error(messageErreur(e), { cause: e });
+      }
+      if (typeof recu.html !== "string") throw new Error("Le document n’a pas pu être lu.");
+      return recu.html;
+    },
+    [convex, lieu],
+  );
+  const ouvrir = useCallback(
+    async (documentId: string, titre: string) => {
+      const html = await lireHtml(documentId);
+      const bridge = getBridge();
+      if (!bridge?.documents?.ouvrir) throw new Error("L’ouverture marche dans l’app de bureau.");
+      const r = await bridge.documents.ouvrir(html, titre);
+      if (!r.ok) throw new Error(r.message);
+    },
+    [lireHtml],
+  );
+  const vignette = useCallback(
+    async (documentId: string, majLe: number, forcer: boolean) => {
+      const bridge = getBridge();
+      if (!bridge?.documents?.vignette) return null;
+      const html = await lireHtml(documentId);
+      const r = await bridge.documents.vignette(`${documentId}:${majLe}`, html, forcer);
+      return r.ok ? r.data : null;
+    },
+    [lireHtml],
+  );
+
   const api_ = useMemo<DocumentsKlyraApi>(() => {
     const envoyer = async (f: () => Promise<unknown>) => {
       try {
@@ -180,8 +222,10 @@ function DocumentsConnectes({
       },
       reprendre: (documentId) => envoyer(() => convex.mutation(api.documentsKlyra.reprendre, { documentId: documentId as Id<"documentsKlyra">, lieu })),
       supprimer: (documentId) => envoyer(() => convex.mutation(api.documentsKlyra.supprimer, { documentId: documentId as Id<"documentsKlyra">, lieu })),
+      ouvrir,
+      vignette,
     };
-  }, [etat, documents, espace, erreur, reessayer, convex, lieu]);
+  }, [etat, documents, espace, erreur, reessayer, convex, lieu, ouvrir, vignette]);
   useEffect(() => surValeur({ cle, api: api_ }), [api_, cle, surValeur]);
   return null;
 }
