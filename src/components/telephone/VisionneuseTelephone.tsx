@@ -10,17 +10,19 @@ import { DocumentWord } from "@/components/project/apercu/DocumentWord";
 import { Classeur, TableauTexte } from "@/components/project/apercu/Grille";
 import { COULEURS, VueSource } from "@/components/project/apercu/VueSource";
 import { colorer, langageDe, type Langage } from "@/lib/apercu/coloration";
+import { cn } from "@/lib/cn";
 import { ancreDe, cibleLien } from "@/lib/apercu/liens";
 import { lireMarkdown } from "@/lib/apercu/markdown";
 import { indenterJson, renduDe } from "@/lib/apercu/texte";
 import { nomFichier } from "@/lib/fichiers";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
-import { majuscule } from "@/lib/poste-texte";
+import { texteErreurPoste } from "@/lib/poste-texte";
 import { dossierAffiche, montrerDans, ouvrableADistance, tailleLisible, urlFichier, urlRetourFichier, type FichierLu } from "@/lib/telephone/dossiers";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { MenuFeuille, type ActionMenu } from "./Feuille";
 import { NotePoste, SurLePoste, useBandeau, VueLecture } from "./etats";
 import { usePostes, useSupport } from "./poste";
+import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 
 /**
  * T-13 : un fichier du projet en page pleine (la barre du bas est recouverte). Le poste lit et met
@@ -112,7 +114,7 @@ export function VisionneuseTelephone({
   const ouvrirSurPoste = async () => {
     const r = await faire("fichiers.ouvrir", { projetId, chemin });
     if (r.ok) dire(`Ouvert sur ${sur}`);
-    else dire(r.code === "delai" ? `${majuscule(sur)} ne répond pas.` : r.message || "Le geste a échoué sur l’ordinateur.");
+    else dire(texteErreurPoste(r, sur));
   };
   /* Un fichier d'un VPS n'est pas sur l'ordinateur : rien à y ouvrir (comme au bureau). Un programme ne s'ouvre pas à distance. */
   const ouvrable = lu?.surPoste !== false;
@@ -137,7 +139,7 @@ export function VisionneuseTelephone({
     <div role="dialog" aria-label={nom} className="fixed inset-0 z-30 flex flex-col bg-fond-page">
       <EnteteTelephone
         titre={nom}
-        retour={() => router.push(urlRetourFichier(projetId, chemin, retour))}
+        parent={urlRetourFichier(projetId, chemin, retour)}
         droite={<BoutonIcone variant="discret" taille="md" libelle="Actions du fichier" onClick={() => setMenu(true)} icone={<Icon name="dot-horizontal" size={24} />} />}
       />
       <div className="shrink-0 border-b border-bordure-subtile px-4 pb-2">
@@ -151,7 +153,7 @@ export function VisionneuseTelephone({
             ]}
             valeur={vue}
             onChange={setVue}
-            className="mt-2 flex w-full [&>button]:min-h-10 [&>button]:flex-1 [&>button]:justify-center [&>button]:text-ui"
+            className={cn("mt-2", ONGLETS_TELEPHONE)}
           />
         ) : null}
       </div>

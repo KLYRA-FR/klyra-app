@@ -10,6 +10,7 @@ import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { attenteEnvoi } from "@/lib/poste-texte";
+import { roleLisible } from "@/lib/telephone/agents";
 import { aTraiter, etatLigne, idDirect, sections, type ConversationLue, type ElementATraiter } from "@/lib/telephone/chats";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { useBandeau } from "./etats";
@@ -148,18 +149,19 @@ function CarteATraiter({ element, titre }: { element: Exclude<ElementATraiter, {
 
 /** T-01, l'écran d'ouverture (et T-04 par `?vue=recherche`). Les conversations viennent du compte : elles se lisent ordinateur fermé. */
 export function ChatsTelephone() {
-  const vue = useSearchParams().get("vue");
-  if (vue === "recherche") return <RechercheTelephone />;
-  return <ListeChats />;
+  const params = useSearchParams();
+  if (params.get("vue") === "recherche") return <RechercheTelephone />;
+  /* `?ecrire=1` : « Écrire à un agent » d'un écran dont l'ordinateur est fermé (S-19) ouvre le choix de l'agent. */
+  return <ListeChats ecrire={params.get("ecrire") === "1"} />;
 }
 
-function ListeChats() {
+function ListeChats({ ecrire }: { ecrire: boolean }) {
   const router = useRouter();
   const conversations = useQuery(api.conversationsCompte.liste, {});
   const enAttente = useQuery(api.conversationsCompte.enAttente, {});
   const { cartes, nom } = useCartes();
   const { postes, ouvert } = usePostes();
-  const [nouveau, setNouveau] = useState(false);
+  const [nouveau, setNouveau] = useState(ecrire);
   const [bandeau, montrer] = useBandeau();
   const menu = useMenuChat({ onBandeau: montrer });
   const charge = conversations !== undefined && cartes !== undefined;
@@ -171,7 +173,7 @@ function ListeChats() {
   const traiter = aTraiter(liste, enAttente ?? []);
   const titreDe = (origine: string) => {
     const c = parOrigine.get(origine);
-    return c && (c.kind === "equipe" || c.parent) ? c.titre : nom(origine.replace(/^dm-/, ""));
+    return c && (c.kind === "equipe" || c.parent) ? c.titre : origine.startsWith("dm-") ? nom(origine.slice(3)) : c?.titre || "Cette conversation";
   };
   const sansPoste = postes?.length === 0;
 
@@ -265,8 +267,8 @@ function ListeChats() {
                     href={`/chat?id=${encodeURIComponent(idDirect(carte.origine))}`}
                     avatar={<RondAgent id={carte.origine} />}
                     titre={carte.nom}
-                    etiquette={carte.origine === "principal" ? "assistant" : carte.roleCourt}
-                    texte={etat?.texte ?? (conversation?.extrait || carte.roleCourt)}
+                    etiquette={carte.origine === "principal" ? "assistant" : roleLisible(carte.roleCourt, carte.origine)}
+                    texte={etat?.texte ?? (conversation?.extrait || "Pas encore de message")}
                     enCours={!!etat?.enCours}
                     heure={conversation?.extraitLe ? formatListDate(conversation.extraitLe) : null}
                     nonLus={conversation?.nonLus ?? 0}
@@ -297,7 +299,14 @@ function ListeChats() {
           </>
         )}
       </div>
-      {nouveau ? <NouveauChat onFermer={() => setNouveau(false)} /> : null}
+      {nouveau ? (
+        <NouveauChat
+          onFermer={() => {
+            setNouveau(false);
+            if (ecrire) router.replace("/chats");
+          }}
+        />
+      ) : null}
       {menu.rendu}
       {bandeau}
     </div>

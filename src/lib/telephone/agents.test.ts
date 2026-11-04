@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { agentDeLaBibliotheque, libelleRetour, listeMesAgents, teinteSure, texteConversations, texteErreurFiche } from "./agents";
+import { agentDeLaBibliotheque, libelleRetour, listeMesAgents, roleLisible, tagLisible, teinteSure, texteConversations, texteErreurFiche } from "./agents";
 
 const cartes = [
   { origine: "dev", nom: "Hugo", teinte: "vert", roleCourt: "Dev", actif: true },
@@ -51,5 +51,18 @@ describe("Mes agents sur le téléphone (T-08)", () => {
     expect(agentDeLaBibliotheque(etats, { definitionId: "d1" })?.id).toBe("juriste-2");
     expect(agentDeLaBibliotheque(etats, { modele: "prompty" })?.statut).toBe("desactive");
     expect(agentDeLaBibliotheque(undefined, { modele: "prompty" })).toBeNull();
+  });
+});
+
+describe("rôle court affiché (C-2a)", () => {
+  test("jamais l'id de l'agent : le rôle lisible, sinon le rôle de la fiche, sinon rien", () => {
+    expect(roleLisible("redaction", "redaction")).toBe("");
+    expect(roleLisible("Plume", "redaction")).toBe("Plume");
+    expect(roleLisible(undefined, "dev")).toBe("");
+    expect(tagLisible({ id: "redaction", tag: "redaction", title: "Rédacteur" })).toBe("Rédacteur");
+    expect(tagLisible({ id: "dev", tag: "Dev", title: "Développeur" })).toBe("Dev");
+    expect(tagLisible({ id: "x", tag: "x" })).toBe("");
+    const [carte] = listeMesAgents([{ origine: "redaction", nom: "Basile", teinte: "ocre", roleCourt: "redaction", actif: true }], []).actifs;
+    expect(carte.roleCourt).toBe("");
   });
 });

@@ -15,7 +15,7 @@ import { teinteDuNom } from "@/lib/bibliotheque-ui";
 import { cn } from "@/lib/cn";
 import { identifiantDe, nomPropre } from "@/lib/noms-agents";
 import { useLecturePoste } from "@/lib/poste/client";
-import { oublierProposition, reprendreDansEditeur } from "@/lib/proposition-agent";
+import { oublierProposition, reprendreBrouillonTelephone } from "@/lib/proposition-agent";
 import { ID_ASSISTANT, MEMOIRES_FICHE, MODELES_FICHE, teinteSure } from "@/lib/telephone/agents";
 import type { FicheLue } from "@/lib/telephone/gestes-agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
@@ -26,6 +26,7 @@ import { ConfirmationFeuille } from "./Feuille";
 import { roleDeFiche } from "./FicheAgentTelephone";
 import { NotePoste, VueLecture } from "./etats";
 import { useSupport } from "./poste";
+import { useRetour } from "./retour";
 
 /**
  * L'éditeur de fiche du téléphone (spec T-09) : page pleine, un champ par bloc (« Rôle court »,
@@ -86,19 +87,19 @@ function ChampsAvances({
 }
 
 function ModificationFiche({ id }: { id: string }) {
-  const lecture = useLecturePoste<FicheLue>("agents.fiche", { id });
+  /* Une fiche se modifie en direct : pas de vue gardée dans l'éditeur. */
+  const lecture = useLecturePoste<FicheLue>("agents.fiche", { id }, { garder: false });
   const [gardee, setGardee] = useState<Extract<FicheLue, { type: "agent" }> | null>(null);
   const [cle, setCle] = useState(0);
   const { carte } = useCartesAgents();
-  const router = useRouter();
-  const nom = carte(id)?.nom ?? id;
+  const nom = carte(id)?.nom ?? "cet agent";
   /* La version ouverte est figée dès sa première lecture : un poste qui se ferme ou se rouvre ne la remplace pas. */
   if (!gardee && lecture.etat === "ok" && lecture.data.type === "agent") setGardee(lecture.data);
 
   if (!gardee) {
     return (
       <PagePleine>
-        <EnteteTelephone titre={`Modifier ${nom}`} retour={() => router.push(`/equipe?agent=${encodeURIComponent(id)}`)} />
+        <EnteteTelephone titre={`Modifier ${nom}`} parent={`/equipe?agent=${encodeURIComponent(id)}`} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <VueLecture lecture={lecture} ferme={(sur) => `la fiche de ${nom} est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`}>
             {() => null}
@@ -147,6 +148,7 @@ function FormulaireFiche({ fiche, onReprendre }: { fiche: Extract<FicheLue, { ty
   const [copie, setCopie] = useState(false);
   const [abandon, setAbandon] = useState(false);
   const retour = `/equipe?agent=${encodeURIComponent(fiche.id)}`;
+  const retourner = useRetour(retour);
   const auteur = fiche.lien.type === "recu" ? fiche.lien.auteur : null;
 
   const erreurs = {
@@ -173,10 +175,8 @@ function FormulaireFiche({ fiche, onReprendre }: { fiche: Extract<FicheLue, { ty
 
   return (
     <PagePleine>
-      <EnteteTelephone titre={`Modifier ${initial.nom}`} retour={() => (modifie ? setAbandon(true) : router.push(retour))} />
+      <EnteteTelephone titre={`Modifier ${initial.nom}`} retour={() => (modifie ? setAbandon(true) : retourner())} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <p className="text-ui-xs break-all text-texte-secondaire">{fiche.chemin}</p>
-
         {erreur?.code === "conflit" ? (
           <div role="alert" className="mt-3 flex flex-col gap-2 rounded-md border border-bordure-erreur bg-fond-surface p-3">
             <p className="text-ui text-texte-principal">
@@ -247,7 +247,7 @@ function FormulaireFiche({ fiche, onReprendre }: { fiche: Extract<FicheLue, { ty
           titre="Abandonner les modifications ?"
           texte="Ce que tu as changé dans cette fiche ne sera pas enregistré."
           confirmer="Abandonner"
-          onConfirmer={() => router.push(retour)}
+          onConfirmer={retourner}
           onFermer={() => setAbandon(false)}
         />
       ) : null}
@@ -262,12 +262,12 @@ function CreationFiche() {
   const sur = useSupport();
   const { cartes, liste } = useCartesAgents();
   const { agir, occupe, ouvert, erreur } = useGesteTelephone();
-  const [proposition] = useState(() => (params.get("proposition") ? reprendreDansEditeur() : null));
+  const [proposition] = useState(() => (params.get("proposition") ? reprendreBrouillonTelephone() : null));
   const [nom, setNom] = useState(proposition?.nom ?? "");
   const [tag, setTag] = useState(proposition?.role ?? "");
   const [teinte, setTeinte] = useState<RoleTeinte>(() => (proposition ? teinteDuNom(proposition.id || identifiantDe(proposition.nom)) : "bleu-k2"));
   const [description, setDescription] = useState(proposition?.description ?? "");
-  const [corpsSaisi, setCorpsSaisi] = useState<string | null>(proposition?.consignes ?? null);
+  const [corpsSaisi, setCorpsSaisi] = useState<string | null>(proposition?.consignes || null);
   const [idSaisi, setIdSaisi] = useState<string | null>(proposition?.id || null);
   const [modele, setModele] = useState("opus");
   const [memoire, setMemoire] = useState("project");
@@ -357,7 +357,7 @@ function CreationFiche() {
           <ErreurGeste message={erreur ? `La création a échoué : ${erreur.message}` : null} />
         </div>
       </div>
-      <Barre libelle={occupe ? "Création…" : "Créer l’agent"} disabled={!ouvert || occupe} onClick={() => void creer()} ouvert={ouvert} detail={`Crée la fiche ${id || "identifiant"}.md dans l’app, sur ${sur}.`} />
+      <Barre libelle={occupe ? "Création…" : "Créer l’agent"} disabled={!ouvert || occupe} onClick={() => void creer()} ouvert={ouvert} detail={`Crée sa fiche dans l’app, sur ${sur}.`} />
       {abandon ? (
         <ConfirmationFeuille
           titre="Abandonner les modifications ?"

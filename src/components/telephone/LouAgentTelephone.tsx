@@ -104,7 +104,7 @@ export function LouAgentTelephone({ id }: { id: string }) {
   const travail = etat.kind === "travail";
   return (
     <PagePleine>
-      <EnteteTelephone titre={`Modifier ${nom} avec Lou`} retour={() => router.push(fiche)} />
+      <EnteteTelephone titre={`Modifier ${nom} avec Lou`} parent={fiche} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <div className="flex items-start gap-3">
           <RondApercu agentId={LOU} nom={lou?.nom ?? "Lou"} teinte={lou?.teinte ?? "violet"} taille={48} />

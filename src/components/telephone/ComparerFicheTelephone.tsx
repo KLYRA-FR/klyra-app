@@ -76,7 +76,7 @@ export function ComparerFicheTelephone({ id }: { id: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre={`Modèle KLYRA de ${nom}`} retour={() => router.push(retour)} />
+      <EnteteTelephone titre={`Modèle KLYRA de ${nom}`} parent={retour} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-6">
         <VueLecture lecture={fiche} ferme={(sur) => `la fiche de ${nom} est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`}>
           {(f) => {

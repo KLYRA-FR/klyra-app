@@ -45,6 +45,24 @@ export const ICONES: IconName[] = [
   "clock-01",
 ];
 
+/** Le nom lu de chaque icône de catégorie : jamais le nom technique (« home-01 »). */
+export const NOMS_ICONES: Partial<Record<IconName, string>> = {
+  "home-01": "Maison",
+  "users-profiles-01": "Personnes",
+  "file-01": "Document",
+  folder: "Dossier",
+  "calendar-01": "Calendrier",
+  "bell-01": "Cloche",
+  "code-01": "Code",
+  "image-01": "Image",
+  "globe-01": "Globe",
+  "message-square": "Message",
+  "layers-01": "Calques",
+  computer: "Ordinateur",
+  list: "Liste",
+  "clock-01": "Horloge",
+};
+
 export function nouvelleTache(partiel: Partial<Tache> = {}): Tache {
   return {
     id: crypto.randomUUID(),

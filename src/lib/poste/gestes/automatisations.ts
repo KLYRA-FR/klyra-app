@@ -5,6 +5,7 @@ import { useAgents } from "@/lib/agents";
 import { getBridge, type Reponse } from "@/lib/bridge";
 import { lieuParDefaut, useServeursRelies } from "@/lib/lieux";
 import { poste } from "@/lib/plateforme";
+import { tagLisible } from "@/lib/telephone/agents";
 import {
   agentsDesRoutines,
   lireId,
@@ -214,8 +215,8 @@ export function useGestesAutomatisations(): Gestes {
       if (executionId && !choisie) throw new ErreurPoste("introuvable", "Cette exécution n’existe plus.");
       const cites = new Set(graphe.noeuds.filter((n) => n.type === "agent").map((n) => String(n.champs.agent ?? "")));
       const agents: AgentWorkflow[] = [
-        ...roles.map((r) => ({ id: r.id, name: r.name, tag: r.tag, teinte: r.teinte, actif: true })),
-        ...tous.filter((a) => cites.has(a.role.id) && !agentActif(a.role.id)).map(({ role: r }) => ({ id: r.id, name: r.name, tag: r.tag, teinte: r.teinte, actif: false })),
+        ...roles.map((r) => ({ id: r.id, name: r.name, tag: tagLisible(r), teinte: r.teinte, actif: true })),
+        ...tous.filter((a) => cites.has(a.role.id) && !agentActif(a.role.id)).map(({ role: r }) => ({ id: r.id, name: r.name, tag: tagLisible(r), teinte: r.teinte, actif: false })),
       ];
       return {
         id: wf.id,
