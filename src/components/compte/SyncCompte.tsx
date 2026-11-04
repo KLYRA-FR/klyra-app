@@ -153,7 +153,8 @@ export function SyncCompte({ actif }: { actif: boolean }) {
           return;
         case "creerFil":
           if (!chat && ID_FIL.test(chatId) && a.roles.some((r) => r.id === valeur.roleId)) {
-            w.creerFil(valeur.roleId as string, undefined, null, undefined, chatId);
+            // Le téléphone ne voit que les conversations de ce PC (`dm-<agent>`) : le fil y reste.
+            w.creerFil(valeur.roleId as string, undefined, null, undefined, { id: chatId, lieu: null });
             crees.current.add(chatId);
           }
           return;

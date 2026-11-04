@@ -8,7 +8,7 @@ import { ElementContextuel, MenuContextuel, SeparateurContextuel, useMenuContext
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
 import { useIdDirect, useTravail, useWorkspace } from "@/lib/workspace";
-import { dansEspace } from "@/lib/lieux";
+import { dansEspace, lieuDeConversation } from "@/lib/lieux";
 import { colonneTicket } from "@/lib/tickets";
 import { useFermerTicket } from "@/components/tickets/useFermerTicket";
 import type { Chat, RoleId } from "@/types/domain";
@@ -110,9 +110,9 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
   const { state, creerFil, renommerChat, rouvrirFil } = useWorkspace();
   const fermerTicket = useFermerTicket();
   const principal = useIdDirect()(roleId);
-  const lieu = state.chats.find((c) => c.id === chatId)?.lieu;
+  const lieu = lieuDeConversation(state.chats, chatId);
   // Les fils de l'agent sur le serveur de cette conversation (ceux de ce PC : leurs outils sont les siens).
-  const fils = state.chats.filter((c) => c.fil?.roleId === roleId && dansEspace(c.lieu, lieu ?? null)).sort((a, b) => a.fil!.creeLe.localeCompare(b.fil!.creeLe));
+  const fils = state.chats.filter((c) => c.fil?.roleId === roleId && dansEspace(c.lieu, lieu)).sort((a, b) => a.fil!.creeLe.localeCompare(b.fil!.creeLe));
   const ouverts = fils.filter((c) => c.fil!.statut === "ouvert");
   const archives = fils.filter((c) => c.fil!.statut === "archive" && !c.fil!.supprime).reverse();
   const chatPrincipal = state.chats.find((c) => c.id === principal) ?? ({ id: principal, roleIds: [roleId] } as Chat);
@@ -150,7 +150,8 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
     if (ids.includes(chatId)) aller(principal);
   };
 
-  const nouveau = () => aller(creerFil(roleId));
+  // Le nouveau fil reste sur la machine de cette conversation.
+  const nouveau = () => aller(creerFil(roleId, undefined, null, undefined, { lieu }));
 
   const choisi = menu ? ouverts.find((c) => c.id === menu.cible) : undefined;
   const rang = choisi ? ouverts.indexOf(choisi) : -1;
