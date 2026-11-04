@@ -1,37 +1,72 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getBridge, type FenetreUtilisation, type Utilisation } from "@/lib/bridge";
 import { COULEUR_CLAUDE } from "@/data/marques";
 import { cn } from "@/lib/cn";
+import { useLieuActif } from "@/lib/lieux";
+import { pret, useMoteurs, type EtatMoteur } from "@/lib/moteurs";
 
 /**
- * Utilisation de l'abonnement Claude, en anneaux concentriques : dehors la
- * semaine, dedans la session de 5 h. L'arc montre ce qui reste. Le détail
- * s'ouvre au survol, un clic met à jour.
+ * Utilisation de l'abonnement d'un fournisseur (Claude, ChatGPT), en anneaux concentriques : dehors la
+ * semaine, dedans la session de 5 h. L'arc montre ce qui reste. Le détail s'ouvre au survol, un clic
+ * met à jour. Dans le rail, un bouton par fournisseur connecté du serveur affiché (`UtilisationRail`).
  */
 
-/** La dernière utilisation connue, mise à jour à chaque réponse d'un agent. */
-function useUtilisation() {
-  const bridge = getBridge();
+/** Les fournisseurs dont on sait lire les limites d'abonnement, par moteur (cf. electron/utilisation.ts). */
+const FOURNISSEURS = {
+  claude: { nom: "Claude", programme: "Claude Code", fond: COULEUR_CLAUDE, logo: "/brand/claude-logo-blanc.svg" },
+  codex: { nom: "ChatGPT", programme: "Codex", fond: "#FFFFFF", logo: "/brand/openai-logo-noir.svg" },
+} as const;
+type IdFournisseur = keyof typeof FOURNISSEURS;
+
+/** Relire les limites d'un VPS ou de Codex ne consomme rien : au plus une fois par minute, au survol. */
+const RELECTURE_MS = 60_000;
+
+/**
+ * La dernière utilisation connue d'un moteur, sur ce PC (`lieu` null, mise à jour à chaque réponse
+ * d'un agent) ou sur un VPS (relue au survol). `actualiser` la redemande : pour Claude Code sur ce PC,
+ * une toute petite requête qui compte un peu, donc seulement au clic.
+ */
+function useUtilisation(moteur: IdFournisseur, lieu: string | null) {
+  const bridge = getBridge()?.moteurs;
   const [utilisation, setUtilisation] = useState<Utilisation | null>(null);
   const [enCours, setEnCours] = useState(false);
+  const lueLe = useRef(0);
+  /* Relire ne coûte rien, sauf Claude Code sur ce PC (une requête au modèle). */
+  const gratuit = moteur === "codex" || lieu !== null;
 
+  const lire = useCallback(
+    async (actualiser: boolean) => {
+      if (!bridge?.utilisation) return;
+      lueLe.current = Date.now();
+      const r = await bridge.utilisation(moteur, lieu, actualiser);
+      if (r.ok) setUtilisation(r.data);
+    },
+    [bridge, moteur, lieu],
+  );
+
+  /* Un autre moteur ou un autre serveur est un autre bouton (clé dans UtilisationRail) : rien à remettre à zéro ici. */
   useEffect(() => {
-    if (!bridge) return;
-    void bridge.claude.utilisation().then((r) => r.ok && setUtilisation(r.data));
-    return bridge.claude.onUtilisation(setUtilisation);
-  }, [bridge]);
+    if (!bridge?.utilisation) return;
+    lueLe.current = Date.now();
+    void bridge.utilisation(moteur, lieu, gratuit).then((r) => r.ok && setUtilisation(r.data));
+    if (lieu !== null || !bridge.onUtilisation) return;
+    return bridge.onUtilisation((id, u) => id === moteur && setUtilisation(u));
+  }, [bridge, moteur, lieu, gratuit]);
 
   const actualiser = async () => {
-    if (!bridge || enCours) return;
+    if (!bridge?.utilisation || enCours) return;
     setEnCours(true);
-    const r = await bridge.claude.actualiserUtilisation();
-    if (r.ok && r.data) setUtilisation(r.data);
+    await lire(true);
     setEnCours(false);
   };
+  /** Au survol : relue si elle est gratuite et date de plus d'une minute. */
+  const rafraichir = () => {
+    if (gratuit && Date.now() - lueLe.current > RELECTURE_MS) void lire(true);
+  };
 
-  return { disponible: !!bridge, utilisation, enCours, actualiser };
+  return { disponible: !!bridge?.utilisation, utilisation, enCours, actualiser, rafraichir, gratuit };
 }
 
 /** Part restante, de 0 à 100. */
@@ -48,7 +83,8 @@ function avantRemise(ms: number | null, maintenant: number): string | null {
 }
 
 /** Les deux anneaux. `sombre` : posés sur le rail noir. */
-function Anneaux({ utilisation, sombre, taille = 34 }: { utilisation: Utilisation | null; sombre: boolean; taille?: number }) {
+function Anneaux({ moteur, utilisation, sombre, taille = 34 }: { moteur: IdFournisseur; utilisation: Utilisation | null; sombre: boolean; taille?: number }) {
+  const { fond, logo } = FOURNISSEURS[moteur];
   const anneaux = [
     { f: utilisation?.semaine ?? null, r: 15.875 },
     { f: utilisation?.session ?? null, r: 11.375 },
@@ -90,15 +126,32 @@ function Anneaux({ utilisation, sombre, taille = 34 }: { utilisation: Utilisatio
         );
       })}
       </g>
-      {/* Au centre, le logo de Claude en blanc sur un rond de sa couleur (fichier officiel de l'extension Claude Code). */}
-      <circle cx="17" cy="17" r="8" fill={COULEUR_CLAUDE} />
-      <image href="/brand/claude-logo-blanc.svg" x="11.5" y="11.5" width="11" height="11" />
+      {/* Au centre, le logo du fournisseur sur un rond de sa couleur (Claude : fichier officiel de l'extension Claude Code ; ChatGPT : public/logos/ia). */}
+      <circle cx="17" cy="17" r="8" fill={fond} className={!sombre && moteur === "codex" ? "stroke-bordure-subtile" : undefined} strokeWidth={0.75} />
+      <image href={logo} x="11.5" y="11.5" width="11" height="11" />
     </svg>
   );
 }
 
 /** Le détail au survol : une ligne par fenêtre, barre, part restante, temps avant la remise à zéro. */
-function Detail({ utilisation, disponible, enCours }: { utilisation: Utilisation | null; disponible: boolean; enCours: boolean }) {
+function Detail({
+  moteur,
+  utilisation,
+  disponible,
+  enCours,
+  gratuit,
+  lieu,
+}: {
+  moteur: IdFournisseur;
+  utilisation: Utilisation | null;
+  disponible: boolean;
+  enCours: boolean;
+  gratuit: boolean;
+  lieu: string | null;
+}) {
+  const { nom, programme } = FOURNISSEURS[moteur];
+  /* Claude Code sur un VPS : la dernière reçue d'une session, le clic ne la redemande pas. */
+  const relisible = lieu === null || moteur === "codex";
   const [maintenant, setMaintenant] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setMaintenant(Date.now()), 30_000);
@@ -128,18 +181,24 @@ function Detail({ utilisation, disponible, enCours }: { utilisation: Utilisation
   return (
     <div className="flex w-[300px] flex-col gap-3 rounded-lg border border-bordure-subtile bg-fond-surface p-3 shadow-ombre-flottante">
       <div className="flex items-baseline justify-between">
-        <span className="text-ui-s font-semibold text-texte-principal">Utilisation de Claude</span>
+        <span className="text-ui-s font-semibold text-texte-principal">Utilisation de {nom}</span>
         <span className="text-ui-3xs text-texte-tertiaire">restant</span>
       </div>
       {!disponible ? (
         <p className="m-0 text-ui-xs text-texte-tertiaire">Visible dans l’app de bureau.</p>
       ) : !utilisation ? (
         <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
-          {enCours ? "Lecture…" : "Elle s’affiche à la première réponse d’un agent. Clic pour la lire maintenant."}
+          {enCours
+            ? "Lecture…"
+            : moteur === "codex"
+              ? "ChatGPT n’a pas encore donné ses limites (rien à lire avec une clé API). Clic pour réessayer."
+              : relisible
+                ? "Elle s’affiche à la première réponse d’un agent. Clic pour la lire maintenant."
+                : "Elle s’affiche à la première réponse d’un agent sur ce serveur."}
         </p>
       ) : !utilisation.session && !utilisation.semaine ? (
         <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
-          {enCours ? "Lecture…" : "Claude Code n’a pas encore donné le détail des limites. Clic pour réessayer."}
+          {enCours ? "Lecture…" : `${programme} n’a pas encore donné le détail des limites.${relisible ? " Clic pour réessayer." : ""}`}
         </p>
       ) : (
         <>
@@ -150,7 +209,9 @@ function Detail({ utilisation, disponible, enCours }: { utilisation: Utilisation
           )}
           {ligne("5 heures", utilisation.session)}
           {ligne("Semaine", utilisation.semaine)}
-          <span className="text-ui-3xs text-texte-tertiaire">{enCours ? "Mise à jour…" : "Clic pour mettre à jour"}</span>
+          <span className="text-ui-3xs text-texte-tertiaire">
+            {enCours ? "Mise à jour…" : relisible ? "Clic pour mettre à jour" : gratuit ? "Mise à jour à chaque réponse d’un agent" : null}
+          </span>
         </>
       )}
     </div>
@@ -159,17 +220,22 @@ function Detail({ utilisation, disponible, enCours }: { utilisation: Utilisation
 
 /** Bouton des anneaux, avec le détail qui s'ouvre au survol (après 250 ms). */
 function BoutonAnneaux({
+  moteur,
+  lieu,
   sombre,
   children,
   className,
   placement,
 }: {
+  moteur: IdFournisseur;
+  lieu: string | null;
   sombre: boolean;
   children?: ReactNode;
   className?: string;
   placement: "droite" | "dessus";
 }) {
-  const { disponible, utilisation, enCours, actualiser } = useUtilisation();
+  const { disponible, utilisation, enCours, actualiser, rafraichir, gratuit } = useUtilisation(moteur, lieu);
+  const { nom } = FOURNISSEURS[moteur];
   const [ouvert, setOuvert] = useState(false);
   const minuteur = useRef<ReturnType<typeof setTimeout>>(undefined);
   const programmer = (valeur: boolean, delai: number) => {
@@ -187,7 +253,10 @@ function BoutonAnneaux({
   return (
     <div
       className="relative"
-      onMouseEnter={() => programmer(true, 250)}
+      onMouseEnter={() => {
+        programmer(true, 250);
+        rafraichir();
+      }}
       onMouseLeave={() => programmer(false, 75)}
       onFocus={() => setOuvert(true)}
       onBlur={() => setOuvert(false)}
@@ -195,7 +264,7 @@ function BoutonAnneaux({
       <button
         type="button"
         onClick={() => void actualiser()}
-        aria-label={`Utilisation de Claude, ${resume}. Mettre à jour`}
+        aria-label={`Utilisation de ${nom}, ${resume}. Mettre à jour`}
         className={cn(
           "flex cursor-pointer items-center border-0 bg-transparent transition-colors duration-[120ms]",
           sombre ? "hover:bg-white/8" : "hover:bg-fond-survol",
@@ -203,7 +272,7 @@ function BoutonAnneaux({
           className,
         )}
       >
-        <Anneaux utilisation={utilisation} sombre={sombre} />
+        <Anneaux moteur={moteur} utilisation={utilisation} sombre={sombre} />
         {children}
       </button>
       {ouvert && (
@@ -214,22 +283,43 @@ function BoutonAnneaux({
             placement === "droite" ? "bottom-0 left-full ml-2" : "bottom-full left-0 mb-2",
           )}
         >
-          <Detail utilisation={utilisation} disponible={disponible} enCours={enCours} />
+          <Detail moteur={moteur} utilisation={utilisation} disponible={disponible} enCours={enCours} gratuit={gratuit} lieu={lieu} />
         </div>
       )}
     </div>
   );
 }
 
-/** Dans le rail : les anneaux seuls, le détail au survol. */
-export function UtilisationRail() {
-  return <BoutonAnneaux sombre placement="droite" className="size-12 justify-center rounded-md p-0" />;
+/**
+ * Les fournisseurs du serveur affiché dont l'abonnement a des limites à montrer : Claude dès qu'il est
+ * prêt, ChatGPT connecté par son compte (une clé API n'a pas de limites). Tant que rien n'est lu, ou que
+ * rien n'est prêt, Claude seul, comme avant.
+ */
+function fournisseursAffiches(moteurs: EtatMoteur[] | null): IdFournisseur[] {
+  const prets = (moteurs ?? []).filter(pret);
+  const liste: IdFournisseur[] = [];
+  if (prets.some((m) => m.moteur.id === "claude")) liste.push("claude");
+  if (prets.some((m) => m.moteur.id === "codex" && m.compte?.methode === "chatgpt")) liste.push("codex");
+  return liste.length ? liste : ["claude"];
 }
 
-/** Dans le menu complet : les anneaux et « Claude », sur une ligne de menu. */
+/** Dans le rail : les anneaux de chaque fournisseur connecté du serveur affiché, le détail au survol. */
+export function UtilisationRail() {
+  const lieu = useLieuActif();
+  const { moteurs } = useMoteurs(lieu);
+  return (
+    <>
+      {fournisseursAffiches(moteurs).map((id) => (
+        <BoutonAnneaux key={`${lieu ?? ""}|${id}`} moteur={id} lieu={lieu} sombre placement="droite" className="size-12 justify-center rounded-md p-0" />
+      ))}
+    </>
+  );
+}
+
+/** Dans Réglages › Claude : les anneaux de Claude sur ce PC et « Claude », sur une ligne de menu. */
 export function CarteUtilisation() {
   return (
-    <BoutonAnneaux sombre={false} placement="dessus" className="h-11 w-full gap-3 rounded-sm px-2 text-left">
+    <BoutonAnneaux moteur="claude" lieu={null} sombre={false} placement="dessus" className="h-11 w-full gap-3 rounded-sm px-2 text-left">
       <span className="flex min-w-0 flex-col">
         <span className="text-ui font-medium text-texte-secondaire">Utilisation</span>
         <span className="text-ui-3xs text-texte-tertiaire">Claude · semaine et 5 h</span>

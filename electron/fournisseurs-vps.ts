@@ -1,6 +1,7 @@
 import { net, shell } from "electron";
 import { createServer } from "node:http";
 import type { CompteMoteur, ModeleMoteur, Progression } from "./moteurs/types";
+import type { Utilisation } from "./utilisation";
 
 /**
  * Les fournisseurs d'un VPS relié (serveur/moteurs.mjs et serveur/ia.mjs), pour Réglages du serveur ›
@@ -72,6 +73,15 @@ export async function modelesVps(origine: string, jeton: string | null, id: stri
   return (await appel(origine, jeton, `/klyra/v1/moteurs/${idValide(id)}/modeles`)).modeles as ModeleMoteur[];
 }
 
+/**
+ * Les limites de l'abonnement d'un moteur du VPS (serveur/utilisation.mjs) ; null si le VPS ne les connaît pas.
+ * `actualiser` : le VPS les relit (Codex : lecture du compte ; Claude Code : la dernière reçue, sans requête).
+ */
+export async function utilisationVps(origine: string, jeton: string | null, id: string, actualiser: boolean): Promise<Utilisation | null> {
+  const json = await appel(origine, jeton, `/klyra/v1/moteurs/${idValide(id)}/utilisation${actualiser ? "?actualiser=1" : ""}`);
+  return (json.utilisation as Utilisation | null) ?? null;
+}
+
 export async function versionDisponibleVps(origine: string, jeton: string | null, id: string): Promise<string | null> {
   const v = (await appel(origine, jeton, `/klyra/v1/moteurs/${idValide(id)}/version-disponible`)).version;
   return typeof v === "string" ? v : null;
@@ -128,7 +138,8 @@ function ecouterRetour(retour: string, relayer: (chemin: string) => Promise<bool
  * Connexion de Codex au compte ChatGPT sur le VPS, comme sur ce PC : la page d'OpenAI s'ouvre dans le
  * navigateur, et son retour est relayé au VPS (`ecouterRetour`). Si l'adresse de retour est déjà prise sur
  * ce PC, la connexion passe par un code d'appareil : le lien s'ouvre, l'écran montre le code (`montrerCode`).
- * Dans les deux cas, on relit le compte du VPS jusqu'à ce qu'il soit connecté.
+ * Grok n'a que le code d'appareil sur un VPS : le VPS le rend tout de suite.
+ * Dans tous les cas, on relit le compte du VPS jusqu'à ce qu'il soit connecté.
  */
 export async function connecterVps(origine: string, jeton: string | null, id: string, montrerCode: (c: { url: string; code: string }) => void): Promise<CompteMoteur> {
   idValide(id);
@@ -137,21 +148,28 @@ export async function connecterVps(origine: string, jeton: string | null, id: st
     const json = await appel(origine, jeton, `/klyra/v1/moteurs/${id}/connecter`, "POST", { mode: "navigateur" });
     const url = typeof json.url === "string" ? json.url : "";
     const retour = typeof json.retour === "string" ? json.retour : "";
-    if (!/^https:\/\//.test(url) || !/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(retour)) throw new Error("Le VPS n’a pas donné de page de connexion.");
-    ecoute = await ecouterRetour(retour, async (chemin) => {
-      try {
-        const r = await appel(origine, jeton, `/klyra/v1/moteurs/${id}/retour`, "POST", { chemin });
-        return typeof r.statut === "number" && r.statut < 400;
-      } catch {
-        return false;
+    /* Grok : le VPS donne tout de suite un code d'appareil (lien + code), sans page à relayer. */
+    const parCode = typeof json.code === "string" && !retour;
+    if (!/^https:\/\//.test(url) || (!parCode && !/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(retour))) throw new Error("Le VPS n’a pas donné de page de connexion.");
+    if (parCode) {
+      montrerCode({ url, code: String(json.code) });
+      await shell.openExternal(url);
+    } else {
+      ecoute = await ecouterRetour(retour, async (chemin) => {
+        try {
+          const r = await appel(origine, jeton, `/klyra/v1/moteurs/${id}/retour`, "POST", { chemin });
+          return typeof r.statut === "number" && r.statut < 400;
+        } catch {
+          return false;
+        }
+      });
+      if (ecoute) await shell.openExternal(url);
+      else {
+        const code = await appel(origine, jeton, `/klyra/v1/moteurs/${id}/connecter`, "POST", { mode: "code" });
+        if (typeof code.url !== "string" || !/^https:\/\//.test(code.url) || typeof code.code !== "string") throw new Error("Le VPS n’a pas donné de code de connexion.");
+        montrerCode({ url: code.url, code: code.code });
+        await shell.openExternal(code.url);
       }
-    });
-    if (ecoute) await shell.openExternal(url);
-    else {
-      const code = await appel(origine, jeton, `/klyra/v1/moteurs/${id}/connecter`, "POST", { mode: "code" });
-      if (typeof code.url !== "string" || !/^https:\/\//.test(code.url) || typeof code.code !== "string") throw new Error("Le VPS n’a pas donné de code de connexion.");
-      montrerCode({ url: code.url, code: code.code });
-      await shell.openExternal(code.url);
     }
     const debut = Date.now();
     while (Date.now() - debut < CONNEXION_MAX_MS) {

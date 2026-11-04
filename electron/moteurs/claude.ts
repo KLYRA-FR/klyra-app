@@ -1,4 +1,4 @@
-import { autoriser, cancelAgent, compteClaude, connecterClaude, deconnecterClaude, findClaude, streamAgent } from "../claude";
+import { actualiserUtilisation, autoriser, cancelAgent, compteClaude, connecterClaude, deconnecterClaude, derniereUtilisation, findClaude, streamAgent, surUtilisation } from "../claude";
 import { commande, derniereVersionNpm } from "./installation";
 import type { Moteur } from "./types";
 
@@ -14,6 +14,8 @@ export const claude: Moteur = {
   lancer: streamAgent,
   arreter: cancelAgent,
   autoriser,
+  utilisation: (actualiser) => (actualiser ? actualiserUtilisation() : Promise.resolve(derniereUtilisation())),
+  surUtilisation,
   versionDisponible: () => derniereVersionNpm("@anthropic-ai/claude-code"),
   /** Claude Code se met à jour lui-même (`claude update`), quel que soit l'endroit où il est installé. */
   async mettreAJour(progression) {

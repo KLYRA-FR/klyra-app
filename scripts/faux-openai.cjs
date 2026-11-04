@@ -6,6 +6,7 @@
  * - après le résultat d'une commande : « Commande faite » ;
  * - sinon : « Bonjour de ChatGPT ».
  * Chaque requête est gardée telle quelle dans `requetes`.
+ * Une demande qui contient LIMITES reçoit les en-têtes de limites de l'abonnement (`LIMITES`).
  * `configCodex(url)` : le config.toml qui envoie Codex vers ce serveur (clé dans FAUX_CLE).
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- partagé par des tests CommonJS et ESM */
@@ -31,9 +32,20 @@ function derniereDemande(corps) {
   return (dernier?.content ?? []).map((c) => c.text ?? "").join("\n");
 }
 
+/** Les en-têtes de limites qu'OpenAI joint à une réponse de Codex (5 h à 25 %, semaine à 60 %). */
+const LIMITES = {
+  "x-codex-primary-used-percent": "25",
+  "x-codex-primary-window-minutes": "300",
+  "x-codex-primary-reset-at": "1900000000",
+  "x-codex-secondary-used-percent": "60",
+  "x-codex-secondary-window-minutes": "10080",
+  "x-codex-secondary-reset-at": "1900500000",
+};
+
 function repondre(corps, res, n) {
   const id = `resp_${n}`;
   const demande = derniereDemande(corps);
+  if (demande.includes("LIMITES")) for (const [nom, valeur] of Object.entries(LIMITES)) res.setHeader(nom, valeur);
   sse(res, [{ type: "response.created", response: { id } }]);
   if (JSON.stringify(corps.input ?? []).includes("function_call_output")) {
     sse(res, [...texte(`msg_${id}`, ["Commande ", "faite"]), fini(id)]);
