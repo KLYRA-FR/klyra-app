@@ -339,6 +339,13 @@ contextBridge.exposeInMainWorld("klyra", {
       ipcRenderer.on("navigateur:menu", listener);
       return () => ipcRenderer.removeListener("navigateur:menu", listener);
     },
+    onEchap: (callback: (id: string) => void) => {
+      const listener = (_e: unknown, id: string) => callback(id);
+      ipcRenderer.on("navigateur:echap", listener);
+      return () => ipcRenderer.removeListener("navigateur:echap", listener);
+    },
+    /** Test d'écran seulement : une vraie frappe Échap sur la page affichée. */
+    testerEchap: () => ipcRenderer.invoke("navigateur:tester-echap"),
     coffre: () => ipcRenderer.invoke("navigateur:coffre"),
     ajouterAuCoffre: (entree: unknown) => ipcRenderer.invoke("navigateur:coffre:ajouter", entree),
     retirerDuCoffre: (id: string) => ipcRenderer.invoke("navigateur:coffre:retirer", id),
