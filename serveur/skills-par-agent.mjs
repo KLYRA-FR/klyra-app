@@ -9,11 +9,12 @@
  * ou un agent nouveau, ne la reçoit pas tant qu'on ne l'allume pas. Une skill de projet
  * reste reçue tant qu'on ne la coupe pas.
  *
- * Claude Code : `skillOverrides` à `off` dans le `--settings` de la session (prouvé le
- * 04/11/2026, Claude Code 2.1.306, faux fournisseur). Les agents du poste et les CLAUDE.md
- * restent. La valeur s'applique à toute la session : un agent appelé dedans reçoit les
- * skills de celui qui l'a lancé, pas les siennes. Codex ne lit pas `.claude/skills` :
- * l'app filtre la liste qu'elle lui donne.
+ * Claude Code lit, au lancement, un dossier préparé par l'app (`CLAUDE_CONFIG_DIR`,
+ * electron/preparation-fournisseur.ts) : les fiches actives et seulement les skills
+ * personnelles allumées. Le poste n'est pas modifié. `skillOverrides` retire encore
+ * ce qui resterait listé (skills de projet, skills livrées avec l'outil). La valeur
+ * s'applique à toute la session : un agent appelé dedans reçoit le catalogue de celui
+ * qui l'a lancé. Codex garde un seul processus : le filtre reste la consigne.
  */
 export const SKILLS_PAR_DEFAUT = {
     fige: false,

@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os, { hostname } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
 import { consigneKlyra } from "./configuration-klyra";
 import { figerChoix } from "./skills-par-agent";
+import { lireReprise, migrerCopies } from "./preparation-fournisseur";
 import { dossierHorsProjet } from "./atelier";
 import {
   catalogueSkills,
@@ -228,6 +229,8 @@ if (process.platform === "win32") app.setAppUserModelId("design.klyra.app");
 /* Les données de la personne (conversations, projets, réglages) restent
    toujours dans le même dossier, quel que soit le nom affiché de l'app. */
 if (!process.env.KLYRA_USER_DATA) app.setPath("userData", path.join(app.getPath("appData"), "klyra-app"));
+/* claude.ts prépare le dossier de l'agent sans importer Electron (le test des routines ne charge pas electron). */
+if (!process.env.KLYRA_USER_DATA) process.env.KLYRA_USER_DATA = app.getPath("userData");
 
 /* L'export Next injecte des scripts inline : 'unsafe-inline' reste nécessaire.
    Le compte Convex est la seule origine nommée. L'appel au VPS ne part pas du rendu. */
@@ -1108,7 +1111,10 @@ function registerBridge() {
       if (!existsSync(abs)) throw new Error("Dossier introuvable.");
       projet = abs;
     }
-    return catalogueSkills(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), projet);
+    return {
+      ...catalogueSkills(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), projet),
+      reprise: lireReprise(path.join(app.getPath("userData"), "reprise-equipe.json")),
+    };
   });
   handle("reglages:diagnostic-poste:montrer", (chemin: string) => {
     // Seulement un chemin que le diagnostic vient de trouver.
@@ -1182,6 +1188,26 @@ app.on("second-instance", (_event, argv) => {
 });
 ouvrirLienKlyra(lienDans(process.argv));
 
+/**
+ * Copie une fois les fiches et les skills du poste dans le dossier de l'app.
+ * N'écrit le marqueur qu'après la copie. Ne supprime et ne modifie rien du poste.
+ * Une skill apparue ensuite sur le poste n'est pas recopiée : l'interrupteur décide.
+ */
+function reprendreEquipe(): void {
+  const userData = app.getPath("userData");
+  const marqueur = path.join(userData, "reprise-equipe.json");
+  if (lireReprise(marqueur)) return;
+  const poste = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  const reprise = migrerCopies({
+    fichesPoste: path.join(poste, "agents"),
+    skillsPoste: path.join(poste, "skills"),
+    fichesDest: path.join(userData, "equipe"),
+    skillsDest: path.join(userData, "bibliotheque-skills"),
+  });
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(marqueur, `${JSON.stringify({ fiches: reprise.fiches, skills: reprise.skills })}\n`, "utf8");
+}
+
 /** Fige le choix des skills une fois : ce qui est déjà là reste reçu. Une skill ou un agent apparu après ne l'est pas. */
 async function figerSkillsPersonnelles(): Promise<void> {
   const actuels = lireReglages();
@@ -1195,6 +1221,12 @@ void app.whenReady().then(async () => {
   /* Mes agents d'abord : sa première création décide entre reprise et nouveau profil,
      avant que l'interface écrive ses propres données. */
   await chargerMesAgents(MODELES_KLYRA).catch((e) => console.error("Mes agents illisible :", e));
+  /* Une fois : copie des fiches et des skills dans le dossier de l'app. Le poste n'est pas touché. */
+  try {
+    reprendreEquipe();
+  } catch (e) {
+    console.error("Reprise de l’équipe non faite :", e);
+  }
   /* Premier lancement de cette version : les skills personnelles déjà là restent reçues par les agents déjà là. */
   await figerSkillsPersonnelles().catch((e) => console.error("Choix des skills non figé :", e));
   // Sans version installée, macOS prend l'icône d'Electron : on la remplace dans le Dock.
