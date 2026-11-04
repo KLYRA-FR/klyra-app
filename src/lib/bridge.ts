@@ -427,8 +427,14 @@ export interface KlyraBridge {
     montrer: (chemin: string) => Promise<Reponse<void>>;
     /** Copie un livrable dans l'espace de l'agent (`~/.klyra/rendus/<agent>/`) ; `remplace` : sa copie précédente. */
     copier: (origine: string, agent: string, remplace: string | null) => Promise<Reponse<{ chemin: string; taille: number; dossier: boolean }>>;
-    /** Recopie le livrable d'un agent du VPS `lieu` (annoncé par `onVps`) dans l'espace de l'agent sur ce PC. */
+    /** Ancien chemin : recopier un livrable de VPS dans les rendus de ce PC. L'écran ne l'appelle plus. */
     copierVps?: (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) => Promise<Reponse<{ chemin: string; taille: number; dossier: boolean }>>;
+    /** HTML d'une copie locale, en base64, pour le partage. Absent hors de l'app de bureau. */
+    lireHtml?: (chemin: string) => Promise<Reponse<string>>;
+    /** HTML d'un livrable du VPS, lu sur le serveur. Rien n'est écrit dans `~/.klyra/rendus`. */
+    lireHtmlVps?: (lieu: string, id: string, dossier: boolean) => Promise<Reponse<string>>;
+    /** Ouvre un livrable du VPS servi par le serveur. Le fichier temporaire n'est pas une copie gardée. */
+    ouvrirVps?: (lieu: string, id: string, agent: string, nom: string, dossier: boolean) => Promise<Reponse<void>>;
     /** Un agent du VPS `lieu` a publié un livrable (cf. serveur/rendus.mjs). */
     onVps?: (callback: (lieu: string, rendu: RenduVps) => void) => () => void;
     /** Supprime la copie d'un livrable (jamais hors de l'espace des rendus). */

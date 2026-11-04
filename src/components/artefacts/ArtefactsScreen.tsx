@@ -18,9 +18,12 @@ import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { codeErreur } from "@/lib/compte";
+import { DocumentsKlyraProvider, useDocumentsKlyra, type DocumentKlyra, type EtatDocuments } from "@/lib/documents-klyra";
+import { hoteDe, useLieuActif } from "@/lib/lieux";
 import { apparition } from "@/lib/mouvement";
 import { poste } from "@/lib/plateforme";
 import { nomDuFichier } from "@/lib/rendus";
+import { lieuDuRendu, renduDansEspace, texteEspace } from "@/lib/rendus-espace";
 import { jouer } from "@/lib/sons/sons";
 import { useIdDirect, useProjects, useRole, useWorkspace } from "@/lib/workspace";
 import type { Artefact, Rendu, TypeRendu } from "@/types/domain";
@@ -129,15 +132,17 @@ function Confirmation({ texte, action, erreur, enCours, onConfirmer, onAnnuler }
   onAnnuler: () => void;
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-fond-page p-2.5">
-      <span className="flex-1 text-ui-xs text-texte-principal">{texte}</span>
-      <Bouton variant="sombre" taille="compact" onClick={onConfirmer} disabled={enCours}>
-        {action}
-      </Bouton>
-      <Bouton variant="blanc" taille="compact" onClick={onAnnuler}>
-        Annuler
-      </Bouton>
-      {erreur && <span className="w-full text-ui-xs text-texte-erreur">{erreur}</span>}
+    <div className="mt-2 flex flex-col gap-2 rounded-md bg-fond-page p-2.5">
+      <p className="m-0 text-ui-xs leading-[1.45] text-texte-principal">{texte}</p>
+      <div className="flex flex-wrap gap-2">
+        <Bouton variant="sombre" taille="compact" onClick={onConfirmer} disabled={enCours}>
+          {action}
+        </Bouton>
+        <Bouton variant="blanc" taille="compact" onClick={onAnnuler}>
+          Annuler
+        </Bouton>
+      </div>
+      {erreur && <p className="m-0 text-ui-xs text-texte-erreur">{erreur}</p>}
     </div>
   );
 }
@@ -421,16 +426,74 @@ function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
   const projet = projects.find((p) => p.id === rendu.projectId);
   const agent = useRole(rendu.roleId);
   const { retirerRendu } = useWorkspace();
-  const { image, carte } = useVignette({ type: "rendu", chemin: rendu.chemin }, true, version);
+  const documents = useDocumentsKlyra();
+  const partage = documents.documents.find((d) => d.deMoi && d.origine === rendu.origine) ?? null;
+  const { image, carte } = useVignette({ type: "rendu", chemin: rendu.chemin || "vide" }, !!rendu.chemin, version);
   const [retirer, setRetirer] = useState(false);
+  const [reprendre, setReprendre] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enregistre, setEnregistre] = useState<string | null>(null);
   const type = RENDUS[rendu.type];
+  const page = rendu.type === "page";
 
-  const agir = (action: "ouvrir" | "montrer", chemin = rendu.chemin) => {
+  const ouvrir = () => {
     if (!bridge) return;
     setErreur(null);
+    if (rendu.chemin) {
+      void bridge.rendus.ouvrir(rendu.chemin).then((r) => !r.ok && setErreur(r.message));
+      return;
+    }
+    const lieu = lieuDuRendu(rendu.origine);
+    if (!rendu.distantId || !lieu || !bridge.rendus.ouvrirVps) {
+      setErreur("Ce document est sur le serveur : ouvre-le depuis l’espace de ce serveur.");
+      return;
+    }
+    void bridge.rendus.ouvrirVps(lieu, rendu.distantId, rendu.roleId, nomDuFichier(rendu.origine), rendu.dossier === true).then((r) => !r.ok && setErreur(r.message));
+  };
+  const agir = (action: "ouvrir" | "montrer", chemin = rendu.chemin) => {
+    if (!bridge || !chemin) return;
+    setErreur(null);
     void bridge.rendus[action](chemin).then((r) => !r.ok && setErreur(r.message));
+  };
+  const partager = () => {
+    if (envoi || documents.etat !== "pret") return;
+    const lieu = lieuDuRendu(rendu.origine);
+    if (!rendu.chemin && !(rendu.distantId && lieu)) {
+      setErreur("Ce document n’est pas dans cet espace.");
+      return;
+    }
+    setErreur(null);
+    setEnvoi(true);
+    void documents
+      .partager({
+        chemin: rendu.chemin,
+        distant: rendu.chemin || !rendu.distantId || !lieu ? null : { lieu, id: rendu.distantId, dossier: rendu.dossier === true },
+        titre: rendu.titre,
+        description: rendu.description,
+        origine: rendu.origine,
+        agent: rendu.roleId,
+      })
+      .then(
+        () => setEnvoi(false),
+        (e: unknown) => {
+          setEnvoi(false);
+          setErreur(e instanceof Error ? e.message : String(e));
+        },
+      );
+  };
+  const retirerIci = () => {
+    void (async () => {
+      if (partage) {
+        try {
+          await documents.supprimer(partage._id);
+        } catch (e) {
+          setErreur(e instanceof Error ? e.message : String(e));
+          return;
+        }
+      }
+      retirerRendu(rendu.id);
+    })();
   };
   /* « Enregistrer dans… » : une copie dans le dossier choisi, celui du projet proposé d'abord. */
   const enregistrer = () => {
@@ -451,15 +514,24 @@ function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
         titre={rendu.titre}
         image={image}
         icone={type.icone}
-        sansImage={rendu.type === "page" || rendu.type === "image" ? undefined : type.libelle}
-        onOuvrir={() => agir("ouvrir")}
+        sansImage={rendu.chemin ? (rendu.type === "page" || rendu.type === "image" ? undefined : type.libelle) : "Sur le serveur"}
+        onOuvrir={ouvrir}
       />
       <div className="flex flex-1 flex-col gap-1.5 rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm">
         <div className="flex items-start gap-2">
           <span className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{rendu.titre}</span>
           <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover/artefact:opacity-100 focus-within:opacity-100">
-            <BoutonIcone taille="mini" icone={<Icon name="download-02" size={16} />} libelle="Enregistrer dans un dossier…" onClick={enregistrer} className="text-icone-secondaire" />
-            <BoutonIcone taille="mini" icone={<Icon name="folder-open-01" size={16} />} libelle={`Montrer ${poste.dansExplorateur}`} onClick={() => agir("montrer")} className="text-icone-secondaire" />
+            {page && documents.etat === "pret" && (
+              <BoutonIcone
+                taille="mini"
+                icone={<Icon name="users-profiles-plus" size={16} />}
+                libelle={partage ? "Mettre à jour le partage" : "Partager à l’équipe"}
+                onClick={partager}
+                className="text-icone-secondaire"
+              />
+            )}
+            {rendu.chemin && <BoutonIcone taille="mini" icone={<Icon name="download-02" size={16} />} libelle="Enregistrer dans un dossier…" onClick={enregistrer} className="text-icone-secondaire" />}
+            {rendu.chemin && <BoutonIcone taille="mini" icone={<Icon name="folder-open-01" size={16} />} libelle={`Montrer ${poste.dansExplorateur}`} onClick={() => agir("montrer")} className="text-icone-secondaire" />}
             <BoutonIcone taille="mini" icone={<Icon name="trash-01" size={16} />} libelle="Retirer de la liste" onClick={() => setRetirer(true)} className="text-icone-secondaire" />
           </span>
         </div>
@@ -471,8 +543,14 @@ function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
           </span>
           {projet && <span className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">{projet.name}</span>}
           <span className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">{type.libelle}</span>
+          {partage && <span className="rounded-2xs bg-fond-surface-grise px-1.5 py-px font-medium text-texte-secondaire">Équipe</span>}
           <span className="ml-auto">{date.format(new Date(rendu.misAJour))}</span>
         </div>
+        {partage && (
+          <button type="button" onClick={() => setReprendre(true)} className="m-0 w-fit cursor-pointer border-0 bg-transparent p-0 text-left text-ui-2xs text-texte-tertiaire underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
+            Ne plus partager
+          </button>
+        )}
         {erreur && <p className="m-0 text-ui-xs text-texte-erreur">{erreur}</p>}
         {enregistre && (
           <p className="m-0 flex flex-wrap items-center gap-x-2 text-ui-xs text-texte-secondaire">
@@ -482,11 +560,30 @@ function CarteRendu({ rendu, version }: { rendu: Rendu; version: number }) {
             </button>
           </p>
         )}
+        {reprendre && partage && (
+          <Confirmation
+            texte="Ne plus partager avec l’équipe ? Le fichier quitte le compte. Il reste dans Mes artefacts de cet espace."
+            action="Ne plus partager"
+            onConfirmer={() => {
+              void documents.reprendre(partage._id).then(
+                () => setReprendre(false),
+                (e: unknown) => setErreur(e instanceof Error ? e.message : String(e)),
+              );
+            }}
+            onAnnuler={() => setReprendre(false)}
+          />
+        )}
         {retirer && (
           <Confirmation
-            texte="Retirer de la liste ? La copie gardée par KLYRA est supprimée ; l’original de l’agent et ce que tu as enregistré ailleurs restent."
+            texte={
+              partage
+                ? "Retirer de la liste ? Le partage quitte le compte. L’original de l’agent reste où il est."
+                : rendu.chemin
+                  ? "Retirer de la liste ? La copie gardée par KLYRA est supprimée ; l’original de l’agent et ce que tu as enregistré ailleurs restent."
+                  : "Retirer de la liste ? Le fichier reste sur le serveur."
+            }
             action="Retirer"
-            onConfirmer={() => retirerRendu(rendu.id)}
+            onConfirmer={retirerIci}
             onAnnuler={() => setRetirer(false)}
           />
         )}
@@ -584,6 +681,60 @@ function CarteEquipe({ artefact, session, version }: { artefact: ArtefactEquipe;
   );
 }
 
+/** Une page HTML partagée depuis cet espace. Pas d'ouverture : l'adresse Convex ne sort pas de l'écran. */
+function CarteDocument({ document }: { document: DocumentKlyra }) {
+  const documents = useDocumentsKlyra();
+  const [reprendre, setReprendre] = useState(false);
+  const [envoi, setEnvoi] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
+  const envoyer = async () => {
+    setEnvoi({ enCours: true, erreur: null });
+    try {
+      await documents.reprendre(document._id);
+      setEnvoi({ enCours: false, erreur: null });
+      setReprendre(false);
+    } catch (e) {
+      setEnvoi({ enCours: false, erreur: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  return (
+    <li className="group/artefact flex flex-col gap-2 rounded-2xl bg-fond-surface-grise p-2">
+      <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-lg border border-white bg-fond-page text-texte-tertiaire shadow-ombre-sm">
+        <span className="flex flex-col items-center gap-2">
+          <span className="klyra-orbe flex size-10 items-center justify-center rounded-full">
+            <Icon name="globe-01" size={20} />
+          </span>
+          <span className="text-ui-2xs">Page HTML</span>
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col gap-1.5 rounded-lg border border-white bg-fond-surface px-4 py-3 shadow-ombre-sm">
+        <div className="flex items-start gap-2">
+          <span className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{document.titre}</span>
+        </div>
+        {document.description && <p className="m-0 line-clamp-2 text-ui-s leading-[1.45] text-texte-secondaire">{document.description}</p>}
+        <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-ui-2xs text-texte-tertiaire">
+          <span>{document.deMoi ? "Partagé par toi" : `Partagé par ${document.auteur.nom}`}</span>
+          <span>{date.format(new Date(document.majLe))}</span>
+        </div>
+        {document.deMoi && (
+          <button type="button" onClick={() => setReprendre(true)} className="m-0 w-fit cursor-pointer border-0 bg-transparent p-0 text-left text-ui-2xs text-texte-tertiaire underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
+            Ne plus partager
+          </button>
+        )}
+        {reprendre && (
+          <Confirmation
+            texte="Ne plus partager avec l’équipe ? Le fichier quitte le compte. Il reste dans Mes artefacts de cet espace."
+            action="Ne plus partager"
+            enCours={envoi.enCours}
+            erreur={envoi.erreur}
+            onConfirmer={() => void envoyer()}
+            onAnnuler={() => setReprendre(false)}
+          />
+        )}
+      </div>
+    </li>
+  );
+}
+
 /** Ce qu'on dit des artefacts de l'équipe quand la liste n'est pas là (onglet Équipe, fenêtre de partage). */
 function texteEtatEquipe(etat: EtatArtefactsEquipe, message: string | null): string {
   const textes: Record<EtatArtefactsEquipe, string> = {
@@ -596,27 +747,6 @@ function texteEtatEquipe(etat: EtatArtefactsEquipe, message: string | null): str
     pret: "",
   };
   return textes[etat];
-}
-
-/** Ce que l'onglet Équipe dit quand la liste n'est pas là. */
-function EtatEquipe() {
-  const router = useRouter();
-  const equipe = useArtefactsEquipe();
-  return (
-    <div className="flex flex-wrap items-center gap-3 p-4">
-      <p className="m-0 text-ui-s text-texte-secondaire">{texteEtatEquipe(equipe.etat, equipe.message)}</p>
-      {equipe.etat === "deconnecte" && (
-        <Bouton variant="sombre" taille="compact" onClick={() => router.push("/reglages?section=equipe")}>
-          Me connecter
-        </Bouton>
-      )}
-      {equipe.etat === "erreur" && (
-        <Bouton variant="blanc" taille="compact" onClick={equipe.reessayer}>
-          Réessayer
-        </Bouton>
-      )}
-    </div>
-  );
 }
 
 /* ─── Ajout à la main ──────────────────────────────────────────── */
@@ -671,7 +801,9 @@ function AjoutArtefact({ onFermer }: { onFermer: () => void }) {
 export function ArtefactsScreen() {
   return (
     <ArtefactsEquipeProvider>
-      <Ecran />
+      <DocumentsKlyraProvider>
+        <Ecran />
+      </DocumentsKlyraProvider>
     </ArtefactsEquipeProvider>
   );
 }
@@ -679,9 +811,44 @@ export function ArtefactsScreen() {
 /** Une carte de Mes artefacts : un rendu d'agent ou un artefact claude.ai. */
 type Element = { type: "rendu"; rendu: Rendu; date: string } | { type: "claude"; artefact: Artefact; date: string };
 
+function texteEtatDocuments(etat: EtatDocuments, message: string | null): string {
+  const textes: Record<EtatDocuments, string> = {
+    indisponible: "Le compte d’équipe n’est pas disponible sur ce poste.",
+    deconnecte: "Connecte-toi à ton compte d’équipe pour voir les pages partagées.",
+    retire: "Ce compte ne fait plus partie de l’équipe.",
+    chargement: "Lecture des pages partagées…",
+    "hors-ligne": "Hors ligne : les pages partagées reviendront avec le réseau.",
+    erreur: message ?? "Le serveur de l’équipe ne répond pas.",
+    pret: "",
+  };
+  return textes[etat];
+}
+
+function EtatDocuments() {
+  const router = useRouter();
+  const documents = useDocumentsKlyra();
+  return (
+    <div className="flex flex-wrap items-center gap-3 p-4">
+      <p className="m-0 text-ui-s text-texte-secondaire">{texteEtatDocuments(documents.etat, documents.message)}</p>
+      {documents.etat === "deconnecte" && (
+        <Bouton variant="sombre" taille="compact" onClick={() => router.push("/reglages?section=equipe")}>
+          Me connecter
+        </Bouton>
+      )}
+      {documents.etat === "erreur" && (
+        <Bouton variant="blanc" taille="compact" onClick={documents.reessayer}>
+          Réessayer
+        </Bouton>
+      )}
+    </div>
+  );
+}
+
 function Ecran() {
   const bridge = getBridge();
   const equipe = useArtefactsEquipe();
+  const documents = useDocumentsKlyra();
+  const lieu = useLieuActif();
   const [vue, setVue] = useState<"miens" | "equipe">("miens");
   const { state, synchroniserArtefacts, choisirArtefactsClaude } = useWorkspace();
   const { roles, tous } = useAgents();
@@ -751,12 +918,13 @@ function Ecran() {
   };
 
   const nomAgent = (id: string) => (roles.find((r) => r.id === id) ?? tous.find((a) => a.role.id === id)?.role)?.name ?? id;
+  const rendusIci = useMemo(() => state.rendus.filter((r) => renduDansEspace(r.origine, lieu)), [state.rendus, lieu]);
   const elements = useMemo<Element[]>(() => {
     const q = recherche.trim().toLowerCase();
-    const rendus = state.rendus
+    const rendus = rendusIci
       .filter((r) => !filtreAgent || r.roleId === filtreAgent)
       .map((r): Element => ({ type: "rendu", rendu: r, date: r.misAJour }));
-    const liens = claude && !filtreAgent ? state.artefacts.map((a): Element => ({ type: "claude", artefact: a, date: a.misAJour ?? a.ajouteLe })) : [];
+    const liens = claude && !filtreAgent && lieu === null ? state.artefacts.map((a): Element => ({ type: "claude", artefact: a, date: a.misAJour ?? a.ajouteLe })) : [];
     return [...rendus, ...liens]
       .filter((e) => !filtreProjet || (e.type === "rendu" ? e.rendu.projectId : e.artefact.projectId) === filtreProjet)
       .filter((e) => {
@@ -766,15 +934,21 @@ function Ecran() {
       })
       .sort((a, b) => b.date.localeCompare(a.date));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.rendus, state.artefacts, claude, recherche, filtreProjet, filtreAgent, roles, tous]);
-  const totalMiens = state.rendus.length + (claude ? state.artefacts.length : 0);
-  const agentsDesRendus = [...new Set(state.rendus.map((r) => r.roleId))];
+  }, [rendusIci, state.artefacts, claude, lieu, recherche, filtreProjet, filtreAgent, roles, tous]);
+  const totalMiens = rendusIci.length + (claude && lieu === null ? state.artefacts.length : 0);
+  const agentsDesRendus = [...new Set(rendusIci.map((r) => r.roleId))];
 
   const visiblesEquipe = useMemo(() => {
     const q = recherche.trim().toLowerCase();
-    return equipe.artefacts.filter((a) => !q || `${a.titre} ${a.description} ${a.auteur.nom}`.toLowerCase().includes(q));
-  }, [equipe.artefacts, recherche]);
-  const nombre = vue === "miens" ? elements.length : visiblesEquipe.length;
+    return lieu === null ? equipe.artefacts.filter((a) => !q || `${a.titre} ${a.description} ${a.auteur.nom}`.toLowerCase().includes(q)) : [];
+  }, [equipe.artefacts, recherche, lieu]);
+  const visiblesDocuments = useMemo(() => {
+    const q = recherche.trim().toLowerCase();
+    return documents.documents.filter((d) => !q || `${d.titre} ${d.description} ${d.auteur.nom}`.toLowerCase().includes(q));
+  }, [documents.documents, recherche]);
+  const nombreEquipe = (documents.etat === "pret" ? visiblesDocuments.length : 0) + visiblesEquipe.length;
+  const nombre = vue === "miens" ? elements.length : nombreEquipe;
+  const nomEspace = lieu ? hoteDe(lieu) : "Ce PC";
 
   return (
     <div className="h-full overflow-y-auto">
@@ -785,10 +959,14 @@ function Ecran() {
               <span className="font-semibold">Artefacts</span> <span className="font-normal">du studio</span>
             </h1>
             <p className="m-0 text-ui-s text-texte-secondaire">
-              {vue === "miens" ? "Ce que tes agents ont produit : pages, maquettes, captures, vidéos, documents." : "Les liens que l’équipe partage : chacun y ajoute les siens depuis Mes artefacts."}
+              {vue === "miens" ? "Ce que tes agents ont produit : pages, maquettes, captures, vidéos, documents." : "Ce que l’équipe a partagé depuis cet espace."}
+            </p>
+            <p className="m-0 text-ui-2xs text-texte-tertiaire">
+              {nomEspace}
+              {documents.espace ? ` · ${texteEspace(documents.espace.octets, documents.espace.complet)}` : ""}
             </p>
           </div>
-          {claude && vue === "miens" && (
+          {claude && lieu === null && vue === "miens" && (
             <div className="flex flex-wrap items-center gap-2">
               <Bouton variant="blanc" taille="md" onClick={() => setAjout(true)} disabled={ajout}>
                 Ajouter un lien
@@ -800,7 +978,7 @@ function Ecran() {
           )}
         </header>
 
-        {claude && vue === "miens" && (sync.message || (bridge && !session)) && (
+        {claude && lieu === null && vue === "miens" && (sync.message || (bridge && !session)) && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-bordure-subtile bg-fond-page px-4 py-3">
             {sync.message && <span className={cn("text-ui-s", sync.erreur ? "text-texte-erreur" : "text-texte-principal")}>{sync.message}</span>}
             {bridge && !session && (
@@ -824,7 +1002,7 @@ function Ecran() {
               onChange={setVue}
               onglets={[
                 { id: "miens", label: "Mes artefacts", icone: <Icon name="user-profile-01" size={16} />, nombre: totalMiens },
-                { id: "equipe", label: "Équipe", icone: <Icon name="users-profiles-01" size={16} />, nombre: equipe.etat === "pret" ? equipe.artefacts.length : undefined },
+                { id: "equipe", label: "Équipe", icone: <Icon name="users-profiles-01" size={16} />, nombre: documents.etat === "pret" || visiblesEquipe.length > 0 ? nombreEquipe : undefined },
               ]}
             />
             <div className="w-[260px] max-w-full">
@@ -844,17 +1022,22 @@ function Ecran() {
             <BoutonIcone taille="compact" icone={<Icon name="refresh-01" size={16} />} libelle="Refaire les aperçus" onClick={() => { vignettes.clear(); setVersion((v) => v + 1); }} className="text-icone-secondaire" />
           </div>
           {vue === "equipe" ? (
-            equipe.etat !== "pret" ? (
-              <EtatEquipe />
-            ) : visiblesEquipe.length ? (
+            documents.etat !== "pret" && visiblesEquipe.length === 0 ? (
+              <EtatDocuments />
+            ) : nombreEquipe ? (
               <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 p-0">
+                {documents.etat === "pret" && visiblesDocuments.map((d) => <CarteDocument key={d._id} document={d} />)}
                 {visiblesEquipe.map((a) => (
                   <CarteEquipe key={`${a._id}-${version}`} artefact={a} session={session} version={version} />
                 ))}
               </ul>
             ) : (
               <p className="m-0 p-4 text-ui-s text-texte-secondaire">
-                {equipe.artefacts.length ? "Aucun artefact ne correspond." : "Rien de partagé pour l’instant : dans Mes artefacts, partage un lien claude.ai avec l’équipe."}
+                {documents.documents.length || equipe.artefacts.length
+                  ? "Aucun artefact ne correspond."
+                  : lieu
+                    ? "Rien de partagé pour l’instant : dans Mes artefacts de ce serveur, « Partager à l’équipe » envoie une page HTML."
+                    : "Rien de partagé pour l’instant : dans Mes artefacts, « Partager à l’équipe » envoie une page HTML, ou partage un lien claude.ai."}
               </p>
             )
           ) : elements.length ? (
@@ -873,7 +1056,7 @@ function Ecran() {
             </p>
           )}
 
-          {vue === "miens" && bridge && (
+          {vue === "miens" && lieu === null && bridge && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg bg-fond-surface-grise px-4 py-3">
               <Icon name="link" size={16} className="text-icone-secondaire" />
               <span className="flex-1 text-ui-s text-texte-secondaire">
