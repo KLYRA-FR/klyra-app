@@ -3,12 +3,13 @@ import { cn } from "@/lib/cn";
 
 /**
  * Les logos officiels des fournisseurs (public/logos/ia, tirés de @lobehub/icons-static-svg 1.102.0, MIT) :
- * les moteurs (`claude`, `codex`) et les IA à consulter (cf. electron/ia.ts). Ni « autre » ni une IA
+ * les moteurs (`claude`, `codex`, `grok`) et les IA à consulter (cf. electron/ia.ts). Ni « autre » ni une IA
  * inconnue n'en ont : on écrit leur initiale.
  */
 const LOGOS: Record<string, string> = {
   claude: "claude",
   codex: "openai",
+  grok: "grok",
   openai: "openai",
   gemini: "gemini",
   mistral: "mistral",

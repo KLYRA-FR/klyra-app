@@ -69,7 +69,7 @@ jobs:
       - name: Modèles KLYRA, versions et mise à jour des fiches installées
         run: pnpm test:modeles
       - name: Artefacts (rendus des agents, lecture de claude.ai) et dossier de chaque agent
-        run: pnpm exec vitest run src/lib/rendus.test.ts && node --experimental-strip-types --test electron/artefacts-liste.test.mts electron/atelier.test.mts
+        run: pnpm exec vitest run src/lib/rendus.test.ts && node --experimental-strip-types --test electron/artefacts-liste.test.mts electron/atelier.test.mts electron/document-isole.test.mts
 
       # Ubuntu 24.04 bloque le bac à sable de Chromium (espaces de noms
       # utilisateur) : on le rouvre pour ce test, sans toucher à l'app.

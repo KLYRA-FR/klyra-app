@@ -166,6 +166,8 @@ import {
 } from "./artefacts";
 import { copierRenduVps, htmlRenduVps, ouvrirRenduVps } from "./rendus-vps";
 import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
+import { PRIVILEGE_SCHEMA } from "./document-isole";
+import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { arbreVps, consignesVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
@@ -182,6 +184,7 @@ import {
   retirerIaVps,
   testerIaVps,
   travailVps,
+  utilisationVps,
   versionDisponibleVps,
 } from "./fournisseurs-vps";
 import { competencesVps, creerSouvenirVps, diagnosticVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
@@ -238,6 +241,7 @@ const CONTENT_SECURITY_POLICY = politiqueContenu(sourcesConvex());
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  PRIVILEGE_SCHEMA,
 ]);
 
 /** `/chat` → `out/chat.html`, `/` → `out/index.html`, assets tels quels. */
@@ -677,6 +681,18 @@ function registerBridge() {
     const origine = vps(lieu);
     return origine ? modelesVps(origine, jetonServeur(origine), id) : (moteurConnu(id).modeles?.() ?? []);
   });
+  /* Les limites de l'abonnement de chaque moteur (anneaux du rail) : la dernière connue, ou relue (`actualiser`).
+     Celles de ce PC arrivent aussi d'elles-mêmes sur `moteurs:utilisation` pendant le travail des agents. */
+  handle("moteurs:utilisation", (id: string, lieu?: string | null, actualiser?: unknown) => {
+    const origine = vps(lieu);
+    if (origine) return utilisationVps(origine, jetonServeur(origine), id, actualiser === true);
+    return moteurConnu(id).utilisation?.(actualiser === true) ?? null;
+  });
+  for (const m of moteurs.liste()) {
+    m.surUtilisation?.((u) => {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("moteurs:utilisation", m.id, u);
+    });
+  }
   handle("moteurs:version-disponible", (id: string, lieu?: string | null) => {
     const origine = vps(lieu);
     return origine ? versionDisponibleVps(origine, jetonServeur(origine), id) : (moteurConnu(id).versionDisponible?.() ?? null);
@@ -837,6 +853,9 @@ function registerBridge() {
   handle("rendus:supprimer", (chemin: string) => supprimerCopieRendu(chemin));
   handle("rendus:enregistrer", (chemin: string, dossier: string | null) => enregistrerRenduDans(chemin, dossier));
   handle("rendus:dossier-agent", (agent: string, quoi: string) => ouvrirDossierAgent(agent, quoi));
+  /* HTML déjà lu par l'écran (`contenu`). L'adresse de stockage n'est pas un argument. */
+  handle("documents:ouvrir", (html: string, titre: string) => ouvrirHtml(html, titre));
+  handle("documents:vignette", (cle: string, html: string, forcer: boolean) => vignetteHtml(cle, html, !!forcer));
   handle("claude-ai:etat", () => etatClaudeAi());
   handle("claude-ai:connexion", () => connecterClaudeAi(BrowserWindow.getFocusedWindow() ?? undefined));
   handle("claude-ai:deconnexion", () => deconnecterClaudeAi());

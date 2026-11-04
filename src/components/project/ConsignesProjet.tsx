@@ -10,7 +10,7 @@ import { ouvrirFichier as ouvrirDansVisionneuse } from "./Visionneuse";
 
 /**
  * Les consignes du projet pour ses agents (electron/consignes-projet.ts) : un AGENTS.md court à remplir,
- * lu par Claude et ChatGPT, en un clic. L'aperçu montre ce qui sera écrit ; rien n'est écrasé.
+ * lu par Claude, ChatGPT et Grok, en un clic. L'aperçu montre ce qui sera écrit ; rien n'est écrasé.
  * Projet de ce poste ou d'un VPS : le même module, lu et écrit là où est le projet.
  */
 export function ConsignesProjet({ project }: { project: Project }) {
@@ -98,7 +98,7 @@ export function ConsignesProjet({ project }: { project: Project }) {
             </div>
           ))}
           <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
-            AGENTS.md est lu par Claude et par ChatGPT ; le CLAUDE.md l’importe pour que toutes les versions de Claude Code le lisent, une seule fois. Garde-le court : chaque ligne est relue à chaque appel.
+            AGENTS.md est lu par Claude, par ChatGPT et par Grok ; le CLAUDE.md l’importe pour que toutes les versions de Claude Code le lisent, une seule fois. Garde-le court : chaque ligne est relue à chaque appel.
           </p>
           <div className="flex gap-2">
             <Bouton variant="sombre" taille="compact" onClick={() => void ecrire()}>

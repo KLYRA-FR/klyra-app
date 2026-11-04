@@ -435,7 +435,7 @@ export function PanneauLateral({
       )}
 
       {/* Onglets, et à droite : ajouter, agrandir, fermer. */}
-      <div className="flex h-[57px] shrink-0 items-center gap-1 border-b border-bordure-subtile px-2">
+      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-bordure-subtile px-2">
         <div role="tablist" aria-label="Onglets du panneau" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {etat.ouverts.map((o) => {
             const choisi = o === actif;

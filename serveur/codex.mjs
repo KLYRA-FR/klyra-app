@@ -11,6 +11,7 @@ import path from "node:path";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { binaireGere } from "./installation.mjs";
+import { lireUtilisationCodex } from "./utilisation.mjs";
 import { preparerSessionCodex } from "./preparation-fournisseur.mjs";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
@@ -99,6 +100,8 @@ export function creerCodex(options) {
         if (r.demandes.delete(id)) r.emit({ type: "autorisation-fin", id, accepte: false });
       } else if (r.tour.notification(method, params)) finir(r);
     }
+    /* Les limites de l'abonnement ChatGPT, envoyées pendant le travail des agents (n'importe quel processus). */
+    if (method === "account/rateLimits/updated") noterUtilisation(params);
     for (const ecouteur of ecouteurs) ecouteur(method, params);
   }
 
@@ -435,7 +438,29 @@ export function creerCodex(options) {
   async function deconnecter() {
     await pret();
     await requete("account/logout", {});
+    /* Les limites étaient celles de ce compte. */
+    derniereUtilisation = null;
     return compte();
+  }
+
+  /* ─── Utilisation de l'abonnement ChatGPT (comme electron/moteurs/codex.ts) ─── */
+
+  let derniereUtilisation = null;
+  function noterUtilisation(brut) {
+    derniereUtilisation = lireUtilisationCodex(brut, derniereUtilisation) ?? derniereUtilisation;
+  }
+
+  /** La dernière connue ; `actualiser` : relue dans le compte (`account/rateLimits/read`, ne consomme rien). */
+  async function utilisation(actualiser) {
+    if (!actualiser && derniereUtilisation) return derniereUtilisation;
+    if (!trouver()) return derniereUtilisation;
+    try {
+      await pret();
+      noterUtilisation(await requete("account/rateLimits/read", { excludeResetCreditDetails: true }));
+    } catch {
+      /* Connecté par une clé API : pas de limites à lire. */
+    }
+    return derniereUtilisation;
   }
 
   async function modeles() {
@@ -453,5 +478,5 @@ export function creerCodex(options) {
     return liste;
   }
 
-  return { trouver, compte, connecter, relayerRetour, etatConnexion, connecterAvecCle, deconnecter, modeles, envoyer, autoriser, annuler, fermer };
+  return { trouver, compte, connecter, relayerRetour, etatConnexion, connecterAvecCle, deconnecter, modeles, utilisation, envoyer, autoriser, annuler, fermer };
 }

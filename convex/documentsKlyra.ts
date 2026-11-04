@@ -1,6 +1,7 @@
+import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { erreur, exigerMembre } from "./model/acces";
 import { DESCRIPTION_MAX } from "./model/artefacts";
 import { nettoyerNom } from "./model/valeurs";
@@ -198,7 +199,41 @@ export const lister = query({
   },
 });
 
-/** L'adresse du HTML partagé dans cet espace. Un document d'un autre espace est introuvable. */
+/**
+ * L'identifiant du fichier dans cet espace. L'écran ne le reçoit pas :
+ * seule l'action `contenu` s'en sert pour lire les octets.
+ */
+export const fichierDansEspace = internalQuery({
+  args: { documentId: v.id("documentsKlyra"), lieu: vLieu },
+  returns: v.id("_storage"),
+  handler: async (ctx, { documentId, lieu }) => {
+    await exigerMembre(ctx);
+    const doc = await dansCetEspace(ctx, documentId, lieuValide(lieu));
+    return doc.fichier;
+  },
+});
+
+/** Référence par nom : importer `internal` ici bouclerait les types avec `_generated/api`. */
+const fichierDansEspaceRef = makeFunctionReference<"query", { documentId: Id<"documentsKlyra">; lieu: string | null }, Id<"_storage">>(
+  "documentsKlyra:fichierDansEspace",
+);
+
+/**
+ * Le HTML partagé dans cet espace, sans adresse de stockage.
+ * Une requête ne peut pas lire les octets. `lire` renvoie l'adresse et l'écran ne l'appelle pas.
+ */
+export const contenu = action({
+  args: { documentId: v.id("documentsKlyra"), lieu: vLieu },
+  returns: v.object({ html: v.string() }),
+  handler: async (ctx, { documentId, lieu }): Promise<{ html: string }> => {
+    const fichier = await ctx.runQuery(fichierDansEspaceRef, { documentId, lieu });
+    const blob = await ctx.storage.get(fichier);
+    if (blob === null) throw erreur("introuvable");
+    return { html: await blob.text() };
+  },
+});
+
+/** L'adresse du HTML partagé dans cet espace. Un document d'un autre espace est introuvable. L'écran ne l'appelle pas. */
 export const lire = query({
   args: { documentId: v.id("documentsKlyra"), lieu: vLieu },
   returns: v.object({ url: v.string() }),

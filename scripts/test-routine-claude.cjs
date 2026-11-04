@@ -99,6 +99,8 @@ function fixture() {
     "./epreuve": require(path.join(path.dirname(filename), "epreuve.js")),
     "./json-partiel": require(path.join(path.dirname(filename), "json-partiel.js")),
     "./atelier-agent": require(path.join(path.dirname(filename), "atelier-agent.js")),
+    // Module pur : la lecture des limites de l'abonnement (rate_limit_event), sans effet.
+    "./utilisation": require(path.join(path.dirname(filename), "utilisation.js")),
     // Module pur : la configuration KLYRA réelle ; ses réglages, ceux par défaut (rien d'adopté).
     "./configuration-klyra": require(path.join(path.dirname(filename), "configuration-klyra.js")),
     "./reglages": { lireReglages: () => ({ configuration: require(path.join(path.dirname(filename), "configuration-klyra.js")).CONFIGURATION_PAR_DEFAUT }) },

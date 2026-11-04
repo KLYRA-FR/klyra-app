@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { brotliDecompressSync } from "node:zlib";
 import type { Progression } from "./types";
 
 /** Les moteurs que l'app installe elle-même, rangés par version : `~/.klyra/moteurs/<moteur>/<version>/`. */
@@ -117,7 +118,25 @@ async function telecharger(url: string, fichier: string, progression: (p: Progre
 }
 
 /**
- * Installe un moteur publié sur npm avec un paquet par plateforme (Codex : `@openai/codex@<v>-win32-x64`) :
+ * Le dossier à ranger, avec le programme dans son `bin/` : `package/vendor/<cible>` (Codex), ou
+ * `package/bin/<programme>` éventuellement compressé en brotli (`<programme>.br`, Grok Build), décompressé ici.
+ */
+function dossierDuProgramme(extrait: string, executable: string): string {
+  const vendor = path.join(extrait, "package", "vendor");
+  const cible = (existsSync(vendor) ? readdirSync(vendor) : []).find((c) => existsSync(path.join(vendor, c, "bin", executable)));
+  if (cible) return path.join(vendor, cible);
+  const bin = path.join(extrait, "package", "bin");
+  const sortie = path.join(extrait, "programme");
+  mkdirSync(path.join(sortie, "bin"), { recursive: true });
+  if (existsSync(path.join(bin, `${executable}.br`))) writeFileSync(path.join(sortie, "bin", executable), brotliDecompressSync(readFileSync(path.join(bin, `${executable}.br`))));
+  else if (existsSync(path.join(bin, executable))) renameSync(path.join(bin, executable), path.join(sortie, "bin", executable));
+  else throw new Error(`Le paquet ne contient pas ${executable}.`);
+  return sortie;
+}
+
+/**
+ * Installe un moteur publié sur npm avec un paquet par plateforme (Codex : `@openai/codex@<v>-win32-x64` ;
+ * Grok Build : `@xai-official/grok-win32-x64@<v>`) :
  * téléchargé, empreinte sha512 comparée à celle de npm, décompressé avec `tar`, et rangé dans
  * `~/.klyra/moteurs/<moteur>/<version>/` (le dossier `vendor/<cible>` du paquet). Rend le chemin du programme.
  * Les anciennes versions de l'app sont retirées ; celle du poste n'est jamais touchée.
@@ -127,10 +146,11 @@ export async function installerDepuisNpm(o: { moteur: string; paquet: string; ex
   const version = o.version ?? (await derniereVersionNpm(o.paquet));
   if (!version) throw new Error(`Impossible de lire la dernière version de ${o.paquet} sur npm.`);
   const meta = await lireJson(urlPaquet(o.paquet, version));
-  const alias = (meta.optionalDependencies as Record<string, string> | undefined)?.[`${o.paquet}-${plateformeNpm()}`];
+  const nomPlateforme = `${o.paquet}-${plateformeNpm()}`;
+  const alias = (meta.optionalDependencies as Record<string, string> | undefined)?.[nomPlateforme];
   if (!alias) throw new Error(`${o.paquet} ${version} n’existe pas pour ce système (${plateformeNpm()}).`);
-  // « npm:@openai/codex@0.166.0-win32-x64 »
-  const spec = alias.replace(/^npm:/, "");
+  // Codex : « npm:@openai/codex@0.166.0-win32-x64 » ; Grok Build : « 1.0.70 », le paquet `@xai-official/grok-linux-x64`.
+  const spec = alias.startsWith("npm:") ? alias.slice(4) : `${nomPlateforme}@${alias}`;
   const arobase = spec.lastIndexOf("@");
   const dist = (await lireJson(urlPaquet(spec.slice(0, arobase), spec.slice(arobase + 1)))).dist as { tarball?: string; integrity?: string } | undefined;
   if (!dist?.tarball || !dist.integrity?.startsWith("sha512-")) throw new Error("npm ne donne pas d’empreinte pour ce paquet : installation refusée.");
@@ -149,15 +169,11 @@ export async function installerDepuisNpm(o: { moteur: string; paquet: string; ex
     mkdirSync(extrait);
     const r = await commande(tar(), ["-xzf", archive, "-C", extrait], 10 * 60_000);
     if (r.code !== 0) throw new Error(`Décompression impossible : ${r.sortie.trim().slice(0, 300)}`);
-    const vendor = path.join(extrait, "package", "vendor");
-    const cibles = existsSync(vendor) ? readdirSync(vendor) : [];
-    const cible = cibles.find((c) => existsSync(path.join(vendor, c, "bin", o.executable)));
-    if (!cible) throw new Error(`Le paquet ne contient pas ${o.executable}.`);
-
     const destination = path.join(racine, o.moteur, version);
+    const source = dossierDuProgramme(extrait, o.executable);
     mkdirSync(path.dirname(destination), { recursive: true });
     rmSync(destination, { recursive: true, force: true });
-    renameSync(path.join(vendor, cible), destination);
+    renameSync(source, destination);
     if (process.platform !== "win32") {
       for (const nom of readdirSync(path.join(destination, "bin"))) chmodSync(path.join(destination, "bin", nom), 0o755);
     }

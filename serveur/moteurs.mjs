@@ -1,6 +1,6 @@
 /**
  * Les moteurs du VPS, vus par Réglages du serveur › Fournisseurs : Claude Code (posé par lancer.sh) et
- * Codex pour ChatGPT (installé depuis l'app, comme sur le PC). Mêmes formes que l'app (`MoteurPoste`,
+ * Codex pour ChatGPT et Grok Build pour Grok (installés depuis l'app, comme sur le PC). Mêmes formes que l'app (`MoteurPoste`,
  * `CompteMoteur`, `ModeleMoteur`, cf. electron/moteurs/types.ts).
  *
  * Installer ou mettre à jour prend du temps : la demande lance un travail et répond tout de suite ;
@@ -9,17 +9,18 @@
 import { commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation.mjs";
 
 /**
- * @param {{ home: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string> },
- *   codex: ReturnType<typeof import("./codex.mjs").creerCodex> }} options
+ * @param {{ home: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string>, utilisation?: () => object | null },
+ *   codex: ReturnType<typeof import("./codex.mjs").creerCodex>, grok?: ReturnType<typeof import("./grok.mjs").creerGrok> }} options
  */
 export function creerMoteurs(options) {
-  const { home, claude, codex } = options;
+  const { home, claude, codex, grok } = options;
   const travaux = new Map();
   let versionClaude = null;
 
   const CATALOGUE = [
     { id: "claude", nom: "Claude Code", fournisseur: "Claude", paquet: "@anthropic-ai/claude-code", trouver: claude.trouver, installable: false },
     { id: "codex", nom: "Codex", fournisseur: "ChatGPT", paquet: "@openai/codex", trouver: codex.trouver, installable: true },
+    ...(grok ? [{ id: "grok", nom: "Grok Build", fournisseur: "Grok", paquet: "@xai-official/grok", trouver: grok.trouver, installable: true }] : []),
   ];
   const connu = (id) => {
     const m = CATALOGUE.find((x) => x.id === id);
@@ -44,6 +45,7 @@ export function creerMoteurs(options) {
 
   async function compte(id) {
     if (connu(id).id === "codex") return codex.compte();
+    if (id === "grok") return grok.compte();
     const bin = claude.trouver();
     const etat = claude.etat();
     return {
@@ -59,7 +61,9 @@ export function creerMoteurs(options) {
     };
   }
 
-  const modeles = (id) => (connu(id).id === "codex" ? codex.modeles() : Promise.resolve([]));
+  const modeles = (id) => (connu(id).id === "codex" ? codex.modeles() : id === "grok" ? grok.modeles() : Promise.resolve([]));
+  /** Les limites de l'abonnement : Codex les relit dans le compte ; Claude Code, la dernière reçue d'une session (sans requête). */
+  const utilisation = async (id, actualiser) => (connu(id).id === "codex" ? codex.utilisation(actualiser === true) : id === "grok" ? null : (claude.utilisation?.() ?? null));
   const versionDisponible = (id) => derniereVersionNpm(connu(id).paquet);
 
   /** Lance l'installation (Codex) ou la mise à jour ; un seul travail à la fois par moteur. */
@@ -72,6 +76,19 @@ export function creerMoteurs(options) {
     travaux.set(id, travail);
     const progression = (p) => Object.assign(travail, p);
     const faire = async () => {
+      if (id === "grok") {
+        const bin = grok.trouver();
+        if (action === "installer" || !bin || estGere(home, bin)) {
+          await installerDepuisNpm({ home, moteur: "grok", paquet: m.paquet, executable: "grok", progression });
+          grok.relancer();
+          return;
+        }
+        grok.relancer();
+        const r = await commande(bin, ["update"], 10 * 60_000, { env: { ...process.env, HOME: home } });
+        grok.relancer();
+        if (r.code !== 0) throw new Error(r.sortie.trim().split("\n").slice(-3).join(" ").slice(0, 400) || "La mise à jour de Grok a échoué.");
+        return;
+      }
       if (id === "codex") {
         const bin = codex.trouver();
         if (action === "installer" || !bin || estGere(home, bin)) {
@@ -99,7 +116,9 @@ export function creerMoteurs(options) {
 
   /** `mode` : « navigateur » (la page d'OpenAI, dont l'app relaie le retour) ou « code » (code d'appareil). */
   function connecter(id, mode) {
-    if (connu(id).id !== "codex") {
+    /* Grok : par code d'appareil seulement (lien + code), il n'y a pas de navigateur sur le VPS. */
+    if (connu(id).id === "grok") return grok.connecter();
+    if (id !== "codex") {
       throw new Error("Claude Code se connecte depuis le VPS : relance la commande d’installation avec « connecter-claude ».");
     }
     return codex.connecter(mode === "code" ? "code" : "navigateur");
@@ -111,13 +130,15 @@ export function creerMoteurs(options) {
   };
 
   const connecterAvecCle = (id, cle) => {
-    if (connu(id).id !== "codex") throw new Error("Claude Code ne se connecte pas avec une clé ici.");
+    if (connu(id).id === "grok") return grok.connecterAvecCle(cle);
+    if (id !== "codex") throw new Error("Claude Code ne se connecte pas avec une clé ici.");
     return codex.connecterAvecCle(cle);
   };
   const deconnecter = (id) => {
-    if (connu(id).id !== "codex") throw new Error("Claude Code se déconnecte depuis le VPS.");
+    if (connu(id).id === "grok") return grok.deconnecter();
+    if (id !== "codex") throw new Error("Claude Code se déconnecte depuis le VPS.");
     return codex.deconnecter();
   };
 
-  return { liste, compte, modeles, versionDisponible, lancerTravail, connecter, relayerRetour, etatConnexion: codex.etatConnexion, connecterAvecCle, deconnecter };
+  return { liste, compte, modeles, utilisation, versionDisponible, lancerTravail, connecter, relayerRetour, etatConnexion: (id) => (id === "grok" ? grok.etatConnexion() : codex.etatConnexion()), connecterAvecCle, deconnecter };
 }

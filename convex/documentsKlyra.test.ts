@@ -62,6 +62,11 @@ describe("documents KLYRA", () => {
     await expect(a.query(api.documentsKlyra.lire, { documentId: id, lieu: VPS })).rejects.toThrow(/introuvable/);
     await expect(b.query(api.documentsKlyra.lire, { documentId: id, lieu: VPS })).rejects.toThrow(/introuvable/);
     expect((await b.query(api.documentsKlyra.lire, { documentId: id, lieu: PC })).url).toContain("http");
+    const lu = await b.action(api.documentsKlyra.contenu, { documentId: id, lieu: PC });
+    expect(lu).toEqual({ html: "<p>secret</p>" });
+    expect(lu).not.toHaveProperty("url");
+    expect(JSON.stringify(lu)).not.toContain("convex.cloud");
+    await expect(b.action(api.documentsKlyra.contenu, { documentId: id, lieu: VPS })).rejects.toThrow(/introuvable/);
     const espace = await b.query(api.documentsKlyra.espace, {});
     expect(espace).toEqual({ octets: ici.documents[0].taille, nombre: 1, complet: true });
   });
@@ -198,6 +203,7 @@ describe("documents KLYRA", () => {
     await expect(t.query(api.documentsKlyra.lister, { lieu: PC })).rejects.toThrow(/non_connecte/);
     await expect(t.query(api.documentsKlyra.espace, {})).rejects.toThrow(/non_connecte/);
     await expect(t.query(api.documentsKlyra.lire, { documentId: id, lieu: PC })).rejects.toThrow(/non_connecte/);
+    await expect(t.action(api.documentsKlyra.contenu, { documentId: id, lieu: PC })).rejects.toThrow(/non_connecte/);
     await expect(t.mutation(api.documentsKlyra.preparerDepot, {})).rejects.toThrow(/non_connecte/);
     await expect(
       t.mutation(api.documentsKlyra.partager, { fichier: await deposer(t), titre: "Page", description: "", origine: "/tmp/a.html", agent: null, lieu: PC }),

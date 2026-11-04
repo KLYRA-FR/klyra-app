@@ -2,6 +2,8 @@ import { net, shell } from "electron";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { PAGE_ISOLEE } from "./document-isole";
+import { ouvrirChemin } from "./fenetre-document";
 import { dansLesRendus, nomLibre, RACINE_RENDUS, type CopieRendu } from "./rendus";
 
 /**
@@ -128,6 +130,10 @@ export async function ouvrirRenduVps(origine: string, jeton: string | null, id: 
   const copie = await deposer(path.join(os.tmpdir(), "klyra-rendus-ouverts"), origine, jetonOk, d.id, d.agent, d.base, dossier);
   const cible = dossier ? path.join(copie.chemin, "index.html") : copie.chemin;
   if (!existsSync(cible)) throw new Error("Ce livrable n’a pas de page à ouvrir.");
+  if (PAGE_ISOLEE.test(cible)) {
+    await ouvrirChemin(dossier ? copie.chemin : cible);
+    return;
+  }
   const erreur = await shell.openPath(cible);
   if (erreur) throw new Error(erreur);
 }

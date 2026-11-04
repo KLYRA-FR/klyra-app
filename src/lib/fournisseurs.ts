@@ -2,11 +2,12 @@ import type { Chat, Message, RoleId } from "@/types/domain";
 
 /**
  * Les fournisseurs qui font travailler les agents (cf. electron/moteurs) : ce que tu choisis
- * (« ChatGPT »), et le moteur que l'app lance (« codex »). Claude Code reste celui par défaut.
+ * (« ChatGPT », « Grok »), et le moteur que l'app lance (« codex », « grok »). Claude Code reste celui par défaut.
  */
 export const FOURNISSEURS = [
   { id: "claude", nom: "Claude", moteur: "Claude Code", initiale: "C" },
   { id: "codex", nom: "ChatGPT", moteur: "Codex", initiale: "G" },
+  { id: "grok", nom: "Grok", moteur: "Grok Build", initiale: "X" },
 ] as const;
 
 export type IdFournisseur = (typeof FOURNISSEURS)[number]["id"];

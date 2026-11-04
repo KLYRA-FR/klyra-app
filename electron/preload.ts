@@ -55,6 +55,12 @@ contextBridge.exposeInMainWorld("klyra", {
     versionDisponible: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:version-disponible", id, lieu ?? null),
     installer: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:installer", id, lieu ?? null),
     mettreAJour: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:mettre-a-jour", id, lieu ?? null),
+    utilisation: (id: string, lieu?: string | null, actualiser?: boolean) => ipcRenderer.invoke("moteurs:utilisation", id, lieu ?? null, actualiser === true),
+    onUtilisation: (callback: (id: string, u: unknown) => void) => {
+      const listener = (_e: unknown, id: string, u: unknown) => callback(id, u);
+      ipcRenderer.on("moteurs:utilisation", listener);
+      return () => ipcRenderer.removeListener("moteurs:utilisation", listener);
+    },
     onProgression: (callback: (id: string, p: unknown, lieu: string | null) => void) => {
       const listener = (_e: unknown, id: string, p: unknown, lieu: string | null) => callback(id, p, lieu ?? null);
       ipcRenderer.on("moteurs:progression", listener);
@@ -138,6 +144,12 @@ contextBridge.exposeInMainWorld("klyra", {
     supprimer: (chemin: string) => ipcRenderer.invoke("rendus:supprimer", chemin),
     enregistrer: (chemin: string, dossier: string | null) => ipcRenderer.invoke("rendus:enregistrer", chemin, dossier),
     dossierAgent: (agent: string, quoi: "rendus" | "atelier") => ipcRenderer.invoke("rendus:dossier-agent", agent, quoi),
+  },
+  documents: {
+    /** Ouvre le HTML dans la fenêtre isolée. Pas d'adresse de stockage. */
+    ouvrir: (html: string, titre: string) => ipcRenderer.invoke("documents:ouvrir", html, titre),
+    /** Vignette PNG (data URL). `cle` est l'identifiant et la date, pas une adresse. */
+    vignette: (cle: string, html: string, forcer: boolean) => ipcRenderer.invoke("documents:vignette", cle, html, forcer),
   },
   fenetres: {
     ouvrir: (url: string) => ipcRenderer.invoke("fenetres:ouvrir", url),
