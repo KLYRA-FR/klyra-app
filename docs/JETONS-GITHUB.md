@@ -1,0 +1,46 @@
+# Jetons GitHub des agents
+
+Quand un projet de KLYRA-FR passe par le circuit des Issues, ses agents n'utilisent pas le compte de la personne : ils demandent un jeton d'une heure, limité au dépôt de ce projet. Cela vaut pour tout projet de l'organisation, pas seulement pour klyra-app.
+
+| App | Rôle | App ID | Code |
+|---|---|---|---|
+| `klyra-agents` | Exécuter : code, Issues, PR | 5618456 | Écriture |
+| `klyra-reviewer` | Relire : Issues, PR | 5618483 | Lecture |
+
+Aucune n'a `administration`, `workflows` ni `secrets`. Les Apps sont installées sur tous les dépôts de KLYRA-FR : un nouveau projet de l'organisation est joignable sans rien réinstaller. **La limite vient du code** : chaque jeton ne vaut que pour un dépôt, et seulement si `accesDepots` l'accorde à la personne.
+
+## Poser les clés
+
+Une fois par App, sur le déploiement de production : tableau de bord Convex › Settings › Environment Variables.
+
+| Variable | Valeur |
+|---|---|
+| `GITHUB_APP_AGENTS_CLE` | Tout le contenu du `.pem` de `klyra-agents` |
+| `GITHUB_APP_REVIEWER_CLE` | Tout le contenu du `.pem` de `klyra-reviewer` |
+
+Un retour à la ligne perdu au collage n'est pas un problème, la clé est reconstruite. Jamais de clé dans Git, une conversation ou une Issue.
+
+## Accorder ou retirer un accès
+
+Seulement depuis le tableau de bord Convex (Functions) ou `npx convex run` : aucun écran ni agent ne peut s'accorder un accès. La personne doit s'être connectée une fois à l'app.
+
+```bash
+npx convex run --prod jetonsDepot:accorder '{"email":"prenom@klyra.design","depot":"KLYRA-FR/klyra-app"}'
+```
+
+```bash
+npx convex run --prod jetonsDepot:retirer '{"email":"prenom@klyra.design","depot":"KLYRA-FR/klyra-app"}'
+```
+
+## Demander un jeton
+
+`jetonsDepotEnvoi:demander` avec `{ depot, role }`, par une session de l'app. Trente demandes par heure au plus, par personne. Chaque demande est tracée dans `demandesJetonDepot`, jamais le jeton.
+
+| Refus | Sens |
+|---|---|
+| `depot_invalide` | Pas un dépôt de KLYRA-FR |
+| `depot_non_autorise` | Accès non accordé à cette personne |
+| `jetons_non_configures` | Clé absente, invalide, ou refusée par GitHub |
+| `app_non_installee` | L'App n'a pas accès à ce dépôt |
+| `github_indisponible` | GitHub ne répond pas ou est en erreur |
+| `trop_tot` | Limite horaire atteinte |

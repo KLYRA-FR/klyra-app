@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { vRoleDepot } from "./model/depots";
 import { vRole, vStatutInvitation } from "./model/valeurs";
 
 /**
@@ -377,6 +378,21 @@ export default defineSchema({
     .index("by_membre", ["membreId"])
     .index("by_sessionId", ["sessionId"])
     .index("by_endpoint", ["endpoint"]),
+
+  /** Qui peut demander un jeton GitHub, pour quel dépôt (`klyra-fr/nom` en minuscules). Cf. `jetonsDepot.ts`. */
+  accesDepots: defineTable({
+    membreId: v.id("membres"),
+    depot: v.string(),
+    cree: v.number(),
+  }).index("by_membre_and_depot", ["membreId", "depot"]),
+
+  /** La trace de chaque demande de jeton, et la base de sa limite horaire. Jamais le jeton. */
+  demandesJetonDepot: defineTable({
+    membreId: v.id("membres"),
+    depot: v.string(),
+    role: vRoleDepot,
+    cree: v.number(),
+  }).index("by_membre_and_cree", ["membreId", "cree"]),
 
   /** Développement seulement (`KLYRA_COURRIEL_SIMULE=1`, sans clé PostShiba) : les e-mails au lieu de l'envoi. */
   courrielsSimules: defineTable({
