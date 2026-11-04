@@ -1191,6 +1191,7 @@ ouvrirLienKlyra(lienDans(process.argv));
 /**
  * Copie une fois les fiches et les skills du poste dans le dossier de l'app.
  * N'écrit le marqueur qu'après la copie. Ne supprime et ne modifie rien du poste.
+ * Ensuite l'éditeur lit `equipe` : une fiche apparue plus tard sur le poste n'est pas reprise.
  * Une skill apparue ensuite sur le poste n'est pas recopiée : l'interrupteur décide.
  */
 function reprendreEquipe(): void {
@@ -1218,15 +1219,16 @@ async function figerSkillsPersonnelles(): Promise<void> {
 }
 
 void app.whenReady().then(async () => {
-  /* Mes agents d'abord : sa première création décide entre reprise et nouveau profil,
-     avant que l'interface écrive ses propres données. */
-  await chargerMesAgents(MODELES_KLYRA).catch((e) => console.error("Mes agents illisible :", e));
-  /* Une fois : copie des fiches et des skills dans le dossier de l'app. Le poste n'est pas touché. */
+  /* La copie d'abord : Mes agents lit le dossier de l'app, qui doit déjà contenir les fiches du poste.
+     Le marqueur n'est pas une donnée de reprise (conversations, réglages, historique). */
   try {
     reprendreEquipe();
   } catch (e) {
     console.error("Reprise de l’équipe non faite :", e);
   }
+  /* Puis Mes agents : sa première création décide entre reprise et nouveau profil,
+     avant que l'interface écrive ses propres données. */
+  await chargerMesAgents(MODELES_KLYRA).catch((e) => console.error("Mes agents illisible :", e));
   /* Premier lancement de cette version : les skills personnelles déjà là restent reçues par les agents déjà là. */
   await figerSkillsPersonnelles().catch((e) => console.error("Choix des skills non figé :", e));
   // Sans version installée, macOS prend l'icône d'Electron : on la remplace dans le Dock.

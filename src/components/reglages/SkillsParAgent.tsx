@@ -74,7 +74,7 @@ export function SkillsParAgent() {
   return (
     <Groupe
       titre="Skills de chaque agent"
-      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Au lancement, KLYRA prépare pour Claude un dossier à part : les agents actifs, et seulement ces skills. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
+      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Au lancement, KLYRA prépare pour Claude un dossier à part : les fiches de l’app (copiées une fois depuis le poste, puis lues et écrites ici) et seulement ces skills. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
     >
       <Ligne
         id="skills-par-agent"

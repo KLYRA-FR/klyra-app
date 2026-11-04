@@ -73,10 +73,11 @@ function texteDe(dossier) {
 function profil(nom) {
   const racine = path.join(TMP, nom);
   const home = path.join(racine, "home");
-  const agents = path.join(home, ".claude", "agents");
+  const poste = path.join(home, ".claude", "agents");
   const donnees = path.join(racine, "userdata");
+  const agents = path.join(donnees, "equipe");
   const dossierChoisi = path.join(racine, "Contrats");
-  for (const d of [agents, donnees, dossierChoisi]) mkdirSync(d, { recursive: true });
+  for (const d of [poste, agents, donnees, dossierChoisi]) mkdirSync(d, { recursive: true });
   return {
     home,
     agents,

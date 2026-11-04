@@ -113,13 +113,14 @@ export interface ClaudeResult {
 const running = new Map<string, ChildProcess>();
 
 /*
- * Ce que Claude Code charge vraiment : toutes les fiches de `~/.claude/agents` (et de `.claude/agents`
- * du projet), celles des plugins et des réglages gérés. Seuls les agents actifs de Mes agents restent :
+ * Ce que Claude Code charge vraiment : les fiches actives du dossier préparé (copiées depuis
+ * le dossier de l'app), plus `.claude/agents` du projet, les plugins et les réglages gérés.
+ * Seuls les agents actifs de Mes agents restent :
  * - chaque fiche lue qui n'est pas active est refusée (`Agent(<nom>)`) : le modèle ne la voit plus dans
  *   la liste des agents, et son appel échoue ;
  * - tout appel d'agent passe en plus par l'app (règle `ask`), qui n'accepte que les agents actifs et
  *   ceux de Claude Code (`agentAutorise`) : le filet pour les plugins et les fiches apparues depuis.
- * Les fiches elles-mêmes ne sont jamais touchées : d'autres outils les lisent.
+ * Les fiches du poste ne sont jamais modifiées. Celles de l'app non plus par ce refus.
  */
 const refusAgents = (cwd: string) => agentsARefuser(cwd).map((nom) => `Agent(${nom})`);
 /** Permissions de la session. Les skills coupées s'y ajoutent (`reglagesSession`) ; sans coupe, le JSON reste celui-ci. */

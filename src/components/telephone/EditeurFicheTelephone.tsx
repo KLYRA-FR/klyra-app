@@ -357,7 +357,7 @@ function CreationFiche() {
           <ErreurGeste message={erreur ? `La création a échoué : ${erreur.message}` : null} />
         </div>
       </div>
-      <Barre libelle={occupe ? "Création…" : "Créer l’agent"} disabled={!ouvert || occupe} onClick={() => void creer()} ouvert={ouvert} detail={`Crée ~/.claude/agents/${id || "identifiant"}.md sur ${sur}.`} />
+      <Barre libelle={occupe ? "Création…" : "Créer l’agent"} disabled={!ouvert || occupe} onClick={() => void creer()} ouvert={ouvert} detail={`Crée la fiche ${id || "identifiant"}.md dans l’app, sur ${sur}.`} />
       {abandon ? (
         <ConfirmationFeuille
           titre="Abandonner les modifications ?"

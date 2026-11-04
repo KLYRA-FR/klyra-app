@@ -8,7 +8,7 @@ import type { Role } from "@/types/domain";
  */
 
 export function consigne(role: Role, base: string, demande: string): string {
-  return `Tu modifies la fiche du sous-agent « ${role.name} » (${role.id}), fichier ~/.claude/agents/${role.id}.md.
+  return `Tu modifies la fiche du sous-agent « ${role.name} » (${role.id}), celle que KLYRA affiche.
 
 Voici la fiche actuelle :
 <fiche>
