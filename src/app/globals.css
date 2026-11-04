@@ -770,18 +770,18 @@ body[data-glisse] iframe {
   transition: transform 560ms var(--ease-sortie), opacity 240ms var(--ease-sortie);
 }
 
-/* L'avatar de l'agent qui construit (carré arrondi au quart, 30 px) : un anneau de sa couleur en fait le tour. */
+/* L'avatar de l'agent qui construit (carré arrondi au quart, `--klyra-rayon`, 8 px pour 30 px) : un anneau de sa couleur en fait le tour. */
 .klyra-wf-anneau {
   position: relative;
   display: inline-flex;
-  border-radius: 8px;
+  border-radius: var(--klyra-rayon, 8px);
 }
 
 .klyra-wf-anneau::before {
   content: "";
   position: absolute;
   inset: -3px;
-  border-radius: 11px;
+  border-radius: calc(var(--klyra-rayon, 8px) + 3px);
   padding: 2px;
   background: conic-gradient(from var(--klyra-angle), transparent 0 40%, var(--klyra-agent, var(--color-bleu-k1-500)) 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -807,7 +807,35 @@ body[data-glisse] iframe {
   from { opacity: 0; transform: translateY(6px); }
 }
 
+/* Le téléphone lit un workflow en liste d'étapes : une étape posée par l'agent, pas encore enregistrée,
+   porte un trait en pointillés de sa couleur ; celle qu'il écrit est teintée ; enregistrée, elle s'éclaire. */
+.klyra-wf-ligne-fantome,
+.klyra-wf-ligne-ecrit {
+  background:
+    linear-gradient(var(--klyra-agent, var(--color-bleu-k1-500)) 50%, transparent 0) left top / 2px 8px repeat-y,
+    color-mix(in srgb, var(--klyra-agent, var(--color-bleu-k1-500)) 6%, transparent);
+}
+
+.klyra-wf-ligne-ecrit {
+  background:
+    linear-gradient(var(--klyra-agent, var(--color-bleu-k1-500)) 50%, transparent 0) left top / 2px 8px repeat-y,
+    color-mix(in srgb, var(--klyra-agent, var(--color-bleu-k1-500)) 14%, transparent);
+}
+
+.klyra-wf-ligne-modif {
+  box-shadow: inset 2px 0 0 var(--klyra-agent, var(--color-bleu-k1-500));
+}
+
+.klyra-wf-eclat {
+  animation: klyra-wf-eclat 1600ms var(--ease-sortie);
+}
+
+@keyframes klyra-wf-eclat {
+  from { background-color: color-mix(in srgb, var(--klyra-agent, var(--color-bleu-k1-500)) 22%, transparent); }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .klyra-wf-eclat,
   .klyra-wf-pose,
   .klyra-wf-ne,
   .klyra-wf-geste,

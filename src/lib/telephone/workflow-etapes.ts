@@ -1,6 +1,7 @@
 import { FICHES, LIBELLES_STATUT_EXECUTION, nomNoeud } from "@/components/workflows/catalogue";
 import { libelleFrequence } from "@/lib/planning";
 import { ErreurPoste } from "@/lib/poste/types";
+import type { Chantier } from "@/lib/workflows/chantiers";
 import { texteSortie } from "@/lib/workflows/moteur";
 import type { Frequence } from "@/types/domain";
 import {
@@ -8,6 +9,7 @@ import {
   liensBoucle,
   type Branche,
   type EtapeWorkflow,
+  type Graphe,
   type ExecutionWorkflow,
   type Noeud,
   type SourceExecution,
@@ -84,6 +86,27 @@ export interface AgentWorkflow {
   actif: boolean;
 }
 
+/**
+ * Un agent construit ce workflow en ce moment (cf. `src/lib/workflows/chantiers.ts`) : ce que le
+ * téléphone en montre, sans le dessin. Le graphe en cours est celui de `noeuds` et `liens`.
+ */
+export interface ChantierLu {
+  agent: { id: string; name: string; teinte: string };
+  /** Un workflow que l'agent crée : il n'existe pas encore sur l'ordinateur. */
+  nouveau: boolean;
+  /** ecrit : l'agent écrit encore ; pose : l'app pose les étapes ; fini : enregistré à l'instant. */
+  phase: Chantier["phase"];
+  /** Les étapes posées par l'agent, et celles déjà là qu'il change. */
+  nouveaux: string[];
+  modifies: string[];
+  /** L'étape qu'il écrit (pour un lien : celle où il arrive). */
+  enEcriture: string | null;
+  /** Ses derniers gestes, le plus récent d'abord (« Ajoute Maquette »). */
+  gestes: string[];
+  etapes: number;
+  liens: number;
+}
+
 /** Réponse de `workflows.liste` (T-18). */
 export interface LigneWorkflow {
   id: string;
@@ -92,6 +115,8 @@ export interface LigneWorkflow {
   declencheur: string;
   etapes: number;
   derniere: ResumeExecution | null;
+  /** Un agent le construit (absent d'un ordinateur d'avant cette version). */
+  chantier?: ChantierLu | null;
 }
 
 /** Réponse de `workflows.lire` (T-19). */
@@ -111,6 +136,8 @@ export interface WorkflowLu {
   vue: ExecutionLue | null;
   enCours: string | null;
   agents: AgentWorkflow[];
+  /** Un agent le construit : `noeuds` et `liens` sont alors son graphe en cours. */
+  chantier?: ChantierLu | null;
 }
 
 export interface VersionLue {
@@ -187,6 +214,89 @@ export function ligneWorkflow(wf: Workflow, executions: readonly ExecutionWorkfl
     derniere: derniere ? resumeExecution(derniere, wf.graphe.noeuds) : null,
   };
 }
+
+/* ─── Un agent construit ───────────────────────────────────────── */
+
+/** Les gestes gardés pour le téléphone : les trois derniers, comme la pastille du bureau. */
+const GESTES_LUS = 3;
+
+/** Ce que l'ordinateur envoie d'un chantier. `agent` : son nom et sa teinte, lus dans l'équipe. */
+export function chantierLu(c: Chantier, agent: { name: string; teinte: string } | null): ChantierLu {
+  const lien = c.enEcriture ? c.graphe.liens.find((l) => l.id === c.enEcriture) : null;
+  const enEcriture = lien ? lien.vers : c.enEcriture && c.graphe.noeuds.some((n) => n.id === c.enEcriture) ? c.enEcriture : null;
+  return {
+    agent: { id: c.roleId, name: agent?.name ?? c.roleId, teinte: agent?.teinte ?? "bleu-k1" },
+    nouveau: c.nouveau,
+    phase: c.phase,
+    nouveaux: c.nouveaux,
+    modifies: c.modifies,
+    enEcriture: c.phase === "fini" ? null : enEcriture,
+    gestes: c.gestes.slice(-GESTES_LUS).reverse().map((g) => g.texte),
+    etapes: c.nouveaux.length,
+    liens: c.liensNouveaux.length,
+  };
+}
+
+/** Le chantier de ce workflow, s'il y en a un (le plus récent, s'il y en avait deux). */
+export function chantierDuWorkflow(chantiers: readonly Chantier[], id: string): Chantier | null {
+  return [...chantiers].filter((c) => c.workflowId === id).sort((a, b) => b.debut - a.debut)[0] ?? null;
+}
+
+/** La ligne de la liste d'un workflow que l'agent crée : il n'est pas encore enregistré. */
+export function ligneChantier(c: Chantier, lu: ChantierLu, maintenant: string): LigneWorkflow {
+  return {
+    id: c.workflowId,
+    titre: c.titre,
+    majLe: maintenant,
+    declencheur: libelleDeclencheur(c.graphe.noeuds),
+    etapes: c.graphe.noeuds.filter((n) => estEtape(n.type)).length,
+    derniere: null,
+    chantier: lu,
+  };
+}
+
+/**
+ * La liste du téléphone (`workflows.liste`) : en tête, les workflows qu'un agent crée en ce moment
+ * (pas encore enregistrés), puis tous les autres, le dernier modifié d'abord, avec leur chantier.
+ */
+export function listeWorkflows(
+  workflows: readonly Workflow[],
+  executions: readonly ExecutionWorkflow[],
+  chantiers: readonly Chantier[],
+  agentDe: (id: string) => { name: string; teinte: string } | null,
+  maintenant: string,
+): LigneWorkflow[] {
+  const nouveaux = chantiers
+    .filter((c) => c.nouveau && !workflows.some((w) => w.id === c.workflowId))
+    .sort((a, b) => b.debut - a.debut)
+    .map((c) => ligneChantier(c, chantierLu(c, agentDe(c.roleId)), maintenant));
+  const lignes = [...workflows]
+    .sort((a, b) => b.majLe.localeCompare(a.majLe))
+    .map((wf) => {
+      const c = chantierDuWorkflow(chantiers, wf.id);
+      return { ...ligneWorkflow(wf, executions), ...(c ? { chantier: chantierLu(c, agentDe(c.roleId)) } : {}) };
+    });
+  return [...nouveaux, ...lignes];
+}
+
+/** Les nœuds et liens envoyés au téléphone, d'un graphe (celui du workflow, ou du chantier). */
+export function grapheLu(g: Graphe): { noeuds: NoeudLu[]; liens: LienLu[] } {
+  return { noeuds: g.noeuds.map(noeudLu), liens: g.liens.map((l) => ({ id: l.id, de: l.de, vers: l.vers, ...(l.branche ? { branche: l.branche } : {}) })) };
+}
+
+/** Ce que la construction fait d'une étape, sur le téléphone. */
+export function etatChantier(c: ChantierLu | null | undefined, noeudId: string): "fantome" | "ecrit" | "modif" | "ne" | null {
+  if (!c) return null;
+  const nouvelle = c.nouveaux.includes(noeudId);
+  if (!nouvelle && !c.modifies.includes(noeudId)) return null;
+  if (c.phase === "fini") return "ne";
+  if (c.enEcriture === noeudId) return "ecrit";
+  return nouvelle ? "fantome" : "modif";
+}
+
+/** La relecture du téléphone : chaque seconde pendant qu'un agent construit, sinon toutes les 4 s pendant une exécution. */
+export const RELECTURE_CHANTIER_MS = 1000;
+export const enTravaux = (c: ChantierLu | null | undefined) => !!c && c.phase !== "fini";
 
 /** « Attend ton accord · 3/8 », « Réussie », « Échec ». */
 export function libelleExecution(e: ResumeExecution, total: number): string {

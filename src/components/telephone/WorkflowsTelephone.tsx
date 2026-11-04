@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Input, Textarea } from "klyra-ui";
@@ -13,6 +13,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { cn } from "@/lib/cn";
+import { reduit } from "@/lib/mouvement";
 import { libelleFrequence, NOMS_JOURS } from "@/lib/planning";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { majuscule } from "@/lib/poste-texte";
@@ -22,14 +23,18 @@ import {
   CHAMPS_ETAPE,
   enCoursExecution,
   entreeEtape,
+  enTravaux,
+  etatChantier,
   etatsEtapes,
   libelleAnnotations,
   libelleExecution,
   libelleUnDeclencheur,
   miseAPlat,
   modifiable,
+  RELECTURE_CHANTIER_MS,
   texteAnnotation,
   type ChampEtape,
+  type ChantierLu,
   type EtapeLue,
   type LigneEtape,
   type LigneWorkflow,
@@ -45,6 +50,7 @@ import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong } from "./Feuil
 import { NotePoste, SurLePoste, VueLecture, useBandeau } from "./etats";
 import { usePostes, useSupport } from "./poste";
 import { CHAMP_KLYRA_UI } from "./Controles";
+import { AvatarConstructeur, BandeauConstructionTelephone, couleurChantier, verbeChantier } from "./ChantierTelephone";
 
 /**
  * Automatisations › Workflows sur le téléphone (spec mobile T-18, T-19). Le canevas devient une
@@ -235,7 +241,15 @@ function FeuilleVersions({ id, onFermer, onChoisir }: { id: string; onFermer: ()
 
 export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
   const router = useRouter();
-  const lecture = useLectureSuivie<LigneWorkflow[]>("workflows.liste", {}, { suivre: (l) => l.some((w) => w.derniere && enCoursExecution(w.derniere)) });
+  /* Suivie pendant une exécution, et chaque seconde pendant qu'un agent construit un workflow. */
+  const lecture = useLectureSuivie<LigneWorkflow[]>(
+    "workflows.liste",
+    {},
+    {
+      suivre: (l) => l.some((w) => (w.derniere && enCoursExecution(w.derniere)) || w.chantier),
+      intervalle: (l) => (l.some((w) => enTravaux(w.chantier)) ? RELECTURE_CHANTIER_MS : 5000),
+    },
+  );
   const tirer = useTirerPourRelire(lecture.relancer, { enCours: lecture.relecture });
   const actions = useActionsWorkflow({ relancer: lecture.relancer });
 
@@ -273,10 +287,31 @@ export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
 }
 
 function LigneListeWorkflow({ wf, onOuvrir, onMenu }: { wf: LigneWorkflow; onOuvrir: () => void; onMenu: () => void }) {
-  const appui = useAppuiLong(onMenu);
+  const c = wf.chantier ?? null;
+  /* Un workflow qu'un agent crée n'existe pas encore sur l'ordinateur : rien à y faire, on regarde. */
+  const virtuel = !!c?.nouveau && enTravaux(c);
+  const appui = useAppuiLong(virtuel ? () => {} : onMenu);
   const d = wf.derniere;
+  if (c && enTravaux(c))
+    return (
+      <li className="klyra-wf-pose flex items-center gap-1 border-b border-bordure-subtile" {...appui} style={{ ...appui.style, ...couleurChantier(c).style }}>
+        <button type="button" onClick={onOuvrir} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2 text-left active:bg-fond-survol">
+          <AvatarConstructeur chantier={c} />
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="truncate text-body-s font-medium text-texte-principal">{wf.titre}</span>
+            <span className="truncate text-ui-xs text-texte-secondaire">
+              <span className="font-medium text-texte-principal">{c.agent.name}</span> {verbeChantier(c)} · {c.etapes} étape{c.etapes > 1 ? "s" : ""}
+            </span>
+            {c.gestes[0] ? <span className={cn("truncate text-ui-xs text-texte-tertiaire", c.phase === "ecrit" && "klyra-curseur-texte")}>{c.gestes[0]}</span> : null}
+          </span>
+        </button>
+        {virtuel ? null : (
+          <BoutonIcone variant="discret" taille="md" libelle={`Actions de ${wf.titre}`} aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={onMenu} />
+        )}
+      </li>
+    );
   return (
-    <li className="flex items-center gap-1 border-b border-bordure-subtile" {...appui}>
+    <li className={cn("flex items-center gap-1 border-b border-bordure-subtile", c?.phase === "fini" && "klyra-wf-eclat")} {...appui} style={{ ...appui.style, ...(c ? couleurChantier(c).style : {}) }}>
       <button type="button" onClick={onOuvrir} className="flex min-h-16 min-w-0 flex-1 flex-col justify-center gap-0.5 py-2 text-left active:bg-fond-survol">
         <span className="truncate text-body-s font-medium text-texte-principal">{wf.titre}</span>
         <span className="truncate text-ui-xs text-texte-secondaire">
@@ -311,7 +346,11 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
   const lecture = useLectureSuivie<WorkflowLu>(
     "workflows.lire",
     { id, version: versionId, execution: vue, limite },
-    { garde: `${id}|${versionId}`, suivre: (w) => !!w.enCours, intervalle: 4000 },
+    {
+      garde: `${id}|${versionId}`,
+      suivre: (w) => !!w.enCours || !!w.chantier,
+      intervalle: (w) => (enTravaux(w.chantier) ? RELECTURE_CHANTIER_MS : 4000),
+    },
   );
   const { relancer } = lecture;
   const tirer = useTirerPourRelire(relancer, { enCours: lecture.relecture });
@@ -327,7 +366,10 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
   const etats = useMemo(() => etatsEtapes(data?.vue ?? null), [data]);
   const total = data?.noeuds.filter((n) => estEtape(n.type)).length ?? 0;
   const enCours = data?.executions.find((e) => e.id === data.enCours) ?? (data?.vue && data.vue.id === data.enCours ? data.vue : undefined);
-  const lectureSeule = !!data?.version;
+  /* Un agent construit : on regarde, on ne modifie pas une étape qu'il est en train d'écrire. */
+  const chantier = data?.chantier ?? null;
+  const travaux = enTravaux(chantier);
+  const lectureSeule = !!data?.version || travaux;
   const indisponible = !ouvert || occupe;
   const nomAgent = (agentId: string) => data?.agents.find((a) => a.id === agentId)?.name ?? agentId;
 
@@ -352,12 +394,14 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
         titre={data?.titre ?? "Workflow"}
         parent={versionId ? urlWorkflows(id) : urlWorkflows()}
         droite={
-          data && !lectureSeule ? (
+          data && !lectureSeule && !(chantier?.nouveau && travaux) ? (
             <BoutonIcone variant="discret" taille="md" libelle="Actions du workflow" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => actions.ouvrir(data)} />
           ) : null
         }
       />
-      {data?.version ? (
+      {chantier ? (
+        <BandeauConstructionTelephone chantier={chantier} />
+      ) : data?.version ? (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-y border-bordure-subtile bg-fond-surface-grise px-4 py-2">
           <p className="min-w-0 flex-1 text-ui text-texte-principal">
             <span className="font-medium">Aperçu de la version</span> · {quandCourt(data.version.at)} · lecture seule
@@ -410,6 +454,7 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
                     etats={etats}
                     nomAgent={nomAgent}
                     indisponible={indisponible}
+                    chantier={chantier}
                     onOuvrir={(noeud, numero) => setEtape({ noeud, numero })}
                     onDecider={decider}
                   />
@@ -436,7 +481,13 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
           )}
         </VueLecture>
       </div>
-      {data && !lectureSeule ? (
+      {data && travaux ? (
+        <div className="shrink-0 border-t border-bordure-subtile px-4 py-3">
+          <BoutonPrincipal className="w-full" disabled>
+            En construction…
+          </BoutonPrincipal>
+        </div>
+      ) : data && !lectureSeule ? (
         <div className="shrink-0 border-t border-bordure-subtile px-4 py-3">
           {erreur ? (
             <p role="alert" className="pb-2 text-ui-xs text-texte-erreur">
@@ -496,6 +547,7 @@ function LigneEtapeVue({
   etats,
   nomAgent,
   indisponible,
+  chantier,
   onOuvrir,
   onDecider,
 }: {
@@ -504,9 +556,17 @@ function LigneEtapeVue({
   etats: Map<string, EtapeLue>;
   nomAgent: (id: string) => string;
   indisponible: boolean;
+  /** Un agent construit le workflow : ses étapes à lui sont marquées, celle qu'il écrit suivie. */
+  chantier: ChantierLu | null;
   onOuvrir: (noeud: NoeudLu, numero: number) => void;
   onDecider: (etapeId: string, approuver: boolean) => void;
 }) {
+  const ref = useRef<HTMLLIElement>(null);
+  const etatTravaux = ligne.genre === "etape" ? etatChantier(chantier, ligne.noeud.id) : null;
+  /* L'étape qu'il écrit reste à l'écran : la liste la suit, comme la caméra du bureau. */
+  useEffect(() => {
+    if (etatTravaux === "ecrit") ref.current?.scrollIntoView({ block: "nearest", behavior: reduit() ? "auto" : "smooth" });
+  }, [etatTravaux]);
   const retrait = { paddingLeft: ligne.niveau * 20 };
   if (ligne.genre === "branche") {
     return (
@@ -530,8 +590,23 @@ function LigneEtapeVue({
   const titre = n.type === "declencheur" ? `${nomNoeud(n)} · ${libelleUnDeclencheur(n)}` : agent ? `${nomNoeud(n)} · ${nomAgent(agent)}` : nomNoeud(n);
   const detail = detailEtape(n, wf);
   const attend = etat?.statut === "approbation";
+  /* Une étape de l'agent prend toute la largeur : son trait de couleur au bord de l'écran. */
+  const marquee = !!etatTravaux;
   return (
-    <li style={retrait} className="border-b border-bordure-subtile">
+    <li
+      ref={ref}
+      data-chantier={etatTravaux ?? undefined}
+      style={marquee ? { ...couleurChantier(chantier).style, paddingLeft: 16 + ligne.niveau * 20, paddingRight: 16 } : retrait}
+      className={cn(
+        "border-b border-bordure-subtile transition-[background-color] duration-300 ease-sortie",
+        marquee && "-mx-4",
+        chantier?.nouveaux.includes(n.id) && "klyra-wf-pose",
+        etatTravaux === "fantome" && "klyra-wf-ligne-fantome",
+        etatTravaux === "ecrit" && "klyra-wf-ligne-ecrit",
+        etatTravaux === "modif" && "klyra-wf-ligne-modif",
+        etatTravaux === "ne" && "klyra-wf-eclat",
+      )}
+    >
       <button type="button" onClick={() => onOuvrir(n, ligne.numero)} className="flex min-h-14 w-full items-start gap-3 py-3 text-left active:bg-fond-survol">
         <span className="w-5 shrink-0 pt-1 text-ui font-medium text-texte-secondaire tabular-nums">{ligne.numero}</span>
         {agent ? (
@@ -543,7 +618,11 @@ function LigneEtapeVue({
         )}
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-body-s font-medium text-texte-principal">{titre}</span>
-          {detail ? <span className="line-clamp-2 text-ui-xs break-words text-texte-secondaire">{detail}</span> : null}
+          {detail ? (
+            <span className={cn("line-clamp-2 text-ui-xs break-words text-texte-secondaire", etatTravaux === "ecrit" && "klyra-curseur-texte")}>{detail}</span>
+          ) : etatTravaux === "ecrit" ? (
+            <span className="klyra-curseur-texte text-ui-xs text-texte-tertiaire">{chantier?.agent.name} l’écrit</span>
+          ) : null}
           {etat?.erreur ? <span className="line-clamp-2 text-ui-xs text-texte-erreur">{etat.erreur}</span> : null}
         </span>
         {etat ? (
