@@ -204,9 +204,13 @@ function Detail({
                 : "Elle s’affiche à la première réponse d’un agent sur ce serveur."}
         </p>
       ) : !utilisation.session && !utilisation.semaine && !utilisation.mois ? (
-        <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
-          {enCours ? "Lecture…" : `${programme} n’a pas encore donné le détail des limites.${relisible ? " Clic pour réessayer." : ""}`}
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
+            {enCours ? "Lecture…" : `${programme} n’a pas encore donné le détail des limites.${relisible ? " Clic pour réessayer." : ""}`}
+          </p>
+          {/* Ce que le fournisseur a répondu (Grok : son erreur, ou les champs de sa réponse sans leurs valeurs). */}
+          {utilisation.note && !enCours && <p className="m-0 break-words text-ui-3xs leading-[1.45] text-texte-tertiaire">{utilisation.note}</p>}
+        </div>
       ) : (
         <>
           {utilisation.statut === "rejected" && (

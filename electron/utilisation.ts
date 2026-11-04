@@ -21,6 +21,8 @@ export interface Utilisation {
   semaine: FenetreUtilisation | null;
   /** Crédits du mois (Grok : l'abonnement donne des crédits par période de facturation, pas de fenêtre 5 h ni semaine). */
   mois?: FenetreUtilisation | null;
+  /** Pourquoi aucune fenêtre n'a pu être lue (Grok : erreur ou forme de sa réponse), montré au survol. */
+  note?: string | null;
   /** « allowed », « allowed_warning » ou « rejected » (limite atteinte). */
   statut: string;
   misAJour: number;
@@ -105,35 +107,97 @@ export function lireUtilisationCodex(brut: unknown, precedente: Utilisation | nu
 
 /* ─── Grok (SuperGrok, X Premium+) ─────────────────────────────── */
 
+type Objet = Record<string, unknown>;
+const objet = (v: unknown): Objet | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Objet) : null);
+
+/** Un nombre de Grok : nombre, ou texte qui en est un (« 37.5 »). */
+function nombre(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
+  return null;
+}
+
 /** Une date de Grok en millisecondes : texte ISO, ou nombre en secondes ou en millisecondes. */
 function dateGrok(brut: unknown): number | null {
-  if (typeof brut === "string" && brut.trim()) {
+  if (typeof brut === "string" && brut.trim() && !Number.isFinite(Number(brut))) {
     const ms = Date.parse(brut);
     return Number.isFinite(ms) ? ms : null;
   }
-  if (typeof brut === "number" && Number.isFinite(brut) && brut > 0) return brut < 1e12 ? brut * 1000 : brut;
+  const n = nombre(brut);
+  return n !== null && n > 0 ? (n < 1e12 ? n * 1000 : n) : null;
+}
+
+/** La configuration de facturation, là où Grok la met : `config`, ou sous une enveloppe (`billing`, `result`, `data`). */
+function configGrok(reponse: Objet): { config: Objet; enveloppe: Objet } | null {
+  const enveloppes = [reponse, objet(reponse.billing), objet(reponse.result), objet(reponse.data)].filter((e): e is Objet => !!e);
+  for (const enveloppe of enveloppes) {
+    for (const config of [objet(enveloppe.config), objet(enveloppe.billingConfig), enveloppe]) {
+      if (config && ("creditUsagePercent" in config || "monthlyLimit" in config || "currentPeriod" in config)) return { config, enveloppe };
+    }
+  }
   return null;
 }
 
 /**
+ * La part utilisée, de 0 à 100 : `creditUsagePercent` quand Grok la donne ; sinon ce qui a été utilisé
+ * dans la période en cours (`history`, `includedUsed` puis `totalUsed`) rapporté à `monthlyLimit`, deux
+ * chiffres de Grok. Rien d'autre : sans eux, null.
+ */
+function pourcentGrok(config: Objet): number | null {
+  const direct = nombre(config.creditUsagePercent);
+  if (direct !== null) return direct;
+  const limite = nombre(config.monthlyLimit);
+  const historique = Array.isArray(config.history) ? config.history.map(objet).filter((h): h is Objet => !!h) : [];
+  const courant = historique.at(-1);
+  const utilise = courant ? (nombre(courant.includedUsed) ?? nombre(courant.totalUsed)) : null;
+  return limite !== null && limite > 0 && utilise !== null ? (utilise / limite) * 100 : null;
+}
+
+/**
  * Lit la réponse de `x.ai/billing` de Grok Build (`BillingConfigResponse` : `config`, `on_demand_enabled`,
- * `subscription_tier`). L'abonnement donne des crédits par période de facturation : `config.creditUsagePercent`
- * (part utilisée, de 0 à 100) et `config.currentPeriod.end` (remise à zéro) font la fenêtre du mois. Sans
- * pourcentage lisible (connecté par une clé API, réponse d'une autre forme), rien n'est inventé : la
- * précédente reste. La limite n'est atteinte que si le paiement à l'usage n'est pas activé : sinon les agents
- * continuent, facturés à part.
+ * `subscription_tier`). L'abonnement donne des crédits par période de facturation : la part utilisée
+ * (`pourcentGrok`) et `config.currentPeriod.end` (remise à zéro) font la fenêtre du mois. Sans chiffre
+ * lisible, rien n'est inventé : la précédente reste. La limite n'est atteinte que si le paiement à l'usage
+ * n'est pas activé : sinon les agents continuent, facturés à part.
  */
 export function lireUtilisationGrok(brut: unknown, precedente: Utilisation | null, maintenant = Date.now()): Utilisation | null {
-  const reponse = brut as { config?: unknown; on_demand_enabled?: unknown; onDemandEnabled?: unknown } | null | undefined;
-  if (!reponse || typeof reponse !== "object") return precedente;
-  const config = (reponse.config && typeof reponse.config === "object" ? reponse.config : reponse) as {
-    creditUsagePercent?: unknown;
-    currentPeriod?: { end?: unknown } | null;
-  };
-  const pourcent = config.creditUsagePercent;
-  if (typeof pourcent !== "number" || !Number.isFinite(pourcent)) return precedente;
-  const mois: FenetreUtilisation = { utilise: Math.max(0, Math.min(1, pourcent / 100)), reinitialiseA: dateGrok(config.currentPeriod?.end) };
-  const aLUsage = reponse.on_demand_enabled === true || reponse.onDemandEnabled === true;
+  const reponse = objet(brut);
+  const trouve = reponse ? configGrok(reponse) : null;
+  if (!trouve) return precedente;
+  const pourcent = pourcentGrok(trouve.config);
+  if (pourcent === null) return precedente;
+  const periode = objet(trouve.config.currentPeriod);
+  const mois: FenetreUtilisation = { utilise: Math.max(0, Math.min(1, pourcent / 100)), reinitialiseA: dateGrok(periode?.end) };
+  const aLUsage = [trouve.enveloppe, reponse!].some((o) => o.on_demand_enabled === true || o.onDemandEnabled === true);
   const pleine = mois.utilise >= 1 && (mois.reinitialiseA === null || mois.reinitialiseA > maintenant);
   return { session: null, semaine: null, mois, statut: pleine && !aLUsage ? "rejected" : "allowed", misAJour: maintenant };
+}
+
+/**
+ * La forme d'une réponse, pour dire ce que Grok a répondu quand rien n'y est lisible : les noms des champs et
+ * leur type, jamais leurs valeurs (« config{creditUsagePercent:null, monthlyLimit:number} »).
+ */
+export function formeReponse(brut: unknown, profondeur = 0): string {
+  if (brut === null) return "null";
+  if (Array.isArray(brut)) return `liste(${brut.length})`;
+  const o = objet(brut);
+  if (!o) return typeof brut;
+  if (profondeur >= 2) return "objet";
+  const champs = Object.entries(o).slice(0, 12).map(([cle, v]) => (objet(v) ? `${cle}${formeReponse(v, profondeur + 1)}` : `${cle}:${formeReponse(v, profondeur + 1)}`));
+  return `{${champs.join(", ")}${Object.keys(o).length > 12 ? ", …" : ""}}`;
+}
+
+/**
+ * L'utilisation de Grok après une lecture de `x.ai/billing` (sa réponse, ou l'erreur de la demande) : les
+ * crédits du mois quand ils sont lisibles ; sinon une utilisation sans fenêtre qui dit pourquoi (`note`,
+ * montrée au survol de l'anneau), sauf si des crédits ont déjà été lus : un échec passager ne les efface pas.
+ */
+export function utilisationGrok(lecture: { reponse: unknown } | { erreur: string }, precedente: Utilisation | null, maintenant = Date.now()): Utilisation {
+  if ("reponse" in lecture) {
+    const lue = lireUtilisationGrok(lecture.reponse, null, maintenant);
+    if (lue) return lue;
+  }
+  if (precedente?.mois) return precedente;
+  const note = "erreur" in lecture ? `Grok a répondu : ${lecture.erreur}` : `réponse sans crédits lisibles ${formeReponse(lecture.reponse)}`;
+  return { session: null, semaine: null, mois: null, statut: "allowed", misAJour: maintenant, note: note.slice(0, 400) };
 }

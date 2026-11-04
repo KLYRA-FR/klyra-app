@@ -14,7 +14,7 @@ import { creerClientAcp, emailDeAuth, lireCodeAppareil, mcpPourAcp } from "./acp
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { corpsDeFiche } from "./codex-protocole.mjs";
 import { binaireGere, commande } from "./installation.mjs";
-import { lireUtilisationGrok } from "./utilisation.mjs";
+import { utilisationGrok } from "./utilisation.mjs";
 
 const CONNEXION_MAX_MS = 15 * 60 * 1000;
 const CODE_MAX_MS = 30_000;
@@ -199,11 +199,12 @@ export function creerGrok(options) {
   async function utilisation(actualiser) {
     if (!actualiser && derniereUtilisation) return derniereUtilisation;
     if (!trouver() || !existsSync(path.join(grokHome(), "auth.json"))) return derniereUtilisation;
-    try {
-      derniereUtilisation = lireUtilisationGrok(await client.facturation(), derniereUtilisation) ?? derniereUtilisation;
-    } catch {
-      /* Cette version de Grok ne donne pas sa facturation : pas d'anneau, rien d'inventé. */
-    }
+    /* Rien de lisible : aucun chiffre inventé, mais la raison (erreur de Grok, forme de sa réponse) est montrée au survol. */
+    const lecture = await client.facturation().then(
+      (reponse) => ({ reponse }),
+      (erreur) => ({ erreur: erreur instanceof Error ? erreur.message : String(erreur) }),
+    );
+    derniereUtilisation = utilisationGrok(lecture, derniereUtilisation);
     return derniereUtilisation;
   }
 

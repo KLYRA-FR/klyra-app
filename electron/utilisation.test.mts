@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { lireUtilisation, lireUtilisationCodex, lireUtilisationGrok } from "./utilisation.ts";
+import { formeReponse, lireUtilisation, lireUtilisationCodex, lireUtilisationGrok, utilisationGrok } from "./utilisation.ts";
 
 const T = 1_800_000_000_000;
 
@@ -86,4 +86,29 @@ test("Grok : rien de lisible (clé API, autre forme), rien d'effacé, aucun chif
   assert.equal(lireUtilisationGrok(null, avant, T + 1), avant);
   assert.equal(lireUtilisationGrok({ config: {} }, avant, T + 1), avant);
   assert.equal(lireUtilisationGrok({ config: { creditUsagePercent: "beaucoup" } }, null, T), null);
+});
+
+test("Grok : pourcentage en texte, réponse sous une enveloppe, date en texte de secondes", () => {
+  assert.equal(lireUtilisationGrok({ billing: { config: { creditUsagePercent: "25", currentPeriod: { end: "1800500000" } } } }, null, T)?.mois?.utilise, 0.25);
+  assert.equal(lireUtilisationGrok({ billing: { config: { creditUsagePercent: "25", currentPeriod: { end: "1800500000" } } } }, null, T)?.mois?.reinitialiseA, 1_800_500_000_000);
+  assert.equal(lireUtilisationGrok({ result: { creditUsagePercent: 10 } }, null, T)?.mois?.utilise, 0.1);
+});
+
+test("Grok : sans pourcentage, l'utilisé de la période rapporté à la limite du mois (chiffres de Grok seulement)", () => {
+  const sansPourcent = { config: { creditUsagePercent: null, monthlyLimit: 200, history: [{ billingCycle: { month: 10 }, includedUsed: 200 }, { billingCycle: { month: 11 }, includedUsed: 50, totalUsed: 60 }] } };
+  assert.equal(lireUtilisationGrok(sansPourcent, null, T)?.mois?.utilise, 0.25);
+  assert.equal(lireUtilisationGrok({ config: { creditUsagePercent: null, monthlyLimit: 0, history: [{ includedUsed: 5 }] } }, null, T), null);
+  assert.equal(lireUtilisationGrok({ config: { creditUsagePercent: null, monthlyLimit: 200 } }, null, T), null);
+});
+
+test("Grok : rien de lisible, la raison est dite (erreur, ou champs sans leurs valeurs), les crédits déjà lus restent", () => {
+  const vide = utilisationGrok({ reponse: { config: { creditUsagePercent: null, monthlyLimit: null }, subscription_tier: "SuperGrok" } }, null, T);
+  assert.deepEqual([vide.mois, vide.session, vide.semaine], [null, null, null]);
+  assert.equal(vide.note, "réponse sans crédits lisibles {config{creditUsagePercent:null, monthlyLimit:null}, subscription_tier:string}");
+  assert.ok(!vide.note!.includes("SuperGrok"), "une valeur de la réponse est montrée");
+  assert.equal(utilisationGrok({ erreur: "Method not found" }, null, T).note, "Grok a répondu : Method not found");
+  const lue = utilisationGrok({ reponse: facturation(42, null) }, null, T);
+  assert.equal(lue.mois?.utilise, 0.42);
+  assert.equal(utilisationGrok({ erreur: "délai dépassé" }, lue, T + 1), lue);
+  assert.equal(formeReponse([1, 2]), "liste(2)");
 });

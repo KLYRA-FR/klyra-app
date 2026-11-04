@@ -144,6 +144,8 @@ if (process.argv[2] === "agent") process.stdin.on("data", (d) => {
       /* La facturation de l'abonnement, dans la forme de Grok Build 1.0.70 (`BillingConfigResponse`). FAUX_ACP_SANS_FACTURATION : une version qui ne la connaît pas. */
       case "x.ai/billing":
         if (process.env.FAUX_ACP_SANS_FACTURATION) ecrire({ id, error: { code: -32601, message: `Méthode inconnue : ${method}` } });
+        /* FAUX_ACP_FACTURATION_SESSION : une version qui ne répond qu'avec une session connue. */
+        else if (process.env.FAUX_ACP_FACTURATION_SESSION && !sessions.has(params.sessionId)) ecrire({ id, error: { code: -32602, message: "sessionId requis" } });
         else
           ecrire({
             id,

@@ -154,12 +154,28 @@ test("le client ACP face au faux Grok : réponse, session reprise, outils, autor
   }
 });
 
+test("une version de Grok qui veut une session pour la facturation : une session ouverte dans un dossier vide", async () => {
+  chmodSync(FAUX, 0o755);
+  const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-acp-"));
+  const journal = path.join(dossier, "journal.jsonl");
+  const client = creerClientAcp({ trouver: () => FAUX, env: () => ({ ...process.env, FAUX_ACP_FACTURATION_SESSION: "1", FAUX_ACP_JOURNAL: journal }), cwd: () => dossier, client: { name: "klyra", title: "KLYRA", version: "1" } });
+  try {
+    assert.equal(lireUtilisationGrok(await client.facturation(), null)?.mois?.utilise, 0.375);
+    const nouvelle = readFileSync(journal, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { method?: string; params?: { cwd?: string; mcpServers?: unknown[] } }).find((m) => m.method === "session/new");
+    assert.deepEqual(nouvelle?.params?.mcpServers, []);
+    assert.ok(nouvelle?.params?.cwd?.includes("klyra-grok-facturation-"), "la session n’est pas ouverte dans un dossier vide");
+  } finally {
+    client.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
 test("une version de Grok sans facturation : la lecture échoue, sans bloquer ni inventer", async () => {
   chmodSync(FAUX, 0o755);
   const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-acp-"));
   const client = creerClientAcp({ trouver: () => FAUX, env: () => ({ ...process.env, FAUX_ACP_SANS_FACTURATION: "1" }), cwd: () => dossier, client: { name: "klyra", title: "KLYRA", version: "1" } });
   try {
-    await assert.rejects(client.facturation());
+    await assert.rejects(client.facturation(), /sans session : Méthode inconnue : x\.ai\/billing ; avec session : Méthode inconnue/);
   } finally {
     client.fermer();
     rmSync(dossier, { recursive: true, force: true });

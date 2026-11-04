@@ -1,5 +1,8 @@
 // Généré par scripts/serveur-genere.mjs depuis electron/moteurs/acp.ts : ne pas modifier à la main.
 import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 /** Les serveurs MCP de l'app (format `--mcp-config` de Claude Code, cf. ia.ts) dans la forme d'ACP. */
 export function mcpPourAcp(config) {
     if (!config)
@@ -515,14 +518,35 @@ export function creerClientAcp(o) {
      */
     async function facturation() {
         await pret();
+        let sansSession;
         try {
             return await requeteBornee("x.ai/billing", {}, FACTURATION_MAX_MS);
         }
         catch (erreur) {
-            const sessionId = [...sessions.keys()].at(-1);
+            sansSession = erreur;
+        }
+        /* Sans session ouverte : une, dans un dossier vide, sans serveur MCP ni modèle (comme pour lire les modèles). */
+        let sessionId = [...sessions.keys()].at(-1);
+        const vide = sessionId ? null : mkdtempSync(path.join(os.tmpdir(), "klyra-grok-facturation-"));
+        try {
+            if (vide) {
+                const r = await requeteBornee("session/new", { cwd: vide, mcpServers: [] }, FACTURATION_MAX_MS);
+                if (typeof r?.sessionId === "string") {
+                    sessionId = r.sessionId;
+                    noterOptions(r.sessionId, r.configOptions);
+                }
+            }
             if (!sessionId)
-                throw erreur;
-            return requeteBornee("x.ai/billing", { sessionId }, FACTURATION_MAX_MS);
+                throw sansSession;
+            return await requeteBornee("x.ai/billing", { sessionId }, FACTURATION_MAX_MS);
+        }
+        catch (avecSession) {
+            const message = (e) => (e instanceof Error ? e.message : String(e));
+            throw new Error(avecSession === sansSession ? message(sansSession) : `sans session : ${message(sansSession)} ; avec session : ${message(avecSession)}`);
+        }
+        finally {
+            if (vide)
+                rmSync(vide, { recursive: true, force: true });
         }
     }
     return {

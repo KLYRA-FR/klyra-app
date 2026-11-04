@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { AgentEvent, Decision, ModeleMoteur, StreamOptions } from "./types";
 
 /**
@@ -587,12 +590,30 @@ export function creerClientAcp(o: OptionsAcp) {
    */
   async function facturation(): Promise<unknown> {
     await pret();
+    let sansSession: unknown;
     try {
       return await requeteBornee("x.ai/billing", {}, FACTURATION_MAX_MS);
     } catch (erreur) {
-      const sessionId = [...sessions.keys()].at(-1);
-      if (!sessionId) throw erreur;
-      return requeteBornee("x.ai/billing", { sessionId }, FACTURATION_MAX_MS);
+      sansSession = erreur;
+    }
+    /* Sans session ouverte : une, dans un dossier vide, sans serveur MCP ni modèle (comme pour lire les modèles). */
+    let sessionId = [...sessions.keys()].at(-1);
+    const vide = sessionId ? null : mkdtempSync(path.join(os.tmpdir(), "klyra-grok-facturation-"));
+    try {
+      if (vide) {
+        const r = await requeteBornee<{ sessionId?: unknown; configOptions?: unknown }>("session/new", { cwd: vide, mcpServers: [] }, FACTURATION_MAX_MS);
+        if (typeof r?.sessionId === "string") {
+          sessionId = r.sessionId;
+          noterOptions(r.sessionId, r.configOptions);
+        }
+      }
+      if (!sessionId) throw sansSession;
+      return await requeteBornee("x.ai/billing", { sessionId }, FACTURATION_MAX_MS);
+    } catch (avecSession) {
+      const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+      throw new Error(avecSession === sansSession ? message(sansSession) : `sans session : ${message(sansSession)} ; avec session : ${message(avecSession)}`);
+    } finally {
+      if (vide) rmSync(vide, { recursive: true, force: true });
     }
   }
 

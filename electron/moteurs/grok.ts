@@ -12,7 +12,7 @@ import { signatureNavigateur } from "../navigateur/outils";
 import { voirFin, voirOutil } from "../ordinateur/apercu";
 import { signatureOrdinateur } from "../ordinateur/pilote";
 import { lireReglages } from "../reglages";
-import { lireUtilisationGrok, type Utilisation } from "../utilisation";
+import { utilisationGrok, type Utilisation } from "../utilisation";
 import { creerClientAcp, emailDeAuth, mcpPourAcp } from "./acp";
 import { ficheBrute, ficheDe } from "./codex";
 import { binaireGere, commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation";
@@ -135,14 +135,15 @@ const parAbonnement = () => existsSync(path.join(grokHome(), "auth.json"));
 async function utilisation(actualiser: boolean): Promise<Utilisation | null> {
   if (!actualiser && derniereUtilisation) return derniereUtilisation;
   if (!trouverGrok() || !parAbonnement()) return derniereUtilisation;
-  try {
-    const u = lireUtilisationGrok(await client.facturation(), derniereUtilisation);
-    if (u && u !== derniereUtilisation) {
-      derniereUtilisation = u;
-      abonnesUtilisation.forEach((cb) => cb(u));
-    }
-  } catch {
-    /* Cette version de Grok ne donne pas sa facturation : pas d'anneau, rien d'inventé. */
+  /* Rien de lisible : aucun chiffre inventé, mais la raison (erreur de Grok, forme de sa réponse) est montrée au survol. */
+  const lecture = await client.facturation().then(
+    (reponse) => ({ reponse }),
+    (erreur: unknown) => ({ erreur: erreur instanceof Error ? erreur.message : String(erreur) }),
+  );
+  const u = utilisationGrok(lecture, derniereUtilisation);
+  if (u !== derniereUtilisation) {
+    derniereUtilisation = u;
+    abonnesUtilisation.forEach((cb) => cb(u));
   }
   return derniereUtilisation;
 }

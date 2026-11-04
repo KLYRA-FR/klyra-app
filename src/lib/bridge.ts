@@ -131,6 +131,8 @@ export interface Utilisation {
   semaine: FenetreUtilisation | null;
   /** Crédits du mois (Grok). */
   mois?: FenetreUtilisation | null;
+  /** Pourquoi aucune fenêtre n'a pu être lue (Grok), montré au survol. */
+  note?: string | null;
   statut: string;
   misAJour: number;
 }
