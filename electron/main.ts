@@ -164,8 +164,8 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
-import { copierRenduVps } from "./rendus-vps";
-import { copierRendu, enregistrerRenduDans, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
+import { copierRenduVps, htmlRenduVps, ouvrirRenduVps } from "./rendus-vps";
+import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { arbreVps, consignesVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
@@ -189,7 +189,7 @@ import type { AjoutFiche } from "./atelier-agent";
 import { essayerVps } from "./epreuve-vps";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
-import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
+import { adresseConvex, ecrireJeton, enregistrerProtocole, jetonsEcrits, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 import { recevoirPiece } from "./pieces-telephone";
 
@@ -265,7 +265,27 @@ async function runSmokeTest(win: BrowserWindow) {
     "document.querySelector('main')?.innerText.replace(/\\s+/g, ' ').slice(0, 200) ?? ''",
   );
   console.log(text ? `OK — ${text}` : "ÉCHEC — rien n'est affiché");
+  if (process.env.KLYRA_SMOKE_JETON === "1") console.log(await essaiJeton());
   app.exit(text ? 0 : 1);
+}
+
+/**
+ * `KLYRA_SMOKE_JETON=1` (avec le smoke test) : un faux jeton de session, écrit par une version de l'app
+ * et relu par la suivante, par le même chemin que la vraie session (electron/compte.ts, trousseau).
+ * C'est ce que la vérification Mac contrôle à travers une mise à jour (verification-mac.yml).
+ */
+async function essaiJeton(): Promise<string> {
+  const cle = "__convexAuthJWT_essaimiseajour";
+  const lu = lireJeton(cle);
+  if (lu === "jeton-essai") return "JETON RELU";
+  if (lu !== null) return "JETON DIFFÉRENT";
+  if (existsSync(path.join(app.getPath("userData"), "compte.json"))) {
+    return `JETON PERDU (trousseau ${safeStorage.isEncryptionAvailable() ? "disponible, déchiffrement refusé" : "indisponible"})`;
+  }
+  if (!safeStorage.isEncryptionAvailable()) return "JETON NON ÉCRIT (trousseau indisponible)";
+  await ecrireJeton(cle, "jeton-essai");
+  await jetonsEcrits();
+  return "JETON ÉCRIT";
 }
 
 /** Un serveur de dev sur ce Mac. */
@@ -802,9 +822,15 @@ function registerBridge() {
   handle("artefacts:ouvrir", (url: string, titre: string) => ouvrirArtefact(url, String(titre ?? "Artefact")));
   handle("rendus:vignette", (chemin: string, forcer: boolean) => vignetteRendu(chemin, !!forcer));
   handle("rendus:ouvrir", (chemin: string) => ouvrirRendu(chemin));
+  handle("rendus:html", (chemin: string) => htmlDuRendu(chemin));
+  /* Le HTML d'un livrable du VPS, lu sur le serveur, sans l'écrire dans ~/.klyra/rendus. */
+  handle("rendus:html-vps", (lieu: string, id: string, dossier: boolean) => htmlRenduVps(String(lieu), jetonServeur(String(lieu)), id, dossier === true));
+  handle("rendus:ouvrir-vps", (lieu: string, id: string, agent: string, nom: string, dossier: boolean) =>
+    ouvrirRenduVps(String(lieu), jetonServeur(String(lieu)), id, agent, nom, dossier === true),
+  );
   handle("rendus:montrer", (chemin: string) => montrerRendu(chemin));
   handle("rendus:copier", (origine: string, agent: string, remplace: string | null) => copierRendu(origine, agent, remplace));
-  /* Un livrable d'un agent du VPS : recopié depuis le serveur dans l'espace de l'agent, comme un livrable local. */
+  /* Ancien canal : copie dans ~/.klyra/rendus. L'écran ne l'appelle plus à la publication. */
   handle("rendus:copier-vps", (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) =>
     copierRenduVps(String(lieu), jetonServeur(String(lieu)), id, agent, nom, dossier === true, remplace),
   );
@@ -1288,9 +1314,9 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   quitteApresEcriture = true;
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send("app:avant-fermeture");
-  // Le temps que l'interface envoie son état, puis que le fichier soit écrit (2 s au plus).
+  // Le temps que l'interface envoie son état, puis que les fichiers soient écrits, jetons de session compris (2 s au plus).
   setTimeout(() => {
-    void Promise.race([ecrituresTerminees(), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
+    void Promise.race([Promise.all([ecrituresTerminees(), jetonsEcrits()]), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
   }, 300);
 });
 

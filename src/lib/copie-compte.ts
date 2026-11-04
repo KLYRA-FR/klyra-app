@@ -383,7 +383,8 @@ export function carteAgent(role: Role, actif: boolean) {
     origine: role.id,
     nom: role.name,
     teinte: role.teinte,
-    roleCourt: role.tag || role.title,
+    /* Le rôle court lisible, sinon le rôle de la fiche : jamais l'id, que `roleFromContent` prend en dernier repli (C-2a). */
+    roleCourt: (role.tag && role.tag !== role.id ? role.tag : role.title) || "",
     actif,
   };
 }

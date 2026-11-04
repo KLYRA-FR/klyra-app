@@ -22,7 +22,7 @@ export { FOURNISSEURS };
 const OUTIL_PUBLIER = {
   name: "publier_artefact",
   description:
-    "Publie dans l'écran Artefacts de la personne un fichier que tu as produit sur ce VPS : tout fichier qu'on t'a demandé, quel que soit son format (texte, tableur, document, page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app), et tout rendu qu'elle doit voir. L'app en garde une copie sur son ordinateur, montre un aperçu et l'ouvre d'un clic ; l'original reste où il est. Une page qui a des ressources (images, CSS, JS) se publie par son dossier, qui doit contenir index.html (300 Mo au plus, sans node_modules ni .git). Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet. Republier le même fichier remplace sa copie.",
+    "Publie dans l'écran Artefacts de la personne un fichier que tu as produit sur ce VPS : tout fichier qu'on t'a demandé, quel que soit son format (texte, tableur, document, page HTML, maquette, capture d'écran, image, vidéo, PDF, présentation, petite app), et tout rendu qu'elle doit voir. Le fichier reste sur ce VPS, dans Mes artefacts de ce serveur, sans être copié sur l'ordinateur ni partagé à l'équipe. Une page qui a des ressources (images, CSS, JS) se publie par son dossier, qui doit contenir index.html (300 Mo au plus, sans node_modules ni .git). Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet. Republier le même fichier met à jour cette publication.",
   inputSchema: {
     type: "object",
     properties: {

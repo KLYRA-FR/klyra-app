@@ -1,5 +1,6 @@
 import type { AgentRoutine } from "@/components/routines/ColonneAgents";
 import { ErreurPoste } from "@/lib/poste/types";
+import { tagLisible } from "@/lib/telephone/agents";
 import type { Role, RoleTeinte } from "@/types/domain";
 import type { Routine, RoutineInput, RoutinePatch, RoutineRun, RoutineSchedule } from "@/types/routines";
 
@@ -42,10 +43,10 @@ export interface ExecutionsLues {
 export function agentsDesRoutines(roles: readonly Role[], tous: readonly { role: Role }[], routines: readonly Pick<Routine, "agentId">[]): AgentLu[] {
   const actif = (id: string) => roles.some((r) => r.id === id);
   return [
-    ...roles.map((r) => ({ id: r.id, name: r.name, tag: r.tag, title: r.title, teinte: r.teinte, actif: true, connu: true })),
+    ...roles.map((r) => ({ id: r.id, name: r.name, tag: tagLisible(r), title: r.title, teinte: r.teinte, actif: true, connu: true })),
     ...[...new Set(routines.map((r) => r.agentId))].filter((id) => !actif(id)).map((id) => {
       const local = tous.find((a) => a.role.id === id)?.role;
-      return { id, name: local?.name ?? id, tag: local?.tag ?? "", title: local?.title ?? "", teinte: local?.teinte ?? ("jaune" as RoleTeinte), actif: false, connu: !!local };
+      return { id, name: local?.name ?? id, tag: local ? tagLisible(local) : "", title: local?.title ?? "", teinte: local?.teinte ?? ("jaune" as RoleTeinte), actif: false, connu: !!local };
     }),
   ];
 }

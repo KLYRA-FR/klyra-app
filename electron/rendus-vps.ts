@@ -1,12 +1,14 @@
-import { net } from "electron";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { net, shell } from "electron";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { dansLesRendus, nomLibre, RACINE_RENDUS, type CopieRendu } from "./rendus";
 
 /**
- * Les livrables des agents d'un VPS relié (serveur/rendus.mjs) : le VPS les annonce par le journal des
- * événements, l'app en garde la copie sur ce PC, dans l'espace de l'agent (`~/.klyra/rendus/<agent>/`),
- * comme un livrable local (electron/rendus.ts) : même nommage, même limite, même remplacement.
+ * Les livrables des agents d'un VPS relié (serveur/rendus.mjs). Le VPS les annonce par le journal.
+ * Ils restent sur le serveur : l'écran ne les copie plus dans `~/.klyra/rendus`.
+ * `htmlRenduVps` lit la page en mémoire. `ouvrirRenduVps` écrit un fichier temporaire, hors des rendus,
+ * le temps de l'ouvrir. `copierRenduVps` reste pour l'ancien canal et n'est plus appelé à la publication.
  * Le VPS ne sert que les fichiers d'une publication retenue.
  */
 
@@ -43,23 +45,34 @@ function relatifSur(relatif: unknown): string {
   return path.join(...morceaux);
 }
 
-/**
- * Recopie un livrable du VPS dans l'espace de l'agent. `nom` : celui de l'original (fichier ou dossier de
- * la page) ; `remplace` : la copie d'une publication précédente du même original, remplacée.
- */
-export async function copierRenduVps(origine: string, jeton: string | null, id: unknown, agent: unknown, nom: unknown, dossier: boolean, remplace: unknown): Promise<CopieRendu> {
+function exigerJeton(jeton: string | null): string {
   if (!jeton) throw new Error("Ce PC n’est plus relié à ce VPS.");
+  return jeton;
+}
+
+function demande(id: unknown, agent: unknown, nom: unknown): { id: string; agent: string; base: string } {
   if (typeof id !== "string" || !ID.test(id)) throw new Error("Livrable invalide.");
   if (typeof agent !== "string" || !NOM_AGENT.test(agent)) throw new Error("Agent invalide.");
   const base = typeof nom === "string" ? path.basename(nom.replace(/[\\/]+$/, "")) : "";
   if (!base || base === "." || base === "..") throw new Error("Livrable invalide.");
+  return { id, agent, base };
+}
 
-  const liste = ((await (await lire(origine, jeton, `/klyra/v1/rendus/${id}/fichiers`)).json()) as { fichiers?: { relatif?: unknown; taille?: unknown }[] }).fichiers;
+type FichierAnnonce = { relatif?: unknown; taille?: unknown };
+
+async function fichiersDe(origine: string, jeton: string, id: string): Promise<FichierAnnonce[]> {
+  const liste = ((await (await lire(origine, jeton, `/klyra/v1/rendus/${id}/fichiers`)).json()) as { fichiers?: FichierAnnonce[] }).fichiers;
   if (!Array.isArray(liste) || !liste.length) throw new Error("Le VPS n’a envoyé aucun fichier pour ce livrable.");
   const total = liste.reduce((n, f) => n + (typeof f.taille === "number" ? f.taille : 0), 0);
   if (total > TAILLE_MAX) throw new Error("Trop lourd pour un livrable (300 Mo au plus).");
+  return liste;
+}
 
-  const espace = path.join(RACINE_RENDUS, agent);
+/** Écrit le livrable sous `racine/<agent>/`. N'efface rien d'autre. */
+async function deposer(racine: string, origine: string, jeton: string, id: string, agent: string, base: string, dossier: boolean): Promise<CopieRendu> {
+  const liste = await fichiersDe(origine, jeton, id);
+  const total = liste.reduce((n, f) => n + (typeof f.taille === "number" ? f.taille : 0), 0);
+  const espace = path.join(racine, agent);
   mkdirSync(espace, { recursive: true });
   const jour = new Date().toISOString().slice(0, 10);
   const vers = nomLibre(espace, `${jour} ${base}`);
@@ -78,11 +91,43 @@ export async function copierRenduVps(origine: string, jeton: string | null, id: 
       }
     }
   } catch (e) {
-    // Une copie à moitié faite ne reste pas dans les livrables.
     rmSync(vers, { recursive: true, force: true });
     throw e;
   }
-  // La copie précédente du même original : remplacée, seulement si elle est dans l'espace des rendus.
-  if (typeof remplace === "string" && remplace && dansLesRendus(path.resolve(remplace))) rmSync(path.resolve(remplace), { recursive: true, force: true });
   return { chemin: vers, taille: total, dossier };
+}
+
+/**
+ * Ancien canal : recopie dans `~/.klyra/rendus`. L'écran ne l'appelle plus à la publication.
+ * `remplace` : une copie précédente, retirée seulement si elle est dans l'espace des rendus.
+ */
+export async function copierRenduVps(origine: string, jeton: string | null, id: unknown, agent: unknown, nom: unknown, dossier: boolean, remplace: unknown): Promise<CopieRendu> {
+  const jetonOk = exigerJeton(jeton);
+  const d = demande(id, agent, nom);
+  const copie = await deposer(RACINE_RENDUS, origine, jetonOk, d.id, d.agent, d.base, dossier);
+  if (typeof remplace === "string" && remplace && dansLesRendus(path.resolve(remplace))) rmSync(path.resolve(remplace), { recursive: true, force: true });
+  return copie;
+}
+
+/** Le HTML du livrable, en base64. Rien n'est écrit sur ce PC. */
+export async function htmlRenduVps(origine: string, jeton: string | null, id: unknown, dossier: boolean): Promise<string> {
+  const jetonOk = exigerJeton(jeton);
+  if (typeof id !== "string" || !ID.test(id)) throw new Error("Livrable invalide.");
+  const liste = await fichiersDe(origine, jetonOk, id);
+  const relatif = dossier ? liste.find((f) => typeof f.relatif === "string" && /(^|\/)index\.html?$/i.test(f.relatif))?.relatif : liste[0]?.relatif;
+  if (typeof relatif !== "string" || !/\.html?$/i.test(relatif)) throw new Error("Seule une page HTML se partage avec l’équipe.");
+  const chemin = dossier ? `/klyra/v1/rendus/${id}/fichier?relatif=${encodeURIComponent(relatif)}` : `/klyra/v1/rendus/${id}/fichier`;
+  const octets = Buffer.from(await (await lire(origine, jetonOk, chemin)).arrayBuffer());
+  return octets.toString("base64");
+}
+
+/** Ouvre le livrable servi par le VPS. Le fichier va dans un dossier temporaire, pas dans les rendus. */
+export async function ouvrirRenduVps(origine: string, jeton: string | null, id: unknown, agent: unknown, nom: unknown, dossier: boolean): Promise<void> {
+  const jetonOk = exigerJeton(jeton);
+  const d = demande(id, agent, nom);
+  const copie = await deposer(path.join(os.tmpdir(), "klyra-rendus-ouverts"), origine, jetonOk, d.id, d.agent, d.base, dossier);
+  const cible = dossier ? path.join(copie.chemin, "index.html") : copie.chemin;
+  if (!existsSync(cible)) throw new Error("Ce livrable n’a pas de page à ouvrir.");
+  const erreur = await shell.openPath(cible);
+  if (erreur) throw new Error(erreur);
 }

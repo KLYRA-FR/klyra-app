@@ -50,11 +50,12 @@ describe("documents KLYRA", () => {
       lieu: null,
       version: 1,
       deMoi: true,
+      origine: "/tmp/page.html",
       auteur: { nom: "Alice", actif: true },
     });
     expect(ici.documents[0].taille).toBeGreaterThan(0);
     expect(await b.query(api.documentsKlyra.lister, { lieu: PC })).toMatchObject({
-      documents: [expect.objectContaining({ _id: id, deMoi: false, lieu: null })],
+      documents: [expect.objectContaining({ _id: id, deMoi: false, lieu: null, origine: null })],
     });
     expect(await a.query(api.documentsKlyra.lister, { lieu: VPS })).toMatchObject({ lieu: VPS, documents: [] });
     expect(await b.query(api.documentsKlyra.lister, { lieu: VPS })).toMatchObject({ documents: [] });
@@ -95,6 +96,59 @@ describe("documents KLYRA", () => {
     expect(await existe(t, autre)).toBe(false);
     expect(await a.query(api.documentsKlyra.espace, {})).toEqual({ octets: 0, nombre: 0, complet: true });
     await expect(a.mutation(api.documentsKlyra.supprimer, { documentId: deux, lieu: PC })).rejects.toThrow(/introuvable/);
+  });
+
+  test("partager deux fois le même document dans le même espace donne une seule carte, et l'auteur connecté se voit de soi", async () => {
+    const t = nouvelEssai();
+    const { a, b } = await deuxComptes(t);
+    const origine = "/tmp/page-du-pc.html";
+    const premier = await deposer(t, "<p>une</p>");
+    const id = await partager(t, a, premier, PC, origine);
+    const second = await deposer(t, "<p>deux, plus long</p>");
+    const encore = await partager(t, a, second, PC, origine);
+    expect(encore).toBe(id);
+    const cartes = (await a.query(api.documentsKlyra.lister, { lieu: PC })).documents;
+    expect(cartes).toHaveLength(1);
+    expect(cartes[0]).toMatchObject({
+      _id: id,
+      deMoi: true,
+      version: 2,
+      origine,
+      lieu: null,
+      auteur: { nom: "Alice", actif: true },
+    });
+    expect(await existe(t, premier)).toBe(false);
+    expect(await existe(t, second)).toBe(true);
+    expect((await a.query(api.documentsKlyra.espace, {})).nombre).toBe(1);
+
+    const trois = await deposer(t, "<p>bruno</p>");
+    const pris = await partager(t, b, trois, PC, origine);
+    expect(pris).not.toBe(id);
+    const pourAlice = (await a.query(api.documentsKlyra.lister, { lieu: PC })).documents;
+    expect(pourAlice).toHaveLength(2);
+    expect(pourAlice.find((doc) => doc._id === id)).toMatchObject({
+      deMoi: true,
+      version: 2,
+      origine,
+      auteur: { nom: "Alice" },
+    });
+    expect(pourAlice.find((doc) => doc._id === pris)).toMatchObject({
+      deMoi: false,
+      origine: null,
+      auteur: { nom: "Bruno" },
+    });
+    const pourBruno = (await b.query(api.documentsKlyra.lister, { lieu: PC })).documents;
+    expect(pourBruno.find((doc) => doc._id === pris)).toMatchObject({
+      deMoi: true,
+      version: 1,
+      origine,
+      auteur: { nom: "Bruno" },
+    });
+    await expect(b.mutation(api.documentsKlyra.reprendre, { documentId: id, lieu: PC })).rejects.toThrow(/reserve_a_l_auteur/);
+    await expect(a.mutation(api.documentsKlyra.reprendre, { documentId: pris, lieu: PC })).rejects.toThrow(/reserve_a_l_auteur/);
+    expect(await existe(t, second)).toBe(true);
+    expect(await existe(t, trois)).toBe(true);
+    expect((await a.query(api.documentsKlyra.espace, {})).nombre).toBe(2);
   });
 
   test("repartager le même original remplace le fichier, sans toucher l'autre espace", async () => {

@@ -267,10 +267,12 @@ try {
     await allerTel(chemin);
     textesTel.push(await telephone.texte());
   }
-  verifier(textesTel[2].includes("Les routines se gèrent sur") && textesTel[2].includes("Celles d’un VPS y tournent même"), "Automatisations : MO-T17");
+  /* MO-T17 est la ligne Automatisations de Plus (`texteRoutines`). */
+  verifier(textesTel[1].includes("Les routines se gèrent sur") && textesTel[1].includes("Celles d’un VPS y tournent même"), "Automatisations : MO-T17");
   verifier(textesTel.every((t) => !/ton Mac|Sur ton Mac/.test(t)), "téléphone : aucun « ton Mac » écrit en dur (poste Linux)");
   await allerTel("/chats");
-  await telephone.ev(`[...document.querySelectorAll('header button')].find((b) => /ouvert|fermé/i.test(b.innerText))?.click()`);
+  /* La pastille (socle mobile § 2.3) : « Ordinateur » sous Linux, son nom accessible finit par « État des ordinateurs ». */
+  await telephone.ev(`[...document.querySelectorAll('header button')].find((b) => (b.getAttribute('aria-label') ?? '').includes('État des ordinateurs'))?.click()`);
   verifier(await telephone.quand("[...document.querySelectorAll('[role=dialog]')].some((d) => d.innerText.includes('Ordinateurs'))", 5000), "feuille des ordinateurs (T-23) ouverte");
   verifier(!(await telephone.texte()).includes("Me prévenir"), "feuille du poste : plus de « Me prévenir à l’ouverture »");
   await telephone.cliquer("Fermer");

@@ -109,7 +109,8 @@ export function ServicePoste({ actif }: { actif: boolean }) {
         const erreur =
           err instanceof ErreurPoste
             ? { code: err.code, message: err.message }
-            : { code: "erreur", message: err instanceof Error && err.message ? err.message.slice(0, 300) : "Le geste a échoué sur l’ordinateur." };
+            : /* Sans phrase, le téléphone dit lui-même qui n'a pas pu le faire (`texteErreurPoste`). */
+              { code: "erreur", message: err instanceof Error && err.message ? err.message.slice(0, 300) : "" };
         await repondre({ id, erreur }).catch(() => {
           /* Demande expirée entre-temps. */
         });

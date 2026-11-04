@@ -65,7 +65,7 @@ const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu
 const UN_RESPONSABLE = `Un livrable, un responsable : un livrable va entier à un seul agent, celui de sa partie principale, qui fait aussi les petites parties voisines (les textes d'une page qu'il intègre, par exemple). Plusieurs agents seulement pour des parties lourdes et indépendantes, menées en parallèle, jamais en relais de l'un à l'autre : chaque passage de main fait tout relire. Une tâche que tu ferais en quelques minutes, fais-la toi-même ; si la personne demande expressément son équipe, suis-la avec le moins d'agents possible.`;
 const LIVRER_EN_FICHIERS = `Livre ton travail dans des fichiers ; ta réponse finale est un compte rendu court qui donne leurs chemins, sans recopier leur contenu.`;
 /** Comme CONSIGNE_ARTEFACTS de l'app (electron/claude.ts) : tout fichier demandé se publie avant « livré ». */
-const CONSIGNE_ARTEFACTS = `Publie avec publier_artefact (chemin complet sur ce VPS, ou dossier d'une page avec index.html ; un titre court ; à quoi il sert) chaque fichier qu'on t'a demandé de produire, quel que soit son format, que la demande vienne de la personne ou de l'agent qui t'a confié le travail, et tout rendu qu'elle doit voir : l'app en garde une copie sur son ordinateur et elle le retrouve dans l'écran Artefacts. Publie-le avant de dire que c'est livré. Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet.`;
+const CONSIGNE_ARTEFACTS = `Publie avec publier_artefact (chemin complet sur ce VPS, ou dossier d'une page avec index.html ; un titre court ; à quoi il sert) chaque fichier qu'on t'a demandé de produire, quel que soit son format, que la demande vienne de la personne ou de l'agent qui t'a confié le travail, et tout rendu qu'elle doit voir : le fichier reste sur ce VPS, dans Mes artefacts de ce serveur, sans être partagé à l'équipe. Publie-le avant de dire que c'est livré. Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet.`;
 const OUTIL_PUBLIER = "mcp__klyra__publier_artefact";
 
 const COMMANDES_AUTORISEES = [
@@ -293,7 +293,7 @@ export function creerAgents(options) {
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
-  /* Les livrables des agents (outil publier_artefact du serveur MCP local) : retenus ici, recopiés par l'app. */
+  /* Les livrables des agents (outil publier_artefact du serveur MCP local) : retenus ici, servis depuis ce VPS. */
   const rendus = creerRendus({ home, donnees, publier });
   options.ia?.surPublication((appelant, args) => rendus.publier(appelant, args));
   /* Le navigateur de KLYRA, sur le PC de la personne : les appels lui sont relayés par le journal (cf. navigateur.mjs). */

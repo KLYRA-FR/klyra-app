@@ -25,6 +25,8 @@ const vDocument = v.object({
   description: v.string(),
   agent: v.union(v.string(), v.null()),
   lieu: vLieu,
+  /** Le chemin d'origine, pour l'auteur seulement. Les autres ne voient pas le disque. */
+  origine: v.union(v.string(), v.null()),
   taille: v.number(),
   version: v.number(),
   majLe: v.number(),
@@ -69,6 +71,7 @@ async function resume(ctx: QueryCtx, doc: Doc<"documentsKlyra">, moi: Id<"membre
     description: doc.description,
     agent: doc.agent,
     lieu: doc.lieu,
+    origine: doc.auteurId === moi ? doc.origine : null,
     taille: doc.taille,
     version: doc.version,
     majLe: doc.majLe,
@@ -118,8 +121,10 @@ export const preparerDepot = mutation({
 });
 
 /**
- * Partage un HTML avec l'équipe, dans un seul espace. Republier le même original au même endroit
- * remplace le fichier. Il n'y a pas d'argument pour viser un autre espace que `lieu`.
+ * Partage un HTML avec l'équipe, dans un seul espace. Le même auteur qui repartage
+ * le même original au même endroit remplace sa carte. Un autre membre crée la sienne :
+ * il n'écrase pas le fichier, et l'auteur garde le retrait. Il n'y a pas d'argument
+ * pour viser un autre espace que `lieu`.
  */
 export const partager = mutation({
   args: {

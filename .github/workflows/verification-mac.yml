@@ -17,6 +17,7 @@ on:
       - .github/workflows/app.yml
       - .github/workflows/verification-mac.yml
       - electron/maj.ts
+      - electron/compte.ts
       - src/lib/sons/**
       - scripts/test-sons.cjs
       - electron/routines/**
@@ -86,3 +87,35 @@ jobs:
         run: |
           KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
             perl -e 'alarm 120; exec @ARGV' v2/mac/KLYRA.app/Contents/MacOS/KLYRA
+
+      # La session du compte d'équipe à travers une mise à jour : la version 1, installée au même endroit, écrit un
+      # jeton (trousseau du Mac, electron/compte.ts), le relit, puis est remplacée par la version 2 comme le fait
+      # electron/maj.ts (rm -rf puis ditto) ; la version 2 doit le relire sans demande du trousseau (vérifié le 04/11 :
+      # même certificat, même exigence désignée, aucune demande). Le résultat est aussi dans le résumé du job.
+      - name: Session gardée à travers une mise à jour (trousseau du Mac)
+        timeout-minutes: 6
+        run: |
+          # Un trousseau neuf, seul dans la liste de recherche : « KLYRA Safe Storage » y est créée par la version 1
+          # (le smoke test précédent a lancé la version 2 sur le trousseau de session).
+          ESSAI="$RUNNER_TEMP/essai-session.keychain-db"
+          security create-keychain -p essai "$ESSAI"
+          security set-keychain-settings "$ESSAI"
+          security unlock-keychain -p essai "$ESSAI"
+          security list-keychains -d user -s "$ESSAI"
+          security default-keychain -d user -s "$ESSAI"
+          export KLYRA_SMOKE_TEST=1 KLYRA_SMOKE_JETON=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra-maj"
+          APP="$RUNNER_TEMP/Applications/KLYRA.app"
+          mkdir -p "$RUNNER_TEMP/Applications"
+          lancer() { perl -e 'alarm 90; exec @ARGV' "$APP/Contents/MacOS/KLYRA" 2>&1 | grep '^JETON' || echo "JETON sans réponse en 90 s (demande du trousseau en attente ?)"; }
+          /usr/bin/ditto v1/mac/KLYRA.app "$APP"
+          V1="$(lancer)"; V1_BIS="$(lancer)"
+          rm -rf "$APP" && /usr/bin/ditto v2/mac/KLYRA.app "$APP"
+          V2="$(lancer)"
+          {
+            echo "### Session à travers une mise à jour (trousseau du Mac)"
+            echo "- version 1, premier lancement : $V1"
+            echo "- version 1, relancée : $V1_BIS"
+            echo "- version 2, après le remplacement : $V2"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          security find-generic-password -s "KLYRA Safe Storage" "$ESSAI" 2>&1 | grep -E 'keychain:|"svce"|"acct"|class' || echo "(pas d'entrée KLYRA Safe Storage)"
+          echo "$V1_BIS" | grep -q "JETON RELU" && echo "$V2" | grep -q "JETON RELU"

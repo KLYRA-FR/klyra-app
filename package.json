@@ -46,6 +46,8 @@
     "test:tickets:app": "node scripts/test-tickets.mjs",
     "test:profil": "node scripts/test-profil.mjs",
     "test:liens": "node scripts/test-liens.mjs",
+    "test:jetons-compte": "electron scripts/test-jetons-compte.cjs",
+    "test:session-maj": "node scripts/test-session-maj.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
     "test:relais": "node --experimental-strip-types --test electron/ordinateur/relais.test.mts",
     "test:apercu-fenetre": "node --experimental-strip-types --test electron/ordinateur/apercu-cible.test.mts electron/ordinateur/navigateur-defaut.test.mts",

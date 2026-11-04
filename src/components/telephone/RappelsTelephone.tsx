@@ -2,25 +2,40 @@
 
 import { useId, useState } from "react";
 import { Icon } from "@/components/icons/Icon";
-import { ICONES, PastilleCategorie } from "@/components/planning/Rappels";
+import { ICONES, NOMS_ICONES, PastilleCategorie } from "@/components/planning/Rappels";
+import { NOMS_TEINTES } from "@/components/roles/ChoixTeinte";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { libellePeriode } from "@/lib/dates";
 import { reportsProposes } from "@/lib/report";
+import { texteErreurPoste } from "@/lib/poste-texte";
 import { NOMS_REPORT, cibleReport, type RappelTelephone, type SectionRappels } from "@/lib/telephone/planning";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte } from "@/types/domain";
 import { usePlanningTelephone } from "./ContextePlanningTelephone";
 import { Feuille, MenuFeuille } from "./Feuille";
-import { NotePoste } from "./etats";
+import { BandeauVueGardee, NotePoste } from "./etats";
 
 /**
  * T-06 Planning › Rappels : une section repliable par catégorie au lieu des colonnes du bureau,
  * puis « Ceux que j'ai assignés » et « Assignés par l'équipe ». Une ligne : la coche (44 × 44),
  * le titre (ouvre T-07), l'échéance, « Reporter ».
  */
-export function RappelsTelephone({ sections, charge }: { sections: SectionRappels[]; charge: boolean }) {
+export function RappelsTelephone({
+  sections,
+  charge,
+  toutLu,
+  surPoste,
+}: {
+  sections: SectionRappels[];
+  charge: boolean;
+  /** L'ordinateur a été lu en direct, ou il n'y en a aucun : « Tout est fait » peut être vrai (D-8). */
+  toutLu: boolean;
+  /** Ordinateur fermé : ses rappels lus la dernière fois, à part et datés (S-22). */
+  surPoste: { lu: number; rappels: RappelTelephone[] } | null;
+}) {
+  const { sur } = usePlanningTelephone();
   const [replies, setReplies] = useState<ReadonlySet<string>>(() => new Set());
   const basculer = (id: string) =>
     setReplies((avant) => {
@@ -38,10 +53,13 @@ export function RappelsTelephone({ sections, charge }: { sections: SectionRappel
       </ul>
     );
   }
-  const rien = sections.every((s) => s.rappels.length === 0);
+  /* D-8 (C-1b) : « Tout est fait » seulement si le compte et l'ordinateur sont lus, et vides. */
+  const rien = toutLu && sections.every((s) => s.rappels.length === 0);
   return (
     <div className="flex flex-col">
       {rien ? <p className="py-4 text-body-s text-texte-secondaire">Tout est fait</p> : null}
+      {surPoste ? <h2 className="pt-3 pb-1 text-ui font-semibold text-texte-principal">Dans ton compte</h2> : null}
+      {surPoste && sections.every((s) => s.rappels.length === 0) ? <p className="py-2 text-ui text-texte-secondaire">Aucun rappel dans ton compte.</p> : null}
       {sections.map((section, i) => (
         <div key={section.id}>
           {section.categorie && sections[i - 1]?.groupe !== "mes" ? (
@@ -50,6 +68,20 @@ export function RappelsTelephone({ sections, charge }: { sections: SectionRappel
           <SectionRappelsTelephone section={section} replie={replies.has(section.id)} onBasculer={() => basculer(section.id)} />
         </div>
       ))}
+      {surPoste ? (
+        <section aria-label={`Sur ${sur}`} className="pt-4">
+          <h2 className="pb-2 text-ui font-semibold text-texte-principal">
+            Sur {sur} <span className="font-normal text-texte-secondaire">{surPoste.rappels.length}</span>
+          </h2>
+          <BandeauVueGardee lu={surPoste.lu} mot="Vus" />
+          <ul className="flex flex-col pt-1 pb-2">
+            {surPoste.rappels.map((rappel) => (
+              <LigneRappel key={`${rappel.source}-${rappel.id}`} rappel={rappel} avecCategorie />
+            ))}
+          </ul>
+          <NotePoste className="text-ui-xs text-texte-secondaire" />
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -104,7 +136,9 @@ function SectionRappelsTelephone({ section, replie, onBasculer }: { section: Sec
  * `data-echeance` : elle s'éclaire après un report, une restauration ou un retour de T-07.
  */
 export function LigneRappel({ rappel, avecCategorie = false }: { rappel: RappelTelephone; avecCategorie?: boolean }) {
-  const { cocher, ouvrirRappel, noms, categories, occupes } = usePlanningTelephone();
+  const { cocher, ouvrirRappel, noms, categories, occupes, posteOuvert } = usePlanningTelephone();
+  /* Un rappel de l'ordinateur fermé vient de sa vue gardée : il se lit, il ne se coche pas. */
+  const enAttente = rappel.source === "poste" && !posteOuvert;
   const [report, setReport] = useState(false);
   const categorie = avecCategorie ? categories?.find((c) => c.id === rappel.liste) : undefined;
   const nomAutre = rappel.autre ? (noms.get(rappel.autre) ?? "quelqu’un") : null;
@@ -118,7 +152,7 @@ export function LigneRappel({ rappel, avecCategorie = false }: { rappel: RappelT
         aria-checked={rappel.faite}
         aria-label={rappel.faite ? `Rouvrir ${rappel.titre}` : `Terminer ${rappel.titre}`}
         aria-busy={occupes.has(rappel.id) || undefined}
-        disabled={occupes.has(rappel.id)}
+        disabled={occupes.has(rappel.id) || enAttente}
         onClick={() => cocher(rappel)}
         className="flex size-11 shrink-0 items-center justify-center rounded-xs active:bg-fond-survol disabled:opacity-60"
       >
@@ -144,7 +178,7 @@ export function LigneRappel({ rappel, avecCategorie = false }: { rappel: RappelT
         ) : null}
       </button>
       {categorie ? <PastilleCategorie categorie={categorie} taille={20} /> : null}
-      {!rappel.faite && rappel.createur ? (
+      {!rappel.faite && rappel.createur && !enAttente ? (
         <button type="button" onClick={() => setReport(true)} className="min-h-11 shrink-0 rounded-xs px-2 text-ui text-texte-secondaire active:bg-fond-survol">
           {rappel.jour ? "Reporter" : "Planifier"}
         </button>
@@ -237,7 +271,7 @@ export function MenuRappels({
  * catégorie range ses rappels dans la première qui reste.
  */
 export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: Categorie | null; nombre: number; onFermer: () => void }) {
-  const { posteOuvert, surPoste } = usePlanningTelephone();
+  const { posteOuvert, surPoste, sur } = usePlanningTelephone();
   const [nom, setNom] = useState(categorie?.nom ?? "");
   const [teinte, setTeinte] = useState<RoleTeinte>(categorie?.teinte ?? ROLE_TEINTES[nombre % ROLE_TEINTES.length]);
   const [icone, setIcone] = useState(categorie?.icone ?? "list");
@@ -252,7 +286,7 @@ export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: C
     const resultat = await surPoste(type, args);
     setOccupe(false);
     if (resultat.ok) onFermer();
-    else setErreur(resultat.code === "delai" ? "Pas de réponse de l’ordinateur. Réessaie." : resultat.message || "Le geste a échoué sur l’ordinateur.");
+    else setErreur(texteErreurPoste(resultat, sur));
   };
 
   const enregistrer = () => {
@@ -304,7 +338,7 @@ export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: C
               <button
                 key={t}
                 type="button"
-                aria-label={t}
+                aria-label={NOMS_TEINTES[t]}
                 aria-pressed={teinte === t}
                 onClick={() => setTeinte(t)}
                 className="flex size-11 items-center justify-center rounded-full"
@@ -325,7 +359,7 @@ export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: C
               <button
                 key={i}
                 type="button"
-                aria-label={i}
+                aria-label={NOMS_ICONES[i] ?? "Icône"}
                 aria-pressed={icone === i}
                 onClick={() => setIcone(i)}
                 className={cn(

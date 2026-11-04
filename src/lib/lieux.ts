@@ -137,6 +137,14 @@ export function lireIdDirect(id: string): { roleId: RoleId; hote: string | null 
   return { roleId: reste.slice(0, at), hote: hote === SUR_PC ? null : hote };
 }
 
+/** La machine d'une conversation (null : ce PC) ; une directe pas encore enregistrée se lit à son id. */
+export function lieuDeConversation(chats: readonly Chat[], id: string): string | null {
+  const chat = chats.find((c) => c.id === id);
+  if (chat) return chat.lieu ?? null;
+  const hote = lireIdDirect(id)?.hote;
+  return hote ? lieuDeHote(hote) : null;
+}
+
 /**
  * La conversation directe avec un agent dans l'espace d'une machine : une par agent et par serveur.
  * Celle qui existe est reprise, même sous un id d'avant (`dm-<agent>` restée sur un VPS). Sinon :

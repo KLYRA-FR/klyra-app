@@ -15,7 +15,7 @@ import { roleFromContent } from "@/lib/agents";
 import type { Lien } from "@/lib/lien-bibliotheque";
 import { useLecturePoste } from "@/lib/poste/client";
 import { idDirect } from "@/lib/workspace";
-import { ID_ASSISTANT, libelleRetour, teinteSure, texteConversations } from "@/lib/telephone/agents";
+import { ID_ASSISTANT, libelleRetour, roleLisible, teinteSure, texteConversations } from "@/lib/telephone/agents";
 import type { ApercuPartage, FicheLue } from "@/lib/telephone/gestes-agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import type { Role, RoleSection, RoleTeinte } from "@/types/domain";
@@ -25,6 +25,7 @@ import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, type ActionMenu } from "./Feuille";
 import { NotePoste, VueLecture } from "./etats";
 import { useSupport } from "./poste";
+import { useRetour } from "./retour";
 
 /**
  * La fiche d'un agent sur le téléphone (spec mobile T-09). L'identité (nom, couleur, rôle court) vient
@@ -120,9 +121,10 @@ export function FicheAgentTelephone({ id }: { id: string }) {
   const agent = lue?.type === "agent" ? lue : null;
   const role = useMemo(() => (agent ? roleDeFiche(agent) : null), [agent]);
   const identite = carte(id);
-  const nom = identite?.nom ?? role?.name ?? id;
+  /* Jamais l'id à l'écran (socle § 8) : sans carte ni fiche lue, « Cet agent ». */
+  const nom = identite?.nom ?? role?.name ?? "Cet agent";
   const teinte: RoleTeinte = identite?.teinte ?? role?.teinte ?? teinteSure(null);
-  const roleCourt = identite?.roleCourt ?? role?.tag ?? "";
+  const roleCourt = identite?.roleCourt || roleLisible(role?.tag, id) || role?.title || "";
   const statut = agent?.statut ?? (assistant || identite?.actif ? "actif" : "desactive");
   const siennes = (conversations ?? []).filter((c) => c.roleIds.includes(id));
 
@@ -183,7 +185,7 @@ export function FicheAgentTelephone({ id }: { id: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre={nom} retour={() => router.push("/equipe")} droite={<BoutonMenu libelle="Plus d’options" onClick={() => setMenu(true)} />} />
+      <EnteteTelephone titre={nom} parent="/equipe" droite={<BoutonMenu libelle="Plus d’options" onClick={() => setMenu(true)} />} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-6">
         <header className="flex flex-col gap-3 px-4 pt-2">
           <div className="flex items-center gap-3">
@@ -226,7 +228,8 @@ export function FicheAgentTelephone({ id }: { id: string }) {
                       onComparer={() => aller("maj")}
                     />
                     <p className="text-ui-xs text-texte-secondaire">
-                      {[texteOrigine(agent.lien, nom, sur), role.model ? `Modèle ${role.model}` : null, `${agent.chemin} · modifiée le ${dateLongue.format(agent.modifiedAt)}`]
+                      {/* C-2c : jamais le chemin du fichier de la fiche sur le téléphone. */}
+                      {[texteOrigine(agent.lien, nom, sur), role.model ? `Modèle ${role.model}` : null, `Modifiée le ${dateLongue.format(agent.modifiedAt)}`]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
@@ -517,6 +520,7 @@ export function HistoriqueFicheTelephone({ id }: { id: string }) {
   const version = useLecturePoste<{ contenu: string; actuel: string; empreinte: string }>("agents.version", choisie ? { id, versionId: choisie } : null);
   const { agir, occupe, ouvert, erreur } = useGesteTelephone();
   const fiche = `/equipe?agent=${encodeURIComponent(id)}`;
+  const versFiche = useRetour(fiche);
 
   const restaurer = async () => {
     if (!choisie || version.etat !== "ok") return;
@@ -526,7 +530,7 @@ export function HistoriqueFicheTelephone({ id }: { id: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre={choisie ? "Une version" : `Historique de ${nom}`} retour={() => (choisie ? setChoisie(null) : router.push(fiche))} />
+      <EnteteTelephone titre={choisie ? "Une version" : `Historique de ${nom}`} retour={() => (choisie ? setChoisie(null) : versFiche())} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-6">
         {choisie ? (
           <VueLecture lecture={version} ferme={(sur) => `l’historique de ${nom} est sur ${sur}. Il s’affiche quand KLYRA y est ouverte.`}>

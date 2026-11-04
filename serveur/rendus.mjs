@@ -3,7 +3,7 @@
  * (electron/rendus.ts), un fichier ou le dossier d'une page avec index.html, 300 Mo au plus, sans
  * node_modules ni .git. Le VPS ne copie rien : il retient la publication (`donnees/rendus.json`),
  * prévient l'app par le journal des événements (type `rendu`), et ne sert ensuite que ces fichiers-là
- * à l'appareil relié, qui en garde la copie sur l'ordinateur (electron/rendus-vps.ts).
+ * à l'appareil relié. Le fichier reste sur ce VPS : l'app ne le copie plus dans ses rendus.
  * Rien hors du dossier de klyra.
  */
 import { randomUUID } from "node:crypto";
@@ -95,7 +95,7 @@ export function creerRendus(options) {
     const rendu = { id: avant?.id ?? randomUUID(), chemin, dossier, taille: total, titre, description, agent, conversation, at: maintenant() };
     ecrire([rendu, ...liste.filter((r) => r.id !== rendu.id)]);
     options.publier(`rendu-${rendu.id}-${rendu.at}`, { type: "rendu", ...rendu }, null);
-    return `Publié dans Artefacts : « ${titre} ». L’app en garde une copie sur l’ordinateur de la personne ; republier le même fichier remplace cette copie.`;
+    return `Publié dans Artefacts : « ${titre} ». Il reste dans Mes artefacts de ce serveur, sans être partagé à l’équipe. Republier le même fichier met à jour cette publication.`;
   }
 
   /** Une publication retenue (jamais un autre fichier). */

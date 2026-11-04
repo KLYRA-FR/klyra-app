@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Rendu } from "@/types/domain";
-import { estCheminComplet, lirePublication, nomDuFichier, publierRendu, typeDeRendu } from "./rendus";
+import { estCheminComplet, lirePublication, nomDuFichier, publierRendu, renduDepuisServeur, typeDeRendu } from "./rendus";
 
 const rendu = (r: Partial<Rendu>): Rendu => ({
   id: "r1",
@@ -38,6 +38,33 @@ describe("rendus des agents", () => {
     expect(lirePublication({ chemin: " /tmp/accueil.png ", titre: "  Page   d’accueil " })).toEqual({ chemin: "/tmp/accueil.png", titre: "Page d’accueil", description: "" });
     expect(lirePublication({ chemin: "/tmp/accueil.png" }).titre).toBe("accueil.png");
     expect(lirePublication({ chemin: "/tmp/a.png", titre: "x".repeat(200), description: "y".repeat(900) })).toMatchObject({ titre: "x".repeat(80), description: "y".repeat(500) });
+  });
+
+  test("un livrable de VPS n'a pas de copie sur ce PC", () => {
+    const fiche = renduDepuisServeur(
+      "https://vps.exemple",
+      { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", chemin: "/root/klyra/page.html", dossier: false, taille: 40, titre: "Page", description: "Notes", agent: "iris" },
+      { id: "dm-iris@vps", projectId: null },
+      "2026-11-04T12:00:00.000Z",
+      "local",
+    );
+    expect(fiche).toMatchObject({
+      chemin: "",
+      origine: "https://vps.exemple#/root/klyra/page.html",
+      distantId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      dossier: false,
+      type: "page",
+      roleId: "iris",
+      chatId: "dm-iris@vps",
+    });
+    const dossier = renduDepuisServeur(
+      "https://vps.exemple",
+      { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", chemin: "/root/klyra/site", dossier: true, taille: 80, titre: "", description: "", agent: "iris" },
+      undefined,
+      "2026-11-04T12:00:00.000Z",
+      "local",
+    );
+    expect(dossier).toMatchObject({ type: "page", titre: "site", chemin: "", chatId: null });
   });
 
   test("republier le même original met son rendu à jour (nouvelle copie) et le remonte", () => {
