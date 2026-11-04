@@ -55,13 +55,13 @@ export function trouverCodex(): string | null {
 }
 
 /** La fiche de l'agent (dossier de l'app, sous-dossiers compris), sans son en-tête. */
-function ficheDe(agent: string): string | null {
+export function ficheDe(agent: string): string | null {
   const brute = ficheBrute(agent);
   return brute ? corpsDeFiche(brute) : null;
 }
 
 /** La fiche entière, en-tête compris (ses `skills`). */
-function ficheBrute(agent: string): string | null {
+export function ficheBrute(agent: string): string | null {
   const chercher = (dossier: string, profondeur: number): string | null => {
     const direct = path.join(dossier, `${agent}.md`);
     if (existsSync(direct)) return direct;

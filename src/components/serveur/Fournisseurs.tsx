@@ -64,6 +64,7 @@ function sousTitre(m: EtatMoteur | undefined): string {
   if (compte.email) return compte.email;
   if (compte.methode === "cle-api") return "Clé API";
   if (compte.methode === "config") return "Réglé dans la configuration de Codex";
+  if (compte.methode === "env") return "Clé API d’xAI (XAI_API_KEY)";
   if (compte.methode === "jeton") return "Jeton longue durée";
   return "Connecté";
 }
@@ -151,7 +152,7 @@ const correspond = (requete: string, ...textes: string[]) => {
 
 /**
  * Tous les fournisseurs du serveur en une liste : ceux qui font travailler les agents (Claude, ChatGPT
- * par Codex) et ceux qu'ils peuvent consulter avec une clé API (Gemini, DeepSeek, Grok…, cf. electron/ia.ts).
+ * par Codex, Grok par Grok Build) et ceux qu'ils peuvent consulter avec une clé API (Gemini, DeepSeek, Grok…, cf. electron/ia.ts).
  */
 function Liste({ ouvrir, lieu }: { ouvrir: (id: string) => void; lieu: string | null }) {
   const { moteurs, erreur } = useMoteurs(lieu);
@@ -197,7 +198,7 @@ function Liste({ ouvrir, lieu }: { ouvrir: (id: string) => void; lieu: string | 
       {(autres.length > 0 || iasProposees.length > 0) && (
         <Groupe
           titre="Autres fournisseurs"
-          description={`Claude et ChatGPT font travailler les agents : ils s’installent et se connectent depuis leur page. Les IA « À consulter » s’ajoutent avec leur clé API, ${lieu ? "gardée sur ce serveur" : "chiffrée dans le trousseau de ce poste"}.`}
+          description={`Claude, ChatGPT et Grok font travailler les agents : ils s’installent et se connectent depuis leur page. Les IA « À consulter » s’ajoutent avec leur clé API, ${lieu ? "gardée sur ce serveur" : "chiffrée dans le trousseau de ce poste"}.`}
         >
           {autres.map((f) => (
             <Ligne1 key={f.id} id={f.id} m={etat(f.id)} publiee={publiees[f.id]} onClick={() => ouvrir(f.id)} />
@@ -322,58 +323,96 @@ function Moteur({ id, m, lieu }: { id: string; m: EtatMoteur | undefined; lieu: 
   );
 }
 
-function CompteChatGpt({ m, lieu }: { m: EtatMoteur | undefined; lieu: string | null }) {
+/** Ce qui change d'un fournisseur à abonnement à l'autre sur sa page : ses mots, ceux de sa clé API. */
+const ABONNEMENTS = {
+  codex: {
+    description: "Ton abonnement ChatGPT : Codex s’y connecte, comme dans son application.",
+    config: "Réglé dans la configuration de Codex",
+    agents: "Les agents réglés sur ChatGPT travaillent avec ce compte.",
+    page: "La page d’OpenAI",
+    codeLibelle: "Code à saisir sur la page d’OpenAI",
+    cleTitre: "Plutôt qu’un abonnement : une clé de platform.openai.com/api-keys. Codex la garde sur",
+    cleLibelle: "Clé API d’OpenAI",
+    clePlaceholder: "sk-…",
+  },
+  grok: {
+    description: "Ton abonnement Grok (SuperGrok ou X Premium+) : Grok Build s’y connecte, comme dans son terminal.",
+    config: "Clé API d’xAI (XAI_API_KEY)",
+    agents: "Les agents réglés sur Grok travaillent avec ce compte.",
+    page: "La page d’xAI",
+    codeLibelle: "Code à saisir sur la page d’xAI",
+    cleTitre: "Plutôt qu’un abonnement : une clé de console.x.ai. KLYRA la garde sur",
+    cleLibelle: "Clé API d’xAI",
+    clePlaceholder: "xai-…",
+  },
+} as const;
+
+/** Le compte d'un fournisseur qui se connecte par abonnement ou par clé (ChatGPT par Codex, Grok par Grok Build). */
+function CompteAbonnement({ id, m, lieu }: { id: keyof typeof ABONNEMENTS; m: EtatMoteur | undefined; lieu: string | null }) {
   const bridge = getBridge()?.moteurs;
-  const { action, erreur, lancer } = useAction("codex", lieu);
+  const { action, erreur, lancer } = useAction(id, lieu);
   const [cle, setCle] = useState("");
+  const textes = ABONNEMENTS[id];
+  const nom = fournisseur(id).nom;
   const compte = m?.compte;
   const installe = !!m?.moteur.chemin;
   if (!installe) return null;
+  /* Grok sur un VPS : par code d'appareil seulement ; sur ce poste, `grok login` ouvre la page d'xAI. */
+  const parCode = id === "grok" && !!lieu;
+  const libelleCompte =
+    compte?.email ??
+    (compte?.methode === "config" || compte?.methode === "env" ? textes.config : compte?.methode === "cle-api" ? "Connecté par clé API" : compte?.connecte ? `Connecté à ${nom}` : "Aucun compte connecté");
 
   return (
     <>
-      <Groupe titre="Compte" description="Ton abonnement ChatGPT : Codex s’y connecte, comme dans son application.">
+      <Groupe titre="Compte" description={textes.description}>
         <Ligne
-          id="compte-chatgpt"
-          libelle={compte?.email ?? (compte?.methode === "config" ? "Réglé dans la configuration de Codex" : compte?.methode === "cle-api" ? "Connecté par clé API" : "Aucun compte connecté")}
+          id={`compte-${id === "codex" ? "chatgpt" : id}`}
+          libelle={libelleCompte}
           description={
             compte?.connecte
-              ? [compte.abonnement && `Abonnement ${nomAbonnement(compte.abonnement)}`, "Les agents réglés sur ChatGPT travaillent avec ce compte."].filter(Boolean).join(" · ")
-              : lieu
-                ? "La page d’OpenAI s’ouvre dans ton navigateur ; reviens ici une fois connecté. Le compte est relié à ce serveur."
-                : "La page d’OpenAI s’ouvre dans ton navigateur ; reviens ici une fois connecté."
+              ? [compte.abonnement && `Abonnement ${nomAbonnement(compte.abonnement)}`, textes.agents].filter(Boolean).join(" · ")
+              : parCode
+                ? `${textes.page} s’ouvre dans ton navigateur avec un code à saisir ; reviens ici une fois connecté. Le compte est relié à ce serveur.`
+                : lieu
+                  ? `${textes.page} s’ouvre dans ton navigateur ; reviens ici une fois connecté. Le compte est relié à ce serveur.`
+                  : `${textes.page} s’ouvre dans ton navigateur ; reviens ici une fois connecté.`
           }
         >
           {bridge && !compte?.connecte && (
-            <Bouton variant="sombre" taille="compact" disabled={!!action} onClick={() => void lancer("connecter", () => bridge.connecter("codex", lieu))}>
+            <Bouton variant="sombre" taille="compact" disabled={!!action} onClick={() => void lancer("connecter", () => bridge.connecter(id, lieu))}>
               {action?.nom === "connecter" ? "Connexion dans le navigateur…" : "Se connecter"}
             </Bouton>
           )}
-          {bridge && compte?.connecte && compte.methode !== "config" && (
-            <Bouton variant="blanc" taille="compact" disabled={!!action} onClick={() => void lancer("deconnecter", () => bridge.deconnecter("codex", lieu))}>
+          {bridge && compte?.connecte && compte.methode !== "config" && compte.methode !== "env" && (
+            <Bouton variant="blanc" taille="compact" disabled={!!action} onClick={() => void lancer("deconnecter", () => bridge.deconnecter(id, lieu))}>
               Se déconnecter
             </Bouton>
           )}
         </Ligne>
         {action?.code && (
-          <Ligne id="code-chatgpt" libelle="Code à saisir sur la page d’OpenAI" description={<>L’adresse de retour est déjà prise sur ce poste : la connexion passe par ce code. La page ne s’est pas ouverte ? Va sur {action.code.url}.</>}>
+          <Ligne
+            id={`code-${id === "codex" ? "chatgpt" : id}`}
+            libelle={textes.codeLibelle}
+            description={<>{parCode ? "Le serveur n’a pas de navigateur : la connexion passe par ce code." : "L’adresse de retour est déjà prise sur ce poste : la connexion passe par ce code."} La page ne s’est pas ouverte ? Va sur {action.code.url}.</>}
+          >
             <span className="klyra-mono rounded-sm bg-fond-surface-grise px-3 py-1.5 text-ui font-semibold tracking-[0.08em] text-texte-principal select-all">{action.code.code}</span>
           </Ligne>
         )}
       </Groupe>
 
       {!compte?.connecte && (
-        <Groupe titre="Clé API" description={`Plutôt qu’un abonnement : une clé de platform.openai.com/api-keys. Codex la garde sur ${lieu ? "ce serveur" : "ce poste"} ; elle ne revient jamais à l’interface.`}>
-          <Ligne id="cle-api-chatgpt" libelle="Clé API d’OpenAI" pile>
+        <Groupe titre="Clé API" description={`${textes.cleTitre} ${lieu ? "ce serveur" : "ce poste"} ; elle ne revient jamais à l’interface.`}>
+          <Ligne id={`cle-api-${id === "codex" ? "chatgpt" : id}`} libelle={textes.cleLibelle} pile>
             <form
               className="flex w-full items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!bridge || !cle.trim()) return;
-                void lancer("cle", () => bridge.connecterAvecCle("codex", cle.trim(), lieu)).then(() => setCle(""));
+                void lancer("cle", () => bridge.connecterAvecCle(id, cle.trim(), lieu)).then(() => setCle(""));
               }}
             >
-              <Input size="sm" type="password" value={cle} onChange={(e) => setCle(e.target.value)} autoComplete="off" spellCheck={false} placeholder="sk-…" className={cn(CHAMP, "klyra-mono flex-1")} />
+              <Input size="sm" type="password" value={cle} onChange={(e) => setCle(e.target.value)} autoComplete="off" spellCheck={false} placeholder={textes.clePlaceholder} className={cn(CHAMP, "klyra-mono flex-1")} />
               <Bouton type="submit" variant="blanc" taille="compact" disabled={!!action || !cle.trim()}>
                 {action?.nom === "cle" ? "Vérification…" : "Ajouter"}
               </Bouton>
@@ -435,7 +474,7 @@ function Detail({ id, retour, lieu }: { id: string; retour: () => void; lieu: st
           </span>
         </div>
       </div>
-      {id === PAR_DEFAUT ? lieu ? <CompteClaudeVps m={m} /> : <Claude /> : <CompteChatGpt m={m} lieu={lieu} />}
+      {id === PAR_DEFAUT ? lieu ? <CompteClaudeVps m={m} /> : <Claude /> : id === "grok" || id === "codex" ? <CompteAbonnement id={id} m={m} lieu={lieu} /> : null}
       <Moteur id={id} m={m} lieu={lieu} />
     </div>
   );

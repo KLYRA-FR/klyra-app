@@ -5,8 +5,26 @@
  */
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { brotliDecompressSync } from "node:zlib";
+
+/**
+ * Le dossier à ranger, avec le programme dans son `bin/` : `package/vendor/<cible>` (Codex), ou
+ * `package/bin/<programme>` éventuellement compressé en brotli (`<programme>.br`, Grok Build), décompressé ici.
+ */
+function dossierDuProgramme(extrait, executable) {
+  const vendor = path.join(extrait, "package", "vendor");
+  const cible = (existsSync(vendor) ? readdirSync(vendor) : []).find((c) => existsSync(path.join(vendor, c, "bin", executable)));
+  if (cible) return path.join(vendor, cible);
+  const bin = path.join(extrait, "package", "bin");
+  const sortie = path.join(extrait, "programme");
+  mkdirSync(path.join(sortie, "bin"), { recursive: true });
+  if (existsSync(path.join(bin, `${executable}.br`))) writeFileSync(path.join(sortie, "bin", executable), brotliDecompressSync(readFileSync(path.join(bin, `${executable}.br`))));
+  else if (existsSync(path.join(bin, executable))) renameSync(path.join(bin, executable), path.join(sortie, "bin", executable));
+  else throw new Error(`Le paquet ne contient pas ${executable}.`);
+  return sortie;
+}
 
 /** Le registre npm ; les tests en donnent un faux. */
 const registre = () => (process.env.KLYRA_REGISTRE_NPM ?? "https://registry.npmjs.org").replace(/\/$/, "");
@@ -112,9 +130,11 @@ export async function installerDepuisNpm({ home, moteur, paquet, executable, pro
   const version = await derniereVersionNpm(paquet);
   if (!version) throw new Error(`Impossible de lire la dernière version de ${paquet} sur npm.`);
   const meta = await lireJson(urlPaquet(paquet, version));
-  const alias = meta.optionalDependencies?.[`${paquet}-${plateformeNpm()}`];
+  const nomPlateforme = `${paquet}-${plateformeNpm()}`;
+  const alias = meta.optionalDependencies?.[nomPlateforme];
   if (!alias) throw new Error(`${paquet} ${version} n’existe pas pour ce système (${plateformeNpm()}).`);
-  const spec = alias.replace(/^npm:/, "");
+  /* Codex : « npm:@openai/codex@0.166.0-linux-x64 » ; Grok Build : « 1.0.70 », le paquet `@xai-official/grok-linux-x64`. */
+  const spec = alias.startsWith("npm:") ? alias.slice(4) : `${nomPlateforme}@${alias}`;
   const arobase = spec.lastIndexOf("@");
   const dist = (await lireJson(urlPaquet(spec.slice(0, arobase), spec.slice(arobase + 1)))).dist;
   if (!dist?.tarball || !dist.integrity?.startsWith("sha512-")) throw new Error("npm ne donne pas d’empreinte pour ce paquet : installation refusée.");
@@ -133,15 +153,11 @@ export async function installerDepuisNpm({ home, moteur, paquet, executable, pro
     mkdirSync(extrait);
     const r = await commande("tar", ["-xzf", archive, "-C", extrait], 10 * 60_000);
     if (r.code !== 0) throw new Error(`Décompression impossible : ${r.sortie.trim().slice(0, 300)}`);
-    const vendor = path.join(extrait, "package", "vendor");
-    const cibles = existsSync(vendor) ? readdirSync(vendor) : [];
-    const cible = cibles.find((c) => existsSync(path.join(vendor, c, "bin", executable)));
-    if (!cible) throw new Error(`Le paquet ne contient pas ${executable}.`);
-
     const destination = path.join(racine, moteur, version);
+    const source = dossierDuProgramme(extrait, executable);
     mkdirSync(path.dirname(destination), { recursive: true });
     rmSync(destination, { recursive: true, force: true });
-    renameSync(path.join(vendor, cible), destination);
+    renameSync(source, destination);
     for (const nom of readdirSync(path.join(destination, "bin"))) chmodSync(path.join(destination, "bin", nom), 0o755);
     writeFileSync(path.join(destination, "klyra-installation.json"), JSON.stringify({ paquet, version, integrite: dist.integrity, installeLe: new Date().toISOString() }, null, 2));
     for (const ancienne of versionsGerees(home, moteur).filter((v) => v !== version)) {

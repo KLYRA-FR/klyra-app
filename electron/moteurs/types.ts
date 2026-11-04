@@ -6,8 +6,8 @@
 
 import type { Utilisation } from "../utilisation";
 
-/** Les moteurs que l'app sait lancer : Claude Code, et Codex pour ChatGPT. */
-export type IdMoteur = "claude" | "codex";
+/** Les moteurs que l'app sait lancer : Claude Code, Codex pour ChatGPT, Grok Build pour Grok. */
+export type IdMoteur = "claude" | "codex" | "grok";
 
 /** Ce que l'interface reçoit pendant qu'un agent travaille (cf. src/lib/bridge.ts). */
 export type AgentEvent =

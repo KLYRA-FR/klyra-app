@@ -39,7 +39,7 @@ function Consignes({ configuration, changer }: { configuration: ConfigurationKly
     <Ligne
       id="consignes-klyra"
       libelle="Consignes KLYRA"
-      description="Ajoutées à chaque session de tes agents, sur Claude comme sur ChatGPT : chercher avant de lire, ne pas afficher de sortie entière, répondre court. Sur nos essais, 13 à 19 % de coût en moins à résultat égal. Elles valent pour les conversations qui commencent ensuite."
+      description="Ajoutées à chaque session de tes agents, sur Claude, ChatGPT et Grok : chercher avant de lire, ne pas afficher de sortie entière, répondre court. Sur nos essais, 13 à 19 % de coût en moins à résultat égal. Elles valent pour les conversations qui commencent ensuite."
       pile
     >
       <div className="flex w-full flex-col gap-2.5">

@@ -40,6 +40,7 @@ import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { creerCodex } from "./codex.mjs";
+import { creerGrok } from "./grok.mjs";
 
 /** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
 const OUTILS_BLOQUANTS = ["AskUserQuestion", "EnterPlanMode"];
@@ -411,6 +412,20 @@ export function creerAgents(options) {
     ...(options.codex !== undefined ? { codex: options.codex } : {}),
   });
 
+  /* Grok par Grok Build (grok.mjs) : mêmes consignes, mêmes IA à consulter que Codex. */
+  const grok = creerGrok({
+    home,
+    donnees,
+    version: options.version ?? "1",
+    publier,
+    consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
+    consignesKlyra: () => lireEquipe().configuration.consignes,
+    mcp: mcpIa,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
+    skillsParAgent: () => lireEquipe().skillsParAgent,
+    ...(options.grok !== undefined ? { grok: options.grok } : {}),
+  });
+
   const agentAutorise = (type) => typeof type !== "string" || !type || estActif(type) || AGENTS_DE_CLAUDE.includes(type);
 
   /* ─── Processus et réponses ─────────────────────────────────────── */
@@ -657,11 +672,13 @@ export function creerAgents(options) {
     if (!demande || typeof demande !== "object") return "Demande invalide.";
     if (typeof demande.prompt !== "string" || !demande.prompt || demande.prompt.length > 500_000) return "Message invalide.";
     if (demande.agent !== null && (typeof demande.agent !== "string" || !ID_AGENT.test(demande.agent))) return "Nom d’agent invalide.";
-    if (demande.moteur !== undefined && demande.moteur !== null && !["claude", "codex"].includes(demande.moteur)) return `Fournisseur inconnu : ${String(demande.moteur)}.`;
+    if (demande.moteur !== undefined && demande.moteur !== null && !["claude", "codex", "grok"].includes(demande.moteur)) return `Fournisseur inconnu : ${String(demande.moteur)}.`;
     const codexDemande = demande.moteur === "codex";
-    if (demande.sessionId !== null && (typeof demande.sessionId !== "string" || !/^[0-9a-f-]{36}$/.test(demande.sessionId))) return "Session invalide.";
-    if (demande.modele && !(codexDemande ? /^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,63}$/ : /^[a-z0-9][a-z0-9.\-]{0,63}$/).test(demande.modele)) return "Modèle invalide.";
-    if (demande.effort && !(codexDemande ? EFFORTS_CODEX : EFFORTS_CLAUDE).includes(demande.effort)) return "Effort invalide.";
+    const grokDemande = demande.moteur === "grok";
+    /* Grok nomme ses sessions lui-même (pas forcément un UUID) : le client ACP vérifie leur forme. */
+    if (demande.sessionId !== null && (typeof demande.sessionId !== "string" || !(grokDemande ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/ : /^[0-9a-f-]{36}$/).test(demande.sessionId))) return "Session invalide.";
+    if (demande.modele && !(grokDemande ? /^[a-zA-Z0-9][a-zA-Z0-9.:\-_/]{0,95}$/ : codexDemande ? /^[a-zA-Z0-9][a-zA-Z0-9.\-_]{0,63}$/ : /^[a-z0-9][a-z0-9.\-]{0,63}$/).test(demande.modele)) return "Modèle invalide.";
+    if (demande.effort && !(grokDemande ? /^[a-z]{1,16}$/.test(demande.effort) : (codexDemande ? EFFORTS_CODEX : EFFORTS_CLAUDE).includes(demande.effort))) return "Effort invalide.";
     if (demande.acces && !["demander", "projet", "tout"].includes(demande.acces)) return "Accès invalide.";
     if (demande.dossier !== null && demande.dossier !== undefined && (typeof demande.dossier !== "string" || !path.isAbsolute(demande.dossier))) return "Dossier invalide.";
     if (demande.skill !== undefined && demande.skill !== null && (typeof demande.skill !== "string" || !/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(demande.skill))) return "Compétence invalide.";
@@ -684,6 +701,7 @@ export function creerAgents(options) {
     } else mkdirSync(atelier, { recursive: true });
 
     if (demande.moteur === "codex") return codex.envoyer(requestId, demande, cwd);
+    if (demande.moteur === "grok") return grok.envoyer(requestId, demande, cwd);
     // Claude Code hors projet : le dossier de l'agent dans l'atelier (cf. electron/atelier.ts).
     if (!demande.dossier) {
       cwd = dossierHorsProjet(atelier, demande.agent ?? null, demande.sessionId ?? null, path.join(home, ".claude"), existsSync);
@@ -788,6 +806,7 @@ export function creerAgents(options) {
 
   function autoriser(requestId, demandeId, decision) {
     if (codex.autoriser(requestId, demandeId, decision)) return true;
+    if (grok.autoriser(requestId, demandeId, decision)) return true;
     const enCours = parRequete.get(requestId);
     const demande = demandes.get(requestId)?.get(demandeId);
     if (!enCours || !demande || !["oui", "toujours", "non"].includes(decision)) return false;
@@ -800,6 +819,7 @@ export function creerAgents(options) {
 
   function annuler(requestId) {
     if (codex.annuler(requestId)) return true;
+    if (grok.annuler(requestId)) return true;
     const enCours = parRequete.get(requestId);
     if (!enCours) return false;
     const { proc, tour } = enCours;
@@ -815,6 +835,7 @@ export function creerAgents(options) {
   function fermerTout() {
     for (const proc of new Set(processus.values())) proc.child.kill("SIGTERM");
     codex.fermer();
+    grok.fermer();
     if (process.env.KLYRA_USER_DATA === donnees) {
       if (userDataAvant === undefined) delete process.env.KLYRA_USER_DATA;
       else process.env.KLYRA_USER_DATA = userDataAvant;
@@ -833,5 +854,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex, grok };
 }

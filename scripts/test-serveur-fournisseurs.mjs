@@ -65,7 +65,7 @@ const publier = (requestId, event, sessionId) => {
 const ia = creerIa({ donnees: DONNEES, version: "1" });
 await ia.demarrer();
 const agents = creerAgents({ home: HOME, donnees: DONNEES, nomServeur: "essai", publier, spontane: journal.spontane, ia, claude: null, codex: bin });
-const moteurs = creerMoteurs({ home: HOME, claude: agents.claude, codex: agents.codex });
+const moteurs = creerMoteurs({ home: HOME, claude: agents.claude, codex: agents.codex, grok: agents.grok });
 const serveur = await ecouter({ nom: "essai", dossier: DONNEES, journal, agents, moteurs, ia });
 const base = `http://127.0.0.1:${serveur.port}`;
 
@@ -100,7 +100,7 @@ try {
 
   /* 2. Moteurs, compte et modèles. */
   const { moteurs: liste } = (await appel("/klyra/v1/moteurs")).json;
-  assert.deepEqual(liste.map((m) => [m.id, m.fournisseur, m.installable]), [["claude", "Claude", false], ["codex", "ChatGPT", true]]);
+  assert.deepEqual(liste.map((m) => [m.id, m.fournisseur, m.installable]), [["claude", "Claude", false], ["codex", "ChatGPT", true], ["grok", "Grok", true]]);
   assert.equal(liste[0].chemin, null);
   assert.equal(liste[1].chemin, bin);
   const compte = (await appel("/klyra/v1/moteurs/codex/compte")).json.compte;

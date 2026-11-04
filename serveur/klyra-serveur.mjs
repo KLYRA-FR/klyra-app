@@ -188,11 +188,11 @@ export function contexteTelephone(brut) {
 
 /**
  * Ce qui identifie l'agent d'une conversation, pour retrouver sa session : « conversation|agent »,
- * et « |codex » au bout pour celle de Codex (une session n'existe que dans le moteur qui l'a créée).
+ * et « |codex » ou « |grok » au bout pour celle de Codex ou de Grok (une session n'existe que dans le moteur qui l'a créée).
  */
 export function cleConversation(conversation, agent, moteur = null) {
   if (typeof conversation !== "string" || !/^[A-Za-z0-9_.:-]{1,120}$/.test(conversation)) return null;
-  return `${conversation}|${typeof agent === "string" && agent ? agent : "principal"}${moteur === "codex" ? "|codex" : ""}`;
+  return `${conversation}|${typeof agent === "string" && agent ? agent : "principal"}${moteur === "codex" || moteur === "grok" ? `|${moteur}` : ""}`;
 }
 
 /**
@@ -413,7 +413,7 @@ export function creerGestionnaire(options) {
       const [id = "", action = ""] = url.pathname.slice(CHEMIN_MOTEURS.length + 1).split("/");
       try {
         if (!id && req.method === "GET") return repondre(res, 200, { moteurs: moteurs.liste() });
-        if (action === "compte" && req.method === "GET") return repondre(res, 200, { compte: await moteurs.compte(id), connexion: id === "codex" ? moteurs.etatConnexion() : null });
+        if (action === "compte" && req.method === "GET") return repondre(res, 200, { compte: await moteurs.compte(id), connexion: id === "codex" || id === "grok" ? moteurs.etatConnexion(id) : null });
         if (action === "modeles" && req.method === "GET") return repondre(res, 200, { modeles: await moteurs.modeles(id) });
         if (action === "utilisation" && req.method === "GET") return repondre(res, 200, { utilisation: await moteurs.utilisation(id, url.searchParams.get("actualiser") === "1") });
         if (action === "version-disponible" && req.method === "GET") return repondre(res, 200, { version: await moteurs.versionDisponible(id) });
@@ -681,7 +681,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const ia = creerIa({ donnees: dossier, version: String(PROTOCOLE) });
   await ia.demarrer();
   const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane, ia, version: String(PROTOCOLE), ecouteurs: journal.ecouteurs });
-  const moteurs = creerMoteurs({ home, claude: agents.claude, codex: agents.codex });
+  const moteurs = creerMoteurs({ home, claude: agents.claude, codex: agents.codex, grok: agents.grok });
   routines = creerRoutines({ donnees: dossier, home, envoyer: agents.envoyer, annuler: agents.annuler });
   const ecoute = await ecouter({
     nom: process.env.KLYRA_SERVEUR_NOM,

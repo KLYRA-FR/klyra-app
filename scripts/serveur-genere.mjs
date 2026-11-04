@@ -8,6 +8,7 @@
  * - `serveur/skills-par-agent.mjs` : quelles skills chaque agent reçoit (electron/skills-par-agent.ts) ;
  * - `serveur/preparation-fournisseur.mjs` : le dossier que Claude Code lit à la place de ~/.claude (electron/preparation-fournisseur.ts) ;
  * - `serveur/consommation-ecart.mjs` : ce qu'un tour de Claude Code a consommé (electron/consommation-ecart.ts) ;
+ * - `serveur/acp.mjs` : le client ACP de Grok Build (electron/moteurs/acp.ts) ;
  * - `serveur/utilisation.mjs` : les limites de l'abonnement de Claude et de ChatGPT (electron/utilisation.ts) ;
  * - `serveur/diagnostic-poste.mjs` : ce que la configuration de Claude Code ajoute à chaque appel (electron/diagnostic-poste.ts) ;
  * - `serveur/consignes-projet.mjs` : les consignes KLYRA d'un projet, AGENTS.md et CLAUDE.md (electron/consignes-projet.ts) ;
@@ -31,6 +32,7 @@ const FICHIERS = [
   ["electron/preparation-fournisseur.ts", "serveur/preparation-fournisseur.mjs"],
   ["electron/consommation-ecart.ts", "serveur/consommation-ecart.mjs"],
   ["electron/utilisation.ts", "serveur/utilisation.mjs"],
+  ["electron/moteurs/acp.ts", "serveur/acp.mjs"],
   ["electron/diagnostic-poste.ts", "serveur/diagnostic-poste.mjs"],
   ["electron/consignes-projet.ts", "serveur/consignes-projet.mjs"],
   ["electron/epreuve.ts", "serveur/epreuve.mjs"],

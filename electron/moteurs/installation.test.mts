@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { brotliCompressSync } from "node:zlib";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -29,6 +30,20 @@ function paquet(contenu: string): Buffer {
 }
 const empreinte = (b: Buffer) => `sha512-${createHash("sha512").update(b).digest("base64")}`;
 
+/** Un paquet de plateforme comme celui de Grok Build : package/bin/grok.br, compressé en brotli. */
+const EXE_GROK = process.platform === "win32" ? "grok.exe" : "grok";
+function paquetGrok(contenu: string): Buffer {
+  const dossier = mkdtempSync(path.join(TMP, "paquet-grok-"));
+  const bin = path.join(dossier, "package", "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(bin, `${EXE_GROK}.br`), brotliCompressSync(Buffer.from(contenu)));
+  writeFileSync(path.join(dossier, "package", "package.json"), "{}");
+  const sortie = path.join(dossier, "paquet.tgz");
+  assert.equal(spawnSync("tar", ["-czf", sortie, "-C", dossier, "package"]).status, 0);
+  return readFileSync(sortie);
+}
+const archiveGrok = paquetGrok("#!/bin/sh\necho grok-essai\n");
+
 let archive = paquet("#!/bin/sh\necho codex-essai\n");
 let integrite = empreinte(archive);
 let serveur: http.Server;
@@ -42,6 +57,11 @@ before(async () => {
     if (version === "9.9.9" || version === "9.9.8") return json({ version, optionalDependencies: { [`@openai/codex-${PLATEFORME}`]: `npm:@openai/codex@${version}-${PLATEFORME}` } });
     if (version?.endsWith(PLATEFORME)) return json({ dist: { tarball: `${base}/archive.tgz`, integrity: integrite } });
     if (req.url === "/archive.tgz") return res.writeHead(200, { "content-length": archive.length }).end(archive);
+    /* Grok Build : la dépendance de plateforme porte la version seule (« 1.0.70 »), sans alias npm:. */
+    if (req.url === "/@xai-official%2Fgrok/latest") return json({ version: "1.0.70" });
+    if (req.url === "/@xai-official%2Fgrok/1.0.70") return json({ version: "1.0.70", optionalDependencies: { [`@xai-official/grok-${PLATEFORME}`]: "1.0.70" } });
+    if (req.url === `/@xai-official%2Fgrok-${PLATEFORME}/1.0.70`) return json({ dist: { tarball: `${base}/grok.tgz`, integrity: empreinte(archiveGrok) } });
+    if (req.url === "/grok.tgz") return res.writeHead(200, { "content-length": archiveGrok.length }).end(archiveGrok);
     res.writeHead(404).end("{}");
   });
   await new Promise<void>((r) => serveur.listen(0, "127.0.0.1", () => r()));
@@ -71,6 +91,14 @@ test("installe la dernière version : empreinte vérifiée, rangée par version,
   assert.equal(binaireGere("codex", EXE), chemin);
   assert.ok(estGere(chemin));
   assert.ok(!estGere("/usr/local/bin/codex"));
+});
+
+test("Grok Build : paquet de plateforme sans alias, programme compressé en brotli", async () => {
+  const chemin = await installerDepuisNpm({ moteur: "grok", paquet: "@xai-official/grok", executable: EXE_GROK });
+  assert.equal(chemin, path.join(dossierMoteurs(), "grok", "1.0.70", "bin", EXE_GROK));
+  assert.equal(readFileSync(chemin, "utf8"), "#!/bin/sh\necho grok-essai\n");
+  if (process.platform !== "win32") assert.ok(statSync(chemin).mode & 0o100, "pas exécutable");
+  assert.equal(binaireGere("grok", EXE_GROK), chemin);
 });
 
 test("une nouvelle version remplace l'ancienne de l'app", async () => {
