@@ -65,6 +65,7 @@ Remplacer VS Code par **notre propre outil** pour travailler avec l’IA, en plu
 | 04/11/2026 | **Les fiches vivent dans le dossier de l’app.** L’éditeur lit et écrit `userData/equipe`. Le premier lancement copie `~/.claude/agents` avant de décider reprise ou nouveau profil ; ensuite plus de réimport. Rien n’est supprimé ni réécrit sur le poste. Une fiche créée dans KLYRA n’apparaît pas dans le terminal. Codex lit cette copie, toujours dans son processus unique. Les skills du poste restent la source des compétences | Suite du GO du 04/11 (issue #117). La copie n’était encore qu’une archive |
 | 04/11/2026 | **Les skills personnelles lues sont celles de l’app.** `userData/bibliotheque-skills` est créé au premier lancement, même vide, et remplace `~/.claude/skills` comme source (session préparée, interrupteurs, compétences, consigne Codex, diagnostic). Une skill ajoutée ensuite sur le poste n’est pas reprise. Le VPS lit encore les skills de son propre `~/.claude` : les fichiers ne sont pas envoyés, seul l’interrupteur voyage. Codex reste un seul processus | Suite du GO du 04/11 (issue #117). Le filtre Codex par agent n’est pas réécrit |
 | 04/11/2026 | **Importer un dossier de skills.** Réglages › Agents copie le dossier choisi dans `userData/bibliotheque-skills`. Un nom déjà là n’est pas écrasé. Rien n’est supprimé, ni à la source ni dans la bibliothèque. La skill importée reste éteinte tant qu’on ne l’allume pas. Le VPS ne reçoit toujours pas ces fichiers | Suite du GO du 04/11 (issue #117). L’empreinte d’équipe n’est pas réécrite |
+| 04/11/2026 | **Plugins du poste dans la session, et import depuis le poste.** Le dossier préparé lie `plugins`, `settings.json` et `settings.local.json` : les plugins activés se chargent. Un fichier déjà écrit dans ce dossier est remplacé par le lien ; le poste n’est pas modifié. « Importer depuis le poste » reprend les skills apparues ensuite dans `~/.claude/skills`, éteintes | Demande de Cicco avant la fusion de la #124. Pas de réécriture de l’empreinte |
 
 ## Maquettes (Figma)
 
@@ -163,6 +164,8 @@ pnpm desktop
 Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app KLYRA. »
 
 ## Historique des sessions
+
+- **04/11/2026 — Plugins liés, import depuis le poste** (issue #117, PR #124, pas fusionnée). `CLAUDE_CONFIG_DIR` remplaçait `~/.claude`, donc les plugins activés (vercel, aircloud-tools) ne se chargeaient plus. Le dossier préparé lie maintenant `plugins`, `settings.json` et `settings.local.json` du poste. Un fichier déjà écrit dans ce dossier (une session d’avant ce lien) est remplacé par le lien ; le poste n’est pas modifié. « Importer depuis le poste » copie les skills apparues ensuite dans `~/.claude/skills` ; elles restent éteintes. Pas de fusion.
 
 - **04/11/2026 — Importer un dossier de skills** (issue #117, suite, pas fusionnée). Réglages › Agents (`reglages:skills-importer`) copie un dossier choisi dans `userData/bibliotheque-skills` : le dossier lui-même s’il contient `SKILL.md`, sinon ses sous-dossiers. Un nom ou un dossier déjà présent reste tel quel. Un lien n’est pas pris. Rien n’est supprimé. La skill importée n’est pas dans `personnellesConnues` : elle reste éteinte tant qu’on ne l’allume pas. **Pas sur le VPS** : les fichiers ne partent toujours pas, seul l’interrupteur voyage. Pas de fusion.
 

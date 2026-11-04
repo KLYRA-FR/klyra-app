@@ -602,6 +602,8 @@ export interface KlyraBridge {
     skillsDisponibles?: (dossier: string | null) => Promise<Reponse<{ poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[]; reprise: { fiches: string[]; skills: string[] } | null }>>;
     /** Dossier choisi dans Réglages. null : la personne a annulé. Absent avant la relance de l'app. */
     importerSkills?: () => Promise<Reponse<{ ajoutees: string[]; dejaLa: string[]; ignorees: string[] } | null>>;
+    /** Reprend les skills apparues ensuite dans ~/.claude/skills. Elles restent éteintes. */
+    importerSkillsPoste?: () => Promise<Reponse<{ ajoutees: string[]; dejaLa: string[]; ignorees: string[] }>>;
     essaiNotification: () => Promise<Reponse<void>>;
     autorisationsComputerUse: () => Promise<Reponse<AutorisationsComputerUse>>;
     ouvrirAutorisation: (type: "accessibilite" | "ecran") => Promise<Reponse<void>>;

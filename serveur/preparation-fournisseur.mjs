@@ -16,6 +16,7 @@ import path from "node:path";
  * `projects` et `sessions`, jamais une copie, jamais une suppression.
  * Les skills personnelles copiées viennent de `userData/bibliotheque-skills` dès que ce dossier
  * existe (la copie du premier lancement). Sans lui, elles viennent encore du poste.
+ * Les plugins et `settings.json` du poste sont des liens : Claude Code les charge comme avant.
  * Rien ici n'écrit dans le dossier du poste.
  */
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -66,6 +67,25 @@ function lier(source, lien) {
         if (st.isSymbolicLink() && path.resolve(path.dirname(lien), readlinkSync(lien)) === path.resolve(source))
             return;
         return;
+    }
+    catch (error) {
+        if (error.code !== "ENOENT")
+            return;
+    }
+    symlinkSync(source, lien);
+}
+/**
+ * Lien vers le poste, même si le dossier préparé a déjà un fichier ou un dossier de ce nom.
+ * Ce qui est remplacé est dans le dossier préparé, jamais le poste.
+ */
+function lierEnRemplacant(dossier, source, lien) {
+    if (!source || !existsSync(source) || !dans(dossier, lien))
+        return;
+    try {
+        const st = lstatSync(lien);
+        if (st.isSymbolicLink() && path.resolve(path.dirname(lien), readlinkSync(lien)) === path.resolve(source))
+            return;
+        rmSync(lien, { recursive: true, force: true });
     }
     catch (error) {
         if (error.code !== "ENOENT")
@@ -156,6 +176,9 @@ export function preparerClaude(dossier, entree) {
     lier(entree.identifiants, path.join(dossier, ".credentials.json"));
     lier(entree.projects, path.join(dossier, "projects"));
     lier(entree.sessions, path.join(dossier, "sessions"));
+    lierEnRemplacant(dossier, entree.plugins ?? null, path.join(dossier, "plugins"));
+    lierEnRemplacant(dossier, entree.reglages ?? null, path.join(dossier, "settings.json"));
+    lierEnRemplacant(dossier, entree.reglagesLocaux ?? null, path.join(dossier, "settings.local.json"));
 }
 /**
  * Prépare le dossier de l'agent et le rend. null : pas de dossier d'app
@@ -187,6 +210,9 @@ export function preparerSessionClaude(session) {
         identifiants: path.join(poste, ".credentials.json"),
         projects: path.join(poste, "projects"),
         sessions: path.join(poste, "sessions"),
+        plugins: path.join(poste, "plugins"),
+        reglages: path.join(poste, "settings.json"),
+        reglagesLocaux: path.join(poste, "settings.local.json"),
     });
     return { dossier, skills: skills.map((s) => s.nom) };
 }

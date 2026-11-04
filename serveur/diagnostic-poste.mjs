@@ -12,7 +12,8 @@ import path from "node:path";
  * `--setting-sources project,local` retire aussi ce dossier : on ne le combine pas.
  * Les skills et les fiches comptées sont celles de l'app (`bibliotheque-skills`, `equipe`)
  * dès que ces dossiers existent. Le CLAUDE.md, les plugins et les MCP restent ceux du poste.
- * Les plugins du poste n'entrent pas dans le dossier préparé. Les interrupteurs sont dans Réglages › Agents.
+ * La session préparée charge les plugins par un lien vers ce dossier, pas par une copie.
+ * Les interrupteurs sont dans Réglages › Agents.
  */
 export const CARACTERES_PAR_JETON = 2.75;
 const jetons = (caracteres) => Math.round(caracteres / CARACTERES_PAR_JETON);
@@ -131,9 +132,9 @@ function plugins(dossierClaude) {
     return {
         cle: "plugins",
         libelle: "Plugins de Claude Code",
-        detail: actives.length ? `${actives.length} activé${actives.length > 1 ? "s" : ""} : ${actives.slice(0, 6).join(", ")}${actives.length > 6 ? "…" : ""}. Une session lancée par KLYRA ne les charge pas.` : "Aucun.",
+        detail: actives.length ? `${actives.length} activé${actives.length > 1 ? "s" : ""} : ${actives.slice(0, 6).join(", ")}${actives.length > 6 ? "…" : ""}. Une session lancée par KLYRA les charge par un lien, sans les copier.` : "Aucun.",
         jetons: null,
-        conseil: actives.length ? "Ces plugins valent pour Claude Code hors de KLYRA. Une session de l’app lit un dossier préparé, sans eux." : null,
+        conseil: null,
         chemin: actives.length ? path.join(dossierClaude, "settings.json") : null,
     };
 }

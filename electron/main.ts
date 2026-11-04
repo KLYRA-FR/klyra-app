@@ -1124,6 +1124,11 @@ function registerBridge() {
     if (choix.canceled || !choix.filePaths[0]) return null;
     return importerSkills(choix.filePaths[0], path.join(app.getPath("userData"), "bibliotheque-skills"));
   });
+  /* Skills apparues dans ~/.claude/skills après la copie du premier lancement. Elles restent éteintes. */
+  handle("reglages:skills-importer-poste", () => {
+    const poste = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+    return importerSkills(path.join(poste, "skills"), path.join(app.getPath("userData"), "bibliotheque-skills"));
+  });
   handle("reglages:diagnostic-poste:montrer", (chemin: string) => {
     // Seulement un chemin que le diagnostic vient de trouver.
     if (!diagnostic().elements.some((e) => e.chemin === chemin) || !existe(chemin)) throw new Error("Ce fichier n’est plus là.");

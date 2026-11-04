@@ -49,6 +49,7 @@ test("le dossier préparé ne garde que les fiches actives et les skills allumé
     assert.equal(readFileSync(path.join(dest, "projects", "session.jsonl"), "utf8"), "{}\n");
     assert.equal(readFileSync(path.join(poste, "agents", "hugo.md"), "utf8").includes("Hugo."), true);
     assert.equal(readFileSync(path.join(poste, "skills", "maquette", "SKILL.md"), "utf8").includes("Dessine."), true);
+    assert.equal(existsSync(path.join(dest, "plugins")), false);
   } finally {
     rmSync(racine, { recursive: true, force: true });
   }
@@ -75,6 +76,30 @@ test("une session prépare le dossier de l'agent et laisse le poste intact", () 
     assert.equal(readFileSync(path.join(session.dossier, "CLAUDE.md"), "utf8"), avant);
     assert.equal(readFileSync(path.join(poste, "CLAUDE.md"), "utf8"), avant);
     assert.equal(preparerSessionClaude({ userData: null, home, agent: null, dossierAgents: poste, idsActifs: [], garder: () => true }), null);
+    mkdirSync(path.join(poste, "plugins"), { recursive: true });
+    writeFileSync(path.join(poste, "plugins", "installed_plugins.json"), "{\"plugins\":{}}\n");
+    writeFileSync(path.join(poste, "settings.json"), "{\"enabledPlugins\":{\"vercel@claude-plugins-official\":true}}\n");
+    writeFileSync(path.join(poste, "settings.local.json"), "{\"enabledPlugins\":{\"aircloud-tools@local\":true}}\n");
+    const deja = path.join(userData, "preparation", "iris");
+    mkdirSync(path.join(deja, "plugins", "cache"), { recursive: true });
+    writeFileSync(path.join(deja, "plugins", "cache", "local.txt"), "pas-le-poste\n");
+    writeFileSync(path.join(deja, "settings.json"), "{\"enabledPlugins\":{}}\n");
+    const avecPlugins = preparerSessionClaude({
+      userData,
+      home,
+      agent: "iris",
+      dossierAgents: path.join(poste, "agents"),
+      idsActifs: ["iris"],
+      garder: () => false,
+      poste,
+    });
+    assert.ok(avecPlugins);
+    for (const nom of ["plugins", "settings.json", "settings.local.json"]) {
+      assert.equal(lstatSync(path.join(avecPlugins.dossier, nom)).isSymbolicLink(), true);
+    }
+    assert.equal(readFileSync(path.join(avecPlugins.dossier, "settings.json"), "utf8").includes("vercel@claude-plugins-official"), true);
+    assert.equal(readFileSync(path.join(poste, "settings.json"), "utf8").includes("vercel@claude-plugins-official"), true);
+    assert.equal(readFileSync(path.join(poste, "plugins", "installed_plugins.json"), "utf8"), "{\"plugins\":{}}\n");
   } finally {
     rmSync(racine, { recursive: true, force: true });
   }
