@@ -10,8 +10,10 @@ import { cn } from "@/lib/cn";
  * une seule puce, l'interrupteur du bureau, la coche d'un choix, la case ronde. Aucun nouveau token.
  */
 
+/* Correction AA d'Iris (§ 6.3, 04/11) : au repos, contour `texte-tertiaire` (3,79:1) et placeholder
+   `texte-secondaire` (7:1), au lieu du filet `bordure-champ` et de `texte-placeholder`. */
 const CHAMP_COMMUN =
-  "rounded-md border border-bordure-champ bg-fond-surface text-body-s text-texte-principal placeholder:text-texte-placeholder focus-visible:border-bordure-champ-survol focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:border-[1.5px] aria-[invalid=true]:border-bordure-erreur disabled:border-transparent disabled:bg-fond-survol disabled:text-texte-tertiaire";
+  "rounded-md border border-texte-tertiaire bg-fond-surface text-body-s text-texte-principal placeholder:text-texte-secondaire focus-visible:border-bordure-champ-survol focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:border-[1.5px] aria-[invalid=true]:border-bordure-erreur disabled:border-transparent disabled:bg-fond-survol disabled:text-texte-tertiaire";
 
 /** Un champ natif (`input`, `textarea`) : 48 px, texte 16 px (en dessous, Safari agrandit la page au focus). */
 export const CHAMP_TELEPHONE = cn("h-12 w-full px-3.5", CHAMP_COMMUN);
@@ -51,10 +53,19 @@ export function Puce({ choisie = false, className, children, ...rest }: ButtonHT
   );
 }
 
-/** La piste de l'interrupteur du bureau (36 × 20, K1 allumé, 220 ms) : toute la ligne est la cible. */
+/**
+ * La piste de l'interrupteur du bureau (36 × 20, K1 allumé, 220 ms) : toute la ligne est la cible.
+ * Éteint mais disponible : un contour intérieur de 1,5 px `texte-tertiaire` (AA, § 6.3).
+ */
 export function PisteInterrupteur({ actif }: { actif: boolean }) {
   return (
-    <span aria-hidden="true" className={cn("relative inline-flex h-5 w-9 shrink-0 rounded-pill transition-colors duration-[220ms] ease-sortie", actif ? "bg-fond-accent" : "bg-gris-k2-500")}>
+    <span
+      aria-hidden="true"
+      className={cn(
+        "relative inline-flex h-5 w-9 shrink-0 rounded-pill transition-colors duration-[220ms] ease-sortie",
+        actif ? "bg-fond-accent" : "bg-gris-k2-500 shadow-[inset_0_0_0_1.5px_var(--color-texte-tertiaire)]",
+      )}
+    >
       <span className={cn("absolute top-0.5 left-0.5 size-4 rounded-full bg-fond-surface shadow-ombre-sm transition-transform duration-[220ms] ease-sortie", actif && "translate-x-4")} />
     </span>
   );

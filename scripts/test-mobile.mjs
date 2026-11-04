@@ -253,8 +253,11 @@ try {
   verifier(await telephone.quand("!document.body.innerText.includes('Connecte-toi à KLYRA') && document.body.innerText.includes('Chats')", 30000), "téléphone connecté par le lien simulé");
 
   /* 4 bis. « Ce téléphone » et les écrans du téléphone : le vrai poste, jamais « ton Mac » en dur. */
+  /* La page change dans une transition de vue (socle mobile § 2.6) : dans cette fenêtre cachée, qui
+     dessine peu, elle peut prendre plus d'une seconde. On attend la nouvelle adresse, puis son rendu. */
   const allerTel = async (chemin) => {
     await telephone.ev(`window.next.router.push(${JSON.stringify(chemin)})`);
+    await telephone.quand(`location.pathname + location.search === ${JSON.stringify(chemin)}`, 10000);
     await attendre(1200);
   };
   /* `/reglages` liste les sections (T-22) ; « Ce téléphone » est la section Mobile. */
