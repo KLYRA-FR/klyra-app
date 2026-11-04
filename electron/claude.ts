@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
 import { consigneNavigateur, signatureNavigateur } from "./navigateur/outils";
-import { CONSIGNE_COFFRE } from "./coffre-outils";
+import { CONSIGNE_COFFRE } from "./coffre-definitions";
 import { voirFin, voirOutil } from "./ordinateur/apercu";
 import { consigneOrdinateur, OUTILS_ORDINATEUR_INTERDITS, OUTILS_ORDINATEUR_LECTURE, serveurOrdinateur, signatureOrdinateur } from "./ordinateur/pilote";
 import { composioConnect, espaceComposio } from "./composio";
