@@ -180,8 +180,10 @@ export function VueCompetences({
           )}
           {liste("Du projet", "Rangées dans le dossier .claude/skills du projet.", c.projet.filter((s) => !dansLaFiche(s)), false)}
           {liste(
-            surServeur ? "Du serveur" : `De ${poste.ce}`,
-            `Tous tes agents${surServeur ? " sur ce serveur" : ""} peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.`,
+            surServeur ? "Du serveur" : "De l’app",
+            surServeur
+              ? "Tous tes agents sur ce serveur peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une."
+              : "Celles que KLYRA garde, copiées une fois depuis .claude/skills. Tous tes agents peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.",
             c.poste.filter((s) => !dansLaFiche(s)),
             false,
           )}
@@ -195,7 +197,7 @@ export function VueCompetences({
             <Note>
               {surServeur
                 ? "Aucune compétence sur le serveur pour l’instant. Une skill de Claude Code rangée dans le dossier .claude/skills de l’utilisateur klyra du VPS apparaîtra ici."
-                : `Aucune compétence sur ${poste.ce} pour l’instant. Une skill de Claude Code rangée dans ton dossier personnel (.claude/skills) apparaîtra ici.`}
+                : "Aucune compétence dans l’app pour l’instant. Celles de .claude/skills sont reprises au premier lancement. Une skill ajoutée ensuite dans ce dossier n’apparaît pas ici : « Importer depuis le poste », dans Réglages › Agents, la reprend éteinte."}
             </Note>
           )}
           {surServeur && attribuer && (

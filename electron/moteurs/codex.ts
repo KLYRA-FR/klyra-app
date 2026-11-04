@@ -51,7 +51,7 @@ export function trouverCodex(): string | null {
   return candidats.find((c): c is string => !!c && existsSync(c)) ?? null;
 }
 
-/** La fiche de l'agent (`~/.claude/agents/<nom>.md`, sous-dossiers compris), sans son en-tête. */
+/** La fiche de l'agent (dossier de l'app, sous-dossiers compris), sans son en-tête. */
 function ficheDe(agent: string): string | null {
   const brute = ficheBrute(agent);
   return brute ? corpsDeFiche(brute) : null;

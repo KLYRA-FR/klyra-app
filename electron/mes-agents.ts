@@ -9,7 +9,9 @@ import path from "node:path";
  * « Mes agents » : les agents que la personne a choisis sur cet ordinateur, et l'assistant qu'elle a nommé.
  *
  * Quatre choses distinctes :
- * - le fichier d'exécution `~/.claude/agents/<id>.md`, que Claude Code lit (jamais supprimé par l'app) ;
+ * - la fiche, dans le dossier de l'app (`<userData>/equipe/<id>.md`) dès que ce dossier est connu.
+ *   Le premier lancement la copie depuis `~/.claude/agents` ; ensuite l'éditeur ne lit et n'écrit qu'ici.
+ *   Rien n'est supprimé ni réécrit sur le poste ;
  * - ce choix (`userData/mes-agents.json`) : actif ou non, et d'où vient l'agent ;
  * - la définition partagée reçue de la bibliothèque, à la version choisie (`userData/definitions-recues/<id>.md`) ;
  * - les préférences personnelles : nom affiché et couleur (`agents-meta.json`), dossiers configurés (ici, `valeurs`).
@@ -111,7 +113,19 @@ export function origineValide(brut: unknown): Origine {
 /** Les sous-agents fournis par Claude Code lui-même : des outils de l'assistant, pas des spécialistes. */
 export const AGENTS_DE_CLAUDE = ["general-purpose", "Explore", "Plan", "statusline-setup", "claude", "claude-code-guide", "output-style-setup"];
 
-export const dossierAgents = () => path.join(os.homedir(), ".claude", "agents");
+/** Le dossier du poste. L'app le lit une fois pour la copie, et le reparcourt pour refuser un agent. Elle n'y écrit pas. */
+export function dossierAgentsPoste(): string {
+  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "agents");
+}
+
+/**
+ * Les fiches que l'app lit et écrit. Le dossier de l'app quand il est connu
+ * (`KLYRA_USER_DATA`, posé par le process principal avant l'ouverture), sinon le poste.
+ */
+export const dossierAgents = (): string => {
+  const donnees = process.env.KLYRA_USER_DATA;
+  return donnees ? path.join(donnees, "equipe") : dossierAgentsPoste();
+};
 const fichierEtat = () => path.join(app.getPath("userData"), "mes-agents.json");
 const dossierRecues = () => path.join(app.getPath("userData"), "definitions-recues");
 
@@ -287,11 +301,12 @@ function fichesDe(dossier: string, profondeur = 0): { id: string; nom: string }[
 }
 
 /**
- * Les dossiers d'agents que Claude Code lit pour une session ouverte dans `cwd` : celui de
- * l'utilisateur (et de `CLAUDE_CONFIG_DIR`), puis `.claude/agents` du dossier et de ses parents.
+ * Les dossiers dont on refuse les fiches qui ne sont pas actives : celui de l'app, celui du
+ * poste (et de `CLAUDE_CONFIG_DIR`), puis `.claude/agents` du dossier de travail et de ses parents.
+ * La session lancée par KLYRA ne charge que le dossier préparé ; le poste reste dans le filet.
  */
 function dossiersLus(cwd: string): string[] {
-  const dossiers = new Set([dossierAgents()]);
+  const dossiers = new Set([dossierAgents(), path.join(os.homedir(), ".claude", "agents")]);
   if (process.env.CLAUDE_CONFIG_DIR) dossiers.add(path.join(process.env.CLAUDE_CONFIG_DIR, "agents"));
   for (let d = path.resolve(cwd); ; d = path.dirname(d)) {
     dossiers.add(path.join(d, ".claude", "agents"));

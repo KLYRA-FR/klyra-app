@@ -28,8 +28,8 @@ export function useDesactiverAgent(): [(role: Role) => Promise<boolean>, ReactNo
         <div className="flex flex-col gap-2">
           <p className="m-0">
             {role.name} ne pourra plus être appelé dans KLYRA : ni par toi, ni par {roles[0].name}, ni par tes autres agents. Ses conversations et sa fiche
-            sont gardées, et tu pourras le réactiver. Cela ne vaut que pour KLYRA : sa fiche reste dans ~/.claude/agents, et Claude Code dans le terminal ou
-            tes autres outils l’utilisent comme avant.
+            sont gardées, et tu pourras le réactiver. Cela ne vaut que pour KLYRA : sa fiche reste dans l’app, et rien n’est supprimé de l’ordinateur.
+            Claude Code ouvert dans le terminal garde la copie d’origine, pas les changements faits ici.
           </p>
           {enCours.length > 0 && <p className="m-0">Il travaille en ce moment : sa réponse en cours sera arrêtée.</p>}
           {nombreRoutines > 0 && (

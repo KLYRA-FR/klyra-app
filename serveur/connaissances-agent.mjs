@@ -263,9 +263,20 @@ export function lireSkillsPlugins(configClaude, dossierProjet) {
     }
     return liste.sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
 }
-/** Ce que l'agent sait faire : les skills de sa fiche (retrouvées dans le projet, le poste ou un plugin), puis celles du poste, du projet et des plugins. */
+/**
+ * Les skills personnelles. La bibliothèque de l'app, une fois créée au premier lancement.
+ * Sans elle (VPS, test, session d'avant la copie) : le dossier du poste passé par l'appelant.
+ */
+function dossierSkillsPersonnelles(configClaude) {
+    const donnees = process.env.KLYRA_USER_DATA;
+    if (!donnees)
+        return path.join(configClaude, "skills");
+    const bibliotheque = path.join(donnees, "bibliotheque-skills");
+    return existsSync(bibliotheque) ? bibliotheque : path.join(configClaude, "skills");
+}
+/** Ce que l'agent sait faire : les skills de sa fiche (retrouvées dans le projet, l'app ou un plugin), puis celles de l'app, du projet et des plugins. */
 export function lireCompetences(contenuFiche, configClaude, dossierProjet) {
-    const poste = lireSkills(path.join(configClaude, "skills"));
+    const poste = lireSkills(dossierSkillsPersonnelles(configClaude));
     const projet = dossierProjet ? lireSkills(path.join(dossierProjet, ".claude", "skills")) : [];
     const plugins = lireSkillsPlugins(configClaude, dossierProjet);
     const trouver = (liste, nom) => liste.find((s) => s.nom === nom || path.basename(s.dossier ?? "") === nom);
@@ -288,10 +299,10 @@ export function skillEnTete(texte) {
     const nom = /^\/([a-z0-9][a-z0-9:_-]{0,63})(?=\s|$)/i.exec(texte.trimStart())?.[1] ?? null;
     return nom && !COMMANDES_A_PART.has(nom.toLowerCase()) ? nom : null;
 }
-/** Les noms des skills que Claude Code trouvera dans ce dossier (poste et projet), par leur nom et par leur dossier. */
+/** Les noms des skills que Claude Code trouvera (bibliothèque de l'app, ou poste, et projet), par leur nom et par leur dossier. */
 export function skillsConnues(configClaude, dossier) {
     const noms = new Set();
-    for (const s of [...lireSkills(path.join(configClaude, "skills")), ...(dossier ? lireSkills(path.join(dossier, ".claude", "skills")) : [])]) {
+    for (const s of [...lireSkills(dossierSkillsPersonnelles(configClaude)), ...(dossier ? lireSkills(path.join(dossier, ".claude", "skills")) : [])]) {
         noms.add(s.nom);
         if (s.dossier)
             noms.add(path.basename(s.dossier));
@@ -301,10 +312,10 @@ export function skillsConnues(configClaude, dossier) {
         noms.add(s.nom);
     return noms;
 }
-/** Les noms des skills du poste et du projet, pour le choix par agent. */
+/** Les noms des skills de l'app (ou du poste) et du projet, pour le choix par agent. */
 export function nomsSkills(configClaude, dossier) {
     return {
-        poste: lireSkills(path.join(configClaude, "skills")).map((s) => s.nom),
+        poste: lireSkills(dossierSkillsPersonnelles(configClaude)).map((s) => s.nom),
         projet: dossier ? lireSkills(path.join(dossier, ".claude", "skills")).map((s) => s.nom) : [],
     };
 }
@@ -312,7 +323,7 @@ export function nomsSkills(configClaude, dossier) {
 export function catalogueSkills(configClaude, dossier) {
     const court = (s) => ({ nom: s.nom, description: s.description });
     return {
-        poste: lireSkills(path.join(configClaude, "skills")).map(court),
+        poste: lireSkills(dossierSkillsPersonnelles(configClaude)).map(court),
         projet: dossier ? lireSkills(path.join(dossier, ".claude", "skills")).map(court) : [],
     };
 }
@@ -389,7 +400,7 @@ export function competencesPrechargees(contenuFiche, configClaude, dossier, gard
 /** Les skills de Claude (poste, puis projet) que l'app présente à un agent qui travaille avec Codex. */
 function skillsDeClaude(configClaude, dossier) {
     const vues = new Set();
-    return [...(dossier ? lireSkills(path.join(dossier, ".claude", "skills")) : []), ...lireSkills(path.join(configClaude, "skills")), ...lireSkillsPlugins(configClaude, dossier)].filter((s) => {
+    return [...(dossier ? lireSkills(path.join(dossier, ".claude", "skills")) : []), ...lireSkills(dossierSkillsPersonnelles(configClaude)), ...lireSkillsPlugins(configClaude, dossier)].filter((s) => {
         if (vues.has(s.nom))
             return false;
         vues.add(s.nom);

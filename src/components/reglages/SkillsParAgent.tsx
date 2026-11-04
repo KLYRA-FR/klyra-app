@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Bouton } from "@/components/ui/Bouton";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useAgents } from "@/lib/agents";
 import { getBridge, unwrap } from "@/lib/bridge";
@@ -32,6 +33,12 @@ export function SkillsParAgent() {
   const agent = roles.some((r) => r.id === agentId) ? agentId : (roles[0]?.id ?? "principal");
   const [lu, setLu] = useState<{ dossier: string | null; poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[]; reprise?: { fiches: string[]; skills: string[] } | null } | null>(null);
   const [echec, setEchec] = useState<string | null>(null);
+  const [relecture, setRelecture] = useState(0);
+  const [importEnCours, setImportEnCours] = useState(false);
+  const [importPosteEnCours, setImportPosteEnCours] = useState(false);
+  const [compte, setCompte] = useState<string | null>(null);
+  const pontImport = getBridge()?.reglages?.importerSkills;
+  const pontPoste = getBridge()?.reglages?.importerSkillsPoste;
 
   useEffect(() => {
     if (!pont) return;
@@ -51,14 +58,53 @@ export function SkillsParAgent() {
     return () => {
       actif = false;
     };
-  }, [pont, projet?.folder]);
+  }, [pont, projet?.folder, relecture]);
+
+  const annoncer = (resultat: { ajoutees: string[]; dejaLa: string[] } | null, vide: string) => {
+    if (!resultat) return;
+    const morceaux: string[] = [];
+    if (resultat.ajoutees.length) morceaux.push(`${resultat.ajoutees.length} ajoutée${resultat.ajoutees.length > 1 ? "s" : ""}`);
+    if (resultat.dejaLa.length) morceaux.push(`${resultat.dejaLa.length} déjà là`);
+    setCompte(
+      morceaux.length
+        ? `${morceaux.join(", ")}. Une skill importée reste éteinte tant que tu ne l’allumes pas. Le poste n’est pas modifié.`
+        : vide,
+    );
+    setRelecture((n) => n + 1);
+  };
+
+  const importer = async () => {
+    if (!pontImport) return;
+    setImportEnCours(true);
+    setEchec(null);
+    try {
+      annoncer(unwrap(await pontImport()), "Aucune skill à importer dans ce dossier.");
+    } catch (e: unknown) {
+      setEchec(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportEnCours(false);
+    }
+  };
+
+  const importerPoste = async () => {
+    if (!pontPoste) return;
+    setImportPosteEnCours(true);
+    setEchec(null);
+    try {
+      annoncer(unwrap(await pontPoste()), "Aucune skill nouvelle dans ~/.claude/skills.");
+    } catch (e: unknown) {
+      setEchec(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportPosteEnCours(false);
+    }
+  };
 
   const dossier = projet?.folder ?? null;
   const catalogue = lu?.dossier === dossier ? lu : null;
   const lecture = !pont ? null : catalogue ? echec : "Lecture des skills…";
   const poste = catalogue?.poste ?? [];
   const lignes: SkillVue[] = [
-    ...poste.map((s) => ({ ...s, origine: "poste" as const, lieu: "Poste" })),
+    ...poste.map((s) => ({ ...s, origine: "poste" as const, lieu: "KLYRA" })),
     ...(catalogue?.projet ?? [])
       .filter((s) => !poste.some((p) => p.nom === s.nom))
       .map((s) => ({ ...s, origine: "projet" as const, lieu: projet?.name ?? "Projet" })),
@@ -74,12 +120,12 @@ export function SkillsParAgent() {
   return (
     <Groupe
       titre="Skills de chaque agent"
-      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Au lancement, KLYRA prépare pour Claude un dossier à part : les agents actifs, et seulement ces skills. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
+      description="Un agent lancé par KLYRA ne reçoit que les skills allumées pour lui. Au lancement, KLYRA prépare pour Claude un dossier à part : les fiches de l’app et les skills de l’app, copiées une fois depuis le poste, puis lues ici. Celles qui sont déjà là restent allumées ; une skill personnelle nouvelle, ou un agent nouveau, ne les reçoit pas tant que tu ne l’allumes pas. Rien n’est retiré de ton poste. Une skill ajoutée ensuite dans ~/.claude/skills n’est pas reprise toute seule : « Importer depuis le poste » la reprend, éteinte. Le même nom est coupé aussi sur un serveur relié. Un agent appelé dans la session reçoit les skills de celui qui l’a lancé."
     >
       <Ligne
         id="skills-par-agent"
         libelle="Ce que reçoit chaque agent"
-        description="Les skills d’un projet apparaissent quand un projet de ce PC est ouvert. Un même nom, au poste et dans le projet, n’a qu’un interrupteur."
+        description="Les skills d’un projet apparaissent quand un projet de ce PC est ouvert. Un même nom, dans l’app et dans le projet, n’a qu’un interrupteur."
         pile
       >
         {!pont ? (
@@ -106,6 +152,21 @@ export function SkillsParAgent() {
                 />
               )}
             </div>
+            {(pontImport || pontPoste) && (
+              <div className="flex flex-wrap items-center gap-2">
+                {pontPoste && (
+                  <Bouton type="button" variant="blanc" taille="compact" disabled={importPosteEnCours || importEnCours} onClick={() => void importerPoste()}>
+                    {importPosteEnCours ? "Import…" : "Importer depuis le poste"}
+                  </Bouton>
+                )}
+                {pontImport && (
+                  <Bouton type="button" variant="blanc" taille="compact" disabled={importEnCours || importPosteEnCours} onClick={() => void importer()}>
+                    {importEnCours ? "Import…" : "Importer un dossier"}
+                  </Bouton>
+                )}
+                {compte && <span className="text-ui-xs text-texte-tertiaire">{compte}</span>}
+              </div>
+            )}
             {catalogue?.reprise && (
               <span className="text-ui-xs text-texte-tertiaire">
                 Reprises dans KLYRA, sans rien supprimer du poste : {catalogue.reprise.fiches.length} fiche{catalogue.reprise.fiches.length > 1 ? "s" : ""}, {catalogue.reprise.skills.length} skill{catalogue.reprise.skills.length > 1 ? "s" : ""}.

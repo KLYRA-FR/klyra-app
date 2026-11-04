@@ -29,9 +29,10 @@ const TMP = mkdtempSync(path.join(os.tmpdir(), "klyra-atelier-"));
 const lireJson = (f) => JSON.parse(readFileSync(f, "utf8"));
 
 const home = path.join(TMP, "home");
-const agents = path.join(home, ".claude", "agents");
+const poste = path.join(home, ".claude", "agents");
 const donnees = path.join(TMP, "userdata");
-mkdirSync(agents, { recursive: true });
+const agents = path.join(donnees, "equipe");
+mkdirSync(poste, { recursive: true });
 mkdirSync(donnees, { recursive: true });
 // Sans Claude Code : un clic sur une réponse envoie le message, sans appel à une IA.
 const env = { HOME: home, KLYRA_USER_DATA: donnees, PATH: "/usr/bin:/bin" };
@@ -138,11 +139,11 @@ try {
   verifier(await app.quand(`${puce("m4", "Promettre un délai")}?.disabled === true && ${puce("m4", "Engager un prix")}?.getAttribute('aria-pressed') === 'true'`), "puis elles se figent sur ce qui a été répondu");
 
   // La naissance.
-  verifier(!existsSync(path.join(agents, "nina.md")), "rien n’est écrit avant « Créer l’agent »");
+  verifier(!existsSync(path.join(agents, "nina.md")) && !existsSync(path.join(poste, "nina.md")), "rien n’est écrit avant « Créer l’agent »");
   await app.cliquer("Créer l’agent", carte);
   // La fiche est créée sans écraser (`wx`) : elle existe un instant avant d'être remplie.
   const ficheEcrite = (nom) => surDisque(() => /\n---\n[\s\S]*\n$/.test(readFileSync(path.join(agents, `${nom}.md`), "utf8")));
-  verifier(await ficheEcrite("nina"), "« Créer l’agent » écrit nina.md");
+  verifier(await ficheEcrite("nina") && !existsSync(path.join(poste, "nina.md")), "« Créer l’agent » écrit nina.md dans le dossier de l’app, pas sur le poste");
   const fiche = readFileSync(path.join(agents, "nina.md"), "utf8");
   verifier(/^displayName: Nina$/m.test(fiche) && /^description: "Commercial — Rédige les propositions/m.test(fiche) && !/^memory:/m.test(fiche), "la fiche : prénom, description composée, sans mémoire");
   verifier(fiche.includes("## Quand m’appeler\n\n- Un brief client arrive"), "la fiche reprend les piliers");

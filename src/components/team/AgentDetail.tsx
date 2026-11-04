@@ -327,8 +327,8 @@ function FicheAgent({ role }: { role: Role }) {
           <div role="status" className={cn(BANDEAU, "border-bordure-subtile bg-fond-page")}>
             <p className="m-0 min-w-[240px] flex-1 text-ui-s text-texte-secondaire">
               {role.name} n’est plus dans Mes agents{local?.entree?.desactiveLe ? ` depuis le ${dateCourte(local.entree.desactiveLe)}` : ""}. Désactivé dans KLYRA
-              seulement : ni toi, ni {roles[0].name}, ni tes autres agents ne peuvent l’appeler dans l’app. Sa fiche reste dans ~/.claude/agents, où Claude
-              Code et tes autres outils la voient toujours.
+              seulement : ni toi, ni {roles[0].name}, ni tes autres agents ne peuvent l’appeler dans l’app. Sa fiche reste dans l’app. Rien n’est supprimé
+              de l’ordinateur.
             </p>
             <Bouton variant="sombre" taille="compact" onClick={() => void reactiver()}>
               Réactiver
@@ -338,7 +338,7 @@ function FicheAgent({ role }: { role: Role }) {
         {statut === "disponible" && (
           <div role="status" className={cn(BANDEAU, "border-bordure-subtile bg-fond-page")}>
             <p className="m-0 min-w-[240px] flex-1 text-ui-s text-texte-secondaire">
-              Cette fiche est sur {poste.ce}, mais pas dans Mes agents : KLYRA ne l’appelle pas. Tes autres outils la gardent telle quelle.
+              Cette fiche est dans le dossier de l’app, mais pas dans Mes agents : KLYRA ne l’appelle pas. Rien n’est modifié dans ~/.claude/agents.
             </p>
             <Bouton
               variant="sombre"

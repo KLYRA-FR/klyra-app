@@ -34,12 +34,14 @@ const enTete = (t) => t.replace(/\r\n/g, "\n").match(/^---\n([\s\S]*?)\n---/)[1]
 const ligneDescription = (t) => enTete(t).find((l) => l.startsWith("description:"));
 
 const HOME = path.join(TMP, "home");
-const AGENTS = path.join(HOME, ".claude", "agents");
+const POSTE = path.join(HOME, ".claude", "agents");
 const DONNEES = path.join(TMP, "userdata");
-mkdirSync(AGENTS, { recursive: true });
+const VIVANT = path.join(DONNEES, "equipe");
+mkdirSync(POSTE, { recursive: true });
 mkdirSync(path.join(DONNEES, "definitions-recues"), { recursive: true });
 const env = { HOME, KLYRA_USER_DATA: DONNEES };
-const fiche = (id) => path.join(AGENTS, `${id}.md`);
+const fichePoste = (id) => path.join(POSTE, `${id}.md`);
+const fiche = (id) => path.join(VIVANT, `${id}.md`);
 const lire = (id) => readFileSync(fiche(id), "utf8");
 const historique = (id) => {
   const d = path.join(DONNEES, "historique-agents", id);
@@ -58,7 +60,7 @@ const fiches = {
   "mon-dev": v1("dev").replace(/^name: dev$/m, "name: mon-dev"),
   perso: "---\nname: perso\ndisplayName: Perso\ndescription: \"Perso — essai. Appelle Perso pour l’essai.\"\n---\n\n# Perso — Essai\n\nÀ moi.\n",
 };
-for (const [id, contenu] of Object.entries(fiches)) writeFileSync(fiche(id), contenu);
+for (const [id, contenu] of Object.entries(fiches)) writeFileSync(fichePoste(id), contenu);
 writeFileSync(path.join(DONNEES, "definitions-recues", "pelin-dev.md"), fiches["pelin-dev"]);
 const modele = (id) => ({ actif: true, ajouteLe: 1, origine: { type: "modele", modele: id }, empreinte: null });
 const mesAgents = {
@@ -140,7 +142,7 @@ try {
    * fichier sans rapport touché toutes les 50 ms retient cette relecture, et le clic part avec la
    * fiche d'avant, comme quand la personne clique pendant qu'un autre outil écrit.
    */
-  const bruit = path.join(AGENTS, ".bruit");
+  const bruit = path.join(VIVANT, ".bruit");
   const retenue = setInterval(() => writeFileSync(bruit, String(Date.now())), 50);
   writeFileSync(fiche("designer"), exterieure);
   await app.cliquer("Mettre à jour");
@@ -160,10 +162,10 @@ try {
   if (process.platform !== "win32" && process.getuid?.() !== 0) {
     await app.aller("/equipe?agent=motion&mode=maj");
     await dans(app, "Version 2 du modèle KLYRA");
-    chmodSync(AGENTS, 0o555);
+    chmodSync(VIVANT, 0o555);
     await app.cliquer("Mettre à jour");
     verifier(await dans(app, "Rien n’a changé", 5000), "dossier en lecture seule : l’échec est dit");
-    chmodSync(AGENTS, 0o755);
+    chmodSync(VIVANT, 0o755);
     verifier(empreinte(lire("motion")) === avant.motion && historique("motion").length === 0, "motion.md intact, rien dans l’historique");
   }
 
@@ -216,13 +218,14 @@ try {
   verifier(JSON.stringify(relues.chats[0].sessions) === JSON.stringify(conversations.chats[0].sessions) && relues.messages.some((m) => m.id === "m1"), "conversation et session de Valérie intactes");
   verifier(JSON.stringify(lireJson(path.join(DONNEES, "agents-meta.json"))) === JSON.stringify(reglages), "réglages intacts après redémarrage");
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs[0]}` : ""}`);
+  verifier(Object.keys(fiches).every((id) => readFileSync(fichePoste(id), "utf8") === fiches[id]), "le poste ~/.claude/agents n’a pas été réécrit");
   await app.fermer();
   app = null;
   await attendre(300);
 } finally {
   if (app) await app.fermer();
   try {
-    chmodSync(AGENTS, 0o755);
+    chmodSync(VIVANT, 0o755);
   } catch {
     /* déjà rendu */
   }

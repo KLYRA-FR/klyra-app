@@ -14,6 +14,9 @@ import path from "node:path";
  *
  * La connexion et les sessions restent celles du poste : un lien vers `.credentials.json`,
  * `projects` et `sessions`, jamais une copie, jamais une suppression.
+ * Les skills personnelles copiées viennent de `userData/bibliotheque-skills` dès que ce dossier
+ * existe (la copie du premier lancement). Sans lui, elles viennent encore du poste.
+ * Les plugins et `settings.json` du poste sont des liens : Claude Code les charge comme avant.
  * Rien ici n'écrit dans le dossier du poste.
  */
 
@@ -74,6 +77,22 @@ function lier(source: string | null, lien: string): void {
     const st = lstatSync(lien);
     if (st.isSymbolicLink() && path.resolve(path.dirname(lien), readlinkSync(lien)) === path.resolve(source)) return;
     return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+  }
+  symlinkSync(source, lien);
+}
+
+/**
+ * Lien vers le poste, même si le dossier préparé a déjà un fichier ou un dossier de ce nom.
+ * Ce qui est remplacé est dans le dossier préparé, jamais le poste.
+ */
+function lierEnRemplacant(dossier: string, source: string | null, lien: string): void {
+  if (!source || !existsSync(source) || !dans(dossier, lien)) return;
+  try {
+    const st = lstatSync(lien);
+    if (st.isSymbolicLink() && path.resolve(path.dirname(lien), readlinkSync(lien)) === path.resolve(source)) return;
+    rmSync(lien, { recursive: true, force: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
   }
@@ -154,6 +173,10 @@ export function preparerClaude(
     identifiants: string | null;
     projects: string | null;
     sessions: string | null;
+    /** Dossier `plugins` du poste, et ses réglages (`enabledPlugins`). Liens, jamais une copie. */
+    plugins?: string | null;
+    reglages?: string | null;
+    reglagesLocaux?: string | null;
   },
 ): void {
   mkdirSync(dossier, { recursive: true });
@@ -163,6 +186,9 @@ export function preparerClaude(
   lier(entree.identifiants, path.join(dossier, ".credentials.json"));
   lier(entree.projects, path.join(dossier, "projects"));
   lier(entree.sessions, path.join(dossier, "sessions"));
+  lierEnRemplacant(dossier, entree.plugins ?? null, path.join(dossier, "plugins"));
+  lierEnRemplacant(dossier, entree.reglages ?? null, path.join(dossier, "settings.json"));
+  lierEnRemplacant(dossier, entree.reglagesLocaux ?? null, path.join(dossier, "settings.local.json"));
 }
 
 export interface SessionClaude {
@@ -194,7 +220,7 @@ export function preparerSessionClaude(session: SessionClaude): { dossier: string
       /* fiche absente : on ne l'invente pas */
     }
   }
-  const skills = listerSkills(path.join(poste, "skills")).filter((s) => session.garder(s.nom));
+  const skills = listerSkills(dossierSkillsSession(session.userData, poste)).filter((s) => session.garder(s.nom));
   const claudeMd = path.join(poste, "CLAUDE.md");
   preparerClaude(dossier, {
     fiches,
@@ -203,8 +229,17 @@ export function preparerSessionClaude(session: SessionClaude): { dossier: string
     identifiants: path.join(poste, ".credentials.json"),
     projects: path.join(poste, "projects"),
     sessions: path.join(poste, "sessions"),
+    plugins: path.join(poste, "plugins"),
+    reglages: path.join(poste, "settings.json"),
+    reglagesLocaux: path.join(poste, "settings.local.json"),
   });
   return { dossier, skills: skills.map((s) => s.nom) };
+}
+
+/** La bibliothèque de l'app si elle existe, sinon les skills du poste. */
+function dossierSkillsSession(userData: string, poste: string): string {
+  const bibliotheque = path.join(userData, "bibliotheque-skills");
+  return existsSync(bibliotheque) ? bibliotheque : path.join(poste, "skills");
 }
 
 function copierSiAbsent(source: string, dest: string): boolean {
@@ -238,6 +273,7 @@ export function migrerCopies(opts: { fichesPoste: string; skillsPoste: string; f
     if (copierSiAbsent(path.join(opts.fichesPoste, nom), dest)) fiches.push(id);
   }
   const skills: string[] = [];
+  mkdirSync(opts.skillsDest, { recursive: true });
   for (const skill of listerSkills(opts.skillsPoste)) {
     const base = path.basename(skill.source);
     const dest = path.join(opts.skillsDest, base);
@@ -245,6 +281,90 @@ export function migrerCopies(opts: { fichesPoste: string; skillsPoste: string; f
     if (copierSiAbsent(skill.source, dest)) skills.push(skill.nom);
   }
   return { fiches, skills };
+}
+
+export interface ImportSkills {
+  ajoutees: string[];
+  dejaLa: string[];
+  ignorees: string[];
+}
+
+const triNoms = (noms: string[]) => [...noms].sort((a, b) => a.localeCompare(b, "fr"));
+
+/**
+ * Copie dans la bibliothèque de l'app les skills d'un dossier choisi.
+ * Si ce dossier contient `SKILL.md`, c'est une skill. Sinon, ce sont ses sous-dossiers.
+ * Un nom ou un dossier déjà présent n'est pas écrasé. Rien n'est supprimé, ni à la source, ni dans la bibliothèque.
+ * Un lien n'est pas pris comme dossier de skill.
+ */
+export function importerSkills(source: string, dest: string): ImportSkills {
+  const ajoutees: string[] = [];
+  const dejaLa: string[] = [];
+  const ignorees: string[] = [];
+  const racine = path.resolve(source);
+  let info: ReturnType<typeof lstatSync>;
+  try {
+    info = lstatSync(racine);
+  } catch {
+    return { ajoutees, dejaLa, ignorees: [path.basename(racine) || racine] };
+  }
+  if (!info.isDirectory() || info.isSymbolicLink()) return { ajoutees, dejaLa, ignorees: [path.basename(racine) || racine] };
+
+  const garder: SkillSource[] = [];
+  const enfants = listerSkills(racine);
+  if (enfants.length) {
+    garder.push(...enfants);
+  } else {
+    const fiche = path.join(racine, "SKILL.md");
+    try {
+      const fichier = lstatSync(fiche);
+      if (fichier.isFile() && !fichier.isSymbolicLink()) {
+        const base = path.basename(racine);
+        if (!NOM_DOSSIER.test(base)) ignorees.push(base);
+        else garder.push({ nom: nomSkill(readFileSync(fiche, "utf8"), racine), source: racine });
+      }
+    } catch {
+      /* ce dossier n'est pas une skill */
+    }
+  }
+
+  const bibliotheque = path.resolve(dest);
+  mkdirSync(bibliotheque, { recursive: true });
+  const presentes = listerSkills(bibliotheque);
+  const noms = new Set(presentes.map((s) => s.nom));
+  const dossiers = new Set(presentes.map((s) => path.basename(s.source)));
+  for (const skill of garder) {
+    const base = path.basename(skill.source);
+    const cible = path.join(bibliotheque, base);
+    if (!NOM_DOSSIER.test(base) || !dans(bibliotheque, cible)) {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    if (path.resolve(skill.source) === path.resolve(cible) || existsSync(cible) || noms.has(skill.nom) || dossiers.has(base)) {
+      dejaLa.push(skill.nom);
+      continue;
+    }
+    if (dans(skill.source, cible)) {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    let st: ReturnType<typeof lstatSync>;
+    try {
+      st = lstatSync(skill.source);
+    } catch {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    if (st.isSymbolicLink() || !st.isDirectory()) {
+      ignorees.push(skill.nom);
+      continue;
+    }
+    cpSync(skill.source, cible, { recursive: true, dereference: true });
+    ajoutees.push(skill.nom);
+    noms.add(skill.nom);
+    dossiers.add(base);
+  }
+  return { ajoutees: triNoms(ajoutees), dejaLa: triNoms(dejaLa), ignorees: triNoms(ignorees) };
 }
 
 /** Le compte rendu déjà écrit, ou null. */

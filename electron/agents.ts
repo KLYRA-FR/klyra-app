@@ -5,14 +5,15 @@ import path from "node:path";
 import { dossierAgents, empreinte, NOM_VALIDE } from "./mes-agents";
 
 /**
- * Les fiches des sous-agents Claude Code : `~/.claude/agents/<name>.md`.
+ * Les fiches des agents : `<userData>/equipe/<name>.md` (cf. `dossierAgents`).
+ * `~/.claude/agents` est la copie d'origine, lue une fois, jamais réécrite ici.
  * - Chaque écriture garde d'abord une copie de la version remplacée dans
  *   l'historique de l'app (hors du dossier des agents, que Claude Code lit).
  * - Une écriture est refusée si le fichier a changé sur le disque depuis que
  *   l'écran l'a lu (`expectedModifiedAt`) : on n'écrase jamais une modif faite
  *   ailleurs sans le dire.
  * - Le nom d'un agent est vérifié : impossible d'écrire hors du dossier.
- * - L'app ne supprime jamais une fiche : d'autres outils lisent ce dossier.
+ * - L'app ne supprime jamais une fiche, ni dans son dossier, ni sur le poste.
  *   Qui est dans « Mes agents » est tenu à part (`mes-agents.ts`).
  */
 
