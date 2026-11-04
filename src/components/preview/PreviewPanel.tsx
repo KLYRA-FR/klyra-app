@@ -16,6 +16,7 @@ import { getBridge } from "@/lib/bridge";
 import { ouvrirFichier } from "@/components/project/Visionneuse";
 import { BarreAdresse, noterAdresse } from "./BarreAdresse";
 import { Publier } from "./Publier";
+import { Regle } from "./Regle";
 import { PanneauNavigateur } from "@/components/chat/navigateur/PanneauNavigateur";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 
@@ -104,6 +105,19 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
   const recharger = () => majActif((o) => ({ recharge: o.recharge + 1 }));
   const [publier, setPublier] = useState(false);
   const panneau = useRef<HTMLElement>(null);
+  /* Largeur réelle de la page affichée (celle de l'iframe), pour la règle du responsive. */
+  const cadre = useRef<HTMLDivElement>(null);
+  const [largeurPage, setLargeurPage] = useState(0);
+  const cadreVisible = tab === "apercu" && !!chargee;
+  useEffect(() => {
+    const el = cadre.current;
+    if (!el) return;
+    const mesurer = () => setLargeurPage(Math.round(el.clientWidth));
+    mesurer();
+    const obs = new ResizeObserver(mesurer);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [cadreVisible, device]);
 
   /* Lien cliqué dans la conversation : on l'affiche (rendu suivant, sans effet). */
   const [derniereDemande, setDerniereDemande] = useState(0);
@@ -304,11 +318,13 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
             {chargee ? (
               <>
                 <div
+                  ref={cadre}
                   className={cn(
-                    "h-full overflow-hidden border border-bordure-subtile bg-fond-surface shadow-ombre-ambiante",
+                    "flex h-full flex-col overflow-hidden border border-bordure-subtile bg-fond-surface shadow-ombre-ambiante",
                     device === "mobile" ? "w-[390px] max-w-full rounded-3xl" : "w-full rounded-md",
                   )}
                 >
+                  <Regle largeur={largeurPage} />
                   {/* Chaque onglet garde sa page chargée : on cache les autres, on ne les recharge pas. */}
                   {onglets
                     .filter((o) => o.chargee)
@@ -318,7 +334,7 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
                         src={versUrl(o.chargee)}
                         title={`Aperçu de ${project?.name ?? "projet"} : ${titreOnglet(o.chargee)}`}
                         hidden={o.id !== actif.id}
-                        className="size-full border-0"
+                        className="min-h-0 w-full flex-1 border-0"
                       />
                     ))}
                 </div>
