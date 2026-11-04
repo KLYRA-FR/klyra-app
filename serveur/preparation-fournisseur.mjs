@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { filtreSkills } from "./connaissances-agent.mjs";
 import { skillRecue } from "./skills-par-agent.mjs";
 /**
  * Ce que KLYRA prépare pour un fournisseur, à part du poste.
@@ -37,6 +38,17 @@ function dans(racine, cible) {
     const base = path.resolve(racine);
     const resolu = path.resolve(cible);
     return resolu === base || resolu.startsWith(base + path.sep);
+}
+/** Un lien dans le dossier préparé est retiré, sans suivre la cible (jamais le poste). */
+function oterSiLien(chemin) {
+    try {
+        if (lstatSync(chemin).isSymbolicLink())
+            rmSync(chemin, { force: true });
+    }
+    catch (error) {
+        if (error.code !== "ENOENT")
+            return;
+    }
 }
 function nomSkill(contenu, dossier) {
     const entete = /^---\r?\n([\s\S]*?)\r?\n---/.exec(contenu)?.[1] ?? "";
@@ -105,8 +117,91 @@ function lierEnRemplacant(dossier, source, lien) {
     }
     symlinkSync(source, lien);
 }
+const MAX_SKILLS_APPELE = 32;
+const MAX_TEXTE_SKILL = 40_000;
+const NOM_SKILL = /^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,80}$/;
+const NOM_OUTIL = /^[^\n\r]{1,120}$/;
+/** Découpe l'en-tête YAML. Sans en-tête, `lignes` est null et le texte reste le corps. */
+function couperEntete(contenu) {
+    const texte = contenu.replace(/\r\n/g, "\n");
+    if (!texte.startsWith("---\n"))
+        return { lignes: null, corps: texte };
+    const fin = texte.indexOf("\n---", 3);
+    if (fin < 0)
+        return { lignes: null, corps: texte };
+    const apres = texte.slice(fin + 4);
+    return { lignes: texte.slice(4, fin).split("\n"), corps: apres.startsWith("\n") ? apres.slice(1) : apres };
+}
+function blocsEntete(lignes) {
+    const sortie = [];
+    for (const ligne of lignes) {
+        const m = /^([A-Za-z][\w-]*):\s?(.*)$/.exec(ligne);
+        if (m)
+            sortie.push({ cle: m[1], valeur: m[2], suite: [] });
+        else if (sortie.length)
+            sortie[sortie.length - 1].suite.push(ligne);
+    }
+    return sortie;
+}
+function nomsListe(bloc, motif) {
+    /* Une liste YAML : une entrée par ligne, espaces compris (`Bash(git *)`).
+       Une valeur sur la même ligne : découpée par les virgules. */
+    const morceaux = bloc.suite.length ? bloc.suite : bloc.valeur.replace(/^\[|\]$/g, "").split(/[\n,]/);
+    return morceaux
+        .map((l) => l.replace(/^\s*-\s+/, "").trim().replace(/^["']|["']$/g, ""))
+        .filter((n) => motif.test(n));
+}
+function blocListe(cle, noms, motif) {
+    const propres = [...new Set(noms)].filter((n) => motif.test(n));
+    if (!propres.length)
+        return null;
+    return { cle, valeur: "", suite: propres.map((n) => `  - ${n}`) };
+}
+function ecrireEntete(blocs, corps) {
+    const lignes = blocs.flatMap((b) => [`${b.cle}:${b.valeur === "" ? "" : ` ${b.valeur}`}`, ...b.suite]);
+    return `---\n${lignes.join("\n")}\n---\n\n${corps.trim()}\n`;
+}
+function texteSkill(source) {
+    try {
+        const texte = readFileSync(path.join(source, "SKILL.md"), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
+        return texte || null;
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * La copie de fiche qu'un agent appelé lit. L'outil Skill est retiré : il montrerait
+ * le catalogue de l'agent qui a lancé la session (prouvé le 04/11/2026, Claude Code 2.1.306).
+ * Les skills allumées pour lui et présentes dans cette session sont préchargées (`skills`).
+ * Celles que la session a coupées sont écrites dans le corps : `skillOverrides` les
+ * empêcherait d'être préchargées. La fiche d'origine n'est pas modifiée.
+ */
+export function ficheAgentAppele(contenu, skills, dansSession) {
+    const { lignes, corps } = couperEntete(contenu);
+    const retenues = skills.slice(0, MAX_SKILLS_APPELE);
+    const precharge = retenues.filter((s) => dansSession(s.nom));
+    const hors = retenues.filter((s) => !dansSession(s.nom));
+    const tous = lignes?.length ? blocsEntete(lignes) : [];
+    const outils = tous.find((b) => b.cle === "disallowedTools");
+    const reste = tous.filter((b) => b.cle !== "skills" && b.cle !== "disallowedTools");
+    const skillsBloc = blocListe("skills", precharge.map((s) => s.nom), NOM_SKILL);
+    const outilsBloc = blocListe("disallowedTools", [...(outils ? nomsListe(outils, NOM_OUTIL) : []), "Skill"], NOM_OUTIL);
+    const entete = [...reste, ...(skillsBloc ? [skillsBloc] : []), ...(outilsBloc ? [outilsBloc] : [])];
+    const ajouts = [];
+    for (const s of hors) {
+        const texte = texteSkill(s.source);
+        if (!texte)
+            continue;
+        const coupe = texte.length > MAX_TEXTE_SKILL;
+        const corpsSkill = coupe ? `${texte.slice(0, MAX_TEXTE_SKILL)}\n\n[Coupée ici : lis la suite dans ${path.join(s.source, "SKILL.md")}.]` : texte;
+        ajouts.push(`<competence nom="${s.nom}">\n${corpsSkill}\n</competence>`);
+    }
+    return ecrireEntete(entete, [corps.trim(), ...ajouts].filter(Boolean).join("\n\n"));
+}
 function ecrireFiches(dossier, fiches) {
     const agents = path.join(dossier, "agents");
+    oterSiLien(agents);
     mkdirSync(agents, { recursive: true });
     const gardes = new Set();
     for (const fiche of fiches) {
@@ -115,6 +210,7 @@ function ecrireFiches(dossier, fiches) {
         const cible = path.join(agents, `${fiche.id}.md`);
         if (!dans(agents, cible))
             continue;
+        oterSiLien(cible);
         writeFileSync(cible, fiche.contenu, "utf8");
         gardes.add(`${fiche.id}.md`);
     }
@@ -128,6 +224,7 @@ function ecrireFiches(dossier, fiches) {
 }
 function ecrireSkills(dossier, skills) {
     const racine = path.join(dossier, "skills");
+    oterSiLien(racine);
     mkdirSync(racine, { recursive: true });
     const gardes = new Set();
     for (const skill of skills) {
@@ -202,12 +299,22 @@ export function preparerSessionClaude(session) {
     const id = session.agent && ID_AGENT.test(session.agent) ? session.agent : "principal";
     const dossier = path.join(session.userData, "preparation", id);
     const poste = session.poste || path.join(session.home, ".claude");
+    const catalogues = new Map();
+    if (session.choix && session.configClaude) {
+        for (const agent of session.idsActifs) {
+            if (!ID_AGENT.test(agent) || agent === id)
+                continue;
+            catalogues.set(agent, filtreSkills(session.choix, agent, session.configClaude, session.dossierProjet ?? null).dossiers);
+        }
+    }
     const fiches = [];
     for (const agent of session.idsActifs) {
         if (!ID_AGENT.test(agent))
             continue;
         try {
-            fiches.push({ id: agent, contenu: readFileSync(path.join(session.dossierAgents, `${agent}.md`), "utf8") });
+            const brut = readFileSync(path.join(session.dossierAgents, `${agent}.md`), "utf8");
+            const skills = catalogues.get(agent);
+            fiches.push({ id: agent, contenu: skills ? ficheAgentAppele(brut, skills, session.garder) : brut });
         }
         catch {
             /* fiche absente : on ne l'invente pas */
@@ -226,7 +333,11 @@ export function preparerSessionClaude(session) {
         reglages: path.join(poste, "settings.json"),
         reglagesLocaux: path.join(poste, "settings.local.json"),
     });
-    return { dossier, skills: skills.map((s) => s.nom) };
+    const catalogue = [...catalogues.entries()]
+        .map(([agent, liste]) => `${agent}:${liste.map((s) => s.nom).sort((a, b) => a.localeCompare(b, "fr")).join(",")}`)
+        .sort((a, b) => a.localeCompare(b, "fr"))
+        .join("\n");
+    return { dossier, skills: skills.map((s) => s.nom), catalogue };
 }
 /**
  * Prépare le `CODEX_HOME` de cet agent : seulement ses skills allumées.

@@ -14,9 +14,10 @@
  * (`userData/equipe`, copiées une fois depuis le poste) et seulement les skills
  * personnelles allumées, lues dans `userData/bibliotheque-skills` (la même copie).
  * Le poste n'est pas modifié. `skillOverrides` retire encore
- * ce qui resterait listé (skills de projet, skills livrées avec l'outil). La valeur
- * s'applique à toute la session : un agent appelé dedans reçoit le catalogue de celui
- * qui l'a lancé. Codex a un processus par agent : son dossier préparé ne reçoit
+ * ce qui resterait listé (skills de projet, skills livrées avec l'outil). Cette valeur
+ * reste celle de l'agent de la session. La fiche copiée d'un agent appelé retire l'outil
+ * Skill (le catalogue du lanceur) et reçoit les skills allumées pour lui.
+ * Codex a un processus par agent : son dossier préparé ne reçoit
  * que les skills que ce filtre laisse allumées.
  */
 export const SKILLS_PAR_DEFAUT = {

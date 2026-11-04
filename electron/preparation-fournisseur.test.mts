@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { filtreSkills, nomsSkills } from "./connaissances-agent.ts";
 import { diagnostiquerPoste } from "./diagnostic-poste.ts";
-import { ecrireBibliotheque, importerSkills, listerSkills, migrerCopies, preparerClaude, preparerSessionClaude, preparerSessionCodex, skillsAEnvoyer } from "./preparation-fournisseur.ts";
+import { ecrireBibliotheque, ficheAgentAppele, importerSkills, listerSkills, migrerCopies, preparerClaude, preparerSessionClaude, preparerSessionCodex, skillsAEnvoyer } from "./preparation-fournisseur.ts";
 
 function posteVide() {
   const racine = mkdtempSync(path.join(tmpdir(), "klyra-prep-"));
@@ -68,6 +68,7 @@ test("une session prépare le dossier de l'agent et laisse le poste intact", () 
       garder: (nom) => nom === "rangement",
     });
     assert.ok(session);
+    assert.equal(session.catalogue, "");
     assert.equal(session.dossier, path.join(userData, "preparation", "iris"));
     assert.deepEqual(session.skills, ["rangement"]);
     assert.equal(readFileSync(path.join(session.dossier, "agents", "iris.md"), "utf8").includes("Iris."), true);
@@ -352,6 +353,121 @@ test("Codex : un dossier préparé par agent, avec ses seules skills allumées",
     assert.equal(readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8"), avant);
     assert.equal(readFileSync(path.join(codexPoste, "config.toml"), "utf8"), 'model = "faux"\n');
   } finally {
+    rmSync(racine, { recursive: true, force: true });
+  }
+});
+
+test("la copie d'un agent appelé retire Skill et borne le texte", () => {
+  const racine = mkdtempSync(path.join(tmpdir(), "klyra-fiche-"));
+  try {
+    const longue = path.join(racine, "longue");
+    mkdirSync(longue);
+    writeFileSync(path.join(longue, "SKILL.md"), `---\nname: longue\n---\n\n${"A".repeat(40_100)}\n`);
+    const fiche = "---\nname: hugo\ndisallowedTools: Bash(git *)\n---\n\nHugo.\n";
+    const injectee = ficheAgentAppele(fiche, [{ nom: "longue", source: longue }], () => false);
+    assert.equal(injectee.includes("Bash(git *)"), true);
+    assert.equal(injectee.includes("\n  - Skill\n"), true);
+    assert.equal(injectee.includes("<competence nom=\"longue\">"), true);
+    assert.equal(injectee.includes("[Coupée ici :"), true);
+    assert.equal(injectee.includes("A".repeat(40_100)), false);
+    const prechargee = ficheAgentAppele(fiche, [{ nom: "longue", source: longue }], () => true);
+    assert.equal(prechargee.includes("\n  - longue\n"), true);
+    assert.equal(prechargee.includes("<competence"), false);
+    const beaucoup = Array.from({ length: 33 }, (_, i) => ({ nom: `s${i}`, source: longue }));
+    const borne = ficheAgentAppele("---\nname: hugo\n---\n\nHugo.\n", beaucoup, () => true);
+    assert.equal(borne.includes("\n  - s31\n"), true);
+    assert.equal(borne.includes("\n  - s32\n"), false);
+  } finally {
+    rmSync(racine, { recursive: true, force: true });
+  }
+});
+
+test("un agent appelé reçoit ses skills, et le poste n'est pas suivi par un lien", () => {
+  const { racine, home, poste, userData } = posteVide();
+  const avantEnv = process.env.KLYRA_USER_DATA;
+  try {
+    delete process.env.KLYRA_USER_DATA;
+    mkdirSync(path.join(poste, "skills", "partage"), { recursive: true });
+    writeFileSync(path.join(poste, "skills", "partage", "SKILL.md"), "---\nname: partage\ndescription: En commun.\n---\n\nPartage.\n");
+    const hugoPoste = path.join(poste, "agents", "hugo.md");
+    const hugoSource = "---\nname: hugo\ndisallowedTools:\n  - Bash(git *)\n---\n\nHugo.\n";
+    writeFileSync(hugoPoste, hugoSource);
+    const agents = path.join(poste, "agents");
+    const sessionSans = preparerSessionClaude({
+      userData,
+      home,
+      agent: "iris",
+      dossierAgents: agents,
+      idsActifs: ["iris", "hugo"],
+      garder: (nom) => nom !== "rangement",
+    });
+    assert.ok(sessionSans);
+    assert.equal(sessionSans.catalogue, "");
+    assert.equal(readFileSync(path.join(sessionSans.dossier, "agents", "hugo.md"), "utf8"), hugoSource);
+    const choix = {
+      fige: true,
+      personnellesConnues: ["rangement", "maquette", "partage"],
+      agentsConnus: ["iris", "hugo", "principal"],
+      coupees: { iris: ["rangement"], hugo: ["maquette"] },
+      activees: {},
+    };
+    const filtre = filtreSkills(choix, "iris", poste, null);
+    const session = preparerSessionClaude({
+      userData,
+      home,
+      agent: "iris",
+      dossierAgents: agents,
+      idsActifs: ["iris", "hugo"],
+      garder: filtre.garder,
+      choix,
+      configClaude: poste,
+      dossierProjet: null,
+    });
+    assert.ok(session);
+    assert.equal(session.catalogue, "hugo:partage,rangement");
+    assert.deepEqual(session.skills, ["maquette", "partage"]);
+    assert.equal(existsSync(path.join(session.dossier, "skills", "rangement")), false);
+    const iris = readFileSync(path.join(session.dossier, "agents", "iris.md"), "utf8");
+    assert.equal(iris.includes("Iris."), true);
+    assert.equal(iris.includes("disallowedTools"), false);
+    const hugo = readFileSync(path.join(session.dossier, "agents", "hugo.md"), "utf8");
+    assert.equal(hugo.includes("\n  - Skill\n"), true);
+    assert.equal(hugo.includes("Bash(git *)"), true);
+    assert.equal(hugo.includes("\n  - partage\n"), true);
+    assert.equal(hugo.includes("\n  - rangement\n"), false);
+    assert.equal(hugo.includes("Range."), true);
+    assert.equal(hugo.includes("Partage."), false);
+    assert.equal(hugo.includes("Dessine."), false);
+    assert.equal(readFileSync(hugoPoste, "utf8"), hugoSource);
+    assert.equal(readFileSync(path.join(poste, "agents", "iris.md"), "utf8").includes("Iris."), true);
+
+    rmSync(path.join(session.dossier, "agents", "hugo.md"));
+    symlinkSync(hugoPoste, path.join(session.dossier, "agents", "hugo.md"));
+    rmSync(path.join(session.dossier, "skills"), { recursive: true, force: true });
+    symlinkSync(path.join(poste, "skills"), path.join(session.dossier, "skills"));
+    const encore = preparerSessionClaude({
+      userData,
+      home,
+      agent: "iris",
+      dossierAgents: agents,
+      idsActifs: ["iris", "hugo"],
+      garder: filtre.garder,
+      choix,
+      configClaude: poste,
+      dossierProjet: null,
+    });
+    assert.ok(encore);
+    assert.equal(readFileSync(hugoPoste, "utf8"), hugoSource);
+    assert.equal(readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8").includes("Range."), true);
+    assert.equal(readFileSync(path.join(poste, "skills", "maquette", "SKILL.md"), "utf8").includes("Dessine."), true);
+    assert.equal(lstatSync(path.join(encore.dossier, "agents", "hugo.md")).isSymbolicLink(), false);
+    assert.equal(lstatSync(path.join(encore.dossier, "skills")).isSymbolicLink(), false);
+    assert.equal(readFileSync(path.join(encore.dossier, "agents", "hugo.md"), "utf8").includes("Range."), true);
+    assert.equal(existsSync(path.join(encore.dossier, "skills", "rangement")), false);
+    assert.equal(existsSync(path.join(encore.dossier, "skills", "maquette")), true);
+  } finally {
+    if (avantEnv === undefined) delete process.env.KLYRA_USER_DATA;
+    else process.env.KLYRA_USER_DATA = avantEnv;
     rmSync(racine, { recursive: true, force: true });
   }
 });
