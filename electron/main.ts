@@ -189,7 +189,7 @@ import type { AjoutFiche } from "./atelier-agent";
 import { essayerVps } from "./epreuve-vps";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
-import { adresseConvex, ecrireJeton, enregistrerProtocole, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
+import { adresseConvex, ecrireJeton, enregistrerProtocole, jetonsEcrits, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
 import { recevoirPiece } from "./pieces-telephone";
 
@@ -265,7 +265,27 @@ async function runSmokeTest(win: BrowserWindow) {
     "document.querySelector('main')?.innerText.replace(/\\s+/g, ' ').slice(0, 200) ?? ''",
   );
   console.log(text ? `OK — ${text}` : "ÉCHEC — rien n'est affiché");
+  if (process.env.KLYRA_SMOKE_JETON === "1") console.log(await essaiJeton());
   app.exit(text ? 0 : 1);
+}
+
+/**
+ * `KLYRA_SMOKE_JETON=1` (avec le smoke test) : un faux jeton de session, écrit par une version de l'app
+ * et relu par la suivante, par le même chemin que la vraie session (electron/compte.ts, trousseau).
+ * C'est ce que la vérification Mac contrôle à travers une mise à jour (verification-mac.yml).
+ */
+async function essaiJeton(): Promise<string> {
+  const cle = "__convexAuthJWT_essaimiseajour";
+  const lu = lireJeton(cle);
+  if (lu === "jeton-essai") return "JETON RELU";
+  if (lu !== null) return "JETON DIFFÉRENT";
+  if (existsSync(path.join(app.getPath("userData"), "compte.json"))) {
+    return `JETON PERDU (trousseau ${safeStorage.isEncryptionAvailable() ? "disponible, déchiffrement refusé" : "indisponible"})`;
+  }
+  if (!safeStorage.isEncryptionAvailable()) return "JETON NON ÉCRIT (trousseau indisponible)";
+  await ecrireJeton(cle, "jeton-essai");
+  await jetonsEcrits();
+  return "JETON ÉCRIT";
 }
 
 /** Un serveur de dev sur ce Mac. */
@@ -1294,9 +1314,9 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   quitteApresEcriture = true;
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send("app:avant-fermeture");
-  // Le temps que l'interface envoie son état, puis que le fichier soit écrit (2 s au plus).
+  // Le temps que l'interface envoie son état, puis que les fichiers soient écrits, jetons de session compris (2 s au plus).
   setTimeout(() => {
-    void Promise.race([ecrituresTerminees(), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
+    void Promise.race([Promise.all([ecrituresTerminees(), jetonsEcrits()]), new Promise((r) => setTimeout(r, 1500))]).then(() => app.quit());
   }, 300);
 });
 

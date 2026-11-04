@@ -31,6 +31,9 @@ jobs:
       - run: pnpm build:electron && pnpm test:composio
       - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif
       - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime
+      - name: Jetons de session du compte d'équipe, trousseau du Mac
+        timeout-minutes: 3
+        run: env -u ELECTRON_RUN_AS_NODE pnpm test:jetons-compte
 
   verifier:
     name: Build, types, lint et smoke test
@@ -84,6 +87,8 @@ jobs:
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:agents
       - name: Journal de consommation et rattrapage de l'historique
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
+      - name: Jetons de session du compte d'équipe (écriture ratée, entrée illisible)
+        run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-jetons-compte.cjs
       - name: Sons de l'app, rendus dans Chromium
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-sons.cjs
       - name: Navigateur de KLYRA, ce que les agents y font (page locale, profil temporaire)
@@ -144,6 +149,13 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           pnpm exec electron scripts/test-consommation.cjs
           if ($LASTEXITCODE -ne 0) { throw "Le test de consommation a échoué sous Windows." }
+      - name: Jetons de session du compte d'équipe, coffre de Windows (fichier verrouillé, entrée illisible)
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          pnpm exec electron scripts/test-jetons-compte.cjs
+          if ($LASTEXITCODE -ne 0) { throw "Le test des jetons de session a échoué sous Windows." }
       - name: Sons de l'app et réglage des sons du système
         shell: pwsh
         run: |
