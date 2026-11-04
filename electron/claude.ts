@@ -872,9 +872,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     for (const d of dossiersJoints) args.push("--add-dir", d);
     // Les rendus publiés (écran Artefacts) : le fichier de planning donne leurs chemins, l'agent doit pouvoir les lire.
     if (existsSync(DOSSIER_RENDUS)) args.push("--add-dir", DOSSIER_RENDUS);
-    // Créé d'avance : l'agent lit le fichier que `lire_artefact` y écrit pendant sa réponse.
-    mkdirSync(DOSSIER_ARTEFACTS_LUS, { recursive: true });
-    args.push("--add-dir", DOSSIER_ARTEFACTS_LUS);
+    // Créé au démarrage de l'app (`demarrerServeurMcp`) : l'agent lit le fichier que `lire_artefact` y écrit.
+    if (existsSync(DOSSIER_ARTEFACTS_LUS)) args.push("--add-dir", DOSSIER_ARTEFACTS_LUS);
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", [...consignesApp(options, mcp), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
 
     proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane, prepare?.dossier ?? null);

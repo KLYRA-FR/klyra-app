@@ -1,7 +1,7 @@
 import { app, net, safeStorage } from "electron";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { enregistrerAppelIa } from "./consommation";
@@ -10,7 +10,7 @@ import { serveursMcpDirects } from "./mcp-direct";
 import { OUTIL_FENETRE_NAVIGATEUR, ouvrirFenetreNavigateurDefaut } from "./ordinateur/fenetre-navigateur";
 import { serveurOrdinateur } from "./ordinateur/pilote";
 import { estOutilNavigateur, executerOutilNavigateur, navigateurActif, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur/outils";
-import { lireArtefact } from "./artefacts";
+import { DOSSIER_ARTEFACTS_LUS, lireArtefact } from "./artefacts";
 import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
 
 /**
@@ -405,6 +405,8 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
 /** Démarre le serveur MCP local (une fois, à l'ouverture de l'app). */
 export async function demarrerServeurMcp(): Promise<void> {
   combien = (await lire()).length;
+  // Le dossier où `lire_artefact` écrit : il existe avant le premier agent, qui reçoit son accès (`--add-dir`).
+  await mkdir(DOSSIER_ARTEFACTS_LUS, { recursive: true }).catch(() => {});
   return new Promise((resolve) => {
     const jeton = randomBytes(24).toString("hex");
     const http = createServer((req, res) => void traiter(req, res).catch(() => repondre(res, 500)));
