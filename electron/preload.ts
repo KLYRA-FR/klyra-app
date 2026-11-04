@@ -340,6 +340,22 @@ contextBridge.exposeInMainWorld("klyra", {
       ipcRenderer.on("navigateur:menu", listener);
       return () => ipcRenderer.removeListener("navigateur:menu", listener);
     },
+    onEchap: (callback: (id: string) => void) => {
+      const listener = (_e: unknown, id: string) => callback(id);
+      ipcRenderer.on("navigateur:echap", listener);
+      return () => ipcRenderer.removeListener("navigateur:echap", listener);
+    },
+    /** Test d'écran seulement : une vraie frappe Échap sur la page affichée. */
+    testerEchap: () => ipcRenderer.invoke("navigateur:tester-echap"),
+    /** La fenêtre qu'un agent pilote sur cet ordinateur (Computer Use), pas un onglet. */
+    apercu: () => ipcRenderer.invoke("ordinateur:apercu"),
+    onApercu: (callback: (etat: unknown) => void) => {
+      const listener = (_e: unknown, etat: unknown) => callback(etat);
+      ipcRenderer.on("ordinateur:apercu", listener);
+      return () => ipcRenderer.removeListener("ordinateur:apercu", listener);
+    },
+    /** Test d'écran seulement. */
+    testerApercu: (chatId: string, mode: string) => ipcRenderer.invoke("ordinateur:tester-apercu", chatId, mode),
     coffre: () => ipcRenderer.invoke("navigateur:coffre"),
     ajouterAuCoffre: (entree: unknown) => ipcRenderer.invoke("navigateur:coffre:ajouter", entree),
     retirerDuCoffre: (id: string) => ipcRenderer.invoke("navigateur:coffre:retirer", id),

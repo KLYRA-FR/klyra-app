@@ -90,6 +90,8 @@ jobs:
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur-ecran
       - name: Computer Use, relais entre les agents et le pilote
         run: pnpm test:relais
+      - name: Computer Use local, aperçu d'une fenêtre (sans le pilote)
+        run: pnpm test:apercu-fenetre
       - name: Routines, échéances et moteur (dossiers temporaires, sans agent)
         run: pnpm test:routines
       - name: Transport du parcours routines (preload et moteur réels, hôte et agent fictifs)

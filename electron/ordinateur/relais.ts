@@ -1,5 +1,6 @@
 import { chmod } from "node:fs/promises";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { extraitDeResultat, lireRequete, type ExtraitImage, type RequeteLegere } from "./apercu-cible.ts";
 
 /**
  * Computer Use : le relais entre les agents et le pilote (cua-driver), repris
@@ -27,6 +28,15 @@ const MAX_REPONSE = 33_554_432;
 const TEXTE_REPETE = 256;
 const BASE64_MIN = 1_024;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * L'aperçu du panneau. Le relais ne décide pas quoi montrer : il signale la
+ * réponse, et l'écran entier est annoncé sans ses pixels.
+ */
+let observateur: ((e: ExtraitImage) => void) | null = null;
+export function definirObservateurRelais(f: ((e: ExtraitImage) => void) | null): void {
+  observateur = f;
+}
 
 type Objet = Record<string, unknown>;
 const estObjet = (v: unknown): v is Objet => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -133,8 +143,8 @@ export class Relais {
     agent.on("close", fin);
     demon.on("close", fin);
 
-    /* Chaque ligne de requête annonce une ligne de réponse, dans l'ordre : true si c'est un appel d'outil. */
-    const attendues: boolean[] = [];
+    /* Chaque ligne de requête annonce une ligne de réponse, dans l'ordre. */
+    const attendues: { completer: boolean; requete: RequeteLegere | null }[] = [];
     let enCours = "";
     let sauter = false;
     agent.on("data", (morceau: Buffer) => {
@@ -144,7 +154,8 @@ export class Relais {
       while (fl >= 0) {
         const ligne = enCours.slice(0, fl);
         enCours = enCours.slice(fl + 1);
-        attendues.push(!sauter && estAppel(ligne));
+        const requete = sauter ? null : lireRequete(ligne);
+        attendues.push({ completer: requete !== null, requete });
         sauter = false;
         fl = enCours.indexOf("\n");
       }
@@ -156,6 +167,7 @@ export class Relais {
 
     /* Au retour : une réponse d'appel est gardée jusqu'à sa fin de ligne, puis complétée ; le reste passe tel quel. */
     let ligne: "passer" | "garder" | null = null;
+    let requeteGardee: RequeteLegere | null = null;
     let gardee: Buffer[] = [];
     let taille = 0;
     const lacher = (entiere: boolean) => {
@@ -163,12 +175,16 @@ export class Relais {
       const brute = Buffer.concat(gardee, taille);
       gardee = [];
       taille = 0;
-      agent.write(entiere ? avecCopie(brute) : brute);
+      agent.write(entiere ? avecCopie(brute, requeteGardee) : brute);
     };
     demon.on("data", (morceau: Buffer) => {
       let debut = 0;
       while (debut < morceau.length) {
-        if (ligne === null) ligne = attendues.shift() ? "garder" : "passer";
+        if (ligne === null) {
+          const attente = attendues.shift();
+          ligne = attente?.completer ? "garder" : "passer";
+          requeteGardee = attente?.requete ?? null;
+        }
         const fl = morceau.indexOf(0x0a, debut);
         const fin = fl < 0 ? morceau.length : fl + 1;
         const piece = morceau.subarray(debut, fin);
@@ -185,6 +201,7 @@ export class Relais {
         if (fl >= 0) {
           if (ligne === "garder") lacher(true);
           ligne = null;
+          requeteGardee = null;
         }
       }
     });
@@ -192,18 +209,25 @@ export class Relais {
   }
 }
 
-function estAppel(ligne: string): boolean {
+function signaler(texte: string, requete: RequeteLegere | null): void {
+  if (!observateur || !requete) return;
   try {
-    const lu: unknown = JSON.parse(ligne);
-    return estObjet(lu) && lu.method === "call" && typeof lu.name === "string";
+    if (requete.bureau || requete.name === "get_desktop_state") {
+      observateur({ name: requete.name, windowId: null, pid: null, titre: null, base64: null, mime: null, masquee: false, absente: false, bureau: true });
+      return;
+    }
+    const extrait = extraitDeResultat(JSON.parse(texte) as unknown, requete);
+    if (extrait && (extrait.base64 || extrait.masquee || extrait.absente || extrait.windowId != null)) observateur(extrait);
   } catch {
-    return false;
+    /* L'aperçu ne bloque pas l'agent. */
   }
 }
 
-function avecCopie(ligne: Buffer): Buffer {
+function avecCopie(ligne: Buffer, requete: RequeteLegere | null): Buffer {
+  const fin = ligne[ligne.length - 1] === 0x0a ? ligne.length - 1 : ligne.length;
+  const texte = ligne.toString("utf8", 0, fin);
+  signaler(texte, requete);
   if (!ligne.includes('"structuredContent"')) return ligne;
-  const texte = ligne.toString("utf8", 0, ligne[ligne.length - 1] === 0x0a ? ligne.length - 1 : ligne.length);
   const reecrite = ajouterCopieJson(texte);
   return reecrite === null ? ligne : Buffer.from(`${reecrite}\n`, "utf8");
 }

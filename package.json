@@ -47,6 +47,7 @@
     "test:liens": "node scripts/test-liens.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
     "test:relais": "node --experimental-strip-types --test electron/ordinateur/relais.test.mts",
+    "test:apercu-fenetre": "node --experimental-strip-types --test electron/ordinateur/apercu-cible.test.mts electron/ordinateur/navigateur-defaut.test.mts",
     "test:routines": "node scripts/test-routine-schedule.cjs && node scripts/test-routines.cjs && node scripts/test-routine-ipc.cjs && node scripts/test-routine-claude.cjs",
     "test:ordinateur": "electron scripts/test-ordinateur.cjs",
     "test:navigateur": "node --experimental-strip-types --test electron/navigateur/regles.test.mts && electron scripts/test-navigateur.cjs",

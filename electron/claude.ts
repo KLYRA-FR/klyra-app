@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
 import { consigneNavigateur, signatureNavigateur } from "./navigateur/outils";
+import { voirFin, voirOutil } from "./ordinateur/apercu";
 import { consigneOrdinateur, OUTILS_ORDINATEUR_INTERDITS, OUTILS_ORDINATEUR_LECTURE, serveurOrdinateur, signatureOrdinateur } from "./ordinateur/pilote";
 import { composioConnect, espaceComposio } from "./composio";
 import { agentAutorise, agentsARefuser, dossierAgents as agentsDir, estActif, generation, mesAgents, presentationActifs } from "./mes-agents";
@@ -257,6 +258,8 @@ interface Processus {
   fond: number;
   /** L'agent de ce Claude Code (null : le Principal), pour la consommation. */
   agent: string | null;
+  /** La conversation, pour montrer sa fenêtre dans le panneau Navigateur. */
+  chatId: string;
   /** Jetons et coût cumulés par modèle depuis le lancement (cf. consommation.ts). */
   cumul: ReturnType<typeof enregistrerTourClaude>;
   /** Les entrées d'outil en cours d'écriture que l'écran montre en direct, par bloc du message. */
@@ -498,6 +501,7 @@ function finirTour(proc: Processus, tour: Tour, event: Extract<AgentEvent, { typ
   running.delete(tour.requestId);
   demandes.delete(tour.requestId);
   tour.emit(event);
+  if (!proc.tours.length) voirFin(proc.chatId);
   if (!proc.tours.length && !proc.fond && vivant(proc)) {
     proc.veille = setTimeout(() => proc.child.stdin?.end(), VEILLE_MS);
   }
@@ -606,6 +610,7 @@ function lireLigne(proc: Processus, ligne: string) {
     }
     for (const bloc of outils) {
       if (bloc.input?.run_in_background === true) proc.fond += 1;
+      if (bloc.name!.startsWith("mcp__ordinateur__")) voirOutil(proc.chatId, bloc.name!, bloc.input ?? {});
       tour.emit({ type: "etape", id: bloc.id!, outil: bloc.name!, entree: bloc.input ?? {}, parent });
       if (parent === null) tour.etapesDepuisTexte = true;
     }
@@ -727,6 +732,7 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
     veille: null,
     fond: 0,
     agent: options.agent,
+    chatId: options.chatId ?? "",
     cumul: {},
     saisies: new Map(),
   };

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ElementContextuel, MenuContextuel, SeparateurContextuel } from "@/components/ui/MenuContextuel";
-import { getBridge, type ActionMenuNavigateur, type MenuNavigateur, type OngletNavigateur } from "@/lib/bridge";
+import { getBridge, type ActionMenuNavigateur, type ApercuFenetre, type MenuNavigateur, type OngletNavigateur } from "@/lib/bridge";
 import { raccourciDuSysteme } from "@/lib/plateforme";
 import { ModaleCoffre } from "./Coffre";
 import { cn } from "@/lib/cn";
@@ -16,11 +17,18 @@ import type { Chat } from "@/types/domain";
 /**
  * L'onglet « Navigateur » du panneau d'une conversation : les pages que
  * l'agent ouvre pour travailler (et celles que la personne ouvre pour lui),
- * en vignettes, puis la page elle-même, vivante, à l'endroit de la zone
- * réservée. La page est une vue native posée par le process principal
+ * en vignettes. Un clic sur une vignette ouvre la page en plein écran dans
+ * la fenêtre de l'app (pas dans le tiroir) : Échap ou « Retour » ramène aux
+ * vignettes. La page est une vue native posée par le process principal
  * (electron/navigateur/) : rien de l'écran ne peut passer par-dessus, donc
  * elle s'efface derrière sa vignette dès qu'une fenêtre ou un menu s'ouvre.
+ *
+ * En local, le Computer Use n'ouvre pas d'onglet : la fenêtre pilotée
+ * (une seule, jamais l'écran entier) s'affiche ici de la même façon.
  */
+
+/** Une fenêtre ou un menu de l'app est ouvert : Échap le ferme, il ne quitte pas le plein écran. */
+const RECOUVRE_ECHAP = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
 
 const pont = () => getBridge()?.navigateur;
 
@@ -194,6 +202,38 @@ function MenuPage({ onglet, menu, x, y, onFermer }: { onglet: OngletNavigateur; 
   );
 }
 
+/**
+ * La page ouverte, en plein écran sur la fenêtre. La barre reste au-dessus de
+ * la vue native (elle ne peut rien laisser passer par-dessus). Échap quitte,
+ * sauf si une fenêtre ou un menu de l'app l'utilise déjà.
+ */
+function PleinEcran({ ongletId, onFermer, children }: { ongletId: string; onFermer: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (document.querySelector(RECOUVRE_ECHAP)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onFermer();
+    };
+    window.addEventListener("keydown", onKey, true);
+    const off = pont()?.onEchap?.((id) => {
+      if (id === ongletId && !document.querySelector(RECOUVRE_ECHAP)) onFermer();
+    });
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      off?.();
+    };
+  }, [ongletId, onFermer]);
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div data-plein-ecran-navigateur className="fixed inset-0 z-40 flex min-h-0 flex-col bg-fond-surface">
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 /** Une page ouverte : sa barre, ce qui s'y passe, la page elle-même, ses téléchargements. */
 function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigateur; chat: Chat; nombre: number; retour: () => void; nouveau: boolean }) {
   const zone = useRef<HTMLDivElement>(null);
@@ -223,10 +263,11 @@ function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigat
         {/* Au bord de la barre : la page native couvre toute la zone en dessous. */}
         {onglet.chargement && <span className="klyra-chargement-navigateur absolute inset-x-0 -bottom-px h-0.5" aria-hidden />}
         <div className="flex items-center gap-0.5">
-          <Bouton variant="discret" taille="mini" iconeGauche={<Icon name="chevron-left" size={14} />} onClick={retour} className="px-1.5">
-            Onglets
-            <span className="klyra-mono text-texte-tertiaire">{nombre}</span>
+          <Bouton variant="sombre" taille="mini" iconeGauche={<Icon name="chevron-left" size={14} />} onClick={retour} aria-keyshortcuts="Escape" aria-label="Retour au panneau">
+            Retour
           </Bouton>
+          <span className="px-1 text-ui-2xs text-texte-tertiaire">Échap</span>
+          <span className="klyra-mono text-ui-2xs text-texte-tertiaire">{nombre}</span>
           <span className="mx-1 h-4 w-px bg-bordure-subtile" />
           <BoutonIcone taille="mini" cote="haut" icone={<Icon name="arrow-rotate-left-01" size={14} />} libelle="Page précédente" disabled={!onglet.peutReculer} onClick={() => void p?.historique(onglet.id, "retour")} />
           <BoutonIcone taille="mini" cote="haut" icone={<Icon name="arrow-rotate-right-01" size={14} />} libelle="Page suivante" disabled={!onglet.peutAvancer} onClick={() => void p?.historique(onglet.id, "suivant")} />
@@ -289,6 +330,112 @@ function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigat
   );
 }
 
+function useApercu(chatId: string): ApercuFenetre | null {
+  const [etat, setEtat] = useState<ApercuFenetre[] | null>(null);
+  useEffect(() => {
+    const p = pont();
+    if (!p?.apercu || !p.onApercu) return;
+    let vivant = true;
+    void p.apercu().then((r) => {
+      if (vivant && r.ok) setEtat(r.data);
+    });
+    const off = p.onApercu((e) => setEtat(e));
+    return () => {
+      vivant = false;
+      off();
+    };
+  }, []);
+  return etat?.find((a) => a.chatId === chatId) ?? null;
+}
+
+function messageApercu(apercu: ApercuFenetre): string | null {
+  if (apercu.image && !apercu.bureau && !apercu.masquee) return null;
+  if (apercu.bureau) return "L’agent vise tout l’écran. Ici, seulement sa fenêtre.";
+  if (apercu.masquee) return "Fenêtre masquée ou réduite. Pas d’image.";
+  if (apercu.absente) return "Cette fenêtre n’est plus là.";
+  if (apercu.actif) return "Lecture de la fenêtre…";
+  return null;
+}
+
+/** La fenêtre pilotée, en plein écran : une image, pas une vue native. */
+function ApercuPlein({ apercu, chat, onFermer }: { apercu: ApercuFenetre; chat: Chat; onFermer: () => void }) {
+  const { arreter } = useWorkspace();
+  const travail = useTravail(chat.id);
+  const roleId = chat.roleIds[0] ?? "principal";
+  const agent = useRole(roleId);
+  const message = messageApercu(apercu);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-bordure-subtile px-2 py-2">
+        <Bouton variant="sombre" taille="mini" iconeGauche={<Icon name="chevron-left" size={14} />} onClick={onFermer} aria-keyshortcuts="Escape" aria-label="Retour au panneau">
+          Retour
+        </Bouton>
+        <span className="px-1 text-ui-2xs text-texte-tertiaire">Échap</span>
+        <span className="mx-1 h-4 w-px bg-bordure-subtile" />
+        <span className="min-w-0 flex-1 truncate text-ui-s font-medium text-texte-principal">{apercu.titre}</span>
+        <span className="px-1 text-ui-2xs text-texte-tertiaire">{apercu.actif ? "En direct" : "Dernière image"}</span>
+        {travail && (
+          <BoutonIcone taille="mini" icone={<Icon name="stop-01" size={14} />} libelle={`Arrêter ${agent.name}`} onClick={() => arreter(chat.id)} />
+        )}
+      </div>
+      <div data-zone-apercu className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-fond-surface p-3">
+        {apercu.image ? (
+          // eslint-disable-next-line @next/next/no-img-element -- une capture en data:, pas une image distante
+          <img src={apercu.image} alt={apercu.titre} className="max-h-full max-w-full object-contain object-top" />
+        ) : (
+          <p className="m-0 max-w-sm text-center text-ui-s text-texte-secondaire">{message}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** La carte de la fenêtre pilotée, à côté des onglets. */
+function CarteApercu({ apercu, chat, ouvrir }: { apercu: ApercuFenetre; chat: Chat; ouvrir: () => void }) {
+  const { arreter } = useWorkspace();
+  const travail = useTravail(chat.id);
+  const roleId = chat.roleIds[0] ?? "principal";
+  const agent = useRole(roleId);
+  const message = messageApercu(apercu);
+  return (
+    <li className="group/carte relative">
+      <button
+        type="button"
+        data-apercu-fenetre
+        onClick={ouvrir}
+        className="flex w-full cursor-pointer flex-col gap-1.5 rounded-md border-0 bg-transparent p-1.5 text-left hover:bg-fond-survol"
+      >
+        <span className="relative block aspect-[16/10] w-full overflow-hidden rounded-sm border border-bordure-subtile bg-fond-surface-grise">
+          {apercu.image ? (
+            // eslint-disable-next-line @next/next/no-img-element -- une capture en data:, pas une image distante
+            <img src={apercu.image} alt="" className="size-full object-contain object-top" />
+          ) : (
+            <span className="flex size-full items-center justify-center px-3 text-center text-ui-2xs leading-[1.4] text-texte-secondaire">{message}</span>
+          )}
+          <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1.5 rounded-pill bg-fond-surface py-0.5 pr-2 pl-0.5 text-ui-2xs font-medium text-texte-principal shadow-ombre-xs">
+            <AgentRond roleId={roleId} taille={16} />
+            {apercu.actif ? "En direct" : agent.name}
+          </span>
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5 px-0.5">
+          <span className="truncate text-ui-s font-medium text-texte-principal">{apercu.titre}</span>
+          <span className="truncate text-ui-2xs text-texte-tertiaire">{message ?? (apercu.actif ? "Computer Use · en direct" : "Computer Use · dernière image")}</span>
+        </span>
+      </button>
+      {travail && (
+        <BoutonIcone
+          taille="mini"
+          variant="blanc"
+          icone={<Icon name="stop-01" size={12} />}
+          libelle={`Arrêter ${agent.name}`}
+          onClick={() => arreter(chat.id)}
+          className="absolute top-3 right-3 size-6 shadow-ombre-xs"
+        />
+      )}
+    </li>
+  );
+}
+
 /** Une carte d'onglet : sa vignette, son titre, son site, et qui l'utilise. */
 function Carte({ onglet, ouvrir }: { onglet: OngletNavigateur; ouvrir: () => void }) {
   const roleId = onglet.main?.type === "demandee" ? onglet.main.roleId : onglet.pilote?.roleId;
@@ -339,15 +486,21 @@ function Carte({ onglet, ouvrir }: { onglet: OngletNavigateur; ouvrir: () => voi
 
 export function PanneauNavigateur({ chat }: { chat: Chat }) {
   const onglets = useOngletsChat(chat.id);
+  const apercu = useApercu(chat.id);
   const [vu, setVu] = useOngletVu(chat.id);
+  const [apercuOuvert, setApercuOuvert] = useState(false);
   const [nouveau, setNouveau] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const agent = useRole(chat.roleIds[0] ?? "principal");
   const p = pont();
+  const retour = useCallback(() => setVu(null), [setVu]);
+  const fermerApercu = useCallback(() => setApercuOuvert(false), []);
   /* Un agent attend la personne sur une page : elle s'ouvre (une fois par demande). */
   const enAttente = onglets.find((o) => o.main?.type === "demandee");
   const demande = enAttente?.main?.type === "demandee" ? `${enAttente.id}:${enAttente.main.raison}` : null;
   const [demandeVue, setDemandeVue] = useState<string | null>(null);
+  if (apercuOuvert && !apercu) setApercuOuvert(false);
+
   if (demande && enAttente && demande !== demandeVue) {
     setDemandeVue(demande);
     if (vu !== enAttente.id) setVu(enAttente.id);
@@ -370,11 +523,19 @@ export function PanneauNavigateur({ chat }: { chat: Chat }) {
   };
 
   const ongletVu = onglets.find((o) => o.id === vu);
-  if (ongletVu) return <Page key={ongletVu.id} onglet={ongletVu} chat={chat} nombre={onglets.length} retour={() => setVu(null)} nouveau={nouveau === ongletVu.id} />;
-
   const surServeur = !!chat.lieu;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+      {apercuOuvert && apercu && (
+        <PleinEcran ongletId="apercu" onFermer={fermerApercu}>
+          <ApercuPlein apercu={apercu} chat={chat} onFermer={fermerApercu} />
+        </PleinEcran>
+      )}
+      {ongletVu && (
+        <PleinEcran ongletId={ongletVu.id} onFermer={retour}>
+          <Page key={ongletVu.id} onglet={ongletVu} chat={chat} nombre={onglets.length} retour={retour} nouveau={nouveau === ongletVu.id} />
+        </PleinEcran>
+      )}
       <div className="flex items-center justify-between gap-2 px-1.5 pt-1">
         <span className="text-ui-xs font-semibold text-texte-principal">
           {onglets.length ? `${onglets.length} onglet${onglets.length > 1 ? "s" : ""}` : "Navigateur"}
@@ -389,8 +550,9 @@ export function PanneauNavigateur({ chat }: { chat: Chat }) {
           Cette conversation tourne sur un serveur : ses agents utilisent ce navigateur, sur cet ordinateur, tant que KLYRA y est ouvert.
         </span>
       )}
-      {onglets.length ? (
+      {apercu || onglets.length ? (
         <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-1 p-0">
+          {apercu && <CarteApercu apercu={apercu} chat={chat} ouvrir={() => setApercuOuvert(true)} />}
           {onglets.map((o) => (
             <Carte key={o.id} onglet={o} ouvrir={() => setVu(o.id)} />
           ))}
