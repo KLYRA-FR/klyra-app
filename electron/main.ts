@@ -166,6 +166,8 @@ import {
 } from "./artefacts";
 import { copierRenduVps, htmlRenduVps, ouvrirRenduVps } from "./rendus-vps";
 import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
+import { PRIVILEGE_SCHEMA } from "./document-isole";
+import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { arbreVps, consignesVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
@@ -239,6 +241,7 @@ const CONTENT_SECURITY_POLICY = politiqueContenu(sourcesConvex());
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  PRIVILEGE_SCHEMA,
 ]);
 
 /** `/chat` → `out/chat.html`, `/` → `out/index.html`, assets tels quels. */
@@ -850,6 +853,9 @@ function registerBridge() {
   handle("rendus:supprimer", (chemin: string) => supprimerCopieRendu(chemin));
   handle("rendus:enregistrer", (chemin: string, dossier: string | null) => enregistrerRenduDans(chemin, dossier));
   handle("rendus:dossier-agent", (agent: string, quoi: string) => ouvrirDossierAgent(agent, quoi));
+  /* HTML déjà lu par l'écran (`contenu`). L'adresse de stockage n'est pas un argument. */
+  handle("documents:ouvrir", (html: string, titre: string) => ouvrirHtml(html, titre));
+  handle("documents:vignette", (cle: string, html: string, forcer: boolean) => vignetteHtml(cle, html, !!forcer));
   handle("claude-ai:etat", () => etatClaudeAi());
   handle("claude-ai:connexion", () => connecterClaudeAi(BrowserWindow.getFocusedWindow() ?? undefined));
   handle("claude-ai:deconnexion", () => deconnecterClaudeAi());

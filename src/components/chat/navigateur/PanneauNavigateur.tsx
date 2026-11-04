@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { createPortal } from "react-dom";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
@@ -17,9 +16,9 @@ import type { Chat } from "@/types/domain";
 /**
  * L'onglet « Navigateur » du panneau d'une conversation : les pages que
  * l'agent ouvre pour travailler (et celles que la personne ouvre pour lui),
- * en vignettes. Un clic sur une vignette ouvre la page en plein écran dans
- * la fenêtre de l'app (pas dans le tiroir) : Échap ou « Retour » ramène aux
- * vignettes. La page est une vue native posée par le process principal
+ * en vignettes. Un clic sur une vignette ouvre la page dans le panneau, comme
+ * l'aperçu : la conversation reste visible à côté, et le panneau s'élargit à
+ * la poignée ou s'agrandit. Échap ou « Retour » ramène aux vignettes. La page est une vue native posée par le process principal
  * (electron/navigateur/) : rien de l'écran ne peut passer par-dessus, donc
  * elle s'efface derrière sa vignette dès qu'une fenêtre ou un menu s'ouvre.
  *
@@ -27,7 +26,7 @@ import type { Chat } from "@/types/domain";
  * (une seule, jamais l'écran entier) s'affiche ici de la même façon.
  */
 
-/** Une fenêtre ou un menu de l'app est ouvert : Échap le ferme, il ne quitte pas le plein écran. */
+/** Une fenêtre ou un menu de l'app est ouvert : Échap le ferme, il ne quitte pas la page. */
 const RECOUVRE_ECHAP = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
 
 const pont = () => getBridge()?.navigateur;
@@ -203,15 +202,19 @@ function MenuPage({ onglet, menu, x, y, onFermer }: { onglet: OngletNavigateur; 
 }
 
 /**
- * La page ouverte, en plein écran sur la fenêtre. La barre reste au-dessus de
- * la vue native (elle ne peut rien laisser passer par-dessus). Échap quitte,
- * sauf si une fenêtre ou un menu de l'app l'utilise déjà.
+ * La page ouverte, dans le panneau (comme l'aperçu) : la conversation reste à
+ * côté. La barre reste au-dessus de la vue native (elle ne peut rien laisser
+ * passer par-dessus). Échap quitte, sauf si une fenêtre ou un menu de l'app
+ * l'utilise déjà, ou si on écrit ailleurs (le message de la conversation).
  */
-function PleinEcran({ ongletId, onFermer, children }: { ongletId: string; onFermer: () => void; children: React.ReactNode }) {
+function DansLePanneau({ ongletId, onFermer, children }: { ongletId: string; onFermer: () => void; children: React.ReactNode }) {
+  const racine = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (document.querySelector(RECOUVRE_ECHAP)) return;
+      const focus = document.activeElement;
+      if (focus && focus !== document.body && !racine.current?.contains(focus)) return;
       e.preventDefault();
       e.stopPropagation();
       onFermer();
@@ -225,12 +228,10 @@ function PleinEcran({ ongletId, onFermer, children }: { ongletId: string; onFerm
       off?.();
     };
   }, [ongletId, onFermer]);
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <div data-plein-ecran-navigateur className="fixed inset-0 z-40 flex min-h-0 flex-col bg-fond-surface">
+  return (
+    <div ref={racine} data-page-navigateur className="flex min-h-0 flex-1 flex-col bg-fond-surface">
       {children}
-    </div>,
-    document.body,
+    </div>
   );
 }
 
@@ -357,7 +358,7 @@ function messageApercu(apercu: ApercuFenetre): string | null {
   return null;
 }
 
-/** La fenêtre pilotée, en plein écran : une image, pas une vue native. */
+/** La fenêtre pilotée, dans le panneau : une image, pas une vue native. */
 function ApercuPlein({ apercu, chat, onFermer }: { apercu: ApercuFenetre; chat: Chat; onFermer: () => void }) {
   const { arreter } = useWorkspace();
   const travail = useTravail(chat.id);
@@ -524,18 +525,23 @@ export function PanneauNavigateur({ chat }: { chat: Chat }) {
 
   const ongletVu = onglets.find((o) => o.id === vu);
   const surServeur = !!chat.lieu;
+  /* Une page ouverte remplace les vignettes, dans le panneau. */
+  if (apercuOuvert && apercu) {
+    return (
+      <DansLePanneau ongletId="apercu" onFermer={fermerApercu}>
+        <ApercuPlein apercu={apercu} chat={chat} onFermer={fermerApercu} />
+      </DansLePanneau>
+    );
+  }
+  if (ongletVu) {
+    return (
+      <DansLePanneau ongletId={ongletVu.id} onFermer={retour}>
+        <Page key={ongletVu.id} onglet={ongletVu} chat={chat} nombre={onglets.length} retour={retour} nouveau={nouveau === ongletVu.id} />
+      </DansLePanneau>
+    );
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
-      {apercuOuvert && apercu && (
-        <PleinEcran ongletId="apercu" onFermer={fermerApercu}>
-          <ApercuPlein apercu={apercu} chat={chat} onFermer={fermerApercu} />
-        </PleinEcran>
-      )}
-      {ongletVu && (
-        <PleinEcran ongletId={ongletVu.id} onFermer={retour}>
-          <Page key={ongletVu.id} onglet={ongletVu} chat={chat} nombre={onglets.length} retour={retour} nouveau={nouveau === ongletVu.id} />
-        </PleinEcran>
-      )}
       <div className="flex items-center justify-between gap-2 px-1.5 pt-1">
         <span className="text-ui-xs font-semibold text-texte-principal">
           {onglets.length ? `${onglets.length} onglet${onglets.length > 1 ? "s" : ""}` : "Navigateur"}

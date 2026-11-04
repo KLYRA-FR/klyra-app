@@ -426,7 +426,7 @@ export interface KlyraBridge {
   rendus: {
     /** Vignette PNG (data URL) ; null pour une vidéo, un PDF ou un document. */
     vignette: (chemin: string, forcer: boolean) => Promise<Reponse<string | null>>;
-    /** Avec l'app du système ; un type qu'on ne sait pas montrer s'ouvre dans son dossier. */
+    /** Une page HTML ou SVG s'ouvre dans la fenêtre isolée. Le reste, avec l'app du système. */
     ouvrir: (chemin: string) => Promise<Reponse<void>>;
     montrer: (chemin: string) => Promise<Reponse<void>>;
     /** Copie un livrable dans l'espace de l'agent (`~/.klyra/rendus/<agent>/`) ; `remplace` : sa copie précédente. */
@@ -447,6 +447,12 @@ export interface KlyraBridge {
     enregistrer: (chemin: string, dossier: string | null) => Promise<Reponse<string | null>>;
     /** Ouvre l'espace des livrables d'un agent, ou son dossier de travail hors projet. */
     dossierAgent: (agent: string, quoi: "rendus" | "atelier") => Promise<Reponse<void>>;
+  };
+  /** Une page HTML partagée, ouverte sans que l'adresse Convex arrive à l'écran. */
+  documents?: {
+    ouvrir: (html: string, titre: string) => Promise<Reponse<void>>;
+    /** Vignette PNG (data URL). `cle` est l'identifiant et la date de mise à jour. */
+    vignette: (cle: string, html: string, forcer: boolean) => Promise<Reponse<string | null>>;
   };
   fenetres: {
     /** Ouvre une adresse locale (localhost) dans une fenêtre de l'app. */
@@ -803,7 +809,7 @@ export interface OngletNavigateur {
   erreur: string | null;
   vignette: string | null;
   endormi: boolean;
-  /** Sa page est à l'écran (plein écran de la fenêtre). */
+  /** Sa page est à l’écran (dans le panneau de la conversation). */
   affiche: boolean;
   pilote: { roleId: string; action: string; at: number } | null;
   main: null | { type: "personne" } | { type: "demandee"; roleId: string; raison: string };
