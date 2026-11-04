@@ -106,6 +106,37 @@ export default defineSchema({
     .index("by_url_and_retireLe", ["url", "retireLe"]),
 
   /**
+   * Un HTML KLYRA partagé avec l'équipe (cf. `documentsKlyra.ts`). Un privé n'est pas ici :
+   * il reste sur la machine de son espace. `lieu` null : Ce PC. Sinon l'adresse du VPS,
+   * la même que l'espace actif. Une liste ne mélange pas les espaces.
+   */
+  documentsKlyra: defineTable({
+    auteurId: v.id("membres"),
+    /** Slug de l'agent qui l'a produit, ou null : déposé par la personne. */
+    agent: v.union(v.string(), v.null()),
+    titre: v.string(),
+    description: v.string(),
+    /** Pour l'instant seulement une page HTML. */
+    type: v.literal("html"),
+    fichier: v.id("_storage"),
+    taille: v.number(),
+    /** Empreinte du fichier, donnée par le stockage. */
+    empreinte: v.string(),
+    /** 1 au premier partage, +1 quand le même original est partagé à nouveau dans le même espace. */
+    version: v.number(),
+    /** Clé de remplacement (chemin d'origine), dans un espace. Deux membres peuvent avoir la même. */
+    origine: v.string(),
+    /** null : Ce PC. Sinon l'adresse du VPS. Jamais recopié d'un espace à l'autre. */
+    lieu: v.union(v.string(), v.null()),
+    majLe: v.number(),
+    /** null : encore partagé. Le retrait efface le fichier de Convex. La copie locale, s'il y en a une, n'est pas ici. */
+    retireLe: v.union(v.number(), v.null()),
+  })
+    .index("by_lieu_and_retireLe_and_majLe", ["lieu", "retireLe", "majLe"])
+    .index("by_auteurId_and_lieu_and_origine", ["auteurId", "lieu", "origine"])
+    .index("by_retireLe_and_majLe", ["retireLe", "majLe"]),
+
+  /**
    * Un rappel partagé (cf. `docs/CONVEX-PLAN.md`, § 2). Visible par qui l'a créé et par
    * la personne à qui il est assigné. `liste` est la catégorie de l'assigné, sur son
    * ordinateur ; null : la colonne « Assignés par l'équipe ».

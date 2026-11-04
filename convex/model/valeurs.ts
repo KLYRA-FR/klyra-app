@@ -50,7 +50,9 @@ export type CodeErreur =
   // Artefacts de l'équipe (cf. `convex/artefactsEquipe.ts`).
   | "lien_invalide"
   | "deja_partage"
-  | "description_trop_longue";
+  | "description_trop_longue"
+  // Documents KLYRA (cf. `convex/documentsKlyra.ts`).
+  | "document_invalide";
 
 const ADRESSE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

@@ -175,6 +175,7 @@ const MESSAGES: Record<string, string> = {
   lien_invalide: "Ce lien ne mène pas à un artefact claude.ai.",
   deja_partage: "Cet artefact est déjà partagé avec l’équipe.",
   description_trop_longue: "La description fait 500 caractères au plus.",
+  document_invalide: "Ce document n’est pas valable : un fichier HTML, avec un titre.",
   reserve_au_createur: "Seul qui a créé le rappel peut changer ça.",
   rappel_invalide: "Ce rappel n’est pas valable : vérifie le titre, la date et la catégorie.",
   membre_inconnu: "Cette personne n’est plus dans l’équipe.",

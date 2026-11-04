@@ -15,6 +15,7 @@ import type * as connexion from "../connexion.js";
 import type * as conversationsCompte from "../conversationsCompte.js";
 import type * as courriels from "../courriels.js";
 import type * as demandesPoste from "../demandesPoste.js";
+import type * as documentsKlyra from "../documentsKlyra.js";
 import type * as equipe from "../equipe.js";
 import type * as evenements from "../evenements.js";
 import type * as http from "../http.js";
@@ -49,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   conversationsCompte: typeof conversationsCompte;
   courriels: typeof courriels;
   demandesPoste: typeof demandesPoste;
+  documentsKlyra: typeof documentsKlyra;
   equipe: typeof equipe;
   evenements: typeof evenements;
   http: typeof http;
