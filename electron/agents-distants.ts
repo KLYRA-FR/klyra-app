@@ -22,7 +22,7 @@ export interface Fenetre {
   evenement: (requestId: string, event: AgentEvent) => void;
   /** Une réponse que l'interface n'a pas demandée (tâche de fond, routine du VPS, réponse finie pendant l'absence de l'app). */
   spontane: (requestId: string, sessionId: string, contexte: (ContexteReponse & { lieu: string }) | null) => void;
-  /** Un livrable publié par un agent du VPS (`publier_artefact`, cf. serveur/rendus.mjs) : l'écran le recopie. */
+  /** Un livrable publié par un agent du VPS (`publier_artefact`, cf. serveur/rendus.mjs) : l'écran l'ajoute, sans le copier sur ce PC. */
   rendu: (origine: string, rendu: RenduVps) => void;
 }
 

@@ -47,6 +47,35 @@ export function renduDeLOrigine(rendus: Rendu[], origine: string): Rendu | undef
   return rendus.find((r) => r.origine === origine);
 }
 
+/**
+ * Un livrable annoncé par le VPS, sans copie sur ce PC.
+ * `chemin` reste vide : le fichier est servi depuis le serveur (`distantId`).
+ */
+export function renduDepuisServeur(
+  lieu: string,
+  annonce: { id: string; chemin: string; dossier: boolean; taille: number; titre: string; description: string; agent: string },
+  chat: { id: string; projectId: string | null } | undefined,
+  maintenant: string,
+  id: string,
+): Rendu {
+  return {
+    id,
+    chemin: "",
+    origine: `${lieu}#${annonce.chemin}`,
+    distantId: annonce.id,
+    dossier: annonce.dossier,
+    taille: annonce.taille,
+    titre: annonce.titre || nomDuFichier(annonce.chemin),
+    description: annonce.description,
+    type: annonce.dossier ? "page" : typeDeRendu(annonce.chemin),
+    roleId: annonce.agent,
+    chatId: chat?.id ?? null,
+    projectId: chat?.projectId ?? null,
+    ajouteLe: maintenant,
+    misAJour: maintenant,
+  };
+}
+
 /** Publier deux fois le même original met son rendu à jour (copie, titre, description, date) et le remonte. */
 export function publierRendu(rendus: Rendu[], nouveau: Rendu): Rendu[] {
   const existant = renduDeLOrigine(rendus, nouveau.origine);

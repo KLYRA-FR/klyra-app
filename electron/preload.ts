@@ -123,6 +123,13 @@ contextBridge.exposeInMainWorld("klyra", {
     copier: (origine: string, agent: string, remplace: string | null) => ipcRenderer.invoke("rendus:copier", origine, agent, remplace),
     copierVps: (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) =>
       ipcRenderer.invoke("rendus:copier-vps", lieu, id, agent, nom, dossier, remplace),
+    /** HTML d'une copie locale, en base64. Jamais un fichier hors des rendus. */
+    lireHtml: (chemin: string) => ipcRenderer.invoke("rendus:html", chemin),
+    /** HTML d'un livrable du VPS, lu sur le serveur, sans copie dans les rendus de ce PC. */
+    lireHtmlVps: (lieu: string, id: string, dossier: boolean) => ipcRenderer.invoke("rendus:html-vps", lieu, id, dossier),
+    /** Ouvre un livrable du VPS depuis le serveur (fichier temporaire, pas une copie gardée). */
+    ouvrirVps: (lieu: string, id: string, agent: string, nom: string, dossier: boolean) =>
+      ipcRenderer.invoke("rendus:ouvrir-vps", lieu, id, agent, nom, dossier),
     onVps: (callback: (lieu: string, rendu: unknown) => void) => {
       const listener = (_e: unknown, lieu: string, rendu: unknown) => callback(lieu, rendu);
       ipcRenderer.on("rendus:vps", listener);

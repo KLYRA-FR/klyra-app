@@ -447,10 +447,17 @@ export type TypeRendu = "page" | "image" | "video" | "pdf" | "document";
  */
 export interface Rendu {
   id: string;
-  /** La copie gardée par l'app (`~/.klyra/rendus/<agent>/…`) : fichier, ou dossier d'une page avec ses ressources. */
+  /**
+   * La copie gardée par l'app (`~/.klyra/rendus/<agent>/…`) sur ce PC.
+   * Vide quand le fichier reste sur le VPS (`distantId`) : rien n'est copié d'un espace à l'autre.
+   */
   chemin: string;
-  /** Le fichier publié par l'agent, là où il l'a mis. */
+  /** Le fichier publié par l'agent, là où il l'a mis. Sur un VPS : `https://hôte#/chemin`. */
   origine: string;
+  /** Publication sur le VPS. Le fichier est servi depuis le serveur, pas depuis ce PC. */
+  distantId?: string;
+  /** Dossier d'une page (index.html) sur le VPS. */
+  dossier?: boolean;
   /** Octets de la copie. */
   taille: number;
   titre: string;

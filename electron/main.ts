@@ -164,8 +164,8 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
-import { copierRenduVps } from "./rendus-vps";
-import { copierRendu, enregistrerRenduDans, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
+import { copierRenduVps, htmlRenduVps, ouvrirRenduVps } from "./rendus-vps";
+import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { arbreVps, consignesVps, creerDossierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
@@ -802,9 +802,15 @@ function registerBridge() {
   handle("artefacts:ouvrir", (url: string, titre: string) => ouvrirArtefact(url, String(titre ?? "Artefact")));
   handle("rendus:vignette", (chemin: string, forcer: boolean) => vignetteRendu(chemin, !!forcer));
   handle("rendus:ouvrir", (chemin: string) => ouvrirRendu(chemin));
+  handle("rendus:html", (chemin: string) => htmlDuRendu(chemin));
+  /* Le HTML d'un livrable du VPS, lu sur le serveur, sans l'écrire dans ~/.klyra/rendus. */
+  handle("rendus:html-vps", (lieu: string, id: string, dossier: boolean) => htmlRenduVps(String(lieu), jetonServeur(String(lieu)), id, dossier === true));
+  handle("rendus:ouvrir-vps", (lieu: string, id: string, agent: string, nom: string, dossier: boolean) =>
+    ouvrirRenduVps(String(lieu), jetonServeur(String(lieu)), id, agent, nom, dossier === true),
+  );
   handle("rendus:montrer", (chemin: string) => montrerRendu(chemin));
   handle("rendus:copier", (origine: string, agent: string, remplace: string | null) => copierRendu(origine, agent, remplace));
-  /* Un livrable d'un agent du VPS : recopié depuis le serveur dans l'espace de l'agent, comme un livrable local. */
+  /* Ancien canal : copie dans ~/.klyra/rendus. L'écran ne l'appelle plus à la publication. */
   handle("rendus:copier-vps", (lieu: string, id: string, agent: string, nom: string, dossier: boolean, remplace: string | null) =>
     copierRenduVps(String(lieu), jetonServeur(String(lieu)), id, agent, nom, dossier === true, remplace),
   );

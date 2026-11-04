@@ -25,6 +25,8 @@ const vDocument = v.object({
   description: v.string(),
   agent: v.union(v.string(), v.null()),
   lieu: vLieu,
+  /** Le chemin d'origine, pour l'auteur seulement. Les autres ne voient pas le disque. */
+  origine: v.union(v.string(), v.null()),
   taille: v.number(),
   version: v.number(),
   majLe: v.number(),
@@ -69,6 +71,7 @@ async function resume(ctx: QueryCtx, doc: Doc<"documentsKlyra">, moi: Id<"membre
     description: doc.description,
     agent: doc.agent,
     lieu: doc.lieu,
+    origine: doc.auteurId === moi ? doc.origine : null,
     taille: doc.taille,
     version: doc.version,
     majLe: doc.majLe,

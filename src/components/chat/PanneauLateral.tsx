@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge } from "@/lib/bridge";
+import { lieuDuRendu, renduDansEspace } from "@/lib/rendus-espace";
+import { nomDuFichier } from "@/lib/rendus";
 import { cn } from "@/lib/cn";
 import { nomFichier } from "@/lib/fichiers";
 import { formatListDate } from "@/lib/format";
@@ -131,7 +133,7 @@ function Livrables({ chat }: { chat: Chat }) {
   const direct = chat.kind === "direct" && !chat.fil;
   const agentId = chat.roleIds[0] ?? "principal";
   const agent = useRole(agentId);
-  const livrables = state.rendus.filter((r) => (direct ? r.roleId === agentId : r.chatId === chat.id));
+  const livrables = state.rendus.filter((r) => renduDansEspace(r.origine, chat.lieu ?? null) && (direct ? r.roleId === agentId : r.chatId === chat.id));
   const total = livrables.reduce((n, r) => n + (r.taille ?? 0), 0);
   const surCePc = !!bridge && !chat.lieu;
   if (!livrables.length && !(direct && surCePc)) return null;
@@ -148,7 +150,15 @@ function Livrables({ chat }: { chat: Chat }) {
             <li key={r.id}>
               <button
                 type="button"
-                onClick={() => bridge && void bridge.rendus.ouvrir(r.chemin)}
+                onClick={() => {
+                  if (!bridge) return;
+                  if (r.chemin) {
+                    void bridge.rendus.ouvrir(r.chemin);
+                    return;
+                  }
+                  const lieu = lieuDuRendu(r.origine);
+                  if (r.distantId && lieu && bridge.rendus.ouvrirVps) void bridge.rendus.ouvrirVps(lieu, r.distantId, r.roleId, nomDuFichier(r.origine), r.dossier === true);
+                }}
                 title={`${r.titre}\n${r.origine}\nClic pour l’ouvrir`}
                 className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent p-1.5 text-left hover:bg-fond-survol"
               >

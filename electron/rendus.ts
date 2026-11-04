@@ -191,6 +191,14 @@ export async function vignetteRendu(chemin: unknown, forcer = false): Promise<st
   });
 }
 
+/** Le HTML d'une copie de livrable, en base64, pour l'envoyer au compte. Jamais un fichier hors des rendus. */
+export async function htmlDuRendu(chemin: unknown): Promise<string> {
+  const fichier = fichierDuRendu(chemin);
+  if (!dansLesRendus(fichier)) throw new Error("Ce fichier n’est pas une copie de livrable.");
+  if (!/\.html?$/i.test(fichier)) throw new Error("Seule une page HTML se partage avec l’équipe.");
+  return (await readFile(fichier)).toString("base64");
+}
+
 /** Ouvre le rendu avec l'app du système ; un type qu'on ne sait pas montrer est montré dans son dossier. */
 export async function ouvrirRendu(chemin: unknown): Promise<void> {
   const fichier = fichierDuRendu(chemin);

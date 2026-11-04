@@ -14,7 +14,7 @@ import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCours } from "@/lib/atelier-agent";
-import { lirePublication, nomDuFichier, publierRendu, renduDeLOrigine, typeDeRendu } from "@/lib/rendus";
+import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
@@ -1197,40 +1197,22 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [suivant],
   );
 
-  /* Un agent d'un VPS a publié un livrable (publier_artefact, cf. serveur/rendus.mjs) : l'app le recopie dans
-     l'espace de l'agent sur ce PC et l'ajoute à Artefacts, comme un livrable local. Son origine garde le
-     serveur, pour qu'une nouvelle publication du même fichier remplace sa copie. */
+  /* Un agent d'un VPS a publié un livrable (publier_artefact, cf. serveur/rendus.mjs). Le fichier reste
+     sur le serveur : on ne le copie pas dans ~/.klyra/rendus. Une copie déjà là, d'avant cette règle, est
+     retirée à la publication suivante du même original. L'origine garde le serveur. */
   useEffect(() => {
-    // Un pont partiel (tests de l'interface, ancienne app) n'a pas forcément les livrables : rien à écouter.
     const onVps = bridge?.rendus?.onVps;
-    const copierVps = bridge?.rendus?.copierVps;
-    if (!onVps || !copierVps) return;
+    if (!onVps) return;
     return onVps((lieu, r) => {
-      void (async () => {
-        const origine = `${lieu}#${r.chemin}`;
-        const avant = renduDeLOrigine(stateRef.current.rendus, origine);
-        const copie = await copierVps(lieu, r.id, r.agent, nomDuFichier(r.chemin), r.dossier, avant?.chemin ?? null);
-        if (!copie.ok) return;
-        const chat = stateRef.current.chats.find((c) => c.id === r.conversation);
-        const maintenant = new Date().toISOString();
-        dispatch({
-          type: "rendu/publier",
-          rendu: {
-            id: crypto.randomUUID(),
-            chemin: copie.data.chemin,
-            origine,
-            taille: copie.data.taille,
-            titre: r.titre || nomDuFichier(r.chemin),
-            description: r.description,
-            type: copie.data.dossier ? "page" : typeDeRendu(r.chemin),
-            roleId: r.agent,
-            chatId: chat?.id ?? null,
-            projectId: chat?.projectId ?? null,
-            ajouteLe: maintenant,
-            misAJour: maintenant,
-          },
-        });
-      })();
+      const origine = `${lieu}#${r.chemin}`;
+      const avant = renduDeLOrigine(stateRef.current.rendus, origine);
+      if (avant?.chemin) void bridge?.rendus.supprimer(avant.chemin);
+      const chat = stateRef.current.chats.find((c) => c.id === r.conversation);
+      const maintenant = new Date().toISOString();
+      dispatch({
+        type: "rendu/publier",
+        rendu: renduDepuisServeur(lieu, r, chat, maintenant, crypto.randomUUID()),
+      });
     });
   }, [bridge]);
 
@@ -2001,7 +1983,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
               misAJour: maintenant,
             },
           });
-          return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans ton espace de livrables ; republier le même fichier remplace cette copie.`;
+          return `Publié dans Artefacts : « ${publication.titre} ». L’app en garde une copie dans Mes artefacts de cet espace ; elle n’est pas partagée à l’équipe. Republier le même fichier remplace cette copie.`;
         }
         case "proposer_agent":
         case "proposer_choix": {
@@ -2134,7 +2116,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /* Retirer un livrable supprime la copie de l'app ; l'original de l'agent reste où il était. */
   const retirerRendu = useCallback((id: string) => {
     const rendu = stateRef.current.rendus.find((r) => r.id === id);
-    if (rendu) void bridge?.rendus.supprimer(rendu.chemin);
+    if (rendu?.chemin) void bridge?.rendus.supprimer(rendu.chemin);
     dispatch({ type: "rendu/retirer", id });
   }, [bridge]);
   const choisirArtefactsClaude = useCallback((actif: boolean) => dispatch({ type: "artefacts-claude/choisir", actif }), []);

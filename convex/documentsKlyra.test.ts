@@ -50,11 +50,12 @@ describe("documents KLYRA", () => {
       lieu: null,
       version: 1,
       deMoi: true,
+      origine: "/tmp/page.html",
       auteur: { nom: "Alice", actif: true },
     });
     expect(ici.documents[0].taille).toBeGreaterThan(0);
     expect(await b.query(api.documentsKlyra.lister, { lieu: PC })).toMatchObject({
-      documents: [expect.objectContaining({ _id: id, deMoi: false, lieu: null })],
+      documents: [expect.objectContaining({ _id: id, deMoi: false, lieu: null, origine: null })],
     });
     expect(await a.query(api.documentsKlyra.lister, { lieu: VPS })).toMatchObject({ lieu: VPS, documents: [] });
     expect(await b.query(api.documentsKlyra.lister, { lieu: VPS })).toMatchObject({ documents: [] });
