@@ -121,7 +121,8 @@ export function FicheAgentTelephone({ id }: { id: string }) {
   const agent = lue?.type === "agent" ? lue : null;
   const role = useMemo(() => (agent ? roleDeFiche(agent) : null), [agent]);
   const identite = carte(id);
-  const nom = identite?.nom ?? role?.name ?? id;
+  /* Jamais l'id à l'écran (socle § 8) : sans carte ni fiche lue, « Cet agent ». */
+  const nom = identite?.nom ?? role?.name ?? "Cet agent";
   const teinte: RoleTeinte = identite?.teinte ?? role?.teinte ?? teinteSure(null);
   const roleCourt = identite?.roleCourt || roleLisible(role?.tag, id) || role?.title || "";
   const statut = agent?.statut ?? (assistant || identite?.actif ? "actif" : "desactive");

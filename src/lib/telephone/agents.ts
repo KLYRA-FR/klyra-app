@@ -73,6 +73,11 @@ export function roleLisible(roleCourt: string | null | undefined, id: string): s
   return role && role !== id ? role : "";
 }
 
+/** Le rôle court qu'un geste de l'ordinateur envoie au téléphone : lisible, sinon le rôle de la fiche (C-2a). */
+export function tagLisible(role: { id: string; tag: string; title?: string }): string {
+  return roleLisible(role.tag, role.id) || role.title?.trim() || "";
+}
+
 /** « 1 conversation », « 4 conversations », « Aucune conversation ». */
 export function texteConversations(n: number): string {
   if (n <= 0) return "Aucune conversation";

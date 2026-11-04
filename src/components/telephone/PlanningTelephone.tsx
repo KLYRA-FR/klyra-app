@@ -203,10 +203,11 @@ export function PlanningTelephone() {
   );
   const categories = donnees?.categories ?? null;
   /* Vue gardée (S-22) : le compte d'abord, puis ce que l'ordinateur gardait, à part et daté. */
+  /* Vue gardée : les catégories de l'ordinateur ne rangent plus les rappels du compte (des catégories vides). */
   const sections = sectionsRappels({
     mes: vueGardee ? rappelsMes.filter((r) => r.source === "compte") : rappelsMes,
     assignes: rappelsAssignes,
-    categories,
+    categories: vueGardee ? null : categories,
     voirFaits,
     gardes,
   });

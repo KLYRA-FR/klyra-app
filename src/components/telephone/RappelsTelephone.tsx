@@ -59,6 +59,7 @@ export function RappelsTelephone({
     <div className="flex flex-col">
       {rien ? <p className="py-4 text-body-s text-texte-secondaire">Tout est fait</p> : null}
       {surPoste ? <h2 className="pt-3 pb-1 text-ui font-semibold text-texte-principal">Dans ton compte</h2> : null}
+      {surPoste && sections.every((s) => s.rappels.length === 0) ? <p className="py-2 text-ui text-texte-secondaire">Aucun rappel dans ton compte.</p> : null}
       {sections.map((section, i) => (
         <div key={section.id}>
           {section.categorie && sections[i - 1]?.groupe !== "mes" ? (
