@@ -8,6 +8,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useAgents } from "@/lib/agents";
+import { ordreBarre } from "@/lib/ordre-barre";
 import { getBridge } from "@/lib/bridge";
 import { lieuParDefaut, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { quandRoutine } from "@/lib/routines-affichage";
@@ -98,7 +99,7 @@ export function FormulaireRoutine(props: FormulaireRoutineProps) {
 }
 
 function SaisieRoutine({ initiale, valeursInitiales, onEnregistrer, onAnnuler, onChange, changeeAilleurs = false, onRecharger }: FormulaireRoutineProps) {
-  const { roles, tous } = useAgents();
+  const { roles, tous, meta } = useAgents();
   const { state: { projects } } = useWorkspace();
   const [base] = useState(() => normaliser(initiale));
   const [valeurs, setValeurs] = useState(() => normaliser(valeursInitiales ?? initiale));
@@ -182,7 +183,7 @@ function SaisieRoutine({ initiale, valeursInitiales, onEnregistrer, onAnnuler, o
   };
 
   const aideConsigne = `Elle part telle quelle à chaque exécution, comme un message que tu lui écrirais. ${role.name} ne voit pas cette page : écris tout ce qu’il doit savoir.`;
-  const optionsAgents = roles.map((agent) => ({ value: agent.id, label: `${agent.name} · ${agent.tag}`, icone: <AgentRond roleId={agent.id} taille={20} />, disabled: false }));
+  const optionsAgents = ordreBarre(roles, (id) => meta[id]).map((agent) => ({ value: agent.id, label: `${agent.name} · ${agent.tag}`, icone: <AgentRond roleId={agent.id} taille={20} />, disabled: false }));
   if (!agentActif) optionsAgents.unshift({ value: valeurs.agentId, label: `${role.name} · ${agentConnu ? "désactivé" : "introuvable"}`, icone: <AgentRond roleId={valeurs.agentId} taille={20} />, disabled: true });
 
   return (
