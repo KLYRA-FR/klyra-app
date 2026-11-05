@@ -3,11 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { useLieuActif } from "@/lib/lieux";
+import { useConversationsEspace } from "@/lib/telephone/espace";
 import type { LecturePoste } from "@/lib/poste/client";
 import { libelleStatut, tonStatut } from "@/lib/telephone/dossiers";
 import { ilYa, jourCourt, ligneTravail, quandLisible, type FicheProjet, type SuiviTravail, type TravailFiche } from "@/lib/telephone/fiche-projet";
@@ -33,6 +33,8 @@ export interface CarteProjetLue {
 }
 
 const FERME = (sur: string) => `le brief, les agents et les travaux de ce projet sont sur ${sur}. Ils s’affichent ici quand KLYRA y est ouverte.`;
+/* Un projet d'un serveur : ses données ne sont pas sur l'ordinateur, c'est l'app de bureau qui les lit. */
+const FERME_SERVEUR = (sur: string) => `le brief, les agents et les travaux de ce projet se lisent par KLYRA sur ${sur}. Ils s’affichent ici quand elle y est ouverte.`;
 const BRIEF_LONG = 200;
 
 export function FicheProjetTelephone({
@@ -50,6 +52,7 @@ export function FicheProjetTelephone({
   const tirage = useTirerPourRelire(lecture.relancer, { actif: relireActif });
   const gardee = lecture.etat === "ferme" ? lecture.gardee : null;
   const attente = lecture.etat === "attente";
+  const lieu = useLieuActif();
 
   const suite = (fiche: FicheProjet) => (
     <>
@@ -63,7 +66,7 @@ export function FicheProjetTelephone({
       {tirage.indicateur}
       {gardee ? (
         /* E6-09 : le bandeau, puis la carte (compte) et ce qui a été lu. Un travail s'ouvre quand même. */
-        <LectureGardee vue={gardee} gestes="Modifier le projet" verrou={false}>
+        <LectureGardee vue={gardee} gestes={lieu ? "Relire" : "Modifier le projet"} verrou={false}>
           <div className="flex flex-col gap-4 px-4">
             <CarteIdentite carte={carte} fiche={gardee.data} eclaire={eclaire} />
             {suite(gardee.data)}
@@ -79,7 +82,7 @@ export function FicheProjetTelephone({
           ) : attente ? (
             <DemandeEnCours lent={lecture.lent} lignes={3} />
           ) : (
-            <VueLecture lecture={lecture} ferme={FERME} forme="encadre" sansRecours>
+            <VueLecture lecture={lecture} ferme={lieu ? FERME_SERVEUR : FERME} forme="encadre" sansRecours>
               {() => null}
             </VueLecture>
           )}
@@ -208,11 +211,14 @@ function SectionTravaux({ fiche, onOuvrir }: { fiche: FicheProjet; onOuvrir: (t:
 /** Ce qui reste sur l'ordinateur (P-8). */
 function SectionSurPoste({ surPoste }: { surPoste: boolean }) {
   const sur = useSupport();
+  const lieu = useLieuActif();
+  /* Sur un serveur, ces gestes ne sont pas « sur ton Mac » : ils se font depuis l'app de bureau. */
+  const titre = lieu ? "Depuis l’app de bureau" : `Sur ${sur}`;
   const ligne = (icone: IconName, nom: string, raison: string) => (
-    <LigneListe key={nom} debut={<TuileIcone icone={icone} />} retrait="tuile" nom={nom} etiquette={<Etiquette>{`Sur ${sur}`}</Etiquette>} ligne2={raison} />
+    <LigneListe key={nom} debut={<TuileIcone icone={icone} />} retrait="tuile" nom={nom} etiquette={<Etiquette>{lieu ? "App de bureau" : `Sur ${sur}`}</Etiquette>} ligne2={raison} />
   );
   return (
-    <SectionListe titre={`Sur ${sur}`}>
+    <SectionListe titre={titre}>
       <GroupeListe>
         {[
           ligne("note-01", "Consignes des agents", surPoste ? "Elles s’écrivent dans le dossier du projet, sur l’ordinateur." : "Elles s’écrivent dans le dossier du projet, depuis l’app de bureau."),
@@ -234,7 +240,7 @@ const ICONES_SUIVI: Record<SuiviTravail["genre"], IconName> = {
 /** E6-12 : où en est le travail, son suivi, ses preuves ; « Ouvrir le fil » si son fil est dans le compte. */
 function FeuilleTravail({ travail, onFermer }: { travail: TravailFiche; onFermer: () => void }) {
   const router = useRouter();
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const conversations = useConversationsEspace();
   const maintenant = useMaintenant();
   const filConnu = !!travail.filId && !!conversations?.some((c) => c.origine === travail.filId);
   const details: { icone: IconName; nom: string; valeur: string }[] = [];

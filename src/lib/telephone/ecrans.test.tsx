@@ -11,6 +11,7 @@ const simule = vi.hoisted(() => ({
   lecture: { etat: "attente", lent: false } as Record<string, unknown>,
   ouvert: true,
   params: new URLSearchParams(),
+  lieu: null as string | null,
 }));
 
 vi.mock("convex/react", () => ({
@@ -42,13 +43,20 @@ vi.mock("@/components/telephone/poste", () => {
   };
 });
 
+vi.mock("@/lib/lieux", async (importer) => ({
+  ...(await importer<typeof import("@/lib/lieux")>()),
+  useLieuActif: () => simule.lieu,
+}));
+
 const { ProjetsTelephone, ProjetTelephone } = await import("@/components/telephone/EcransProjets");
 const { DossierTelephone } = await import("@/components/telephone/DossierTelephone");
 const { VisionneuseTelephone } = await import("@/components/telephone/VisionneuseTelephone");
+const { PageModifierProjet } = await import("@/components/telephone/ModifierProjetTelephone");
 
 const texte = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
 beforeEach(() => {
+  simule.lieu = null;
   simule.ouvert = true;
   simule.params = new URLSearchParams();
   simule.lecture = { etat: "attente", lent: false };
@@ -366,7 +374,60 @@ describe("E6-08 à E6-12 : la fiche du projet", () => {
   test("un projet retiré du compte le dit, avec un retour", () => {
     simule.params = new URLSearchParams("id=disparu");
     const html = renderToStaticMarkup(<ProjetTelephone />);
-    expect(texte(html)).toContain("Ce projet n’est plus dans ton compte");
+    expect(texte(html)).toContain("Ce projet n’est pas dans cet espace");
     expect(html).toContain('aria-label="Retour"');
+  });
+});
+
+describe("sur un serveur (Plus › Serveurs)", () => {
+  const SERVEUR = "https://vps.exemple.test";
+  beforeEach(() => {
+    simule.lieu = SERVEUR;
+    simule.requetes["conversationsCompte:projets"] = [
+      { origine: "ici", nom: "Du PC", accroche: "", statut: "en-cours", epingle: false, misAJour: null, lieu: null },
+      { origine: "la", nom: "Du serveur", accroche: "", statut: "en-cours", epingle: false, misAJour: null, lieu: SERVEUR },
+    ];
+    simule.requetes["conversationsCompte:liste"] = [
+      { origine: "c1", titre: "Du PC", projetId: "la", roleIds: ["dev"], misAJour: "2026-11-01", epingleLe: null, extrait: "", lieu: null },
+      { origine: "c2", titre: "Sur le serveur", projetId: "la", roleIds: ["dev"], misAJour: "2026-11-02", epingleLe: null, extrait: "", lieu: SERVEUR },
+    ];
+  });
+
+  test("la liste ne montre que l'espace choisi, et ne dit pas « sur ton Mac »", () => {
+    const lu = texte(renderToStaticMarkup(<ProjetsTelephone />));
+    expect(lu).toContain("1 projet sur ce serveur");
+    expect(lu).toContain("Du serveur");
+    expect(lu).toContain("1 chat");
+    expect(lu).not.toContain("Du PC");
+    expect(lu).not.toContain("Sur ton Mac");
+    expect(lu).toContain("Nouveau projet App de bureau");
+  });
+
+  test("un projet d'un autre espace ne s'ouvre pas ici", () => {
+    simule.params = new URLSearchParams("id=ici");
+    expect(texte(renderToStaticMarkup(<ProjetTelephone />))).toContain("Ce projet n’est pas dans cet espace");
+  });
+
+  test("Modifier : le geste irait à l'ordinateur : inactif, et il dit pourquoi", () => {
+    simule.lecture = { etat: "ok", data: { nom: "Du serveur", accroche: "", brief: "", statut: "en-cours", epingle: false } };
+    const html = renderToStaticMarkup(<PageModifierProjet projetId="la" onFermer={() => undefined} onEnregistre={() => undefined} />);
+    expect(texte(html)).toContain("Depuis l’app de bureau, sur ce serveur.");
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/);
+  });
+
+  test("poste fermé : les fichiers d'un serveur ne sont pas dits « sur ton Mac »", () => {
+    simule.params = new URLSearchParams("id=la&onglet=fichiers");
+    simule.ouvert = false;
+    simule.lecture = { etat: "ferme", gardee: null };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu).toContain("Les fichiers de ce projet se lisent par KLYRA sur ton Mac.");
+    expect(lu).not.toContain("sont sur ton Mac");
+  });
+
+  test("un PDF d'un serveur ne propose pas de l'ouvrir sur l'ordinateur", () => {
+    simule.lecture = { etat: "ok", data: { contenu: { type: "autre", taille: 20, raison: "Pas d’aperçu pour ce type de fichier." }, surPoste: false } };
+    const lu = texte(renderToStaticMarkup(<VisionneuseTelephone projetId="la" nomProjet="Du serveur" chemin="a.pdf" ancre={null} retour={[]} />));
+    expect(lu).toContain("Pas d’aperçu pour ce type de fichier");
+    expect(lu).not.toContain("Ouvrir sur");
   });
 });

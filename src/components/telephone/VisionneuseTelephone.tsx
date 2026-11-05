@@ -15,6 +15,7 @@ import { ancreDe, cibleLien } from "@/lib/apercu/liens";
 import { lireMarkdown } from "@/lib/apercu/markdown";
 import { indenterJson, renduDe } from "@/lib/apercu/texte";
 import { nomFichier } from "@/lib/fichiers";
+import { useLieuActif } from "@/lib/lieux";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { texteErreurPoste } from "@/lib/poste-texte";
 import { dossierAffiche, iconeElement, montrerDans, ouvrableADistance, parentDe, tailleLisible, urlFermerFichier, urlFichier, urlRetourFichier, type FichierLu } from "@/lib/telephone/dossiers";
@@ -90,6 +91,7 @@ export function VisionneuseTelephone({
   const annoncer = useAnnonce();
   const enLigne = !useHorsLigne();
   const { principal } = usePostes();
+  const lieu = useLieuActif();
   const { possible, raison } = useGestePossible();
   const lecture = useLecturePoste<FichierLu>("fichiers.lire", projetId ? { projetId, chemin } : null, { delai: DELAI_LECTURE_MS, horsLigne: !enLigne });
   const { faire, occupe } = useGestePoste();
@@ -168,7 +170,7 @@ export function VisionneuseTelephone({
     else annoncer({ texte: texteErreurPoste(r, sur), erreur: true });
   };
   /* Un fichier d'un VPS n'est pas sur l'ordinateur : rien à y ouvrir (comme au bureau). Un programme ne s'ouvre pas à distance. */
-  const ouvrable = lu?.surPoste !== false;
+  const ouvrable = !lieu && lu?.surPoste !== false;
   const aDistance = ouvrableADistance(chemin);
   const noteOuvrir = !aDistance ? "Ce type de fichier ne s’ouvre que devant l’ordinateur." : raison;
   const surPoste = <Etiquette>{`Sur ${sur}`}</Etiquette>;
@@ -196,7 +198,7 @@ export function VisionneuseTelephone({
       titre={nom}
       onFermer={fermer}
       libre
-      droite={<BoutonIcone variant="discret" className="size-11" libelle="Actions du fichier" aria-haspopup="dialog" onClick={() => setMenu(true)} icone={<Icon name="dot-horizontal" size={24} />} />}
+      droite={actions.length ? <BoutonIcone variant="discret" className="size-11" libelle="Actions du fichier" aria-haspopup="dialog" onClick={() => setMenu(true)} icone={<Icon name="dot-horizontal" size={24} />} /> : undefined}
     >
       <div className="relative z-[1] flex shrink-0 flex-col gap-2 bg-fond-page px-4 pb-2.5 shadow-[inset_0_-1px_0_var(--color-bordure-defaut)]">
         {precedent ? (
@@ -287,7 +289,7 @@ export function VisionneuseTelephone({
           <SqueletteTexte lent={lecture.lent} />
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <VueLecture lecture={lecture} ferme={(s) => `ce fichier est sur ${s}. Il s’affiche ici quand KLYRA y est ouverte.`} sansRecours>
+            <VueLecture lecture={lecture} ferme={(s) => (lieu ? `ce fichier se lit par KLYRA sur ${s}. Il s’affiche ici quand elle y est ouverte.` : `ce fichier est sur ${s}. Il s’affiche ici quand KLYRA y est ouverte.`)} sansRecours>
               {() => null}
             </VueLecture>
           </div>

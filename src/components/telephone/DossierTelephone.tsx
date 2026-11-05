@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { nomFichier } from "@/lib/fichiers";
+import { useLieuActif } from "@/lib/lieux";
 import { useLecturePoste, type LecturePoste } from "@/lib/poste/client";
 import {
   estCache,
@@ -35,6 +36,8 @@ import { useTirerPourRelire } from "./TirerPourRelire";
  */
 
 const FERME = (sur: string) => `les fichiers de ce projet sont sur ${sur}. Ils s’affichent ici quand KLYRA y est ouverte.`;
+/* Un projet d'un serveur : ses fichiers ne sont pas sur l'ordinateur, c'est l'app de bureau qui les lit. */
+const FERME_SERVEUR = (sur: string) => `les fichiers de ce projet se lisent par KLYRA sur ${sur}. Ils s’affichent ici quand elle y est ouverte.`;
 
 export interface Niveau {
   lecture: LecturePoste<NiveauDossier> & { relancer: () => void };
@@ -51,7 +54,8 @@ export function useNiveau(projetId: string, chemin: string, actif = true): Nivea
   const { principal } = usePostes();
   const enLigne = !useHorsLigne();
   const sur = useSupport();
-  const { possible, raison } = useGestePossible();
+  const lieu = useLieuActif();
+  const { possible, raison } = useGestePossible({ lecture: true });
   const lecture = useLecturePoste<NiveauDossier>("fichiers.arbre", actif && projetId ? { projetId, chemin } : null, { horsLigne: !enLigne });
   const { relancer } = lecture;
   const cle = `${projetId}|${chemin}`;
@@ -78,14 +82,19 @@ export function useNiveau(projetId: string, chemin: string, actif = true): Nivea
     relancer,
     actions: [
       { libelle: "Relire", icone: "refresh-01", onChoisir: relancer, desactivee: !possible, note: raison },
-      {
-        libelle: montrerDans(principal?.systeme ?? null),
-        icone: "folder-open-01",
-        onChoisir: () => undefined,
-        desactivee: true,
-        note: "S’ouvre sur l’écran de l’ordinateur.",
-        fin: <Etiquette>{`Sur ${sur}`}</Etiquette>,
-      },
+      /* Le dossier d'un serveur n'est pas sur cet ordinateur : rien à y montrer. */
+      ...(lieu
+        ? []
+        : [
+            {
+              libelle: montrerDans(principal?.systeme ?? null),
+              icone: "folder-open-01" as const,
+              onChoisir: () => undefined,
+              desactivee: true,
+              note: "S’ouvre sur l’écran de l’ordinateur.",
+              fin: <Etiquette>{`Sur ${sur}`}</Etiquette>,
+            },
+          ]),
     ],
   };
 }
@@ -166,11 +175,12 @@ function DossierDisparu({ projetId, message }: { projetId: string; message: stri
 /** Les éléments d'un niveau, dossiers d'abord (l'ordre vient du poste), et ses états. Tirer la liste la relit. */
 export function ListeDossier({ projetId, niveau, tete }: { projetId: string; niveau: Niveau; tete?: ReactNode }) {
   const sur = useSupport();
-  const { possible } = useGestePossible();
+  const lieu = useLieuActif();
+  const { possible } = useGestePossible({ lecture: true });
   const tirage = useTirerPourRelire(niveau.relancer, { actif: possible, enCours: niveau.relecture });
   const affiche = niveau.affiche;
   const contenu = (n: NiveauDossier) => {
-    const coupure = texteCoupure(n, sur);
+    const coupure = texteCoupure(n, lieu ? "l’app de bureau" : sur);
     return n.elements.length === 0 ? (
       <EtatEcran forme="encadre" icone="folder-open-01" titre="Dossier vide" texte="Ce que tes agents y écriront s’affichera ici." />
     ) : (
@@ -202,7 +212,7 @@ export function ListeDossier({ projetId, niveau, tete }: { projetId: string; niv
           /* Ordinateur fermé : la vue gardée du niveau. Un dossier ou un fichier jamais lu ici dit pourquoi à son ouverture. */
           <VueLecture
             lecture={niveau.lecture}
-            ferme={FERME}
+            ferme={lieu ? FERME_SERVEUR : FERME}
             lignes={6}
             verrou={false}
             sansRecours

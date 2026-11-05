@@ -3,6 +3,7 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 import { Bouton } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { useLieuActif } from "@/lib/lieux";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
 import { projetModifie } from "@/lib/telephone/fiche-projet";
@@ -56,6 +57,7 @@ function FormulaireProjet({ projetId, initial, onFermer, onEnregistre }: { proje
   const { faire, occupe } = useGestePoste();
   const { possible, raison } = useGestePossible();
   const sur = useSupport();
+  const lieu = useLieuActif();
   const [valeurs, setValeurs] = useState(initial);
   const [erreurNom, setErreurNom] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -163,7 +165,7 @@ function FormulaireProjet({ projetId, initial, onFermer, onEnregistre }: { proje
           ligne2="En tête de la liste des projets"
           fin={<PisteInterrupteur actif={valeurs.epingle} />}
         />
-        <LigneListe debut={<TuileIcone icone="folder" />} retrait="tuile" nom="Dossier" etiquette={<Etiquette>{`Sur ${sur}`}</Etiquette>} ligne2={RAISON_DOSSIER} />
+        <LigneListe debut={<TuileIcone icone="folder" />} retrait="tuile" nom="Dossier" etiquette={<Etiquette>{lieu ? "App de bureau" : `Sur ${sur}`}</Etiquette>} ligne2={RAISON_DOSSIER} />
       </GroupeListe>
     </PagePleine>
   );

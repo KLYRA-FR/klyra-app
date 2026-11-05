@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
+import { useLieuActif } from "@/lib/lieux";
 import type { LecturePoste } from "@/lib/poste/client";
 import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
 import { libelleVue, type VueGardee } from "@/lib/telephone/vue-gardee";
@@ -158,14 +159,20 @@ export function AucunPoste({ phrase, forme = "plein", className }: { phrase: (su
   );
 }
 
+/** Sur un serveur (Plus › Serveurs), ce qui écrirait par l'ordinateur reste à l'app de bureau. */
+export const RAISON_SERVEUR = "Depuis l’app de bureau, sur ce serveur.";
+
 /**
  * Ce geste peut-il partir vers l'ordinateur maintenant ? Sinon, sa raison en une phrase (P-7, § 5.5) :
- * hors ligne, aucun ordinateur relié, ou ordinateur fermé.
+ * sur un serveur, hors ligne, aucun ordinateur relié, ou ordinateur fermé. `lecture` : une relecture
+ * n'écrit rien : sur un serveur, elle reste possible, comme la lecture qui ouvre l'écran.
  */
-export function useGestePossible(): { possible: boolean; raison: string | undefined } {
+export function useGestePossible({ lecture = false }: { lecture?: boolean } = {}): { possible: boolean; raison: string | undefined } {
   const sur = useSupport();
+  const lieu = useLieuActif();
   const { ouvert, postes } = usePostes();
   const enLigne = !useHorsLigne();
+  if (lieu && !lecture) return { possible: false, raison: RAISON_SERVEUR };
   if (!enLigne) return { possible: false, raison: "Possible quand ce téléphone est en ligne" };
   if (postes?.length === 0) return { possible: false, raison: "Possible quand un ordinateur est relié" };
   if (!ouvert) return { possible: false, raison: `Possible quand ${sur} est ouvert` };

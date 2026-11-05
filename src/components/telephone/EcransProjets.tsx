@@ -3,16 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { Onglets } from "@/components/ui/Onglets";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
+import { useLieuActif } from "@/lib/lieux";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { texteErreurPoste } from "@/lib/poste-texte";
 import { compteChats, libelleModifie, libelleStatut, tonStatut, urlProjet, vueProjet, type OngletProjet, type ProjetModifiable } from "@/lib/telephone/dossiers";
+import { useConversationsEspace, useProjetsEspace } from "@/lib/telephone/espace";
 import type { FicheProjet } from "@/lib/telephone/fiche-projet";
 import { RondAgent } from "./AgentsChat";
 import { useAnnonce } from "./Annonce";
@@ -65,9 +65,10 @@ function MenuProjet({ carte, chats, zone = [], onModifier, onFermer }: { carte: 
   const { faire } = useGestePoste();
   const { possible, raison } = useGestePossible();
   const { ouvert } = usePostes();
+  const lieu = useLieuActif();
   const statut = libelleStatut(carte.statut);
-  const sous = [statut, !ouvert ? `${sur} est fermé` : chats === null ? null : compteChats(chats)].filter(Boolean).join(" · ");
-  const surPoste = <Etiquette>{`Sur ${sur}`}</Etiquette>;
+  const sous = [statut, !ouvert && !lieu ? `${sur} est fermé` : chats === null ? null : compteChats(chats)].filter(Boolean).join(" · ");
+  const surPoste = <Etiquette>{lieu ? "App de bureau" : `Sur ${sur}`}</Etiquette>;
 
   const epingler = async () => {
     const r = await faire<ProjetModifiable>("projets.epingler", { projetId: carte.origine, epingle: !carte.epingle });
@@ -89,9 +90,10 @@ function MenuProjet({ carte, chats, zone = [], onModifier, onFermer }: { carte: 
 /** E6-01 à E6-05. La liste vient du compte : épinglés d'abord, puis les autres. */
 export function ProjetsTelephone() {
   const router = useRouter();
-  const projets = useQuery(api.conversationsCompte.projets, {});
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const projets = useProjetsEspace();
+  const conversations = useConversationsEspace();
   const sur = useSupport();
+  const lieu = useLieuActif();
   const { postes } = usePostes();
   const annoncer = useAnnonce();
   const maintenant = useMaintenant();
@@ -106,7 +108,7 @@ export function ProjetsTelephone() {
   );
 
   return (
-    <PageOnglet titre="Projets" sous={liste.length ? `${liste.length} projet${liste.length > 1 ? "s" : ""} sur ${sur}` : "Les dossiers où travaillent tes agents"}>
+    <PageOnglet titre="Projets" sous={liste.length ? `${liste.length} projet${liste.length > 1 ? "s" : ""} sur ${lieu ? "ce serveur" : sur}` : "Les dossiers où travaillent tes agents"}>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-6">
         {projets === undefined ? (
           squelette ? (
@@ -115,7 +117,7 @@ export function ProjetsTelephone() {
             </div>
           ) : null
         ) : liste.length === 0 ? (
-          postes?.length === 0 ? (
+          postes?.length === 0 && !lieu ? (
             <AucunPoste forme="encadre" className="px-0" phrase={(s) => `tes projets et leurs fichiers vivent sur ${s}.`} />
           ) : (
             <EtatEcran
@@ -123,7 +125,11 @@ export function ProjetsTelephone() {
               className="px-0"
               icone="projets-dossier"
               titre="Aucun projet pour l’instant"
-              texte={`Un projet se crée sur ${sur} : dans KLYRA, Projets › Nouveau projet, choisis son dossier. Il apparaît ici aussitôt.`}
+              texte={
+                lieu
+                  ? "Un projet de ce serveur se crée depuis l’app de bureau : Projets › Nouveau projet, choisis son dossier. Il apparaît ici aussitôt."
+                  : `Un projet se crée sur ${sur} : dans KLYRA, Projets › Nouveau projet, choisis son dossier. Il apparaît ici aussitôt.`
+              }
             />
           )
         ) : (
@@ -139,7 +145,7 @@ export function ProjetsTelephone() {
               </SectionListe>
             ) : null}
             <GroupeListe>
-              <LigneListe debut={<TuileIcone icone="plus-01" />} retrait="tuile" nom="Nouveau projet" etiquette={<Etiquette>{`Sur ${sur}`}</Etiquette>} ligne2={RAISON_DOSSIER} />
+              <LigneListe debut={<TuileIcone icone="plus-01" />} retrait="tuile" nom="Nouveau projet" etiquette={<Etiquette>{lieu ? "App de bureau" : `Sur ${sur}`}</Etiquette>} ligne2={RAISON_DOSSIER} />
             </GroupeListe>
           </>
         )}
@@ -198,7 +204,7 @@ function LigneProjet({
 export function ProjetTelephone() {
   const params = useSearchParams();
   const projetId = params.get("id") ?? "";
-  const projets = useQuery(api.conversationsCompte.projets, {});
+  const projets = useProjetsEspace();
   const carte = projets?.find((p) => p.origine === projetId) ?? null;
   const nom = carte?.nom ?? "Projet";
   const vue = vueProjet(params);
@@ -212,7 +218,7 @@ export function ProjetTelephone() {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <EnteteTelephone titre="Projet" parent="/projets" />
-        <EtatEcran icone="help-circle-contained" titre="Ce projet n’est plus dans ton compte" texte="Il a pu être retiré sur l’ordinateur." />
+        <EtatEcran icone="help-circle-contained" titre="Ce projet n’est pas dans cet espace" texte="Il a pu être retiré, ou appartenir à un autre serveur (Plus › Serveurs)." />
       </div>
     );
   }
@@ -225,8 +231,9 @@ function OngletsProjet({ projetId, carte, onglet }: { projetId: string; carte: C
   const params = useSearchParams();
   const annoncer = useAnnonce();
   const enLigne = !useHorsLigne();
-  const { possible, raison } = useGestePossible();
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  /* Relire n'écrit rien : c'est la lecture de l'écran, possible aussi sur un serveur. */
+  const { possible, raison } = useGestePossible({ lecture: true });
+  const conversations = useConversationsEspace();
   const [menu, setMenu] = useState(false);
   const [modifier, setModifier] = useState(false);
   const [eclaire, setEclaire] = useState(false);
@@ -299,7 +306,7 @@ function OngletsProjet({ projetId, carte, onglet }: { projetId: string; carte: C
 
 /** E6-06, E6-07 : l'entrée « Nouveau chat dans {nom}… » puis les chats du projet (compte). */
 function ChatsDuProjet({ projetId, nom }: { projetId: string; nom: string }) {
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const conversations = useConversationsEspace();
   const squelette = useApresDelai(300, conversations === undefined);
   const liste = (conversations ?? [])
     .filter((c) => c.projetId === projetId && !c.archiveLe)
