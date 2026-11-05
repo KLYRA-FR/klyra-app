@@ -25,7 +25,7 @@ import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { skillEnTete } from "@/lib/skills";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
 import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, moteurDuMessage, PAR_DEFAUT } from "@/lib/fournisseurs";
-import { COMMANDE_RESUME_AUTO, estCommandeCompacter, formaterJetons, nouvelleMesure, resumeAvantEnvoi, resumePause } from "@/lib/contexte";
+import { COMMANDE_RESUME_AUTO, estAvantDepart, estCommandeCompacter, formaterJetons, nouvelleMesure, peutRepartir, repartirAZero, resumeAvantEnvoi, resumePause, viderConversation } from "@/lib/contexte";
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
@@ -190,6 +190,7 @@ type WorkspaceAction =
   | { type: "chat/add"; chat: Chat }
   | { type: "chat/update"; id: string; patch: (chat: Chat) => Chat }
   | { type: "chat/vider"; id: string }
+  | { type: "chat/repartir"; id: string; le: string }
   | { type: "message/add"; message: Message }
   | { type: "message/update"; id: string; patch: (message: Message) => Message }
   | { type: "travail/debut"; chatId: string; travail: Travail }
@@ -376,8 +377,10 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       return {
         ...state,
         messages: state.messages.filter((m) => m.chatId !== action.id),
-        chats: state.chats.map((c) => (c.id === action.id ? { ...c, sessions: {}, taches: [], luJusqua: null } : c)),
+        chats: state.chats.map((c) => (c.id === action.id ? viderConversation(c) : c)),
       };
+    case "chat/repartir":
+      return { ...state, chats: state.chats.map((c) => (c.id === action.id ? repartirAZero(c, action.le) : c)) };
     case "message/update":
       return {
         ...state,
@@ -593,6 +596,8 @@ interface WorkspaceApi {
   basculerMachine: (lieu: string | null) => void;
   /** Repart de zéro avec l'agent : les messages et sa mémoire de cette conversation sont effacés. */
   nouvelleConversation: (chatId: string) => void;
+  /** L'agent oublie la conversation ; ses messages restent lisibles (cf. lib/contexte.ts). */
+  repartir: (chatId: string) => void;
   /** Ouvre une conversation d'équipe dans un projet avec ce premier message ; renvoie son id (`id` : celui choisi sur le téléphone). */
   startChat: (projectId: string, text: string, to: RoleId | null, fichiers?: string[], id?: string) => string;
   reessayer: (chatId: string, messageId: string, facon: FaconReessai, modele?: string) => void;
@@ -921,7 +926,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const nom = (id: RoleId) => allRoles.find((r) => r.id === id)?.name ?? id;
     // « /compact » part tel quel : c'est une commande de Claude Code, pas un message à lui expliquer.
     if (estCommandeCompacter(texteDe(messageUtilisateur))) return texteDe(messageUtilisateur).trim();
-    const fil = messages.filter((m) => m.chatId === chat.id && m.id !== messageUtilisateur.id);
+    // Avant le dernier « Repartir à zéro » : lisible à l'écran, plus pour l'agent.
+    const fil = messages.filter((m) => m.chatId === chat.id && m.id !== messageUtilisateur.id && !estAvantDepart(chat, m));
     // Ce que l'agent n'a pas vu avec ce moteur : depuis sa dernière réponse écrite avec lui (cf. fournisseurs.ts).
     const moteur = moteurDe(chat);
     const aVoir = aReprendre(fil, roleId, moteur);
@@ -1417,6 +1423,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           lieu: chat.lieu ?? null,
           dossierVps: chat.lieu && chat.kind === "equipe" && project?.lieu === chat.lieu ? project.folder : null,
           sessionId: chat.sessions[roleId] ?? null,
+          ...(chat.sessionNeuve && !chat.sessions[roleId] ? { sessionNeuve: true } : {}),
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
           acces: stateRef.current.acces,
@@ -2079,6 +2086,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     dispatch({ type: "chat/vider", id: chatId });
   }, []);
 
+  const repartir = useCallback((chatId: string) => {
+    const { travail, chats, messages } = stateRef.current;
+    const chat = chats.find((c) => c.id === chatId);
+    if (!chat || travail[chatId] || !peutRepartir(chat, messages.filter((m) => m.chatId === chatId))) return;
+    dispatch({ type: "chat/repartir", id: chatId, le: new Date().toISOString() });
+  }, []);
+
   const retirerDeLaFile = useCallback(
     (chatId: string, id: string) => {
       // Une exécution de routine retirée de la file : le moteur l'annule, sinon l'agent resterait réservé.
@@ -2629,6 +2643,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirFournisseur,
       basculerMachine,
       nouvelleConversation,
+      repartir,
       creerFil,
       majTicket,
       confierRappel,
@@ -2688,6 +2703,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirFournisseur,
       basculerMachine,
       nouvelleConversation,
+      repartir,
       creerFil,
       majTicket,
       confierRappel,

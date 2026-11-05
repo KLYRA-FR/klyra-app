@@ -144,10 +144,10 @@ test("le client ACP face au faux Grok : réponse, session reprise, outils, autor
 
     assert.deepEqual((await client.modeles(dossier)).map((m) => m.id), ["grok-4.5", "grok-4.6"]);
 
-    /* Les crédits du mois de l'abonnement (`x.ai/billing`), lus comme l'anneau du rail les lit. */
+    /* Les crédits du mois de l'abonnement (`_x.ai/billing`), lus comme l'anneau du rail les lit. */
     const mois = lireUtilisationGrok(await client.facturation(), null)?.mois;
     assert.deepEqual(mois, { utilise: 0.375, reinitialiseA: Date.parse("2026-12-01T00:00:00Z") });
-    assert.ok(requetes().some((m) => m.method === "x.ai/billing"));
+    assert.ok(requetes().some((m) => m.method === "_x.ai/billing"));
   } finally {
     client.fermer();
     rmSync(dossier, { recursive: true, force: true });
@@ -160,6 +160,18 @@ test("une version de Grok sans facturation : la lecture échoue, sans bloquer ni
   const client = creerClientAcp({ trouver: () => FAUX, env: () => ({ ...process.env, FAUX_ACP_SANS_FACTURATION: "1" }), cwd: () => dossier, client: { name: "klyra", title: "KLYRA", version: "1" } });
   try {
     await assert.rejects(client.facturation());
+  } finally {
+    client.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+/* Contre le vrai programme (`KLYRA_GROK_PATH`), sans compte : la méthode existe, seul le compte lui manque. Le faux Grok ne peut pas prouver un nom. */
+test("le vrai Grok connaît la méthode de facturation", { skip: !process.env.KLYRA_GROK_PATH }, async () => {
+  const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-acp-vrai-"));
+  const client = creerClientAcp({ trouver: () => process.env.KLYRA_GROK_PATH!, env: () => ({ HOME: dossier, GROK_HOME: path.join(dossier, ".grok"), PATH: process.env.PATH }), cwd: () => dossier, client: { name: "klyra", title: "KLYRA", version: "1" } });
+  try {
+    await assert.rejects(client.facturation(), /Authentication required/);
   } finally {
     client.fermer();
     rmSync(dossier, { recursive: true, force: true });

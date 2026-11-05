@@ -60,7 +60,7 @@ test("Codex : rien de lisible, rien d'effacé, aucun chiffre inventé", () => {
   assert.equal(lireUtilisationCodex({ rateLimits: { primary: { usedPercent: "beaucoup" } } }, null, T), null);
 });
 
-/** La forme de `BillingConfigResponse` (x.ai/billing), d'après les champs de Grok Build 1.0.70. */
+/** La forme de `BillingConfigResponse` (_x.ai/billing), d'après les champs de Grok Build 1.0.70. */
 const facturation = (pourcent: unknown, fin: unknown, aLUsage = false) => ({
   config: { creditUsagePercent: pourcent, currentPeriod: { start: "2026-11-01T00:00:00Z", end: fin }, monthlyLimit: 100, onDemandCap: 0, onDemandUsed: 0, prepaidBalance: 0, isUnifiedBillingUser: true },
   on_demand_enabled: aLUsage,
@@ -73,6 +73,12 @@ test("Grok : les crédits du mois, en part de 0 à 1, remise à zéro à la fin 
   assert.equal(lireUtilisationGrok(facturation(10, 1_800_500_000), null, T)?.mois?.reinitialiseA, 1_800_500_000_000);
   assert.equal(lireUtilisationGrok(facturation(10, 1_800_500_000_000), null, T)?.mois?.reinitialiseA, 1_800_500_000_000);
   assert.equal(lireUtilisationGrok(facturation(10, null), null, T)?.mois?.reinitialiseA, null);
+});
+
+test("Grok : la même réponse enveloppée dans un `result` (forme du vrai `_x.ai/mcp/list`)", () => {
+  assert.deepEqual(lireUtilisationGrok({ result: facturation(42, "2026-12-01T00:00:00Z") }, null, T), lireUtilisationGrok(facturation(42, "2026-12-01T00:00:00Z"), null, T));
+  assert.equal(lireUtilisationGrok({ result: facturation(100, 1_900_000_000, true) }, null, T)?.statut, "allowed");
+  assert.equal(lireUtilisationGrok({ result: {} }, null, T), null);
 });
 
 test("Grok : crédits épuisés, sauf si le paiement à l'usage est activé", () => {

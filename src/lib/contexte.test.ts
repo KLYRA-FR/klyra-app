@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   COMMANDE_RESUME_AUTO,
   conseilContexte,
+  departsAvant,
   DUREE_CACHE_MS,
+  estAvantDepart,
+  estChatPrincipal,
   estCommandeCompacter,
   formaterJetons,
   nouvelleMesure,
+  peutRepartir,
+  repartirAZero,
   resumeAvantEnvoi,
   resumePause,
+  viderConversation,
   SEUIL_LOURD,
   SEUIL_REPRISE,
   SEUIL_RESUME_ENVOI,
@@ -175,5 +181,82 @@ describe("résumé automatique", () => {
   it("la commande est un /compact avec ce qu'il faut garder", () => {
     expect(estCommandeCompacter(COMMANDE_RESUME_AUTO)).toBe(true);
     expect(COMMANDE_RESUME_AUTO).toMatch(/décisions.*chemins.*tâches en cours.*accords/);
+  });
+});
+
+describe("repartir à zéro", () => {
+  const lourd: Partial<Chat> = {
+    sessions: { dev: "s1" },
+    sessionsParLieu: { pc: { dev: "s0" } },
+    sessionsParMoteur: { codex: { dev: "s2" } },
+    taches: [{ texte: "x", statut: "en-cours" }],
+    amorce: "ce qui était repris",
+    contexteMasqueJusqua: 109_000,
+    luJusqua: ilYa(10),
+  };
+  const message = (createdAt: string) => ({ createdAt });
+
+  it("le chat d'un agent seulement : ni un fil, ni une conversation d'équipe", () => {
+    expect(estChatPrincipal(chat(undefined))).toBe(true);
+    expect(estChatPrincipal(chat(undefined, { fil: { roleId: "dev" } as Chat["fil"] }))).toBe(false);
+    expect(estChatPrincipal(chat(undefined, { kind: "equipe" }))).toBe(false);
+  });
+
+  it("l'agent oublie tout, partout ; le reste de la conversation ne bouge pas", () => {
+    const avant = chat({ dev: { jetons: 89_000, base: 40_000, le: ilYa(0), session: "s1" } }, { ...lourd, modele: "opus" });
+    const apres = repartirAZero(avant, ilYa(0));
+    expect(apres.sessions).toEqual({});
+    expect(apres.sessionNeuve).toBe(true);
+    expect(apres.taches).toEqual([]);
+    for (const champ of ["sessionsParLieu", "sessionsParMoteur", "contexte", "contexteMasqueJusqua", "amorce"] as const) expect(apres[champ]).toBeUndefined();
+    expect(apres.departs).toEqual([ilYa(0)]);
+    expect(apres.modele).toBe("opus");
+    expect(apres.luJusqua).toBe(ilYa(10));
+  });
+
+  it("« Plus tard » ne survit pas : le conseil revient dès que la conversation repartie pèse à nouveau", () => {
+    const repartie = repartirAZero(chat(undefined, lourd), ilYa(0));
+    const session = { ...repartie, sessions: { dev: "s3" }, contexte: { dev: { jetons: 95_000, base: 15_000, le: ilYa(0), session: "s3" } } };
+    expect(conseilContexte(session, MAINTENANT)?.raison).toBe("lourde");
+  });
+
+  it("les départs s'ajoutent", () => {
+    const deux = repartirAZero(repartirAZero(chat(undefined), ilYa(5000)), ilYa(1000));
+    expect(deux.departs).toEqual([ilYa(5000), ilYa(1000)]);
+  });
+
+  it("seul le dernier départ compte pour l'agent ; un message qui le suit est lu", () => {
+    const repartie = { departs: [ilYa(5000), ilYa(1000)] };
+    expect(estAvantDepart(repartie, message(ilYa(2000)))).toBe(true);
+    expect(estAvantDepart(repartie, message(ilYa(1000)))).toBe(true);
+    expect(estAvantDepart(repartie, message(ilYa(500)))).toBe(false);
+    expect(estAvantDepart({}, message(ilYa(2000)))).toBe(false);
+  });
+
+  it("rien à oublier depuis le dernier départ : on ne repart pas", () => {
+    expect(peutRepartir({}, [])).toBe(false);
+    expect(peutRepartir({}, [message(ilYa(2000))])).toBe(true);
+    expect(peutRepartir({ departs: [ilYa(1000)] }, [message(ilYa(2000))])).toBe(false);
+    expect(peutRepartir({ departs: [ilYa(1000)] }, [message(ilYa(2000)), message(ilYa(500))])).toBe(true);
+  });
+
+  it("chaque séparateur tombe entre les bons messages, ou à la fin du fil", () => {
+    const repartie = { departs: [ilYa(1000)] };
+    const avant = message(ilYa(2000));
+    const apres = message(ilYa(500));
+    expect(departsAvant(repartie, avant, apres)).toEqual([ilYa(1000)]);
+    expect(departsAvant(repartie, undefined, avant)).toEqual([]);
+    expect(departsAvant(repartie, apres)).toEqual([]);
+    expect(departsAvant(repartie, avant)).toEqual([ilYa(1000)]);
+    expect(departsAvant({}, avant, apres)).toEqual([]);
+  });
+
+  it("effacer retire aussi les départs et le masquage : il n'y a plus rien au-dessus", () => {
+    const videe = viderConversation(repartirAZero(chat(undefined, lourd), ilYa(1000)));
+    expect(videe.departs).toBeUndefined();
+    expect(videe.contexteMasqueJusqua).toBeUndefined();
+    expect(videe.sessions).toEqual({});
+    expect(videe.sessionNeuve).toBe(true);
+    expect(videe.luJusqua).toBeNull();
   });
 });
