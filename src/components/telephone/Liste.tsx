@@ -6,8 +6,9 @@ import { Compteur } from "@/components/ui/Compteur";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
-import { CocheChoix } from "./Controles";
+import { CocheChoix, EnvoiEnCours, PisteInterrupteur } from "./Controles";
 import { useAppuiLong } from "./Feuille";
+import { jouer } from "@/lib/sons/sons";
 
 /**
  * Listes et cartes du téléphone (socle mobile § 3) : le contenu se pose en groupes blancs et en
@@ -67,8 +68,9 @@ export function TuileIcone({ icone, bleue = false, grande = false }: { icone: Ic
   );
 }
 
-/** La valeur d'une ligne de formulaire, et son chevron. */
-export function ValeurLigne({ children, chevron = true }: { children: ReactNode; chevron?: boolean }) {
+/** Une valeur lue, avec un chevron explicite si elle ouvre un formulaire. */
+export function ValeurLigne({ children, chevron = false }: { children: ReactNode; chevron?: boolean }) {
+  if (!chevron) return <span className="shrink-0 text-right text-ui text-texte-secondaire">{children}</span>;
   return (
     <span className="flex max-w-[55%] shrink-0 items-center gap-1 text-ui text-texte-secondaire">
       <span className="truncate">{children}</span>
@@ -80,51 +82,6 @@ export function ValeurLigne({ children, chevron = true }: { children: ReactNode;
 const FILET_LIGNE =
   "[&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:right-0 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-bordure-defaut [&:not(:first-child)]:before:content-['']";
 
-/** Une ligne de choix unique (D-6) : toute la ligne est la cible, la coche à droite. Dans un `radiogroup`. */
-export function LigneChoix({
-  nom,
-  ligne2,
-  debut,
-  etiquette,
-  choisie,
-  desactivee = false,
-  autoFocus = false,
-  onChoisir,
-}: {
-  nom: ReactNode;
-  ligne2?: ReactNode;
-  debut?: ReactNode;
-  etiquette?: ReactNode;
-  choisie: boolean;
-  desactivee?: boolean;
-  autoFocus?: boolean;
-  onChoisir: () => void;
-}) {
-  return (
-    <li className={cn("relative flex items-center before:left-4", FILET_LIGNE)}>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={choisie}
-        disabled={desactivee}
-        data-autofocus={autoFocus || undefined}
-        onClick={onChoisir}
-        className="flex min-h-[52px] min-w-0 flex-1 items-center gap-3 py-2.5 pr-3 pl-4 text-left transition-colors duration-[120ms] ease-sortie active:bg-fond-survol disabled:text-texte-tertiaire"
-      >
-        {debut}
-        <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className={cn("min-w-0 truncate text-body-s", ligne2 ? "font-medium" : "font-normal")}>{nom}</span>
-            {etiquette}
-          </span>
-          {ligne2 ? <span className="mt-0.5 block text-ui leading-[1.35] text-texte-secondaire">{ligne2}</span> : null}
-        </span>
-        <CocheChoix choisi={choisie} />
-      </button>
-    </li>
-  );
-}
-
 /**
  * Une ligne dont la valeur se règle avec le sélecteur du système (heure, date) : la valeur française à
  * droite, le contrôle natif invisible par-dessus (D-6). `children` sans `valeur` : un champ visible.
@@ -134,7 +91,7 @@ export function LigneSaisie({ icone, nom, valeur, erreur = false, children }: { 
     <li className={cn("relative flex min-h-14 items-center gap-3 py-2.5 pr-3 pl-4", icone ? "before:left-16" : "before:left-4", FILET_LIGNE, valeur !== undefined && "active:bg-fond-survol")}>
       {icone ? <TuileIcone icone={icone} /> : null}
       <span className={cn("min-w-0 flex-1 truncate text-body-s font-medium", erreur ? "text-texte-erreur" : "text-texte-principal")}>{nom}</span>
-      {valeur !== undefined ? <ValeurLigne>{valeur}</ValeurLigne> : null}
+      {valeur !== undefined ? <ValeurLigne chevron>{valeur}</ValeurLigne> : null}
       {children}
     </li>
   );
@@ -150,6 +107,7 @@ const RETRAITS = { aucun: "before:left-4", tuile: "before:left-16", avatar: "bef
  * d'écran) ; un élément sans page garde son « ⋯ » (`menuVisible`).
  */
 export function LigneListe({
+  id,
   href,
   onClick,
   debut,
@@ -173,6 +131,8 @@ export function LigneListe({
   role,
   coche,
 }: {
+  /** Une ancre (un réglage trouvé par la recherche, éclairé en arrivant). */
+  id?: string;
   /** Revenue d'un geste réussi : elle s'éclaire 1 800 ms. */
   eclairee?: boolean;
   /** Sur la ligne elle-même (un chantier d'agent, sa couleur). */
@@ -232,11 +192,14 @@ export function LigneListe({
     !inactive && "active:bg-fond-survol data-[presse]:bg-fond-survol",
   );
   return (
-    <li data-eclaire={eclairee || undefined} style={style} className={cn("klyra-telephone-eclaire relative flex items-center", FILET_LIGNE, RETRAITS[retrait], className)}>
+    <li id={id} data-eclaire={eclairee || undefined} style={style} className={cn("klyra-telephone-eclaire relative flex items-center", id && "klyra-reglage scroll-mt-4", FILET_LIGNE, RETRAITS[retrait], className)}>
       {href && !inactive ? (
         <Link href={href} {...(onMenu ? appui : {})} className={classeCorps}>
           {corps}
         </Link>
+      ) : !onClick && !onMenu && !inactive && !role ? (
+        /* Une valeur lue, ou une ligne dont le contrôle est à sa fin (un bouton n'en contient pas un autre). */
+        <div className={classeCorps}>{corps}</div>
       ) : (
         <button type="button" role={role} aria-checked={role ? coche : undefined} disabled={inactive || !onClick} onClick={onClick} {...(onMenu ? appui : {})} className={cn(classeCorps, "disabled:cursor-default")}>
           {corps}
@@ -249,6 +212,166 @@ export function LigneListe({
           {libelleMenu}
         </button>
       ) : null}
+    </li>
+  );
+}
+
+const ITEM_LISTE =
+  "relative [&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:right-0 [&:not(:first-child)]:before:left-4 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-bordure-defaut [&:not(:first-child)]:before:content-['']";
+
+/** Une phrase sous l'en-tête d'une section. */
+export function SousSection({ children }: { children: ReactNode }) {
+  return <p className="-mt-0.5 mx-1 mb-2.5 text-ui-xs leading-[1.4] text-texte-secondaire">{children}</p>;
+}
+
+/** Une phrase sous un groupe (ce qui reste, ce qui attend). */
+export function NoteListe({ children, className }: { children: ReactNode; className?: string }) {
+  return <p className={cn("mx-1 mt-2.5 text-ui-xs leading-[1.4] text-texte-secondaire", className)}>{children}</p>;
+}
+
+/**
+ * Une ligne d'interrupteur (§ 6.3) : toute la ligne est la cible, `role="switch"`. `envoi` : un geste
+ * sur l'ordinateur attend sa réponse (« Envoi… », piste à 45 %) ; la valeur reste la dernière confirmée.
+ */
+export function LigneInterrupteur({
+  id,
+  nom,
+  ligne2,
+  uneLigne = false,
+  actif,
+  disabled = false,
+  envoi = false,
+  onChange,
+}: {
+  id?: string;
+  nom: string;
+  ligne2?: ReactNode;
+  uneLigne?: boolean;
+  actif: boolean;
+  disabled?: boolean;
+  envoi?: boolean;
+  onChange: (actif: boolean) => void;
+}) {
+  return (
+    <li id={id} className={cn(ITEM_LISTE, id && "klyra-reglage scroll-mt-4")}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={actif}
+        aria-label={nom}
+        aria-busy={envoi || undefined}
+        disabled={disabled || envoi}
+        onClick={() => {
+          jouer(actif ? "desactive" : "active");
+          onChange(!actif);
+        }}
+        className="flex min-h-14 w-full items-center gap-2.5 py-2.5 pr-3.5 pl-4 text-left transition-colors duration-[120ms] ease-sortie active:bg-fond-survol disabled:active:bg-transparent disabled:[&_[data-piste]]:opacity-45"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-body-s font-medium text-texte-principal">{nom}</span>
+          {ligne2 ? <span className={cn("mt-0.5 block text-ui leading-[1.35] text-texte-secondaire", uneLigne ? "truncate" : "line-clamp-2")}>{ligne2}</span> : null}
+        </span>
+        {envoi ? <EnvoiEnCours /> : null}
+        <span data-piste className="flex shrink-0">
+          <PisteInterrupteur actif={actif} />
+        </span>
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Une ligne de choix unique (§ 6.3) : `role="radio"`, la coche à droite de la ligne choisie, jamais la
+ * teinte seule. Inactive : nom grisé, étiquette et raison dessous (P-7, P-8).
+ */
+export function LigneChoix({
+  id,
+  nom,
+  ligne2,
+  meta,
+  etiquette,
+  raison,
+  choisi: choisiDirect,
+  choisie,
+  inactive: inactiveDirect = false,
+  desactivee = false,
+  autoFocus = false,
+  envoi = false,
+  onChoisir,
+  debut,
+  finSiPasChoisi,
+}: ({ choisi: boolean; choisie?: never } | { choisi?: never; choisie: boolean }) & {
+  id?: string;
+  nom: ReactNode;
+  ligne2?: ReactNode;
+  /** Une tuile devant le nom : le filet se décale d'autant. */
+  debut?: ReactNode;
+  /** Ce qui se pose à droite tant que la ligne n'est pas choisie (un compte). */
+  finSiPasChoisi?: ReactNode;
+  meta?: ReactNode;
+  etiquette?: ReactNode;
+  raison?: ReactNode;
+  inactive?: boolean;
+  desactivee?: boolean;
+  autoFocus?: boolean;
+  envoi?: boolean;
+  onChoisir?: () => void;
+}) {
+  const choisi = choisiDirect ?? choisie;
+  const inactive = inactiveDirect || desactivee;
+  return (
+    <li id={id} className={cn(ITEM_LISTE, debut ? "[&:not(:first-child)]:before:left-16" : undefined, id && "klyra-reglage scroll-mt-4")}>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={choisi}
+        aria-busy={envoi || undefined}
+        data-autofocus={autoFocus || undefined}
+        disabled={inactive || envoi}
+        onClick={onChoisir}
+        className="flex min-h-14 w-full items-center gap-3 py-2.5 pr-3 pl-4 text-left transition-colors duration-[120ms] ease-sortie active:bg-fond-survol disabled:active:bg-transparent disabled:[&_[data-coche]]:opacity-45"
+      >
+        {debut}
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className={cn("min-w-0 truncate text-body-s font-medium", inactive ? "text-texte-tertiaire" : "text-texte-principal")}>{nom}</span>
+            {etiquette}
+          </span>
+          {inactive && raison ? <span className="mt-0.5 block text-ui-xs text-texte-secondaire">{raison}</span> : null}
+          {(!inactive || !raison) && ligne2 ? <span className="mt-0.5 line-clamp-2 block text-ui leading-[1.35] text-texte-secondaire">{ligne2}</span> : null}
+        </span>
+        {meta ? <span className="shrink-0 text-ui-xs text-texte-secondaire">{meta}</span> : null}
+        {envoi ? (
+          <EnvoiEnCours />
+        ) : inactive ? null : !choisi && finSiPasChoisi ? (
+          finSiPasChoisi
+        ) : (
+          <span data-coche className="flex shrink-0">
+            <CocheChoix choisi={choisi} />
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+/** Le compte de ce qui attend sur un autre serveur (K1, la couleur « non lu » du bureau). */
+export function CompteEspace({ valeur, libelle }: { valeur: number; libelle: string }) {
+  return (
+    <span aria-label={libelle} className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-pill bg-fond-accent px-1.5 text-ui-xs font-semibold text-texte-inverse">
+      {valeur}
+    </span>
+  );
+}
+
+/** Une ligne qui ouvre une page publique hors de l'app. */
+export function LigneLienExterne({ id, href, nom }: { id?: string; href: string; nom: string }) {
+  return (
+    <li id={id} className={cn(ITEM_LISTE, id && "klyra-reglage scroll-mt-4")}>
+      <a href={href} target="_blank" rel="noopener noreferrer" className="flex min-h-14 items-center gap-3 py-2.5 pr-4 pl-4 no-underline transition-colors duration-[120ms] ease-sortie active:bg-fond-survol">
+        <span className="min-w-0 flex-1 truncate text-body-s font-medium text-texte-principal">{nom}</span>
+        <Icon name="link-external" size={20} className="shrink-0 text-icone-secondaire" />
+      </a>
     </li>
   );
 }

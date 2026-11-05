@@ -135,4 +135,3 @@ describe("pièces ajoutées au lot 7", () => {
     expect(renderToStaticMarkup(<BandeauEtat icone={null}>Oui</BandeauEtat>)).toContain('role="status"');
   });
 });
-

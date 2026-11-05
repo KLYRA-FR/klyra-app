@@ -78,6 +78,22 @@ export function appliquerEvenement(echange: EchangeDirect, event: Evenement): Ec
 
 const abonnes = new Set<() => void>();
 let cache: EchangeDirect[] | null = null;
+let generation = 0;
+const suivis = new Set<AbortController>();
+
+/** Déconnexion de ce téléphone : le disque et la projection déjà lue sont oubliés ensemble. */
+export function effacerEchangesDirects() {
+  generation++;
+  for (const suivi of suivis) suivi.abort();
+  suivis.clear();
+  cache = [];
+  try {
+    localStorage.removeItem(CLE);
+  } catch {
+    /* Le cache mémoire est effacé même sans stockage. */
+  }
+  for (const abonne of abonnes) abonne();
+}
 
 function lire(): EchangeDirect[] {
   if (cache) return cache;
@@ -150,6 +166,7 @@ export async function envoyerAuVps(p: {
   modele: string | null;
   effort: string | null;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
+  const depart = generation;
   const jeton = jetonAppareil(p.adresse);
   if (!jeton) return { ok: false, message: "Ce téléphone n’est plus relié à ce VPS : relie-le dans Plus › Serveurs." };
   const echange: EchangeDirect = {
@@ -196,16 +213,19 @@ export async function envoyerAuVps(p: {
   } catch {
     return { ok: false, message: "Le VPS ne répond pas. S’il est éteint, ou hors de ton réseau Tailscale, l’agent ne peut pas répondre." };
   }
+  if (depart !== generation) return { ok: false, message: "Ce téléphone a été déconnecté : reconnecte-toi pour continuer." };
   ecrire((liste) => [...liste, echange]);
   return { ok: true };
 }
 
 /** Suit la réponse en flux (événements de cette réponse seulement). Renvoie de quoi arrêter de suivre. */
 function suivre(requestId: string): () => void {
+  const depart = generation;
   const echange = lire().find((e) => e.requestId === requestId);
   const jeton = echange ? jetonAppareil(echange.adresse) : null;
   if (!echange || !jeton) return () => undefined;
   const controle = new AbortController();
+  suivis.add(controle);
   void (async () => {
     try {
       const reponse = await fetch(`${echange.adresse}${CHEMIN_AGENT}/evenements?depuis=0&instance=&requete=${encodeURIComponent(requestId)}`, {
@@ -213,6 +233,7 @@ function suivre(requestId: string): () => void {
         signal: controle.signal,
         cache: "no-store",
       });
+      if (depart !== generation) return;
       if (!reponse.body) return;
       const lecteur = reponse.body.getReader();
       const decodeur = new TextDecoder();
@@ -222,7 +243,7 @@ function suivre(requestId: string): () => void {
       mettreAJour(requestId, (e) => ({ ...e, reponse: "", autorisation: null }));
       for (;;) {
         const { value, done } = await lecteur.read();
-        if (done) break;
+        if (done || depart !== generation) break;
         tampon += decodeur.decode(value, { stream: true });
         const blocs = tampon.split("\n\n");
         tampon = blocs.pop() ?? "";
@@ -242,9 +263,14 @@ function suivre(requestId: string): () => void {
       }
     } catch {
       /* Coupé (écran quitté, réseau) : le suivi reprend au prochain affichage. */
+    } finally {
+      suivis.delete(controle);
     }
   })();
-  return () => controle.abort();
+  return () => {
+    controle.abort();
+    suivis.delete(controle);
+  };
 }
 
 export async function autoriserVps(echange: EchangeDirect, decision: "oui" | "non"): Promise<boolean> {

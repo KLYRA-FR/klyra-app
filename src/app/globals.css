@@ -537,6 +537,18 @@ body[data-glisse] iframe {
   transform: scale(1.1);
 }
 
+/* Le volume sur le téléphone (lot 8) : cible de 44 px, pouce de 24. */
+.klyra-curseur-telephone {
+  height: 44px;
+}
+
+.klyra-curseur-telephone::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+  box-shadow: var(--shadow-ombre-sm), inset 0 0 0 1px var(--color-bordure-defaut);
+}
+
 /* Routines : les seuils portent sur l'écran disponible, rail exclu. */
 .klyra-routines-grille {
   container: routines / inline-size;

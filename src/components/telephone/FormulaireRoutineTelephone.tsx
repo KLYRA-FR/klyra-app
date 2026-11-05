@@ -297,11 +297,11 @@ export function FormulaireRoutineTelephone({
               {avance ? (
                 <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Fréquence" fin={<ValeurLigne chevron={false}>{libelleFrequence}</ValeurLigne>} />
               ) : (
-                <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Fréquence" fin={<ValeurLigne>{libelleFrequence}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("frequence")} />
+                <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Fréquence" fin={<ValeurLigne chevron>{libelleFrequence}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("frequence")} />
               )}
-              {s.kind === "weekly" ? <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Jour" fin={<ValeurLigne>{JOURS[VALEURS_JOURS.indexOf(s.weekday)]}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("jour")} /> : null}
-              {s.kind === "monthly" ? <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Jour du mois" fin={<ValeurLigne>{s.day === 1 ? "1er" : s.day}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("jourMois")} /> : null}
-              {s.kind === "hourly" ? <LigneListe debut={<TuileIcone icone="clock-01" />} retrait="tuile" nom="Minute" fin={<ValeurLigne>{String(s.minute).padStart(2, "0")}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("minute")} /> : null}
+              {s.kind === "weekly" ? <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Jour" fin={<ValeurLigne chevron>{JOURS[VALEURS_JOURS.indexOf(s.weekday)]}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("jour")} /> : null}
+              {s.kind === "monthly" ? <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Jour du mois" fin={<ValeurLigne chevron>{s.day === 1 ? "1er" : s.day}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("jourMois")} /> : null}
+              {s.kind === "hourly" ? <LigneListe debut={<TuileIcone icone="clock-01" />} retrait="tuile" nom="Minute" fin={<ValeurLigne chevron>{String(s.minute).padStart(2, "0")}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("minute")} /> : null}
               {s.kind === "once" ? (
                 <LigneSaisie icone="calendar-01" nom="Date" valeur={dateLisible(s.date)}>
                   <SelecteurSysteme type="date" libelle="Date" min={aujourdHui(valeurs.timezone)} valeur={s.date} disabled={occupe} onChange={(date) => changerPlanning({ ...s, date })} />
@@ -328,7 +328,7 @@ export function FormulaireRoutineTelephone({
                       className={cn(CHAMP_KLYRA_UI, "h-11 w-24 px-3 text-right")}
                     />
                   </LigneSaisie>
-                  <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Unité" fin={<ValeurLigne>{s.unit === "minutes" ? "Minutes" : s.unit === "hours" ? "Heures" : "Jours"}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("unite")} />
+                  <LigneListe debut={<TuileIcone icone="calendar-01" />} retrait="tuile" nom="Unité" fin={<ValeurLigne chevron>{s.unit === "minutes" ? "Minutes" : s.unit === "hours" ? "Heures" : "Jours"}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("unite")} />
                 </>
               ) : null}
             </GroupeListe>
@@ -365,7 +365,7 @@ export function FormulaireRoutineTelephone({
           )
         ) : null}
         <GroupeListe>
-          <LigneListe debut={<TuileIcone icone="globe-01" />} retrait="tuile" nom="Fuseau horaire" fin={<ValeurLigne>{ville(valeurs.timezone)}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("fuseau")} />
+          <LigneListe debut={<TuileIcone icone="globe-01" />} retrait="tuile" nom="Fuseau horaire" fin={<ValeurLigne chevron>{ville(valeurs.timezone)}</ValeurLigne>} onClick={occupe ? undefined : () => setFeuille("fuseau")} />
           {contexte.serveurs.length > 0 || valeurs.lieu ? (
             <LigneListe debut={<TuileIcone icone="computer" />} retrait="tuile" nom="Machine" ligne2={initiale ? "Une routine reste sur sa machine." : `Sur un VPS, elle tourne même quand ${sur} est éteint.`} fin={<ValeurLigne chevron={!initiale}>{nomLieu(valeurs.lieu)}</ValeurLigne>} onClick={occupe || initiale ? undefined : () => setFeuille("machine")} />
           ) : null}

@@ -428,8 +428,11 @@ function ContenuChoix<T extends string>({ titre, valeur, options, onChoisir }: {
   );
 }
 
-function ContenuConfirmation({ texte, confirmer, onConfirmer }: { texte?: string; confirmer: string; onConfirmer: () => void }) {
+export function ContenuConfirmation({ texte, confirmer, onConfirmer }: { texte?: string; confirmer: string; onConfirmer: () => void }) {
   const fermer = useFermerFeuille();
+  /* Un menu changé en confirmation dans la même feuille : « Annuler » prend le focus (§ 4.3). */
+  const annuler = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => annuler.current?.focus(), []);
   return (
     <div className="px-1">
       {texte ? <p className="mt-2 text-body-s text-texte-secondaire">{texte}</p> : null}
@@ -445,7 +448,7 @@ function ContenuConfirmation({ texte, confirmer, onConfirmer }: { texte?: string
         >
           {confirmer}
         </Bouton>
-        <Bouton variant="blanc" taille="md" className="w-full" data-autofocus onClick={fermer}>
+        <Bouton ref={annuler} variant="blanc" taille="md" className="w-full" data-autofocus onClick={fermer}>
           Annuler
         </Bouton>
       </div>
