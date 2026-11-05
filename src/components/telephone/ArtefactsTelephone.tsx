@@ -774,7 +774,7 @@ function PageApercu({ id, rendu, liste, relire }: { id: string; rendu: RenduLu |
     >
       <div className="-mx-4 -mt-2 flex min-h-full flex-1 flex-col">
         {rendu ? <p className="truncate border-b border-bordure-defaut px-4 pb-2.5 text-ui-xs text-texte-secondaire">{[TYPES[rendu.type].libelle, rendu.agent, rendu.projet, quand(rendu.date)].filter(Boolean).join(" · ")}</p> : null}
-        <div className="flex min-h-[320px] flex-1 items-center justify-center bg-fond-surface-grise p-4">
+        <div className="-mb-6 flex min-h-[58dvh] flex-1 items-center justify-center bg-fond-surface-grise p-4">
           {lecture.etat === "ok" ? (
             image ? (
               // eslint-disable-next-line @next/next/no-img-element -- une image en data URL, dessinée par l'ordinateur
