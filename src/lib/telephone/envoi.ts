@@ -15,6 +15,8 @@ export interface Envoi {
   options?: OptionsMessage;
   /** Les fichiers joints sur le téléphone, déjà vérifiés (`ajouterPieces`). */
   pieces?: File[];
+  /** Après le dépôt de chaque pièce : combien sont réellement dans le compte (pas de progression en octets, `fetch` n'en donne pas). */
+  surPiece?: (deposees: number) => void;
 }
 
 /**
@@ -28,7 +30,7 @@ export function useEnvoyerMessage() {
   const { ouvert } = usePostes();
   const conversations = useQuery(api.conversationsCompte.liste, {});
   return useCallback(
-    async ({ conversationOrigine, texte, options = {}, pieces = [] }: Envoi): Promise<Id<"messagesFile"> | null> => {
+    async ({ conversationOrigine, texte, options = {}, pieces = [], surPiece }: Envoi): Promise<Id<"messagesFile"> | null> => {
       const conversation = conversations?.find((c) => c.origine === conversationOrigine);
       const lieu = conversation?.lieu ?? null;
       if (conversation && conversationOrigine.startsWith("dm-") && envoiSimple(options, pieces.length)) {
@@ -55,6 +57,7 @@ export function useEnvoyerMessage() {
         if (!reponse.ok) throw new Error(`${piece.name} n’a pas pu partir vers ton compte. Réessaie.`);
         const { storageId } = (await reponse.json()) as { storageId: Id<"_storage"> };
         deposees.push({ fichier: storageId, nom: piece.name, type });
+        surPiece?.(deposees.length);
       }
       const ecrites = ecrireOptions(options);
       return await convex.mutation(api.conversationsCompte.laisser, {

@@ -71,7 +71,7 @@ export function PagePleine({
       ) : (
         children
       )}
-      {pied ? <div className={cn("shrink-0 border-t border-bordure-defaut bg-fond-page px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]")}>{pied}</div> : null}
+      {pied ? <div data-pied-telephone className={cn("shrink-0 border-t border-bordure-defaut bg-fond-page px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]")}>{pied}</div> : null}
       {abandon ? (
         <ConfirmationFeuille
           titre="Abandonner les modifications ?"
