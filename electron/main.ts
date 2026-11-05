@@ -167,7 +167,7 @@ import {
   vignetteArtefact,
 } from "./artefacts";
 import { copierRenduVps, htmlRenduVps, ouvrirRenduVps } from "./rendus-vps";
-import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
+import { copierRendu, enregistrerRenduDans, htmlDuRendu, imageJointe, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
@@ -926,6 +926,7 @@ function registerBridge() {
     return ecrireFichierVps(lieu, jetonServeur(lieu), chemin, texte);
   });
   handle("fichiers:coller", (octets: unknown, type: unknown) => enregistrerCollage(octets, type));
+  handle("fichiers:image", (chemin: unknown, pleine: unknown) => imageJointe(chemin, pleine === true));
   handle("fichiers:recevoir", (octets: unknown, nom: unknown) => recevoirPiece(octets, nom));
   handle("webhooks:adresse", (secret: string) => adresseWebhook(secret));
   demarrerWebhooks();

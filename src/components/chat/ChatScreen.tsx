@@ -23,6 +23,7 @@ import { MessageExport } from "./MessageExport";
 import { useExporterConversation } from "./useExporterConversation";
 import { OngletsConversations } from "./OngletsConversations";
 import { OngletsFils } from "./OngletsFils";
+import { useImagesOuvertes, VueImage } from "./ImageJointe";
 import { OUVRIR_PANNEAU_AGENT, PanneauLateral, surReglages, usePanneauLateral } from "./PanneauLateral";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 import type { DemandeApercu } from "@/components/ui/Lien";
@@ -136,6 +137,14 @@ export function ChatScreen() {
   const [adresseApercu, setAdresseApercu] = useState<{ url: string; n: number } | null>(null);
   const equipe = chat?.kind === "equipe";
 
+  /* Une image jointe cliquée : un onglet du panneau, ou le panneau de l'aperçu dans une conversation de projet. */
+  const images = useImagesOuvertes(
+    chat?.id ?? "",
+    useCallback(() => setPanneauOuvert(true), []),
+  );
+  const imageEquipe = equipe ? images.active : null;
+  const { choisir: choisirImage } = images;
+
   /* Un agent annonce l'adresse du site qu'il vient de lancer : l'aperçu l'ouvre tout seul,
      et le projet la garde pour la prochaine fois. */
   const { enregistrerProjet } = useWorkspace();
@@ -178,11 +187,12 @@ export function ChatScreen() {
   useEffect(() => {
     const ouvrir = () => {
       setPanneauOuvert(true);
+      choisirImage(null);
       setEtatPanneau(surReglages);
     };
     window.addEventListener(OUVRIR_PANNEAU_AGENT, ouvrir);
     return () => window.removeEventListener(OUVRIR_PANNEAU_AGENT, ouvrir);
-  }, [setEtatPanneau]);
+  }, [setEtatPanneau, choisirImage]);
 
   const fermerPanneau = useCallback(() => {
     setPanneauOuvert(false);
@@ -212,10 +222,12 @@ export function ChatScreen() {
           chat={chat}
           actionExport={exportConversation.action}
           project={project}
-          previewOpen={chat.kind === "direct" ? panneauOuvert : previewOpen}
-          onTogglePreview={() =>
-            chat.kind === "direct" ? setPanneauOuvert((v) => !v) : setPreviewOpen((v) => !v)
-          }
+          previewOpen={chat.kind === "direct" ? panneauOuvert : previewOpen || !!imageEquipe}
+          onTogglePreview={() => {
+            if (chat.kind === "direct") setPanneauOuvert((v) => !v);
+            else if (imageEquipe) choisirImage(null);
+            else setPreviewOpen((v) => !v);
+          }}
         />
         {!dansEspace(chat.lieu, espace) && <AutreServeur lieu={chat.lieu ?? null} quoi="Cette conversation" />}
         <MessageThread key={chat.id} chatId={chat.id} messageExport={exportConversation.message &&
@@ -231,7 +243,15 @@ export function ChatScreen() {
         )}
       </section>
       {/* Conversation directe : pas de projet, donc pas d'aperçu. */}
-      {previewOpen && chat.kind === "equipe" && <PreviewPanel key={project?.id} project={project} chat={chat} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} />}
+      {/* L'aperçu reste monté derrière l'image : ses onglets et sa page ne se perdent pas. */}
+      <div className={imageEquipe ? "hidden" : "contents"}>
+        {previewOpen && chat.kind === "equipe" && <PreviewPanel key={project?.id} project={project} chat={chat} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} />}
+      </div>
+      {imageEquipe && (
+        <aside aria-label="Image jointe" className="flex w-[min(560px,calc(100%-424px))] min-w-[296px] shrink-0 flex-col border-l border-bordure-subtile bg-fond-surface">
+          <VueImage key={imageEquipe} chemin={imageEquipe} onFermer={() => images.fermer(imageEquipe)} />
+        </aside>
+      )}
       {panneauOuvert && chat.kind === "direct" && (
         <PanneauLateral
           chat={chat}
@@ -240,6 +260,10 @@ export function ChatScreen() {
           onFermer={fermerPanneau}
           etat={etatPanneau}
           setEtat={setEtatPanneau}
+          images={images.ouvertes}
+          imageActive={images.active}
+          onChoisirImage={images.choisir}
+          onFermerImage={images.fermer}
         />
       )}
     </div>

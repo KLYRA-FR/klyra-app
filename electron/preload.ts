@@ -254,6 +254,8 @@ contextBridge.exposeInMainWorld("klyra", {
     cheminDe: (file: File) => webUtils.getPathForFile(file),
     /** Une image collée (Ctrl/Cmd+V), écrite dans le dossier de l'app ; renvoie son chemin. */
     enregistrerCollage: (octets: Uint8Array, type: string) => ipcRenderer.invoke("fichiers:coller", octets, type),
+    /** Une image jointe, pour sa vignette ou en grand dans le panneau. */
+    image: (chemin: string, pleine: boolean) => ipcRenderer.invoke("fichiers:image", chemin, pleine),
     /** Une pièce jointe envoyée depuis le téléphone, écrite dans le dossier de l'app ; renvoie son chemin. */
     recevoirPiece: (octets: Uint8Array, nom: string) => ipcRenderer.invoke("fichiers:recevoir", octets, nom),
   },

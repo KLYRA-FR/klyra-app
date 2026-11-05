@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MAX_FICHIERS, Pieces } from "@/components/chat/Composer";
+import { Pieces } from "@/components/chat/Composer";
+import { PucesImages } from "@/components/chat/ImageJointe";
+import { estImage } from "@/lib/fichiers";
 import { PromptBox } from "@/components/chat/PromptBox";
+import { useAjoutFichiers } from "@/components/chat/useAjoutFichiers";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Bouton } from "@/components/ui/Bouton";
@@ -94,13 +97,15 @@ export function HomeScreen() {
       el.setSelectionRange(suite.length, suite.length);
     });
   };
-  /* Fichiers joints avec le trombone (app de bureau). */
+  /* Fichiers joints avec le trombone ou collés dans le champ (app de bureau). */
   const [fichiers, setFichiers] = useState<string[]>([]);
+  const [alerte, setAlerte] = useState<string | null>(null);
+  const { ajouter, coller } = useAjoutFichiers(fichiers, setFichiers, setAlerte);
   const joindre = async () => {
     const bridge = getBridge();
     if (!bridge) return;
     const r = await bridge.fichiers.choisir();
-    if (r.ok) setFichiers((f) => [...new Set([...f, ...r.data])].slice(0, MAX_FICHIERS));
+    if (r.ok) ajouter(r.data);
   };
   // Sans projet : la demande part en conversation directe (à l'assistant, ou à l'agent choisi).
   const [projectId, setProjectId] = useState("");
@@ -206,8 +211,10 @@ export function HomeScreen() {
             onChange={setText}
             onSubmit={submit}
             onJoindre={() => void joindre()}
+            onColler={coller}
             aDesPieces={fichiers.length > 0}
             pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
+            apresTexte={fichiers.some(estImage) && <PucesImages fichiers={fichiers} />}
             placeholder={
               to === AUTO
                 ? seul
@@ -237,6 +244,11 @@ export function HomeScreen() {
               </>
             }
           />
+          {alerte && (
+            <p role="alert" className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-erreur">
+              {alerte}
+            </p>
+          )}
         </div>
       </div>
     </div>

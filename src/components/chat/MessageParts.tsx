@@ -8,13 +8,14 @@ import { cn } from "@/lib/cn";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond, RondApercu } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
+import { VignetteMessage } from "@/components/chat/ImageJointe";
 import { Markdown } from "@/components/ui/Markdown";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { roleFromContent } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { estCaptureCollee } from "@/lib/collage";
 import { iconeEtape } from "@/lib/etapes";
-import { nomFichier } from "@/lib/fichiers";
+import { estImage, nomFichier } from "@/lib/fichiers";
 import { identifiantDe } from "@/lib/noms-agents";
 import { poste } from "@/lib/plateforme";
 import { confierAEditeur } from "@/lib/proposition-agent";
@@ -85,7 +86,7 @@ function CarteCitation({ messageId, roleId, extrait }: { messageId: string; role
 
 /* ─── Fichiers joints ──────────────────────────────────────────── */
 
-/** Les fichiers joints à un message : une carte par fichier, un clic le montre dans le Finder (l'Explorateur). */
+/** Les fichiers joints à un message : une carte par fichier, un clic le montre dans le Finder (l'Explorateur). Une image : sa vignette, un clic l'ouvre dans le panneau. */
 export function FichiersJoints({ chemins }: { chemins: string[] }) {
   const bridge = getBridge();
   return (
@@ -93,7 +94,7 @@ export function FichiersJoints({ chemins }: { chemins: string[] }) {
       {chemins.map((chemin) => {
         const nom = nomFichier(chemin);
         const capture = estCaptureCollee(chemin);
-        return (
+        const carte = (
           <button
             key={chemin}
             type="button"
@@ -108,6 +109,7 @@ export function FichiersJoints({ chemins }: { chemins: string[] }) {
             </span>
           </button>
         );
+        return estImage(chemin) ? <VignetteMessage key={chemin} chemin={chemin} repli={carte} /> : carte;
       })}
     </div>
   );

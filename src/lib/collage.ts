@@ -43,6 +43,12 @@ export function estCaptureCollee(chemin: string): boolean {
   return morceaux.at(-2) === "collages" && /^capture-\d{4}-\d{2}-\d{2}-\d{6}-[0-9a-f]{12}\.(png|jpg|gif|webp)$/.test(morceaux.at(-1) ?? "");
 }
 
+/** Le nom montré d'une image jointe : « image.png » pour une capture, son nom pour un fichier. */
+export function nomImage(chemin: string): string {
+  const nom = chemin.split(/[\\/]/).filter(Boolean).pop() ?? chemin;
+  return estCaptureCollee(chemin) ? `image.${nom.split(".").pop()}` : nom;
+}
+
 export function analyserCollage(texte: string, elements: ElementColle[]): Collage {
   if (texte.trim() || elements.length === 0) return { action: "texte" };
   const chemins = [...new Set(elements.map((e) => e.chemin).filter(Boolean))];
