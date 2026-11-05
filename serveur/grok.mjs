@@ -195,7 +195,7 @@ export function creerGrok(options) {
 
   let derniereUtilisation = null;
 
-  /** La dernière connue ; `actualiser` : relue par `x.ai/billing` (crédits restants, ne consomme rien). Seulement connecté par l'abonnement. */
+  /** La dernière connue ; `actualiser` : relue par `_x.ai/billing` (crédits restants, ne consomme rien). Seulement connecté par l'abonnement. */
   async function utilisation(actualiser) {
     if (!actualiser && derniereUtilisation) return derniereUtilisation;
     if (!trouver() || !existsSync(path.join(grokHome(), "auth.json"))) return derniereUtilisation;

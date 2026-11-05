@@ -642,7 +642,8 @@ export function creerGestionnaire(options) {
         if (options && typeof options === "object" && options.conversation === undefined && typeof contexte?.chatId === "string") options.conversation = contexte.chatId;
         if (cle && journal) {
           journal.lierConversation(requestId, cle);
-          if (!options.sessionId) options.sessionId = journal.sessionDe(cle);
+          /* Repartie à zéro sur le PC : surtout pas l'ancienne ; la session neuve la remplacera ici. */
+          if (!options.sessionId && options.sessionNeuve !== true) options.sessionId = journal.sessionDe(cle);
         }
         agents.envoyer(requestId, options);
         return repondre(res, 202, { requestId });

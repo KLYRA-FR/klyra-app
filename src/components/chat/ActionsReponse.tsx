@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { cn } from "@/lib/cn";
+import { estAvantDepart } from "@/lib/contexte";
 import { apparition } from "@/lib/mouvement";
 import { formatDaySeparator, formatTime, isSameDay } from "@/lib/format";
 import { citationDe, REACTIONS, repondreA } from "@/lib/repondre";
@@ -256,7 +257,8 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
           >
             Créer une branche dans une nouvelle conversation
           </Ligne>
-          <div className="relative">
+          {/* Avant un « Repartir à zéro », l'agent n'a plus cette réponse : la brancher reste possible, la refaire non. */}
+          {!estAvantDepart(chat, message) && <div className="relative">
             <Ligne
               icone="refresh-01"
               sousMenu
@@ -311,7 +313,7 @@ export function ActionsReponse({ chat, message, derniere }: { chat: Chat; messag
                 </div>
               </div>
             )}
-          </div>
+          </div>}
         </div>
       )}
     </div>
