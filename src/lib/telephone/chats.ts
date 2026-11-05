@@ -1,6 +1,8 @@
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../../convex/_generated/api";
 import { lireActivite, type Activite } from "@/lib/copie-compte";
+import { DUREE_CACHE_MS, estCommandeCompacter, SEUIL_LOURD, SEUIL_REPRISE } from "@/lib/contexte";
+import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
 
 /**
  * Les règles des écrans Chats et du fil sur le téléphone (spec mobile T-01, T-02), sans React :
@@ -16,6 +18,13 @@ export const DIRECT = "dm-";
 export const PREFIXE_FIL = "klyra-fil-";
 
 export const idDirect = (roleId: string) => `${DIRECT}${roleId}`;
+
+/** Les suggestions de l'accueil du bureau : chacune remplit le composeur, sans rien envoyer. */
+export const SUGGESTIONS = [
+  { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine" },
+  { libelle: "Résume ce document", texte: "Résume ce document" },
+  { libelle: "Crée-moi un agent pour…", texte: DEBUT_DEMANDE_AGENT },
+];
 
 /** Un fil d'agent : sa conversation directe parente, sinon null. */
 export function parentDe(c: Pick<ConversationLue, "origine" | "parent" | "roleIds">): string | null {
@@ -58,10 +67,14 @@ export function attendUneAction(c: Pick<ConversationLue, "activite" | "archiveLe
  * Le texte d'état d'une ligne, comme la barre latérale du bureau. `nom` : le prénom d'un agent.
  * Ordinateur fermé, plus rien ne s'écrit : seuls l'accord (expiré, P-11) et la question restent.
  */
-export function etatLigne(c: ConversationLue | undefined, nom: (id: string) => string, posteOuvert = true): { texte: string; enCours: boolean } | null {
+export function etatLigne(c: ConversationLue | undefined, nom: (id: string) => string, posteOuvert = true, horsLigne = false): { texte: string; enCours: boolean } | null {
   const activite = activiteDe(c);
   if (!c || !activite) return null;
-  if (!posteOuvert && activite.etat !== "accord" && activite.etat !== "question") return null;
+  /* Hors ligne, la copie ne dit plus si l'agent travaille (E2-07) ; un accord reste une demande, sans « En cours » ni expiration affirmée. */
+  if (horsLigne && posteOuvert && activite.etat === "accord") return { texte: c.kind === "equipe" ? `${nom(activite.roleId)} attend ton accord` : "Attend ton accord", enCours: false };
+  if (horsLigne && activite.etat !== "question" && activite.etat !== "accord") return null;
+  if (!posteOuvert && activite.etat === "accord") return { texte: "Demande d’accord expirée", enCours: false };
+  if (!posteOuvert && activite.etat !== "question") return null;
   const equipe = c.kind === "equipe";
   const qui = nom(activite.roleId);
   switch (activite.etat) {
@@ -93,7 +106,7 @@ export interface LigneAgent {
  * « Mes agents » (l'assistant, puis les agents actifs), « Conversations d'équipe » (les autres, les
  * plus récentes d'abord). Les fils vivent dans le chat de leur agent.
  */
-export function sections(conversations: ConversationLue[], cartes: CarteAgentLue[], nom: (id: string) => string, posteOuvert = true) {
+export function sections(conversations: ConversationLue[], cartes: CarteAgentLue[], nom: (id: string) => string, posteOuvert = true, horsLigne = false) {
   const equipe = conversations.filter((c) => c.kind === "equipe");
   const epinglees = equipe
     .filter((c) => c.epingleLe)
@@ -106,9 +119,73 @@ export function sections(conversations: ConversationLue[], cartes: CarteAgentLue
   const agents: LigneAgent[] = actifs.map((carte) => {
     const conversation = parOrigine.get(idDirect(carte.origine));
     const filActif = conversations.find((c) => !c.archiveLe && parentDe(c) === idDirect(carte.origine) && activiteDe(c));
-    return { carte, conversation, etat: etatLigne(conversation, nom, posteOuvert) ?? etatLigne(filActif, nom, posteOuvert) };
+    return { carte, conversation, etat: etatLigne(conversation, nom, posteOuvert, horsLigne) ?? etatLigne(filActif, nom, posteOuvert, horsLigne) };
   });
   return { epinglees, agents, equipe: autres };
+}
+
+export type StatutTache = "a-faire" | "en-cours" | "fait";
+
+/** Les tâches de suivi d'une conversation, telles que l'ordinateur les copie dans le compte (Détails › Tâches). */
+export function tachesDe(c: Pick<ConversationLue, "taches"> | undefined): { texte: string; statut: StatutTache }[] {
+  try {
+    const brut = JSON.parse(c?.taches ?? "[]") as { texte?: unknown; statut?: unknown }[];
+    return Array.isArray(brut)
+      ? brut.filter((t): t is { texte: string; statut: StatutTache } => typeof t.texte === "string" && (t.statut === "a-faire" || t.statut === "en-cours" || t.statut === "fait"))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface AgentAuTravail {
+  /** La conversation où il travaille : la carte ouvre ce fil. */
+  origine: string;
+  roleId: string;
+  /** Le titre de la conversation d'équipe ou du fil ; null pour sa conversation directe. */
+  sujet: string | null;
+  /** Ce qu'il fait : « Écrit sa réponse… », le nom de l'étape. */
+  texte: string;
+  depuis: string;
+  /** « 2/5 » : ses tâches faites sur le total, s'il en suit. */
+  taches: { faites: number; total: number } | null;
+}
+
+/**
+ * « Au travail » (E2-01, D2-2) : les agents qui travaillent réellement, ordinateur ouvert (il écrit,
+ * réfléchit, passe une étape, attend un collègue), les plus récents d'abord. L'accord et la question
+ * vont dans « À traiter ». Ordinateur fermé : personne, une copie d'activité ne prouve pas qu'il
+ * travaille encore.
+ */
+export function auTravail(conversations: ConversationLue[], posteOuvert: boolean): AgentAuTravail[] {
+  if (!posteOuvert) return [];
+  return conversations
+    .filter((c) => !c.archiveLe)
+    .flatMap((c): AgentAuTravail[] => {
+      const activite = activiteDe(c);
+      if (!activite || activite.etat === "accord" || activite.etat === "question") return [];
+      const taches = tachesDe(c);
+      const etat = etatLigne({ ...c, kind: "direct" }, () => "", true);
+      return [
+        {
+          origine: c.origine,
+          roleId: activite.roleId,
+          sujet: c.kind === "equipe" || parentDe(c) ? c.titre : null,
+          texte: etat?.texte ?? "Travaille…",
+          depuis: activite.depuis,
+          taches: taches.length ? { faites: taches.filter((t) => t.statut === "fait").length, total: taches.length } : null,
+        },
+      ];
+    })
+    .sort((a, b) => b.depuis.localeCompare(a.depuis));
+}
+
+/** Depuis quand : « à l'instant », « 12 min », « 1 h 05 ». */
+export function dureeDepuis(iso: string, maintenant: Date = new Date()): string {
+  const minutes = Math.floor((maintenant.getTime() - new Date(iso).getTime()) / 60_000);
+  if (!Number.isFinite(minutes) || minutes < 1) return "à l’instant";
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
 }
 
 export type ElementATraiter =
@@ -146,16 +223,19 @@ export function nombreATraiter(conversations: ConversationLue[]): number {
 
 /* ─── Menus « ⋯ » ──────────────────────────────────────────────── */
 
-export type ActionConversation = "details" | "renommer" | "epingler" | "desepingler" | "exporter" | "projet" | "rechercher";
+export type ActionConversation = "details" | "renommer" | "epingler" | "desepingler" | "exporter" | "projet" | "rechercher" | "lu" | "arreter" | "reglages";
 
 export const LIBELLES_CONVERSATION: Record<ActionConversation, string> = {
   details: "Détails",
-  renommer: "Renommer",
+  renommer: "Renommer…",
   epingler: "Épingler",
   desepingler: "Retirer l’épingle",
   exporter: "Exporter en Markdown…",
   projet: "Ouvrir le projet",
   rechercher: "Rechercher dans cette conversation",
+  lu: "Marquer comme lu",
+  arreter: "Arrêter l’agent",
+  reglages: "Réglages de l’agent",
 };
 
 /**
@@ -164,44 +244,136 @@ export const LIBELLES_CONVERSATION: Record<ActionConversation, string> = {
  * on n'épingle qu'une conversation d'équipe. Dans le fil, « Rechercher » ouvre T-04 sur « Cette conversation ».
  */
 export function actionsConversation(
-  c: Pick<ConversationLue, "kind" | "origine" | "parent" | "roleIds" | "epingleLe" | "projetId"> | undefined,
-  { dansLeFil = false }: { dansLeFil?: boolean } = {},
+  c: Pick<ConversationLue, "kind" | "origine" | "parent" | "roleIds" | "epingleLe" | "projetId" | "nonLus"> | undefined,
+  { dansLeFil = false, actif = false }: { dansLeFil?: boolean; actif?: boolean } = {},
 ): ActionConversation[] {
   const actions: ActionConversation[] = dansLeFil ? ["details"] : [];
   if (c) {
     const fil = !!parentDe(c);
-    if (c.kind === "equipe" || fil) actions.push("renommer");
+    if (!dansLeFil && c.nonLus > 0) actions.push("lu");
     if (c.kind === "equipe" && !fil) actions.push(c.epingleLe ? "desepingler" : "epingler");
+    if (c.kind === "equipe" || fil) actions.push("renommer");
   }
-  actions.push("exporter");
-  if (c?.projetId) actions.push("projet");
   if (dansLeFil) actions.push("rechercher");
+  if (c?.projetId) actions.push("projet");
+  actions.push("exporter");
+  if (actif) actions.push("arreter");
+  if (dansLeFil && c && c.kind !== "equipe") actions.push("reglages");
   return actions;
 }
 
 export type ActionReponse =
-  | { id: "copier" | "ecouter"; libelle: string; voie: "compte" }
-  | { id: "brancher"; libelle: string; voie: "file" }
-  | { id: "reessayer" | "details" | "concis" | "web"; libelle: string; voie: "file" }
-  | { id: "modele"; libelle: string; voie: "file" };
+  | { id: "repondre" | "citer" | "fil"; libelle: string; voie: "brouillon" }
+  | { id: "copier" | "ecouter"; libelle: string; voie: "telephone" }
+  | { id: "reessayer" | "brancher"; libelle: string; voie: "file" };
 
 /**
- * Les actions d'une réponse d'agent (feuille ouverte par appui long ou « ⋯ » sous la bulle). Copier et
- * lire à voix haute se font sur le téléphone ; le reste part avec un message, comme au bureau. Rien
- * sans texte, ni sur une réponse qui s'écrit encore.
+ * Les actions d'un message (E2-37), ouvertes par appui long ou « ⋯ ». Répondre, citer, en faire un fil
+ * préparent un brouillon et n'envoient rien ; copier et lire se font sur le téléphone, ordinateur fermé
+ * compris. Réessayer et brancher partent par la file, seulement sur une réponse achevée d'un agent.
  */
-export function actionsReponse({ texte, enCours, parle }: { texte: string; enCours: boolean; parle: boolean }): ActionReponse[] {
-  if (!texte.trim() || enCours) return [];
-  return [
-    { id: "copier", libelle: "Copier", voie: "compte" },
-    { id: "ecouter", libelle: parle ? "Arrêter la lecture" : "Lire à voix haute", voie: "compte" },
-    { id: "brancher", libelle: "Créer une branche dans une nouvelle conversation", voie: "file" },
-    { id: "reessayer", libelle: "Réessayer", voie: "file" },
-    { id: "details", libelle: "Ajouter des détails", voie: "file" },
-    { id: "concis", libelle: "Plus concis", voie: "file" },
-    { id: "web", libelle: "Rechercher sur le web", voie: "file" },
-    { id: "modele", libelle: "Changer de modèle", voie: "file" },
+export function actionsReponse({ texte, enCours, parle, agent = true }: { texte: string; enCours: boolean; parle: boolean; agent?: boolean }): ActionReponse[] {
+  if (!texte.trim()) return [];
+  const lecture: ActionReponse[] = [
+    { id: "copier", libelle: "Copier", voie: "telephone" },
+    { id: "ecouter", libelle: parle ? "Arrêter la lecture" : "Lire à voix haute", voie: "telephone" },
   ];
+  if (enCours) return lecture;
+  return [
+    ...(agent ? [{ id: "repondre" as const, libelle: "Répondre", voie: "brouillon" as const }] : []),
+    { id: "citer", libelle: "Citer dans ma réponse", voie: "brouillon" },
+    { id: "fil", libelle: "En faire un fil", voie: "brouillon" },
+    ...lecture,
+    ...(agent
+      ? [
+          { id: "reessayer" as const, libelle: "Réessayer", voie: "file" as const },
+          { id: "brancher" as const, libelle: "Créer une branche", voie: "file" as const },
+        ]
+      : []),
+  ];
+}
+
+/** La sous-page « Réessayer » (E2-38) : les mêmes façons qu'au bureau, et « Changer de modèle » (E2-39). */
+export const FACONS_REESSAI: { id: "reessayer" | "details" | "concis" | "web"; libelle: string; icone: "refresh-01" | "align-left" | "minimise-01" | "globe-01" }[] = [
+  { id: "reessayer", libelle: "Réessayer", icone: "refresh-01" },
+  { id: "details", libelle: "Ajouter des détails", icone: "align-left" },
+  { id: "concis", libelle: "Plus concis", icone: "minimise-01" },
+  { id: "web", libelle: "Rechercher sur le web", icone: "globe-01" },
+];
+
+/** Les noms lisibles des réactions (E2-37, § 11) : l'émoji seul n'est pas un nom accessible. */
+export const NOMS_REACTIONS: Record<string, string> = {
+  "👍": "J’aime",
+  "👎": "Pas utile",
+  "❤️": "J’adore",
+  "😂": "Drôle",
+  "🎉": "Bravo",
+  "😮": "Surprenant",
+};
+
+/** À qui confier un fil tiré d'un passage : l'auteur, l'agent du fil, le seul de la conversation ; sinon un choix (E2-41). */
+export function agentsPourFil({ auteurId, conversation, actifs }: { auteurId: string | null; conversation: Pick<ConversationLue, "origine" | "parent" | "roleIds"> | undefined; actifs: string[] }): string[] {
+  if (auteurId) return actifs.includes(auteurId) ? [auteurId] : [];
+  const seul = conversation ? parentDe(conversation)?.slice(DIRECT.length) ?? null : null;
+  if (seul) return actifs.includes(seul) ? [seul] : [];
+  return (conversation?.roleIds ?? []).filter((id) => actifs.includes(id));
+}
+
+export interface MesureCopiee {
+  roleId: string;
+  jetons: number;
+  echanges: number;
+  le: string;
+  masqueJusqua: number;
+}
+
+/** La mesure copiée par l'ordinateur (`conversationsCompte.contexte`) ; null si absente ou mal formée : aucun chiffre deviné. */
+export function lireMesure(json: string | null | undefined): MesureCopiee | null {
+  if (!json) return null;
+  try {
+    const m = JSON.parse(json) as Partial<MesureCopiee>;
+    if (typeof m.roleId !== "string" || typeof m.jetons !== "number" || typeof m.echanges !== "number" || typeof m.le !== "string" || Number.isNaN(Date.parse(m.le))) return null;
+    return { roleId: m.roleId, jetons: m.jetons, echanges: m.echanges, le: m.le, masqueJusqua: typeof m.masqueJusqua === "number" ? m.masqueJusqua : 0 };
+  } catch {
+    return null;
+  }
+}
+
+export interface ConseilFil {
+  roleId: string;
+  jetons: number;
+  raison: "lourde" | "pause";
+  cacheExpire: boolean;
+  filPossible: boolean;
+}
+
+/**
+ * Le conseil au-dessus du composeur (E2-42) : mêmes seuils que le bureau (`conseilContexte`), sur la mesure
+ * copiée. Absent pendant une réponse. `masque` : « Plus tard » touché sur ce téléphone.
+ */
+export function conseilDuFil(c: Pick<ConversationLue, "contexte" | "kind" | "parent" | "origine" | "roleIds"> | undefined, { maintenant, masque = 0, occupe = false }: { maintenant: number; masque?: number; occupe?: boolean }): ConseilFil | null {
+  const mesure = lireMesure(c?.contexte);
+  if (!c || !mesure || occupe) return null;
+  if (mesure.jetons <= Math.max(mesure.masqueJusqua, masque)) return null;
+  const cacheExpire = maintenant - Date.parse(mesure.le) > DUREE_CACHE_MS;
+  const filPossible = c.kind === "direct" || !!parentDe(c);
+  const conseil = { roleId: mesure.roleId, jetons: mesure.jetons, cacheExpire, filPossible };
+  if (mesure.echanges >= SEUIL_LOURD) return { ...conseil, raison: "lourde" };
+  if (cacheExpire && filPossible && mesure.echanges >= SEUIL_REPRISE) return { ...conseil, raison: "pause" };
+  return null;
+}
+
+/** La demande de résumé : `/compact`, seul ou avec ses consignes (ligne système « Résumé demandé », E2-43). */
+export const estDemandeResume = estCommandeCompacter;
+
+/** Une demande de résumé attend sa réponse : encore dans la file, ou dernier message de la personne sans réponse achevée après lui. */
+export function resumeEnAttente(messages: { auteurKind: string; texte: string; statut: string | null }[] | undefined, enFile: { texte: string }[]): boolean {
+  if (enFile.some((m) => estDemandeResume(m.texte))) return true;
+  for (const m of [...(messages ?? [])].reverse()) {
+    if (m.auteurKind === "user") return estDemandeResume(m.texte);
+    if (m.statut !== "en-cours") return false;
+  }
+  return false;
 }
 
 /** Le texte d'une réponse à lire à voix haute, sans la mise en forme Markdown (comme au bureau). */
