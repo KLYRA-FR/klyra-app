@@ -39,6 +39,9 @@ import { FeuilleNotifications } from "./NotificationsRappels";
 import { usePostes, useSupport } from "./poste";
 import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 import { useAnnonce } from "./Annonce";
+import { useDemandeTicket } from "./DemandesTickets";
+import { auTravail as agentsAuTravail, nouvelIdFil } from "@/lib/telephone/chats";
+import { confieA } from "@/lib/telephone/tickets";
 
 type Onglet = "agenda" | "rappels";
 
@@ -78,8 +81,11 @@ export function PlanningTelephone() {
 
   const { moi } = useCompte();
   const moiId = moi?._id ?? null;
-  const { ouvert } = usePostes();
+  const { ouvert, postes } = usePostes();
   const sur = useSupport();
+  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const { demandes, envoyer } = useDemandeTicket();
+  const filsPrevus = useRef(new Map<string, string>());
   const fenetre = useMemo(() => fenetreAgenda(vue, jour), [vue, jour]);
   const occurrences = useQuery(api.evenements.entre, fenetre);
   const mes = useQuery(api.rappels.mes, {});
@@ -390,6 +396,18 @@ export function PlanningTelephone() {
     ouvrirRappel,
     ouvrirEvenement,
     modifierCategorie: (categorie) => setCategorieEditee(categorie ?? "nouvelle"),
+    aUnPoste: (postes?.length ?? 0) > 0,
+    auTravail: new Set(agentsAuTravail(conversations ?? [], ouvert).map((a) => a.roleId)),
+    confieDe: (rappel) => confieA(rappel, conversations, demandes),
+    confier: async (rappel, roleId) => {
+      /* Le même rappel confié au même agent garde son fil : un double appui ou un nouvel essai n'en ouvrent pas un autre. */
+      const cle = `${rappel.source}:${rappel.id}:${roleId}`;
+      const fil = filsPrevus.current.get(cle) ?? nouvelIdFil();
+      filsPrevus.current.set(cle, fil);
+      const erreur = await envoyer(fil, "confier", { roleId, rappel: { source: rappel.source === "poste" ? "local" : "compte", id: rappel.id } }, 0);
+      if (!erreur) eclairerEcheance(rappel.id);
+      return erreur;
+    },
   };
 
   /* ─── T-07 : l'élément ouvert, relu dans les données à jour ─── */

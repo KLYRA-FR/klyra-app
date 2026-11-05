@@ -214,6 +214,10 @@ export interface Fil {
   projetId?: string | null;
   /** Le rappel d'où vient ce fil (« Confier à un agent »). */
   rappel?: { source: "local" | "compte"; id: string } | null;
+  /** Compte les demandes du téléphone appliquées : la copie du compte n'écrase pas un état plus récent. */
+  revision?: number;
+  /** Les dernières demandes du téléphone déjà appliquées : une reprise ne les rejoue pas. */
+  demandes?: string[];
   /** Fermé (archivé) le : pour la colonne Terminé. Absent sur les fils fermés avant les tickets. */
   fermeLe?: string | null;
 }

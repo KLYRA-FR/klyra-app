@@ -611,7 +611,7 @@ interface WorkspaceApi {
    */
   creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, options?: OptionsFil) => string;
   /** Confie un rappel à un agent : un fil s'ouvre avec le rappel pour brief ; renvoie son id. */
-  confierRappel: (rappel: RappelAConfier, roleId: RoleId) => string;
+  confierRappel: (rappel: RappelAConfier, roleId: RoleId, idImpose?: string) => string;
   /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
   majTicket: (chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => void;
   renommerChat: (chatId: string, titre: string) => void;
@@ -1833,8 +1833,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, []);
 
   const confierRappel = useCallback(
-    (rappel: RappelAConfier, roleId: RoleId) => {
-      const id = creerFil(roleId, rappel.titre, null, { priorite: rappel.priorite, echeance: rappel.echeance, rappel: { source: rappel.source, id: rappel.id } });
+    (rappel: RappelAConfier, roleId: RoleId, idImpose?: string) => {
+      const id = creerFil(roleId, rappel.titre, null, { priorite: rappel.priorite, echeance: rappel.echeance, rappel: { source: rappel.source, id: rappel.id } }, idImpose ? { id: idImpose, lieu: null } : undefined);
       timers.current.push(setTimeout(() => envoyerRef.current(id, briefDuRappel(rappel), null, []), 0));
       return id;
     },

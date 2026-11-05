@@ -8,6 +8,7 @@ import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
 import { AucunPoste, BandeauVueGardee, DemandeEnCours, ErreurPoste, PasDeReponse, PosteFerme } from "./etats";
 import type { Report } from "@/lib/report";
 import type { ElementJour, RappelTelephone } from "@/lib/telephone/planning";
+import type { ConfieA } from "@/lib/telephone/tickets";
 import type { Categorie, Evenement } from "@/types/domain";
 
 /**
@@ -65,6 +66,14 @@ export interface PlanningTelephoneApi {
   ouvrirEvenement: (evenement: EvenementTelephone | null) => void;
   /** La feuille d'une catégorie (nom, couleur, icône) ; null : une nouvelle. */
   modifierCategorie: (categorie: Categorie | null) => void;
+  /** Un ordinateur est relié au compte : c'est lui qui crée le fil d'un rappel confié. */
+  aUnPoste: boolean;
+  /** Les agents qui travaillent en ce moment (la liste de Confier le dit). */
+  auTravail: ReadonlySet<string>;
+  /** À qui ce rappel est confié, d'après la copie du compte et les demandes. */
+  confieDe: (rappel: Pick<RappelTelephone, "source" | "id">) => ConfieA | null;
+  /** Demande l'attribution : rend l'erreur à dire, ou null si le compte l'a acceptée (pas encore faite). */
+  confier: (rappel: Pick<RappelTelephone, "source" | "id">, roleId: string) => Promise<string | null>;
 }
 
 /**

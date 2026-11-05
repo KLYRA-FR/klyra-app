@@ -341,7 +341,37 @@ export function dossierDe(chat: Pick<Chat, "projectId">, projets: Project[]): st
  * La conversation telle que le compte la garde. Un fil supprimé (retiré des archivés) n'y va pas : null.
  * `duFil` : ses messages seulement, dans l'ordre.
  */
-export function conversationCompte(chat: Chat, duFil: Message[], projets: Project[], travail: TravailCopie | null = null) {
+/** La version du contrat Tickets que connaît ce poste. */
+export const CONTRAT_TICKETS = 1;
+
+/**
+ * Le ticket d'un fil pour le compte (contrat des lots 3 et 4, règle 1) : les champs utiles du fil, le poste,
+ * la version, s'il a une réponse. Null pour une conversation qui n'est pas un fil. Sans chemin ni secret.
+ */
+export function ticketCompte(chat: Chat, duFil: Message[], projets: Project[], poste: string | null): string | null {
+  const fil = chat.fil;
+  if (!fil) return null;
+  const projet = projets.find((p) => p.id === fil.projetId);
+  const dossier = projets.find((p) => p.id === chat.projectId)?.folder ?? projet?.folder ?? null;
+  return JSON.stringify({
+    version: CONTRAT_TICKETS,
+    poste,
+    statut: fil.statut,
+    etape: fil.etape ?? null,
+    raison: fil.raison ? sansCheminNiSecret(fil.raison, dossier).slice(0, 200) : null,
+    priorite: fil.priorite ?? 0,
+    echeance: fil.echeance ?? null,
+    projetNom: projet?.name ?? null,
+    rappel: fil.rappel ?? null,
+    lancePar: fil.lancePar?.roleId ?? null,
+    creeLe: fil.creeLe,
+    fermeLe: fil.fermeLe ?? null,
+    aReponse: duFil.some((m) => m.author.kind === "role" && m.statut !== "en-cours"),
+    revision: fil.revision ?? 0,
+  });
+}
+
+export function conversationCompte(chat: Chat, duFil: Message[], projets: Project[], travail: TravailCopie | null = null, poste: string | null = null) {
   if (chat.fil?.supprime) return null;
   const dernier = duFil.at(-1);
   const projet = projets.find((p) => p.id === chat.projectId);
@@ -368,6 +398,8 @@ export function conversationCompte(chat: Chat, duFil: Message[], projets: Projec
     activite: activite ? JSON.stringify(activite) : null,
     modele: chat.modele || chat.effort ? JSON.stringify({ modele: chat.modele ?? null, effort: chat.effort ?? null }) : null,
     contexte: contexteCompte(chat),
+    ticket: ticketCompte(chat, duFil, projets, poste),
+    contratTickets: CONTRAT_TICKETS,
   };
 }
 

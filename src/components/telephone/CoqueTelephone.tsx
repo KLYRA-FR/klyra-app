@@ -21,6 +21,7 @@ import { ConnexionTelephone } from "./ConnexionTelephone";
 import { FilTelephone } from "./FilTelephone";
 import { PlanningTelephone } from "./PlanningTelephone";
 import { ServeursTelephone } from "./ServeursTelephone";
+import { SuiviDemandesTickets } from "./DemandesTickets";
 import Image from "next/image";
 import { lienValable } from "../../../convex/model/push";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
@@ -327,6 +328,7 @@ export function CoqueTelephone() {
   return (
     <FournisseurReseau horsLigne={horsLigne}>
       <FournisseurAnnonce barreOnglets={barre}>
+        {connecte ? <SuiviDemandesTickets /> : null}
         <div className="flex h-full bg-fond-page">
           {tablette && navigation ? <BarreOnglets vertical /> : null}
           <div className="flex min-w-0 flex-1 flex-col">

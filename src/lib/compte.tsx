@@ -158,6 +158,7 @@ const MESSAGES: Record<string, string> = {
   couleur_invalide: "Cette couleur n’est pas dans la palette.",
   deja_membre: "Cette personne fait déjà partie de l’équipe.",
   deja_invitee: "Cette adresse est déjà invitée.",
+  deja_confie: "Ce rappel est déjà confié à un agent.",
   introuvable: "Cette personne ou cette invitation n’existe plus.",
   dernier_admin: "Il faut garder au moins un admin dans l’équipe.",
   trop_tot: "Un lien vient déjà d’être demandé pour cette adresse : attends une minute avant d’en redemander un.",
