@@ -1,5 +1,7 @@
 # Journal du projet — app KLYRA
 
+- **05/11/2026 — Intégration mobile lot 7 après le lot 6** : main `2f7af66` intégré dans la branche de #189. Les composants du socle conservent les interrupteurs et recours du lot 6, les choix et mises en évidence du lot 7, ainsi que la visionneuse en page pleine. Aucun écran des lots 2 à 4 remplacé.
+
 > Historique des décisions et de l’avancement, pour reprendre le travail depuis n’importe quel ordi.
 > **À Claude, en début de session : lis ce fichier et `CLAUDE.md` avant toute chose, puis mets à jour ce journal à la fin de chaque session.**
 
@@ -344,3 +346,4 @@ Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app
 - **05/11/2026** — PC fermé, le VPS range lui-même la réponse d’un agent dans sa conversation. Le message de la personne part sur le serveur dès l’envoi.
 - **05/11/2026** — Les workflows d’un serveur tournent sur lui, PC éteint : même moteur que l’app, planifiés, webhooks, approbations. L’app suit en direct et ne les lance plus elle-même.
 - **05/11/2026** — Le téléphone choisit son serveur, sans toucher à celui de l’ordinateur : Chats, recherche, projets, routines, workflows et agents suivent. Rappels et calendrier restent communs.
+- **05/11/2026** — Téléphone, lot 6 (Projets) : liste en groupes, trois segments Chats / Fichiers / Projet, dossier en descente, visionneuse en page pleine, Modifier avec ses états. Nouveaux gestes du poste `projets.fiche` (brief, agents, travaux du journal, sans identifiant de travail ni référence de preuve) et `projets.epingler`. La réponse de `projets.fiche` transite par `demandesPoste` comme un fichier lu (effacée à la lecture) ; rien du journal n’est copié au compte. La carte d’un projet porte sa date de modification (`misAJour`, facultatif). Un journal illisible est une section indisponible, jamais « aucun travail ».

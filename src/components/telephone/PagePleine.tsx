@@ -4,6 +4,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { BandeauReseau } from "./BandeauReseau";
 import { ConfirmationFeuille } from "./Feuille";
 import { useZoneVisible } from "./zone-visible";
 
@@ -18,20 +19,23 @@ export function PagePleine({
   titre,
   onFermer,
   modifie = false,
-  droite,
   pied,
   onEnvoyer,
+  droite,
+  libre = false,
   children,
 }: {
   titre?: string;
   onFermer?: () => void;
   /** Des modifications non enregistrées : fermer demande d'abord. */
   modifie?: boolean;
-  /** Une action à droite du titre (« ⋯ »). */
-  droite?: ReactNode;
   pied?: ReactNode;
   /** La page est un formulaire : Entrée dans un champ l'envoie. */
   onEnvoyer?: () => void;
+  /** Une action à droite de la barre (le ⋯ de la visionneuse). */
+  droite?: ReactNode;
+  /** Le contenu se pose et défile lui-même, sans marge (la visionneuse) ; la barre du haut reste. */
+  libre?: boolean;
   children: ReactNode;
 }) {
   const zone = useZoneVisible();
@@ -65,9 +69,10 @@ export function PagePleine({
             <h1 className="min-w-0 flex-1 truncate text-center text-body-s font-semibold text-texte-principal">{titre}</h1>
             {droite ?? <span aria-hidden="true" className="size-11 shrink-0" />}
           </div>
+          <BandeauReseau />
         </header>
       ) : null}
-      {titre ? (
+      {titre && !libre ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-6">
           <div className="flex flex-col gap-4">{children}</div>
         </div>

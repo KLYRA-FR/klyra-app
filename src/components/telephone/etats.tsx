@@ -11,6 +11,7 @@ import type { LecturePoste } from "@/lib/poste/client";
 import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
 import { libelleVue, type VueGardee } from "@/lib/telephone/vue-gardee";
 import { useAnnonce } from "./Annonce";
+import { useHorsLigne } from "./BandeauReseau";
 import { PrevenirOuverture } from "./PastillePoste";
 import { usePostes, useSupport } from "./poste";
 import { usePushTelephone } from "./push";
@@ -133,20 +134,23 @@ function premierePhrase(texte: string): string {
  * qui marche quand même. `phrase` reçoit « ton Mac » : « les fichiers de ce projet sont sur ton Mac.
  * Ils s'affichent quand KLYRA y est ouverte. »
  */
-export function PosteFerme({ phrase, forme = "plein", carte }: { phrase: (sur: string) => string; forme?: FormeEtat; carte?: ReactNode }) {
+export function PosteFerme({ phrase, forme = "plein", carte, sansRecours = false, className }: { phrase: (sur: string) => string; forme?: FormeEtat; carte?: ReactNode; sansRecours?: boolean; className?: string }) {
   const sur = useSupport();
   const { principal, horsLigne } = usePostes();
   /* Hors ligne, rien ne dit que l'ordinateur est fermé : on dit ce qui manque vraiment (§ 5.5). */
-  if (horsLigne) return <EtatEcran forme={forme} icone="globe-01" titre="Hors ligne" texte="Ce qui est sur ton ordinateur reviendra avec le réseau." />;
+  if (horsLigne) {
+    return <EtatEcran className={className} forme={forme} icone="globe-01" titre="Ce téléphone est hors ligne" texte={`${majuscule(phrase(sur))} Reviens quand ce téléphone est en ligne.`} />;
+  }
   return (
     <EtatEcran
+      className={className}
       forme={forme}
       icone="computer"
       titre={`${majuscule(sur)} est fermé`}
       texte={majuscule(phrase(sur))}
       action={principal ? <PrevenirOuverture cle={principal.cle} /> : null}
     >
-      {carte ?? (
+      {sansRecours ? null : carte ?? (
         <CarteSuite icone="message-square" texte="Tu peux quand même écrire à un agent : ton message partira à l’ouverture." lien="Écrire à un agent" href="/chats?ecrire=1" />
       )}
     </EtatEcran>
@@ -184,6 +188,43 @@ export function AucunPoste({ phrase, forme = "plein", className }: { phrase: (su
         </>
       }
     />
+  );
+}
+
+/** Sur un serveur (Plus › Serveurs), ce qui écrirait par l'ordinateur reste à l'app de bureau. */
+export const RAISON_SERVEUR = "Depuis l’app de bureau, sur ce serveur.";
+
+/**
+ * Ce geste peut-il partir vers l'ordinateur maintenant ? Sinon, sa raison en une phrase (P-7, § 5.5) :
+ * sur un serveur, hors ligne, aucun ordinateur relié, ou ordinateur fermé. `lecture` : une relecture
+ * n'écrit rien : sur un serveur, elle reste possible, comme la lecture qui ouvre l'écran.
+ */
+export function useGestePossible({ lecture = false }: { lecture?: boolean } = {}): { possible: boolean; raison: string | undefined } {
+  const sur = useSupport();
+  const lieu = useLieuActif();
+  const { ouvert, postes } = usePostes();
+  const enLigne = !useHorsLigne();
+  if (lieu && !lecture) return { possible: false, raison: RAISON_SERVEUR };
+  if (!enLigne) return { possible: false, raison: "Possible quand ce téléphone est en ligne" };
+  if (postes?.length === 0) return { possible: false, raison: "Possible quand un ordinateur est relié" };
+  if (!ouvert) return { possible: false, raison: `Possible quand ${sur} est ouvert` };
+  return { possible: true, raison: undefined };
+}
+
+/** Un bandeau dans la page (§ 6.2) : `attente` (gris), `erreur` (filet rouge), `info` (bleu pâle). */
+export function Bandeau({ ton = "attente", icone, children, className, role }: { ton?: "info" | "attente" | "erreur"; icone: IconName; children: ReactNode; className?: string; role?: "alert" | "status" }) {
+  return (
+    <div
+      role={role ?? (ton === "erreur" ? "alert" : undefined)}
+      className={cn(
+        "flex items-start gap-2.5 rounded-md py-3 pr-3 pl-3.5 text-ui leading-[1.4]",
+        ton === "erreur" ? "border border-bordure-erreur bg-fond-surface text-texte-erreur" : ton === "info" ? "border border-bordure-accent-legere bg-fond-teinte-bleue text-texte-principal" : "bg-fond-surface-grise text-texte-principal",
+        className,
+      )}
+    >
+      <Icon name={icone} size={20} className={cn("shrink-0", ton === "info" && "text-icone-accent")} />
+      <div className="min-w-0 flex-1 pt-px">{children}</div>
+    </div>
   );
 }
 
@@ -300,7 +341,7 @@ export function ErreurPoste({ code = "erreur", message, relancer, forme = "plein
 /* ─── Vue gardée (socle § 5.4) ───────────────────────────────────── */
 
 /** L'heure d'une vue gardée, relue chaque minute (« Vue à 18:42 » devient « Vue hier… » à minuit). */
-function useMaintenant(): number {
+export function useMaintenant(): number {
   const [maintenant, setMaintenant] = useState(() => Date.now());
   useEffect(() => {
     const minuteur = setInterval(() => setMaintenant(Date.now()), 60_000);
@@ -420,6 +461,7 @@ export function VueLecture<T>({
   carteFerme,
   gestes,
   verrou,
+  sansRecours,
   children,
 }: {
   lecture: LecturePoste<T> & { relancer: () => void };
@@ -438,6 +480,8 @@ export function VueLecture<T>({
   gestes?: string | null;
   /** Vue gardée : désactiver tous les contrôles (par défaut), ou laisser l'écran le faire. */
   verrou?: boolean;
+  /** Fermé sans vue gardée : sans la carte « Écrire à un agent » (l'écran a déjà ce recours). */
+  sansRecours?: boolean;
   children: (data: T) => ReactNode;
 }) {
   if (lecture.etat === "aucun") {
@@ -456,7 +500,7 @@ export function VueLecture<T>({
         </LectureGardee>
       );
     }
-    return <PosteFerme phrase={ferme} forme={forme} carte={carteFerme} />;
+    return <PosteFerme phrase={ferme} forme={forme} carte={carteFerme} sansRecours={sansRecours} />;
   }
   if (lecture.etat === "attente") return <DemandeEnCours lent={lecture.lent} lignes={lignes} />;
   if (lecture.etat === "delai") return <PasDeReponse relancer={lecture.relancer} forme={forme} />;

@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { LigneChoix } from "./Liste";
+import { PisteInterrupteur } from "./Controles";
 import { marquerFeuille } from "./retour";
 import { mouvementReduit, useZoneVisible, vibrer } from "./zone-visible";
 
@@ -237,14 +238,16 @@ export interface ActionMenu {
   separateurAvant?: boolean;
   /** Mène à une autre page : un chevron le dit. */
   chevron?: boolean;
-  /** Ce qui se pose à droite (« Sur ton Mac »). */
-  fin?: ReactNode;
   /** Le menu se change en cette confirmation, dans la même feuille (§ 4.1). */
   confirmation?: { titre: string; texte?: string; confirmer: string };
   /** Mène à une sous-page : la feuille reste ouverte, un chevron le dit. */
   sousPage?: boolean;
   /** Ce que donnera ce choix, à droite de la ligne (« Jeu. 5 nov., 09:00 »). */
   valeur?: string;
+  /** Ce qui se pose à droite de la ligne (l'étiquette « Sur ton Mac », P-8). */
+  fin?: ReactNode;
+  /** Un réglage dans le menu : la ligne est un interrupteur, et le menu reste ouvert. */
+  interrupteur?: boolean;
 }
 
 /** Les actions rapides en tête d'un menu (grille de 4, `ActionsRapides` du bureau). */
@@ -337,7 +340,9 @@ function ContenuMenu({ rapides, noteRapides, actions, onConfirmer }: { rapides?:
             <button
               type="button"
               disabled={action.desactivee}
-              onClick={() => (action.confirmation ? onConfirmer(action) : choisir(action))}
+              role={action.interrupteur === undefined ? undefined : "switch"}
+              aria-checked={action.interrupteur}
+              onClick={() => (action.interrupteur !== undefined ? action.onChoisir() : action.confirmation ? onConfirmer(action) : choisir(action))}
               className={cn(
                 "flex min-h-[52px] w-full items-center gap-3.5 px-5 py-1.5 text-left text-body-s transition-colors duration-[120ms] ease-sortie active:bg-fond-survol",
                 action.danger ? "text-texte-erreur" : "text-texte-principal",
@@ -351,7 +356,8 @@ function ContenuMenu({ rapides, noteRapides, actions, onConfirmer }: { rapides?:
               </span>
               {action.valeur ? <span className="shrink-0 text-ui text-texte-secondaire">{action.valeur}</span> : null}
               {action.sousPage || action.chevron ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
-              {action.fin}
+              {action.fin ? <span className="shrink-0">{action.fin}</span> : null}
+              {action.interrupteur !== undefined ? <PisteInterrupteur actif={action.interrupteur} /> : null}
             </button>
           </li>
         ))}

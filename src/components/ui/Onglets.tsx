@@ -7,6 +7,8 @@ export interface Onglet<T extends string> {
   icone?: ReactNode;
   /** Un nombre discret après le libellé (« Mes agents 12 »). */
   nombre?: number;
+  /** Afficher aussi un nombre à zéro (par défaut, il est tu). */
+  zero?: boolean;
 }
 
 interface OngletsProps<T extends string> {
@@ -75,7 +77,7 @@ export function Onglets<T extends string>({
           >
             {onglet.icone}
             <span className={cn(etiquettes === "large" && onglet.icone && "sr-only @lg:not-sr-only")}>{onglet.label}</span>
-            {onglet.nombre !== undefined && onglet.nombre > 0 && <span className="text-texte-tertiaire">{onglet.nombre}</span>}
+            {onglet.nombre !== undefined && (onglet.nombre > 0 || onglet.zero) && <span className="text-texte-tertiaire">{onglet.nombre}</span>}
           </button>
         );
       })}

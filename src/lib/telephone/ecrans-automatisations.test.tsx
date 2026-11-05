@@ -167,7 +167,7 @@ describe("Routines", () => {
     expect(garde).not.toContain("est fermé");
     simule.lecture = { etat: "ferme", gardee: null };
     const sans = texte(renderToStaticMarkup(<AgentsRoutinesTelephone onglets={null} routineDemandee={null} />));
-    expect(sans).toContain("Hors ligne");
+    expect(sans).toMatch(/hors ligne/i);
     expect(sans).not.toContain("est fermé");
   });
 

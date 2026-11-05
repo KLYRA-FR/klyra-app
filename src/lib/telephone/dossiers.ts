@@ -61,6 +61,11 @@ export function libelleStatut(statut: string): string | null {
   return STATUTS.find((s) => s.valeur === statut)?.libelle ?? null;
 }
 
+/** La teinte de l'étiquette d'un statut (E6-01) : bleue en cours, orange en revue, neutre livré. */
+export function tonStatut(statut: string): "bleue" | "orange" | "neutre" {
+  return statut === "en-cours" ? "bleue" : statut === "en-revue" ? "orange" : "neutre";
+}
+
 /* ─── La garde des chemins (côté poste) ────────────────────────── */
 
 const CHEMIN_MAX = 1024;
@@ -142,11 +147,34 @@ export function niveauDossier(noeuds: FileNode[], modifies: Set<string>): Niveau
   };
 }
 
-/** « Liste coupée : … » quand un niveau dépasse le seuil, sinon null. Même phrase qu'au bureau. */
-export function texteCoupure(niveau: NiveauDossier): string | null {
+/**
+ * « Liste coupée : … » quand un niveau dépasse le seuil, sinon null. La phrase du bureau, avec « ton
+ * Mac » (E6-15). Sans total lisible, on dit qu'il en reste sans fabriquer un compte.
+ */
+export function texteCoupure(niveau: Pick<NiveauDossier, "elements"> & { total?: number }, sur = "l’ordinateur"): string | null {
+  if (typeof niveau.total !== "number" || !Number.isFinite(niveau.total)) {
+    return niveau.elements.length >= ELEMENTS_MAX ? `D’autres éléments ne sont pas affichés. Ouvre le dossier sur ${sur} pour tout voir.` : null;
+  }
   const reste = niveau.total - niveau.elements.length;
   if (reste <= 0) return null;
-  return `Liste coupée : ${reste.toLocaleString("fr-FR")} autres éléments non affichés. Ouvre le dossier sur l’ordinateur pour tout voir.`;
+  return `Liste coupée : ${reste.toLocaleString("fr-FR")} autres éléments non affichés. Ouvre le dossier sur ${sur} pour tout voir.`;
+}
+
+/** Un élément caché : il se dit aussi par un libellé, pas seulement par une teinte (E6-13). */
+export function estCache(nom: string): boolean {
+  return nom.startsWith(".");
+}
+
+const EXT_IMAGES = new Set("png jpg jpeg gif webp avif heic svg bmp tif tiff ico".split(" "));
+const EXT_CODE = new Set("json js jsx ts tsx mjs cjs css scss html htm yaml yml xml sh py rb go rs java php sql toml".split(" "));
+
+/** L'icône d'un élément d'un dossier (E6-13) : du set officiel, d'après son type seulement. */
+export function iconeElement(element: Pick<ElementDossier, "nom" | "type">): "folder" | "image-01" | "file-code" | "file-01" {
+  if (element.type === "dossier") return "folder";
+  const ext = /\.([^./\\]+)$/.exec(element.nom)?.[1].toLowerCase() ?? "";
+  if (EXT_IMAGES.has(ext)) return "image-01";
+  if (EXT_CODE.has(ext)) return "file-code";
+  return "file-01";
 }
 
 /* ─── La descente : chemins et adresses ────────────────────────── */
@@ -164,10 +192,13 @@ export function filAriane(nomProjet: string, chemin: string): { nom: string; che
   return [{ nom: nomProjet, chemin: "" }, ...segments.map((nom, i) => ({ nom, chemin: segments.slice(0, i + 1).join("/") }))];
 }
 
-/** `/projet?id=…` : T-11, onglet Chats ou Fichiers. */
-export function urlProjet(projetId: string, onglet: "chats" | "fichiers" = "chats"): string {
+/** Les trois segments d'un projet (E6-06, E6-13, E6-08). */
+export type OngletProjet = "chats" | "fichiers" | "projet";
+
+/** `/projet?id=…` : onglet Chats, Fichiers ou Projet. */
+export function urlProjet(projetId: string, onglet: OngletProjet = "chats"): string {
   const params = new URLSearchParams({ id: projetId });
-  if (onglet === "fichiers") params.set("onglet", "fichiers");
+  if (onglet !== "chats") params.set("onglet", onglet);
   return `/projet?${params}`;
 }
 
@@ -192,11 +223,16 @@ export function urlRetourFichier(projetId: string, chemin: string, retour: strin
   return urlDossier(projetId, parentDe(chemin) ?? "");
 }
 
+/** ✕ de la visionneuse : le dossier d'où l'on est parti, quelle que soit la pile des liens suivis. */
+export function urlFermerFichier(projetId: string, chemin: string, retour: string[]): string {
+  return urlDossier(projetId, parentDe(retour[0] ?? chemin) ?? "");
+}
+
 /** Ce que l'adresse demande : la visionneuse, un dossier, ou un onglet du projet. Un chemin douteux est ignoré. */
 export type VueProjet =
   | { vue: "fichier"; chemin: string; ancre: string | null; retour: string[] }
   | { vue: "dossier"; chemin: string }
-  | { vue: "onglet"; onglet: "chats" | "fichiers" };
+  | { vue: "onglet"; onglet: OngletProjet };
 
 function propre(valeur: string | null): string | null {
   if (valeur === null) return null;
@@ -215,7 +251,8 @@ export function vueProjet(params: { get: (cle: string) => string | null; getAll:
   }
   const dossier = propre(params.get("dossier"));
   if (dossier) return { vue: "dossier", chemin: dossier };
-  return { vue: "onglet", onglet: params.get("onglet") === "fichiers" ? "fichiers" : "chats" };
+  const onglet = params.get("onglet");
+  return { vue: "onglet", onglet: onglet === "fichiers" || onglet === "projet" ? onglet : "chats" };
 }
 
 /* ─── Affichage ────────────────────────────────────────────────── */
@@ -230,6 +267,31 @@ export function tailleLisible(octets: number): string {
 export function dossierAffiche(nomProjet: string, chemin: string): string {
   const parent = parentDe(chemin);
   return parent ? nomFichier(parent) : nomProjet;
+}
+
+const deux = (n: number) => String(n).padStart(2, "0");
+const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+
+function jourDe(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** La ligne d'un projet : « modifié à 13:08 », « modifié hier », « modifié lundi », « modifié le 2 nov. ». Illisible : rien. */
+export function libelleModifie(iso: string | null | undefined, maintenant: number): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const jours = Math.round((jourDe(new Date(maintenant)) - jourDe(d)) / 86_400_000);
+  if (jours <= 0) return `modifié à ${deux(d.getHours())}:${deux(d.getMinutes())}`;
+  if (jours === 1) return "modifié hier";
+  if (jours < 7) return `modifié ${JOURS[d.getDay()]}`;
+  return `modifié le ${d.getDate()} ${MOIS[d.getMonth()]}`;
+}
+
+/** « 2 chats », « 1 chat », « Aucun chat ». */
+export function compteChats(n: number): string {
+  return n === 0 ? "Aucun chat" : `${n} chat${n > 1 ? "s" : ""}`;
 }
 
 /** « Montrer dans le Finder », selon le système du poste (jamais celui du téléphone). */

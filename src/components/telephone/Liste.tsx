@@ -170,6 +170,8 @@ export function LigneListe({
   eclairee = false,
   className,
   style,
+  role,
+  coche,
 }: {
   /** Revenue d'un geste réussi : elle s'éclaire 1 800 ms. */
   eclairee?: boolean;
@@ -195,6 +197,9 @@ export function LigneListe({
   raison?: ReactNode;
   onMenu?: () => void;
   menuVisible?: boolean;
+  /** Toute la ligne est un interrupteur (`switch` et son état `coche`). */
+  role?: "switch";
+  coche?: boolean;
 }) {
   const appui = useAppuiLong(() => onMenu?.());
   const libelleMenu = `Actions pour ${typeof nom === "string" ? nom : "cet élément"}`;
@@ -233,7 +238,7 @@ export function LigneListe({
           {corps}
         </Link>
       ) : (
-        <button type="button" disabled={inactive || !onClick} onClick={onClick} {...(onMenu ? appui : {})} className={cn(classeCorps, "disabled:cursor-default")}>
+        <button type="button" role={role} aria-checked={role ? coche : undefined} disabled={inactive || !onClick} onClick={onClick} {...(onMenu ? appui : {})} className={cn(classeCorps, "disabled:cursor-default")}>
           {corps}
         </button>
       )}
