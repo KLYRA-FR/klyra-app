@@ -1,5 +1,7 @@
 # Journal du projet — app KLYRA
 
+- **05/11/2026 — Téléphone, lot 8 :** une déconnexion, une révocation ou un changement de compte efface aussi les accès VPS et les échanges directs locaux, en mémoire et sur ce téléphone. Les lecteurs du compte suivant attendent cette purge ; un appairage ou flux tardif ne la défait pas. Aucun appel de révocation au VPS, ni changement sur les autres appareils. Tests de régression avec deux comptes et des accès fictifs.
+
 > Historique des décisions et de l’avancement, pour reprendre le travail depuis n’importe quel ordi.
 > **À Claude, en début de session : lis ce fichier et `CLAUDE.md` avant toute chose, puis mets à jour ce journal à la fin de chaque session.**
 

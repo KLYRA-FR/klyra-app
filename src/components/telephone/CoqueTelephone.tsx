@@ -14,8 +14,7 @@ import { AutomatisationsTelephone } from "./EcransAutomatisations";
 import { ProjetsTelephone, ProjetTelephone } from "./EcransProjets";
 import { useRetenirPoste } from "./poste";
 import { useNumeroterNavigation } from "./retour";
-import { effacerVues } from "@/lib/telephone/vue-gardee";
-import { effacerBrouillons } from "@/lib/brouillons";
+import { actualiserSessionTelephone } from "@/lib/telephone/session-locale";
 import { BarreOnglets } from "./BarreOnglets";
 import { ChatsTelephone } from "./ChatsTelephone";
 import { ConnexionTelephone } from "./ConnexionTelephone";
@@ -152,22 +151,21 @@ function useHorsLigne(): string | null {
 /* ─── Vue gardée (socle § 5.4) ───────────────────────────────────── */
 
 /**
- * Ce que le téléphone a gardé (lectures de l'ordinateur, brouillons) ne survit pas à la déconnexion : session
+ * Ce que le téléphone a gardé (lectures, brouillons et accès VPS) ne survit pas à la déconnexion : session
  * fermée sur ce téléphone ou à distance, compte retiré, ou un autre compte connecté. Un démarrage sans
  * réseau n'efface rien (le compte n'a pas encore répondu).
  */
 function useEffacerVuesGardees() {
   const { etat, moi, sessionFermee } = useCompte();
   const membre = etat === "connecte" && moi ? (moi._id as string) : null;
-  const [etaitConnecte, setEtaitConnecte] = useState(false);
-  if (etat === "connecte" && !etaitConnecte) setEtaitConnecte(true);
-  useEffect(() => {
-    if (membre) effacerVues(undefined, membre);
-    else if (etat === "retire" || sessionFermee || (etat === "deconnecte" && etaitConnecte)) {
-      effacerVues();
-      effacerBrouillons();
-    }
-  }, [membre, etat, sessionFermee, etaitConnecte]);
+  const cle = `${etat}|${membre ?? ""}|${sessionFermee}`;
+  const [traitee, setTraitee] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    actualiserSessionTelephone({ membre, deconnecte: etat === "deconnecte", revoque: etat === "retire" || sessionFermee });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Barrière de session : monter les lecteurs seulement après la purge locale, avant le prochain affichage.
+    setTraitee(cle);
+  }, [cle, membre, etat, sessionFermee]);
+  return traitee === cle;
 }
 
 /* ─── Service worker et notifications touchées ───────────────────── */
@@ -352,7 +350,7 @@ export function CoqueTelephone() {
   const compte = useCompte();
   useRetenirPoste();
   useNumeroterNavigation();
-  useEffacerVuesGardees();
+  const sessionPrete = useEffacerVuesGardees();
   useServiceWorker();
   useSynchroPush();
   const disposition = useComposition();
@@ -372,6 +370,9 @@ export function CoqueTelephone() {
   const connecte = compte.etat === "connecte";
   const navigation = connecte && !installation.aProposer;
   const barre = navigation && !tablette && !sansBarre;
+
+  /* Ne monte pas les lecteurs du compte suivant avant d'avoir oublié la session précédente. */
+  if (!sessionPrete) return null;
 
   return (
     <FournisseurReseau horsLigne={horsLigne}>

@@ -41,6 +41,23 @@ export const CLE_LIEN_ATTENTE = "klyra:lien-attente";
 export const EVENEMENT_AJOUTER = "klyra:ajouter-serveur";
 /** Hors Electron seulement : les jetons d’appareil, par origine. */
 const CLE_JETONS = "klyra:jetons-serveurs";
+let generationAccesTelephone = 0;
+
+/** Oublie seulement les accès de ce navigateur, sans révoquer un appareil sur le VPS. */
+export function oublierAccesServeursTelephone() {
+  if (pont()) return;
+  generationAccesTelephone++;
+  try {
+    localStorage.removeItem(CLE_JETONS);
+    localStorage.removeItem(CLE_CARNET);
+    localStorage.removeItem("klyra:lieu-actif");
+    sessionStorage.removeItem(CLE_LIEN_ATTENTE);
+  } catch {
+    /* Un stockage indisponible ne doit pas empêcher les autres copies d'être oubliées. */
+  }
+  window.dispatchEvent(new Event("klyra:carnet"));
+  window.dispatchEvent(new Event("klyra:lieu-actif"));
+}
 
 const ATTENTE_MS = 8_000;
 const MAX_SERVEURS = 20;
@@ -264,6 +281,7 @@ export async function interroger(adresse: string, signal?: AbortSignal): Promise
 
 /** L'équipe d'un VPS (serveur/equipe.mjs), lue par ce téléphone avec son jeton. null : il ne répond pas, ou n'en a pas à lui. */
 export async function lireEquipeServeur(adresse: string, signal?: AbortSignal) {
+  const generation = generationAccesTelephone;
   const jeton = lireJetons()[adresse];
   if (!jeton) return null;
   const appel = async <T,>(methode: string): Promise<T | null> => {
@@ -279,13 +297,14 @@ export async function lireEquipeServeur(adresse: string, signal?: AbortSignal) {
     appel<import("./bridge").MesAgents>("mes"),
     appel<import("./bridge").AgentsMeta>("meta"),
   ]);
-  return liste && mes ? { fiches: liste.agents, mes, meta: meta ?? {} } : null;
+  return generation === generationAccesTelephone && liste && mes ? { fiches: liste.agents, mes, meta: meta ?? {} } : null;
 }
 
 /** Échange le code du lien contre un jeton d’appareil, gardé là où l’app tourne. */
 export async function appairer(adresse: string, code: string): Promise<Lecture> {
   const electron = pont();
   if (electron?.appairer) return parPont(() => electron.appairer!(adresse, code));
+  const generation = generationAccesTelephone;
   const recu = await appelDirect(`${adresse}${CHEMIN_APPAIRER}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -294,6 +313,7 @@ export async function appairer(adresse: string, code: string): Promise<Lecture> 
   if (!recu) return { ok: false, message: MESSAGE_SILENCE };
   const lu = lireAppairage(recu.status, recu.json);
   if (!lu.ok) return lu;
+  if (generation !== generationAccesTelephone) return { ok: false, message: MESSAGE_INVITATION };
   ecrireJeton(adresse, lu.jeton);
   return { ok: true, nom: lu.nom, version: lu.version };
 }
