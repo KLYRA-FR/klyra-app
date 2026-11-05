@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MAX_FICHIERS, Pieces } from "@/components/chat/Composer";
+import { PucesImages } from "@/components/chat/ImageJointe";
+import { estImage } from "@/lib/fichiers";
 import { PromptBox } from "@/components/chat/PromptBox";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
@@ -208,6 +210,7 @@ export function HomeScreen() {
             onJoindre={() => void joindre()}
             aDesPieces={fichiers.length > 0}
             pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
+            apresTexte={fichiers.some(estImage) && <PucesImages fichiers={fichiers} />}
             placeholder={
               to === AUTO
                 ? seul

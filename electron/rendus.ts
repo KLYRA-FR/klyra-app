@@ -180,6 +180,28 @@ export async function vignetteRendu(chemin: unknown, forcer = false): Promise<st
   });
 }
 
+const TYPES_IMAGE_JOINTE: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
+/** Au-delà, l'image reste réduite dans le panneau : elle passerait toute entière dans la fenêtre. */
+const IMAGE_JOINTE_MAX = 30 * 1024 * 1024;
+
+/**
+ * Une image jointe à un message, pour l'écran : réduite pour sa vignette, entière pour le panneau.
+ * Seulement ces formats, jamais un SVG. Électron ne réduit que PNG et JPEG : un GIF ou un WebP reste entier.
+ */
+export async function imageJointe(chemin: unknown, pleine: boolean): Promise<{ url: string; taille: number }> {
+  const fichier = absolu(chemin);
+  const type = TYPES_IMAGE_JOINTE[path.extname(fichier).toLowerCase()];
+  if (!type) throw new Error("Ce fichier n’est pas une image.");
+  if (!existsSync(fichier)) throw new Error("Cette image n’existe plus à cet endroit.");
+  const { size: taille } = statSync(fichier);
+  if (/\.(png|jpe?g)$/i.test(fichier) && (!pleine || taille > IMAGE_JOINTE_MAX)) {
+    const reduite = await vignetteRendu(fichier);
+    if (reduite) return { url: reduite, taille };
+  }
+  if (taille > IMAGE_JOINTE_MAX) throw new Error("Image trop lourde pour l’aperçu.");
+  return { url: `data:${type};base64,${(await readFile(fichier)).toString("base64")}`, taille };
+}
+
 /** Le HTML d'une copie de livrable, en base64, pour l'envoyer au compte. Jamais un fichier hors des rendus. */
 export async function htmlDuRendu(chemin: unknown): Promise<string> {
   const fichier = fichierDuRendu(chemin);

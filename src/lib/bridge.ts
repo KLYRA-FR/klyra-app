@@ -543,6 +543,8 @@ export interface KlyraBridge {
     ecrire?: (chemin: string, texte: string, lieu?: string | null) => Promise<Reponse<string>>;
     /** Écrit une image collée dans le dossier de l'app (`collages/`) ; renvoie son chemin. Absent avant la relance de l'app. */
     enregistrerCollage?: (octets: Uint8Array, type: string) => Promise<Reponse<string>>;
+    /** Une image jointe, en data URL, avec le poids du fichier ; réduite sauf `pleine`. Absent avant la relance de l'app. */
+    image?: (chemin: string, pleine: boolean) => Promise<Reponse<{ url: string; taille: number }>>;
     /** Écrit une pièce jointe venue du téléphone dans le dossier de l'app (`telephone/`) ; renvoie son chemin. Absent avant la relance de l'app. */
     recevoirPiece?: (octets: Uint8Array, nom: string) => Promise<Reponse<string>>;
   };

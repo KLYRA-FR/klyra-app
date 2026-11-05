@@ -29,6 +29,8 @@ interface PromptBoxProps {
   onCurseur?: (position: number) => void;
   /** Pièces jointes, au-dessus du texte. */
   pieces?: ReactNode;
+  /** Ce qui suit le texte sur sa ligne (les puces des images jointes). */
+  apresTexte?: ReactNode;
   /** Le trombone : joindre des fichiers. */
   onJoindre?: () => void;
   /** Un collage dans le champ (Ctrl/Cmd+V) : le parent y prend une image ; sinon, le texte se colle normalement. */
@@ -58,6 +60,7 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
     onToucheAvant,
     onCurseur,
     pieces,
+    apresTexte,
     onJoindre,
     onColler,
     aDesPieces = false,
@@ -126,31 +129,43 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
     >
       {dictee.phase === "preparation" && <PreparationDictee progression={dictee.preparation} onFermer={dictee.annulerPreparation} />}
       {pieces}
-      <div className="relative">
-        <Textarea
-          ref={relier}
-          variant="ghost"
-          size="sm"
-          autoGrow
-          value={value}
-          readOnly={enDictee}
-          onChange={(e) => {
-            onChange(e.target.value);
-            onCurseur?.(e.target.selectionStart);
-          }}
-          onSelect={(e) => onCurseur?.(e.currentTarget.selectionStart)}
-          onKeyDown={onKeyDown}
-          onPaste={enDictee ? undefined : onColler}
-          placeholder={dictee.phase === "ecoute" ? "Parle, le texte s’écrit ici…" : placeholder}
-          aria-label="Message"
-          className={cn(
-            // Pas de contour propre au champ : c'est la carte arrondie autour qui s'éclaire.
-            "max-h-[240px] border-0 px-1 outline-none focus:border-0 focus:shadow-none focus:[box-shadow:none] focus-visible:outline-none",
-            taille === "grand" ? "min-h-[72px] text-body-s" : "min-h-[44px] text-ui",
-            dictee.zones && "klyra-dictee-champ",
-          )}
-        />
-        {dictee.zones && <MiroirDictee zones={dictee.zones} champ={champ} />}
+      {/* Avec des puces, le champ prend la largeur de son texte, et elles le suivent. Un clic à côté revient au champ. */}
+      <div
+        className={cn(apresTexte && "flex cursor-text flex-wrap items-start gap-x-1.5")}
+        onMouseDown={(e) => {
+          if (!apresTexte || e.target !== e.currentTarget) return;
+          e.preventDefault();
+          champ.current?.focus();
+        }}
+      >
+        <div className="relative max-w-full">
+          <Textarea
+            ref={relier}
+            variant="ghost"
+            size="sm"
+            autoGrow
+            value={value}
+            readOnly={enDictee}
+            onChange={(e) => {
+              onChange(e.target.value);
+              onCurseur?.(e.target.selectionStart);
+            }}
+            onSelect={(e) => onCurseur?.(e.currentTarget.selectionStart)}
+            onKeyDown={onKeyDown}
+            onPaste={enDictee ? undefined : onColler}
+            placeholder={dictee.phase === "ecoute" ? "Parle, le texte s’écrit ici…" : placeholder}
+            aria-label="Message"
+            className={cn(
+              // Pas de contour propre au champ : c'est la carte arrondie autour qui s'éclaire.
+              "max-h-[240px] border-0 px-1 outline-none focus:border-0 focus:shadow-none focus:[box-shadow:none] focus-visible:outline-none",
+              taille === "grand" ? "min-h-[72px] text-body-s" : "min-h-[44px] text-ui",
+              apresTexte && "w-auto! max-w-full [field-sizing:content]",
+              dictee.zones && "klyra-dictee-champ",
+            )}
+          />
+          {dictee.zones && <MiroirDictee zones={dictee.zones} champ={champ} />}
+        </div>
+        {apresTexte}
       </div>
 
       <div className="flex min-w-0 items-center gap-1.5">

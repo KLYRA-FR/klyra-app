@@ -7,20 +7,23 @@ import { getBridge } from "@/lib/bridge";
 import { lieuDuRendu, renduDansEspace } from "@/lib/rendus-espace";
 import { nomDuFichier } from "@/lib/rendus";
 import { cn } from "@/lib/cn";
-import { nomFichier } from "@/lib/fichiers";
+import { nomImage } from "@/lib/collage";
+import { nomFichier, tailleLisible } from "@/lib/fichiers";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
 import { useChatMessages, useRole, useWorkspace } from "@/lib/workspace";
 import type { Chat, TacheAgent } from "@/types/domain";
 import { useActiviteNavigateur } from "@/lib/navigateur";
+import { VueImage } from "./ImageJointe";
 import { PanneauNavigateur } from "./navigateur/PanneauNavigateur";
 import { PastilleExtension } from "./PastilleExtension";
 import { ReglagesAgent } from "./reglages-agent/ReglagesAgent";
 
 /**
  * Panneau à droite d'une conversation, à onglets : les réglages de l'agent,
- * les fichiers de la conversation, ses tâches, le navigateur de ses agents. On ferme un onglet, on le
- * rouvre avec « + », on élargit le panneau à la poignée ou on l'agrandit.
+ * les fichiers de la conversation, ses tâches, le navigateur de ses agents, et un onglet
+ * par image jointe qu'on a ouverte. On ferme un onglet, on le rouvre avec « + »,
+ * on élargit le panneau à la poignée ou on l'agrandit.
  */
 
 export type Onglet = "reglages" | "fichiers" | "taches" | "navigateur";
@@ -44,6 +47,8 @@ export function surReglages(e: EtatPanneau): EtatPanneau {
 
 const LARGEUR_DEFAUT = 340;
 const LARGEUR_MIN = 296;
+/** Une image s'ouvre à cette largeur au moins, si la conversation garde sa place. */
+const LARGEUR_IMAGE = 560;
 const CLE = "klyra-panneau-lateral";
 
 export interface EtatPanneau {
@@ -115,13 +120,6 @@ function useFichiersChat(chatId: string): FichierChat[] {
   }, [messages]);
 }
 
-/** La taille d'un livrable, lisible. */
-function octets(n: number): string {
-  if (n < 1024) return `${n} o`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} Ko`;
-  return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`;
-}
-
 /**
  * Les livrables (outil `publier_artefact`) : ceux de l'agent, toutes conversations confondues, dans sa
  * conversation directe ; ceux de cette conversation ailleurs. Avec, sur ce PC, ses deux dossiers :
@@ -142,7 +140,7 @@ function Livrables({ chat }: { chat: Chat }) {
     <section aria-label="Livrables" className="flex flex-col gap-2 p-3 pb-0">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-ui-xs font-semibold text-texte-principal">{direct ? `Livrables de ${agent.name}` : "Livrables de cette conversation"}</span>
-        {livrables.length > 0 && <span className="klyra-mono text-ui-2xs text-texte-tertiaire">{livrables.length} · {octets(total)}</span>}
+        {livrables.length > 0 && <span className="klyra-mono text-ui-2xs text-texte-tertiaire">{livrables.length} · {tailleLisible(total)}</span>}
       </div>
       {livrables.length > 0 ? (
         <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
@@ -166,7 +164,7 @@ function Livrables({ chat }: { chat: Chat }) {
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate text-ui-s font-medium text-texte-principal">{r.titre}</span>
                   <span className="truncate text-ui-2xs text-texte-tertiaire">
-                    {octets(r.taille ?? 0)} · {formatListDate(r.misAJour)}
+                    {tailleLisible(r.taille ?? 0)} · {formatListDate(r.misAJour)}
                   </span>
                 </span>
               </button>
@@ -357,6 +355,10 @@ export function PanneauLateral({
   onFermer,
   etat,
   setEtat,
+  images,
+  imageActive,
+  onChoisirImage,
+  onFermerImage,
 }: {
   chat: Chat;
   maximise: boolean;
@@ -364,6 +366,12 @@ export function PanneauLateral({
   onFermer: () => void;
   etat: EtatPanneau;
   setEtat: (fn: (e: EtatPanneau) => EtatPanneau) => void;
+  /** Les images ouvertes, chacune son onglet. */
+  images: string[];
+  imageActive: string | null;
+  /** Montre une image, ou (null) revient aux onglets du panneau. */
+  onChoisirImage: (chemin: string | null) => void;
+  onFermerImage: (chemin: string) => void;
 }) {
   const [menuAjout, setMenuAjout] = useState(false);
   const panneau = useRef<HTMLElement>(null);
@@ -375,19 +383,30 @@ export function PanneauLateral({
       const ouverts = e.ouverts.filter((x) => x !== o);
       return { ...e, ouverts, actif: e.actif === o ? (ouverts[0] ?? "reglages") : e.actif };
     });
-  const ouvrirOnglet = (o: Onglet) =>
+  const ouvrirOnglet = (o: Onglet) => {
+    onChoisirImage(null);
     setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === o || e.ouverts.includes(x)), actif: o }));
+  };
 
   /* Un agent passe la main à la personne sur une page : le Navigateur s'ouvre de lui-même. */
   const activite = useActiviteNavigateur(chat.id);
   useEffect(() => {
-    if (activite === "attente") setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "navigateur" || e.ouverts.includes(x)), actif: "navigateur" }));
-  }, [activite, setEtat]);
+    if (activite !== "attente") return;
+    onChoisirImage(null);
+    setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "navigateur" || e.ouverts.includes(x)), actif: "navigateur" }));
+  }, [activite, setEtat, onChoisirImage]);
 
   /* Plus aucun onglet : le panneau se ferme. */
   useEffect(() => {
-    if (!etat.ouverts.length) onFermer();
-  }, [etat.ouverts.length, onFermer]);
+    if (!etat.ouverts.length && !images.length) onFermer();
+  }, [etat.ouverts.length, images.length, onFermer]);
+
+  /* Une image a besoin de place : le panneau s'élargit, sans écraser la conversation. */
+  useEffect(() => {
+    if (!imageActive) return;
+    const max = (panneau.current?.parentElement?.clientWidth ?? 1200) - 424;
+    setEtat((s) => (s.largeur >= LARGEUR_IMAGE ? s : { ...s, largeur: Math.max(s.largeur, Math.min(LARGEUR_IMAGE, max)) }));
+  }, [imageActive, setEtat]);
 
   /* Poignée : on tire le bord gauche. Double-clic : largeur par défaut. */
   const tirer = (depart: React.PointerEvent) => {
@@ -438,7 +457,7 @@ export function PanneauLateral({
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-bordure-subtile px-2">
         <div role="tablist" aria-label="Onglets du panneau" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {etat.ouverts.map((o) => {
-            const choisi = o === actif;
+            const choisi = !imageActive && o === actif;
             return (
               <div
                 key={o}
@@ -462,7 +481,10 @@ export function PanneauLateral({
                   type="button"
                   role="tab"
                   aria-selected={choisi}
-                  onClick={() => setEtat((e) => ({ ...e, actif: o }))}
+                  onClick={() => {
+                    onChoisirImage(null);
+                    setEtat((e) => ({ ...e, actif: o }));
+                  }}
                   className="cursor-pointer border-0 bg-transparent p-0 text-inherit"
                 >
                   {ONGLETS[o].nom}
@@ -473,6 +495,39 @@ export function PanneauLateral({
                     className={cn("size-1.5 rounded-full bg-bleu-k1-500", activite === "pilote" && "klyra-respire")}
                   />
                 )}
+              </div>
+            );
+          })}
+          {images.map((chemin) => {
+            const nom = nomImage(chemin);
+            return (
+              <div
+                key={chemin}
+                title={nomFichier(chemin)}
+                className={cn(
+                  "group/onglet flex h-7 min-w-0 items-center gap-1.5 rounded-sm pr-2 pl-1.5 text-ui-xs font-medium transition-colors duration-[120ms]",
+                  chemin === imageActive ? "bg-fond-surface-grise text-texte-principal" : "text-texte-secondaire hover:bg-fond-survol",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => onFermerImage(chemin)}
+                  aria-label={`Fermer l’onglet ${nom}`}
+                  data-son="fermer"
+                  className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-2xs border-0 bg-transparent p-0 text-icone-secondaire"
+                >
+                  <Icon name="image-01" size={14} className="group-hover/onglet:hidden" />
+                  <Icon name="x-01" size={12} className="hidden group-hover/onglet:block" />
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={chemin === imageActive}
+                  onClick={() => onChoisirImage(chemin)}
+                  className="min-w-0 cursor-pointer truncate border-0 bg-transparent p-0 text-inherit"
+                >
+                  {nom}
+                </button>
               </div>
             );
           })}
@@ -525,11 +580,17 @@ export function PanneauLateral({
         />
       </div>
 
-      <div role="tabpanel" className={cn("min-h-0 flex-1", actif === "navigateur" ? "flex flex-col" : "overflow-y-auto")}>
-        {actif === "reglages" && <ReglagesAgent key={chat.id} chat={chat} />}
-        {actif === "fichiers" && <Fichiers chat={chat} />}
-        {actif === "taches" && <Taches chat={chat} />}
-        {actif === "navigateur" && <PanneauNavigateur key={chat.id} chat={chat} />}
+      <div role="tabpanel" className={cn("min-h-0 flex-1", imageActive || actif === "navigateur" ? "flex flex-col" : "overflow-y-auto")}>
+        {imageActive ? (
+          <VueImage key={imageActive} chemin={imageActive} />
+        ) : (
+          <>
+            {actif === "reglages" && <ReglagesAgent key={chat.id} chat={chat} />}
+            {actif === "fichiers" && <Fichiers chat={chat} />}
+            {actif === "taches" && <Taches chat={chat} />}
+            {actif === "navigateur" && <PanneauNavigateur key={chat.id} chat={chat} />}
+          </>
+        )}
       </div>
     </aside>
   );

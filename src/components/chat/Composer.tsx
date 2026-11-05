@@ -11,7 +11,7 @@ import { getBridge } from "@/lib/bridge";
 import { garderBrouillon, lireBrouillons, prendreDemandeEcriture, surBrouillon } from "@/lib/brouillons";
 import { cn } from "@/lib/cn";
 import { analyserCollage, estCaptureCollee } from "@/lib/collage";
-import { nomFichier } from "@/lib/fichiers";
+import { estImage, nomFichier } from "@/lib/fichiers";
 import { useCompteClaude } from "@/lib/compte-claude";
 import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { findMention } from "@/lib/mentions";
@@ -19,6 +19,7 @@ import { surRepondre } from "@/lib/repondre";
 import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skills";
 import { useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Citation, Project, Role, RoleId } from "@/types/domain";
+import { PucesImages, VignettePiece } from "./ImageJointe";
 import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
 import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
@@ -26,14 +27,24 @@ import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
 /** Pas plus de 10 fichiers par message. */
 export const MAX_FICHIERS = 10;
 
-/** Les pièces jointes avant l'envoi : une carte par fichier, avec la croix pour l'enlever. */
+/** Les pièces jointes avant l'envoi : une vignette par image, une carte par autre fichier, avec la croix pour l'enlever. */
 export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer: (chemin: string) => void }) {
   if (!fichiers.length) return null;
   return (
     <div className="flex flex-wrap gap-2">
       {fichiers.map((chemin) => {
         const nom = nomFichier(chemin);
-        return (
+        const croix = (
+          <button
+            type="button"
+            onClick={() => onRetirer(chemin)}
+            aria-label={`Retirer ${nom}`}
+            className="klyra-surface-sombre absolute -top-1.5 -right-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full border-2 border-fond-surface p-0 text-texte-inverse opacity-0 transition-opacity duration-[120ms] group-hover/piece:opacity-100 focus-visible:opacity-100"
+          >
+            <Icon name="x-01" size={10} />
+          </button>
+        );
+        const carte = (
           <div
             key={chemin}
             title={estCaptureCollee(chemin) ? `${nom} · capture collée` : chemin}
@@ -41,16 +52,10 @@ export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer:
           >
             <PastilleExtension chemin={chemin} />
             <span className="min-w-0 truncate text-ui-xs font-medium text-texte-principal">{nom}</span>
-            <button
-              type="button"
-              onClick={() => onRetirer(chemin)}
-              aria-label={`Retirer ${nom}`}
-              className="klyra-surface-sombre absolute -top-1.5 -right-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full border-2 border-fond-surface p-0 text-texte-inverse opacity-0 transition-opacity duration-[120ms] group-hover/piece:opacity-100 focus-visible:opacity-100"
-            >
-              <Icon name="x-01" size={10} />
-            </button>
+            {croix}
           </div>
         );
+        return estImage(chemin) ? <VignettePiece key={chemin} chemin={chemin} croix={croix} repli={carte} /> : carte;
       })}
     </div>
   );
@@ -475,6 +480,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           onColler={coller}
           aDesPieces={fichiers.length > 0}
           pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
+          apresTexte={fichiers.some(estImage) && <PucesImages fichiers={fichiers} />}
           placeholder={
             direct ? `Écris à ${agent.name}…` : seul ? `Écris à ${assistant.name}…` : "Écris à l’équipe, ou @mentionne un agent…"
           }

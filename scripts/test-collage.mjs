@@ -74,6 +74,7 @@ const dimensions = (octets) => ({ largeur: octets.readUInt32BE(16), hauteur: oct
 const IMAGE_1 = png(64, 40, (x, y) => [x * 4, y * 6, 120]);
 const IMAGE_2 = png(48, 48, (x, y) => [200, x * 5, y * 5]);
 const IMAGE_3 = png(32, 20, (x) => [x * 8, 30, 220]);
+const IMAGE_GRANDE = png(1200, 800, (x, y) => [x % 256, y % 256, 180]);
 /* Du vrai bruit : Chromium le réencode en PNG, qui ne se compresse pas, au-delà de 20 Mo. */
 const BRUIT = randomBytes(3000 * 2600 * 3);
 const LOURDE = png(3000, 2600, (x, y) => BRUIT.subarray((y * 3000 + x) * 3, (y * 3000 + x) * 3 + 3), 1);
@@ -82,6 +83,7 @@ const LOURDE = png(3000, 2600, (x, y) => BRUIT.subarray((y * 3000 + x) * 3, (y *
 
 const ID = "equipe-collage";
 mkdirSync(DONNEES, { recursive: true });
+mkdirSync(path.join(TMP, "projet"), { recursive: true });
 writeFileSync(
   path.join(DONNEES, "conversations.json"),
   JSON.stringify({
@@ -132,6 +134,7 @@ async function lancer() {
     });
   await send("Runtime.enable");
   await send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   const ev = async (x) => {
     const m = await send("Runtime.evaluate", { expression: x, returnByValue: true, awaitPromise: true });
     if (m.result?.exceptionDetails) throw new Error(m.result.exceptionDetails.exception?.description ?? "erreur dans la page");
@@ -146,6 +149,14 @@ async function lancer() {
   return {
     erreurs,
     ev,
+    /** KLYRA_CAPTURES=<dossier> : une capture de l'écran (preuve visuelle). */
+    async capture(nom) {
+      if (!process.env.KLYRA_CAPTURES) return;
+      await attendre(400);
+      const m = await send("Page.captureScreenshot", { format: "png" });
+      mkdirSync(process.env.KLYRA_CAPTURES, { recursive: true });
+      writeFileSync(path.join(process.env.KLYRA_CAPTURES, `${nom}.png`), Buffer.from(m.result.data, "base64"));
+    },
     async aller(chemin) {
       await ev(`window.next?.router ? window.next.router.push(${JSON.stringify(chemin)}) : (location.href = ${JSON.stringify(chemin)})`);
       await attendre(1500);
@@ -209,6 +220,15 @@ try {
     fichier1 === e.pieces[0] && JSON.stringify(dimensions(octets1)) === JSON.stringify({ largeur: 64, hauteur: 40 }),
     "le fichier est dans le dossier de l’app (collages/), même nom, PNG de 64 × 40",
   );
+
+  /* La capture se montre : sa vignette et sa puce, avec le nom « image.png » et son poids. */
+  await app.quand("document.querySelector('button[aria-label=\"Ouvrir image.png\"] img')?.naturalWidth > 0");
+  const vue = await app.ev(`(() => {
+    const champ = document.querySelector('textarea[aria-label="Message"]');
+    const puce = [...champ.closest('form').querySelectorAll('button')].find((b) => b.innerText.includes('image.png'));
+    return { vignette: document.querySelector('button[aria-label="Ouvrir image.png"] img')?.naturalWidth, puce: puce?.innerText.replace(/\\s+/g, ' '), nomLong: champ.closest('form').innerText.includes('capture-') };
+  })()`);
+  verifier(vue.vignette === 64 && /^image\.png \d+ (o|Ko)$/.test(vue.puce ?? "") && !vue.nomLong, `capture collée : vignette et puce « ${vue.puce} », sans le nom de fichier long`);
 
   /* 2. Texte seul, Ctrl+V : collage normal. */
   await app.copierTexte("Le bouton Envoyer reste gris.");
@@ -287,13 +307,22 @@ try {
   await app.fermer();
   app = await lancer();
   await app.aller(`/chat?id=${ID}`);
-  await app.quand(`document.querySelector('main')?.innerText.includes(${JSON.stringify(joints[0])})`);
+  await app.quand(`[...document.querySelectorAll('main button[title]')].some((b) => b.title.startsWith(${JSON.stringify(joints[0])}) && b.querySelector('img')?.naturalWidth > 0)`);
   const fil = await app.ev("document.querySelector('main')?.innerText ?? ''");
-  const relus = joints.filter((n) => fil.includes(n));
+  const relus = await app.ev(`[...document.querySelectorAll('main button[title]')].filter((b) => ${JSON.stringify(joints)}.some((n) => b.title.startsWith(n)) && b.querySelector('img')).length`);
   verifier(
-    relus.length === joints.length && !fil.includes(COLLAGES),
-    `relecture après redémarrage : les noms des pièces jointes, jamais le chemin complet (${relus.length}/${joints.length}${fil.includes(COLLAGES) ? ", chemin complet visible" : ""})`,
+    relus === joints.length && !fil.includes(COLLAGES),
+    `relecture après redémarrage : la vignette de chaque image, jamais le chemin complet (${relus}/${joints.length}${fil.includes(COLLAGES) ? ", chemin complet visible" : ""})`,
   );
+
+  /* Une image du fil s'ouvre à droite, sans perdre le panneau de l'aperçu. */
+  await app.ev(`[...document.querySelectorAll('main button[title]')].find((b) => b.title.startsWith(${JSON.stringify(joints[0])})).click()`);
+  await app.quand("document.querySelector('aside[aria-label=\"Image jointe\"] img')?.naturalWidth > 0");
+  verifier(await app.ev("!!document.querySelector('aside[aria-label=\"Image jointe\"] img')"), "conversation de projet : clic sur une image du fil, elle s’ouvre à droite");
+  await app.capture("projet-image-ouverte");
+  await app.ev("document.querySelector('aside[aria-label=\"Image jointe\"] button[aria-label=\"Fermer l’image\"]').click()");
+  await app.quand("!document.querySelector('aside[aria-label=\"Image jointe\"]')");
+  verifier(await app.ev("!document.querySelector('aside[aria-label=\"Image jointe\"]')"), "conversation de projet : l’image se referme");
 
   /* 11. Conversation directe : la même chose. */
   await app.aller("/chat?id=dm-principal");
@@ -307,6 +336,76 @@ try {
   await app.aller("/chat?id=dm-principal");
   await app.quand("document.querySelectorAll('button[aria-label^=\"Retirer \"]').length === 1");
   verifier((await app.etat()).pieces.length === 1, "la capture reste dans le brouillon après un changement de conversation");
+
+  /* 12. La puce suit le texte, sur sa ligne, comme dans OpenBot. */
+  await app.focus();
+  await app.copierImage(IMAGE_GRANDE);
+  await app.ctrlV();
+  verifier(await app.quand("document.querySelectorAll('button[aria-label^=\"Retirer \"]').length === 2"), "une seconde capture, plus grande, rejoint le brouillon");
+  const ecrire = (texte) =>
+    app.ev(`(() => {
+      const champ = document.querySelector('textarea[aria-label="Message"]');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(champ, ${JSON.stringify(texte)});
+      champ.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+  await ecrire("voici une image d’un test");
+  await attendre(400);
+  const position = () =>
+    app.ev(`(() => {
+      const champ = document.querySelector('textarea[aria-label="Message"]');
+      const c = champ.getBoundingClientRect();
+      const puce = [...champ.closest('form').querySelectorAll('button')].find((b) => b.innerText.includes('image.png')).getBoundingClientRect();
+      return { memeLigne: Math.abs(puce.top - c.top) < 4, apres: puce.left >= c.right - 1, hauteur: c.height, largeur: c.width, carte: champ.closest('form').clientWidth };
+    })()`);
+  let place = await position();
+  verifier(place.memeLigne && place.apres, `une ligne de texte : la puce est juste derrière (${JSON.stringify(place)})`);
+  await app.capture("composeur-capture-collee");
+  await ecrire("Un message bien plus long, ".repeat(20));
+  await attendre(400);
+  place = await position();
+  verifier(place.largeur <= place.carte && place.hauteur > 44 && !place.memeLigne, `texte sur plusieurs lignes : le champ reste dans la carte, la puce passe dessous (${JSON.stringify(place)})`);
+  await ecrire("voici une image d’un test");
+  await attendre(400);
+  await app.ev("document.querySelector('textarea[aria-label=\"Message\"]').blur()");
+  await app.ev(`(() => { const rangee = document.querySelector('textarea[aria-label="Message"]').parentElement.parentElement; rangee.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); })()`);
+  verifier(await app.ev("document.activeElement === document.querySelector('textarea[aria-label=\"Message\"]')"), "un clic à côté du texte revient au champ");
+
+  /* 13. Un clic ouvre l'image dans un onglet du panneau, en taille réelle. */
+  await app.ev("[...document.querySelectorAll('button[aria-label=\"Ouvrir image.png\"]')].at(-1).click()");
+  await app.quand("document.querySelector('[role=\"tabpanel\"] img')?.naturalWidth > 0");
+  const ouverte = await app.ev(`(() => {
+    const aside = document.querySelector('aside[aria-label="Panneau de la conversation"]');
+    const onglet = [...aside.querySelectorAll('[role="tab"]')].find((o) => o.innerText === 'image.png');
+    return { largeur: aside.querySelector('[role="tabpanel"] img')?.naturalWidth, choisi: onglet?.getAttribute('aria-selected'), panneau: aside.offsetWidth };
+  })()`);
+  verifier(ouverte.largeur === 1200 && ouverte.choisi === "true" && ouverte.panneau >= 560, `clic sur la vignette : onglet « image.png » dans le panneau, image entière (${JSON.stringify(ouverte)})`);
+  await app.capture("panneau-image-ouverte");
+
+  /* Les autres onglets restent là ; rouvrir la même image n'ajoute pas d'onglet ; on la ferme. */
+  await app.ev("[...document.querySelectorAll('aside[aria-label=\"Panneau de la conversation\"] [role=\"tab\"]')].find((o) => o.innerText === 'Fichiers').click()");
+  await attendre(300);
+  verifier(!(await app.ev("!!document.querySelector('[role=\"tabpanel\"] > div img')")), "un autre onglet remplace l’image");
+  await app.ev("[...document.querySelectorAll('button[aria-label=\"Ouvrir image.png\"]')].at(-1).click()");
+  await attendre(300);
+  const onglets = () => app.ev("[...document.querySelectorAll('aside[aria-label=\"Panneau de la conversation\"] [role=\"tab\"]')].filter((o) => o.innerText === 'image.png').length");
+  verifier((await onglets()) === 1, "rouvrir la même image : pas de second onglet");
+  await app.ev("document.querySelector('aside[aria-label=\"Panneau de la conversation\"] button[aria-label=\"Fermer l’onglet image.png\"]').click()");
+  await attendre(300);
+  verifier((await onglets()) === 0 && (await app.ev("!!document.querySelector('aside[aria-label=\"Panneau de la conversation\"]')")), "fermer l’onglet : le panneau reste, sur ses onglets");
+
+
+  /* 14. L'image n'est plus sur le disque : le brouillon retombe sur la carte du fichier, sans vignette. */
+  const pieces = (await app.etat()).pieces;
+  await attendre(1000);
+  await app.fermer();
+  rmSync(path.join(COLLAGES, pieces[0]));
+  app = await lancer();
+  await app.aller("/chat?id=dm-principal");
+  await app.quand(`document.querySelector(${JSON.stringify(`button[aria-label="Retirer ${pieces[0]}"]`)})?.parentElement.innerText.includes(${JSON.stringify(pieces[0])})`);
+  verifier(
+    await app.ev(`document.querySelector(${JSON.stringify(`button[aria-label="Retirer ${pieces[0]}"]`)})?.parentElement.innerText.includes(${JSON.stringify(pieces[0])})`),
+    "image effacée du disque : la carte du fichier revient à la place de la vignette",
+  );
 
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` (${app.erreurs.join(" | ")})` : ""}`);
 } catch (err) {
