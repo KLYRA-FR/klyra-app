@@ -269,6 +269,8 @@ export default defineSchema({
     activite: v.optional(v.union(v.string(), v.null())),
     /** Modèle et effort choisis pour la conversation, JSON court. Absent ou null : ceux de la fiche. */
     modele: v.optional(v.union(v.string(), v.null())),
+    /** La mesure de l'agent le plus lourd de la conversation, JSON court, sans contenu. Absent ou null : pas de mesure. */
+    contexte: v.optional(v.union(v.string(), v.null())),
   })
     .index("by_membre_and_origine", ["membreId", "origine"])
     .index("by_membre_and_misAJour", ["membreId", "misAJour"]),
@@ -284,6 +286,10 @@ export default defineSchema({
     /** Parties réduites (texte, nombre d'étapes, tâches), JSON. */
     parties: v.string(),
     statut: v.union(v.literal("en-cours"), v.literal("fait"), v.literal("erreur"), v.null()),
+    /** Tes réactions (émojis de `REACTIONS`) : une marque, jamais un message à l'agent. Absent : version d'avant. */
+    reactions: v.optional(v.array(v.string())),
+    /** La réponse d'un `/compact` : la conversation est résumée. Absent : version d'avant. */
+    compaction: v.optional(v.boolean()),
   })
     .index("by_membre_and_conversation_and_creeLe", ["membreId", "conversationOrigine", "creeLe"])
     .index("by_membre_and_origine", ["membreId", "origine"])

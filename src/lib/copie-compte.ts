@@ -1,5 +1,6 @@
 import type { Chat, Etape, Message, MessagePart, Project, Role } from "@/types/domain";
 import { vueAtelier, type ContexteAtelier, type PartieAtelierCompte } from "./atelier-compte";
+import { echanges, mesureActuelle, type MesureContexte } from "./contexte";
 
 export type { CarteAtelierCompte, ContexteAtelier, LigneAtelierCompte, ResultatCompte } from "./atelier-compte";
 
@@ -366,7 +367,23 @@ export function conversationCompte(chat: Chat, duFil: Message[], projets: Projec
     archiveLe: chat.fil?.statut === "archive" ? chat.updatedAt : null,
     activite: activite ? JSON.stringify(activite) : null,
     modele: chat.modele || chat.effort ? JSON.stringify({ modele: chat.modele ?? null, effort: chat.effort ?? null }) : null,
+    contexte: contexteCompte(chat),
   };
+}
+
+/**
+ * La mesure de l'agent qui pèse le plus (`chat.contexte`) pour le conseil du téléphone : des nombres et une
+ * date, aucun contenu. Seulement une mesure de la session actuelle, comme le conseil du bureau.
+ */
+export function contexteCompte(chat: Chat): string | null {
+  let plusLourd: { roleId: string; mesure: MesureContexte } | null = null;
+  for (const roleId of chat.roleIds) {
+    const mesure = mesureActuelle(chat, roleId);
+    if (mesure && (!plusLourd || echanges(mesure) > echanges(plusLourd.mesure))) plusLourd = { roleId, mesure };
+  }
+  if (!plusLourd) return null;
+  const { roleId, mesure } = plusLourd;
+  return JSON.stringify({ roleId, jetons: mesure.jetons, echanges: echanges(mesure), le: mesure.le, masqueJusqua: chat.contexteMasqueJusqua ?? 0 });
 }
 
 export function messageCompte(message: Message, dossier: string | null = null, atelier: ContexteAtelier | null = null) {
@@ -386,6 +403,8 @@ export function messageCompte(message: Message, dossier: string | null = null, a
     texte,
     parties: partiesReduites(message.parts, dossier, atelier),
     statut: message.statut ?? null,
+    reactions: message.reactions ?? [],
+    compaction: message.compaction === true,
   };
 }
 
