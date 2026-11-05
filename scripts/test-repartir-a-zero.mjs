@@ -95,6 +95,7 @@ try {
 
   const disque = chat();
   verifier(disque?.departs?.length === 1 && Object.keys(disque.sessions).length === 0, "le départ est enregistré, sans session");
+  verifier(disque?.updatedAt === disque?.departs?.[0], "le départ date la conversation : il l’emporte sur un autre appareil");
 
   const debut = fournisseur.requetes.length;
   app = await lancerApp({ port: 9383, env });

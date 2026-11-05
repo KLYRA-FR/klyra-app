@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Chat, Message, Project, Rendu } from "@/types/domain";
-import { changements, elementsDuServeur, fusionner, memoDe, paquets, type EtatEspace } from "./espace-sync";
+import { repartirAZero } from "./contexte";
+import { changements, elementsDuServeur, fusionner, memoDe, paquets, type ElementEspace, type EtatEspace } from "./espace-sync";
 
 const VPS = "https://vps";
 const chat = (id: string, lieu: string | null, updatedAt = "2026-11-05T10:00:00Z"): Chat => ({ id, kind: "direct", projectId: null, title: id, roleIds: ["principal"], updatedAt, sessions: {}, luJusqua: null, ...(lieu ? { lieu } : {}) }) as Chat;
@@ -101,5 +102,119 @@ describe("ce qui revient du serveur", () => {
     const etat = vide({ chats: [chat("a", VPS)], messages: [message("m", "a")] });
     const { elements } = elementsDuServeur(etat, VPS);
     expect(changements(elements, memoDe(elements)).aEcrire).toEqual([]);
+  });
+});
+
+/** Deux appareils et un serveur, avec le même enchaînement que useEspaceServeurs : lire, ranger, envoyer. */
+function banc(serveurDepart: EtatEspace) {
+  const serveur = new Map<string, ElementEspace>(elementsDuServeur(serveurDepart, VPS).elements.map((e) => [`${e.type}/${e.id}`, e]));
+  let ecritures = 0;
+  const appareil = (depart: EtatEspace) => {
+    const a = { etat: depart, memo: undefined as Map<string, string> | undefined };
+    const envoyer = () => {
+      const { aEcrire, suivant } = changements(elementsDuServeur(a.etat, VPS).elements, a.memo!);
+      for (const e of aEcrire) {
+        serveur.set(`${e.type}/${e.id}`, e);
+        ecritures++;
+      }
+      a.memo = suivant;
+    };
+    const lire = () => {
+      const elements = [...serveur.values()].map((e) => JSON.parse(JSON.stringify(e)) as ElementEspace);
+      a.etat = fusionner(a.etat, { revision: 1, elements }, VPS, () => false, a.memo);
+      a.memo = memoDe(elements);
+      envoyer();
+    };
+    return { get etat() { return a.etat; }, changer: (f: (e: EtatEspace) => EtatEspace) => { a.etat = f(a.etat); }, envoyer, lire, oublier: () => { a.memo = undefined; } };
+  };
+  return { appareil, ecritures: () => ecritures, chatDuServeur: (id: string) => (serveur.get(`conversation/${id}`)!.valeur as { chat: Chat }).chat, messagesDuServeur: (id: string) => (serveur.get(`conversation/${id}`)!.valeur as { messages: Message[] }).messages };
+}
+
+describe("deux appareils sur le même serveur", () => {
+  const depart = () => vide({ chats: [{ ...chat("a", VPS), sessions: { principal: "ancienne" } }], messages: [message("m", "a")] });
+  const tours = (...appareils: { lire: () => void }[]) => {
+    for (let i = 0; i < 3; i++) for (const a of appareils) a.lire();
+  };
+
+  it("une remise à zéro arrive sur l'autre appareil et y reste", () => {
+    const b = banc(depart());
+    const [un, deux] = [b.appareil(depart()), b.appareil(depart())];
+    tours(un, deux);
+    un.changer((e) => ({ ...e, chats: e.chats.map((c) => repartirAZero(c, "2026-11-05T11:00:00Z")) }));
+    un.envoyer();
+    tours(deux, un);
+    for (const a of [un, deux]) {
+      expect(a.etat.chats[0].sessions).toEqual({});
+      expect(a.etat.chats[0].departs).toEqual(["2026-11-05T11:00:00Z"]);
+    }
+    expect(b.chatDuServeur("a").sessions).toEqual({});
+  });
+
+  it("elle l'emporte aussi sur un appareil qui vient de s'ouvrir avec son ancienne copie", () => {
+    const b = banc(depart());
+    const [un, deux] = [b.appareil(depart()), b.appareil(depart())];
+    tours(un);
+    un.changer((e) => ({ ...e, chats: e.chats.map((c) => repartirAZero(c, "2026-11-05T11:00:00Z")) }));
+    un.envoyer();
+    tours(deux);
+    expect(deux.etat.chats[0].sessions).toEqual({});
+  });
+
+  it("à date égale, deux copies différentes ne se réécrivent pas sans fin", () => {
+    const b = banc(depart());
+    const [un, deux] = [b.appareil(depart()), b.appareil(depart())];
+    tours(un, deux);
+    un.changer((e) => ({ ...e, chats: e.chats.map((c) => ({ ...c, luJusqua: "2026-11-05T10:30:00Z" })) }));
+    un.envoyer();
+    deux.lire();
+    un.lire();
+    const apres = b.ecritures();
+    tours(un, deux);
+    expect(b.ecritures()).toBe(apres);
+    expect(deux.etat.chats[0].luJusqua).toBe("2026-11-05T10:30:00Z");
+    expect(un.etat.chats[0].luJusqua).toBe("2026-11-05T10:30:00Z");
+  });
+
+  it("une copie changée ici et pas encore envoyée n'est jamais écrasée à date égale", () => {
+    const b = banc(depart());
+    const [un, deux] = [b.appareil(depart()), b.appareil(depart())];
+    tours(un, deux);
+    un.changer((e) => ({ ...e, chats: e.chats.map((c) => ({ ...c, title: "Écrit ici" })) }));
+    deux.changer((e) => ({ ...e, chats: e.chats.map((c) => ({ ...c, luJusqua: "2026-11-05T10:30:00Z" })) }));
+    deux.envoyer();
+    un.lire();
+    expect(b.chatDuServeur("a").title).toBe("Écrit ici");
+    tours(deux, un);
+    expect(deux.etat.chats[0].title).toBe("Écrit ici");
+    expect(un.etat.chats[0].title).toBe("Écrit ici");
+  });
+
+  it("à la réouverture, ce qui n'a pas eu le temps de partir part : rien n'est perdu", () => {
+    const b = banc(depart());
+    const un = b.appareil(depart());
+    tours(un);
+    un.changer((e) => ({ ...e, messages: e.messages.map((m) => ({ ...m, statut: "fait" as const })) }));
+    un.oublier();
+    un.lire();
+    expect(un.etat.messages[0].statut).toBe("fait");
+    expect(b.messagesDuServeur("a")[0].statut).toBe("fait");
+  });
+
+  it("vaut aussi pour un projet ; sur une exécution, le serveur fait foi et l'app n'écrit plus", () => {
+    const projet = { id: "p", lieu: VPS, updatedAt: "2026-11-05T10:00:00Z", name: "P" } as unknown as Project;
+    const workflow = { id: "w", lieu: VPS, majLe: "2026-11-05T10:00:00Z" } as unknown as EtatEspace["workflows"][number];
+    const execution = { id: "x", workflowId: "w", statut: "en-cours" } as unknown as EtatEspace["executions"][number];
+    const etat = () => vide({ projects: [projet], workflows: [workflow], executions: [execution] });
+    const b = banc(etat());
+    const [un, deux] = [b.appareil(etat()), b.appareil(etat())];
+    tours(un, deux);
+    un.changer((e) => ({ ...e, projects: e.projects.map((p) => ({ ...p, name: "Renommé" })) }));
+    un.envoyer();
+    deux.changer((e) => ({ ...e, executions: e.executions.map((x) => ({ ...x, statut: "fait" }) as typeof x) }));
+    const apres = b.ecritures();
+    tours(deux, un);
+    expect(deux.etat.projects[0].name).toBe("Renommé");
+    expect((deux.etat.executions[0] as unknown as { statut: string }).statut).toBe("en-cours");
+    expect(b.ecritures()).toBe(apres);
   });
 });

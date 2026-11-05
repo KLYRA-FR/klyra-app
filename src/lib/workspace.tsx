@@ -196,7 +196,7 @@ type WorkspaceAction =
   | { type: "rendu/retirer"; id: string }
   | { type: "chat/add"; chat: Chat }
   | { type: "chat/update"; id: string; patch: (chat: Chat) => Chat }
-  | { type: "chat/vider"; id: string }
+  | { type: "chat/vider"; id: string; le: string }
   | { type: "chat/repartir"; id: string; le: string }
   | { type: "message/add"; message: Message }
   | { type: "message/update"; id: string; patch: (message: Message) => Message }
@@ -387,7 +387,7 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       return {
         ...state,
         messages: state.messages.filter((m) => m.chatId !== action.id),
-        chats: state.chats.map((c) => (c.id === action.id ? viderConversation(c) : c)),
+        chats: state.chats.map((c) => (c.id === action.id ? viderConversation(c, action.le) : c)),
       };
     case "chat/repartir":
       return { ...state, chats: state.chats.map((c) => (c.id === action.id ? repartirAZero(c, action.le) : c)) };
@@ -2127,7 +2127,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   const nouvelleConversation = useCallback((chatId: string) => {
     if (stateRef.current.travail[chatId]) return;
-    dispatch({ type: "chat/vider", id: chatId });
+    dispatch({ type: "chat/vider", id: chatId, le: new Date().toISOString() });
   }, []);
 
   const repartir = useCallback((chatId: string) => {

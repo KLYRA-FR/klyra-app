@@ -99,11 +99,11 @@ function sansMemoire(chat: Chat): Chat {
   return suivant;
 }
 
-/** « Repartir à zéro » : les messages restent, l'agent les oublie. */
-export const repartirAZero = (chat: Chat, le: string): Chat => ({ ...sansMemoire(chat), departs: [...(chat.departs ?? []), le] });
+/** « Repartir à zéro » : les messages restent, l'agent les oublie. La date fait gagner ce départ sur un autre appareil (cf. espace-sync.ts). */
+export const repartirAZero = (chat: Chat, le: string): Chat => ({ ...sansMemoire(chat), updatedAt: le, departs: [...(chat.departs ?? []), le] });
 
 /** « Effacer et repartir » : les messages partent aussi (la conversation les retire de son côté). */
-export const viderConversation = (chat: Chat): Chat => ({ ...sansMemoire(chat), luJusqua: null });
+export const viderConversation = (chat: Chat, le: string): Chat => ({ ...sansMemoire(chat), updatedAt: le, luJusqua: null });
 
 /** « /compact », seul ou suivi de consignes pour le résumé. */
 export function estCommandeCompacter(texte: string): boolean {
