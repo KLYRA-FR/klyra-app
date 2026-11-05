@@ -31,7 +31,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
   const role = useRole(chat.roleIds[0] ?? "principal");
   const project = useProject(chat.projectId);
   const travail = useTravail(chat.id);
-  const { nouvelleConversation, state } = useWorkspace();
+  const { nouvelleConversation } = useWorkspace();
   const { tous, canEdit, save } = useAgents();
   const { reglages } = useReglages();
   const acces = useAccesEspace();
