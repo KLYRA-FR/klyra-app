@@ -81,6 +81,35 @@ export const composioConnect = new ComposioConnect({
   },
 });
 
+/*
+ * La connexion Composio d'un VPS. Il n'a pas de navigateur : cet ordinateur fait la connexion, sans rien
+ * garder, puis lui donne les jetons. Chaque serveur a son compte ; aucune connexion n'est copiée d'un autre.
+ */
+let connexionVps: ComposioConnect | null = null;
+
+export async function connecterComposioVps(adopter: (jetons: JetonsConnect) => Promise<unknown>): Promise<boolean> {
+  if (connexionVps) throw new Error("Une connexion est déjà en cours dans le navigateur.");
+  let obtenus: JetonsConnect | null = null;
+  const connexion = new ComposioConnect({
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : (input as string), init),
+    ouvrir: (url) => shell.openExternal(url),
+    lire: async () => null,
+    ecrire: async (jetons) => { obtenus = jetons; },
+  });
+  connexionVps = connexion;
+  try {
+    const ok = await connexion.connecter();
+    if (!ok || !obtenus) return false;
+    await adopter(obtenus);
+    return true;
+  } finally {
+    connexionVps = null;
+  }
+}
+
+export const annulerComposioVps = () => connexionVps?.annuler();
+export const connexionVpsEnCours = () => !!connexionVps;
+
 /** Les IPC de configuration n'acceptent que le frame principal de la fenêtre KLYRA. */
 export function verifierFenetreComposio(event: IpcMainInvokeEvent, win: BrowserWindow | null, devUrl?: string): void {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) throw new Error("Accès Composio refusé.");

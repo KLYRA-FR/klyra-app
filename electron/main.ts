@@ -112,7 +112,7 @@ import {
 import { ecrirePlanning } from "./planning";
 import { ajouterMcpDirect, APPS_MCP, chargerMcpDirects, listerMcpDirects, retirerMcpDirect } from "./mcp-direct";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
-import { composioConnect, espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio } from "./composio";
+import { composioConnect, espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio, annulerComposioVps, connecterComposioVps, connexionVpsEnCours } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
 import { lireConsommation, lireJournal } from "./consommation";
 import { rattraperHistorique } from "./historique";
@@ -171,7 +171,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDos
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { appelCoffreVps, appelEquipeVps, appelEspaceVps } from "./equipe-vps";
+import { appelCoffreVps, appelComposioVps, appelEquipeVps, appelEspaceVps } from "./equipe-vps";
 import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
@@ -414,6 +414,26 @@ function registerBridge() {
   composio("composio:connect:connecter", () => composioConnect.connecter());
   composio("composio:connect:annuler", () => composioConnect.annuler());
   composio("composio:connect:deconnecter", () => composioConnect.deconnecter());
+  /* La connexion Composio d'un VPS : mêmes gestes, le compte est celui de ce serveur. */
+  const composioVps = (lieu: unknown) => {
+    const origine = String(lieu);
+    if (!originesServeurs().includes(origine)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    return { origine, jeton: jetonServeur(origine) };
+  };
+  composio("composio:connect:vps:etat", async (lieu) => {
+    const { origine, jeton } = composioVps(lieu);
+    const etat = (await appelComposioVps(origine, jeton, "etat")) as Record<string, unknown>;
+    return { ...etat, enCours: connexionVpsEnCours() };
+  });
+  composio("composio:connect:vps:connecter", (lieu) => {
+    const { origine, jeton } = composioVps(lieu);
+    return connecterComposioVps((jetons) => appelComposioVps(origine, jeton, "adopter", { jetons }));
+  });
+  composio("composio:connect:vps:annuler", () => annulerComposioVps());
+  composio("composio:connect:vps:deconnecter", (lieu) => {
+    const { origine, jeton } = composioVps(lieu);
+    return appelComposioVps(origine, jeton, "deconnecter");
+  });
   composio("composio:retirer", (contexte) => espaceComposio.retirerConfiguration(contexte));
   composio("composio:selectionner", (contexte, service, compte) => espaceComposio.selectionner(contexte, service, compte));
   composio("composio:connecter", (contexte, service, configuration) => espaceComposio.connecter(contexte, service, configuration));

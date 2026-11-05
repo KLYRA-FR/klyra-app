@@ -657,6 +657,13 @@ export interface KlyraBridge {
       connecter: () => Promise<Reponse<boolean>>;
       annuler: () => Promise<Reponse<void>>;
       deconnecter: () => Promise<Reponse<void>>;
+      /** La connexion Composio d'un VPS. Absent avant la relance de l'app. */
+      vps?: {
+        etat: (lieu: string) => Promise<Reponse<EtatConnect>>;
+        connecter: (lieu: string) => Promise<Reponse<boolean>>;
+        annuler: () => Promise<Reponse<void>>;
+        deconnecter: (lieu: string) => Promise<Reponse<unknown>>;
+      };
     };
   };
   /** Le Coffre de KLYRA (cf. electron/coffre.ts) : jamais une valeur dans ce sens. Absent avant la relance de l'app. */
