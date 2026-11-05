@@ -141,7 +141,7 @@ async function principal() {
       fin();
       assert.deepEqual(utilisation?.mois, { utilise: 0.375, reinitialiseA: Date.parse("2026-12-01T00:00:00Z") });
       assert.equal(vues.length, 1, "l’anneau du rail n’est pas prévenu");
-      ok("abonnement Grok : crédits du mois lus par x.ai/billing, le rail prévenu");
+      ok("abonnement Grok : crédits du mois lus par _x.ai/billing, le rail prévenu");
     }
 
     /* 7. Les modèles annoncés par Grok. */
