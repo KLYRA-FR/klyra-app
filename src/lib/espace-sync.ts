@@ -32,6 +32,8 @@ export interface EtatEspace {
 }
 
 export interface LectureEspace {
+  /** Le VPS conserve les choix de modèle du téléphone et les relaie aux ordinateurs ouverts. */
+  choixModeleTelephone?: boolean;
   revision: number;
   inchange?: boolean;
   elements?: ElementEspace[];

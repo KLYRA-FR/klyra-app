@@ -166,6 +166,11 @@ describe("conversation copiée", () => {
     expect(conversationCompte(chat(), [], projets)).toMatchObject({ lieu: null, modele: null });
     expect(JSON.stringify(copie)).not.toContain("session-secrete");
   });
+  test.each(["codex", "grok"])("le fournisseur %s part même sans modèle explicite, sans ses sessions", (fournisseur) => {
+    const copie = conversationCompte(chat({ fournisseur }), [], projets);
+    expect(JSON.parse(copie!.modele!)).toEqual({ fournisseur, modele: null, effort: null });
+    expect(JSON.stringify(copie)).not.toContain("session-secrete");
+  });
 });
 
 describe("copie incrémentale", () => {

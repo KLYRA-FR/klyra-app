@@ -4,6 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { jetonAppareil } from "@/lib/serveur-vps";
 import type { LectureEspace } from "@/lib/espace-sync";
 import type { Chat } from "@/types/domain";
+import type { IdFournisseur } from "@/lib/fournisseurs";
 
 /**
  * Voie directe du téléphone vers un VPS. Une conversation qui tourne sur un VPS ne dépend pas de
@@ -165,6 +166,7 @@ export async function envoyerAuVps(p: {
   agentId: string;
   titre: string;
   texte: string;
+  fournisseur?: IdFournisseur;
   modele?: string | null;
   effort?: string | null;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
@@ -185,8 +187,7 @@ export async function envoyerAuVps(p: {
     autorisation: null,
   };
   try {
-    /* Le compte ne copie pas le fournisseur. Relire le fil sur sa machine préserve ChatGPT/Grok et
-       son modèle même si le téléphone n'a jamais ouvert cette conversation depuis le bureau. */
+    /* Relire le fil sur sa machine préserve les réglages les plus récents en l’absence de choix explicite. */
     const lecture = await fetch(`${p.adresse}/klyra/v1/espace/lire`, {
       method: "POST", headers: entetes(jeton), body: "{}", cache: "no-store", redirect: "error",
     });
@@ -196,8 +197,11 @@ export async function envoyerAuVps(p: {
     if (!Array.isArray(lu.resultat?.elements)) return { ok: false, message: "La conversation ne se lit pas sur le VPS. Réessaie après avoir vérifié le serveur." };
     const valeur = lu.resultat.elements.find((e) => e.type === "conversation" && e.id === p.conversation)?.valeur as { chat?: Pick<Chat, "fournisseur" | "modele" | "effort"> } | undefined;
     const chat = valeur?.chat;
-    const moteur = chat?.fournisseur || "claude";
+    const moteur = p.fournisseur ?? chat?.fournisseur ?? "claude";
     if (!["claude", "codex", "grok"].includes(moteur)) return { ok: false, message: "Ce fournisseur n’est pas disponible sur ce téléphone." };
+    if (p.fournisseur !== undefined && moteur !== (chat?.fournisseur ?? "claude") && !lu.resultat.choixModeleTelephone) {
+      return { ok: false, message: "Mets à jour ce serveur pour changer de fournisseur depuis le téléphone. Ton message reste ici." };
+    }
     if (depart !== generation) return { ok: false, message: "Ce téléphone a été déconnecté : reconnecte-toi pour continuer." };
     const reponse = await fetch(`${p.adresse}${CHEMIN_AGENT}/envoyer`, {
       method: "POST",
@@ -206,6 +210,11 @@ export async function envoyerAuVps(p: {
       redirect: "error",
       body: JSON.stringify({
         requestId: echange.requestId,
+        ...((p.fournisseur !== undefined || p.modele !== undefined || p.effort !== undefined) ? { choix: {
+          fournisseur: moteur,
+          modele: p.modele === undefined ? (chat?.modele ?? null) : p.modele,
+          effort: p.effort === undefined ? (chat?.effort ?? null) : p.effort,
+        } } : {}),
         options: {
           agent: p.agentId === "principal" ? null : p.agentId,
           prompt: p.texte,

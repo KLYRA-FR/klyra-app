@@ -1323,6 +1323,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       if (telephone) {
         chat = stateRef.current.chats.find((c) => c.id === contexte.chatId) ?? chat;
         roleId = contexte.agentId;
+        if (chat && contexte.choix) {
+          const { fournisseur: moteur, modele, effort } = contexte.choix;
+          chat = { ...changerDeMoteur(chat, moteur), modele, effort };
+          const suite = chat;
+          dispatch({ type: "chat/update", id: chat.id, patch: () => suite });
+          stateRef.current = { ...stateRef.current, chats: stateRef.current.chats.map((c) => c.id === suite.id ? suite : c) };
+        }
         if (chat && !stateRef.current.messages.some((m) => m.id === telephone.messageId)) {
           dispatch({
             type: "message/add",
@@ -1339,7 +1346,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       if (!stateRef.current.messages.some((m) => m.id === requestId)) {
         dispatch({
           type: "message/add",
-          message: { id: requestId, chatId: chat.id, author: { kind: "role", roleId }, createdAt: new Date().toISOString(), parts: [], statut: "en-cours" },
+          message: { id: requestId, chatId: chat.id, author: { kind: "role", roleId }, createdAt: new Date().toISOString(), parts: [], statut: "en-cours", ...(moteurDe(chat) !== PAR_DEFAUT ? { moteur: moteurDe(chat) } : {}) },
         });
       }
       if (!stateRef.current.travail[chat.id]) {

@@ -22,6 +22,7 @@ import { creerIa } from "./ia.mjs";
 import { creerMoteurs } from "./moteurs.mjs";
 import { creerRoutines } from "./routines.mjs";
 import { VERSION_CODE_SERVEUR } from "./version-code.mjs";
+import { FOURNISSEURS, EFFORTS } from "./fournisseurs.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
 export const CHEMIN_APPAIRER = "/klyra/v1/appairer";
@@ -344,9 +345,9 @@ export function creerGestionnaire(options) {
   /* PC fermé, personne n'écoute : le serveur range lui-même la réponse dans sa conversation. */
   journal?.ecouterFin?.(({ requestId, event, sessionId, contexte, cle }) => {
     if (!espace || journal.ecouteurs() > 0) return;
-    const [conversation, agent] = typeof cle === "string" ? cle.split("|") : [];
+    const [conversation, agent, moteur = "claude"] = typeof cle === "string" ? cle.split("|") : [];
     try {
-      espace.noterReponse({ requestId, event, sessionId, contexte, conversation, agent });
+      espace.noterReponse({ requestId, event, sessionId, contexte, conversation, agent, moteur });
     } catch {
       /* Le journal la garde encore 24 h : l'app la rattrapera. */
     }
@@ -698,10 +699,21 @@ export function creerGestionnaire(options) {
         if (corps.contexte !== undefined) {
           contexte = contexteTelephone(corps.contexte);
           if (!contexte) return repondre(res, 400, { erreur: "contexte" });
-          journal?.poserContexte(requestId, contexte);
         }
         /* La conversation (dite par le PC, ou par le contexte du téléphone) : sans session, l'agent reprend la sienne. */
         const options = corps.options && typeof corps.options === "object" ? { ...corps.options } : corps.options;
+        if (corps.choix !== undefined) {
+          const choix = corps.choix;
+          if (!contexte?.telephone || !choix || !FOURNISSEURS.some((f) => f.id === choix.fournisseur)
+            || (choix.modele !== null && (typeof choix.modele !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(choix.modele)))
+            || (choix.effort !== null && !EFFORTS.some((e) => e.id === choix.effort))
+            || options?.moteur !== choix.fournisseur || options?.modele !== choix.modele || options?.effort !== choix.effort) return repondre(res, 400, { erreur: "choix" });
+          espace?.choisirModele(contexte.chatId, contexte.agentId, contexte.titre, choix);
+        }
+        if (contexte?.telephone && options && FOURNISSEURS.some((f) => f.id === (options.moteur ?? "claude"))) {
+          contexte.choix = { fournisseur: options.moteur ?? "claude", modele: options.modele ?? null, effort: options.effort ?? null };
+        }
+        if (contexte) journal?.poserContexte(requestId, contexte);
         const cle = options && typeof options === "object" ? cleConversation(options.conversation ?? contexte?.chatId, options.agent, options.moteur) : null;
         /* Écrit du téléphone : sa conversation sert aussi à suivre l'atelier d'un agent (cf. agents.mjs). */
         if (options && typeof options === "object" && options.conversation === undefined && typeof contexte?.chatId === "string") options.conversation = contexte.chatId;

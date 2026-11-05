@@ -42,6 +42,7 @@ export function useEnvoyerMessage() {
             agentId,
             titre: conversation?.titre ?? agentId,
             texte,
+            fournisseur: options.fournisseur,
             modele: options.modele,
             effort: options.effort,
           });

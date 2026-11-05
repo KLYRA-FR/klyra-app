@@ -45,7 +45,7 @@ beforeEach(() => {
   simule.mutation.mockReset().mockResolvedValue("message-en-file");
   vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/espace/lire")
-    ? Response.json({ resultat: { revision: 0, elements: simule.serveurChat ? [{ type: "conversation", id: origine, valeur: { chat: simule.serveurChat } }] : [] } })
+    ? Response.json({ resultat: { revision: 0, choixModeleTelephone: true, elements: simule.serveurChat ? [{ type: "conversation", id: origine, valeur: { chat: simule.serveurChat } }] : [] } })
     : new Response(null, { status: 202 })));
 });
 
@@ -81,6 +81,21 @@ describe("destination réelle des messages du téléphone", () => {
     await porteEnvoi()({ conversationOrigine: origine, texte: "Bonjour", options: { modele: null, effort: null } });
     const corps = JSON.parse(vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/agent/envoyer"))![1]!.body as string);
     expect(corps.options).toMatchObject({ moteur: "claude", modele: null, effort: null });
+  });
+  test.each(["codex", "grok", "claude"] as const)("le choix %s remplace celui du VPS et est transmis pour être conservé", async (fournisseur) => {
+    simule.serveurChat = { fournisseur: "codex", modele: "ancien-modele", effort: "high" };
+    const choix = { fournisseur, modele: fournisseur === "claude" ? null : "modele-fictif", effort: fournisseur === "claude" ? null : "ultra" };
+    await porteEnvoi()({ conversationOrigine: origine, texte: "Bonjour", options: choix });
+    const corps = JSON.parse(vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/agent/envoyer"))![1]!.body as string);
+    expect(corps.choix).toEqual(choix);
+    expect(corps.options).toMatchObject({ moteur: fournisseur, modele: choix.modele, effort: choix.effort });
+    expect(simule.mutation).not.toHaveBeenCalled();
+  });
+  test("un VPS ancien refuse le changement de fournisseur sans prendre le message", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ resultat: { elements: [] } })));
+    await expect(porteEnvoi()({ conversationOrigine: origine, texte: "Bonjour", options: { fournisseur: "grok", modele: "modele-test", effort: "high" } })).rejects.toThrow("Mets à jour ce serveur");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(simule.mutation).not.toHaveBeenCalled();
   });
 
   test("une ancienne directe garde le VPS inscrit dans sa conversation", async () => {

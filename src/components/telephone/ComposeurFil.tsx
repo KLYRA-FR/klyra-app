@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent, type Ref } from "react";
-import { EFFORTS, MODELES, nomModele } from "@/components/chat/ChoixModele";
+import { MODELES, modelesDe, nomModele } from "@/components/chat/ChoixModele";
+import { ContenuChoixModele } from "@/components/chat/ContenuChoixModele";
 import { getField, parseAgentFile } from "@/lib/agent-file";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
@@ -11,7 +12,9 @@ import { messageErreur } from "@/lib/compte";
 import { COMMANDE_COMPACTER, formaterJetons, MARGE_PLUS_TARD } from "@/lib/contexte";
 import type { Activite } from "@/lib/copie-compte";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
-import { bandeauComposeur, majuscule, support } from "@/lib/poste-texte";
+import { bandeauComposeur, majuscule } from "@/lib/poste-texte";
+import { fournisseur, nomEffort, PAR_DEFAUT, type IdFournisseur } from "@/lib/fournisseurs";
+import type { EtatMoteur } from "@/lib/moteurs";
 import { lieuDeHote, lireIdDirect, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { surRepondre } from "@/lib/repondre";
 import { jetonAppareil, lireEquipeServeur } from "@/lib/serveur-vps";
@@ -21,6 +24,7 @@ import { garderCitation, lireCitation, type CitationBrouillon } from "@/lib/tele
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
 import { envoiSimple, voieEnvoi } from "@/lib/telephone/vps-direct";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
+import { useModelesTelephone } from "@/lib/telephone/modeles";
 import { agentPourLibelle } from "@/lib/telephone/libelles-fil";
 import type { FicheLue } from "@/lib/telephone/gestes-agents";
 import { ajouterPieces, MAX_PIECES, nomCapture, taillePiece, texteParDefaut } from "@/lib/telephone/pieces";
@@ -36,14 +40,20 @@ import { RondAgent, useCartes } from "./AgentsChat";
 const PUCE =
   "relative flex h-9 shrink-0 items-center gap-1 rounded-xs border border-bordure-subtile bg-fond-surface px-2.5 text-ui text-texte-principal after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']";
 
-type Choix = { modele: string | null; effort: string | null };
+type Choix = { fournisseur?: IdFournisseur; modele: string | null; effort: string | null };
 
 const COMPACTER: SkillProposee = { nom: "compact", description: "Résume la conversation pour alléger les prochains appels" };
 
-function libelleModele(choix: Choix | null): string {
+function libelleModele(choix: Choix | null, moteurs: EtatMoteur[] | null): string {
+  const moteur = choix?.fournisseur ?? PAR_DEFAUT;
+  if (moteur !== PAR_DEFAUT) {
+    const modele = modelesDe(moteur, moteurs).find((m) => m.id === choix?.modele);
+    const effort = choix?.effort && modele?.efforts.includes(choix.effort) ? nomEffort(choix.effort) : null;
+    return `${modele?.nom ?? choix?.modele ?? fournisseur(moteur).nom}${effort ? ` · ${effort}` : ""}`;
+  }
   if (!choix?.modele) return "Modèle de la fiche indisponible";
   const nom = nomModele(choix.modele);
-  const effort = choix.modele !== "haiku" ? EFFORTS.find((e) => e.id === choix.effort)?.nom : undefined;
+  const effort = choix.modele !== "haiku" ? nomEffort(choix.effort) : undefined;
   return effort ? `${nom} · ${effort}` : nom;
 }
 
@@ -70,9 +80,15 @@ function useModeleFiche(agent: string, lieu: string | null, actif: boolean): str
 }
 
 /** « Modèle et effort » en feuille (E2-34) : ils partent avec le prochain message ; fermer annule le choix provisoire. */
-function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; onChoisir: (choix: Choix) => void; onFermer: () => void }) {
+export function FeuilleModele({ actuel, modeleFiche, moteurs, erreur, onChoisir, onFermer }: { actuel: Choix | null; modeleFiche: string | null; moteurs: EtatMoteur[] | null; erreur: string | null; onChoisir: (choix: Choix) => void; onFermer: () => void }) {
   const [choix, setChoix] = useState<Choix>(actuel ?? { modele: null, effort: null });
-  const radio = "flex min-h-12 w-full items-center gap-3 border-b border-bordure-subtile text-left text-body-s text-texte-principal last:border-b-0";
+  const [vue, setVue] = useState(choix.fournisseur ?? PAR_DEFAUT);
+  const [recherche, setRecherche] = useState("");
+  const [aide, setAide] = useState<string | null>(null);
+  const moteur = choix.fournisseur ?? PAR_DEFAUT;
+  const modeles = modelesDe(moteur, moteurs);
+  const modele = choix.modele ?? (moteur === PAR_DEFAUT ? modeleFiche : (modeles.find((m) => m.parDefaut) ?? modeles[0])?.id) ?? null;
+  const effort = choix.effort ?? modeles.find((m) => m.id === modele)?.effortParDefaut ?? null;
   return (
     <Feuille
       titre="Modèle et effort"
@@ -81,60 +97,28 @@ function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; 
       pied={
         <button
           type="button"
+          disabled={!modele}
           className="klyra-surface-sombre h-11 w-full rounded-xs text-body-s text-texte-inverse"
           onClick={() => {
             onFermer();
-            onChoisir(choix);
+            onChoisir({ ...choix, fournisseur: moteur });
           }}
         >
           Choisir
         </button>
       }
     >
-      <div role="radiogroup" aria-label="Modèle">
-        <button type="button" role="radio" aria-checked={!choix.modele} className={radio} onClick={() => setChoix({ modele: null, effort: null })}>
-          <span className="min-w-0 flex-1 py-1.5">
-            Celui de sa fiche
-            <span className="block text-ui-xs text-texte-secondaire">Le modèle choisi dans sa fiche</span>
-          </span>
-          <CocheChoix choisi={!choix.modele} />
-        </button>
-        {MODELES.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            role="radio"
-            aria-checked={choix.modele === m.id}
-            className={radio}
-            onClick={() => setChoix((c) => ({ modele: m.id, effort: m.id === "haiku" ? null : (c.effort ?? "high") }))}
-          >
-            <span className="min-w-0 flex-1 py-1.5">
-              {m.nom}
-              {m.id === "haiku" ? <span className="block text-ui-xs text-texte-secondaire">Sans réglage d’effort</span> : null}
-            </span>
-            <CocheChoix choisi={choix.modele === m.id} />
-          </button>
-        ))}
+      <div className="flex">
+        <ContenuChoixModele tactile vue={vue} moteur={moteur} modele={modele} effort={effort} modeleFiche={modeleFiche}
+          moteurs={moteurs} modelesVue={modelesDe(vue, moteurs)} modelesActuels={modeles}
+          recherche={recherche} connexion={aide || erreur ? { etat: "erreur", message: aide || erreur! } : null}
+          onRecherche={setRecherche} onVue={(id) => { setVue(id as IdFournisseur); setRecherche(""); setAide(null); }}
+          onModele={(m) => setChoix({ fournisseur: vue, modele: vue === PAR_DEFAUT && m.id === modeleFiche ? null : m.id, effort: effort && m.efforts.includes(effort) ? effort : m.effortParDefaut })}
+          onEffort={(id) => setChoix((c) => ({ ...c, fournisseur: moteur, effort: id }))}
+          onConnecter={() => setAide("Connecte ce fournisseur dans les réglages de sa machine, puis rouvre ce choix.")}
+          onAjouter={() => setAide("Ajoute un fournisseur dans les réglages de sa machine, puis rouvre ce choix.")}
+        />
       </div>
-      {choix.modele && choix.modele !== "haiku" ? (
-        <>
-          <p className="mt-4 text-ui font-medium text-texte-secondaire">Effort de réflexion</p>
-          <div role="radiogroup" aria-label="Effort" className="mt-2 grid grid-cols-3 gap-2">
-            {EFFORTS.map((e) => (
-              <button
-                key={e.id}
-                type="button"
-                role="radio"
-                aria-checked={choix.effort === e.id}
-                onClick={() => setChoix((c) => ({ ...c, effort: e.id }))}
-                className={cn("h-11 rounded-xs text-ui font-medium", choix.effort === e.id ? "klyra-surface-sombre text-texte-inverse" : "bg-fond-surface-grise text-texte-secondaire")}
-              >
-                {e.nom}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
       <p className="mt-4 text-ui-xs text-texte-secondaire">Le choix part avec ton prochain message.</p>
     </Feuille>
   );
@@ -276,8 +260,7 @@ export function ComposeurFil({
   const [resumeLance, setResumeLance] = useState(false);
   const [destinataire, setDestinataire] = useState<string | null>(null);
   const [choix, setChoix] = useState<Choix | null>(null);
-  const [posteChoisi, setPosteChoisi] = useState<string | null>(null);
-  const [feuille, setFeuille] = useState<"joindre" | "destinataire" | "modele" | "poste" | null>(null);
+  const [feuille, setFeuille] = useState<"joindre" | "destinataire" | "modele" | null>(null);
   const [curseur, setCurseur] = useState(0);
   const [actif, setActif] = useState(0);
   const [listeFermee, setListeFermee] = useState(false);
@@ -343,14 +326,18 @@ export function ComposeurFil({
 
   const peutEnvoyer = (texte.trim().length > 0 || pieces.length > 0) && !envoi && !horsLigne;
   const actifs = (cartes ?? []).filter((c) => c.actif || c.origine === ASSISTANT);
-  const modeleActuel = choix ?? lireModele(conversation?.modele);
   const postesOuverts = [...(postes ?? [])].sort((a, b) => b.dernierSignal - a.dernierSignal);
-  const posteVise = postesOuverts.find((p) => p.cle === posteChoisi) ?? postesOuverts[0];
+  const posteVise = postesOuverts[0];
   /* La destination est celle de la conversation, indépendamment des ordinateurs ouverts (`envoi.ts`). */
   const serveurs = useServeursRelies();
   /* Une conversation directe pas encore copiée dans le compte : son id dit son serveur. */
   const hote = lireIdDirect(origine)?.hote;
   const lieu = conversation ? (conversation.lieu ?? null) : hote ? lieuDeHote(hote) : null;
+  const catalogue = useModelesTelephone(lieu, origine);
+  const modeleActuel = choix ?? catalogue.choix ?? lireModele(conversation?.modele);
+  const moteur = modeleActuel?.fournisseur ?? PAR_DEFAUT;
+  const discussionAgent = !!agentId || !!lireIdDirect(origine) || !!lireIdDirect(conversation?.parent ?? "");
+  const choixDestinataire = equipe && !discussionAgent;
   const directVps = !!lieu && origine.startsWith("dm-") && envoiSimple({ citation }, pieces.length);
   const voie = voieEnvoi({ lieu, jeton: lieu ? jetonAppareil(lieu) : null });
   const bandeau = directVps
@@ -360,12 +347,15 @@ export function ComposeurFil({
     : ouvert ? null : bandeauComposeur(principal);
   /* Le destinataire effectif : le choix explicite, sinon la première mention reconnue, sinon l'assistant (E2-33). */
   const effectif = destinataire ?? mentionDans(texte, cartes ?? []) ?? ASSISTANT;
-  const agentAffiche = equipe ? effectif : (agentPourLibelle(origine, conversation) ?? agentId ?? ASSISTANT);
-  const modeleFiche = useModeleFiche(agentAffiche, lieu, !modeleActuel?.modele);
-  const modeleAffiche = modeleActuel?.modele ? modeleActuel : modeleFiche ? { modele: modeleFiche, effort: modeleActuel?.effort ?? "high" } : null;
+  const agentAffiche = choixDestinataire ? effectif : (agentPourLibelle(origine, conversation) ?? agentId ?? ASSISTANT);
+  const modeleFiche = useModeleFiche(agentAffiche, lieu, moteur === PAR_DEFAUT);
+  const modeles = modelesDe(moteur, catalogue.moteurs);
+  const modeleDefaut = moteur === PAR_DEFAUT ? modeleFiche : (modeles.find((m) => m.parDefaut) ?? modeles[0])?.id;
+  const modeleEffectif = modeleActuel?.modele ?? modeleDefaut;
+  const modeleAffiche = modeleEffectif ? { fournisseur: moteur, modele: modeleEffectif, effort: modeleActuel?.effort ?? modeles.find((m) => m.id === modeleEffectif)?.effortParDefaut ?? null } : modeleActuel;
 
   /* La liste « @ » (équipe) ou « / » (E2-31, E2-32). */
-  const mention = equipe ? mentionEnCours(texte, curseur) : null;
+  const mention = choixDestinataire ? mentionEnCours(texte, curseur) : null;
   const commande = commandeEnCours(texte, curseur);
   const agentCompetences = agentId ?? (effectif || ASSISTANT);
   const competences = useLecturePoste<{ skills: SkillProposee[]; avecClaude: boolean }>("fil.competences", commande !== null && conversation ? { conversation: origine, agent: agentCompetences } : null);
@@ -458,11 +448,12 @@ export function ComposeurFil({
   const soumettre = async () => {
     if (!peutEnvoyer) return;
     const options: OptionsMessage = {};
-    if (equipe) {
+    if (choixDestinataire) {
       const a = destinataire ?? mentionDans(texte, cartes ?? []);
       if (a && a !== ASSISTANT) options.a = a;
     }
     if (choix) {
+      options.fournisseur = choix.fournisseur;
       options.modele = choix.modele;
       options.effort = choix.effort;
     }
@@ -505,7 +496,7 @@ export function ComposeurFil({
     else setAlerte(r.code === "delai" ? `${majuscule(sur)} ne répond pas.` : r.message || "L’agent n’a pas pu être arrêté.");
   };
 
-  const placeholder = agentId ? `Écris à ${nom(agentAffiche)}…` : equipe ? "Écris à l’équipe, ou @mentionne un agent…" : "Écris ton message…";
+  const placeholder = discussionAgent ? `Écris à ${nom(agentAffiche)}…` : equipe ? "Écris à l’équipe, ou @mentionne un agent…" : "Écris ton message…";
   const qui = activite ? nom(activite.roleId) : null;
   const noteOccupe = arretEnCours ? `Arrêt demandé : ${qui} s’arrête dès que ${sur} le confirme.` : occupe && texte.trim() ? `Il partira quand ${qui} aura fini.` : null;
 
@@ -598,8 +589,8 @@ export function ComposeurFil({
           <div className="flex items-center gap-0.5">
             <BoutonIcone variant="discret" className="size-11 shrink-0" libelle="Joindre" aria-haspopup="dialog" icone={<Icon name="plus-01" size={22} />} onClick={() => setFeuille("joindre")} />
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1 pr-1 [scrollbar-width:none]">
-              {!equipe ? <span className={PUCE} aria-label={`Agent : ${nom(agentAffiche)}`}><Icon name="user-profile-01" size={16} className="text-icone-secondaire" />{nom(agentAffiche)}</span> : null}
-              {equipe ? (
+              {!choixDestinataire ? <span className={PUCE} aria-label={`Agent : ${nom(agentAffiche)}`}><Icon name="user-profile-01" size={16} className="text-icone-secondaire" />{nom(agentAffiche)}</span> : null}
+              {choixDestinataire ? (
                 <>
                   <button type="button" className={PUCE} aria-haspopup="dialog" aria-label={`Destinataire : ${nom(effectif)}`} onClick={() => setFeuille("destinataire")}>
                     <Icon name="user-profile-01" size={16} className="text-icone-secondaire" />
@@ -611,18 +602,10 @@ export function ComposeurFil({
                   </button>
                 </>
               ) : null}
-              <button type="button" className={PUCE} aria-label={`Modèle : ${libelleModele(modeleAffiche)}`} aria-haspopup="dialog" onClick={() => setFeuille("modele")}>
-                {libelleModele(modeleAffiche)}
+              <button type="button" className={PUCE} disabled={occupe || envoi} aria-label={`Modèle : ${libelleModele(modeleAffiche, catalogue.moteurs)}`} aria-haspopup="dialog" onClick={() => setFeuille("modele")}>
+                {libelleModele(modeleAffiche, catalogue.moteurs)}
                 <Icon name="chevron-down" size={14} className="text-icone-secondaire" />
               </button>
-              {lieu ? (
-                <span className={PUCE}>Sur {nomLieu(lieu, serveurs)}</span>
-              ) : postesOuverts.length >= 2 && posteVise ? (
-                <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("poste")}>
-                  Sur {support(posteVise)}
-                  <Icon name="chevron-down" size={14} className="text-icone-secondaire" />
-                </button>
-              ) : null}
             </div>
             {occupe ? (
               <BoutonIcone variant="blanc" className="relative size-9 shrink-0 after:absolute after:-inset-1 after:content-['']" libelle="Arrêter l’agent" disabled={arret.occupe || arretEnCours} icone={<Icon name="square" size={18} />} onClick={() => void arreter()} />
@@ -657,7 +640,7 @@ export function ComposeurFil({
           ]}
         />
       ) : null}
-      {feuille === "destinataire" ? (
+      {choixDestinataire && feuille === "destinataire" ? (
         <Feuille titre="Destinataire" sousTitre={conversation?.titre} onFermer={() => setFeuille(null)}>
           <GroupeListe>
             <div role="radiogroup" aria-label="Destinataire">
@@ -685,14 +668,7 @@ export function ComposeurFil({
           <p className="mt-3 px-1 text-ui-xs text-texte-secondaire">Sans choix, {nom(ASSISTANT)} répartit le travail. Une @mention dans le message choisit aussi.</p>
         </Feuille>
       ) : null}
-      {feuille === "modele" ? <FeuilleModele actuel={modeleActuel} onChoisir={setChoix} onFermer={() => setFeuille(null)} /> : null}
-      {feuille === "poste" ? (
-        <MenuFeuille
-          titre="Sur quel ordinateur ?"
-          onFermer={() => setFeuille(null)}
-          actions={postesOuverts.map((p) => ({ libelle: p.nom, note: p.ouvert ? "Ouvert" : "Fermé : ton message attendra son ouverture", onChoisir: () => setPosteChoisi(p.cle) }))}
-        />
-      ) : null}
+      {feuille === "modele" ? <FeuilleModele actuel={modeleActuel} modeleFiche={modeleFiche} moteurs={catalogue.moteurs} erreur={catalogue.erreur} onChoisir={setChoix} onFermer={() => setFeuille(null)} /> : null}
     </div>
   );
 }
