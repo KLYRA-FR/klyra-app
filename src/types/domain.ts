@@ -178,6 +178,10 @@ export interface Chat {
   contexte?: Record<RoleId, { jetons: number; base?: number; le: string; session: string | null }>;
   /** « Plus tard » sur le conseil de résumer : masqué tant que la conversation ne dépasse pas ce nombre de jetons. */
   contexteMasqueJusqua?: number;
+  /** « Repartir à zéro » : les dates où la conversation a repris sans sa mémoire. Ce qui précède reste lisible, l'agent ne le relit plus (cf. lib/contexte.ts). */
+  departs?: string[];
+  /** Repartie à zéro ou effacée : sans session ici, l'agent en ouvre une neuve, un VPS ne reprend pas celle qu'il retient (cf. `sessionNeuve` des options). */
+  sessionNeuve?: boolean;
 }
 
 /**
