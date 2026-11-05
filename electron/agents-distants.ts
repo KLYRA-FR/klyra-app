@@ -67,6 +67,8 @@ export interface Equipe {
    * ses sessions : messages du PC, du téléphone PC fermé, routines du serveur.
    */
   configuration: { memoireAgents: boolean; consignes: string | null; navigateur?: boolean; coffre?: boolean };
+  /** La même, telle que l'écran la relit : un serveur qui n'en a pas encore l'affiche au lieu des valeurs par défaut. */
+  configurationEcran?: unknown;
   /** Skills reçues par chaque agent. Un ancien serveur ignore le champ : tout reste reçu. */
   skillsParAgent: SkillsParAgent;
   /**
@@ -433,7 +435,7 @@ export async function synchroniserEquipe(origine: string): Promise<void> {
    * S'il est neuf (`equipeInitialisee` faux), il reçoit tout, une seule fois : c'est sa première copie.
    */
   const corps = equipePropre.has(origine)
-    ? { fiches: [], partielle: true, configuration: { navigateur: equipe.configuration.navigateur, coffre: equipe.configuration.coffre }, empreinte: equipe.empreinte }
+    ? { fiches: [], partielle: true, configuration: { navigateur: equipe.configuration.navigateur, coffre: equipe.configuration.coffre }, configurationEcran: equipe.configurationEcran, empreinte: equipe.empreinte }
     : equipe;
   const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", corps);
   if (recu.status !== 200) throw new Error("fiches");

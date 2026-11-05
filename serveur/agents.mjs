@@ -216,6 +216,8 @@ export function creerAgents(options) {
       ecrireFichierEquipe({
         ...actuel,
         configuration: { ...configurationValide(actuel.configuration), navigateur: navigateur === true, coffre: coffre === true },
+        /* Jamais choisie ici (équipe reçue avant, ou envoi passé avant l'écran) : l'écran montre ce qui a été copié, pas les valeurs par défaut. */
+        configurationEcran: actuel.configurationEcran ?? corps.configurationEcran ?? null,
         skillsParAgent: validerSkillsParAgent(actuel.skillsParAgent),
         empreinte: String(corps.empreinte ?? "").slice(0, 80),
       });
@@ -227,6 +229,7 @@ export function creerAgents(options) {
     ecrireFichierEquipe({
       ...actuel,
       configuration: configurationValide(corps.configuration),
+      configurationEcran: corps.configurationEcran ?? actuel.configurationEcran ?? null,
       skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
       empreinte: String(corps.empreinte ?? "").slice(0, 80),
       skillsLe: skills !== null ? Date.now() : actuel.skillsLe,
