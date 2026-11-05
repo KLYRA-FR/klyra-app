@@ -749,7 +749,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const outilsWorkflows = useCallback(
     () =>
       (outilsWorkflowsRef.current ??= creerOutilsWorkflows({
-        etat: () => ({ workflows: stateRef.current.workflows, executions: stateRef.current.executions, projets: stateRef.current.projects }),
+        /* Un agent ne voit que les workflows et les projets du serveur où il travaille. */
+        etat: (a) => {
+          const { chats, workflows, executions, projects } = stateRef.current;
+          const lieu = lieuDeConversation(chats, a.chatId);
+          const ici = workflows.filter((w) => dansEspace(w.lieu, lieu));
+          const ids = new Set(ici.map((w) => w.id));
+          return { workflows: ici, executions: executions.filter((e) => ids.has(e.workflowId)), projets: projects.filter((p) => dansEspace(p.lieu, lieu)) };
+        },
+        lieu: (a) => lieuDeConversation(stateRef.current.chats, a.chatId),
         agents: () => rolesRef.current.map((r) => ({ id: r.id, nom: r.name })),
         enregistrer: (workflow) => {
           dispatch({ type: "workflow/enregistrer", workflow });
@@ -875,7 +883,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           chats: state.chats.filter((c) => dansEspace(c.lieu, null)),
           artefacts: state.artefacts,
           rendus: state.rendus.filter((r) => renduDansEspace(r.origine, null)),
-          workflows: state.workflows,
+          workflows: state.workflows.filter((w) => dansEspace(w.lieu, null)),
           personne: moi.name,
           sansEquipe: comptePret,
         }),
@@ -2364,7 +2372,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /** Un appel au modèle, sans conversation ni outil (étapes LLM et conditions). */
   const appelLibre = useCallback(
-    (o: { prompt: string; systeme: string; modele: string | null; effort: string | null; signal: AbortSignal }) =>
+    (o: { prompt: string; systeme: string; modele: string | null; effort: string | null; signal: AbortSignal; lieu?: string | null }) =>
       new Promise<Resultat>((resoudre) => {
         if (!bridge) {
           setTimeout(() => resoudre({ ok: true, texte: "OUI. (Réponse simulée : l’app n’est pas ouverte sur le bureau.)" }), 800);
@@ -2388,7 +2396,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         o.signal.addEventListener("abort", () => void bridge.claude.cancel(id));
         const prompt = o.systeme.trim() ? `[Consigne système]\n${o.systeme.trim()}\n\n[Demande]\n${o.prompt}` : o.prompt;
         void bridge.claude
-          .stream(id, { agent: null, prompt, dossier: null, sessionId: null, modele: o.modele, effort: o.effort, acces: "demander" })
+          .stream(id, { agent: null, prompt, dossier: null, sessionId: null, modele: o.modele, effort: o.effort, acces: "demander", lieu: o.lieu ?? null })
           .then((r) => {
             if (r.ok) return;
             ecouteurs.current.delete(id);
@@ -2414,6 +2422,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             updatedAt: new Date().toISOString(),
             sessions: {},
             luJusqua: null,
+            /* Les agents d'un workflow travaillent sur son serveur. */
+            ...(wf.lieu ? { lieu: wf.lieu } : {}),
           };
           dispatch({ type: "chat/add", chat });
           stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
@@ -2431,7 +2441,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             signal.addEventListener("abort", () => resoudre({ ok: false, erreur: "Arrêté." }));
             envoyerRef.current(chatId, `Workflow « ${wf.titre} »\n\n${consigne}`, roleId, fichiers);
           }),
-        llm: appelLibre,
+        llm: (o) => appelLibre({ ...o, lieu: wf.lieu ?? null }),
         notifier: (titre, texte) => {
           pousserAuTelephone({ evenement: "workflow", titre, corps: texte, lien: lienWorkflow(wf.id) });
           // Les Réglages peuvent couper les notifications des workflows, ou leur son : alors celui de KLYRA.
@@ -2461,7 +2471,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         ecrireFichier: async (chemin, texte) => {
           const ecrire = bridge?.fichiers.ecrire;
           if (!ecrire) return { ok: false, erreur: "Relance l’app une fois pour qu’elle puisse écrire des fichiers." };
-          const r = await ecrire(chemin, texte);
+          /* Le fichier d'un workflow d'un VPS s'écrit sur ce VPS. */
+          const r = await ecrire(chemin, texte, wf.lieu ?? null);
           return r.ok ? { ok: true, texte: `Écrit dans ${r.data}.` } : { ok: false, erreur: r.message };
         },
         approbation: (etapeId, signal) =>
