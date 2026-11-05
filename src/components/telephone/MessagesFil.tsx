@@ -442,6 +442,8 @@ function MessageAgent({
   const enCours = message.statut === "en-cours";
   const activite = contexte.activite?.messageId === message.origine ? contexte.activite : null;
   const texte = message.texte.trim();
+  /* Des réponses toutes prêtes attendent : les actions restent derrière « ⋯ », la maquette montre l'heure seule (E2-20). */
+  const actionsEnClair = derniere && !(choix.actif && parties.some((p) => p.type === "choix"));
 
   return (
     <div className={cn("grid grid-cols-[32px_minmax(0,1fr)] gap-x-2.5", !suite && "mt-4")}>
@@ -480,7 +482,7 @@ function MessageAgent({
         {message.compaction && !enCours ? <p className="px-1 text-ui-xs font-medium text-texte-secondaire">Conversation résumée</p> : null}
         {!enCours && texte ? (
           <div className="-ml-2 flex items-center text-ui-xs text-texte-secondaire">
-            {derniere && !choix.actif ? (
+            {actionsEnClair ? (
               <>
                 <BoutonIcone
                   variant="discret"
@@ -507,9 +509,9 @@ function MessageAgent({
                 />
               </>
             ) : null}
-            {derniere && !choix.actif ? null : <span className="pr-0.5 pl-2">{formatTime(message.creeLe)}</span>}
+            {actionsEnClair ? null : <span className="pr-0.5 pl-2">{formatTime(message.creeLe)}</span>}
             <BoutonIcone variant="discret" className="size-11" libelle="Actions sur la réponse" icone={<Icon name="dot-horizontal" size={20} />} aria-haspopup="dialog" onClick={() => setActions(true)} />
-            {derniere && !choix.actif ? <span className="pl-1">{formatTime(message.creeLe)}</span> : null}
+            {actionsEnClair ? <span className="pl-1">{formatTime(message.creeLe)}</span> : null}
           </div>
         ) : null}
       </div>

@@ -64,6 +64,7 @@ const ICONES: Record<ActionConversation, IconName> = {
  * La feuille ne se ferme qu'une fois le compte d'accord ; une erreur y reste, le nom saisi aussi.
  */
 export function FeuilleRenommer({ titre, valeur, onValider, onFermer }: { titre: string; valeur: string; onValider: (titre: string) => Promise<unknown>; onFermer: () => void }) {
+  const sur = useSupport();
   const [texte, setTexte] = useState(valeur);
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
@@ -101,7 +102,7 @@ export function FeuilleRenommer({ titre, valeur, onValider, onFermer }: { titre:
         }}
         className={CHAMP}
       />
-      {erreur ? <MessageErreur className="mt-2">{erreur}</MessageErreur> : null}
+      {erreur ? <MessageErreur className="mt-2">{erreur}</MessageErreur> : <p className="mt-2 text-ui-xs text-texte-secondaire">Le nom change aussi sur {sur}.</p>}
     </Feuille>
   );
 }
@@ -229,7 +230,7 @@ export function useMenuChat({ onDetails, onBandeau }: { onDetails?: () => void; 
       ) : null}
       {renommage ? (
         <FeuilleRenommer
-          titre="Renommer"
+          titre={renommage.parent ? "Renommer le fil" : "Renommer la conversation"}
           valeur={renommage.titre}
           onFermer={() => setRenommage(null)}
           onValider={(titre) => renommer({ conversationOrigine: renommage.origine, titre }).then(() => annoncer(`Renommée : ${titre}`))}

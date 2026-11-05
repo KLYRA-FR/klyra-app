@@ -84,14 +84,14 @@ describe("Chats (T-01)", () => {
     expect(agents[2].etat?.texte).toBe("Réfléchit…");
   });
 
-  test("états de ligne comme au bureau ; ordinateur fermé, seuls l'accord et la question restent", () => {
+  test("états de ligne comme au bureau ; ordinateur fermé, la question reste et l'accord est expiré", () => {
     expect(etatLigne(conversation("dm-hugo", { activite: accord("x") }), nom)?.texte).toBe("Attend ton accord");
     expect(etatLigne(conversation("c1", { kind: "equipe", activite: accord("x") }), nom)?.texte).toBe("Hugo attend ton accord");
     expect(etatLigne(conversation("dm-hugo", { activite: activite("etape", "x", { libelle: "Lit README.md" }) }), nom)?.texte).toBe("Lit README.md…");
     expect(etatLigne(conversation("dm-hugo", { activite: activite("collegue", "x") }), nom)?.texte).toBe("Attend un collègue…");
     expect(etatLigne(conversation("dm-hugo", { activite: activite("question", "x") }), nom)).toEqual({ texte: "Attend ta réponse", enCours: false });
     expect(etatLigne(conversation("dm-hugo", { activite: activite("ecrit", "x") }), nom, false)).toBeNull();
-    expect(etatLigne(conversation("dm-hugo", { activite: accord("x") }), nom, false)?.texte).toBe("Attend ton accord");
+    expect(etatLigne(conversation("dm-hugo", { activite: accord("x") }), nom, false)).toEqual({ texte: "Demande d’accord expirée", enCours: false });
   });
 
   test("À traiter : accords puis questions, les plus anciens d'abord, puis les messages en attente ; une question déjà répondue sort", () => {

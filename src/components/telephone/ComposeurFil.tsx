@@ -50,6 +50,7 @@ function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; 
   return (
     <Feuille
       titre="Modèle et effort"
+      sousTitre="Pour cette conversation"
       onFermer={onFermer}
       pied={
         <button
@@ -66,7 +67,10 @@ function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; 
     >
       <div role="radiogroup" aria-label="Modèle">
         <button type="button" role="radio" aria-checked={!choix.modele} className={radio} onClick={() => setChoix({ modele: null, effort: null })}>
-          <span className="min-w-0 flex-1">Celui de la fiche</span>
+          <span className="min-w-0 flex-1 py-1.5">
+            Celui de sa fiche
+            <span className="block text-ui-xs text-texte-secondaire">Le modèle choisi dans sa fiche</span>
+          </span>
           <CocheChoix choisi={!choix.modele} />
         </button>
         {MODELES.map((m) => (
@@ -78,7 +82,10 @@ function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; 
             className={radio}
             onClick={() => setChoix((c) => ({ modele: m.id, effort: m.id === "haiku" ? null : (c.effort ?? "high") }))}
           >
-            <span className="min-w-0 flex-1">{m.nom}</span>
+            <span className="min-w-0 flex-1 py-1.5">
+              {m.nom}
+              {m.id === "haiku" ? <span className="block text-ui-xs text-texte-secondaire">Sans réglage d’effort</span> : null}
+            </span>
             <CocheChoix choisi={choix.modele === m.id} />
           </button>
         ))}

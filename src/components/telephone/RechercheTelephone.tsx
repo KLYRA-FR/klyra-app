@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Icon } from "@/components/icons/Icon";
-import { BoutonIcone } from "@/components/ui/Bouton";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { analyserRequete, normaliser, surligner, type Morceau, type Portee, type Requete } from "@/lib/recherche";
@@ -13,6 +13,7 @@ import { retenirRequete } from "@/lib/recherche-session";
 import { agentDe, type ConversationLue } from "@/lib/telephone/chats";
 import { GrappeChat, RondAgent, useCartes } from "./AgentsChat";
 import { useHorsLigne } from "./BandeauReseau";
+import { EtatEcran } from "./etats";
 import { Etiquette, GroupeListe, LigneListe, SectionListe } from "./Liste";
 
 const PORTEES: { id: Portee; libelle: string }[] = [
@@ -146,15 +147,21 @@ export function RechercheTelephone() {
         ) : !analysee ? (
           <p className="pt-4 text-ui text-texte-secondaire">Ajoute un mot pour préciser.</p>
         ) : rien ? (
-          <div className="flex flex-col items-start gap-2 pt-4">
-            <p role="status" className="text-ui text-texte-secondaire">
-              {portee === "agents" ? "Aucun résultat chez tes agents" : portee === "projets" ? "Aucun résultat dans tes projets" : portee === "conversation" ? "Aucun résultat dans cette conversation" : "Aucun résultat"} pour « {requete} ».
-            </p>
-            {portee !== "tout" ? (
-              <button type="button" className="min-h-11 text-ui font-medium text-texte-principal" onClick={() => setPortee("tout")}>
-                Chercher partout
-              </button>
-            ) : null}
+          <div role="status">
+            <EtatEcran
+              forme="encadre"
+              icone="search-01"
+              titre="Aucun message ne correspond"
+              texte={`« ${requete} » n’apparaît pas ${portee === "agents" ? "dans les conversations avec les agents" : portee === "projets" ? "dans les conversations de projet" : portee === "conversation" ? "dans cette conversation" : "dans tes conversations"}.`}
+              action={
+                portee !== "tout" ? (
+                  <Bouton variant="blanc" taille="md" onClick={() => setPortee("tout")}>
+                    Chercher partout
+                  </Bouton>
+                ) : undefined
+              }
+              className="mt-4"
+            />
           </div>
         ) : (
           <>
