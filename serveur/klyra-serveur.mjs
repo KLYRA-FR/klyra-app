@@ -178,7 +178,7 @@ function lireCorpsRequete(req, max = CORPS_MAX) {
 export function contexteTelephone(brut) {
   if (!brut || typeof brut !== "object") return null;
   const { chatId, agentId, titre, telephone } = brut;
-  if (typeof chatId !== "string" || !/^[A-Za-z0-9_.:-]{1,120}$/.test(chatId) || /^routine-/.test(chatId)) return null;
+  if (typeof chatId !== "string" || !/^[A-Za-z0-9_.:@-]{1,120}$/.test(chatId) || /^routine-/.test(chatId)) return null;
   if (typeof agentId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(agentId)) return null;
   if (!telephone || typeof telephone !== "object") return null;
   const { messageId, texte, creeLe } = telephone;
@@ -198,7 +198,7 @@ export function contexteTelephone(brut) {
  * et « |codex » ou « |grok » au bout pour celle de Codex ou de Grok (une session n'existe que dans le moteur qui l'a créée).
  */
 export function cleConversation(conversation, agent, moteur = null) {
-  if (typeof conversation !== "string" || !/^[A-Za-z0-9_.:-]{1,120}$/.test(conversation)) return null;
+  if (typeof conversation !== "string" || !/^[A-Za-z0-9_.:@-]{1,120}$/.test(conversation)) return null;
   return `${conversation}|${typeof agent === "string" && agent ? agent : "principal"}${moteur === "codex" || moteur === "grok" ? `|${moteur}` : ""}`;
 }
 
@@ -216,6 +216,7 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
   /* Conversation de chaque réponse en cours, et dernière session de chaque agent par conversation. */
   const conversations = new Map();
   let sessions = {};
+  let surFin = null;
   if (fichierSessions) {
     try {
       const lu = JSON.parse(readFileSync(fichierSessions, "utf8"));
@@ -248,9 +249,14 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
       ajouter({ requestId, sessionId: sessionId ?? null, event, ...(lie ? { contexte: lie } : {}) });
       retenirSession(requestId, sessionId);
       if (event?.type === "fin") {
+        surFin?.({ requestId, event, sessionId: sessionId ?? null, contexte: lie, cle: conversations.get(requestId) ?? null });
         contextes.delete(requestId);
         conversations.delete(requestId);
       }
+    },
+    /** Prévient quand une réponse finit : le serveur la range s'il n'y a personne pour le faire. */
+    surFin(fn) {
+      surFin = fn;
     },
     /** La réponse appartient à cette conversation (`cleConversation`) : sa session y sera retenue. */
     lierConversation(requestId, cle) {
@@ -315,6 +321,16 @@ export function creerGestionnaire(options) {
   const ia = options.ia ?? null;
   /* L'espace du serveur (conversations, projets, workflows…) : là où il y a des agents. */
   const espace = options.espace ?? (agents ? creerEspace({ donnees: dossier }) : null);
+  /* PC fermé, personne n'écoute : le serveur range lui-même la réponse dans sa conversation. */
+  journal?.surFin?.(({ requestId, event, sessionId, contexte, cle }) => {
+    if (!espace || journal.ecouteurs() > 0) return;
+    const [conversation, agent] = typeof cle === "string" ? cle.split("|") : [];
+    try {
+      espace.noterReponse({ requestId, event, sessionId, contexte, conversation, agent });
+    } catch {
+      /* Le journal la garde encore 24 h : l'app la rattrapera. */
+    }
+  });
   let echecs = 0;
 
   const appareilDe = (req) => {

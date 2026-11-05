@@ -364,6 +364,8 @@ export interface Message {
   parts: MessagePart[];
   /** Réponse d'agent : en cours d'écriture, finie, ou arrêtée sur une erreur. */
   statut?: "en-cours" | "fait" | "erreur";
+  /** Rangée par le VPS, PC fermé : son texte seul. L'app la remplace si le journal rejoue la réponse complète. */
+  ecritParServeur?: boolean;
   erreur?: string;
   /** L'exécution de routine (moteur du process principal) que ce message porte : la consigne, puis la réponse de l'agent. */
   routineRun?: string;

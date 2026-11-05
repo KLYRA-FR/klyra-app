@@ -86,11 +86,58 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
     return { revision: etat.revision };
   }
 
+  /**
+   * Une réponse finie alors qu'aucune app n'écoutait (PC fermé) : le serveur la range lui-même dans sa
+   * conversation. L'app la complétera en rejouant le journal si elle revient dans les 24 h.
+   */
+  function noterReponse({ requestId, event, sessionId, contexte, conversation, agent }) {
+    const chatId = contexte?.chatId ?? conversation;
+    if (typeof chatId !== "string" || !chatId || typeof requestId !== "string") return;
+    const roleId = contexte?.agentId ?? agent ?? "principal";
+    const date = new Date(maintenant()).toISOString();
+    const fichier = cheminDe("conversation", chatId);
+    let valeur = null;
+    try {
+      valeur = JSON.parse(readFileSync(fichier, "utf8")).valeur;
+    } catch {
+      /* Pas encore dans l'espace : elle y entre ici. */
+    }
+    const chat = valeur?.chat ?? {
+      id: chatId,
+      kind: chatId.startsWith("dm-") ? "direct" : "equipe",
+      projectId: null,
+      title: contexte?.titre ?? chatId,
+      roleIds: [roleId],
+      sessions: {},
+      luJusqua: null,
+    };
+    const messages = [...(valeur?.messages ?? [])];
+    const t = contexte?.telephone;
+    if (t && !messages.some((m) => m.id === t.messageId)) {
+      messages.push({ id: t.messageId, chatId, author: { kind: "user" }, createdAt: t.creeLe, parts: [{ type: "text", text: t.texte }] });
+    }
+    if (messages.some((m) => m.id === requestId)) return;
+    const texte = typeof event?.texte === "string" ? event.texte : "";
+    messages.push({
+      id: requestId,
+      chatId,
+      author: { kind: "role", roleId },
+      createdAt: date,
+      parts: texte ? [{ type: "text", text: texte }] : [],
+      statut: event?.ok === false ? "erreur" : "fait",
+      ...(event?.ok === false && typeof event.erreur === "string" ? { erreur: event.erreur } : {}),
+      /* L'app sait qu'elle peut remplacer ce texte seul par la réponse complète, si le journal la rejoue. */
+      ecritParServeur: true,
+    });
+    const suite = { ...chat, updatedAt: date, sessions: { ...chat.sessions, ...(sessionId ? { [roleId]: sessionId } : {}) } };
+    ecrire({ elements: [{ type: "conversation", id: chatId, valeur: { chat: suite, messages } }] });
+  }
+
   function appeler(methode, corps = {}) {
     if (methode === "lire") return lire(corps.depuis);
     if (methode === "ecrire") return ecrire(corps);
     throw new ErreurEspace("Ce serveur ne connaît pas cette demande.");
   }
 
-  return { appeler, lire, ecrire };
+  return { appeler, lire, ecrire, noterReponse };
 }
