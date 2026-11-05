@@ -122,6 +122,32 @@ try {
   await attendre(300);
   verifier((await choisi()) === surPc, "Ce PC : son accès n’a pas changé");
 
+  // Le Coffre : chaque serveur a le sien, et un secret n'y va que si on le copie.
+  const coffrePc = await app.ev(`window.klyra.coffre.etat()`);
+  if (coffrePc.ok && coffrePc.data.chiffrement) {
+    const ajoute = await app.ev(`window.klyra.coffre.ajouter({ variable: "CLE_DU_PC", nom: "Clé du PC", valeur: "secret-du-pc" })`);
+    verifier(ajoute.ok, "Ce PC : un secret dans son coffre");
+    const avant = await app.ev(`window.klyra.coffre.vps(${JSON.stringify(adresse)}, "etat", {})`);
+    verifier(avant.ok && avant.data.secrets.length === 0, "VPS : il ne le voit pas");
+    const copie = await app.ev(`window.klyra.coffre.copierVers(${JSON.stringify(ajoute.data?.id)}, ${JSON.stringify(adresse)})`);
+    verifier(copie.ok, "on copie ce secret sur le VPS");
+    const apresCopie = await app.ev(`window.klyra.coffre.vps(${JSON.stringify(adresse)}, "etat", {})`);
+    verifier(apresCopie.ok && apresCopie.data.secrets.some((x) => x.variable === "CLE_DU_PC") && !JSON.stringify(apresCopie.data).includes("secret-du-pc"), "VPS : il l’a, et l’écran ne reçoit jamais la valeur");
+    const refuse = await app.ev(`window.klyra.coffre.vps(${JSON.stringify(adresse)}, "lire", { id: "x" })`);
+    verifier(!refuse.ok, "l’écran ne peut pas demander une valeur au VPS");
+  } else {
+    console.log("(pas de trousseau ici : seul le coffre du VPS est essayé)");
+    const direct = await app.ev(`window.klyra.coffre.vps(${JSON.stringify(adresse)}, "ajouter", { entree: { variable: "CLE_VPS", nom: "Clé du VPS", valeur: "secret-vps" } })`);
+    verifier(direct.ok, "VPS : on range un secret dans son coffre");
+    const lu = await app.ev(`window.klyra.coffre.vps(${JSON.stringify(adresse)}, "etat", {})`);
+    verifier(lu.ok && lu.data.secrets.length === 1 && !JSON.stringify(lu.data).includes("secret-vps"), "VPS : l’écran ne reçoit jamais la valeur");
+    const refuse = await app.ev(`window.klyra.coffre.vps(${JSON.stringify(adresse)}, "lire", { id: "x" })`);
+    verifier(!refuse.ok, "l’écran ne peut pas demander une valeur au VPS");
+  }
+  await surServeur(adresse);
+  await app.aller("/reglages?section=coffre");
+  verifier(await app.quand(`document.body.innerText.includes("à lui seul")`), "Réglages › Coffre, sur le VPS : la page dit que c’est le sien, et comment il est protégé");
+
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
 } finally {
   await app?.fermer();
