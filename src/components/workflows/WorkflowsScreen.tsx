@@ -13,7 +13,9 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { apparition } from "@/lib/mouvement";
+import { dansEspace, lieuDeConversation, lieuParDefaut, useLieuActif } from "@/lib/lieux";
 import { texteDe, useProjects, useRoles, useWorkspace } from "@/lib/workspace";
+import { AutreServeur } from "@/components/shell/AutreServeur";
 import { useChantiers, type Chantier } from "@/lib/workflows/chantiers";
 import { estEtape, GRAPHE_VIDE, type ExecutionWorkflow, type Graphe, type VersionWorkflow, type Workflow } from "@/types/workflows";
 import { Canevas } from "./Canevas";
@@ -42,7 +44,9 @@ function duree(e: ExecutionWorkflow): string {
 
 function nouveauWorkflow(titre = "Workflow sans titre", graphe: Graphe = GRAPHE_VIDE): Workflow {
   const maintenant = new Date().toISOString();
-  return { id: crypto.randomUUID(), titre, graphe, projectId: null, creeLe: maintenant, majLe: maintenant, versions: [] };
+  /* Il appartient au serveur affiché, et y reste. */
+  const lieu = lieuParDefaut();
+  return { id: crypto.randomUUID(), titre, graphe, projectId: null, ...(lieu ? { lieu } : {}), creeLe: maintenant, majLe: maintenant, versions: [] };
 }
 
 /** Un exemple pour démarrer : maquette, accord, code, recette ; la recette renvoie au code tant que ce n'est pas bon. */
@@ -574,18 +578,41 @@ function BarrePortail({
 /* ─── L'écran ──────────────────────────────────────────────────── */
 
 export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
+  const { state } = useWorkspace();
+  const espace = useLieuActif();
+  const demande = useSearchParams().get("workflow");
+  /* Un lien (notification, conversation) vers un workflow d'un autre serveur : on propose d'y passer. */
+  const ailleurs = state.workflows.find((w) => w.id === demande && !dansEspace(w.lieu, espace));
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {ailleurs && <AutreServeur lieu={ailleurs.lieu ?? null} quoi={`Le workflow « ${ailleurs.titre} »`} />}
+      {espace && (
+        <p role="note" className="m-0 border-b border-bordure-subtile bg-fond-surface-grise px-5 py-2 text-ui-s text-texte-secondaire">
+          Ces workflows appartiennent à ce serveur et leurs agents y travaillent. Pour l’instant, ils ne se lancent que tant que l’app est ouverte sur cet ordinateur.
+        </p>
+      )}
+      <div className="min-h-0 flex-1">
+        <EcranWorkflows entete={entete} />
+      </div>
+    </div>
+  );
+}
+
+function EcranWorkflows({ entete }: { entete?: ReactNode }) {
   const { state, enregistrerWorkflow, supprimerWorkflow } = useWorkspace();
-  const workflows = useMemo(() => [...state.workflows].sort((a, b) => b.majLe.localeCompare(a.majLe)), [state.workflows]);
+  /* Les workflows du serveur affiché. */
+  const espace = useLieuActif();
+  const workflows = useMemo(() => state.workflows.filter((w) => dansEspace(w.lieu, espace)).sort((a, b) => b.majLe.localeCompare(a.majLe)), [state.workflows, espace]);
   const demande = useSearchParams().get("workflow");
   const [ouvert, setOuvert] = useState<string | null>(demande);
 
   /* Un agent construit un workflow : la page l'ouvre, et le montre avant même qu'il soit enregistré. */
-  const chantiers = useChantiers();
+  const chantiers = useChantiers().filter((c) => dansEspace(lieuDeConversation(state.chats, c.chatId), espace));
   const chantier = chantiers.find((c) => c.phase !== "fini") ?? chantiers[0] ?? null;
   const [suivis, setSuivis] = useState<{ chantier: string | null; execution: string | null; lien: string | null }>({ chantier: null, execution: null, lien: demande });
   const cleChantier = chantier ? `${chantier.cle}|${chantier.workflowId}` : null;
   /* Un agent lance un workflow : la page l'ouvre aussi, pour voir l'exécution passer. */
-  const lanceeParAgent = state.executions.find((e) => e.lancePar && (e.statut === "en-cours" || e.statut === "approbation")) ?? null;
+  const lanceeParAgent = state.executions.find((e) => e.lancePar && (e.statut === "en-cours" || e.statut === "approbation") && workflows.some((w) => w.id === e.workflowId)) ?? null;
   if (cleChantier && cleChantier !== suivis.chantier) {
     setSuivis({ ...suivis, chantier: cleChantier });
     setOuvert(chantier!.workflowId);

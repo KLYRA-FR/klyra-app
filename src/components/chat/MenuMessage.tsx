@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { ElementContextuel, EnteteContextuel, MenuContextuel, SeparateurContextuel, SousMenuContextuel } from "@/components/ui/MenuContextuel";
 import { ajouterAuBrouillon } from "@/lib/brouillons";
+import { estAvantDepart } from "@/lib/contexte";
 import { formatDaySeparator, formatTime, isSameDay } from "@/lib/format";
 import { raccourciDuSysteme } from "@/lib/plateforme";
 import { citer, titreDuPassage } from "@/lib/repondre";
@@ -80,13 +81,15 @@ export function MenuMessage({ chat, cible, x, y, onFermer }: { chat: Chat; cible
           >
             Créer une branche
           </ElementContextuel>
-          <ElementContextuel
-            icone="refresh-01"
-            detail={travail ? "L’agent travaille : ce sera fait juste après" : undefined}
-            onChoisir={() => reessayer(chat.id, message.id, "reessayer")}
-          >
-            Réessayer
-          </ElementContextuel>
+          {!estAvantDepart(chat, message) && (
+            <ElementContextuel
+              icone="refresh-01"
+              detail={travail ? "L’agent travaille : ce sera fait juste après" : undefined}
+              onChoisir={() => reessayer(chat.id, message.id, "reessayer")}
+            >
+              Réessayer
+            </ElementContextuel>
+          )}
         </>
       )}
     </MenuContextuel>

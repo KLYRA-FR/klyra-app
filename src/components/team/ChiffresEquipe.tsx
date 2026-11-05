@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Apparition } from "@/components/ui/Apparition";
 import { Compteur } from "@/components/ui/Compteur";
 import { Icon } from "@/components/icons/Icon";
-import { useWorkspace } from "@/lib/workspace";
+import { useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
 
 interface Chiffre {
   icone: ReactNode;
@@ -25,8 +25,12 @@ function estAujourdhui(iso: string): boolean {
  * sa sphère bleue (pastille « Analyze data », 65:4743), sur le fond de l'app.
  */
 export function ChiffresEquipe({ agents, exemple }: { agents: number; exemple: boolean }) {
-  const { chats, projects, messages } = useWorkspace().state;
-  const taches = messages.flatMap((m) => m.parts.flatMap((p) => (p.type === "tasks" ? p.tasks : [])));
+  const { messages } = useWorkspace().state;
+  /* Les chiffres du serveur affiché. */
+  const chats = useChatsEspace();
+  const projects = useProjects();
+  const ici = new Set(chats.map((c) => c.id));
+  const taches = messages.filter((m) => ici.has(m.chatId)).flatMap((m) => m.parts.flatMap((p) => (p.type === "tasks" ? p.tasks : [])));
   const enCours = taches.filter((t) => t.status === "en-cours").length;
   const faites = taches.filter((t) => t.status === "fait").length;
   const actifs = projects.filter((p) => p.status !== "livre").length;

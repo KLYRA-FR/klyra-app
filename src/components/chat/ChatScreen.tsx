@@ -11,7 +11,8 @@ import { annoncer } from "@/lib/annonces";
 import { demanderEcriture } from "@/lib/brouillons";
 import { formatTime } from "@/lib/format";
 import { jouer } from "@/lib/sons/sons";
-import { dansEspace, nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
+import { dansEspace, useLieuActif } from "@/lib/lieux";
+import { AutreServeur } from "@/components/shell/AutreServeur";
 import { texteDe, useChat, useChatMessages, useProject, useRoles, useWorkspace } from "@/lib/workspace";
 import { AgentsEnCours } from "./AgentsEnCours";
 import { ChatHeader } from "./ChatHeader";
@@ -104,19 +105,6 @@ function BarreHorsDeMesAgents({ agent, chatId }: { agent: AgentLocal; chatId: st
 }
 
 /** Ouverte depuis un lien (notification, ancien lien) alors qu'un autre serveur est affiché : on propose d'y passer. */
-function AutreServeur({ lieu }: { lieu: string | null }) {
-  const { basculerMachine } = useWorkspace();
-  const nom = nomLieu(lieu, useServeursRelies());
-  return (
-    <div role="status" className="flex items-center gap-3 border-b border-bordure-subtile bg-fond-surface-grise px-5 py-2 text-ui-s text-texte-secondaire">
-      <span className="min-w-0 flex-1">Cette conversation est sur {nom}, pas sur le serveur affiché.</span>
-      <Bouton variant="blanc" taille="compact" onClick={() => basculerMachine(lieu)}>
-        Passer sur {nom}
-      </Bouton>
-    </div>
-  );
-}
-
 /** Largeur de fenêtre sous laquelle le panneau de l'agent part fermé. */
 const PANNEAU_MIN_FENETRE = 1280;
 
@@ -229,7 +217,7 @@ export function ChatScreen() {
             chat.kind === "direct" ? setPanneauOuvert((v) => !v) : setPreviewOpen((v) => !v)
           }
         />
-        {!dansEspace(chat.lieu, espace) && <AutreServeur lieu={chat.lieu ?? null} />}
+        {!dansEspace(chat.lieu, espace) && <AutreServeur lieu={chat.lieu ?? null} quoi="Cette conversation" />}
         <MessageThread key={chat.id} chatId={chat.id} messageExport={exportConversation.message &&
           <MessageExport key={exportConversation.numero} message={exportConversation.message} onFermer={exportConversation.fermer} />} />
         <AgentsEnCours chatId={chat.id} />

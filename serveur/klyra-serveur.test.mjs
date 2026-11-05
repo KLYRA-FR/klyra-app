@@ -590,6 +590,12 @@ test("les projets du VPS : arbre, lecture et création sous le dossier de klyra 
     assert.deepEqual((await consignes("POST")).json.consignes.propositions, []);
     assert.equal(readFileSync(path.join(projet, "AGENTS.md"), "utf8"), "Mes consignes.\n");
     assert.equal((await appel(ecoute.port, `/klyra/v1/fichiers/consignes?dossier=${encodeURIComponent("/etc")}&nom=x`, { jeton })).statut, 400);
+    // Le fichier d'un workflow du VPS : sous le dossier de klyra seulement.
+    const ecrit = await appel(ecoute.port, "/klyra/v1/fichiers/ecrire", { methode: "POST", jeton, corps: { chemin: "rapports/hebdo.md", texte: "Bonjour" } });
+    assert.equal(ecrit.statut, 200);
+    assert.equal(readFileSync(ecrit.json.chemin, "utf8"), "Bonjour");
+    assert.equal((await appel(ecoute.port, "/klyra/v1/fichiers/ecrire", { methode: "POST", jeton, corps: { chemin: "/etc/klyra-essai", texte: "non" } })).statut, 400);
+    assert.equal((await appel(ecoute.port, "/klyra/v1/fichiers/ecrire", { methode: "POST", corps: { chemin: "a.md", texte: "non" } })).statut, 401);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });
@@ -713,6 +719,37 @@ test("la session de chaque agent par conversation est retenue, et gardée entre 
     assert.equal(journal.sessionDe(cleConversation("dm-hugo", null)), null);
     assert.equal(cleConversation("../x", "hugo"), null);
   } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("repartie à zéro sur le PC : le VPS ne reprend pas la session qu'il retient, le téléphone suit la neuve", async () => {
+  const dossier = dossierJetable();
+  const journal = creerJournal();
+  const recues = [];
+  const agents = { envoyer: (requestId, options) => recues.push(options), fermerTout() {} };
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  const envoyer = (jeton, requestId, options, contexte) => appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId, options, ...(contexte ? { contexte } : {}) } });
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const ancienne = "11111111-2222-3333-4444-555555555555";
+    const neuve = "66666666-7777-8888-9999-000000000000";
+    const options = { agent: null, prompt: "toi", sessionId: null, acces: "projet", conversation: "dm-lou" };
+    await envoyer(jeton, "r1", options);
+    journal.publier("r1", { type: "session", sessionId: ancienne }, ancienne);
+
+    await envoyer(jeton, "r2", options);
+    assert.equal(recues.at(-1).sessionId, ancienne, "sans session, l'agent reprend la sienne");
+
+    await envoyer(jeton, "r3", { ...options, sessionNeuve: true });
+    assert.equal(recues.at(-1).sessionId, null, "repartie à zéro : pas l'ancienne");
+
+    journal.publier("r3", { type: "session", sessionId: neuve }, neuve);
+    const contexte = { chatId: "dm-lou", agentId: "principal", titre: "Lou", telephone: { messageId: "tel-1", texte: "toi", creeLe: "2026-11-05T10:00:00.000Z" } };
+    await envoyer(jeton, "r4", { agent: null, prompt: "toi", sessionId: null, acces: "demander" }, contexte);
+    assert.equal(recues.at(-1).sessionId, neuve, "le téléphone suit la session neuve");
+  } finally {
+    await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });
   }
 });

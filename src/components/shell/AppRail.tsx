@@ -9,7 +9,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
 import { colonneTicket } from "@/lib/tickets";
-import { useProjects, useWorkspace } from "@/lib/workspace";
+import { useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
 import { NAVIGATION } from "./navigation";
 import { PastilleMaj } from "./PastilleMaj";
@@ -69,7 +69,8 @@ export function AppRail({
   const currentId = useSearchParams().get("id");
   const pathname = usePathname();
   /* Les tickets à valider : ils t'attendent, leur nombre se pose sur l'entrée Tickets. */
-  const { chats, travail } = useWorkspace().state;
+  const { travail } = useWorkspace().state;
+  const chats = useChatsEspace();
   const aValider = chats.filter((c) => c.fil && colonneTicket(c.fil, !!travail[c.id]) === "a-valider").length;
   /* Les projets du rail : les épinglés (sinon les plus récents), et celui qu'on regarde. Tous les autres : Projets. */
   const epingles = projects.filter((p) => p.pinned);

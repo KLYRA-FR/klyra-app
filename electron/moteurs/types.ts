@@ -41,6 +41,8 @@ export interface StreamOptions {
   dossier: string | null;
   /** Session à reprendre : l'agent se souvient de la conversation. */
   sessionId: string | null;
+  /** Sans `sessionId` : une session neuve, même si le VPS en retient une pour cette conversation (« Repartir à zéro »). */
+  sessionNeuve?: boolean;
   /** Modèle choisi dans la conversation (« opus », « sonnet », « haiku »), ou null : celui de la fiche. */
   modele?: string | null;
   /** Effort de réflexion : low, medium, high, xhigh, max ; null : celui par défaut. */

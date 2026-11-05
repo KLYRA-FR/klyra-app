@@ -247,6 +247,8 @@ export interface StreamOptions {
   prompt: string;
   dossier: string | null;
   sessionId: string | null;
+  /** Sans `sessionId` : une session neuve, même si le VPS en retient une pour cette conversation (« Repartir à zéro »). */
+  sessionNeuve?: boolean;
   modele?: string | null;
   effort?: string | null;
   fichiers?: string[];
@@ -535,7 +537,7 @@ export interface KlyraBridge {
     /** Chemin sur le disque d'un fichier glissé dans la fenêtre ("" s'il n'en a pas). */
     cheminDe: (file: File) => string;
     /** Écrit un fichier texte (sortie d'un workflow) ; renvoie son chemin complet. Absent avant la relance de l'app. */
-    ecrire?: (chemin: string, texte: string) => Promise<Reponse<string>>;
+    ecrire?: (chemin: string, texte: string, lieu?: string | null) => Promise<Reponse<string>>;
     /** Écrit une image collée dans le dossier de l'app (`collages/`) ; renvoie son chemin. Absent avant la relance de l'app. */
     enregistrerCollage?: (octets: Uint8Array, type: string) => Promise<Reponse<string>>;
     /** Écrit une pièce jointe venue du téléphone dans le dossier de l'app (`telephone/`) ; renvoie son chemin. Absent avant la relance de l'app. */

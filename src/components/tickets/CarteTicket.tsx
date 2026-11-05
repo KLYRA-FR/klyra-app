@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/cn";
 import { enRetard, libelleEcheance } from "@/lib/dates";
 import { LIBELLES_ETAPES, type ColonneTicket } from "@/lib/tickets";
+import { dansEspace } from "@/lib/lieux";
 import { useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Fil } from "@/types/domain";
 import { useFermerTicket } from "./useFermerTicket";
@@ -47,7 +48,8 @@ function Reglages({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: Colon
   const fermer = useFermerTicket();
   const fil = chat.fil;
   const priorite = fil.priorite ?? 0;
-  const projets = [{ value: "", label: "Aucun projet" }, ...state.projects.map((p) => ({ value: p.id, label: p.name }))];
+  /* Un ticket ne se range que dans un projet de son serveur. */
+  const projets = [{ value: "", label: "Aucun projet" }, ...state.projects.filter((p) => dansEspace(p.lieu, chat.lieu ?? null)).map((p) => ({ value: p.id, label: p.name }))];
   return (
     <div className="flex flex-col gap-2 border-t border-bordure-subtile pt-2">
       {colonne !== "termine" && (

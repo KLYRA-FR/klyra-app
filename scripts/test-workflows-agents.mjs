@@ -9,8 +9,8 @@
  *  - « lance essai » : l'assistant appelle `lancer_workflow` ; l'exécution passe (son étape agent
  *    répond dans la conversation du workflow), l'historique dit qui l'a lancée.
  *  - Sur un VPS (un vrai serveur KLYRA local, ce PC sans Claude Code) : l'assistant du serveur
- *    construit un workflow ; l'appel est relayé à ce PC, où vivent les workflows, et la page le
- *    montre se construire de la même façon.
+ *    construit un workflow ; l'appel est relayé à ce PC, où tourne le moteur, et la page le montre
+ *    se construire de la même façon. Le workflow appartient à ce serveur : Ce PC ne le montre pas.
  * Prérequis : `pnpm build && pnpm build:electron`, Claude Code (KLYRA_CLAUDE_PATH, ou sur le PATH).
  *   xvfb-run -a node scripts/test-workflows-agents.mjs   (sous Linux sans bac à sable : -- --no-sandbox)
  */
@@ -206,8 +206,12 @@ try {
     verifier(await app.quand(`${pastille}?.innerText.includes('a construit ce workflow')`, 60000), "VPS : l’appel relayé à ce PC enregistre le workflow");
     verifier(
       await surDisque(() => conversations().workflows.length === avant + 1 && conversations().workflows.some((w) => w.titre === "Bonjour vps" && w.graphe.noeuds.length === 3)),
-      "VPS : le workflow est sur ce PC, trois étapes",
+      "VPS : le workflow, trois étapes",
     );
+    verifier(conversations().workflows.find((w) => w.titre === "Bonjour vps")?.lieu === adresse, "VPS : le workflow appartient à ce serveur");
+    verifier(!(await app.ev(`document.body.innerText`)).includes("Bonjour essai"), "VPS : les workflows de ce PC ne sont pas proposés");
+    await app.ev(`(() => { localStorage.removeItem("klyra:lieu-actif"); window.dispatchEvent(new Event("klyra:lieu-actif")); })()`);
+    verifier(await app.quand(`!document.body.innerText.includes("Bonjour vps")`), "Ce PC : le workflow du VPS n’y est pas");
     verifier(fournisseur.requetes.some((q) => q.resultats.some((r) => !r.erreur && r.texte.includes("Workflow créé : « Bonjour vps »"))), "VPS : la réponse revient à l’agent du serveur");
     verifier(app.erreurs.length === 0, `VPS : aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
   } finally {
