@@ -235,6 +235,8 @@ export interface ActionMenu {
   confirmation?: { titre: string; texte?: string; confirmer: string };
   /** Mène à une sous-page : la feuille reste ouverte, un chevron le dit. */
   sousPage?: boolean;
+  /** Ce que donnera ce choix, à droite de la ligne (« Jeu. 5 nov., 09:00 »). */
+  valeur?: string;
 }
 
 /** Les actions rapides en tête d'un menu (grille de 4, `ActionsRapides` du bureau). */
@@ -335,6 +337,7 @@ function ContenuMenu({ rapides, actions, onConfirmer }: { rapides?: ActionRapide
                 {action.libelle}
                 {action.note ? <span className="mt-0.5 block text-ui-xs text-texte-secondaire">{action.note}</span> : null}
               </span>
+              {action.valeur ? <span className="shrink-0 text-ui text-texte-secondaire">{action.valeur}</span> : null}
               {action.sousPage ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
             </button>
           </li>

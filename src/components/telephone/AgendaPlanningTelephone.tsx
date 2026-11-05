@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
@@ -13,16 +13,22 @@ import {
   grilleDuMois,
   joursDeLaSemaine,
   joursOccupes,
+  placeMaintenant,
   rappelsDuJour,
   regrouperParJour,
   trierJour,
   type RappelTelephone,
   type VueAgenda,
 } from "@/lib/telephone/planning";
-import { LignePoste, usePlanningTelephone, type ElementAgenda } from "./ContextePlanningTelephone";
+import { useApres } from "./ChatsTelephone";
+import { SectionPoste, usePlanningTelephone, type ElementAgenda } from "./ContextePlanningTelephone";
+import { Puce } from "./Controles";
+import { BandeauVueGardee, EtatEcran, NotePoste, Squelette } from "./etats";
+import { Etiquette, GroupeListe, SectionListe } from "./Liste";
 import { LigneRappel } from "./RappelsTelephone";
 
 const fmtJourCourt = new Intl.DateTimeFormat("fr-FR", { weekday: "short" });
+const fmtHeure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
 const fmtMois = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
 const INITIALES = ["L", "M", "M", "J", "V", "S", "D"];
 const capitaliser = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -63,49 +69,53 @@ export function AgendaPlanningTelephone({
   departs: LecturePoste<unknown> & { relancer: () => void };
   poste: LecturePoste<unknown> & { relancer: () => void };
 }) {
-  const { sur, aujourdhui } = usePlanningTelephone();
+  const { sur, aujourdhui, gardeeLe } = usePlanningTelephone();
   const occupes = useMemo(() => joursOccupes(elements.filter((e) => e.genre === "evenement"), rappels), [elements, rappels]);
   const semaine = joursDeLaSemaine(jour);
-  /* D-8 (C-1c) : « rien de prévu » seulement si l'ordinateur aussi a été lu (ou s'il n'y en a aucun). */
+  /* D-8 (C-1c) : tant que l'ordinateur n'a pas répondu, le compte et lui restent séparés, sans conclure. */
   const toutLu = lue(poste) && (vue === "mois" || lue(departs));
-  /* Les deux lectures gardées : un seul bandeau « Vus à… ». */
-  const deuxVues = departs.etat === "ferme" && !!departs.gardee && poste.etat === "ferme" && !!poste.gardee;
-  const lignesPoste = (
-    <>
-      {vue !== "mois" && !deuxVues ? <LignePoste lecture={departs} ferme={`Départs des routines : visibles quand ${sur} est ouvert`} sur={sur} mot="Vus" /> : null}
-      <LignePoste lecture={poste} ferme={`Événements gardés sur ${sur} : visibles quand il est ouvert`} sur={sur} mot="Vus" />
-    </>
+  const compteSeul = (e: ElementAgenda) => e.origine === "compte";
+  const rappelsCompte = rappels.filter((r) => r.source === "compte");
+  const fermePhrase = (surQui: string) => `tes rendez-vous, les départs des routines et les rappels gardés sur ${surQui} s’afficheront ici quand KLYRA y est ouverte.`;
+  const hors = !semaine.includes(aujourdhui);
+  const chargement = useApres(300, !charge);
+
+  /* Ce que l'ordinateur doit encore dire, ou sa vue gardée datée, dans sa propre section. */
+  const surPoste = (lignes: ReactNode) => (
+    <SectionListe titre={`Sur ${sur}`} className="mt-6">
+      {gardeeLe !== null ? <BandeauVueGardee lu={gardeeLe} mot="Vus" className="mb-2" /> : null}
+      {lue(poste) ? null : <SectionPoste lecture={poste} ferme={fermePhrase} />}
+      {gardeeLe !== null ? lignes : null}
+      {gardeeLe !== null ? <NotePoste className="mt-2 px-1 text-ui-xs text-texte-secondaire" /> : null}
+    </SectionListe>
   );
 
   return (
     <>
-      <div className="flex items-center gap-2 px-4">
-        <div role="radiogroup" aria-label="Vue" className="flex gap-1">
+      <div className="flex items-center gap-1.5 px-4">
+        <div role="group" aria-label="Vue" className="flex gap-1.5">
           {VUES.map(({ id, libelle }) => (
-            <button
-              key={id}
-              type="button"
-              role="radio"
-              aria-checked={vue === id}
-              onClick={() => onVue(id)}
-              className={cn(
-                "min-h-11 rounded-full px-3 text-ui",
-                vue === id ? "bg-fond-surface-grise font-medium text-texte-principal" : "text-texte-secondaire active:bg-fond-survol",
-              )}
-            >
+            <Puce key={id} choisie={vue === id} onClick={() => onVue(id)}>
               {libelle}
-            </button>
+            </Puce>
           ))}
         </div>
         <span className="flex-1" />
+        {hors && vue !== "mois" ? (
+          <button type="button" className="min-h-11 px-1.5 text-ui font-medium text-texte-principal" onClick={() => onJour(aujourdhui)}>
+            Aujourd’hui
+          </button>
+        ) : null}
         <BoutonIcone
-          taille="md"
+          variant="discret"
+          className="size-11"
           libelle={vue === "mois" ? "Mois précédent" : "Semaine précédente"}
           icone={<Icon name="chevron-left" size={20} />}
           onClick={() => onJour(decaler(jour, vue, -1))}
         />
         <BoutonIcone
-          taille="md"
+          variant="discret"
+          className="size-11"
           libelle={vue === "mois" ? "Mois suivant" : "Semaine suivante"}
           icone={<Icon name="chevron-right" size={20} />}
           onClick={() => onJour(decaler(jour, vue, 1))}
@@ -113,12 +123,12 @@ export function AgendaPlanningTelephone({
       </div>
 
       {vue === "mois" ? (
-        <GrilleMoisTelephone jour={jour} occupes={occupes} aujourdhui={aujourdhui} onChoisir={(cle) => {
+        <GrilleMoisTelephone jour={jour} occupes={occupes} aujourdhui={aujourdhui} onAujourdhui={() => onJour(aujourdhui)} onChoisir={(cle) => {
           onJour(cle);
           onVue("jour");
         }} />
       ) : (
-        <ol aria-label={`Semaine du ${libelleJour(semaine[0])}`} className="grid shrink-0 grid-cols-7 gap-1 px-3 pt-1 pb-2">
+        <ol aria-label={`Semaine du ${libelleJour(semaine[0])}`} className="grid shrink-0 grid-cols-7 gap-1 px-3 pt-2 pb-3">
           {semaine.map((cle) => {
             const choisi = cle === jour;
             return (
@@ -133,13 +143,13 @@ export function AgendaPlanningTelephone({
                     if (vue === "semaine") document.getElementById(`jour-${cle}`)?.scrollIntoView({ block: "start" });
                   }}
                   className={cn(
-                    "flex min-h-[52px] w-full flex-col items-center justify-center rounded-md",
-                    choisi ? "bg-texte-principal text-texte-inverse" : "text-texte-principal active:bg-fond-survol",
+                    "flex min-h-[60px] w-full flex-col items-center justify-center gap-0.5 rounded-md",
+                    choisi ? "klyra-surface-sombre text-texte-inverse" : "text-texte-principal active:bg-fond-survol",
                     !choisi && cle === aujourdhui && "border border-bordure-forte",
                   )}
                 >
                   <span className={cn("text-ui-xs", choisi ? "text-texte-inverse" : "text-texte-secondaire")}>{fmtJourCourt.format(depuisCle(cle))}</span>
-                  <span className="text-ui font-medium">{Number(cle.slice(8))}</span>
+                  <span className="text-body-s font-medium">{Number(cle.slice(8))}</span>
                   <span aria-hidden="true" className={cn("size-1 rounded-full", occupes.has(cle) ? (choisi ? "bg-texte-inverse" : "bg-texte-principal") : "")} />
                 </button>
               </li>
@@ -150,129 +160,206 @@ export function AgendaPlanningTelephone({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24">
         {!charge ? (
-          <ul className="mt-2 flex flex-col gap-2" aria-busy="true">
-            {Array.from({ length: 5 }, (_, i) => (
-              <li key={i} className="h-12 rounded-md bg-fond-surface-grise" />
-            ))}
-          </ul>
+          chargement ? (
+            <div aria-busy="true" className="mt-2">
+              <Squelette lignes={4} />
+            </div>
+          ) : null
         ) : vue === "jour" ? (
-          <VueJour cle={jour} elements={elements} rappels={rappels} lignesPoste={lignesPoste} toutLu={toutLu} />
+          lue(poste) ? (
+            <>
+              <VueJour cle={jour} elements={elements} rappels={rappels} toutLu={toutLu && poste.etat !== "aucun"} titre={jour === aujourdhui ? "Ta journée" : libelleJour(jour)} />
+              {poste.etat === "aucun" ? (
+                <div className="mt-4">
+                  <SectionPoste lecture={poste} ferme={fermePhrase} />
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <VueJour cle={jour} elements={elements.filter(compteSeul)} rappels={rappelsCompte} toutLu={false} titre="Dans ton compte" videAussi />
+              {surPoste(
+                <VueJour
+                  cle={jour}
+                  elements={elements.filter((e) => !compteSeul(e))}
+                  rappels={rappels.filter((r) => r.source === "poste")}
+                  toutLu={false}
+                  sansTitre
+                />,
+              )}
+            </>
+          )
         ) : vue === "semaine" ? (
           <>
-            {regrouperParJour(elements, semaine).map(({ cle, elements: duJour }) => (
-              <section key={cle} id={`jour-${cle}`} aria-label={libelleJour(cle)} className="scroll-mt-0">
-                <h2 className="sticky top-0 z-10 bg-fond-page">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onJour(cle);
-                      onVue("jour");
-                    }}
-                    className={cn("flex min-h-11 w-full items-center gap-2 text-left text-ui font-medium", cle === aujourdhui ? "text-texte-principal" : "text-texte-secondaire")}
-                  >
-                    {libelleJour(cle)}
-                    <JoursSpeciaux cle={cle} />
-                  </button>
-                </h2>
-                <ListeDuJour cle={cle} elements={duJour} rappels={rappelsDuJour(rappels, cle, aujourdhui)} vide={toutLu ? "Rien de prévu." : null} />
-              </section>
-            ))}
-            <div className="pt-2">{lignesPoste}</div>
+            {!lue(poste) && gardeeLe === null ? <div className="mb-4">{surPoste(null)}</div> : null}
+            {gardeeLe !== null ? <BandeauVueGardee lu={gardeeLe} mot="Vus" className="mb-3" /> : null}
+            {regrouperParJour(elements, semaine).map(({ cle, elements: duJour }) => {
+              const rappelsJour = rappelsDuJour(rappels, cle, aujourdhui);
+              return (
+                <section key={cle} id={`jour-${cle}`} aria-label={libelleJour(cle)} className="scroll-mt-0 pb-4">
+                  <h2 className="sticky top-0 z-10 bg-fond-page">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onJour(cle);
+                        onVue("jour");
+                      }}
+                      className="flex min-h-11 w-full flex-wrap items-center gap-x-2 text-left text-ui font-semibold text-texte-principal"
+                    >
+                      {capitaliser(libelleJour(cle))}
+                      {duJour.length + rappelsJour.length > 0 ? <span className="font-normal text-texte-secondaire">{duJour.length + rappelsJour.length}</span> : null}
+                      {cle === aujourdhui ? <Etiquette ton="bleue">Aujourd’hui</Etiquette> : null}
+                      <JoursSpeciaux cle={cle} />
+                    </button>
+                  </h2>
+                  <ListeDuJour elements={duJour} rappels={rappelsJour} vide={toutLu ? "Rien de prévu." : null} />
+                </section>
+              );
+            })}
           </>
         ) : (
-          <div className="pt-2">{lignesPoste}</div>
+          <>
+            <p className="px-1 pt-1 text-ui-xs text-texte-secondaire">Touche un jour pour voir sa journée.</p>
+            {lue(poste) ? null : gardeeLe !== null ? <BandeauVueGardee lu={gardeeLe} mot="Vus" className="mt-3" /> : <div className="mt-3"><SectionPoste lecture={poste} ferme={fermePhrase} /></div>}
+          </>
         )}
       </div>
     </>
   );
 }
 
-/** Jour : « Ta journée », les événements et départs dans l'ordre des heures, puis « À faire aujourd'hui ». */
+/** Jour : les événements et départs dans l'ordre des heures, la ligne « maintenant » aujourd'hui, puis « À faire ». */
 function VueJour({
   cle,
   elements,
   rappels,
-  lignesPoste,
   toutLu,
+  titre,
+  videAussi = false,
+  sansTitre = false,
 }: {
   cle: string;
   elements: ElementAgenda[];
   rappels: RappelTelephone[];
-  lignesPoste: ReactNode;
   toutLu: boolean;
+  titre?: string;
+  /** Une section qui reste même vide, sans conclure sur le reste. */
+  videAussi?: boolean;
+  sansTitre?: boolean;
 }) {
   const { aujourdhui } = usePlanningTelephone();
   const duJour = trierJour(elements.filter((e) => e.jour === cle));
   const aFaire = rappelsDuJour(rappels, cle, aujourdhui);
   const estAujourdhui = cle === aujourdhui;
   const vide = duJour.length === 0 && aFaire.length === 0;
+  const heure = useHeure();
+  const place = estAujourdhui ? placeMaintenant(duJour, heure) : -1;
+  if (sansTitre && vide) return null;
   return (
-    <section aria-label={libelleJour(cle)}>
-      <h2 className="flex min-h-11 flex-wrap items-center gap-x-2 text-ui font-medium text-texte-principal">
-        {estAujourdhui ? "Ta journée" : libelleJour(cle)}
-        <JoursSpeciaux cle={cle} />
-      </h2>
-      {vide ? (
-        toutLu ? (
-          <p className="py-2 text-body-s text-texte-secondaire">
-            {estAujourdhui ? "Rien d’imposé aujourd’hui : la journée est à toi." : "Rien de prévu ce jour-là."}
-          </p>
-        ) : null
-      ) : (
-        <ul className="flex flex-col">
-          {duJour.map((element) => (
-            <LigneAgenda key={element.cle} element={element} />
-          ))}
-        </ul>
+    <section aria-label={titre ?? libelleJour(cle)}>
+      {sansTitre ? null : (
+        <h2 className="flex min-h-11 flex-wrap items-center gap-x-1.5 px-1 text-ui font-semibold text-texte-principal">
+          {titre}
+          {duJour.length > 0 ? <span className="font-normal text-texte-secondaire">{duJour.length}</span> : null}
+          <JoursSpeciaux cle={cle} />
+        </h2>
       )}
-      {lignesPoste}
+      {duJour.length > 0 ? (
+        <GroupeListe>
+          {duJour.map((element, i) => (
+            <Fragment key={element.cle}>
+              {i === place ? <LigneMaintenant heure={heure} /> : null}
+              <LigneAgenda element={element} />
+            </Fragment>
+          ))}
+          {place === duJour.length ? <LigneMaintenant heure={heure} /> : null}
+        </GroupeListe>
+      ) : vide && toutLu ? (
+        <EtatEcran
+          forme="encadre"
+          icone="calendar-01"
+          titre={estAujourdhui ? "Rien d’imposé aujourd’hui" : "Rien de prévu ce jour-là"}
+          texte={estAujourdhui ? "La journée est à toi." : undefined}
+        />
+      ) : vide && videAussi ? (
+        <p className="px-1 py-2 text-ui text-texte-secondaire">Rien dans ton compte ce jour-là.</p>
+      ) : null}
       {aFaire.length > 0 ? (
         <>
-          <h3 className="mt-3 flex min-h-11 items-center text-ui font-medium text-texte-principal">{estAujourdhui ? "À faire aujourd’hui" : "À faire"}</h3>
-          <ul className="flex flex-col">
+          <h3 className="mt-3 flex min-h-11 items-center gap-1.5 px-1 text-ui font-semibold text-texte-principal">
+            {estAujourdhui ? "À faire aujourd’hui" : "À faire"}
+            <span className="font-normal text-texte-secondaire">{aFaire.length}</span>
+          </h3>
+          <GroupeListe>
             {aFaire.map((rappel) => (
               <LigneRappel key={`${rappel.source}-${rappel.id}`} rappel={rappel} avecCategorie />
             ))}
-          </ul>
+          </GroupeListe>
         </>
       ) : null}
     </section>
   );
 }
 
-/** Un jour de la semaine : ses événements et départs, puis ses rappels. */
-function ListeDuJour({ cle, elements, rappels, vide }: { cle: string; elements: ElementAgenda[]; rappels: RappelTelephone[]; vide: string | null }) {
-  if (elements.length === 0 && rappels.length === 0) return vide ? <p className="pb-2 text-ui text-texte-secondaire">{vide}</p> : null;
+/** L'heure de ce téléphone, à la minute. */
+function useHeure(): string {
+  const lire = () => fmtHeure.format(new Date());
+  const [heure, setHeure] = useState(lire);
+  useEffect(() => {
+    const minuteur = setInterval(() => setHeure(lire()), 30_000);
+    return () => clearInterval(minuteur);
+  }, []);
+  return heure;
+}
+
+function LigneMaintenant({ heure }: { heure: string }) {
   return (
-    <ul className="flex flex-col pb-2" aria-label={libelleJour(cle)}>
+    <li aria-label={`Maintenant, ${heure}`} className="relative flex h-5 items-center">
+      <span className="z-[1] ml-1.5 rounded-pill bg-bleu-k1-500 px-1.5 text-ui-xs leading-[18px] font-semibold text-texte-inverse tabular-nums">{heure}</span>
+      <span aria-hidden="true" className="h-0.5 flex-1 bg-bleu-k1-500" />
+    </li>
+  );
+}
+
+/** Un jour de la semaine : ses événements et départs, puis ses rappels, dans une même carte. */
+function ListeDuJour({ elements, rappels, vide }: { elements: ElementAgenda[]; rappels: RappelTelephone[]; vide: string | null }) {
+  if (elements.length === 0 && rappels.length === 0) return vide ? <p className="px-1 pb-1 text-ui-xs text-texte-secondaire">{vide}</p> : null;
+  return (
+    <GroupeListe>
       {elements.map((element) => (
         <LigneAgenda key={element.cle} element={element} />
       ))}
       {rappels.map((rappel) => (
         <LigneRappel key={`${rappel.source}-${rappel.id}`} rappel={rappel} avecCategorie />
       ))}
-    </ul>
+    </GroupeListe>
   );
 }
 
-/** Un événement (touché : T-07 rempli, sauf le Weekly et ceux des autres) ou un départ de routine, en pointillé. */
+/**
+ * Un événement ou un départ de routine (filet pointillé, « Routine de … », jamais un rendez-vous
+ * modifiable). Ce qui s'ouvre porte un chevron ; le Weekly et l'événement d'un autre se lisent seulement.
+ */
 function LigneAgenda({ element }: { element: ElementAgenda }) {
   const { ouvrirEvenement } = usePlanningTelephone();
   const depart = element.genre === "depart";
-  const details = [element.fin ? `→ ${element.fin}` : null, element.detail].filter(Boolean).join(" · ");
   const contenu = (
     <>
-      <span className="klyra-mono w-12 shrink-0 pt-0.5 text-ui-xs font-medium text-texte-secondaire">{element.debut ?? "Jour"}</span>
-      <span className={cn("flex min-w-0 flex-1 flex-col gap-0.5", depart && "border-l-2 border-dashed border-bordure-forte pl-3")}>
+      <span className="flex w-11 shrink-0 flex-col pt-0.5 text-ui tabular-nums">
+        <span className="font-medium text-texte-principal">{element.debut ?? "Jour"}</span>
+        {element.fin ? <span className="text-ui-xs text-texte-secondaire">{element.fin}</span> : null}
+      </span>
+      <span className={cn("flex min-w-0 flex-1 flex-col gap-0.5 border-l pl-3", depart ? "border-dashed border-bordure-forte" : "border-bordure-forte")}>
         <span className="text-body-s text-texte-principal [overflow-wrap:anywhere]">
           {depart ? <span className="sr-only">Départ de routine : </span> : null}
           {element.titre}
         </span>
-        {details ? <span className="text-ui-xs text-texte-secondaire">{details}</span> : null}
+        {element.detail ? <span className="text-ui text-texte-secondaire">{element.detail}</span> : null}
       </span>
+      {element.evenement ? <Icon name="chevron-right" size={20} className="mt-2 shrink-0 text-icone-secondaire" /> : null}
     </>
   );
-  const ligne = "flex min-h-12 w-full items-start gap-3 py-2 text-left";
+  const ligne = "flex min-h-14 w-full items-start gap-1 px-4 py-2.5 text-left";
   return (
     <li data-echeance={element.eclairage ?? undefined} className="border-b border-bordure-subtile last:border-b-0">
       {element.evenement ? (
@@ -298,26 +385,33 @@ function GrilleMoisTelephone({
   jour,
   occupes,
   aujourdhui,
+  onAujourdhui,
   onChoisir,
 }: {
   jour: string;
   occupes: ReadonlySet<string>;
   aujourdhui: string;
+  onAujourdhui: () => void;
   onChoisir: (cle: string) => void;
 }) {
   const cases = grilleDuMois(jour, occupes);
   const titre = capitaliser(fmtMois.format(depuisCle(jour)));
   return (
-    <div className="shrink-0 px-3 pb-2">
-      <h2 className="flex min-h-11 items-center px-1 text-ui font-medium text-texte-principal">{titre}</h2>
-      <div aria-hidden="true" className="grid grid-cols-7 gap-1 pb-1">
+    <div className="mx-4 mt-2 mb-2 shrink-0 rounded-xl border border-bordure-subtile bg-fond-surface px-0.5 pb-1 shadow-ombre-xs">
+      <div className="flex min-h-11 items-center px-2">
+        <h2 className="min-w-0 flex-1 text-ui font-semibold text-texte-principal">{titre}</h2>
+        <button type="button" className="relative text-ui text-texte-secondaire after:absolute after:-inset-3" onClick={onAujourdhui}>
+          Aujourd’hui
+        </button>
+      </div>
+      <div aria-hidden="true" className="grid grid-cols-7 pb-1">
         {INITIALES.map((initiale, i) => (
           <span key={i} className="text-center text-ui-xs text-texte-secondaire">
             {initiale}
           </span>
         ))}
       </div>
-      <ol aria-label={titre} className="grid grid-cols-7 gap-1">
+      <ol aria-label={titre} className="grid grid-cols-7">
         {cases.map((c) => {
           const choisi = c.cle === jour;
           return (
@@ -329,7 +423,7 @@ function GrilleMoisTelephone({
                 onClick={() => onChoisir(c.cle)}
                 className={cn(
                   "flex min-h-11 w-full flex-col items-center justify-center rounded-md text-ui",
-                  choisi ? "bg-texte-principal text-texte-inverse" : c.dansLeMois ? "text-texte-principal" : "text-texte-secondaire",
+                  choisi ? "klyra-surface-sombre text-texte-inverse" : c.dansLeMois ? "text-texte-principal" : "text-texte-secondaire",
                   !choisi && c.cle === aujourdhui && "border border-bordure-forte font-medium",
                   !choisi && "active:bg-fond-survol",
                 )}

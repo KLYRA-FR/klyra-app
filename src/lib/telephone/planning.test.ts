@@ -6,6 +6,8 @@ import type { Categorie, Tache } from "@/types/domain";
 process.env.TZ = "Europe/Paris";
 const {
   ajouterJours,
+  categorieDeRepli,
+  placeMaintenant,
   cibleReport,
   decaler,
   depuisCompte,
@@ -302,5 +304,22 @@ describe("reporter un rappel du compte", () => {
   test("la cible écrite dans la feuille, comme au bureau", () => {
     expect(cibleReport("demain-matin", a("2026-10-30T14:12"))).toBe("Sam. 31 oct., 09:00");
     expect(cibleReport("lundi", a("2026-10-30T14:12"))).toBe("Lun. 2 nov., 09:00");
+  });
+});
+
+describe("lignes du lot 3", () => {
+  test("« maintenant » se pose avant le premier élément à venir ; les éléments sans heure restent au-dessus", () => {
+    const elements = [{ debut: null }, { debut: "09:00" }, { debut: "14:00" }];
+    expect(placeMaintenant(elements, "08:00")).toBe(1);
+    expect(placeMaintenant(elements, "10:30")).toBe(2);
+    expect(placeMaintenant(elements, "18:00")).toBe(3);
+    expect(placeMaintenant([], "18:00")).toBe(0);
+  });
+
+  test("supprimer une catégorie : ses rappels vont dans la première qui reste, comme le geste de l'ordinateur", () => {
+    const categories = [{ id: "perso" }, { id: "clients" }];
+    expect(categorieDeRepli(categories, "perso")?.id).toBe("clients");
+    expect(categorieDeRepli(categories, "clients")?.id).toBe("perso");
+    expect(categorieDeRepli([{ id: "seule" }], "seule")).toBeNull();
   });
 });
