@@ -13,7 +13,7 @@
 import { creerEquipe } from "./equipe.mjs";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
@@ -31,8 +31,7 @@ import {
   lireSouvenir,
   porteeDeLaFiche,
   promptAvecSkill,
-  skillsConnues,
-} from "./connaissances-agent.mjs";
+  skillsConnues, catalogueSkills } from "./connaissances-agent.mjs";
 import { ecrireBibliotheque, normaliserSkillsRecues, preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
@@ -41,6 +40,7 @@ import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coffre.mjs";
+import { creerCoffreServeur } from "./coffre-serveur.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
@@ -131,20 +131,27 @@ export function creerAgents(options) {
   /* L'équipe de ce serveur : ses fiches et « Mes agents » vivent ici (cf. equipe.mjs). */
   const equipeServeur = creerEquipe({ donnees, dossierClaude: path.join(home, ".claude") });
 
-  /** Son équipe, et ce que l'app lui envoie encore (configuration, skills). */
-  const lireEquipe = () => {
-    let equipe = {};
+  const lireFichierEquipe = () => {
     try {
-      equipe = JSON.parse(readFileSync(fichierEquipe, "utf8"));
+      return JSON.parse(readFileSync(fichierEquipe, "utf8"));
     } catch {
-      /* Rien reçu : les valeurs par défaut. */
+      return {};
     }
+  };
+  const ecrireFichierEquipe = (contenu) => writeFileSync(fichierEquipe, JSON.stringify(contenu), { mode: 0o600 });
+
+  /** Son équipe et ses réglages. */
+  const lireEquipe = () => {
+    const equipe = lireFichierEquipe();
     return {
       assistant: equipeServeur.assistant(),
       actifs: equipeServeur.actifs(),
       configuration: configurationValide(equipe.configuration),
       skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
-      empreinte: `${equipeServeur.empreinte()}:${equipe.empreinte ?? ""}`,
+      /* La configuration telle que l'écran l'a choisie : il la relit pour ses interrupteurs. */
+      configurationEcran: equipe.configurationEcran ?? null,
+      /* Une session repart quand l'équipe ou ses réglages changent, pas selon le PC qui a écrit le dernier. */
+      empreinte: `${equipeServeur.empreinte()}:${JSON.stringify([configurationValide(equipe.configuration), equipe.skillsParAgent ?? null, equipe.skillsLe ?? 0])}`,
       /* Ce que l'app a envoyé en dernier : elle s'en sert pour ne pas renvoyer deux fois. */
       recue: equipe.empreinte ?? "",
       complete: equipeComplete(equipe),
@@ -196,21 +203,79 @@ export function creerAgents(options) {
   function recevoirFiches(corps) {
     const fiches = Array.isArray(corps?.fiches) ? corps.fiches : null;
     if (!fiches || fiches.length > 100) throw new Error("fiches");
+    /* Une app à jour n'envoie plus que ce que ce PC peut servir au VPS (navigateur, Coffre). Le reste est au serveur. */
     const valides = fiches.filter((f) => f && typeof f.id === "string" && ID_AGENT.test(f.id) && typeof f.contenu === "string" && f.contenu.length <= 200_000);
     if (valides.length !== fiches.length) throw new Error("fiches");
     if (corps.skills !== undefined && !Array.isArray(corps.skills)) throw new Error("fiches");
+    const actuel = lireFichierEquipe();
+    /* Réglés sur ce serveur, ses réglages sont à lui : un envoi complet d'une ancienne app ne les remet pas à ceux du PC. */
+    if (corps.partielle === true || actuel.reglagesLe) {
+      const { navigateur, coffre } = corps.configuration ?? {};
+      ecrireFichierEquipe({
+        ...actuel,
+        configuration: { ...configurationValide(actuel.configuration), navigateur: navigateur === true, coffre: coffre === true },
+        skillsParAgent: validerSkillsParAgent(actuel.skillsParAgent),
+        empreinte: String(corps.empreinte ?? "").slice(0, 80),
+      });
+      return;
+    }
     const skills = Array.isArray(corps.skills) ? normaliserSkillsRecues(corps.skills) : null;
     if (!equipeServeur.initialise()) equipeServeur.appeler("initialiser", { fiches: valides, assistant: corps.assistant });
     if (skills !== null) ecrireBibliotheque(path.join(donnees, "bibliotheque-skills"), skills);
-    writeFileSync(
-      fichierEquipe,
-      JSON.stringify({
-        configuration: configurationValide(corps.configuration),
-        skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
-        empreinte: String(corps.empreinte ?? "").slice(0, 80),
-      }),
-      { mode: 0o600 },
-    );
+    ecrireFichierEquipe({
+      ...actuel,
+      configuration: configurationValide(corps.configuration),
+      skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
+      empreinte: String(corps.empreinte ?? "").slice(0, 80),
+      skillsLe: skills !== null ? Date.now() : actuel.skillsLe,
+    });
+  }
+
+  /** Les demandes de l'écran sur l'équipe de ce serveur : ses fiches (equipe.mjs), ses réglages et ses skills. */
+  function appelerEquipe(methode, corps = {}) {
+    switch (methode) {
+      case "reglages": {
+        const { configurationEcran, skillsParAgent } = lireEquipe();
+        return { configuration: configurationEcran, skillsParAgent };
+      }
+      case "reglages-ecrire": {
+        const actuel = lireFichierEquipe();
+        ecrireFichierEquipe({
+          ...actuel,
+          ...(corps.configuration
+            ? {
+                configuration: { ...configurationValide(corps.configuration), navigateur: actuel.configuration?.navigateur === true, coffre: actuel.configuration?.coffre === true },
+                configurationEcran: corps.configurationEcran ?? null,
+              }
+            : {}),
+          ...(corps.skillsParAgent ? { skillsParAgent: validerSkillsParAgent(corps.skillsParAgent) } : {}),
+          reglagesLe: Date.now(),
+        });
+        return appelerEquipe("reglages");
+      }
+      case "skills":
+        return catalogueSkills(path.join(home, ".claude"), corps.dossier ? projetValide(corps.dossier) : null);
+      case "skills-recevoir": {
+        /* Envoyées d'un autre serveur : ajoutées à sa bibliothèque, sans retirer les siennes. */
+        const recues = normaliserSkillsRecues(Array.isArray(corps.skills) ? corps.skills : []);
+        const dest = path.join(donnees, "bibliotheque-skills");
+        const attente = mkdtempSync(path.join(donnees, "skills-"));
+        try {
+          ecrireBibliotheque(attente, recues);
+          mkdirSync(dest, { recursive: true, mode: 0o700 });
+          for (const s of recues) {
+            rmSync(path.join(dest, s.dossier), { recursive: true, force: true });
+            cpSync(path.join(attente, s.dossier), path.join(dest, s.dossier), { recursive: true });
+          }
+        } finally {
+          rmSync(attente, { recursive: true, force: true });
+        }
+        ecrireFichierEquipe({ ...lireFichierEquipe(), skillsLe: Date.now() });
+        return { ajoutees: recues.map((s) => s.dossier) };
+      }
+      default:
+        return equipeServeur.appeler(methode, corps);
+    }
   }
 
   /**
@@ -290,7 +355,7 @@ export function creerAgents(options) {
 
   const listeAgents = (agents) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
   const ici = () =>
-    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}${configurationDe().coffre ? `\n\n${CONSIGNE_COFFRE} Le coffre est sur l'ordinateur de la personne ; un fichier où tu écris un secret est sur ce VPS, sous ton dossier.` : ""}`;
+    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
 
   function consigneAssistant() {
     const { assistant, actifs } = lireEquipe();
@@ -317,9 +382,10 @@ export function creerAgents(options) {
   /* Le navigateur de KLYRA, sur le PC de la personne : les appels lui sont relayés par le journal (cf. navigateur.mjs). */
   const navigateur = creerRelaisNavigateur({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
   options.ia?.surNavigateur?.({ actif: () => configurationDe().navigateur, appeler: navigateur.appeler });
-  /* Le Coffre de KLYRA, sur le PC de la personne : relayé par le journal, jamais une valeur dedans (cf. coffre.mjs). */
-  const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees });
-  options.ia?.surCoffre?.({ actif: () => configurationDe().coffre, appeler: coffre.appeler });
+  /* Le Coffre de ce serveur : à lui seul, ses agents s'en servent sans le PC, jamais une valeur dans une réponse. */
+  const coffreServeur = creerCoffreServeur({ donnees });
+  const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees, local: coffreServeur });
+  options.ia?.surCoffre?.({ actif: () => true, appeler: coffre.appeler });
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
   const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
   options.ia?.surWorkflows?.({ appeler: workflows.appeler });
@@ -813,7 +879,7 @@ export function creerAgents(options) {
           // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
-          ...(mcp && configuration.coffre ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
+          ...(mcp ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
           // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
           ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
         );
@@ -886,5 +952,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, coffreServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

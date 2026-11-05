@@ -1,5 +1,6 @@
 "use client";
 
+import { NotePoste } from "../NotePoste";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
@@ -36,6 +37,8 @@ export function Navigateur() {
   };
 
   return (
+    <>
+      <NotePoste texte={(serveur) => `Ce navigateur est celui de cet ordinateur. Les agents de ${serveur} l’utilisent à travers lui : l’ordinateur doit être allumé et l’app ouverte.`} />
     <>
       <Groupe>
         <Ligne
@@ -85,6 +88,7 @@ export function Navigateur() {
         </Ligne>
       </Groupe>
       {fenetre}
+    </>
     </>
   );
 }

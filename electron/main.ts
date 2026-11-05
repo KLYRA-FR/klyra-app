@@ -134,7 +134,7 @@ import {
 import { etatApercu, poserApercuTest, surApercu } from "./ordinateur/apercu";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
 import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
-import { ajouterSecret, copierSecret, etatCoffre, modifierSecret, remplacerValeurSecret, retirerSecret, signalerCoffre, surChangementCoffre } from "./coffre";
+import { ajouterSecret, copierSecret, copierValeur, secretACopier, etatCoffre, modifierSecret, remplacerValeurSecret, retirerSecret, signalerCoffre, surChangementCoffre } from "./coffre";
 import { executerPourServeur, navigateurActif } from "./navigateur/outils";
 import { executerCoffrePourServeur } from "./coffre-outils";
 import {
@@ -171,7 +171,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDos
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { appelEquipeVps } from "./equipe-vps";
+import { appelCoffreVps, appelEquipeVps } from "./equipe-vps";
 import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
@@ -426,11 +426,24 @@ function registerBridge() {
     if (methode === "lister") {
       const etat = (await appelEquipeVps(lieu, jeton, "etat")) as { initialise?: boolean } | null;
       if (!etat?.initialise) {
-        const { fiches, assistant } = equipePourVps();
+        const { fiches, assistant, skills, skillsParAgent } = equipePourVps();
+        const reglage = lireReglages().configuration;
         await appelEquipeVps(lieu, jeton, "initialiser", { fiches, assistant, teinte: mesAgents().assistant.teinte });
+        await appelEquipeVps(lieu, jeton, "reglages-ecrire", {
+          configuration: { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes) },
+          configurationEcran: reglage,
+          skillsParAgent,
+        });
+        if (skills?.length) await appelEquipeVps(lieu, jeton, "skills-recevoir", { skills });
       }
     }
     return appelEquipeVps(lieu, jeton, methode, corps);
+  });
+  /* Les skills allumées de ce PC, envoyées à un VPS sur demande (Réglages › Agents, sur ce VPS). */
+  handle("agents:vps:skills-du-pc", async (lieu: string) => {
+    if (!originesServeurs().includes(lieu)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    const { skills } = equipePourVps();
+    return appelEquipeVps(lieu, jetonServeur(lieu), "skills-recevoir", { skills: skills ?? [] }) as Promise<{ ajoutees: string[] }>;
   });
   handle("agents:list", async () => {
     const listing = await listAgents();
@@ -1071,6 +1084,26 @@ function registerBridge() {
     if (wc && !wc.isDestroyed()) wc.send("coffre:change");
   });
   const champsSecret = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+  /* Le Coffre d'un VPS : la valeur reste ici ou là-bas, jamais à l'écran (`lire` n'est pas une demande permise). */
+  const coffreVps = (lieu: unknown) => {
+    const origine = texteNav(lieu, 500);
+    if (!originesServeurs().includes(origine)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    return { origine, jeton: jetonServeur(origine) };
+  };
+  navigateur("coffre:vps", (lieu, methode, corps) => {
+    const { origine, jeton } = coffreVps(lieu);
+    if (typeof methode !== "string" || !["etat", "ajouter", "modifier", "valeur", "retirer"].includes(methode)) throw new AgentError("introuvable", "Demande inconnue.");
+    return appelCoffreVps(origine, jeton, methode, corps);
+  });
+  navigateur("coffre:vps:copier", async (lieu, id) => {
+    const { origine, jeton } = coffreVps(lieu);
+    return copierValeur(String(await appelCoffreVps(origine, jeton, "lire", { id: texteNav(id, 100) })));
+  });
+  /* Un secret de ce PC, copié sur un serveur à la demande de la personne : un par un, jamais d'office. */
+  navigateur("coffre:copier-vers", async (id, lieu) => {
+    const { origine, jeton } = coffreVps(lieu);
+    await appelCoffreVps(origine, jeton, "ajouter", { entree: secretACopier(texteNav(id, 100)) });
+  });
   navigateur("coffre:etat", () => etatCoffre());
   navigateur("coffre:ajouter", (entree, remplacer) => {
     const e = champsSecret(entree);

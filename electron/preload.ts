@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("klyra", {
     list: () => ipcRenderer.invoke("agents:list"),
     /* L'équipe d'un VPS relié (serveur/equipe.mjs) : mêmes gestes que pour celle de ce PC. */
     vps: (lieu: string, methode: string, corps: unknown) => ipcRenderer.invoke("agents:vps", lieu, methode, corps),
+    skillsDuPcVersVps: (lieu: string) => ipcRenderer.invoke("agents:vps:skills-du-pc", lieu),
     write: (name: string, content: string, expectedModifiedAt: number | null) =>
       ipcRenderer.invoke("agents:write", name, content, expectedModifiedAt),
     create: (name: string, content: string) => ipcRenderer.invoke("agents:create", name, content),
@@ -349,6 +350,10 @@ contextBridge.exposeInMainWorld("klyra", {
   /* Le Coffre (electron/coffre.ts) : une valeur part vers le main, jamais l'inverse. */
   coffre: {
     etat: () => ipcRenderer.invoke("coffre:etat"),
+    /* Le Coffre d'un VPS : mêmes gestes ; une valeur ne revient jamais à l'écran. */
+    vps: (lieu: string, methode: string, corps: unknown) => ipcRenderer.invoke("coffre:vps", lieu, methode, corps),
+    copierVps: (lieu: string, id: string) => ipcRenderer.invoke("coffre:vps:copier", lieu, id),
+    copierVers: (id: string, lieu: string) => ipcRenderer.invoke("coffre:copier-vers", id, lieu),
     ajouter: (entree: unknown, remplacer?: boolean) => ipcRenderer.invoke("coffre:ajouter", entree, remplacer === true),
     modifier: (id: string, champs: unknown) => ipcRenderer.invoke("coffre:modifier", id, champs),
     remplacerValeur: (id: string, valeur: string) => ipcRenderer.invoke("coffre:valeur", id, valeur),

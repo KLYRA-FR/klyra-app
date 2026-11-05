@@ -1,5 +1,6 @@
 "use client";
 
+import { NotePoste } from "../NotePoste";
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
@@ -73,6 +74,8 @@ export function ComputerUse() {
   const mac = autorisations?.plateforme === "darwin";
 
   return (
+    <>
+      <NotePoste texte={(serveur) => `Computer Use pilote cet ordinateur. Les agents de ${serveur} ne l’utilisent pas : un serveur n’a pas d’écran.`} />
     <>
       <Groupe>
         <Ligne
@@ -150,6 +153,7 @@ export function ComputerUse() {
         </Ligne>
         {erreurOuverture && <Erreur>{erreurOuverture}</Erreur>}
       </Groupe>
+    </>
     </>
   );
 }

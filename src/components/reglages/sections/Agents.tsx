@@ -16,25 +16,28 @@ import { BridgeError, getBridge } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { FOURNISSEURS, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { pret, useMoteurs } from "@/lib/moteurs";
-import { idDirect, useRole, useWorkspace } from "@/lib/workspace";
+import { useLieuActif } from "@/lib/lieux";
+import { idDirect, useAccesEspace, useRole, useWorkspace } from "@/lib/workspace";
 import type { Role } from "@/types/domain";
 import { GroupeConfigurationKlyra } from "../ConfigurationKlyra";
 import { SkillsParAgent } from "../SkillsParAgent";
 import { ancreReglage, Erreur, Groupe, Ligne, SeulementBureau } from "../ui";
 
 function ChoixAcces() {
-  const { state, choisirAcces } = useWorkspace();
+  const { choisirAcces } = useWorkspace();
+  const lieu = useLieuActif();
+  const acces = useAccesEspace();
   return (
     <div role="radiogroup" aria-label="Accès des agents" className="flex w-full flex-col gap-2">
       {NIVEAUX_ACCES.map((n) => {
-        const choisi = state.acces === n.id;
+        const choisi = acces === n.id;
         return (
           <button
             key={n.id}
             type="button"
             role="radio"
             aria-checked={choisi}
-            onClick={() => choisirAcces(n.id)}
+            onClick={() => choisirAcces(n.id, lieu)}
             className={cn(
               "flex cursor-pointer items-start gap-3 rounded-md border bg-fond-surface p-3.5 text-left transition-colors duration-[120ms] ease-sortie",
               choisi ? "border-bleu-k1-500" : "border-bordure-subtile hover:border-bordure-forte",

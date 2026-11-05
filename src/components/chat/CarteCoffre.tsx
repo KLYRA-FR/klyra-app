@@ -1,5 +1,7 @@
 "use client";
 
+import { useChat } from "@/lib/workspace";
+import { useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { ChampSecret } from "@/components/reglages/sections/Coffre";
@@ -50,7 +52,9 @@ export function CarteCoffre({
 }
 
 function CarteOuverte({ part, nomAgent, onRepondre }: { part: Part; nomAgent: string; onRepondre: (etat: Etat, message: string) => void }) {
-  const coffre = useCoffreKlyra();
+  /* Le coffre du serveur de cette conversation, quel que soit le serveur affiché. */
+  const chat = useChat(useSearchParams().get("id"));
+  const coffre = useCoffreKlyra(chat ? (chat.lieu ?? null) : undefined);
   const [valeur, setValeur] = useState("");
   const [remplacer, setRemplacer] = useState(false);
   const [envoi, setEnvoi] = useState(false);

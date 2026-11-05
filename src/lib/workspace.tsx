@@ -117,8 +117,10 @@ interface WorkspaceState extends MockWorkspace {
   rendus: Rendu[];
   /** Les artefacts claude.ai dans l'écran Artefacts : une source facultative, pour qui s'en sert. */
   artefactsClaude: boolean;
-  /** Ce que les agents peuvent faire sans demander (réglage de ce poste). */
+  /** Ce que les agents de ce PC peuvent faire sans demander. */
   acces: Acces;
+  /** La même chose, pour chaque VPS où on l'a choisi. Sinon, le choix de ce PC. */
+  accesParServeur: Record<string, Acces>;
   taches: Tache[];
   /** Annulation temporaire, jamais écrite sur le disque. */
   rappelsSupprimes: RappelSupprime[];
@@ -139,7 +141,7 @@ function conversationsAEnregistrer(etat: WorkspaceState) {
   return {
     version: VERSION_STOCKAGE, chats: etat.chats, messages: etat.messages,
     routines: etat.routines, artefacts: etat.artefacts, rendus: etat.rendus, artefactsClaude: etat.artefactsClaude, projects: etat.projects,
-    currentUser: etat.currentUser, acces: etat.acces, taches: etat.taches,
+    currentUser: etat.currentUser, acces: etat.acces, accesParServeur: etat.accesParServeur, taches: etat.taches,
     evenements: etat.evenements, categories: etat.categories,
     workflows: etat.workflows, executions: etat.executions,
   };
@@ -157,6 +159,7 @@ type WorkspaceAction =
       projects: Project[];
       currentUser: User | null;
       acces: Acces | null;
+      accesParServeur: Record<string, Acces> | null;
       taches: Tache[];
       evenements: Evenement[];
       categories: Categorie[] | null;
@@ -171,7 +174,7 @@ type WorkspaceAction =
   | { type: "evenement/enregistrer"; evenement: Evenement }
   | { type: "evenement/supprimer"; id: string }
   | { type: "categories/changer"; categories: Categorie[] }
-  | { type: "acces/choisir"; acces: Acces }
+  | { type: "acces/choisir"; acces: Acces; lieu: string | null }
   | { type: "projet/enregistrer"; project: Project }
   | { type: "projet/supprimer"; id: string }
   | { type: "profil/enregistrer"; user: User }
@@ -220,6 +223,7 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
         projects: action.projects,
         currentUser: action.currentUser ?? state.currentUser,
         acces: action.acces ?? state.acces,
+        accesParServeur: action.accesParServeur ?? state.accesParServeur,
         taches: action.taches,
         evenements: action.evenements,
         categories: action.categories ?? state.categories,
@@ -282,7 +286,7 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case "categories/changer":
       return { ...state, categories: action.categories };
     case "acces/choisir":
-      return { ...state, acces: action.acces };
+      return action.lieu ? { ...state, accesParServeur: { ...state.accesParServeur, [action.lieu]: action.acces } } : { ...state, acces: action.acces };
     case "projet/enregistrer": {
       const existe = state.projects.some((p) => p.id === action.project.id);
       return {
@@ -643,7 +647,8 @@ interface WorkspaceApi {
   poserEvenementsCompte: (evenements: Evenement[] | null) => void;
   /** Qui tu es dans l'app, selon les règles de `src/lib/identite.ts`. */
   moi: Identite;
-  choisirAcces: (acces: Acces) => void;
+  /** L'accès des agents d'un serveur (absent : ce PC). */
+  choisirAcces: (acces: Acces, lieu?: string | null) => void;
   enregistrerTache: (tache: Tache) => void;
   supprimerTache: (id: string) => void;
   restaurerTaches: () => RappelSupprime[];
@@ -701,6 +706,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           rendus: [],
           artefactsClaude: false,
           acces: "projet",
+          accesParServeur: {},
           taches: [],
           rappelsSupprimes: [],
           evenements: [],
@@ -720,6 +726,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           rendus: [],
           artefactsClaude: false,
           acces: "projet",
+          accesParServeur: {},
           taches: [],
           rappelsSupprimes: [],
           evenements: [],
@@ -798,6 +805,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             projects?: Project[];
             currentUser?: User;
             acces?: Acces;
+            accesParServeur?: Record<string, Acces>;
             taches?: Tache[];
             evenements?: Evenement[];
             listes?: string[];
@@ -833,6 +841,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         projects: valide ? (data.projects ?? []) : [],
         currentUser: valide ? (data.currentUser ?? null) : null,
         acces: valide ? (data.acces ?? null) : null,
+        accesParServeur: valide ? (data.accesParServeur ?? null) : null,
         taches: valide ? (data.taches ?? []) : [],
         evenements: valide ? (data.evenements ?? []) : [],
         categories: valide ? lireCategories(data.categories ?? data.listes) : null,
@@ -867,7 +876,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     }, 400);
     ecritureRegroupee.current = timer;
     return () => clearTimeout(timer);
-  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.rendus, state.artefactsClaude, state.projects, state.currentUser, state.acces, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
+  }, [bridge, state.charge, state.chats, state.messages, state.routines, state.artefacts, state.rendus, state.artefactsClaude, state.projects, state.currentUser, state.acces, state.accesParServeur, state.taches, state.evenements, state.categories, state.workflows, state.executions]);
 
   /* Le planning, en clair pour les agents (~/.klyra/planning/planning.md), à chaque changement. */
   useEffect(() => {
@@ -1426,7 +1435,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           ...(chat.sessionNeuve && !chat.sessions[roleId] ? { sessionNeuve: true } : {}),
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
-          acces: stateRef.current.acces,
+          acces: accesDuServeur(stateRef.current, chat.lieu),
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
           chatId,
           ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
@@ -2219,7 +2228,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const modifierProfil = useCallback((patch: Partial<User>) => dispatch({ type: "profil/modifier", patch }), []);
   const appliquerProfilCompte = useCallback((profil: ProfilCompte | null) => dispatch({ type: "compte/profil", profil }), []);
   const poserEvenementsCompte = useCallback((evenements: Evenement[] | null) => dispatch({ type: "compte/evenements", evenements }), []);
-  const choisirAcces = useCallback((acces: Acces) => dispatch({ type: "acces/choisir", acces }), []);
+  const choisirAcces = useCallback((acces: Acces, lieu: string | null = null) => dispatch({ type: "acces/choisir", acces, lieu }), []);
   /* Les actions de rappels sont visibles immédiatement par les notifications,
      le prochain clic (ou blur) et la fermeture, avant le prochain rendu React. */
   const agirRappel = useCallback((action: Extract<WorkspaceAction, { type: "tache/enregistrer" | "tache/supprimer" | "tache/restaurer" | "tache/oublierSuppressions" | "tache/notifiee" }>) => {
@@ -2795,6 +2804,17 @@ export function useProjects(): Project[] {
   const { projects } = useWorkspace().state;
   const espace = useLieuActif();
   return useMemo(() => projects.filter((p) => dansEspace(p.lieu, espace)), [projects, espace]);
+}
+
+/** L'accès des agents d'un serveur. Un VPS où rien n'est choisi garde celui de ce PC. */
+export function accesDuServeur(state: { acces: Acces; accesParServeur: Record<string, Acces> }, lieu: string | null | undefined): Acces {
+  return lieu ? (state.accesParServeur[lieu] ?? state.acces) : state.acces;
+}
+
+/** L'accès des agents du serveur affiché. */
+export function useAccesEspace(): Acces {
+  const { state } = useWorkspace();
+  return accesDuServeur(state, useLieuActif());
 }
 
 /** Toutes les conversations de l'espace affiché (le serveur choisi), fils compris : ce qu'on compte et qu'on range ne mélange pas les serveurs. */

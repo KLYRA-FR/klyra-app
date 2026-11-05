@@ -410,7 +410,10 @@ export function oublierServeur(origine: string) {
  */
 async function empreinteDuServeur(origine: string): Promise<string | null> {
   const recu = await requete(origine, CHEMIN_SERVEUR, "GET");
-  const equipe = (recu.json as { equipe?: unknown } | null)?.equipe;
+  const corps = recu.json as { equipe?: unknown; equipePropre?: unknown; equipeInitialisee?: unknown } | null;
+  if (corps?.equipePropre === true && corps.equipeInitialisee !== false) equipePropre.add(origine);
+  else equipePropre.delete(origine);
+  const equipe = corps?.equipe;
   return recu.status === 200 && typeof equipe === "string" ? equipe : null;
 }
 
@@ -425,11 +428,15 @@ export async function synchroniserEquipe(origine: string): Promise<void> {
   if (!equipe) return;
   const surLeServeur = await empreinteDuServeur(origine);
   if (equipeEnvoyee.get(origine) === equipe.empreinte && (surLeServeur === null || surLeServeur === equipe.empreinte)) return;
-  /* Un serveur qui garde sa propre équipe ne reçoit plus les fiches de ce PC : seulement sa configuration et ses skills. */
-  const corps = equipePropre.has(origine) ? { ...equipe, fiches: [], assistant: null } : equipe;
+  /*
+   * Un serveur qui garde son équipe et ses réglages ne reçoit que ce que ce PC peut lui servir (navigateur, Coffre).
+   * S'il est neuf (`equipeInitialisee` faux), il reçoit tout, une seule fois : c'est sa première copie.
+   */
+  const corps = equipePropre.has(origine)
+    ? { fiches: [], partielle: true, configuration: { navigateur: equipe.configuration.navigateur, coffre: equipe.configuration.coffre }, empreinte: equipe.empreinte }
+    : equipe;
   const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", corps);
   if (recu.status !== 200) throw new Error("fiches");
-  if ((recu.json as { equipePropre?: unknown } | null)?.equipePropre === true) equipePropre.add(origine);
   equipeEnvoyee.set(origine, equipe.empreinte);
 }
 

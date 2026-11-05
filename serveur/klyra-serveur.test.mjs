@@ -487,7 +487,7 @@ test("la mémoire d'un agent du VPS, la configuration KLYRA reçue avec l'équip
   }
 });
 
-test("le Coffre des agents du VPS : relayé au PC par le journal, la valeur jamais dedans", async () => {
+test("le Coffre d'un serveur : à lui seul, sans le PC, jamais une valeur en clair ni dans le journal", async () => {
   const dossier = dossierJetable();
   const home = dossierJetable();
   const journal = creerJournal();
@@ -497,34 +497,49 @@ test("le Coffre des agents du VPS : relayé au PC par le journal, la valeur jama
   const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents, ia });
   try {
     const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
-    const equipe = (configuration, empreinte) => appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [], assistant: null, configuration, empreinte } });
     const config = JSON.parse(ia.configMcp({ agent: "hugo", conversation: "dm-hugo" })).mcpServers.klyra;
     const mcp = async (method, params = {}) => (await (await fetch(config.url, { method: "POST", headers: config.headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json()).result;
-    // Un PC qui ne sert pas son coffre (ancienne version) : pas d'outils.
-    assert.equal((await equipe({ memoireAgents: true, consignes: null }, "c0")).statut, 200);
-    assert.ok(!(await mcp("tools/list")).tools.some((t) => t.name.startsWith("coffre_")));
-    assert.equal((await equipe({ memoireAgents: true, consignes: null, coffre: true }, "c1")).statut, 200);
-    assert.deepEqual((await mcp("tools/list")).tools.filter((t) => t.name.startsWith("coffre_")).map((t) => t.name), ["coffre_lister", "coffre_demander", "coffre_enregistrer", "coffre_ecrire_fichier"]);
-    // Sans PC à l'écoute : dit tout de suite.
-    const seul = await mcp("tools/call", { name: "coffre_lister", arguments: {} });
-    assert.equal(seul.isError, true);
-    assert.match(seul.content[0].text, /pas ouverte/);
+    const coffre = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/coffre/${methode}`, { methode: "POST", jeton, corps });
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.coffrePropre, true);
 
-    // Le PC suit le journal : l'appel y arrive, sans la valeur ; le PC la lit une fois par la route, puis répond.
-    const VALEUR = "ghp_JamaisDansLeJournal_7";
-    const flux = lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.event?.type === "coffre"));
-    await new Promise((r) => setTimeout(r, 200));
-    const reponse = mcp("tools/call", { name: "coffre_enregistrer", arguments: { variable: "GITHUB_TOKEN", nom: "Jeton GitHub", valeur: VALEUR } });
-    const { recus } = await flux;
-    const evenement = recus.find((e) => e.event?.type === "coffre").event;
-    assert.deepEqual([evenement.nom, evenement.agent, evenement.conversation, evenement.arguments.variable], ["coffre_enregistrer", "hugo", "dm-hugo", "GITHUB_TOKEN"]);
-    assert.ok(!JSON.stringify(recus).includes(VALEUR), "la valeur n'est pas dans le journal");
-    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", corps: { requestId: evenement.id, lire: true } })).statut, 401, "un appareil inconnu ne lit rien");
-    const lue = await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, lire: true } });
-    assert.deepEqual([lue.statut, lue.json.valeur], [200, VALEUR]);
-    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, lire: true } })).statut, 404, "lue une seule fois");
-    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, resultat: { texte: "Rangé dans le coffre : GITHUB_TOKEN" } } })).json.ok, true);
-    assert.match((await reponse).content[0].text, /Rangé dans le coffre : GITHUB_TOKEN/);
+    // Aucun PC à l'écoute : les outils sont là et répondent quand même.
+    assert.deepEqual((await mcp("tools/list")).tools.filter((t) => t.name.startsWith("coffre_")).map((t) => t.name), ["coffre_lister", "coffre_demander", "coffre_enregistrer", "coffre_ecrire_fichier"]);
+    const vide = await mcp("tools/call", { name: "coffre_lister", arguments: {} });
+    assert.ok(!vide.isError);
+    assert.doesNotMatch(vide.content[0].text, /GITHUB_TOKEN/);
+
+    // Un agent range un secret : ni dans le journal, ni en clair sur le disque, ni dans sa réponse.
+    const VALEUR = "ghp_JamaisEnClair_7";
+    const rangee = await mcp("tools/call", { name: "coffre_enregistrer", arguments: { variable: "GITHUB_TOKEN", nom: "Jeton GitHub", valeur: VALEUR } });
+    assert.match(rangee.content[0].text, /Rangé dans le coffre : GITHUB_TOKEN/);
+    assert.ok(!rangee.content[0].text.includes(VALEUR));
+    assert.ok(!readFileSync(path.join(dossier, "coffre.json"), "utf8").includes(VALEUR));
+    assert.equal((await mcp("tools/call", { name: "coffre_enregistrer", arguments: { variable: "GITHUB_TOKEN", nom: "Autre", valeur: "x" } })).isError, true, "un agent n'écrase pas un secret");
+
+    // Écrit dans un fichier du serveur, sans le voir ; refusé dans les données du serveur.
+    const fichier = path.join(home, "projet", ".env");
+    mkdirSync(path.dirname(fichier), { recursive: true });
+    const ecrit = await mcp("tools/call", { name: "coffre_ecrire_fichier", arguments: { variable: "GITHUB_TOKEN", chemin: fichier } });
+    assert.ok(!ecrit.isError, ecrit.content[0].text);
+    assert.ok(!ecrit.content[0].text.includes(VALEUR));
+    assert.match(readFileSync(fichier, "utf8"), /GITHUB_TOKEN=/);
+    assert.equal((await mcp("tools/call", { name: "coffre_ecrire_fichier", arguments: { variable: "GITHUB_TOKEN", chemin: path.join(dossier, ".env") } })).isError, true);
+
+    // L'écran : sans jeton, rien ; la liste ne donne jamais la valeur ; un secret interdit aux agents leur reste fermé.
+    assert.equal((await appel(ecoute.port, "/klyra/v1/coffre/etat", { methode: "POST", corps: {} })).statut, 401);
+    const etat = (await coffre("etat")).json.resultat;
+    assert.equal(etat.secrets.length, 1);
+    assert.ok(!JSON.stringify(etat).includes(VALEUR) && !("valeur" in etat.secrets[0]));
+    const id = etat.secrets[0].id;
+    assert.equal((await coffre("lire", { id })).json.resultat, VALEUR);
+    assert.equal((await coffre("modifier", { id, champs: { agents: false } })).json.resultat.agents, false);
+    assert.equal((await mcp("tools/call", { name: "coffre_ecrire_fichier", arguments: { variable: "GITHUB_TOKEN", chemin: fichier } })).isError, true);
+    assert.equal((await coffre("ajouter", { entree: { variable: "CLE_PC", nom: "Copiée du PC", valeur: "abc" } })).statut, 200);
+    assert.equal((await coffre("ajouter", { entree: { variable: "CLE_PC", nom: "Encore", valeur: "def" } })).statut, 400);
+    assert.equal((await coffre("ajouter", { entree: { variable: "CLE_PC", nom: "Remplacée", valeur: "def" }, remplacer: true })).statut, 200);
+    assert.equal((await coffre("retirer", { id })).statut, 200);
+    assert.deepEqual((await coffre("etat")).json.resultat.secrets.map((x) => x.variable), ["CLE_PC"]);
+    assert.ok(!JSON.stringify(journal.depuis?.(0) ?? []).includes(VALEUR));
   } finally {
     await ecoute.fermer();
     ia.fermer();
@@ -819,6 +834,15 @@ test("chaque serveur garde son équipe : l'app la lit et la modifie ici, et ne l
     // Ses préférences restent ici.
     assert.equal((await equipe("meta-ecrire", { meta: { lou: { teinte: "violet" } } })).statut, 200);
     assert.deepEqual((await equipe("meta")).json.resultat, { lou: { teinte: "violet" } });
+
+    // Réglés sur ce serveur, ses réglages restent à lui, même face à l'envoi complet d'une ancienne app.
+    assert.equal((await equipe("reglages-ecrire", { configuration: { memoireAgents: false, consignes: "Du VPS" }, configurationEcran: { memoireAgents: false } })).statut, 200);
+    agents.recevoirFiches({ fiches: [], assistant: null, configuration: { memoireAgents: true, consignes: "Du PC", coffre: true }, empreinte: "e8" });
+    assert.deepEqual((await equipe("reglages")).json.resultat.configuration, { memoireAgents: false });
+    assert.equal(agents.empreinteEquipe(), "e8", "l'empreinte suit, pour que l'app ne renvoie pas sans fin");
+    // Un fichier partiel reste complet : l'app ne le renvoie pas à chaque message.
+    agents.recevoirFiches({ fiches: [], partielle: true, configuration: { navigateur: true, coffre: true }, empreinte: "e8b" });
+    assert.equal(agents.empreinteEquipe(), "e8b");
 
     // L'envoi d'une ancienne app n'écrase plus l'équipe.
     agents.recevoirFiches({ fiches: [{ id: "intrus", nom: "Intrus", contenu: fiche("intrus") }], assistant: "Autre", empreinte: "e9" });
