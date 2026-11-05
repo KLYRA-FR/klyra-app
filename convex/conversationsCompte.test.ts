@@ -197,3 +197,15 @@ describe("recherche dans les conversations du compte", () => {
     expect(extraitAutour("Court", "rien")).toBe("Court");
   });
 });
+
+describe("la carte d'un projet", () => {
+  test("sa date de modification suit ; une carte d'une version d'avant reste sans date, sans en perdre une", async () => {
+    const { moi } = await compte();
+    expect((await moi.query(api.conversationsCompte.projets, {}))[0]).toMatchObject({ origine: "p1", misAJour: null });
+    const carte = { origine: "p1", nom: "KLYRA", accroche: "Le site", statut: "en-cours", epingle: false };
+    await moi.mutation(api.conversationsCompte.importerProjets, { lot: [{ ...carte, misAJour: "2026-11-05T13:08:00.000Z" }] });
+    expect((await moi.query(api.conversationsCompte.projets, {}))[0].misAJour).toBe("2026-11-05T13:08:00.000Z");
+    await moi.mutation(api.conversationsCompte.importerProjets, { lot: [carte] });
+    expect((await moi.query(api.conversationsCompte.projets, {}))[0].misAJour).toBe("2026-11-05T13:08:00.000Z");
+  });
+});

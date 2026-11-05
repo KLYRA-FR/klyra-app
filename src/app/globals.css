@@ -428,6 +428,24 @@ body[data-glisse] iframe {
   }
 }
 
+/* La fiche d'un projet après son enregistrement (téléphone, E6-36). */
+[data-carte-projet][data-eclaire] {
+  animation: klyra-eclaire-carte 1800ms var(--ease-sortie), klyra-halo 1800ms var(--ease-sortie);
+}
+
+@keyframes klyra-eclaire-carte {
+  0%, 30% { background-color: var(--color-fond-teinte-bleue); }
+  100%    { background-color: var(--color-fond-surface); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-carte-projet][data-eclaire] {
+    animation: none;
+    background-color: var(--color-fond-teinte-bleue);
+    box-shadow: 0 0 0 8px var(--color-fond-teinte-bleue);
+  }
+}
+
 /* Le rappel restauré par Annuler, sans déplacement de sa ligne. */
 [data-rappel][data-eclaire] {
   border-radius: var(--radius-sm);

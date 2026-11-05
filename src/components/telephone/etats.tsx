@@ -6,10 +6,12 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
+import { useLieuActif } from "@/lib/lieux";
 import type { LecturePoste } from "@/lib/poste/client";
 import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
 import { libelleVue, type VueGardee } from "@/lib/telephone/vue-gardee";
 import { useAnnonce } from "./Annonce";
+import { useHorsLigne } from "./BandeauReseau";
 import { PrevenirOuverture } from "./PastillePoste";
 import { usePostes, useSupport } from "./poste";
 import { usePushTelephone } from "./push";
@@ -91,27 +93,34 @@ function premierePhrase(texte: string): string {
  * qui marche quand même. `phrase` reçoit « ton Mac » : « les fichiers de ce projet sont sur ton Mac.
  * Ils s'affichent quand KLYRA y est ouverte. »
  */
-export function PosteFerme({ phrase, forme = "plein" }: { phrase: (sur: string) => string; forme?: FormeEtat }) {
+export function PosteFerme({ phrase, forme = "plein", sansRecours = false, className }: { phrase: (sur: string) => string; forme?: FormeEtat; sansRecours?: boolean; className?: string }) {
   const sur = useSupport();
   const { principal } = usePostes();
+  const enLigne = !useHorsLigne();
+  if (!enLigne) {
+    return <EtatEcran className={className} forme={forme} icone="globe-01" titre="Ce téléphone est hors ligne" texte={`${majuscule(phrase(sur))} Reviens quand ce téléphone est en ligne.`} />;
+  }
   return (
     <EtatEcran
+      className={className}
       forme={forme}
       icone="computer"
       titre={`${majuscule(sur)} est fermé`}
       texte={majuscule(phrase(sur))}
       action={principal ? <PrevenirOuverture cle={principal.cle} /> : null}
     >
-      <div className="mt-6 flex gap-3 rounded-xl border border-bordure-subtile bg-fond-surface p-4 shadow-ombre-ambiante">
-        <Icon name="message-square" size={20} className="mt-0.5 shrink-0 text-icone-secondaire" />
-        <div className="min-w-0 flex-1">
-          <p className="text-ui text-texte-principal">Tu peux quand même écrire à un agent : ton message partira à l’ouverture.</p>
-          <Link href="/chats?ecrire=1" className="mt-1 inline-flex min-h-11 items-center gap-1 text-ui font-medium text-texte-principal">
-            Écrire à un agent
-            <Icon name="chevron-right" size={16} />
-          </Link>
+      {sansRecours ? null : (
+        <div className="mt-6 flex gap-3 rounded-xl border border-bordure-subtile bg-fond-surface p-4 shadow-ombre-ambiante">
+          <Icon name="message-square" size={20} className="mt-0.5 shrink-0 text-icone-secondaire" />
+          <div className="min-w-0 flex-1">
+            <p className="text-ui text-texte-principal">Tu peux quand même écrire à un agent : ton message partira à l’ouverture.</p>
+            <Link href="/chats?ecrire=1" className="mt-1 inline-flex min-h-11 items-center gap-1 text-ui font-medium text-texte-principal">
+              Écrire à un agent
+              <Icon name="chevron-right" size={16} />
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
     </EtatEcran>
   );
 }
@@ -147,6 +156,43 @@ export function AucunPoste({ phrase, forme = "plein", className }: { phrase: (su
         </>
       }
     />
+  );
+}
+
+/** Sur un serveur (Plus › Serveurs), ce qui écrirait par l'ordinateur reste à l'app de bureau. */
+export const RAISON_SERVEUR = "Depuis l’app de bureau, sur ce serveur.";
+
+/**
+ * Ce geste peut-il partir vers l'ordinateur maintenant ? Sinon, sa raison en une phrase (P-7, § 5.5) :
+ * sur un serveur, hors ligne, aucun ordinateur relié, ou ordinateur fermé. `lecture` : une relecture
+ * n'écrit rien : sur un serveur, elle reste possible, comme la lecture qui ouvre l'écran.
+ */
+export function useGestePossible({ lecture = false }: { lecture?: boolean } = {}): { possible: boolean; raison: string | undefined } {
+  const sur = useSupport();
+  const lieu = useLieuActif();
+  const { ouvert, postes } = usePostes();
+  const enLigne = !useHorsLigne();
+  if (lieu && !lecture) return { possible: false, raison: RAISON_SERVEUR };
+  if (!enLigne) return { possible: false, raison: "Possible quand ce téléphone est en ligne" };
+  if (postes?.length === 0) return { possible: false, raison: "Possible quand un ordinateur est relié" };
+  if (!ouvert) return { possible: false, raison: `Possible quand ${sur} est ouvert` };
+  return { possible: true, raison: undefined };
+}
+
+/** Un bandeau dans la page (§ 6.2) : `attente` (gris), `erreur` (filet rouge), `info` (bleu pâle). */
+export function Bandeau({ ton = "attente", icone, children, className, role }: { ton?: "info" | "attente" | "erreur"; icone: IconName; children: ReactNode; className?: string; role?: "alert" | "status" }) {
+  return (
+    <div
+      role={role ?? (ton === "erreur" ? "alert" : undefined)}
+      className={cn(
+        "flex items-start gap-2.5 rounded-md py-3 pr-3 pl-3.5 text-ui leading-[1.4]",
+        ton === "erreur" ? "border border-bordure-erreur bg-fond-surface text-texte-erreur" : ton === "info" ? "border border-bordure-accent-legere bg-fond-teinte-bleue text-texte-principal" : "bg-fond-surface-grise text-texte-principal",
+        className,
+      )}
+    >
+      <Icon name={icone} size={20} className={cn("shrink-0", ton === "info" && "text-icone-accent")} />
+      <div className="min-w-0 flex-1 pt-px">{children}</div>
+    </div>
   );
 }
 
@@ -246,7 +292,7 @@ export function ErreurPoste({ code = "erreur", message, relancer, forme = "plein
 /* ─── Vue gardée (socle § 5.4) ───────────────────────────────────── */
 
 /** L'heure d'une vue gardée, relue chaque minute (« Vue à 18:42 » devient « Vue hier… » à minuit). */
-function useMaintenant(): number {
+export function useMaintenant(): number {
   const [maintenant, setMaintenant] = useState(() => Date.now());
   useEffect(() => {
     const minuteur = setInterval(() => setMaintenant(Date.now()), 60_000);
@@ -289,14 +335,15 @@ export function BandeauVueGardee({ lu, mot, className }: { lu: number; mot?: str
   const sur = useSupport();
   const { principal } = usePostes();
   const maintenant = useMaintenant();
+  const enLigne = !useHorsLigne();
   return (
     <div role="status" className={cn("flex min-h-10 items-center gap-2 rounded-md bg-fond-surface-grise py-1.5 pr-1.5 pl-3", className)}>
       <Icon name="clock-backward" size={20} className="shrink-0 text-icone-defaut" />
       <p className="min-w-0 flex-1 text-ui text-texte-principal">
         {libelleVue(lu, maintenant, mot)}
-        <span className="text-texte-secondaire"> · {sur} est fermé</span>
+        <span className="text-texte-secondaire"> · {enLigne ? `${sur} est fermé` : "hors ligne"}</span>
       </p>
-      {principal ? <PrevenirCompact cle={principal.cle} /> : null}
+      {principal && enLigne ? <PrevenirCompact cle={principal.cle} /> : null}
     </div>
   );
 }
@@ -358,6 +405,7 @@ export function VueLecture<T>({
   forme = "plein",
   gestes,
   verrou,
+  sansRecours,
   children,
 }: {
   lecture: LecturePoste<T> & { relancer: () => void };
@@ -368,6 +416,8 @@ export function VueLecture<T>({
   gestes?: string;
   /** Vue gardée : désactiver tous les contrôles (par défaut), ou laisser l'écran le faire. */
   verrou?: boolean;
+  /** Fermé sans vue gardée : sans la carte « Écrire à un agent » (l'écran a déjà ce recours). */
+  sansRecours?: boolean;
   children: (data: T) => ReactNode;
 }) {
   if (lecture.etat === "aucun") return <AucunPoste phrase={ferme} forme={forme} />;
@@ -379,7 +429,7 @@ export function VueLecture<T>({
         </LectureGardee>
       );
     }
-    return <PosteFerme phrase={ferme} forme={forme} />;
+    return <PosteFerme phrase={ferme} forme={forme} sansRecours={sansRecours} />;
   }
   if (lecture.etat === "attente") return <DemandeEnCours lent={lecture.lent} lignes={lignes} />;
   if (lecture.etat === "delai") return <PasDeReponse relancer={lecture.relancer} forme={forme} />;

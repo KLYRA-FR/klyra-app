@@ -322,6 +322,8 @@ export default defineSchema({
     epingle: v.boolean(),
     /** Le VPS du projet ; absent : l'ordinateur. Le téléphone montre l'espace du serveur qu'il a choisi. */
     lieu: v.optional(v.union(v.string(), v.null())),
+    /** La date de modification du projet sur l'ordinateur. Absente : carte d'une version d'avant. */
+    misAJour: v.optional(v.string()),
   }).index("by_membre_and_origine", ["membreId", "origine"]),
 
   /** Message écrit sur le téléphone : il part sur l'ordinateur à son ouverture. */

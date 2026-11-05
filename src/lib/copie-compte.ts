@@ -459,6 +459,7 @@ export function carteProjet(projet: Project) {
     statut: projet.status,
     epingle: projet.pinned,
     lieu: projet.lieu ?? null,
+    misAJour: projet.updatedAt,
   };
 }
 

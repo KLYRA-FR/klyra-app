@@ -564,10 +564,10 @@ export interface KlyraBridge {
     etat: (filId: string) => Promise<Reponse<{ status: string; work_id: string } | null>>;
     marquer: (filId: string, status: string, controle: string | null) => Promise<Reponse<{ ok: boolean; motif?: string }>>;
     projection: (projectId: string | null) => Promise<Reponse<{
-      travaux: { work_id: string; fil_id: string | null; titre: string; owner_agent_id: string | null; status: string; state_ref: string; deadline_at: string | null; mesures_cout: string | null }[];
+      travaux: { work_id: string; fil_id: string | null; titre: string; owner_agent_id: string | null; status: string; state_ref: string; deadline_at: string | null; mesures_cout: string | null; last_progress_at?: string | null; couts?: { unite: string; total: number }[] }[];
       alertes: { work_id: string; type: string; motif: string; prochain_geste: string }[];
       blocages: { point: string; texte: string }[];
-      evenements?: { event_id: string; work_id: string; type: string; resume: string }[];
+      evenements?: { event_id: string; work_id: string; type: string; resume: string; quand?: string }[];
       couverture: string;
     }>>;
     preuves: (workId: string) => Promise<Reponse<unknown>>;
