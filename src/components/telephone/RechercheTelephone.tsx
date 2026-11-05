@@ -1,19 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Icon } from "@/components/icons/Icon";
-import { BoutonIcone } from "@/components/ui/Bouton";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { analyserRequete, normaliser, surligner, type Morceau, type Portee, type Requete } from "@/lib/recherche";
 import { retenirRequete } from "@/lib/recherche-session";
 import { agentDe, type ConversationLue } from "@/lib/telephone/chats";
 import { GrappeChat, RondAgent, useCartes } from "./AgentsChat";
-import { CHAMP_TELEPHONE } from "./Controles";
+import { useHorsLigne } from "./BandeauReseau";
+import { EtatEcran } from "./etats";
+import { Etiquette, GroupeListe, LigneListe, SectionListe } from "./Liste";
 
 const PORTEES: { id: Portee; libelle: string }[] = [
   { id: "tout", libelle: "Tout" },
@@ -95,24 +96,29 @@ export function RechercheTelephone() {
     router.push(`/chat?id=${encodeURIComponent(origine)}${message ? `&message=${encodeURIComponent(message)}` : ""}`);
   };
 
+  const horsLigne = useHorsLigne();
   const portees = PORTEES.filter((p) => p.id !== "conversation" || dansConversation);
-  const rien = !!analysee && messages !== undefined && messages.length === 0 && trouvees.length === 0;
+  const rien = !!analysee && lus !== undefined && lus.length === 0 && trouvees.length === 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="shrink-0 bg-fond-page px-2 pt-[env(safe-area-inset-top)]">
         <div className="flex h-[52px] items-center gap-1">
           <BoutonIcone variant="discret" className="size-11" libelle="Retour" icone={<Icon name="chevron-left" size={24} />} onClick={() => router.push(dansConversation ? `/chat?id=${encodeURIComponent(dansConversation)}` : "/chats")} />
-          <input
-            ref={champ}
-            type="search"
-            enterKeyHint="search"
-            aria-label="Rechercher dans les conversations"
-            placeholder="Rechercher dans les conversations"
-            value={saisie}
-            onChange={(e) => setSaisie(e.target.value)}
-            className={cn(CHAMP_TELEPHONE, "min-w-0 flex-1")}
-          />
+          <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-bordure-champ bg-fond-surface pl-3 focus-within:border-bleu-k1-500">
+            <Icon name="search-01" size={20} className="shrink-0 text-icone-secondaire" />
+            <input
+              ref={champ}
+              type="search"
+              enterKeyHint="search"
+              aria-label="Rechercher dans tes chats"
+              placeholder={portee === "conversation" ? "Rechercher dans cette conversation" : "Rechercher dans tes chats"}
+              value={saisie}
+              onChange={(e) => setSaisie(e.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-body-s text-texte-principal outline-none placeholder:text-texte-secondaire [&::-webkit-search-cancel-button]:hidden"
+            />
+            {saisie ? <BoutonIcone variant="discret" className="size-11 shrink-0" libelle="Effacer la recherche" icone={<Icon name="x-01" size={18} />} onClick={() => { setSaisie(""); champ.current?.focus(); }} /> : null}
+          </div>
         </div>
         <div role="radiogroup" aria-label="Où chercher" className="flex gap-2 overflow-x-auto px-2 pb-2 [scrollbar-width:none]">
           {portees.map((p) => (
@@ -124,7 +130,7 @@ export function RechercheTelephone() {
               onClick={() => setPortee(p.id)}
               className={cn(
                 "h-11 shrink-0 rounded-xs px-3 text-ui font-medium",
-                portee === p.id ? "klyra-surface-sombre text-texte-inverse" : "bg-fond-surface-grise text-texte-secondaire",
+                portee === p.id ? "klyra-surface-sombre text-texte-inverse" : "border border-bordure-subtile bg-fond-surface text-texte-principal",
               )}
             >
               {p.libelle}
@@ -141,72 +147,70 @@ export function RechercheTelephone() {
         ) : !analysee ? (
           <p className="pt-4 text-ui text-texte-secondaire">Ajoute un mot pour préciser.</p>
         ) : rien ? (
-          <div className="flex flex-col items-start gap-2 pt-4">
-            <p role="status" className="text-ui text-texte-secondaire">
-              Aucun message ne correspond à « {requete} ».
-            </p>
-            {portee !== "tout" ? (
-              <button type="button" className="min-h-11 text-ui font-medium text-texte-principal" onClick={() => setPortee("tout")}>
-                Chercher partout
-              </button>
-            ) : null}
+          <div role="status">
+            <EtatEcran
+              forme="encadre"
+              icone="search-01"
+              titre="Aucun message ne correspond"
+              texte={`« ${requete} » n’apparaît pas ${portee === "agents" ? "dans les conversations avec les agents" : portee === "projets" ? "dans les conversations de projet" : portee === "conversation" ? "dans cette conversation" : "dans tes conversations"}.`}
+              action={
+                portee !== "tout" ? (
+                  <Bouton variant="blanc" taille="md" onClick={() => setPortee("tout")}>
+                    Chercher partout
+                  </Bouton>
+                ) : undefined
+              }
+              className="mt-4"
+            />
           </div>
         ) : (
           <>
             {trouvees.length > 0 ? (
-              <section aria-label="Conversations" className="pt-3">
-                <h2 className="text-ui font-medium text-texte-secondaire">Conversations</h2>
-                <ul>
+              <SectionListe titre="Conversations" compte={trouvees.length} className="mt-3">
+                <GroupeListe>
                   {trouvees.map(({ c, titre }) => {
                     const agent = c.kind === "equipe" ? null : agentDe(c.origine, c);
                     return (
-                      <li key={c.origine}>
-                        <Link
-                          href={`/chat?id=${encodeURIComponent(c.origine)}`}
-                          className="flex min-h-14 items-center gap-3 border-b border-bordure-subtile py-2 no-underline last:border-b-0 active:bg-fond-survol"
-                        >
-                          {agent ? <RondAgent id={agent} /> : <GrappeChat roleIds={c.roleIds} />}
-                          <span className="min-w-0 flex-1 truncate text-body-s text-texte-principal">
-                            <Surligne morceaux={surligner(titre, analysee)} />
-                          </span>
-                        </Link>
-                      </li>
+                      <LigneListe
+                        key={c.origine}
+                        href={`/chat?id=${encodeURIComponent(c.origine)}`}
+                        retrait="avatar"
+                        debut={agent ? <RondAgent id={agent} taille={40} /> : <GrappeChat roleIds={c.roleIds} grande />}
+                        nom={<Surligne morceaux={surligner(titre, analysee)} />}
+                        etiquette={c.projetNom ? <Etiquette>{c.projetNom}</Etiquette> : null}
+                        ligne2={c.extrait || undefined}
+                        uneLigne
+                      />
                     );
                   })}
-                </ul>
-              </section>
+                </GroupeListe>
+              </SectionListe>
             ) : null}
             {messages && messages.length > 0 ? (
-              <section aria-label="Messages" className="pt-3">
-                <h2 className="text-ui font-medium text-texte-secondaire">Messages</h2>
-                <ul>
+              <SectionListe titre="Messages" compte={messages.length} className="mt-5">
+                <GroupeListe>
                   {messages.map((m) => {
                     const c = parOrigine.get(m.conversationOrigine);
                     const auteur = m.auteurKind === "user" ? "Toi" : nom(m.auteurId ?? "");
                     return (
-                      <li key={m.origine}>
-                        <button
-                          type="button"
-                          onClick={() => ouvrir(m.conversationOrigine, m.origine)}
-                          className="flex w-full flex-col gap-1 border-b border-bordure-subtile py-3 text-left last:border-b-0 active:bg-fond-survol"
-                        >
-                          <span className="flex min-w-0 items-center gap-1.5 text-ui-xs text-texte-secondaire">
-                            <span className="truncate font-medium text-texte-principal">{auteur}</span>
-                            <span className="truncate">· {titreDe(m.conversationOrigine, c)}</span>
-                            <span className="ml-auto shrink-0">{formatListDate(m.creeLe)}</span>
-                          </span>
-                          <span className="line-clamp-3 text-ui text-texte-secondaire [overflow-wrap:anywhere]">
-                            <Surligne morceaux={surligner(m.extrait, analysee)} />
-                          </span>
-                        </button>
-                      </li>
+                      <button key={m.origine} type="button" onClick={() => ouvrir(m.conversationOrigine, m.origine)} className="flex min-h-14 w-full flex-col gap-1 border-b border-bordure-subtile px-4 py-3 text-left last:border-b-0 active:bg-fond-survol">
+                        <span className="flex w-full min-w-0 items-center gap-1.5 text-ui-xs text-texte-secondaire">
+                          <span className="truncate font-semibold text-texte-principal">{auteur}</span>
+                          <span className="truncate">· {titreDe(m.conversationOrigine, c)}</span>
+                          <span className="ml-auto shrink-0">{formatListDate(m.creeLe)}</span>
+                        </span>
+                        <span className="line-clamp-3 text-ui text-texte-principal [overflow-wrap:anywhere]">
+                          <Surligne morceaux={surligner(m.extrait, analysee)} />
+                        </span>
+                      </button>
                     );
                   })}
-                </ul>
-              </section>
-            ) : messages === undefined ? (
-              <p className="pt-4 text-ui text-texte-secondaire" aria-busy="true">
-                Recherche…
+                </GroupeListe>
+              </SectionListe>
+            ) : null}
+            {analysee && lus === undefined ? (
+              <p className="pt-3 text-ui text-texte-secondaire" aria-busy="true" role="status">
+                {horsLigne ? "Hors ligne : les résultats reviendront avec le réseau." : "Recherche…"}
               </p>
             ) : null}
           </>

@@ -122,7 +122,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
           return;
         }
         if (modele !== undefined && "modele" in options) w.choisirModele(chatId, modele, modele === "haiku" ? null : (effort ?? null));
-        w.sendMessage(chatId, texte, destinataire, chemins);
+        w.sendMessage(chatId, texte, destinataire, chemins, options.citation);
       } finally {
         /* Écrit sur ce disque ou abandonné : les pièces quittent le compte. */
         await terminerMessage({ id }).catch(() => undefined);
@@ -154,7 +154,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
         case "creerFil":
           if (!chat && ID_FIL.test(chatId) && a.roles.some((r) => r.id === valeur.roleId)) {
             // Le téléphone ne voit que les conversations de ce PC (`dm-<agent>`) : le fil y reste.
-            w.creerFil(valeur.roleId as string, undefined, null, undefined, { id: chatId, lieu: null });
+            w.creerFil(valeur.roleId as string, typeof valeur.titre === "string" ? valeur.titre : undefined, null, undefined, { id: chatId, lieu: null });
             crees.current.add(chatId);
           }
           return;
@@ -167,6 +167,12 @@ export function SyncCompte({ actif }: { actif: boolean }) {
         case "lu":
           if (chat) w.marquerLu(chatId);
           return;
+        case "reagir": {
+          /* L'état voulu, pas une bascule : un geste rejoué ne retire pas ce qu'il a mis. */
+          const message = w.state.messages.find((m) => m.id === valeur.messageId && m.chatId === chatId);
+          if (message && typeof valeur.emoji === "string" && (message.reactions?.includes(valeur.emoji) ?? false) !== (valeur.mise === true)) w.reagir(message.id, valeur.emoji);
+          return;
+        }
       }
     },
     [prendreOperation],
