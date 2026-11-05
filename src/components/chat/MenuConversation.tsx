@@ -31,7 +31,7 @@ function Ligne({ icone, children, onClick, desactivee = false, detail }: { icone
 }
 
 /**
- * Le « … » d'une conversation : export pour toutes, nom/épingle/projet pour l'équipe.
+ * Le « … » d'une conversation : export pour toutes, nom/épingle/projet pour l'équipe, repartir à zéro pour le chat d'un agent.
  * Au clavier, les flèches parcourent le menu (ligne grisée comprise) ; Échap ou Tab le
  * ferment et rendent le focus au bouton, un clic ailleurs le ferme.
  */
@@ -42,6 +42,7 @@ export function MenuConversation({
   epinglee,
   onEpingler,
   actionExport,
+  repartir,
 }: {
   project?: Project;
   /** Le « … » lui-même : l'en-tête y rend le focus après un renommage au clavier. */
@@ -50,6 +51,8 @@ export function MenuConversation({
   epinglee?: boolean;
   onEpingler?: () => void;
   actionExport?: ActionExport;
+  /** Le chat d'un agent : repartir à zéro, grisé tant que c'est impossible. */
+  repartir?: { lancer: () => void; desactivee: boolean; detail?: string };
 }) {
   const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
@@ -139,6 +142,12 @@ export function MenuConversation({
           >
             {epinglee ? "Retirer l'épingle" : "Épingler"}
           </Ligne>}
+          {repartir && <Ligne
+            icone="refresh-01"
+            desactivee={repartir.desactivee}
+            detail={repartir.detail}
+            onClick={() => { fermer(true); repartir.lancer(); }}
+          >Repartir à zéro</Ligne>}
           {actionExport && <Ligne
             icone="download-02"
             desactivee={actionExport.vide}

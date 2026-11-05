@@ -4,7 +4,8 @@
  * - conversation d'équipe lourde : « Résumer la conversation », pas de fil, « Plus tard » qui tient
  *   après un redémarrage ;
  * - conversation d'équipe moyenne après une pause : rien (un résumé ne rattraperait pas la relecture) ;
- * - conversation directe moyenne après une pause : « Nouveau fil », qui ouvre un fil neuf, pas de résumé ;
+ * - chat d'un agent moyen après une pause : « Repartir à zéro » (pas de fil, qui serait une tâche de plus), pas de résumé ;
+ * - fil moyen après une pause : « Nouveau fil », qui ouvre un fil neuf, pas de résumé ;
  * - mesure d'une ancienne session : ignorée.
  * Dossier personnel et données de l'app temporaires ; aucun agent n'est lancé.
  * Prérequis : `pnpm build && pnpm build:electron`.
@@ -62,9 +63,24 @@ const depart = {
       sessions: { principal: "session-directe" },
       luJusqua: null,
       contexte: { principal: { jetons: 45_000, le: il_y_a(130), session: "session-directe" } },
+      contexteMasqueJusqua: 40_000,
+    },
+    {
+      id: "klyra-fil-pause",
+      kind: "direct",
+      projectId: null,
+      title: "Un fil",
+      roleIds: ["principal"],
+      updatedAt: il_y_a(130),
+      sessions: { principal: "session-fil" },
+      luJusqua: null,
+      fil: { roleId: "principal", statut: "ouvert", creeLe: il_y_a(200), lancePar: null, etape: "a-faire" },
+      contexte: { principal: { jetons: 45_000, le: il_y_a(130), session: "session-fil" } },
     },
   ],
   messages: [
+    { id: "d1", chatId: "dm-principal", author: { kind: "user" }, createdAt: il_y_a(131), parts: [{ type: "text", text: "Ancien sujet." }] },
+    { id: "d2", chatId: "dm-principal", author: { kind: "role", roleId: "principal" }, createdAt: il_y_a(130), statut: "fait", parts: [{ type: "text", text: "Réponse ancienne." }] },
     { id: "m1", chatId: "equipe-lourde", author: { kind: "user" }, createdAt: il_y_a(3), parts: [{ type: "text", text: "On continue." }] },
     { id: "m2", chatId: "equipe-lourde", author: { kind: "role", roleId: "principal" }, createdAt: il_y_a(2), statut: "fait", parts: [{ type: "text", text: "Je continue." }] },
   ],
@@ -177,7 +193,14 @@ try {
   await app.aller("/chat?id=dm-principal");
   c = await conseilPret(app);
   verifier(c?.raison === "pause" && /Pause de plus d’une heure/.test(c.texte) && /45 k jetons/.test(c.texte), `directe après une pause : le conseil le dit (${c?.texte ?? "absent"})`);
-  verifier(!!c && c.boutons.includes("Nouveau fil") && !c.boutons.includes("Résumer la conversation"), `directe après une pause : un fil neuf, pas de résumé (${c?.boutons.join(", ")})`);
+  verifier(!!c && c.boutons.includes("Repartir à zéro") && !c.boutons.includes("Nouveau fil") && !c.boutons.includes("Résumer la conversation"), `chat d’un agent après une pause : repartir à zéro, ni fil ni résumé (${c?.boutons.join(", ")})`);
+  await app.cliquerBouton("Repartir à zéro");
+  verifier((await conseil(app)) === null, "« Repartir à zéro » : le conseil disparaît");
+  verifier(await app.ev(`!!document.querySelector("[data-depart]") && document.body.innerText.includes("Réponse ancienne.")`), "le séparateur apparaît, l’ancienne réponse reste lisible");
+
+  await app.aller("/chat?id=klyra-fil-pause");
+  c = await conseilPret(app);
+  verifier(!!c && c.boutons.includes("Nouveau fil") && !c.boutons.includes("Repartir à zéro") && !c.boutons.includes("Résumer la conversation"), `fil après une pause : un fil neuf, pas de résumé (${c?.boutons.join(", ")})`);
   await app.cliquerBouton("Nouveau fil");
   const adresse = await app.ev("location.search");
   verifier(/id=klyra-fil-/.test(decodeURIComponent(adresse ?? "")), `« Nouveau fil » ouvre un fil neuf (${adresse})`);
@@ -186,6 +209,9 @@ try {
 
   await attendre(1500);
   await app.fermer();
+  const directe = surDisque().chats.find((x) => x.id === "dm-principal");
+  verifier(directe?.departs?.length === 1 && Object.keys(directe.sessions).length === 0 && !directe.contexte && directe.contexteMasqueJusqua === undefined, "repartie à zéro : plus de session, de mesure ni de masquage, le départ est enregistré");
+  verifier(surDisque().messages.filter((m) => m.chatId === "dm-principal").length === 2, "repartie à zéro : les messages restent");
   const lourde = surDisque().chats.find((x) => x.id === "equipe-lourde");
   verifier(lourde?.contexteMasqueJusqua === 112_000, `« Plus tard » enregistré : le conseil revient au-delà de 112 k jetons (${lourde?.contexteMasqueJusqua})`);
 

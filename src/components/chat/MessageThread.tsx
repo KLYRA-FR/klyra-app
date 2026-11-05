@@ -11,6 +11,7 @@ import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { plierAteliers, type EtatAtelier } from "@/lib/atelier-agent";
 import { cn } from "@/lib/cn";
 import { formatDaySeparator, formatJourHeure, formatTime, isSameDay } from "@/lib/format";
+import { departsAvant, estAvantDepart } from "@/lib/contexte";
 import { fournisseur, moteurDuMessage } from "@/lib/fournisseurs";
 import { requeteRetenue } from "@/lib/recherche-session";
 import { DEPART_ROUTINE } from "@/lib/message-routine";
@@ -32,6 +33,17 @@ function memeAuteur(a: Message, b: Message): boolean {
   if (a.author.kind !== b.author.kind) return false;
   // Le même agent avec un autre fournisseur : son nom revient, avec le fournisseur.
   return a.author.kind === "user" || (b.author.kind === "role" && a.author.roleId === b.author.roleId && moteurDuMessage(a) === moteurDuMessage(b));
+}
+
+/** « Repartir à zéro » : ce qui est au-dessus reste lisible, l'agent ne le relit plus. */
+function SeparateurDepart({ nom }: { nom: string }) {
+  return (
+    <div data-depart className="flex items-center gap-3 py-3 text-ui-2xs font-medium text-texte-tertiaire">
+      <span aria-hidden="true" className="h-px flex-1 bg-bordure-subtile" />
+      <span className="shrink-0">Repartie à zéro : {nom} ne relit pas ce qui précède</span>
+      <span aria-hidden="true" className="h-px flex-1 bg-bordure-subtile" />
+    </div>
+  );
 }
 
 function DaySeparator({ iso }: { iso: string }) {
@@ -352,6 +364,7 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   const chat = useChat(chatId);
   const messages = useChatMessages(chatId);
   const travail = useTravail(chatId);
+  const nomAgent = useRole(chat?.roleIds[0] ?? "principal").name;
   const { sendMessage, marquerLu } = useWorkspace();
   const menu = useMenuContextuel<CibleMessage>();
   const zone = useRef<HTMLDivElement>(null);
@@ -380,11 +393,13 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   /* Une nouvelle proposition d'agent remplace les précédentes de la conversation. */
   const propositionCourante = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
+      // Une proposition d'avant le départ : l'agent ne sait plus de quoi il s'agit.
+      if (chat && estAvantDepart(chat, messages[i])) break;
       const part = messages[i].parts.findLast((p) => p.type === "proposition-agent");
       if (part?.type === "proposition-agent") return part.etapeId;
     }
     return null;
-  }, [messages]);
+  }, [messages, chat]);
 
   /* L'atelier d'un agent : tous ses appels pliés dans l'ordre (cf. atelier-agent.ts). */
   const ateliers = useMemo(() => plierAteliers(messages), [messages]);
@@ -431,6 +446,9 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
               new Date(message.createdAt).getTime() - new Date(previous.createdAt).getTime() < GROUPE_MS;
             return (
               <Fragment key={message.id}>
+                {departsAvant(chat, previous, message).map((d) => (
+                  <SeparateurDepart key={d} nom={nomAgent} />
+                ))}
                 {showDay && <DaySeparator iso={message.createdAt} />}
                 <div
                   data-message={message.id}
@@ -464,6 +482,9 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
               </Fragment>
             );
           })}
+          {departsAvant(chat, messages[messages.length - 1]).map((d) => (
+            <SeparateurDepart key={d} nom={nomAgent} />
+          ))}
         </div>
       </div>
       <RailMessages zone={zone} messages={messages} />

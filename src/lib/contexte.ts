@@ -1,4 +1,4 @@
-import type { Chat, RoleId } from "@/types/domain";
+import type { Chat, Message, RoleId } from "@/types/domain";
 
 /**
  * La taille d'une conversation pour Claude Code : chaque appel au modèle (chaque étape d'une
@@ -8,7 +8,7 @@ import type { Chat, RoleId } from "@/types/domain";
  * - Conversation lourde : l'app propose de la résumer (`/compact`). Le résumé coûte une relecture
  *   et sa rédaction, vite rattrapées par les étapes suivantes, qui relisent bien moins.
  * - Reprise après la durée du cache : le prochain message relira tout au prix fort, résumé ou non.
- *   Pour un nouveau sujet, un fil neuf repart léger : c'est ce que l'app propose (là où il y a des fils).
+ *   Pour un nouveau sujet, on repart léger : à zéro dans le chat d'un agent, un fil neuf dans un fil.
  */
 
 /** La commande de Claude Code qui résume la conversation et garde l'essentiel. */
@@ -67,6 +67,43 @@ export interface ConseilContexte {
   /** Un fil neuf avec cet agent est possible (conversation directe ou fil). */
   filPossible: boolean;
 }
+
+/* ─── Repartir à zéro ──────────────────────────────────────────────── */
+
+/** Le chat d'un agent, celui qui reste toujours là : ni un fil (une tâche), ni une conversation d'équipe. */
+export const estChatPrincipal = (chat: Pick<Chat, "kind" | "fil">): boolean => chat.kind === "direct" && !chat.fil;
+
+/** Ce message précède le dernier départ : il reste lisible, l'agent ne le relit plus. */
+export function estAvantDepart(chat: Pick<Chat, "departs">, message: Pick<Message, "createdAt">): boolean {
+  const dernier = chat.departs?.at(-1);
+  return !!dernier && message.createdAt <= dernier;
+}
+
+/** Repartir n'a de sens que s'il y a quelque chose depuis le dernier départ. */
+export const peutRepartir = (chat: Pick<Chat, "departs">, messages: Pick<Message, "createdAt">[]): boolean => messages.some((m) => !estAvantDepart(chat, m));
+
+/** Les départs à montrer juste avant ce message (`suivant` absent : à la fin du fil). */
+export function departsAvant(chat: Pick<Chat, "departs">, precedent?: Pick<Message, "createdAt">, suivant?: Pick<Message, "createdAt">): string[] {
+  return (chat.departs ?? []).filter((d) => (!precedent || d >= precedent.createdAt) && (!suivant || d < suivant.createdAt));
+}
+
+/** La conversation sans ce que l'agent en retient : ses sessions partout, sa taille mesurée, ce qu'elle reprenait. */
+function sansMemoire(chat: Chat): Chat {
+  const suivant: Chat = { ...chat, sessions: {}, taches: [], sessionNeuve: true };
+  delete suivant.sessionsParLieu;
+  delete suivant.sessionsParMoteur;
+  delete suivant.contexte;
+  delete suivant.contexteMasqueJusqua;
+  delete suivant.amorce;
+  delete suivant.departs;
+  return suivant;
+}
+
+/** « Repartir à zéro » : les messages restent, l'agent les oublie. */
+export const repartirAZero = (chat: Chat, le: string): Chat => ({ ...sansMemoire(chat), departs: [...(chat.departs ?? []), le] });
+
+/** « Effacer et repartir » : les messages partent aussi (la conversation les retire de son côté). */
+export const viderConversation = (chat: Chat): Chat => ({ ...sansMemoire(chat), luJusqua: null });
 
 /** « /compact », seul ou suivi de consignes pour le résumé. */
 export function estCommandeCompacter(texte: string): boolean {

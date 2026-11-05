@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { estChatPrincipal, peutRepartir } from "@/lib/contexte";
 import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { ChoixModele } from "./ChoixModele";
 import { ouvrirPanneauAgent } from "./PanneauLateral";
@@ -12,7 +13,7 @@ import { MenuConversation } from "./MenuConversation";
 import type { ActionExport } from "./useExporterConversation";
 import { useBasculerEpingle } from "./BoutonEpingle";
 import { estEpinglee } from "@/lib/epinglage";
-import { useAgentOccupe, useRole, useTravail, useWorkspace } from "@/lib/workspace";
+import { useAgentOccupe, useChatMessages, useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Project } from "@/types/domain";
 
 interface ChatHeaderProps {
@@ -30,6 +31,12 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
   const router = useRouter();
   const role = useRole(chat.roleIds[0] ?? "principal");
   const ici = useTravail(chat.id);
+  const messages = useChatMessages(chat.id);
+  const { repartir } = useWorkspace();
+  const rienDepuis = !peutRepartir(chat, messages);
+  const actionRepartir = estChatPrincipal(chat)
+    ? { lancer: () => repartir(chat.id), desactivee: !!ici || rienDepuis, detail: ici ? `${role.name} travaille` : rienDepuis ? "Rien depuis le dernier départ" : undefined }
+    : undefined;
   const occupe = useAgentOccupe(role.id);
   // Dans un fil : son identifiant, celui qu'on cite (« Rapport hebdo (klyra-fil-…) »).
   const etat = ici ? "Travaille…" : chat.fil ? `${chat.title} · ${chat.id}` : occupe ? "Travaille dans une conversation d’équipe" : role.title;
@@ -87,7 +94,7 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
           <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-bleu-k1-500" />
         )}
       </span>
-      {actionExport && <MenuConversation bouton={options} actionExport={actionExport} />}
+      {actionExport && <MenuConversation bouton={options} actionExport={actionExport} repartir={actionRepartir} />}
     </header>
   );
 }
