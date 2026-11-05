@@ -1,7 +1,7 @@
 "use client";
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { Icon } from "@/components/icons/Icon";
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from "react";
+import { Icon, type IconName } from "@/components/icons/Icon";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { cn } from "@/lib/cn";
 
@@ -82,5 +82,95 @@ export function CaseRonde({ faite }: { faite: boolean }) {
     <PixelCheck className="h-[13px] w-[18px]" />
   ) : (
     <span aria-hidden="true" className="size-6 shrink-0 rounded-full border-[1.5px] border-texte-tertiaire" />
+  );
+}
+
+/**
+ * Un bandeau dans la page (socle § 6.2) : `info` bleu pâle, `attente` gris, `erreur` bordé de rouge.
+ * `fin` : ce qui se pose à droite (un chevron quand le bandeau est un lien).
+ */
+export function Bandeau({ ton = "attente", icone, children, fin, className }: { ton?: "info" | "attente" | "erreur"; icone: IconName; children: ReactNode; fin?: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-md px-3.5 py-3 text-ui",
+        ton === "info" ? "border border-bordure-accent-legere bg-fond-teinte-bleue text-texte-principal" : ton === "erreur" ? "border border-bordure-erreur bg-fond-surface text-texte-erreur" : "bg-fond-surface-grise text-texte-principal",
+        className,
+      )}
+    >
+      <Icon name={icone} size={20} className={cn("shrink-0", ton === "info" ? "text-icone-accent" : ton === "erreur" ? "text-texte-erreur" : "text-icone-defaut")} />
+      <span className="min-w-0 flex-1 leading-[1.4]">{children}</span>
+      {fin}
+    </div>
+  );
+}
+
+/** Le succès d'un geste, sur place : seulement après le résultat de sa source (lot 8 § 4). */
+export function SuccesLigne({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <p role="status" className={cn("flex min-h-6 items-center gap-1.5 text-ui font-medium text-texte-accent", className)}>
+      <Icon name="check-01" size={16} className="shrink-0" />
+      {children}
+    </p>
+  );
+}
+
+/** « Envoi… » : un geste sur l'ordinateur attend sa réponse, jamais un succès annoncé d'avance. */
+export function EnvoiEnCours() {
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-ui whitespace-nowrap text-texte-secondaire">
+      <Icon name="loader-01" size={16} />
+      Envoi…
+    </span>
+  );
+}
+
+/** Une jauge d'utilisation : 6 px, K1 sur gris. `part` de 0 à 1, jamais dessinée sans donnée. */
+export function Jauge({ part, libelle }: { part: number; libelle: string }) {
+  const pourcent = Math.max(0, Math.min(100, Math.round(part * 100)));
+  return (
+    <div role="progressbar" aria-label={libelle} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pourcent} aria-valuetext={`${pourcent} %`} className="h-1.5 overflow-hidden rounded-pill bg-fond-surface-grise">
+      <span className="block h-full rounded-pill bg-fond-accent" style={{ width: `${pourcent}%` }} />
+    </div>
+  );
+}
+
+/** Le curseur de volume : l'`input range` natif habillé, cible de 44 px, pouce de 24. */
+export function CurseurVolume({ valeur, className, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "type"> & { valeur: number }) {
+  return (
+    <input
+      type="range"
+      min={0}
+      max={100}
+      step={1}
+      value={valeur}
+      aria-valuetext={`${valeur} %`}
+      className={cn("klyra-curseur klyra-curseur-telephone min-w-0 flex-1", className)}
+      style={{ "--valeur": `${valeur}%` } as CSSProperties}
+      {...rest}
+    />
+  );
+}
+
+/** Le champ de recherche du téléphone : loupe à gauche, « Effacer » à droite dès qu'il y a du texte. */
+export function ChampRecherche({ valeur, onChange, libelle, placeholder, effacer = "Effacer la recherche" }: { valeur: string; onChange: (valeur: string) => void; libelle: string; placeholder: string; effacer?: string }) {
+  return (
+    <div className="relative">
+      <Icon name="search-01" size={20} className="pointer-events-none absolute top-3.5 left-3.5 text-icone-secondaire" />
+      <input
+        type="search"
+        enterKeyHint="search"
+        value={valeur}
+        placeholder={placeholder}
+        aria-label={libelle}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(CHAMP_TELEPHONE, "pr-11 pl-11 [&::-webkit-search-cancel-button]:appearance-none")}
+      />
+      {valeur ? (
+        <button type="button" aria-label={effacer} onClick={() => onChange("")} className="absolute top-0.5 right-0.5 flex size-11 items-center justify-center text-icone-secondaire">
+          <Icon name="x-01" size={20} />
+        </button>
+      ) : null}
+    </div>
   );
 }

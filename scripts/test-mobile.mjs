@@ -264,14 +264,14 @@ try {
   await allerTel("/reglages?section=mobile");
   verifier(await telephone.quand("document.body.innerText.includes('Ce téléphone') && document.body.innerText.includes('Passe par ton compte, puis par')", 15000), "Ce téléphone : MO-T15");
   texte = await telephone.texte();
-  verifier(texte.includes(MOI.email) && texte.includes("Se déconnecter de ce téléphone") && texte.includes("Ordinateurs") && texte.includes("KLYRA est ouverte sur"), "Ce téléphone : adresse, sortie, ordinateurs et leur état");
+  verifier(texte.includes(MOI.email) && texte.includes("Se déconnecter de ce téléphone") && texte.includes("Ordinateurs et serveurs") && texte.includes("KLYRA est ouverte."), "Ce téléphone : adresse, sortie, ordinateurs et leur état");
   const textesTel = [texte];
   for (const chemin of ["/plus", "/routines", "/equipe", "/projets", "/artefacts"]) {
     await allerTel(chemin);
     textesTel.push(await telephone.texte());
   }
-  /* MO-T17 est la ligne Automatisations de Plus (`texteRoutines`). */
-  verifier(textesTel[1].includes("Les routines se gèrent sur") && textesTel[1].includes("Celles d’un VPS y tournent même"), "Automatisations : MO-T17");
+  /* La ligne Automatisations de Plus (`texteRoutines`, lot 8, E8-01), sous la carte de l'ordinateur. */
+  verifier(textesTel[1].includes("Les routines et les workflows de tes agents") && textesTel[1].includes("KLYRA est ouverte sur"), "Plus : la carte de l'ordinateur et la ligne Automatisations");
   verifier(textesTel.every((t) => !/ton Mac|Sur ton Mac/.test(t)), "téléphone : aucun « ton Mac » écrit en dur (poste Linux)");
   await allerTel("/chats");
   /* La pastille (socle mobile § 2.3) : « Ordinateur » sous Linux, son nom accessible finit par « État des ordinateurs ». */

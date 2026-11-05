@@ -8,7 +8,7 @@ import { carteAgent } from "@/lib/copie-compte";
 import { dansEspace, useLieuActif } from "@/lib/lieux";
 import { lireEquipeServeur } from "@/lib/serveur-vps";
 import type { AgentsMeta, MesAgents } from "@/lib/bridge";
-import { idDirectDe } from "./chats";
+import { idDirectDe, nombreATraiter } from "./chats";
 
 /**
  * L'espace du serveur que ce téléphone a choisi (Plus › Serveurs). Chaque appareil retient le sien : celui de
@@ -20,6 +20,20 @@ export function useConversationsEspace(actif = true) {
   const conversations = useQuery(api.conversationsCompte.liste, actif ? {} : "skip");
   const lieu = useLieuActif();
   return useMemo(() => conversations?.filter((c) => dansEspace(c.lieu, lieu)), [conversations, lieu]);
+}
+
+/**
+ * Ce qui attend dans chaque espace que ce téléphone peut afficher (lot 8, E8-07, E8-10) : `lieux` sont les
+ * serveurs reliés ; l'ordinateur compte toujours. Tant que le compte n'a pas répondu : aucun chiffre.
+ */
+export function useATraiterParEspace(lieux: readonly string[], actif = true): (lieu: string | null) => number {
+  const conversations = useQuery(api.conversationsCompte.liste, actif ? {} : "skip");
+  const parLieu = useMemo(() => {
+    const compte = new Map<string | null, number>();
+    for (const lieu of [null, ...lieux]) compte.set(lieu, nombreATraiter((conversations ?? []).filter((c) => dansEspace(c.lieu, lieu))));
+    return compte;
+  }, [conversations, lieux]);
+  return (lieu) => parLieu.get(lieu) ?? 0;
 }
 
 /** Les projets du compte, sur le serveur choisi. */

@@ -15,6 +15,7 @@ import { ProjetsTelephone, ProjetTelephone } from "./EcransProjets";
 import { useRetenirPoste } from "./poste";
 import { useNumeroterNavigation } from "./retour";
 import { effacerVues } from "@/lib/telephone/vue-gardee";
+import { effacerBrouillons } from "@/lib/brouillons";
 import { BarreOnglets } from "./BarreOnglets";
 import { ChatsTelephone } from "./ChatsTelephone";
 import { ConnexionTelephone } from "./ConnexionTelephone";
@@ -30,6 +31,9 @@ import { getBridge } from "@/lib/bridge";
 import { composition, lireDerniereDonnee, retenirDerniereDonnee, texteHorsLigne, type Composition } from "@/lib/coque";
 import { estIphone, lireNavigateur } from "@/lib/push";
 import { SERVICE_WORKER, useSynchroPush } from "./push";
+import { Icon } from "@/components/icons/Icon";
+import { Bouton } from "@/components/ui/Bouton";
+import { SuiviEspace } from "./EspaceTelephone";
 
 const CLE_INSTALL = "klyra:installer";
 
@@ -148,7 +152,7 @@ function useHorsLigne(): string | null {
 /* ─── Vue gardée (socle § 5.4) ───────────────────────────────────── */
 
 /**
- * Ce que le téléphone a gardé des lectures de l'ordinateur ne survit pas à la déconnexion : session
+ * Ce que le téléphone a gardé (lectures de l'ordinateur, brouillons) ne survit pas à la déconnexion : session
  * fermée sur ce téléphone ou à distance, compte retiré, ou un autre compte connecté. Un démarrage sans
  * réseau n'efface rien (le compte n'a pas encore répondu).
  */
@@ -159,7 +163,10 @@ function useEffacerVuesGardees() {
   if (etat === "connecte" && !etaitConnecte) setEtaitConnecte(true);
   useEffect(() => {
     if (membre) effacerVues(undefined, membre);
-    else if (etat === "retire" || sessionFermee || (etat === "deconnecte" && etaitConnecte)) effacerVues();
+    else if (etat === "retire" || sessionFermee || (etat === "deconnecte" && etaitConnecte)) {
+      effacerVues();
+      effacerBrouillons();
+    }
   }, [membre, etat, sessionFermee, etaitConnecte]);
 }
 
@@ -235,48 +242,98 @@ function useInstallation() {
     setChoixNavigateur(true);
   };
 
+  /* Le succès vient de l'événement du système (`appinstalled`), jamais du seul choix dans la demande (E8-57, E8-58). */
   const installer = async () => {
     if (!invite) return;
     await invite.prompt();
-    if ((await invite.userChoice).outcome === "accepted") setInstallee(true);
+    await invite.userChoice;
     setInvite(null);
   };
+
+  /* « Installer KLYRA sur l'écran d'accueil », depuis Ce téléphone (E8-23) : la page revient. */
+  useEffect(() => {
+    const proposer = () => {
+      try {
+        localStorage.removeItem(CLE_INSTALL);
+      } catch {
+        /* Sans stockage : la page s'affiche quand même pour cette ouverture. */
+      }
+      setChoixNavigateur(false);
+    };
+    window.addEventListener("klyra:proposer-installation", proposer);
+    return () => window.removeEventListener("klyra:proposer-installation", proposer);
+  }, []);
 
   /* La page ne s'affiche que dans le navigateur d'un téléphone ou d'une tablette, jamais dans l'app posée sur l'écran d'accueil. */
   const aProposer = mobile && !navigateur.installee && !choixNavigateur;
   return { aProposer, iphone: estIphone(navigateur), installee, invite, installer, continuer };
 }
 
+function EtapesInstallation({ etapes }: { etapes: ReactNode[] }) {
+  return (
+    <ol className="flex flex-col gap-3.5">
+      {etapes.map((etape, i) => (
+        <li key={i} className="flex items-start gap-3 text-body-s leading-[1.4] text-texte-principal">
+          <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fond-surface-grise text-ui font-semibold">
+            {i + 1}
+          </span>
+          <span className="min-w-0 pt-0.5">{etape}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function PageInstallation({ installation, tablette }: { installation: ReturnType<typeof useInstallation>; tablette: boolean }) {
   const { iphone, installee, invite } = installation;
-  const etapes = iphone
-    ? ["Ouvre cette page dans Safari.", "Touche le bouton Partager de Safari.", "Choisis d’ajouter KLYRA à l’écran d’accueil, puis confirme.", "Ouvre KLYRA depuis l’écran d’accueil."]
-    : ["Ouvre le menu du navigateur.", "Choisis d’installer KLYRA ou de l’ajouter à l’écran d’accueil.", "Ouvre KLYRA depuis l’écran d’accueil."];
+  const partager = (
+    <>
+      Touche le bouton{" "}
+      <span className="inline-flex h-6 items-center gap-1 rounded-sm bg-fond-surface-grise px-1.5 align-[1px] text-ui font-medium">
+        <Icon name="upload-01" size={16} />
+        Partager
+      </span>{" "}
+      de Safari.
+    </>
+  );
+  const menu = (
+    <>
+      Ouvre le menu{" "}
+      <span className="inline-flex h-6 items-center rounded-sm bg-fond-surface-grise px-1.5 align-[1px]">
+        <Icon name="dot-horizontal" size={16} />
+      </span>{" "}
+      du navigateur.
+    </>
+  );
+  const etapes: ReactNode[] = iphone
+    ? ["Ouvre cette page dans Safari.", partager, "Choisis d’ajouter KLYRA à l’écran d’accueil, puis confirme.", "Ouvre KLYRA depuis l’écran d’accueil."]
+    : [menu, "Choisis d’installer KLYRA ou de l’ajouter à l’écran d’accueil.", "Ouvre KLYRA depuis l’écran d’accueil."];
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-      <div className="m-auto flex w-full max-w-sm flex-col gap-4 px-6 py-8">
+    <div className="min-h-0 flex-1 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <div className="mx-auto flex w-full max-w-sm flex-col gap-4 px-6 pt-6 pb-8">
         <Image src="/brand/logo-icone.svg" alt="" width={56} height={56} />
-        <h1 className="text-h4 font-medium text-texte-principal">Installer KLYRA sur {tablette ? "cette tablette" : "ce téléphone"}</h1>
-        <p className="text-ui text-texte-secondaire">
-          Posée sur l’écran d’accueil, KLYRA s’ouvre comme une app, même sans réseau, et peut te prévenir quand un agent attend ton accord.
-        </p>
         {installee ? (
-          <p role="status" className="text-body-s text-texte-principal">
-            KLYRA est installée : ouvre-la depuis l’écran d’accueil.
-          </p>
-        ) : invite ? (
-          <BoutonPrincipal onClick={() => void installation.installer()}>Installer KLYRA</BoutonPrincipal>
+          <div role="status" className="flex flex-col items-center px-2 pt-20 text-center">
+            <span aria-hidden="true" className="mb-4 flex size-12 items-center justify-center rounded-full bg-fond-teinte-bleue text-icone-accent">
+              <Icon name="check-01" size={24} />
+            </span>
+            <h1 className="text-body-s font-semibold text-texte-principal">KLYRA est installée</h1>
+            <p className="mt-1.5 max-w-[290px] text-ui text-texte-secondaire">Ouvre-la depuis l’écran d’accueil : c’est là que tu te connectes et que les notifications arrivent.</p>
+          </div>
         ) : (
-          <ol className="flex list-decimal flex-col gap-2 pl-5 text-body-s text-texte-principal">
-            {etapes.map((etape) => (
-              <li key={etape}>{etape}</li>
-            ))}
-          </ol>
+          <>
+            <h1 className="mt-1 text-h3 leading-[1.05] font-semibold tracking-title text-texte-principal">Installer KLYRA sur {tablette ? "cette tablette" : "ce téléphone"}</h1>
+            <p className="text-ui leading-[1.45] text-texte-secondaire">Posée sur l’écran d’accueil, KLYRA s’ouvre comme une app, même sans réseau, et peut te prévenir quand un agent attend ton accord.</p>
+            {invite ? <BoutonPrincipal onClick={() => void installation.installer()}>Installer KLYRA</BoutonPrincipal> : <EtapesInstallation etapes={etapes} />}
+            <div className="mt-1.5">
+              <Bouton variant="discret" taille="md" className="w-full" onClick={installation.continuer}>
+                Continuer dans le navigateur
+              </Bouton>
+              {iphone ? <p className="mt-1 text-center text-ui-xs text-texte-secondaire">Dans Safari, KLYRA ne pourra pas te prévenir.</p> : null}
+            </div>
+          </>
         )}
-        <button type="button" className="min-h-11 self-start text-ui text-texte-principal underline underline-offset-4" onClick={installation.continuer}>
-          Continuer dans le navigateur
-        </button>
       </div>
     </div>
   );
@@ -320,6 +377,7 @@ export function CoqueTelephone() {
     <FournisseurReseau horsLigne={horsLigne}>
       <FournisseurAnnonce barreOnglets={barre}>
         {connecte ? <SuiviDemandesTickets /> : null}
+        {connecte ? <SuiviEspace /> : null}
         <div className="flex h-full bg-fond-page">
           {tablette && navigation ? <BarreOnglets vertical /> : null}
           <div className="flex min-w-0 flex-1 flex-col">

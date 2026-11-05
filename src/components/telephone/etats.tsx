@@ -121,8 +121,6 @@ export function PosteFerme({ phrase, forme = "plein" }: { phrase: (sur: string) 
  * `phrase` est celle de P-6 : sa première phrase dit ce qui vit sur l'ordinateur.
  */
 export function AucunPoste({ phrase, forme = "plein", className }: { phrase: (sur: string) => string; forme?: FormeEtat; className?: string }) {
-  const { moi } = useCompte();
-  const etapes = ["Ouvre KLYRA sur ton ordinateur.", "Va dans Réglages › Équipe.", moi ? `Connecte-toi avec ${moi.email}.` : "Connecte-toi à ton compte."];
   return (
     <EtatEcran
       className={className}
@@ -133,20 +131,29 @@ export function AucunPoste({ phrase, forme = "plein", className }: { phrase: (su
       texte={
         <>
           <p>{majuscule(premierePhrase(phrase("ton ordinateur")))} Relie-le une fois à ton compte :</p>
-          <ol className="mt-4 flex flex-col gap-3 text-left">
-            {etapes.map((etape, i) => (
-              <li key={etape} className="flex items-start gap-3 text-body-s text-texte-principal">
-                <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-fond-surface-grise text-ui-xs font-semibold">
-                  {i + 1}
-                </span>
-                <span className="min-w-0 [overflow-wrap:anywhere]">{etape}</span>
-              </li>
-            ))}
-          </ol>
+          <EtapesLiaison className="mt-4" />
           <p className="mt-4">Ce téléphone se met à jour tout seul.</p>
         </>
       }
     />
+  );
+}
+
+/** Les trois étapes pour relier un ordinateur au compte (S-21, E8-04). */
+export function EtapesLiaison({ className }: { className?: string }) {
+  const { moi } = useCompte();
+  const etapes = ["Ouvre KLYRA sur ton ordinateur.", "Va dans Réglages › Équipe.", moi ? `Connecte-toi avec ${moi.email}.` : "Connecte-toi à ton compte."];
+  return (
+    <ol className={cn("flex flex-col gap-3 text-left", className)}>
+      {etapes.map((etape, i) => (
+        <li key={etape} className="flex items-start gap-3 text-body-s text-texte-principal">
+          <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-fond-surface-grise text-ui-xs font-semibold">
+            {i + 1}
+          </span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{etape}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 

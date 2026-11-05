@@ -8,6 +8,9 @@ import { EtatEcran } from "./etats";
 import { Etiquette, GroupeListe, LigneListe, TuileIcone } from "./Liste";
 import { usePostes, useSupport } from "./poste";
 import { useConversationsEspace } from "@/lib/telephone/espace";
+import { CarteOrdinateur } from "./CarteOrdinateur";
+import { useEspaceAffiche } from "./EspaceTelephone";
+import { PiedPlus } from "./PiedPlus";
 
 /**
  * T-21 Plus : Tickets, Automatisations, Artefacts, Rechercher, Réglages, puis les serveurs reliés.
@@ -15,22 +18,23 @@ import { useConversationsEspace } from "@/lib/telephone/espace";
  * « Rechercher » mène à `/chats?vue=recherche` (T-04).
  */
 export function PlusTelephone() {
-  const { principal, ouvert } = usePostes();
+  const { ouvert } = usePostes();
   const sur = useSupport();
+  const { serveur } = useEspaceAffiche();
   const aValider = nombreAValider(useConversationsEspace(), ouvert);
   return (
     <PageOnglet titre="Plus">
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+      {/* Lot 8 : une ligne par destination (la ligne 2 coupée, E8-01), la carte de l'ordinateur en tête. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 [&_.line-clamp-2]:line-clamp-1">
+        <CarteOrdinateur />
+        <div className="h-5" />
         <GroupeListe>
           <LigneListe href="/tickets" debut={<TuileIcone icone="list" bleue />} retrait="tuile" nom="Tickets" etiquette={aValider ? <Etiquette ton="bleue">{aValider} à valider</Etiquette> : undefined} ligne2="Le travail de tes agents, par étape" fin="chevron" />
-          <LigneListe href="/routines" debut={<TuileIcone icone="lightning-01" />} retrait="tuile" nom="Automatisations" ligne2={texteRoutines(principal)} fin="chevron" />
-          <LigneListe href="/artefacts" debut={<TuileIcone icone="artefacts-forme" />} retrait="tuile" nom="Artefacts" ligne2={`Les pages et liens d’artefacts. La liste est sur ${sur}.`} fin="chevron" />
-          <LigneListe href="/chats?vue=recherche" debut={<TuileIcone icone="search-01" />} retrait="tuile" nom="Rechercher" ligne2="Dans tes conversations et leurs messages." fin="chevron" />
+          <LigneListe href="/routines" debut={<TuileIcone icone="lightning-01" />} retrait="tuile" nom="Automatisations" ligne2={texteRoutines(serveur ? { nom: serveur.nom, sur } : null)} fin="chevron" />
+          <LigneListe href="/artefacts" debut={<TuileIcone icone="artefacts-forme" />} retrait="tuile" nom="Artefacts" ligne2="Les pages et les liens de tes agents" fin="chevron" />
+          <LigneListe href="/chats?vue=recherche" debut={<TuileIcone icone="search-01" />} retrait="tuile" nom="Rechercher" ligne2="Dans tes conversations et leurs messages" fin="chevron" />
         </GroupeListe>
-        <GroupeListe className="mt-6">
-          <LigneListe href="/reglages" debut={<TuileIcone icone="reglages-engrenage" />} retrait="tuile" nom="Réglages" ligne2={`Ce téléphone, ton compte, et les réglages de ${sur}.`} fin="chevron" />
-          <LigneListe href="/serveurs" debut={<TuileIcone icone="computer" />} retrait="tuile" nom="Serveurs" ligne2={`Voir si ton VPS répond. Tes messages passent par ${sur}.`} fin="chevron" />
-        </GroupeListe>
+        <PiedPlus sur={sur} />
       </div>
     </PageOnglet>
   );

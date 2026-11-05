@@ -69,3 +69,12 @@ export function surBrouillon(chatId: string, recevoir: (text: string) => void): 
   window.addEventListener(EVENEMENT_BROUILLON, ecouter);
   return () => window.removeEventListener(EVENEMENT_BROUILLON, ecouter);
 }
+
+/** Ce téléphone se déconnecte : il oublie ce qu'il gardait (lot 8, E8-24). */
+export function effacerBrouillons() {
+  try {
+    localStorage.removeItem(CLE_BROUILLONS);
+  } catch {
+    /* stockage indisponible : rien n'avait été gardé */
+  }
+}
