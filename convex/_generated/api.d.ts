@@ -29,6 +29,7 @@ import type * as model_limites from "../model/limites.js";
 import type * as model_push from "../model/push.js";
 import type * as model_rappels from "../model/rappels.js";
 import type * as model_reactions from "../model/reactions.js";
+import type * as model_tickets from "../model/tickets.js";
 import type * as model_valeurs from "../model/valeurs.js";
 import type * as notificationsPush from "../notificationsPush.js";
 import type * as notificationsPushEnvoi from "../notificationsPushEnvoi.js";
@@ -37,6 +38,7 @@ import type * as postes from "../postes.js";
 import type * as presence from "../presence.js";
 import type * as rappels from "../rappels.js";
 import type * as telephones from "../telephones.js";
+import type * as ticketsCompte from "../ticketsCompte.js";
 
 import type {
   ApiFromModules,
@@ -66,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   "model/push": typeof model_push;
   "model/rappels": typeof model_rappels;
   "model/reactions": typeof model_reactions;
+  "model/tickets": typeof model_tickets;
   "model/valeurs": typeof model_valeurs;
   notificationsPush: typeof notificationsPush;
   notificationsPushEnvoi: typeof notificationsPushEnvoi;
@@ -74,6 +77,7 @@ declare const fullApi: ApiFromModules<{
   presence: typeof presence;
   rappels: typeof rappels;
   telephones: typeof telephones;
+  ticketsCompte: typeof ticketsCompte;
 }>;
 
 /**

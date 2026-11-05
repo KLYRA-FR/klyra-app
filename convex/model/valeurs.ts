@@ -8,6 +8,7 @@ export const vStatutInvitation = v.union(v.literal("en_attente"), v.literal("acc
 
 /** Les erreurs que l'app sait traduire (cf. `src/lib/compte.tsx`). */
 export type CodeErreur =
+  | "deja_confie"
   | "connexion_refusee"
   | "non_connecte"
   | "reserve_aux_admins"

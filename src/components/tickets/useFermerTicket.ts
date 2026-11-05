@@ -16,17 +16,24 @@ export function useFermerTicket() {
   const { state, archiverFil, enregistrerTache } = useWorkspace();
   const modifier = useMutation(api.rappels.modifier);
   return useCallback(
-    (chatId: string, supprime = false) => {
+    /* Rend ce qu'il est advenu du rappel lié : l'accusé pour le téléphone le dit sans faux succès. */
+    async (chatId: string, supprime = false): Promise<"aucun" | "coche" | "inaccessible"> => {
       const rappel = state.chats.find((c) => c.id === chatId)?.fil?.rappel;
       archiverFil(chatId, supprime);
-      if (supprime || !rappel) return;
+      if (supprime || !rappel) return "aucun";
       if (rappel.source === "local") {
         const tache = state.taches.find((t) => t.id === rappel.id);
-        if (tache && !tache.faite) enregistrerTache({ ...tache, faite: true, faiteLe: new Date().toISOString() });
-        return;
+        if (!tache) return "inaccessible";
+        if (!tache.faite) enregistrerTache({ ...tache, faite: true, faiteLe: new Date().toISOString() });
+        return "coche";
       }
       // Retiré ou réassigné entre-temps : le fil se ferme quand même.
-      modifier({ rappelId: rappel.id as Id<"rappels">, fait: true }).catch(() => {});
+      try {
+        await modifier({ rappelId: rappel.id as Id<"rappels">, fait: true });
+        return "coche";
+      } catch {
+        return "inaccessible";
+      }
     },
     [state.chats, state.taches, archiverFil, enregistrerTache, modifier],
   );

@@ -16,8 +16,8 @@ import { idDirectDe } from "./chats";
  */
 
 /** Les conversations du compte, sur le serveur choisi. */
-export function useConversationsEspace() {
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+export function useConversationsEspace(actif = true) {
+  const conversations = useQuery(api.conversationsCompte.liste, actif ? {} : "skip");
   const lieu = useLieuActif();
   return useMemo(() => conversations?.filter((c) => dansEspace(c.lieu, lieu)), [conversations, lieu]);
 }

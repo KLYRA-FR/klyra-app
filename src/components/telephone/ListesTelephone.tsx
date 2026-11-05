@@ -2,22 +2,27 @@
 
 import type { IconName } from "@/components/icons/Icon";
 import { majuscule, texteRoutines } from "@/lib/poste-texte";
+import { nombreAValider } from "@/lib/telephone/tickets";
 import { EnteteTelephone, PageOnglet } from "./EnteteTelephone";
 import { EtatEcran } from "./etats";
-import { GroupeListe, LigneListe, TuileIcone } from "./Liste";
+import { Etiquette, GroupeListe, LigneListe, TuileIcone } from "./Liste";
 import { usePostes, useSupport } from "./poste";
+import { useConversationsEspace } from "@/lib/telephone/espace";
 
 /**
- * T-21 Plus : Automatisations, Artefacts, Rechercher, Réglages, puis les serveurs reliés.
+ * T-21 Plus : Tickets, Automatisations, Artefacts, Rechercher, Réglages, puis les serveurs reliés.
+ * Le compte de Tickets ne dit que les tickets confirmés à valider ; inconnu ou zéro, rien (E4-01).
  * « Rechercher » mène à `/chats?vue=recherche` (T-04).
  */
 export function PlusTelephone() {
-  const { principal } = usePostes();
+  const { principal, ouvert } = usePostes();
   const sur = useSupport();
+  const aValider = nombreAValider(useConversationsEspace(), ouvert);
   return (
     <PageOnglet titre="Plus">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <GroupeListe>
+          <LigneListe href="/tickets" debut={<TuileIcone icone="list" bleue />} retrait="tuile" nom="Tickets" etiquette={aValider ? <Etiquette ton="bleue">{aValider} à valider</Etiquette> : undefined} ligne2="Le travail de tes agents, par étape" fin="chevron" />
           <LigneListe href="/routines" debut={<TuileIcone icone="lightning-01" />} retrait="tuile" nom="Automatisations" ligne2={texteRoutines(principal)} fin="chevron" />
           <LigneListe href="/artefacts" debut={<TuileIcone icone="artefacts-forme" />} retrait="tuile" nom="Artefacts" ligne2={`Les pages et liens d’artefacts. La liste est sur ${sur}.`} fin="chevron" />
           <LigneListe href="/chats?vue=recherche" debut={<TuileIcone icone="search-01" />} retrait="tuile" nom="Rechercher" ligne2="Dans tes conversations et leurs messages." fin="chevron" />

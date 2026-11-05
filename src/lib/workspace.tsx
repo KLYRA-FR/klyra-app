@@ -30,6 +30,7 @@ import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, mot
 import { COMMANDE_RESUME_AUTO, estAvantDepart, estCommandeCompacter, formaterJetons, nouvelleMesure, peutRepartir, repartirAZero, resumeAvantEnvoi, resumePause, viderConversation } from "@/lib/contexte";
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
+import { notificationDeFin } from "@/lib/tickets-demandes";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import { creerOutilsWorkflows } from "@/lib/workflows/outils-agents";
 import { extraitMarkdown } from "@/lib/apercu/extrait";
@@ -620,7 +621,7 @@ interface WorkspaceApi {
    */
   creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, options?: OptionsFil) => string;
   /** Confie un rappel à un agent : un fil s'ouvre avec le rappel pour brief ; renvoie son id. */
-  confierRappel: (rappel: RappelAConfier, roleId: RoleId) => string;
+  confierRappel: (rappel: RappelAConfier, roleId: RoleId, idImpose?: string) => string;
   /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
   majTicket: (chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => void;
   renommerChat: (chatId: string, titre: string) => void;
@@ -1079,7 +1080,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const corps = extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? ""));
     void notifier(titre, corps, chatId, ok ? "agentFini" : "agentErreur");
     /* Le téléphone aussi, si la fenêtre n'a pas le focus (spec mobile § 8). */
-    pousserAuTelephone({ evenement: ok ? "agentFini" : "agentErreur", titre, corps, lien: lienMessage(chatId, messageId) });
+    pousserAuTelephone(notificationDeFin(stateRef.current.chats.find((c) => c.id === chatId), { ok, titre, corps, lien: lienMessage(chatId, messageId) }));
     return true;
   };
 
@@ -1854,8 +1855,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, []);
 
   const confierRappel = useCallback(
-    (rappel: RappelAConfier, roleId: RoleId) => {
-      const id = creerFil(roleId, rappel.titre, null, { priorite: rappel.priorite, echeance: rappel.echeance, rappel: { source: rappel.source, id: rappel.id } });
+    (rappel: RappelAConfier, roleId: RoleId, idImpose?: string) => {
+      const id = creerFil(roleId, rappel.titre, null, { priorite: rappel.priorite, echeance: rappel.echeance, rappel: { source: rappel.source, id: rappel.id } }, idImpose ? { id: idImpose, lieu: null } : undefined);
       timers.current.push(setTimeout(() => envoyerRef.current(id, briefDuRappel(rappel), null, []), 0));
       return id;
     },
