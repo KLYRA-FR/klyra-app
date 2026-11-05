@@ -171,7 +171,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDos
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { appelCoffreVps, appelEquipeVps } from "./equipe-vps";
+import { appelCoffreVps, appelEquipeVps, appelEspaceVps } from "./equipe-vps";
 import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
@@ -1205,6 +1205,13 @@ function registerBridge() {
   // Le même passage que le minuteur de 15 minutes. Il écrit une alerte, jamais dans le fil.
   handle("superagent:passage", () => passageWatchdog());
   handle("superagent:github", (brut: unknown) => noterGithub(brut));
+  /* L'espace gardé par un VPS (serveur/espace.mjs). */
+  const espaceVps = (lieu: string) => {
+    if (!originesServeurs().includes(lieu)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    return jetonServeur(lieu);
+  };
+  handle("espace:lire", (lieu: string, depuis: unknown) => appelEspaceVps(lieu, espaceVps(lieu), "lire", typeof depuis === "number" ? { depuis } : {}));
+  handle("espace:ecrire", (lieu: string, corps: unknown) => appelEspaceVps(lieu, espaceVps(lieu), "ecrire", corps));
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
   ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {

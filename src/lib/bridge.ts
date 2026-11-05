@@ -576,6 +576,11 @@ export interface KlyraBridge {
     /** Relie une pull request ou enregistre un fait déjà lu. Absent avant la relance de l'app. */
     github?: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; work_id?: string | null; disposition?: string; operations?: string[] }>>;
   };
+  /** L'espace gardé par un VPS (cf. useEspaceServeurs). Absent avant la relance de l'app. */
+  espace?: {
+    lire: (lieu: string, depuis?: number) => Promise<Reponse<unknown>>;
+    ecrire: (lieu: string, corps: { elements: unknown[]; supprimes: unknown[] }) => Promise<Reponse<{ revision: number }>>;
+  };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;
     read: () => Promise<Reponse<unknown>>;

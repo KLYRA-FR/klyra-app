@@ -8,6 +8,7 @@
  * Le serveur ne garde que l’empreinte des codes et des jetons. Aucun secret sur la page publique.
  */
 import { ErreurEquipe } from "./equipe.mjs";
+import { creerEspace, ErreurEspace } from "./espace.mjs";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer as creerHttp } from "node:http";
@@ -28,6 +29,7 @@ export const CHEMIN_FICHES = "/klyra/v1/agents/fiches";
 export const CHEMIN_FICHIERS = "/klyra/v1/fichiers";
 export const CHEMIN_EQUIPE = "/klyra/v1/equipe";
 export const CHEMIN_COFFRE = "/klyra/v1/coffre";
+export const CHEMIN_ESPACE = "/klyra/v1/espace";
 export const CHEMIN_ROUTINES = "/klyra/v1/routines";
 export const CHEMIN_MOTEURS = "/klyra/v1/moteurs";
 export const CHEMIN_IA = "/klyra/v1/ia";
@@ -309,6 +311,8 @@ export function creerGestionnaire(options) {
   const routines = options.routines ?? null;
   const moteurs = options.moteurs ?? null;
   const ia = options.ia ?? null;
+  /* L'espace du serveur (conversations, projets, workflows…) : là où il y a des agents. */
+  const espace = options.espace ?? (agents ? creerEspace({ donnees: dossier }) : null);
   let echecs = 0;
 
   const appareilDe = (req) => {
@@ -325,6 +329,7 @@ export function creerGestionnaire(options) {
     /* Ce serveur garde sa propre équipe (cf. equipe.mjs) : l'app la lit ici et n'y écrase plus les fiches. */
     ...(agents?.equipeServeur ? { equipePropre: true } : {}),
     ...(agents?.coffreServeur ? { coffrePropre: true } : {}),
+    ...(espace ? { espacePropre: true } : {}),
     ...(fichiers ? { projets: fichiers.racine } : {}),
     ...(routines ? { routines: true } : {}),
     /* Réglages du serveur › Fournisseurs : moteurs (Claude Code, Codex) et IA à consulter. */
@@ -480,6 +485,19 @@ export function creerGestionnaire(options) {
         return repondre(res, 200, { resultat: agents.appelerEquipe(url.pathname.slice(CHEMIN_EQUIPE.length + 1), corps ?? {}) });
       } catch (erreur) {
         if (erreur instanceof ErreurEquipe) return repondre(res, 400, { erreur: erreur.code, message: erreur.message });
+        throw erreur;
+      }
+    }
+
+    if (url.pathname.startsWith(`${CHEMIN_ESPACE}/`)) {
+      if (!espace) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+      try {
+        const corps = await lireCorpsRequete(req, CORPS_EQUIPE_MAX);
+        return repondre(res, 200, { resultat: espace.appeler(url.pathname.slice(CHEMIN_ESPACE.length + 1), corps ?? {}) });
+      } catch (erreur) {
+        if (erreur instanceof ErreurEspace) return repondre(res, 400, { erreur: "espace", message: erreur.message });
         throw erreur;
       }
     }

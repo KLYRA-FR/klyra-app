@@ -282,6 +282,10 @@ contextBridge.exposeInMainWorld("klyra", {
     /** Relie une pull request ou enregistre un fait déjà lu. N'écrit rien sur GitHub. */
     github: (fait: unknown) => ipcRenderer.invoke("superagent:github", fait),
   },
+  espace: {
+    lire: (lieu: string, depuis?: number) => ipcRenderer.invoke("espace:lire", lieu, depuis),
+    ecrire: (lieu: string, corps: unknown) => ipcRenderer.invoke("espace:ecrire", lieu, corps),
+  },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */
     avantFermeture: (callback: () => void) => {
