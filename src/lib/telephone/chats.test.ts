@@ -3,7 +3,10 @@ import {
   actionsConversation,
   actionsReponse,
   aTraiter,
+  auTravail,
+  dureeDepuis,
   etatLigne,
+  tachesDe,
   mentionDans,
   mentionEnCours,
   nombreATraiter,
@@ -113,6 +116,34 @@ describe("Chats (T-01)", () => {
     expect(actionsConversation(conversation("c1", { projetId: "p1" }))).toEqual(["renommer", "epingler", "exporter", "projet"]);
     expect(actionsConversation(conversation("c1", { epingleLe: "x" }))).toEqual(["renommer", "desepingler", "exporter"]);
     expect(actionsConversation(undefined)).toEqual(["exporter"]);
+  });
+
+  test("Au travail (D2-2) : seulement ordinateur ouvert, ni accord ni question, les plus récents d'abord, tâches comptées", () => {
+    const taches = JSON.stringify([
+      { texte: "Lire", statut: "fait" },
+      { texte: "Corriger", statut: "en-cours" },
+      { texte: "Tester", statut: "a-faire" },
+    ]);
+    const liste = [
+      conversation("dm-hugo", { activite: activite("ecrit", "2026-11-04T10:00:00.000Z") }),
+      conversation("c1", { titre: "Arrondi de la TVA", taches, activite: activite("etape", "2026-11-04T11:00:00.000Z", { libelle: "Corrige le calcul", roleId: "iris" }) }),
+      conversation("c2", { activite: accord("2026-11-04T09:00:00.000Z") }),
+      conversation("c3", { activite: activite("question", "2026-11-04T09:00:00.000Z") }),
+      conversation("c4", { archiveLe: "2026-11-01", activite: activite("ecrit", "2026-11-04T12:00:00.000Z") }),
+    ];
+    expect(auTravail(liste, false)).toEqual([]);
+    expect(auTravail(liste, true).map((a) => [a.origine, a.roleId, a.sujet, a.texte, a.taches])).toEqual([
+      ["c1", "iris", "Arrondi de la TVA", "Corrige le calcul…", { faites: 1, total: 3 }],
+      ["dm-hugo", "hugo", null, "Écrit sa réponse…", null],
+    ]);
+    expect(tachesDe(conversation("x", { taches: "pas du json" }))).toEqual([]);
+  });
+
+  test("durée depuis le début du travail", () => {
+    const maintenant = new Date("2026-11-04T12:00:00.000Z");
+    expect(dureeDepuis("2026-11-04T11:59:40.000Z", maintenant)).toBe("à l’instant");
+    expect(dureeDepuis("2026-11-04T11:48:00.000Z", maintenant)).toBe("12 min");
+    expect(dureeDepuis("2026-11-04T10:55:00.000Z", maintenant)).toBe("1 h 05");
   });
 });
 

@@ -33,6 +33,12 @@ export function FournisseurReseau({ horsLigne, children }: { horsLigne: string |
   return <ContexteReseau.Provider value={etat}>{children}</ContexteReseau.Provider>;
 }
 
+/** Ce téléphone est hors ligne (P-12) : un geste qui demande le réseau se désactive avec sa raison. */
+export function useHorsLigne(): boolean {
+  const etat = useContext(ContexteReseau);
+  return !!etat && !etat.retour;
+}
+
 /** Le bandeau, sous la barre du haut. Replié (hauteur 0) quand tout va bien. */
 export function BandeauReseau() {
   const etat = useContext(ContexteReseau);

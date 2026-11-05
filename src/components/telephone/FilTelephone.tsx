@@ -8,8 +8,7 @@ import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ajouterAuBrouillon } from "@/lib/brouillons";
 import { messageErreur } from "@/lib/compte";
-import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
-import { activiteDe, agentDe, ASSISTANT } from "@/lib/telephone/chats";
+import { activiteDe, agentDe, ASSISTANT, SUGGESTIONS } from "@/lib/telephone/chats";
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
 import { EnteteTelephone } from "./EnteteTelephone";
@@ -23,13 +22,6 @@ import { useMenuChat } from "./MenuChat";
 import { MessagesFil, type ContexteFil } from "./MessagesFil";
 import { EchangesVps } from "./EchangesVps";
 import { useEchangesDirects } from "@/lib/telephone/vps-direct";
-
-/** Les suggestions de l'accueil du bureau : chacune remplit le composeur, sans rien envoyer. */
-const SUGGESTIONS = [
-  { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine" },
-  { libelle: "Résume ce document", texte: "Résume ce document" },
-  { libelle: "Crée-moi un agent pour…", texte: DEBUT_DEMANDE_AGENT },
-];
 
 /**
  * Le composeur suit le clavier : quand il s'ouvre, le fil prend la hauteur visible de l'écran

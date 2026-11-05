@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { RondApercu, VisuelAgent } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
+import { cn } from "@/lib/cn";
 import { roleLisible } from "@/lib/telephone/agents";
 import type { CarteAgentLue } from "@/lib/telephone/chats";
 
@@ -38,13 +39,13 @@ export function RondAgent({ id, taille = 36, libelle }: { id: string; taille?: n
   return <RondApercu agentId={id} nom={nom(id)} teinte={teinte(id)} taille={taille} libelle={libelle} />;
 }
 
-/** Les visages d'une conversation d'équipe, quatre au plus, dans un carré de 36 px (comme au bureau). */
-export function GrappeChat({ roleIds }: { roleIds: string[] }) {
+/** Les visages d'une conversation d'équipe, quatre au plus, dans un carré de 36 px (40 dans les lignes de Chats), comme au bureau. */
+export function GrappeChat({ roleIds, grande = false }: { roleIds: string[]; grande?: boolean }) {
   const { teinte } = useCartes();
   const visibles = roleIds.length > 4 ? roleIds.slice(0, 3) : roleIds.slice(0, 4);
   const reste = roleIds.length - visibles.length;
   return (
-    <span aria-hidden="true" className="grid size-9 shrink-0 grid-cols-2 gap-[2px] rounded-sm bg-fond-surface-grise p-[2px]">
+    <span aria-hidden="true" className={cn("grid shrink-0 grid-cols-2 gap-[2px] rounded-sm bg-fond-surface-grise p-[2px]", grande ? "size-10" : "size-9")}>
       {visibles.map((id) => (
         <VisuelAgent key={id} agentId={id} teinte={teinte(id)} rayon={5} className={visibles.length === 1 ? "col-span-2 row-span-2" : undefined} />
       ))}

@@ -1,6 +1,7 @@
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../../convex/_generated/api";
 import { lireActivite, type Activite } from "@/lib/copie-compte";
+import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
 
 /**
  * Les règles des écrans Chats et du fil sur le téléphone (spec mobile T-01, T-02), sans React :
@@ -16,6 +17,13 @@ export const DIRECT = "dm-";
 export const PREFIXE_FIL = "klyra-fil-";
 
 export const idDirect = (roleId: string) => `${DIRECT}${roleId}`;
+
+/** Les suggestions de l'accueil du bureau : chacune remplit le composeur, sans rien envoyer. */
+export const SUGGESTIONS = [
+  { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine" },
+  { libelle: "Résume ce document", texte: "Résume ce document" },
+  { libelle: "Crée-moi un agent pour…", texte: DEBUT_DEMANDE_AGENT },
+];
 
 /** Un fil d'agent : sa conversation directe parente, sinon null. */
 export function parentDe(c: Pick<ConversationLue, "origine" | "parent" | "roleIds">): string | null {
@@ -109,6 +117,70 @@ export function sections(conversations: ConversationLue[], cartes: CarteAgentLue
     return { carte, conversation, etat: etatLigne(conversation, nom, posteOuvert) ?? etatLigne(filActif, nom, posteOuvert) };
   });
   return { epinglees, agents, equipe: autres };
+}
+
+export type StatutTache = "a-faire" | "en-cours" | "fait";
+
+/** Les tâches de suivi d'une conversation, telles que l'ordinateur les copie dans le compte (Détails › Tâches). */
+export function tachesDe(c: Pick<ConversationLue, "taches"> | undefined): { texte: string; statut: StatutTache }[] {
+  try {
+    const brut = JSON.parse(c?.taches ?? "[]") as { texte?: unknown; statut?: unknown }[];
+    return Array.isArray(brut)
+      ? brut.filter((t): t is { texte: string; statut: StatutTache } => typeof t.texte === "string" && (t.statut === "a-faire" || t.statut === "en-cours" || t.statut === "fait"))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface AgentAuTravail {
+  /** La conversation où il travaille : la carte ouvre ce fil. */
+  origine: string;
+  roleId: string;
+  /** Le titre de la conversation d'équipe ou du fil ; null pour sa conversation directe. */
+  sujet: string | null;
+  /** Ce qu'il fait : « Écrit sa réponse… », le nom de l'étape. */
+  texte: string;
+  depuis: string;
+  /** « 2/5 » : ses tâches faites sur le total, s'il en suit. */
+  taches: { faites: number; total: number } | null;
+}
+
+/**
+ * « Au travail » (E2-01, D2-2) : les agents qui travaillent réellement, ordinateur ouvert (il écrit,
+ * réfléchit, passe une étape, attend un collègue), les plus récents d'abord. L'accord et la question
+ * vont dans « À traiter ». Ordinateur fermé : personne, une copie d'activité ne prouve pas qu'il
+ * travaille encore.
+ */
+export function auTravail(conversations: ConversationLue[], posteOuvert: boolean): AgentAuTravail[] {
+  if (!posteOuvert) return [];
+  return conversations
+    .filter((c) => !c.archiveLe)
+    .flatMap((c): AgentAuTravail[] => {
+      const activite = activiteDe(c);
+      if (!activite || activite.etat === "accord" || activite.etat === "question") return [];
+      const taches = tachesDe(c);
+      const etat = etatLigne({ ...c, kind: "direct" }, () => "", true);
+      return [
+        {
+          origine: c.origine,
+          roleId: activite.roleId,
+          sujet: c.kind === "equipe" || parentDe(c) ? c.titre : null,
+          texte: etat?.texte ?? "Travaille…",
+          depuis: activite.depuis,
+          taches: taches.length ? { faites: taches.filter((t) => t.statut === "fait").length, total: taches.length } : null,
+        },
+      ];
+    })
+    .sort((a, b) => b.depuis.localeCompare(a.depuis));
+}
+
+/** Depuis quand : « à l'instant », « 12 min », « 1 h 05 ». */
+export function dureeDepuis(iso: string, maintenant: Date = new Date()): string {
+  const minutes = Math.floor((maintenant.getTime() - new Date(iso).getTime()) / 60_000);
+  if (!Number.isFinite(minutes) || minutes < 1) return "à l’instant";
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
 }
 
 export type ElementATraiter =
