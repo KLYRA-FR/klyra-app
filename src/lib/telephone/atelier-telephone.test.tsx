@@ -80,7 +80,7 @@ const rendre = (messages: Message[], enFile: { _id: string; texte: string; piece
     <MessagesFil
       messages={copie(messages)}
       enFile={enFile as never}
-      contexte={{ origine: "dm-principal", projetId: null, activite: null, modele: null, envoyer: vi.fn(), onBandeau: vi.fn() }}
+      contexte={{ origine: "dm-principal", projetId: null, activite: null, modele: null, reagir: vi.fn(), conversation: undefined, envoyer: vi.fn(), onBandeau: vi.fn() }}
       vide={null}
     />,
   );

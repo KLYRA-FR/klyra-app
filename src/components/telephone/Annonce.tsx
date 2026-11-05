@@ -39,26 +39,36 @@ export function FournisseurAnnonce({ barreOnglets, children }: { barreOnglets: b
   const [glisse, setGlisse] = useState(0);
   const compteur = useRef(0);
   const actionChoisie = useRef(false);
+  const affichee = useRef<(Annonce & { cle: number }) | null>(null);
+
+  /* L'annonce affichée s'en va : son `onFin` une seule fois, hors de tout rendu (il peut en annoncer une autre). */
+  const lacher = useCallback(() => {
+    const avant = affichee.current;
+    const choisie = actionChoisie.current;
+    affichee.current = null;
+    actionChoisie.current = false;
+    if (avant && !choisie) avant.onFin?.();
+  }, []);
 
   const finir = useCallback(() => {
-    setCourante((avant) => {
-      if (avant && !actionChoisie.current) avant.onFin?.();
-      return null;
-    });
+    lacher();
+    if (!affichee.current) setCourante(null);
     setSortie(false);
     setGlisse(0);
-  }, []);
+  }, [lacher]);
 
-  const annoncer = useCallback<Annoncer>((a) => {
-    const annonce = typeof a === "string" ? { texte: a } : a;
-    setCourante((avant) => {
-      if (avant && !actionChoisie.current) avant.onFin?.();
-      actionChoisie.current = false;
-      return { ...annonce, cle: ++compteur.current };
-    });
-    setSortie(false);
-    setGlisse(0);
-  }, []);
+  const annoncer = useCallback<Annoncer>(
+    (a) => {
+      const annonce = typeof a === "string" ? { texte: a } : a;
+      lacher();
+      const nouvelle = { ...annonce, cle: ++compteur.current };
+      affichee.current = nouvelle;
+      setCourante(nouvelle);
+      setSortie(false);
+      setGlisse(0);
+    },
+    [lacher],
+  );
 
   /* Le délai, arrêté tant que le doigt est dessus ; puis le fondu de sortie (120 ms). */
   useEffect(() => {
@@ -94,12 +104,31 @@ export function FournisseurAnnonce({ barreOnglets, children }: { barreOnglets: b
     window.addEventListener("pointercancel", lacher, true);
   };
 
+  /* Socle § 6.1 : au-dessus du pied d'une page (composeur du fil, action d'une page pleine), il ne couvre jamais Envoyer. Suivi tant que l'annonce est là : le pied grandit avec le texte, le clavier le déplace. */
+  const placer = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const caler = () => {
+      const pied = document.querySelector("[data-pied-telephone]");
+      el.style.bottom = pied ? `${Math.max(12, window.innerHeight - pied.getBoundingClientRect().top + 12)}px` : "";
+    };
+    caler();
+    const suivi = new ResizeObserver(caler);
+    const pied = document.querySelector("[data-pied-telephone]");
+    if (pied) suivi.observe(pied);
+    window.visualViewport?.addEventListener("resize", caler);
+    return () => {
+      suivi.disconnect();
+      window.visualViewport?.removeEventListener("resize", caler);
+    };
+  }, []);
+
   return (
     <ContexteAnnonce.Provider value={annoncer}>
       {children}
       {courante ? (
         <div
           key={courante.cle}
+          ref={placer}
           role={courante.erreur ? "alert" : "status"}
           data-sortie={sortie || undefined}
           onPointerDown={glisser}
@@ -116,9 +145,10 @@ export function FournisseurAnnonce({ barreOnglets, children }: { barreOnglets: b
             <button
               type="button"
               onClick={() => {
+                /* Une annonce posée par l'action (« Rappel restauré ») remplace celle-ci au lieu de partir avec. */
                 actionChoisie.current = true;
-                courante.action?.onChoisir();
                 setSortie(true);
+                courante.action?.onChoisir();
               }}
               className="relative flex h-11 shrink-0 items-center rounded-xs px-3 text-ui font-semibold text-texte-inverse underline underline-offset-[3px]"
             >

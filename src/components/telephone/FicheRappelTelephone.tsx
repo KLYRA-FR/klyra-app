@@ -5,18 +5,19 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Icon } from "@/components/icons/Icon";
+import { PastilleCategorie } from "@/components/planning/Rappels";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
-import { ListeDeroulante, type OptionListe } from "@/components/ui/ListeDeroulante";
 import { cn } from "@/lib/cn";
 import { messageErreur, useEquipe } from "@/lib/compte";
-import { aujourdhui } from "@/lib/dates";
+import { aujourdhui, libelleEcheance } from "@/lib/dates";
 import { texteErreurPoste } from "@/lib/poste-texte";
 import { echeanceLocale } from "@/lib/rappel-compte";
 import type { RappelTelephone } from "@/lib/telephone/planning";
 import { usePlanningTelephone } from "./ContextePlanningTelephone";
-import { CHAMP_TELEPHONE, ChampFiche, ErreurFiche, PageFiche } from "./FichePlanningTelephone";
-import { NotePoste } from "./etats";
+import { CHAMP_TELEPHONE, ChampFiche, ErreurFiche, FeuilleChoixFiche, LigneChoixFiche, LigneDateFiche, NoteEnregistrement, PageFiche, RaisonFiche } from "./FichePlanningTelephone";
+import { BandeauVueGardee } from "./etats";
+import { GroupeListe } from "./Liste";
 
 type Priorite = RappelTelephone["priorite"];
 const URGENCES: { valeur: Priorite; texte: string; libelle: string }[] = [
@@ -27,10 +28,10 @@ const URGENCES: { valeur: Priorite; texte: string; libelle: string }[] = [
 ];
 
 /**
- * T-07 pour un rappel : titre, date, « Jusqu'au (facultatif) », heure, urgence, catégorie, notes,
- * et pour un rappel du compte « Assigner à ». Mêmes droits qu'au bureau : la personne qui l'a créé
- * change tout et le supprime ; celle à qui il est assigné change ses notes et sa catégorie. Un
- * nouveau rappel va dans le compte. Un rappel de l'ordinateur s'écrit sur le poste (P-7 fermé).
+ * Un rappel en page pleine (E3-31 à E3-36). Mêmes droits qu'au bureau : la personne qui l'a créé change
+ * tout et le supprime ; celle à qui il est assigné change ses notes et sa catégorie, et la raison est
+ * écrite en tête. Un nouveau rappel va dans le compte. Un rappel de l'ordinateur s'écrit sur le poste ;
+ * lu dans sa vue gardée, tout est en lecture. Hors ligne, les saisies restent, Enregistrer attend.
  */
 export function FicheRappelTelephone({
   rappel,
@@ -44,7 +45,7 @@ export function FicheRappelTelephone({
   onFermer: (enregistre?: { eclairage: string }) => void;
   onSupprimer: (rappel: RappelTelephone) => void;
 }) {
-  const { moiId, categories, noms, posteOuvert, surPoste, sur } = usePlanningTelephone();
+  const { moiId, categories, noms, posteOuvert, horsLigne, gardeeLe, surPoste, sur, modifierCategorie } = usePlanningTelephone();
   const creer = useMutation(api.rappels.creer);
   const modifier = useMutation(api.rappels.modifier);
   const { membres } = useEquipe(false);
@@ -64,13 +65,22 @@ export function FicheRappelTelephone({
   const [occupe, setOccupe] = useState(false);
   const id = useId();
   const champJour = useRef<HTMLInputElement>(null);
+  const champTitre = useRef<HTMLInputElement>(null);
+  const [feuille, setFeuille] = useState<"assigne" | "categorie" | null>(null);
   const bloque = surLePoste && !posteOuvert;
   /* La catégorie n'a de sens que pour soi : un rappel assigné à quelqu'un d'autre n'en a pas. */
   const pourMoi = surLePoste || assigneA === moiId;
   const nomCreateur = rappel?.recu && rappel.autre ? (noms.get(rappel.autre) ?? "quelqu’un") : null;
 
   useEffect(() => {
-    if (champ === "jour") champJour.current?.focus();
+    if (champ !== "jour") return;
+    champJour.current?.focus();
+    /* « Planifier… » ouvre le sélecteur de date, quand le navigateur le permet sans geste. */
+    try {
+      champJour.current?.showPicker();
+    } catch {
+      /* Le focus reste sur la ligne ; un toucher l'ouvre. */
+    }
   }, [champ]);
 
   const enregistrer = async () => {
@@ -78,7 +88,8 @@ export function FicheRappelTelephone({
     if (!titre.trim()) trouvees.titre = "Donne un titre au rappel.";
     if (jour && fin && fin <= jour) trouvees.fin = "Le dernier jour doit suivre le premier.";
     setErreurs(trouvees);
-    if (Object.keys(trouvees).length > 0 || occupe || bloque) return;
+    if (trouvees.titre) champTitre.current?.focus();
+    if (Object.keys(trouvees).length > 0 || occupe || bloque || horsLigne) return;
     setOccupe(true);
     setErreur(null);
     const date = jour || null;
@@ -143,156 +154,170 @@ export function FicheRappelTelephone({
     }
   };
 
-  const optionsCategories: OptionListe<string>[] = [
-    ...(surLePoste ? [] : [{ value: "", label: rappel?.recu ? "Assignés par l’équipe" : "Sans catégorie" }]),
-    ...(categories ?? []).map((c) => ({ value: c.id, label: c.nom })),
+  const optionsCategories = [
+    ...(surLePoste ? [] : [{ valeur: "", libelle: rappel?.recu ? "Assignés par l’équipe" : "Sans catégorie" }]),
+    ...(categories ?? []).map((c) => ({ valeur: c.id, libelle: c.nom, visuel: <PastilleCategorie categorie={c} taille={28} /> })),
   ];
-  const optionsMembres: OptionListe<string>[] = (membres ?? []).map((m) => ({ value: m._id, label: m._id === moiId ? `${m.nom} (moi)` : m.nom }));
+  const optionsMembres = (membres ?? []).map((m) => ({ valeur: m._id as string, libelle: m._id === moiId ? `${m.nom} (moi)` : m.nom }));
+  const nomMembre = assigneA === moiId ? "Moi" : (noms.get(assigneA) ?? "Quelqu’un");
+  const nomCategorie = optionsCategories.find((o) => o.valeur === liste)?.libelle ?? "Sans catégorie";
   const verrou = !createur;
+  const urgence = URGENCES.find((u) => u.valeur === priorite) ?? URGENCES[0];
+  /* Des champs saisis et pas enregistrés : ✕ et le retour demandent d'abord (E3-36). */
+  const modifie =
+    titre !== (rappel?.titre ?? "") ||
+    jour !== (rappel?.jour ?? "") ||
+    fin !== (rappel?.fin ?? "") ||
+    heure !== (rappel?.heure ?? "") ||
+    priorite !== (rappel?.priorite ?? 0) ||
+    notes !== (rappel?.notes ?? "") ||
+    (rappel !== null && liste !== (rappel.liste ?? "")) ||
+    (rappel !== null && !surLePoste && assigneA !== (rappel.assigneA ?? ""));
 
   return (
     <PageFiche
       titre={rappel ? "Rappel" : "Nouveau rappel"}
+      modifie={modifie && !bloque}
       onRetour={() => onFermer()}
       onEnregistrer={() => void enregistrer()}
       pied={
         <>
-          <BoutonPrincipal type="submit" disabled={occupe || bloque} className="w-full justify-between">
+          <BoutonPrincipal type="submit" disabled={occupe || bloque || horsLigne} className="w-full justify-between">
             {rappel ? "Enregistrer" : "Ajouter"}
           </BoutonPrincipal>
-          {bloque ? <NotePoste /> : null}
+          <NoteEnregistrement horsLigne={horsLigne} poste={bloque} />
           <ErreurFiche texte={erreur} />
         </>
       }
     >
-      {nomCreateur ? (
-        <p className="text-ui text-texte-secondaire">Par {nomCreateur}. Seul qui a créé le rappel peut changer le titre, la date et l’urgence.</p>
-      ) : null}
-      <ChampFiche id={`${id}-titre`} libelle="Titre" erreur={erreurs.titre}>
-        <input
-          id={`${id}-titre`}
-          value={titre}
-          placeholder="Nouveau rappel"
-          autoFocus={!rappel}
-          disabled={verrou}
-          onChange={(e) => setTitre(e.target.value)}
-          aria-invalid={erreurs.titre ? true : undefined}
-          aria-describedby={erreurs.titre ? `${id}-titre-erreur` : undefined}
-          className={CHAMP_TELEPHONE}
-        />
-      </ChampFiche>
-      <ChampFiche id={`${id}-jour`} libelle="Date">
-        <input
-          ref={champJour}
-          id={`${id}-jour`}
-          type="date"
-          value={jour}
-          disabled={verrou}
-          onChange={(e) => {
-            setJour(e.target.value);
-            if (!e.target.value) {
-              setHeure("");
-              setFin("");
-            }
-          }}
-          className={CHAMP_TELEPHONE}
-        />
-      </ChampFiche>
-      {jour ? (
-        <ChampFiche id={`${id}-fin`} libelle="Jusqu’au (facultatif)" erreur={erreurs.fin}>
+      {bloque && gardeeLe !== null ? <BandeauVueGardee lu={gardeeLe} /> : null}
+      {nomCreateur ? <RaisonFiche>Par {nomCreateur}. Seul qui a créé le rappel peut changer le titre, la date et l’urgence.</RaisonFiche> : null}
+      <fieldset disabled={bloque} className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+        <ChampFiche id={`${id}-titre`} libelle="Rappel" erreur={erreurs.titre}>
           <input
-            id={`${id}-fin`}
-            type="date"
-            value={fin}
-            min={jour}
+            ref={champTitre}
+            id={`${id}-titre`}
+            value={titre}
+            placeholder="Nouveau rappel"
+            autoFocus={!rappel}
             disabled={verrou}
-            onChange={(e) => setFin(e.target.value)}
-            aria-invalid={erreurs.fin ? true : undefined}
-            aria-describedby={erreurs.fin ? `${id}-fin-erreur` : undefined}
-            className={CHAMP_TELEPHONE}
+            onChange={(e) => setTitre(e.target.value)}
+            aria-invalid={erreurs.titre ? true : undefined}
+            aria-describedby={erreurs.titre ? `${id}-titre-erreur` : undefined}
+            className={cn(CHAMP_TELEPHONE, verrou && "bg-fond-surface-grise")}
           />
         </ChampFiche>
-      ) : null}
-      <ChampFiche id={`${id}-heure`} libelle="Heure">
-        <input
-          id={`${id}-heure`}
-          type="time"
-          value={heure}
-          disabled={verrou}
-          onChange={(e) => {
-            setHeure(e.target.value);
-            /* Une heure sans date : aujourd'hui, comme au bureau. */
-            if (e.target.value && !jour) setJour(aujourdhui());
-          }}
-          className={CHAMP_TELEPHONE}
-        />
-      </ChampFiche>
-      <div className="flex flex-col gap-1">
-        <span id={`${id}-urgence`} className="text-ui font-medium text-texte-principal">
-          Urgence
-        </span>
-        <div role="radiogroup" aria-labelledby={`${id}-urgence`} className="flex gap-2">
-          {URGENCES.map((u) => (
-            <button
-              key={u.valeur}
-              type="button"
-              role="radio"
-              aria-checked={priorite === u.valeur}
-              aria-label={u.libelle}
-              disabled={verrou}
-              onClick={() => setPriorite(u.valeur)}
-              className={cn(
-                "min-h-11 flex-1 rounded-xs border text-ui font-semibold disabled:opacity-60",
-                priorite === u.valeur ? "border-texte-principal bg-fond-surface-grise text-texte-principal" : "border-bordure-subtile text-texte-secondaire",
-              )}
-            >
-              {u.texte}
-            </button>
-          ))}
-        </div>
-      </div>
-      {rappel?.source !== "poste" && (createur || rappel === null) ? (
-        <ChampFiche id={`${id}-assigne`} libelle="Assigner à">
-          <ListeDeroulante
-            libelle="Assigner à"
-            value={assigneA}
-            options={optionsMembres.length > 0 ? optionsMembres : [{ value: assigneA, label: "Moi" }]}
-            onChange={setAssigneA}
-            className="h-12 w-full text-body-s"
+        <GroupeListe>
+          <LigneDateFiche
+            libelle="Date"
+            icone="calendar-01"
+            type="date"
+            champ={champJour}
+            valeur={jour}
+            affichage={jour ? libelleEcheance(jour, null) : null}
+            vide="Aucune"
+            disabled={verrou || bloque}
+            actif={!!rappel?.retard && !rappel.faite}
+            onChange={(v) => {
+              setJour(v);
+              if (!v) {
+                setHeure("");
+                setFin("");
+              }
+            }}
+          />
+          {jour ? (
+            <LigneDateFiche libelle="Jusqu’au" icone="calendar-01" type="date" valeur={fin} min={jour} affichage={fin ? libelleEcheance(fin, null) : null} vide="Facultatif" disabled={verrou || bloque} erreur={erreurs.fin} onChange={setFin} />
+          ) : null}
+          <LigneDateFiche
+            libelle="Heure"
+            icone="clock-01"
+            type="time"
+            valeur={heure}
+            affichage={heure || null}
+            vide="Aucune"
+            disabled={verrou || bloque}
+            onChange={(v) => {
+              setHeure(v);
+              /* Une heure sans date : aujourd'hui, comme au bureau. */
+              if (v && !jour) setJour(aujourdhui());
+            }}
+          />
+          {verrou || bloque ? <LigneChoixFiche libelle="Urgence" icone="star-01" valeur={`${urgence.libelle}${urgence.valeur ? ` ${urgence.texte}` : ""}`} disabled onClick={() => undefined} /> : null}
+        </GroupeListe>
+        {verrou || bloque ? null : (
+          <div className="flex flex-col gap-1">
+            <span id={`${id}-urgence`} className="text-ui font-medium text-texte-principal">
+              Urgence
+            </span>
+            <div role="radiogroup" aria-labelledby={`${id}-urgence`} className="grid grid-cols-4 gap-0.5 rounded-md bg-fond-surface-grise p-0.5">
+              {URGENCES.map((u) => (
+                <button
+                  key={u.valeur}
+                  type="button"
+                  role="radio"
+                  aria-checked={priorite === u.valeur}
+                  aria-label={u.libelle}
+                  onClick={() => setPriorite(u.valeur)}
+                  className={cn("min-h-11 rounded-sm text-ui font-medium transition-colors duration-[120ms] ease-sortie", priorite === u.valeur ? "bg-fond-surface text-texte-principal shadow-ombre-xs" : "text-texte-secondaire")}
+                >
+                  {u.texte}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <GroupeListe>
+          {rappel?.source !== "poste" && (createur || rappel === null) ? <LigneChoixFiche libelle="Assigner à" icone="user-profile-01" valeur={nomMembre} onClick={() => setFeuille("assigne")} /> : null}
+          {pourMoi ? (
+            categories !== null ? (
+              <LigneChoixFiche libelle="Catégorie" icone="folder" valeur={nomCategorie} disabled={bloque} onClick={() => setFeuille("categorie")} />
+            ) : (
+              <LigneChoixFiche libelle="Catégorie" icone="folder" valeur={rappel?.recu ? "Assignés par l’équipe" : "Sans catégorie"} note={`Les catégories sont sur ${sur}`} disabled onClick={() => undefined} />
+            )
+          ) : null}
+        </GroupeListe>
+        <ChampFiche id={`${id}-notes`} libelle="Notes">
+          <textarea
+            id={`${id}-notes`}
+            value={notes}
+            placeholder="Ajoute un détail utile…"
+            onChange={(e) => setNotes(e.target.value)}
+            className="min-h-24 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 py-2 text-body-s text-texte-principal placeholder:text-texte-secondaire disabled:bg-fond-surface-grise [field-sizing:content]"
           />
         </ChampFiche>
+        {rappel && createur && !bloque ? (
+          <Bouton variant="discret" taille="md" className="self-start text-texte-erreur" disabled={occupe || bloque || horsLigne} iconeGauche={<Icon name="trash-01" size={20} />} onClick={() => onSupprimer(rappel)}>
+            Supprimer
+          </Bouton>
+        ) : null}
+      </fieldset>
+      {feuille === "assigne" ? (
+        <FeuilleChoixFiche titre="Assigner à" options={optionsMembres.length > 0 ? optionsMembres : [{ valeur: assigneA, libelle: "Moi" }]} valeur={assigneA} onChoisir={setAssigneA} onFermer={() => setFeuille(null)} />
       ) : null}
-      {pourMoi ? (
-        <ChampFiche id={`${id}-categorie`} libelle="Catégorie">
-          {categories !== null ? (
-            <ListeDeroulante libelle="Catégorie" value={liste} options={optionsCategories} onChange={setListe} className="h-12 w-full text-body-s" />
-          ) : (
-            <>
-              <p className="text-body-s text-texte-secondaire">Les catégories sont sur {sur}.</p>
-              <NotePoste />
-            </>
-          )}
-        </ChampFiche>
-      ) : null}
-      <ChampFiche id={`${id}-notes`} libelle="Notes">
-        <textarea
-          id={`${id}-notes`}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="min-h-24 w-full rounded-md border border-bordure-champ bg-fond-surface px-3 py-2 text-body-s text-texte-principal [field-sizing:content]"
+      {feuille === "categorie" ? (
+        <FeuilleChoixFiche
+          titre="Catégorie"
+          options={optionsCategories}
+          valeur={liste}
+          onChoisir={setListe}
+          onFermer={() => setFeuille(null)}
+          apres={
+            posteOuvert && !horsLigne ? (
+              <button
+                type="button"
+                className="mt-1 flex min-h-[52px] w-full items-center gap-3 px-1 text-left text-body-s text-texte-principal"
+                onClick={() => {
+                  setFeuille(null);
+                  modifierCategorie(null);
+                }}
+              >
+                <Icon name="plus-01" size={20} className="shrink-0 text-icone-secondaire" />
+                Nouvelle catégorie…
+              </button>
+            ) : null
+          }
         />
-      </ChampFiche>
-      {rappel && createur ? (
-        <Bouton
-          variant="discret"
-          taille="md"
-          className="self-start text-texte-erreur"
-          disabled={occupe || bloque}
-          iconeGauche={<Icon name="trash-01" size={20} />}
-          onClick={() => onSupprimer(rappel)}
-        >
-          Supprimer
-        </Bouton>
       ) : null}
     </PageFiche>
   );
