@@ -3,12 +3,13 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { DiagnosticDuPoste } from "@/components/reglages/ConfigurationKlyra";
-import { Groupe, Ligne, Valeur } from "@/components/reglages/ui";
+import { Groupe, Ligne, Pastille, Valeur } from "@/components/reglages/ui";
 import { fournisseur } from "@/lib/fournisseurs";
 import { useSondes } from "@/lib/lieux";
 import { useMaj } from "@/lib/maj";
 import { useMoteurs } from "@/lib/moteurs";
 import { libelleServeur, type ServeurConnu } from "@/lib/serveur-vps";
+import { AvisMiseAJour } from "./AvisMiseAJour";
 
 /** Les moteurs de la machine (Ce PC, ou le VPS `lieu`) et leur version. */
 function Moteurs({ lieu }: { lieu: string | null }) {
@@ -46,18 +47,27 @@ export function GeneralServeur({ serveur }: { serveur: ServeurConnu | null }) {
     );
   }
   const sonde = sondes[serveur.id];
+  const repond = sonde?.sonde === "repond";
   return (
     <>
+      {repond && sonde.retard && <AvisMiseAJour versionCode={sonde.versionCode} />}
       <Groupe>
         <Ligne id="serveur-nom" libelle={serveur.nom} description="Un VPS relié : ses agents tournent même quand ce PC est éteint." />
         <Ligne libelle="Adresse">
           <Valeur mono>{serveur.adresse}</Valeur>
         </Ligne>
-        <Ligne id="serveur-version" libelle="Version de KLYRA sur ce serveur">
-          <Valeur>{serveur.version || "—"}</Valeur>
+        <Ligne id="serveur-version" libelle="Version du code de ce serveur">
+          {repond ? (
+            <span className="flex items-center gap-2">
+              <Valeur>{sonde.versionCode ? `Version ${sonde.versionCode}` : "Non annoncée"}</Valeur>
+              <Pastille ton={sonde.retard ? "attente" : "ok"} texte={sonde.retard ? "À mettre à jour" : "À jour"} />
+            </span>
+          ) : (
+            <Valeur>—</Valeur>
+          )}
         </Ligne>
         <Ligne libelle="État">
-          <Valeur>{libelleServeur(serveur.etat, sonde?.sonde, sonde?.agents)}</Valeur>
+          <Valeur>{libelleServeur(serveur.etat, sonde?.sonde, sonde?.agents, sonde?.retard)}</Valeur>
         </Ligne>
         <Ligne libelle="Tous les serveurs" description="Ajouter, relier ou retirer un serveur.">
           <Link href="/serveurs" className="text-ui-s font-medium text-texte-principal underline underline-offset-2">

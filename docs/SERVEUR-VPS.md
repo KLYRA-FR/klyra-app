@@ -16,9 +16,19 @@ curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lan
 - publie le serveur par **Tailscale** (`tailscale serve --https=8791`) si le VPS y est connecté : adresse privée et fixe, `https://<machine>.<réseau>.ts.net:8791`. Sinon, service `klyra-tunnel` (tunnel Cloudflare gratuit, adresse qui change au redémarrage) ;
 - affiche un lien `klyra://rejoindre?adresse=…&code=…` et son QR, valables **10 minutes et une seule fois**.
 
-Relancer la commande met le serveur à jour et donne un nouveau lien ; les appareils déjà reliés le restent. Tout oublier : `curl … | sudo sh -s -- revoquer-tout`. Arrêter : `sudo systemctl disable --now klyra-serveur klyra-tunnel`. Le service OpenBot ne s’arrête pas.
+Relancer la commande met le serveur à jour et donne un nouveau lien ; les appareils déjà reliés le restent (elle redémarre le service : un agent en plein travail s’arrête). Tout oublier : `curl … | sudo sh -s -- revoquer-tout`. Arrêter : `sudo systemctl disable --now klyra-serveur klyra-tunnel`. Le service OpenBot ne s’arrête pas.
 
 Réglages facultatifs : `KLYRA_SERVEUR_NOM` (nom de la machine par défaut) et `KLYRA_SERVEUR_PORT` (8791), passés après `sudo` : `… | sudo KLYRA_SERVEUR_NOM="Klyra-VPS" sh`.
+
+## Un serveur en retard
+
+L’app se met à jour seule, pas le serveur : il garde son code jusqu’à ce qu’on relance la commande. Le protocole (`PROTOCOLE`, 1) ne bouge presque jamais, il ne révèle donc pas cet écart.
+
+- **La version du code** : `VERSION_CODE_SERVEUR` (`electron/version-serveur.ts`, généré en `serveur/version-code.mjs`), un entier distinct du protocole, renvoyé en `versionCode` par `GET /klyra/v1/serveur` et par l’appairage. `version` reste pour les apps qui l’exigent encore.
+- **Elle suit le code tout seul** : `node scripts/serveur-genere.mjs` la monte quand l’empreinte de `serveur/*.mjs` et de `lancer.sh` change (`scripts/empreinte-serveur.mjs`, sans les tests). `pnpm lint` et `test:serveur` échouent si elle n’a pas suivi. Deux PR qui touchent au serveur entrent en conflit sur ce fichier : relancer le script, il repart de la plus haute version et écrit un fichier propre.
+- **Côté app** : `serveurEnRetard` (`src/lib/serveur-vps.ts`). Plus ancien que la version attendue, ou pas de version lisible : en retard. Plus récent : rien à faire sur le VPS, c’est l’app qui n’a pas encore pris sa mise à jour. Un serveur qui ne répond pas n’a pas d’âge connu.
+- **Ce qu’on voit** : Réglages du serveur › Général donne l’avis et la commande (`AvisMiseAJour`), le sélecteur, l’écran Serveurs et Réglages › Mobile disent « Répond · à mettre à jour ». L’avis tombe de lui-même à la sonde suivante (une minute au plus). L’app ne met jamais le VPS à jour elle-même.
+- Test : `xvfb-run -a pnpm test:avis-serveur` (vrai serveur local dont le code est copié sans la version, puis relancé à jour).
 
 ## Appairage
 

@@ -18,6 +18,7 @@ import { ErreurFichier, creerFichiers } from "./fichiers.mjs";
 import { creerIa } from "./ia.mjs";
 import { creerMoteurs } from "./moteurs.mjs";
 import { creerRoutines } from "./routines.mjs";
+import { VERSION_CODE_SERVEUR } from "./version-code.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
 export const CHEMIN_APPAIRER = "/klyra/v1/appairer";
@@ -314,7 +315,8 @@ export function creerGestionnaire(options) {
     const cherche = empreinte(jeton);
     return lireAppareils(dossier).find((a) => egal(a.empreinte, cherche)) ?? null;
   };
-  const corpsServeur = () => ({ produit: "klyra-serveur", protocole: PROTOCOLE, nom, version: String(PROTOCOLE) });
+  /* `versionCode` dit l'âge du code (l'app signale un serveur en retard) ; `version` reste pour les apps qui l'exigent encore. */
+  const corpsServeur = () => ({ produit: "klyra-serveur", protocole: PROTOCOLE, nom, version: String(PROTOCOLE), versionCode: VERSION_CODE_SERVEUR });
   /** Ce que l'app doit savoir pour proposer ce VPS dans le sélecteur. */
   const capacites = () => ({
     agents: agents ? agents.etat() : "absent",
