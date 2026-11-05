@@ -11,7 +11,8 @@ import { MarqueRun } from "@/components/routines/MarqueRun";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { cn } from "@/lib/cn";
-import { useServeursRelies } from "@/lib/lieux";
+import { useLieuActif, useServeursRelies } from "@/lib/lieux";
+import { routinesDeLEspace, useDirectEspace } from "@/lib/telephone/espace";
 import { useGestePoste } from "@/lib/poste/client";
 import { majuscule } from "@/lib/poste-texte";
 import { dureeRun, libellePlanning, libelleRun, lienRun, runActif } from "@/lib/routines-affichage";
@@ -42,8 +43,8 @@ import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMen
 import { FormulaireRoutineTelephone, type ContexteRoutine } from "./FormulaireRoutineTelephone";
 import { Carte, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { useTirerPourRelire } from "./TirerPourRelire";
-import { EtatEcran, NotePoste, VueLecture, useVueGardeeAffichee } from "./etats";
-import { usePostes, useSupport } from "./poste";
+import { EtatEcran, NoteGeste, VueLecture, useVueGardeeAffichee, useAccesGeste } from "./etats";
+import { useSupport } from "./poste";
 
 /**
  * Automatisations › Routines sur le téléphone (lot 7, E7-01 à E7-25). La colonne des agents du
@@ -110,7 +111,8 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
   const lecture = useLectureSuivie<RoutinesLues>("routines.liste", {}, { suivre: (d) => d.enCours.some(runActif) });
   const tirer = useTirerPourRelire(lecture.relancer, { enCours: lecture.relecture });
   const [brouillon] = useState(lireBrouillon);
-  const data = lecture.etat === "ok" ? lecture.data : null;
+  const lieu = useLieuActif();
+  const data = routinesDeLEspace(lecture.etat === "ok" ? lecture.data : null, lieu);
   /* Un lien vers une routine sans son agent (notification) mène à son agent, comme au bureau. */
   const cible = routineDemandee ? data?.routines.find((r) => r.id === routineDemandee) : undefined;
   useEffect(() => {
@@ -124,7 +126,7 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
         {tirer.indicateur}
         <div className="px-4 pt-2 pb-4">{onglets}</div>
         <VueLecture lecture={lecture} ferme={ferme} lignes={5} formeAucun="encadre" phraseAucun={PHRASE_AUCUN} gestes={null}>
-          {(d) => (!d.actif ? <MoteurArrete erreur={d.erreur} relancer={lecture.relancer} /> : <ListeAgents lues={d} brouillonDe={brouillon?.valeurs.agentId} />)}
+          {(d) => (!d.actif ? <MoteurArrete erreur={d.erreur} relancer={lecture.relancer} /> : <ListeAgents lues={routinesDeLEspace(d, lieu)!} brouillonDe={brouillon?.valeurs.agentId} />)}
         </VueLecture>
       </div>
     </div>
@@ -135,7 +137,9 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
 function ListeAgents({ lues, brouillonDe }: { lues: RoutinesLues; brouillonDe?: string }) {
   const sur = useSupport();
   const gardee = !!useVueGardeeAffichee();
-  const enCours = gardee ? lues.enCours.filter((r) => r.status === "needs-attention") : lues.enCours;
+  /* Une exécution d'un autre espace ne se montre pas ici : seules celles des routines de cet espace. */
+  const iciEnCours = lues.enCours.filter((run) => lues.routines.some((r) => r.id === run.routineId));
+  const enCours = gardee ? iciEnCours.filter((r) => r.status === "needs-attention") : iciEnCours;
   return (
     <nav aria-label="Agents" className="flex flex-col gap-4 px-4">
       {[true, false].map((actif) => {
@@ -214,7 +218,7 @@ const SUGGESTIONS = [
 export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { agentId: string; routineId: string | null; formulaire: boolean }) {
   const router = useRouter();
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const ferme = usePhraseFermee();
   const lecture = useLectureSuivie<RoutinesLues>("routines.liste", { agentId }, { suivre: (d) => d.enCours.some((r) => r.agentId === agentId && runActif(r)) });
   const { relancer } = lecture;
@@ -233,14 +237,15 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
   const [erreurs, setErreurs] = useState<Record<string, Echec | undefined>>({});
   const [eclairee, setEclairee] = useState<string | null>(null);
   /* Ce que l'écran montre : la lecture en direct, ou la vue gardée (lecture seule). */
-  const data = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
+  const lieu = useLieuActif();
+  const data = routinesDeLEspace(lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null, lieu);
 
   const agent: AgentLu = data?.agents.find((a) => a.id === agentId) ?? { id: agentId, name: "Agent indisponible", tag: "", title: "", teinte: "jaune" as RoleTeinte, actif: false, connu: false };
   const nomAgent = (id: string) => data?.agents.find((a) => a.id === id)?.name ?? "Agent indisponible";
   const agentActif = (id: string) => !!data?.agents.some((a) => a.id === id && a.actif);
   const liste = (data?.routines ?? []).filter((r) => r.agentId === agentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const actifDe = (id: string) => data?.enCours.find((run) => run.routineId === id && runActif(run));
-  const indisponible = !ouvert || occupe || !data?.actif;
+  const indisponible = !possible || occupe || !data?.actif;
 
   /* Le formulaire est une page : « formulaire=1 » dans l'adresse, le retour du système le ferme (le brouillon reste). */
   if (edition && formulaire && !edition.affichee) setEdition({ ...edition, affichee: true });
@@ -371,7 +376,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
     const relais = !!r.relais?.length;
     const actif = actifDe(r.id);
     const bloquerReprise = indisponible || (!r.active && (!agentActif(r.agentId) || relais));
-    const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+    const note = possible ? undefined : <NoteGeste className="text-ui-xs text-texte-secondaire" />;
     return [
       { libelle: "Modifier", icone: "pencil-01", desactivee: indisponible, note, onChoisir: () => commencer(r) },
       ...(r.schedule.kind !== "manual" ? [{ libelle: r.active ? "Mettre en pause" : "Reprendre", icone: (r.active ? "pause-01" : "play-01") as IconName, desactivee: bloquerReprise, note, onChoisir: () => pause(r) }] : []),
@@ -455,7 +460,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
                     agentActif={agentActif(r.agentId)}
                     nomDe={nomAgent}
                     actif={actifDe(r.id)}
-                    derniere={d.dernieres?.[r.id]}
+                    derniere={data?.dernieres?.[r.id]}
                     eclairee={eclairee === r.id}
                     indisponible={indisponible}
                     relecture={lecture.relecture}
@@ -483,7 +488,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
                           uneLigne
                           fin="chevron"
                           inactive={indisponible}
-                          raison={ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />}
+                          raison={possible ? undefined : <NoteGeste className="text-ui-xs text-texte-secondaire" />}
                           onClick={() => commencer(null, { ...nouvelleRoutine(agentId, d.fuseau, d.lieu), ...s })}
                         />
                       ))}
@@ -500,7 +505,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
           <BoutonPrincipal className={cn("w-full", BOUTON_INACTIF)} disabled={indisponible} onClick={() => commencer(null)}>
             Nouvelle routine
           </BoutonPrincipal>
-          {!ouvert ? <NotePoste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
+          {!possible ? <NoteGeste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
         </div>
       ) : null}
 
@@ -555,6 +560,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
 /** L'agent en tête de ses routines : le lien « confiée à » du canevas devient l'ordre de lecture. */
 function CarteAgentTelephone({ agent, sur }: { agent: AgentLu; sur: string }) {
   const gardee = !!useVueGardeeAffichee();
+  const direct = useDirectEspace();
   return (
     <Carte className={cn("px-4 py-3.5", !agent.actif && "border-bordure-forte bg-fond-surface-douce")}>
       <div aria-label={`Agent ${agent.name}`} role="group">
@@ -568,7 +574,7 @@ function CarteAgentTelephone({ agent, sur }: { agent: AgentLu; sur: string }) {
         {agent.title && !gardee ? <p className="mt-2.5 line-clamp-2 text-ui text-texte-secondaire">{agent.title}</p> : null}
         {!agent.actif ? <p className="mt-2.5 text-ui text-texte-secondaire">{agent.connu ? "Désactivé : ses routines ne partent pas." : `Absent de ${sur} : ses routines ne partent pas.`}</p> : null}
         <div className="mt-3.5 flex flex-wrap gap-x-4 gap-y-3 pb-1">
-          <LienCarte href={`/chat?id=${encodeURIComponent(`dm-${agent.id}`)}`} chevron>
+          <LienCarte href={`/chat?id=${encodeURIComponent(direct(agent.id))}`} chevron>
             Ouvrir la conversation
           </LienCarte>
           {!agent.actif ? (

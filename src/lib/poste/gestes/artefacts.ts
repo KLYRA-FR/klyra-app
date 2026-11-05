@@ -7,6 +7,8 @@ import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { messageErreur } from "@/lib/compte";
 import { poste } from "@/lib/plateforme";
+import { nomDuFichier } from "@/lib/rendus";
+import { lieuDuRendu } from "@/lib/rendus-espace";
 import { gestesArtefacts } from "@/lib/telephone/gestes-artefacts";
 import { useWorkspace } from "@/lib/workspace";
 import { ErreurPoste, type Gestes } from "../types";
@@ -40,16 +42,22 @@ export function useGestesArtefacts(): Gestes {
       const r = await bridge?.rendus.vignette(chemin, forcer);
       return r?.ok ? r.data : null;
     },
-    ouvrirRendu: async (chemin) => {
-      const r = await bridge?.rendus.ouvrir(chemin);
+    ouvrirRendu: async (rendu) => {
+      /* Comme la carte du bureau : la copie de ce PC, ou le fichier resté sur son serveur. */
+      const lieu = lieuDuRendu(rendu.origine);
+      const r = rendu.chemin
+        ? await bridge?.rendus.ouvrir(rendu.chemin)
+        : rendu.distantId && lieu
+          ? await bridge?.rendus.ouvrirVps?.(lieu, rendu.distantId, rendu.roleId, nomDuFichier(rendu.origine), rendu.dossier === true)
+          : undefined;
       if (!r?.ok) throw new Error(r?.message ?? "Ouverture impossible.");
     },
     /* Comme la carte du bureau : un rendu partagé quitte le compte avec sa copie. */
-    retirerPartage: async (origine) => {
+    retirerPartage: async (origine, lieu) => {
       try {
-        const { documents } = await convex.query(api.documentsKlyra.lister, { lieu: null });
+        const { documents } = await convex.query(api.documentsKlyra.lister, { lieu });
         const partage = documents.find((doc) => doc.deMoi && doc.origine === origine);
-        if (partage) await convex.mutation(api.documentsKlyra.supprimer, { documentId: partage._id as Id<"documentsKlyra">, lieu: null });
+        if (partage) await convex.mutation(api.documentsKlyra.supprimer, { documentId: partage._id as Id<"documentsKlyra">, lieu });
       } catch (e) {
         throw new ErreurPoste("compte", messageErreur(e));
       }

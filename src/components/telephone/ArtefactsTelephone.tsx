@@ -9,9 +9,10 @@ import { useAbonnement } from "@/lib/bibliotheque";
 import { ArtefactsEquipeProvider, useArtefactsEquipe, type ArtefactEquipe, type EtatArtefactsEquipe } from "@/lib/artefacts-equipe";
 import { cn } from "@/lib/cn";
 import { codeErreur, messageErreur, useCompte } from "@/lib/compte";
+import { useLieuActif } from "@/lib/lieux";
 import { useLecturePoste } from "@/lib/poste/client";
 import { majuscule } from "@/lib/poste-texte";
-import { filtrerArtefacts, imageApercu, LIEN_ARTEFACT, type ArtefactLu, type ListeArtefacts, type RenduLu } from "@/lib/telephone/gestes-artefacts";
+import { filtrerArtefacts, imageApercu, LIEN_ARTEFACT, listeDeLEspace, type ArtefactLu, type ListeArtefacts, type RenduLu } from "@/lib/telephone/gestes-artefacts";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import type { TypeRendu } from "@/types/domain";
 import { api } from "../../../convex/_generated/api";
@@ -24,8 +25,8 @@ import { ChoixFeuille, Feuille, MenuFeuille, useFermerFeuille, type ActionMenu, 
 import { Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { PagePleine } from "./PagePleine";
 import { useRetour } from "./retour";
-import { BandeauEtat, CarteSuite, DemandeEnCours, EtatEcran, NotePoste, PasDeReponse, ErreurPoste, Squelette, VueLecture, useVueGardeeAffichee } from "./etats";
-import { usePostes, useSupport } from "./poste";
+import { BandeauEtat, CarteSuite, DemandeEnCours, EtatEcran, NoteGeste, PasDeReponse, ErreurPoste, Squelette, VueLecture, useVueGardeeAffichee, useAccesGeste } from "./etats";
+import { useSupport } from "./poste";
 
 /**
  * Artefacts sur le téléphone (lot 7, E7-39 à E7-60). Mes artefacts vit sur l'ordinateur : ses rendus
@@ -77,9 +78,9 @@ interface PageEquipe {
   deMoi: boolean;
 }
 
-function usePagesEquipe(tour: number): PageEquipe[] | null {
+function usePagesEquipe(tour: number, lieu: string | null): PageEquipe[] | null {
   const { etat } = useCompte();
-  const liste = useAbonnement(api.documentsKlyra.lister, etat === "connecte" ? { lieu: null } : null, tour);
+  const liste = useAbonnement(api.documentsKlyra.lister, etat === "connecte" ? { lieu } : null, tour);
   return liste.valeur?.documents ?? null;
 }
 
@@ -95,11 +96,15 @@ function Ecran() {
   const params = useSearchParams();
   const onglet = params.get("onglet") === "equipe" ? "equipe" : "miens";
   const renduOuvert = params.get("rendu");
-  const lecture = useLecturePoste<ListeArtefacts>("artefacts.liste", {});
-  const equipe = useArtefactsEquipe();
+  /* L'espace que ce téléphone a choisi : ses rendus, ses pages partagées ; les liens claude.ai seulement sur Ce PC. */
+  const lieu = useLieuActif();
+  const lecture = useLecturePoste<ListeArtefacts>("artefacts.liste", { lieu });
+  const equipeCompte = useArtefactsEquipe();
+  const equipe = lieu ? { ...equipeCompte, artefacts: [] } : equipeCompte;
   const [tourPages, setTourPages] = useState(0);
-  const pages = usePagesEquipe(tourPages);
-  const liste = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
+  const pages = usePagesEquipe(tourPages, lieu);
+  const lue = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
+  const liste = lue ? listeDeLEspace(lue, lieu) : null;
   const pretEquipe = equipe.etat === "pret" && pages !== null;
   /* Un compte seulement quand la source a été lue : jamais de faux zéro. */
   const nombreMiens = liste ? liste.rendus.length + liste.artefacts.length : undefined;
@@ -120,13 +125,13 @@ function Ecran() {
             <div className="px-4 pt-2 pb-4">
               <SegmentsArtefacts onglet="equipe" miens={nombreMiens} equipe={nombreEquipe} />
             </div>
-            <OngletEquipe pages={pages} relire={relireEquipe} />
+            <OngletEquipe pages={pages} relire={relireEquipe} surServeur={!!lieu} />
           </div>
         </>
       ) : (
-        <OngletMiens lecture={lecture} liste={liste} nombreMiens={nombreMiens} nombreEquipe={nombreEquipe} />
+        <OngletMiens lecture={lecture} lieu={lieu} liste={liste} nombreMiens={nombreMiens} nombreEquipe={nombreEquipe} />
       )}
-      {renduOuvert ? <PageApercu id={renduOuvert} rendu={rendu} liste={liste} relire={lecture.relancer} /> : null}
+      {renduOuvert ? <PageApercu id={renduOuvert} lieu={lieu} rendu={rendu} liste={liste} relire={lecture.relancer} /> : null}
     </div>
   );
 }
@@ -150,16 +155,18 @@ function SegmentsArtefacts({ onglet, miens, equipe }: { onglet: "miens" | "equip
 
 function OngletMiens({
   lecture,
+  lieu,
   liste,
   nombreMiens,
   nombreEquipe,
 }: {
   lecture: ReturnType<typeof useLecturePoste<ListeArtefacts>>;
-  liste: ListeArtefacts | null;
+  lieu: string | null;
+  liste: (ListeArtefacts & { ancien: boolean }) | null;
   nombreMiens?: number;
   nombreEquipe?: number;
 }) {
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const { agir, occupe, bandeau, erreur } = useGesteTelephone();
   const [recherche, setRecherche] = useState("");
   const [projet, setProjet] = useState("");
@@ -172,18 +179,18 @@ function OngletMiens({
     setSync(false);
     if (r) lecture.relancer();
   };
-  const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+  const note = possible ? undefined : <NoteGeste className="text-ui-xs text-texte-secondaire" />;
   const avecClaude = liste?.claude ?? true;
   const actions: ActionMenu[] = [
-    ...(avecClaude ? [{ libelle: "Relire claude.ai", icone: "refresh-01" as IconName, desactivee: !ouvert || occupe, note: note ?? "Ajoute à la liste ce que tu as publié sur claude.ai.", onChoisir: () => void synchroniser() }] : []),
+    ...(avecClaude ? [{ libelle: "Relire claude.ai", icone: "refresh-01" as IconName, desactivee: !possible || occupe, note: note ?? "Ajoute à la liste ce que tu as publié sur claude.ai.", onChoisir: () => void synchroniser() }] : []),
     {
       libelle: "Refaire les aperçus",
       icone: "image-01",
-      desactivee: !ouvert || occupe,
+      desactivee: !possible || occupe,
       note: note ?? "Se refont sur l’ordinateur, en fond.",
       onChoisir: () => void agir<{ lances: number }>("artefacts.apercus", {}, (x) => `Aperçus demandés à l’ordinateur (${x.lances}).`),
     },
-    ...(avecClaude ? [{ libelle: "Ajouter un lien", icone: "plus-01" as IconName, desactivee: !ouvert || occupe, note, onChoisir: () => setLien(true) }] : []),
+    ...(avecClaude ? [{ libelle: "Ajouter un lien", icone: "plus-01" as IconName, desactivee: !possible || occupe, note, onChoisir: () => setLien(true) }] : []),
     { libelle: "Relire la liste", icone: "list", onChoisir: lecture.relancer },
   ];
 
@@ -221,7 +228,7 @@ function OngletMiens({
             gestes="Ouvrir un rendu, modifier, retirer"
             ferme={(sur) => `tes artefacts sont listés sur ${sur}. Ils s’affichent ici quand KLYRA y est ouverte.`}
           >
-            {(lue) => <ListeMiens liste={lue} recherche={recherche} setRecherche={setRecherche} projet={projet} setProjet={setProjet} relire={lecture.relancer} onAjouter={() => setLien(true)} />}
+            {(lue) => <ListeMiens liste={listeDeLEspace(lue, lieu)} lieu={lieu} recherche={recherche} setRecherche={setRecherche} projet={projet} setProjet={setProjet} relire={lecture.relancer} onAjouter={() => setLien(true)} />}
           </VueLecture>
         )}
       </div>
@@ -238,6 +245,7 @@ function CarteEquipeFerme() {
 
 function ListeMiens({
   liste,
+  lieu,
   recherche,
   setRecherche,
   projet,
@@ -245,7 +253,8 @@ function ListeMiens({
   relire,
   onAjouter,
 }: {
-  liste: ListeArtefacts;
+  liste: ListeArtefacts & { ancien: boolean };
+  lieu: string | null;
   recherche: string;
   setRecherche: (v: string) => void;
   projet: string;
@@ -255,7 +264,7 @@ function ListeMiens({
 }) {
   const router = useRouter();
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const gardee = !!useVueGardeeAffichee();
   const annoncer = useAnnonce();
   const equipe = useArtefactsEquipe();
@@ -277,6 +286,10 @@ function ListeMiens({
     return equipe.etat === "pret" && url ? equipe.artefacts.find((x) => x.url === url) : undefined;
   };
 
+  /* Un ordinateur d'avant ce contrat ne dit rien de ses rendus : pas de « Rien pour l'instant ». */
+  if (!total && liste.ancien) {
+    return <EtatEcran forme="encadre" icone="computer" titre="Mets KLYRA à jour" texte={`La version de KLYRA sur ${sur} ne sait pas encore montrer ses rendus à ce téléphone.`} />;
+  }
   if (!total) {
     return (
       <div className="flex flex-col">
@@ -287,14 +300,14 @@ function ListeMiens({
           texte={`Quand un agent livre une page, une maquette, une capture ou une vidéo, elle arrive ici.${liste.claude ? " Tu peux aussi y ajouter tes liens claude.ai." : ""}`}
           action={
             liste.claude ? (
-              <Bouton variant="blanc" taille="md" disabled={!ouvert} iconeGauche={<Icon name="plus-01" size={20} />} onClick={onAjouter}>
+              <Bouton variant="blanc" taille="md" disabled={!possible} iconeGauche={<Icon name="plus-01" size={20} />} onClick={onAjouter}>
                 Ajouter un lien
               </Bouton>
             ) : null
           }
         />
-        {liste.claude && !ouvert ? <NotePoste className="-mt-3 px-5 pb-4 text-center text-ui-xs text-texte-secondaire" /> : null}
-        {liste.rendusServeur ? <NoteServeur nombre={liste.rendusServeur} /> : null}
+        {liste.claude && !possible ? <NoteGeste className="-mt-3 px-5 pb-4 text-center text-ui-xs text-texte-secondaire" /> : null}
+        {liste.rendusAilleurs ? <NoteAilleurs nombre={liste.rendusAilleurs} surServeur={!!lieu} /> : null}
       </div>
     );
   }
@@ -389,7 +402,7 @@ function ListeMiens({
           </GroupeListe>
         </SectionListe>
       ) : null}
-      {liste.rendusServeur ? <NoteServeur nombre={liste.rendusServeur} /> : null}
+      {liste.rendusAilleurs ? <NoteAilleurs nombre={liste.rendusAilleurs} surServeur={!!lieu} /> : null}
       {lienMenu ? (
         <MenuLien
           key={lienMenu.id}
@@ -404,17 +417,17 @@ function ListeMiens({
           }}
         />
       ) : null}
-      {renduMenu ? <MenuRendu rendu={renduMenu} sur={sur} relire={relire} onFermer={() => setRenduMenu(null)} /> : null}
+      {renduMenu ? <MenuRendu rendu={renduMenu} lieu={lieu} sur={sur} relire={relire} onFermer={() => setRenduMenu(null)} /> : null}
     </div>
   );
 
 }
 
-function NoteServeur({ nombre }: { nombre: number }) {
-  const sur = useSupport();
+/** Les rendus d'un autre espace : on dit qu'ils existent, sans les mêler à ceux-ci. */
+function NoteAilleurs({ nombre, surServeur }: { nombre: number; surServeur: boolean }) {
   return (
     <p className="px-5 pb-2 text-ui-xs text-texte-secondaire">
-      {nombre} rendu{nombre > 1 ? "s sont" : " est"} sur un serveur : à voir sur {sur}, dans l’espace de ce serveur.
+      {nombre} autre{nombre > 1 ? "s" : ""} rendu{nombre > 1 ? "s" : ""} dans un autre espace : {surServeur ? "change de serveur" : "choisis son serveur"} dans Plus › Serveurs.
     </p>
   );
 }
@@ -422,14 +435,14 @@ function NoteServeur({ nombre }: { nombre: number }) {
 /* ─── E7-42, E7-45 à E7-49 : un lien claude.ai ─────────────────── */
 
 function MenuLien({ artefact, projets, partage, relire, onFermer, onPartage }: { artefact: ArtefactLu; projets: ListeArtefacts["projets"]; partage?: ArtefactEquipe; relire: () => void; onFermer: () => void; onPartage: () => void }) {
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const { agir, occupe } = useGesteTelephone();
   const annoncer = useAnnonce();
   const equipe = useArtefactsEquipe();
   /* Le menu joue sa sortie pendant que la feuille suivante monte : il ne ferme tout que s'il n'y en a pas. */
   const [menu, setMenu] = useState(true);
   const [suite, setSuite] = useState<"modifier" | "partager" | null>(null);
-  const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+  const note = possible ? undefined : <NoteGeste className="text-ui-xs text-texte-secondaire" />;
   const sansCompte = equipe.etat === "hors-ligne" ? "Possible quand ce téléphone est en ligne" : equipe.etat !== "pret" ? (equipe.etat === "chargement" ? "Lecture de l’équipe…" : TEXTES_EQUIPE[equipe.etat]) : undefined;
   return (
     <>
@@ -444,13 +457,13 @@ function MenuLien({ artefact, projets, partage, relire, onFermer, onPartage }: {
           actions={[
             { libelle: "Ouvrir dans le navigateur", icone: "link-external", onChoisir: () => ouvrirLien(artefact.url) },
             ...(partage ? [] : [{ libelle: "Partager avec l’équipe", icone: "users-profiles-plus" as IconName, desactivee: !!sansCompte, note: sansCompte, onChoisir: () => setSuite("partager") }]),
-            { libelle: "Modifier le titre et la description", icone: "pencil-01", desactivee: !ouvert || occupe, note, onChoisir: () => setSuite("modifier") },
+            { libelle: "Modifier le titre et la description", icone: "pencil-01", desactivee: !possible || occupe, note, onChoisir: () => setSuite("modifier") },
             {
               libelle: "Retirer de la liste…",
               icone: "trash-01",
               danger: true,
               separateurAvant: true,
-              desactivee: !ouvert || occupe,
+              desactivee: !possible || occupe,
               note,
               confirmation: { titre: "Retirer de la liste ?", texte: "L’artefact reste sur claude.ai.", confirmer: "Retirer" },
               onChoisir: () =>
@@ -587,7 +600,8 @@ function PiedFeuille({ libelle, occupe, disabled, onValider, note }: { libelle: 
 }
 
 function FeuilleModifier({ artefact, projets, onFermer, onFait }: { artefact: ArtefactLu; projets: ListeArtefacts["projets"]; onFermer: () => void; onFait: () => void }) {
-  const { agir, occupe, ouvert, erreur } = useGesteTelephone();
+  const { agir, occupe, erreur } = useGesteTelephone();
+  const { possible } = useAccesGeste();
   const annoncer = useAnnonce();
   const [titre, setTitre] = useState(artefact.titre);
   const [description, setDescription] = useState(artefact.description);
@@ -603,7 +617,7 @@ function FeuilleModifier({ artefact, projets, onFermer, onFait }: { artefact: Ar
     <Feuille
       titre="Modifier le titre et la description"
       onFermer={onFermer}
-      pied={<PiedFeuille libelle={occupe ? "Enregistrement" : "Enregistrer"} occupe={occupe} disabled={!ouvert || occupe || !titre.trim()} onValider={() => void enregistrer()} note={ouvert ? null : <NotePoste className="px-1 text-ui-xs text-texte-secondaire" />} />}
+      pied={<PiedFeuille libelle={occupe ? "Enregistrement" : "Enregistrer"} occupe={occupe} disabled={!possible || occupe || !titre.trim()} onValider={() => void enregistrer()} note={possible ? null : <NoteGeste className="px-1 text-ui-xs text-texte-secondaire" />} />}
     >
       <div className="flex flex-col gap-4 pt-1">
         <ChampTelephone label="Titre" erreur={titre.trim() ? null : "Donne-lui un titre."}>
@@ -621,7 +635,8 @@ function FeuilleModifier({ artefact, projets, onFermer, onFait }: { artefact: Ar
 
 /** E7-48 : « Coller » lit le presse-papiers après ce geste, sinon on saisit ; l'artefact rejoint la liste de l'ordinateur. */
 function FeuilleLien({ projets, onFermer, onFait }: { projets: ListeArtefacts["projets"]; onFermer: () => void; onFait: () => void }) {
-  const { agir, occupe, ouvert, erreur } = useGesteTelephone();
+  const { agir, occupe, erreur } = useGesteTelephone();
+  const { possible } = useAccesGeste();
   const annoncer = useAnnonce();
   const [url, setUrl] = useState("");
   const [titre, setTitre] = useState("");
@@ -651,7 +666,7 @@ function FeuilleLien({ projets, onFermer, onFait }: { projets: ListeArtefacts["p
     <Feuille
       titre="Ajouter un lien"
       onFermer={onFermer}
-      pied={<PiedFeuille libelle={occupe ? "Ajout" : "Ajouter"} occupe={occupe} disabled={!ouvert || occupe} onValider={() => void ajouter()} note={ouvert ? null : <NotePoste className="px-1 text-ui-xs text-texte-secondaire" />} />}
+      pied={<PiedFeuille libelle={occupe ? "Ajout" : "Ajouter"} occupe={occupe} disabled={!possible || occupe} onValider={() => void ajouter()} note={possible ? null : <NoteGeste className="px-1 text-ui-xs text-texte-secondaire" />} />}
     >
       <div className="flex flex-col gap-4 pt-1">
         <div className="flex flex-col gap-2">
@@ -689,12 +704,12 @@ function FeuilleLien({ projets, onFermer, onFait }: { projets: ListeArtefacts["p
 
 /* ─── E7-43, E7-44, E7-49 : un rendu d'agent ───────────────────── */
 
-function MenuRendu({ rendu, sur, relire, onFermer }: { rendu: RenduLu; sur: string; relire: () => void; onFermer: () => void }) {
+function MenuRendu({ rendu, lieu, sur, relire, onFermer }: { rendu: RenduLu; lieu: string | null; sur: string; relire: () => void; onFermer: () => void }) {
   const router = useRouter();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const { agir, occupe } = useGesteTelephone();
   const annoncer = useAnnonce();
-  const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+  const note = possible ? undefined : <NoteGeste className="text-ui-xs text-texte-secondaire" />;
   const tag = <Etiquette>Sur {sur}</Etiquette>;
   return (
     <MenuFeuille
@@ -702,14 +717,14 @@ function MenuRendu({ rendu, sur, relire, onFermer }: { rendu: RenduLu; sur: stri
       objet={{ visuel: <TuileIcone grande icone={TYPES[rendu.type].icone} />, sous: [TYPES[rendu.type].libelle, rendu.agent, rendu.projet].filter(Boolean).join(" · ") }}
       onFermer={onFermer}
       actions={[
-        { libelle: "Voir l’aperçu", icone: "expand", desactivee: !rendu.apercu || !ouvert, note: !rendu.apercu ? "Pas d’aperçu pour ce type de fichier." : note, onChoisir: () => router.push(urlApercu(rendu.id)) },
+        { libelle: "Voir l’aperçu", icone: "expand", desactivee: !rendu.apercu || !possible, note: !rendu.apercu ? "Pas d’aperçu pour ce type de fichier." : note, onChoisir: () => router.push(urlApercu(rendu.id)) },
         {
           libelle: `Ouvrir sur ${sur}`,
           icone: "link-external",
-          desactivee: !ouvert || occupe,
+          desactivee: !possible || occupe,
           note,
           onChoisir: () =>
-            void agir("rendus.ouvrir", { id: rendu.id }).then((ok) => {
+            void agir("rendus.ouvrir", { id: rendu.id, lieu }).then((ok) => {
               if (ok) annoncer({ texte: `Ouvert sur ${sur}.`, icone: "check-01" });
               else annoncer({ texte: `Ce rendu n’a pas pu s’ouvrir sur ${sur}.`, erreur: true });
             }),
@@ -721,11 +736,11 @@ function MenuRendu({ rendu, sur, relire, onFermer }: { rendu: RenduLu; sur: stri
           icone: "trash-01",
           danger: true,
           separateurAvant: true,
-          desactivee: !ouvert || occupe,
+          desactivee: !possible || occupe,
           note,
           confirmation: { titre: "Retirer de la liste ?", texte: "La copie gardée par KLYRA est supprimée, et son partage avec l’équipe s’il y en a un ; l’original de l’agent et ce que tu as enregistré ailleurs restent.", confirmer: "Retirer" },
           onChoisir: () =>
-            void agir("rendus.retirer", { id: rendu.id }).then((ok) => {
+            void agir("rendus.retirer", { id: rendu.id, lieu }).then((ok) => {
               if (ok) annoncer({ texte: "Retiré de la liste.", icone: "check-01" });
               else annoncer({ texte: "Le retrait n’a pas abouti : le rendu reste dans la liste.", erreur: true });
               relire();
@@ -740,18 +755,18 @@ function MenuRendu({ rendu, sur, relire, onFermer }: { rendu: RenduLu; sur: stri
  * E7-44 : l'aperçu est une image dessinée par l'ordinateur, jamais la page elle-même (pas de tunnel
  * vers une adresse du poste). Son absence se dit : ce n'est pas un rendu vide.
  */
-function PageApercu({ id, rendu, liste, relire }: { id: string; rendu: RenduLu | null; liste: ListeArtefacts | null; relire: () => void }) {
+function PageApercu({ id, lieu, rendu, liste, relire }: { id: string; lieu: string | null; rendu: RenduLu | null; liste: ListeArtefacts | null; relire: () => void }) {
   const onFermer = useRetour("/artefacts");
   const sur = useSupport();
-  const { ouvert } = usePostes();
-  const lecture = useLecturePoste<{ image: string | null }>("rendus.apercu", { id }, { delai: 30_000, garder: false });
+  const { possible } = useAccesGeste();
+  const lecture = useLecturePoste<{ image: string | null }>("rendus.apercu", { id, lieu }, { delai: 30_000, garder: false });
   const { agir, occupe, erreur } = useGesteTelephone();
   const annoncer = useAnnonce();
   const [menu, setMenu] = useState(false);
   const titre = rendu?.titre ?? "Aperçu";
   const image = lecture.etat === "ok" ? imageApercu(lecture.data.image) : null;
   const ouvrir = () =>
-    void agir("rendus.ouvrir", { id }).then((ok) => {
+    void agir("rendus.ouvrir", { id, lieu }).then((ok) => {
       if (ok) annoncer({ texte: `Ouvert sur ${sur}.`, icone: "check-01" });
     });
   return (
@@ -765,10 +780,10 @@ function PageApercu({ id, rendu, liste, relire }: { id: string; rendu: RenduLu |
             Aperçu dessiné par {sur}. La page, avec ses liens et ses formulaires, s’ouvre sur l’ordinateur.
           </BandeauEtat>
           <ErreurGeste message={erreur?.message} />
-          <Bouton variant="blanc" taille="md" className="w-full" disabled={!ouvert || occupe} iconeGauche={<Icon name="link-external" size={20} />} onClick={ouvrir}>
+          <Bouton variant="blanc" taille="md" className="w-full" disabled={!possible || occupe} iconeGauche={<Icon name="link-external" size={20} />} onClick={ouvrir}>
             Ouvrir sur {sur}
           </Bouton>
-          {!ouvert ? <NotePoste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
+          {!possible ? <NoteGeste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
         </div>
       }
     >
@@ -795,16 +810,18 @@ function PageApercu({ id, rendu, liste, relire }: { id: string; rendu: RenduLu |
           )}
         </div>
       </div>
-      {menu && rendu && liste ? <MenuRendu rendu={rendu} sur={sur} relire={relire} onFermer={() => setMenu(false)} /> : null}
+      {menu && rendu && liste ? <MenuRendu rendu={rendu} lieu={lieu} sur={sur} relire={relire} onFermer={() => setMenu(false)} /> : null}
     </PagePleine>
   );
 }
 
 /* ─── E7-50 à E7-54 : l'onglet Équipe, lu dans le compte ───────── */
 
-function OngletEquipe({ pages, relire }: { pages: PageEquipe[] | null; relire: () => void }) {
+function OngletEquipe({ pages, relire, surServeur }: { pages: PageEquipe[] | null; relire: () => void; surServeur: boolean }) {
   const router = useRouter();
-  const equipe = useArtefactsEquipe();
+  const equipeCompte = useArtefactsEquipe();
+  /* Les liens claude.ai de l'équipe sont ceux de Ce PC, comme au bureau. */
+  const equipe = surServeur ? { ...equipeCompte, artefacts: [] } : equipeCompte;
   const [recherche, setRecherche] = useState("");
   const [menu, setMenu] = useState<ArtefactEquipe | null>(null);
   const q = recherche.trim().toLowerCase();
@@ -842,7 +859,7 @@ function OngletEquipe({ pages, relire }: { pages: PageEquipe[] | null; relire: (
         forme="encadre"
         icone="users-profiles-01"
         titre="Rien de partagé pour l’instant"
-        texte="Dans Mes artefacts, partage un lien claude.ai avec l’équipe : chacun le retrouvera ici."
+        texte={surServeur ? "Les pages que l’équipe partage depuis ce serveur arrivent ici." : "Dans Mes artefacts, partage un lien claude.ai avec l’équipe : chacun le retrouvera ici."}
         action={
           <Bouton variant="blanc" taille="md" onClick={() => router.replace(urlArtefacts())}>
             Voir Mes artefacts

@@ -6,6 +6,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
+import { useLieuActif } from "@/lib/lieux";
 import type { LecturePoste } from "@/lib/poste/client";
 import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
 import { libelleVue, type VueGardee } from "@/lib/telephone/vue-gardee";
@@ -191,6 +192,22 @@ export function NotePoste({ className }: { className?: string }) {
   const sur = useSupport();
   const { horsLigne } = usePostes();
   return <p className={className ?? "mt-1 text-ui-xs text-texte-secondaire"}>{horsLigne ? "Possible quand ce téléphone est en ligne" : `Possible quand ${sur} est ouvert`}</p>;
+}
+
+/** Ce téléphone a choisi un serveur : un geste qui irait à l'ordinateur reste inactif, avec cette raison. */
+export const NOTE_SERVEUR = "Depuis l’app de bureau, sur ce serveur.";
+
+/** Un geste à demander à l'ordinateur est-il possible d'ici ? L'ordinateur ouvert, et ce téléphone sur Ce PC. */
+export function useAccesGeste(): { possible: boolean; surServeur: boolean } {
+  const { ouvert } = usePostes();
+  const lieu = useLieuActif();
+  return { possible: ouvert && !lieu, surServeur: !!lieu };
+}
+
+/** Pourquoi ce geste attend : le serveur choisi, sinon P-7. */
+export function NoteGeste({ className }: { className?: string }) {
+  const { surServeur } = useAccesGeste();
+  return surServeur ? <p className={className ?? "mt-1 text-ui-xs text-texte-secondaire"}>{NOTE_SERVEUR}</p> : <NotePoste className={className} />;
 }
 
 /** P-8 : un geste gardé sur l'ordinateur (spec § 7), avec sa raison. */

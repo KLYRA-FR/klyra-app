@@ -16,6 +16,7 @@ const simule = vi.hoisted(() => ({
   params: new URLSearchParams(),
   equipe: { etat: "pret", artefacts: [], message: null, reessayer: () => undefined } as Record<string, unknown>,
   pages: [] as unknown[] | undefined,
+  lieu: null as string | null,
 }));
 
 vi.mock("convex/react", () => ({ useQuery: () => undefined, useMutation: () => vi.fn(), useConvex: () => ({}) }));
@@ -43,7 +44,7 @@ vi.mock("@/components/telephone/poste", () => {
   };
 });
 vi.mock("@/components/telephone/push", () => ({ usePushTelephone: () => ({ etat: { etat: "indisponible" }, occupe: false, attendreOuverture: vi.fn() }) }));
-vi.mock("@/lib/lieux", () => ({ useServeursRelies: () => [] }));
+vi.mock("@/lib/lieux", async (original) => ({ ...(await original<typeof import("@/lib/lieux")>()), useServeursRelies: () => [], useLieuActif: () => simule.lieu }));
 vi.mock("@/lib/compte", () => ({ useCompte: () => ({ etat: "connecte", moi: { _id: "moi", email: "camille.essai@example.test" } }), messageErreur: () => "", codeErreur: () => null }));
 vi.mock("@/lib/bibliotheque", () => ({ useAbonnement: () => ({ valeur: simule.pages === undefined ? undefined : { documents: simule.pages }, erreur: null }) }));
 vi.mock("@/lib/artefacts-equipe", () => ({
@@ -112,9 +113,30 @@ beforeEach(() => {
   simule.params = new URLSearchParams();
   simule.equipe = { etat: "pret", artefacts: [], message: null, reessayer: () => undefined };
   simule.pages = [];
+  simule.lieu = null;
 });
 
 describe("Routines", () => {
+  test("le serveur choisi au téléphone : seules ses routines, et ses exécutions", () => {
+    simule.lieu = "https://vps.example.test";
+    simule.lecture = { etat: "ok", data: lues({ routines: [routine(), routine({ id: "r2", lieu: "https://vps.example.test", name: "Routine du serveur" })], enCours: [run({ status: "running" })] }) };
+    const t = texte(renderToStaticMarkup(<RoutinesAgentTelephone agentId="dev" routineId={null} formulaire={false} />));
+    expect(t).toContain("Routine du serveur");
+    expect(t).not.toContain("Relance des devis");
+    const liste = texte(renderToStaticMarkup(<AgentsRoutinesTelephone onglets={null} routineDemandee={null} />));
+    expect(liste).not.toContain("En cours");
+  });
+
+  test("sur un serveur, un geste qui irait à l'ordinateur reste inactif et dit pourquoi ; la lecture reste", () => {
+    simule.lieu = "https://vps.example.test";
+    simule.lecture = { etat: "ok", data: lues({ routines: [routine({ lieu: "https://vps.example.test" })], dernieres: { r1: { run: null } } }) };
+    const html = renderToStaticMarkup(<RoutinesAgentTelephone agentId="dev" routineId={null} formulaire={false} />);
+    expect(texte(html)).toContain("Depuis l’app de bureau, sur ce serveur.");
+    expect(texte(html)).toContain("Relance des devis");
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>.*?Exécuter/);
+    expect(html).toMatch(/<a[^>]*href="\/chat\?id=dm-dev(%40|@)vps\.example\.test"/);
+  });
+
   test("E7-06 : moteur arrêté, l'erreur et Réessayer ; aucune liste vide en dessous", () => {
     simule.lecture = { etat: "ok", data: lues({ actif: false, erreur: null, routines: [] }) };
     const t = texte(renderToStaticMarkup(<AgentsRoutinesTelephone onglets={null} routineDemandee={null} />));
@@ -225,6 +247,13 @@ describe("Workflows", () => {
     expect(t).toContain("Lancer le workflow");
   });
 
+  test("sur un serveur : Lancer inactif, avec sa raison", () => {
+    simule.lieu = "https://vps.example.test";
+    simule.lecture = { etat: "ok", data: wf() };
+    const html = renderToStaticMarkup(<WorkflowTelephone id="w1" versionId={null} />);
+    expect(texte(html)).toContain("Depuis l’app de bureau, sur ce serveur.");
+  });
+
   test("E7-38 : une version se lit, ni Restaurer ni Lancer", () => {
     simule.lecture = { etat: "ok", data: wf({ version: { id: "v1", at: "2026-11-03T14:20:00Z", raison: "auto" } }) };
     const t = texte(renderToStaticMarkup(<WorkflowTelephone id="w1" versionId="v1" />));
@@ -267,7 +296,7 @@ describe("Workflows", () => {
 describe("Artefacts", () => {
   const liste: ListeArtefacts = {
     claude: true,
-    rendusServeur: 0,
+    rendusAilleurs: 0,
     projets: [{ id: "p1", nom: "Menuiserie Arlod" }],
     rendus: [{ id: "rd1", titre: "Maquettes de l’espace client", description: "", type: "page", agent: "Maëlle", projetId: "p1", projet: "Menuiserie Arlod", date: "2026-11-03T10:00:00Z", apercu: true }],
     artefacts: [{ id: "a1", titre: "Simulateur de devis", description: "Calcule un devis", url: "https://claude.ai/artifact/simulateur", projetId: "p1", projet: "Menuiserie Arlod", date: "2026-10-28T10:00:00Z" }],
@@ -282,6 +311,25 @@ describe("Artefacts", () => {
     expect(t).toContain("Partagé");
     expect(t).toContain("Mes artefacts 2");
     expect(t).toContain("Équipe 1");
+  });
+
+  test("le serveur choisi au téléphone : pas de liens claude.ai, ni dans Mes artefacts ni dans Équipe", () => {
+    simule.lieu = "https://vps.example.test";
+    simule.lecture = { etat: "ok", data: liste };
+    simule.equipe = { ...simule.equipe, artefacts: [{ _id: "e1", url: "https://claude.ai/artifact/x", titre: "Lien de Sam", description: "", majLe: 1, auteur: { nom: "Sam Essai", couleur: "", actif: true }, deMoi: false }] };
+    const miens = texte(renderToStaticMarkup(<ArtefactsTelephone />));
+    expect(miens).toContain("Maquettes de l’espace client");
+    expect(miens).not.toContain("Simulateur de devis");
+    expect(miens).toContain("Équipe 0");
+    simule.params = new URLSearchParams("onglet=equipe");
+    expect(texte(renderToStaticMarkup(<ArtefactsTelephone />))).not.toContain("Lien de Sam");
+  });
+
+  test("un ordinateur d'avant ce contrat : la mise à jour demandée, pas un faux vide", () => {
+    simule.lecture = { etat: "ok", data: { artefacts: [], projets: [] } };
+    const t = texte(renderToStaticMarkup(<ArtefactsTelephone />));
+    expect(t).toContain("Mets KLYRA à jour");
+    expect(t).not.toContain("Rien pour l’instant");
   });
 
   test("E7-57 : ordinateur fermé sans vue, un seul état, pas de faux vide ni de faux compte ; Équipe reste comptée", () => {

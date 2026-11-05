@@ -13,6 +13,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { cn } from "@/lib/cn";
 import { reduit } from "@/lib/mouvement";
+import { useLieuActif } from "@/lib/lieux";
 import { libelleFrequence } from "@/lib/planning";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { useUneFois } from "@/lib/telephone/geste";
@@ -53,8 +54,8 @@ import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, useFermerFeuille } from "./Feuille";
 import { Carte, CLASSE_GROUPE, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { useTirerPourRelire } from "./TirerPourRelire";
-import { BandeauEtat, EtatEcran, NotePoste, VueLecture } from "./etats";
-import { usePostes, useSupport } from "./poste";
+import { BandeauEtat, EtatEcran, NoteGeste, VueLecture, useAccesGeste } from "./etats";
+import { useSupport } from "./poste";
 
 /**
  * Automatisations › Workflows sur le téléphone (lot 7, E7-26 à E7-38). Le canevas devient une
@@ -122,7 +123,7 @@ const sousTitre = (declencheur: string, etapes: number) => `${declencheur} · ${
 function useActionsWorkflow({ relancer, executions, onSupprime }: { relancer: () => void; executions: (id: string) => void; onSupprime?: () => void }) {
   const router = useRouter();
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const { faire, occupe } = useGestePoste();
   const annonce = useAnnonce();
   const annoncer = (texte: string) => annonce({ texte, icone: "check-01" });
@@ -138,7 +139,7 @@ function useActionsWorkflow({ relancer, executions, onSupprime }: { relancer: ()
     }
     relancer();
   };
-  const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+  const note = possible ? undefined : <NoteGeste className="text-ui-xs text-texte-secondaire" />;
 
   const rendu = (
     <>
@@ -150,11 +151,11 @@ function useActionsWorkflow({ relancer, executions, onSupprime }: { relancer: ()
           actions={[
             { libelle: "Exécutions", icone: "list", onChoisir: () => executions(menu.id) },
             { libelle: "Historique des versions", icone: "clock-backward", onChoisir: () => setSuite({ genre: "versions", wf: menu }) },
-            { libelle: "Renommer", icone: "pencil-01", desactivee: !ouvert, note, onChoisir: () => setSuite({ genre: "renommer", wf: menu }) },
+            { libelle: "Renommer", icone: "pencil-01", desactivee: !possible, note, onChoisir: () => setSuite({ genre: "renommer", wf: menu }) },
             {
               libelle: "Dupliquer",
               icone: "copy-left",
-              desactivee: !ouvert || occupe,
+              desactivee: !possible || occupe,
               note,
               onChoisir: () => void geste<{ id: string }>("workflows.dupliquer", { id: menu.id }, "Workflow dupliqué.", (d) => router.push(urlWorkflows(d.id))),
             },
@@ -164,7 +165,7 @@ function useActionsWorkflow({ relancer, executions, onSupprime }: { relancer: ()
               icone: "trash-01",
               danger: !menu.enCours,
               separateurAvant: true,
-              desactivee: !ouvert || menu.enCours,
+              desactivee: !possible || menu.enCours,
               note: menu.enCours ? "Une exécution est en cours : arrête-la d’abord depuis Exécutions." : note,
               confirmation: { titre: `Supprimer « ${menu.titre} » et ses exécutions ?`, texte: `Il disparaît aussi de ${sur}. Les conversations de ses exécutions restent.`, confirmer: "Supprimer" },
               onChoisir: () => void geste("workflows.supprimer", { id: menu.id }, "Workflow supprimé.", onSupprime),
@@ -213,7 +214,7 @@ function FeuilleRenommer({ wf, onFermer, onFait }: { wf: { id: string; titre: st
 
 function PiedRenommer({ wf, titre, onFait }: { wf: { id: string; titre: string }; titre: string; onFait: () => void }) {
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const { faire, occupe } = useGestePoste();
   const fermer = useFermerFeuille();
   const [erreur, setErreur] = useState<string | null>(null);
@@ -229,10 +230,10 @@ function PiedRenommer({ wf, titre, onFait }: { wf: { id: string; titre: string }
   return (
     <div className="flex flex-col gap-2">
       {erreur ? <MessageErreur>{erreur}</MessageErreur> : null}
-      <Bouton variant="sombre" taille="md" className="w-full" disabled={!ouvert || occupe || !titre.trim() || titre.trim() === wf.titre} onClick={() => void enregistrer()}>
+      <Bouton variant="sombre" taille="md" className="w-full" disabled={!possible || occupe || !titre.trim() || titre.trim() === wf.titre} onClick={() => void enregistrer()}>
         {occupe ? "Enregistrement…" : "Enregistrer"}
       </Bouton>
-      {!ouvert ? <NotePoste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
+      {!possible ? <NoteGeste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
     </div>
   );
 }
@@ -278,9 +279,10 @@ function FeuilleVersions({ id, onFermer, onChoisir }: { id: string; onFermer: ()
 export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
   const router = useRouter();
   /* Suivie pendant une exécution, et chaque seconde pendant qu'un agent construit un workflow. */
+  const lieu = useLieuActif();
   const lecture = useLectureSuivie<LigneWorkflow[]>(
     "workflows.liste",
-    {},
+    { lieu },
     {
       suivre: (l) => l.some((w) => (w.derniere && enCoursExecution(w.derniere)) || w.chantier),
       intervalle: (l) => (l.some((w) => enTravaux(w.chantier)) ? RELECTURE_CHANTIER_MS : 5000),
@@ -379,7 +381,7 @@ function LigneListeWorkflow({ wf, onOuvrir, onMenu }: { wf: LigneWorkflow; onOuv
 export function WorkflowTelephone({ id, versionId, executionsOuvertes = false }: { id: string; versionId: string | null; executionsOuvertes?: boolean }) {
   const router = useRouter();
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const [vue, setVue] = useState<string | null>(null);
   const [limite, setLimite] = useState(12);
   const lecture = useLectureSuivie<WorkflowLu>(
@@ -412,7 +414,7 @@ export function WorkflowTelephone({ id, versionId, executionsOuvertes = false }:
   const chantier = data?.chantier ?? null;
   const travaux = enTravaux(chantier);
   const lectureSeule = !!data?.version || travaux;
-  const indisponible = !ouvert || occupe;
+  const indisponible = !possible || occupe;
   const nomAgent = (agentId: string) => data?.agents.find((a) => a.id === agentId)?.name ?? "Agent indisponible";
 
   /* Une décision, un lancement : envoyés une fois. */
@@ -550,7 +552,7 @@ export function WorkflowTelephone({ id, versionId, executionsOuvertes = false }:
           <BoutonPrincipal className={cn("w-full", BOUTON_INACTIF)} disabled={indisponible || !!data.enCours || total === 0 || lecture.relecture} onClick={lancer}>
             {data.enCours ? "En cours…" : "Lancer le workflow"}
           </BoutonPrincipal>
-          {!ouvert ? <NotePoste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
+          {!possible ? <NoteGeste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
         </div>
       ) : erreur ? (
         <MessageErreur className="shrink-0 px-4 py-2">{erreur}</MessageErreur>
@@ -692,7 +694,7 @@ function LigneEtapeVue({
               Approuver
             </Bouton>
           </div>
-          {indisponible ? <NotePoste className="text-ui-xs text-texte-secondaire" /> : null}
+          {indisponible ? <NoteGeste className="text-ui-xs text-texte-secondaire" /> : null}
         </div>
       ) : null}
     </li>
@@ -914,7 +916,7 @@ function LigneExecutionWorkflow({
               Voir la conversation
             </Link>
           ) : null}
-          {enCours && indisponible ? <NotePoste className="w-full text-ui-xs text-texte-secondaire" /> : null}
+          {enCours && indisponible ? <NoteGeste className="w-full text-ui-xs text-texte-secondaire" /> : null}
         </li>
       ) : null}
     </>

@@ -17,8 +17,8 @@ import { BOUTON_INACTIF, CHAMP_KLYRA_UI, MessageErreur } from "./Controles";
 import { ChoixFeuille, type OptionChoix } from "./Feuille";
 import { Etiquette, GroupeListe, LigneChoix, LigneListe, LigneSaisie, SectionListe, TuileIcone, ValeurLigne } from "./Liste";
 import { PagePleine } from "./PagePleine";
-import { BandeauEtat, NotePoste } from "./etats";
-import { usePostes, useSupport } from "./poste";
+import { BandeauEtat, NoteGeste, useAccesGeste } from "./etats";
+import { useSupport } from "./poste";
 
 /**
  * E7-18 à E7-23 : le formulaire d'une routine en page pleine. Mêmes champs et mêmes règles que
@@ -80,7 +80,7 @@ export function FormulaireRoutineTelephone({
   onFermer: () => void;
 }) {
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const id = useId();
   const [base] = useState(() => complet(baseRecue, contexte.fuseau));
   const [valeurs, setValeurs] = useState(() => complet(valeursRecues, contexte.fuseau));
@@ -144,7 +144,7 @@ export function FormulaireRoutineTelephone({
   };
 
   const enregistrer = async () => {
-    if (occupe || !ouvert) return;
+    if (occupe || !possible) return;
     setEssai(true);
     setServeur(null);
     const controles = erreursSaisie(valeurs, agentActif, agentNom, projetPresent);
@@ -211,10 +211,10 @@ export function FormulaireRoutineTelephone({
               </BandeauEtat>
             </div>
           ) : null}
-          <Bouton type="submit" variant="sombre" taille="md" className={cn("w-full", BOUTON_INACTIF)} disabled={occupe || !ouvert}>
+          <Bouton type="submit" variant="sombre" taille="md" className={cn("w-full", BOUTON_INACTIF)} disabled={occupe || !possible}>
             {occupe ? "Enregistrement…" : initiale ? "Enregistrer" : "Créer la routine"}
           </Bouton>
-          {!ouvert ? <NotePoste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
+          {!possible ? <NoteGeste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
         </div>
       }
     >

@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { ErreurPoste } from "@/lib/poste/types";
 import type { Artefact, Rendu } from "@/types/domain";
-import { filtrerArtefacts, gestesArtefacts, imageApercu, type DepsArtefacts, type ListeArtefacts } from "./gestes-artefacts";
+import { filtrerArtefacts, gestesArtefacts, imageApercu, listeDeLEspace, type DepsArtefacts, type ListeArtefacts } from "./gestes-artefacts";
 
 function poste() {
   const artefacts: Artefact[] = [
@@ -33,8 +33,8 @@ function poste() {
     claude: () => true,
     nomAgent: (id: string) => (id === "dev" ? "Léon" : null),
     vignetteRendu: vi.fn(async () => "data:image/png;base64,AAAA"),
-    ouvrirRendu: vi.fn(async () => undefined),
-    retirerPartage: vi.fn(async () => undefined),
+    ouvrirRendu: vi.fn<DepsArtefacts["ouvrirRendu"]>(async () => undefined),
+    retirerPartage: vi.fn<DepsArtefacts["retirerPartage"]>(async () => undefined),
     retirerRendu: vi.fn(),
     ton: "ton Mac",
     artefacts: () => artefacts,
@@ -96,9 +96,34 @@ describe("gestes « artefacts » (T-20)", () => {
       ["video", "Agent indisponible", "Bizwhoo", false],
       ["page", "Léon", "Bizwhoo", true],
     ]);
-    expect(liste.rendusServeur).toBe(1);
+    expect(liste.rendusAilleurs).toBe(1);
     expect(JSON.stringify(liste)).not.toContain("/maison");
     expect(JSON.stringify(liste)).not.toContain("vps.example.test");
+  });
+
+  test("le serveur choisi au téléphone : ses rendus seulement, sans liens claude.ai ; aucun geste ne passe d'un espace à l'autre", async () => {
+    const { gestes, deps } = poste();
+    const lieu = "https://vps.example.test";
+    const liste = (await gestes["artefacts.liste"]({ lieu })) as ListeArtefacts;
+    expect(liste.rendus.map((r) => [r.id, r.apercu])).toEqual([["vps", false]]);
+    expect(liste.artefacts).toEqual([]);
+    expect(liste.claude).toBe(false);
+    expect(liste.rendusAilleurs).toBe(2);
+    expect((await refus(gestes["rendus.ouvrir"]({ id: "page", lieu }))).code).toBe("introuvable");
+    expect((await refus(gestes["rendus.retirer"]({ id: "page", lieu }))).code).toBe("introuvable");
+    await gestes["rendus.ouvrir"]({ id: "vps", lieu });
+    expect(deps.ouvrirRendu.mock.lastCall?.[0]).toMatchObject({ id: "vps" });
+    await gestes["rendus.retirer"]({ id: "vps", lieu });
+    expect(deps.retirerPartage).toHaveBeenLastCalledWith("https://vps.example.test#/klyra/page.html", lieu);
+    expect(deps.retirerRendu).toHaveBeenCalledWith("vps");
+  });
+
+  test("ce que l'écran montre : pas de lien sur un serveur ; un ordinateur ancien n'est pas une liste vide", () => {
+    const base = { artefacts: [{ id: "a", titre: "A", description: "", url: "", projetId: null, projet: null, date: "" }], projets: [] };
+    expect(listeDeLEspace(base, null)).toMatchObject({ claude: true, ancien: true, rendus: [] });
+    expect(listeDeLEspace(base, null).artefacts).toHaveLength(1);
+    expect(listeDeLEspace(base, "https://vps.example.test").artefacts).toEqual([]);
+    expect(listeDeLEspace({ ...base, rendus: [], claude: false, rendusAilleurs: 0 }, null)).toMatchObject({ ancien: false, claude: false, artefacts: [] });
   });
 
   test("source claude.ai éteinte sur l'ordinateur : ses liens ne se lisent pas ici non plus", async () => {
@@ -124,7 +149,7 @@ describe("gestes « artefacts » (T-20)", () => {
   test("ouvrir : sur l'ordinateur, une erreur dite sans chemin ; retirer : le partage part avant la copie, l'échec garde le rendu", async () => {
     const { gestes, deps } = poste();
     await gestes["rendus.ouvrir"]({ id: "page" });
-    expect(deps.ouvrirRendu).toHaveBeenCalledWith("/maison/.klyra/rendus/dev/page.html");
+    expect(deps.ouvrirRendu.mock.lastCall?.[0]).toMatchObject({ id: "page" });
     deps.ouvrirRendu.mockRejectedValueOnce(new Error("/maison/.klyra/rendus/dev/page.html introuvable"));
     const erreur = await refus(gestes["rendus.ouvrir"]({ id: "page" }));
     expect(erreur.message).toBe("Ce rendu n’a pas pu s’ouvrir sur ton Mac.");
@@ -133,7 +158,7 @@ describe("gestes « artefacts » (T-20)", () => {
     expect((await refus(gestes["rendus.retirer"]({ id: "page" }))).code).toBe("compte");
     expect(deps.retirerRendu).not.toHaveBeenCalled();
     await gestes["rendus.retirer"]({ id: "page" });
-    expect(deps.retirerPartage).toHaveBeenLastCalledWith("/maison/projets/page.html");
+    expect(deps.retirerPartage).toHaveBeenLastCalledWith("/maison/projets/page.html", null);
     expect(deps.retirerRendu).toHaveBeenCalledWith("page");
     expect((await refus(gestes["rendus.retirer"]({ id: "vps" }))).code).toBe("introuvable");
   });
