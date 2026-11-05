@@ -67,6 +67,16 @@ function configurationValide(c) {
   };
 }
 
+/**
+ * `equipe.json` contient-il tout ce que ce serveur y écrit ? Un fichier d'un ancien serveur porte la bonne
+ * empreinte sans ce que celui-ci ne savait pas garder (toute la configuration, ou le Coffre seul).
+ */
+function equipeComplete(equipe) {
+  const { configuration, skillsParAgent } = equipe;
+  return Boolean(configuration && typeof configuration === "object" && skillsParAgent && typeof skillsParAgent === "object")
+    && Object.keys(configurationValide(null)).every((champ) => champ in configuration);
+}
+
 /** Les mêmes que dans l'app (electron/claude.ts) : ne pas les changer d'un seul côté. */
 const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente aucun fait : ni prix, ni délai, ni autorisation, ni horaire, coordonnée, chiffre ou promesse au nom de quelqu'un ; ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien. Ce qui se mesure (tests, liens, contrastes, rendu) se vérifie avec ce que le projet et le poste offrent déjà : trouve l'outil qu'il faut par une recherche ciblée (which, chemins habituels), n'installe rien et ne fouille pas des dossiers sans rapport sans accord, et dis ce qui n'a pas pu être vérifié.`;
 const UN_RESPONSABLE = `Un livrable, un responsable : un livrable va entier à un seul agent, celui de sa partie principale, qui fait aussi les petites parties voisines (les textes d'une page qu'il intègre, par exemple). Plusieurs agents seulement pour des parties lourdes et indépendantes, menées en parallèle, jamais en relais de l'un à l'autre : chaque passage de main fait tout relire. Une tâche que tu ferais en quelques minutes, fais-la toi-même ; si la personne demande expressément son équipe, suis-la avec le moins d'agents possible.`;
@@ -137,6 +147,7 @@ export function creerAgents(options) {
       empreinte: `${equipeServeur.empreinte()}:${equipe.empreinte ?? ""}`,
       /* Ce que l'app a envoyé en dernier : elle s'en sert pour ne pas renvoyer deux fois. */
       recue: equipe.empreinte ?? "",
+      complete: equipeComplete(equipe),
     };
   };
 
@@ -866,8 +877,14 @@ export function creerAgents(options) {
     utilisation: () => utilisationClaude,
   };
 
+  /** L'empreinte annoncée à l'app : vide si le fichier n'est pas complet, pour qu'elle renvoie l'équipe. */
+  const empreinteEquipe = () => {
+    const { recue, complete } = lireEquipe();
+    return complete ? recue : "";
+  };
+
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().recue, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

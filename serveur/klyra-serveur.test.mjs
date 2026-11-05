@@ -33,6 +33,40 @@ async function appel(port, chemin, { methode = "GET", jeton, corps } = {}) {
   return { statut: reponse.status, json, texte, origine: reponse.headers.get("access-control-allow-origin") };
 }
 
+test("un equipe.json écrit par un ancien serveur n’annonce pas d’empreinte : l’app renvoie l’équipe", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  const fichier = path.join(dossier, "equipe.json");
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const annonce = async () => (await appel(ecoute.port, CHEMIN, { jeton })).json.equipe;
+    const base = { assistant: "Cicco", actifs: [], empreinte: "e1" };
+    const configuration = { memoireAgents: true, consignes: null, navigateur: false, coffre: true };
+
+    assert.equal(await annonce(), "", "aucun fichier");
+    writeFileSync(fichier, JSON.stringify(base));
+    assert.equal(await annonce(), "", "sans configuration");
+    writeFileSync(fichier, JSON.stringify({ ...base, configuration: { memoireAgents: true, consignes: null, navigateur: false }, skillsParAgent: {} }));
+    assert.equal(await annonce(), "", "sans le Coffre");
+    writeFileSync(fichier, JSON.stringify({ ...base, configuration }));
+    assert.equal(await annonce(), "", "sans les skills par agent");
+    writeFileSync(fichier, JSON.stringify({ ...base, configuration, skillsParAgent: {} }));
+    assert.equal(await annonce(), "e1", "fichier complet");
+
+    // Ce que ce serveur écrit lui-même est toujours complet, même sans configuration reçue : pas d'envoi en boucle.
+    writeFileSync(fichier, JSON.stringify(base));
+    assert.equal((await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [], assistant: "Cicco", empreinte: "e1" } })).json.equipe, "e1");
+    assert.equal(await annonce(), "e1");
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("le client et le VPS partagent les chemins", () => {
   const lecture = readFileSync(new URL("../electron/lecture-serveur.ts", import.meta.url), "utf8");
   assert.match(lecture, /export const CHEMIN_SERVEUR = "\/klyra\/v1\/serveur"/);

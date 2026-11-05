@@ -84,6 +84,7 @@
     "test:workflows:app": "node scripts/test-workflows-agents.mjs",
     "test:serveur-fournisseurs": "node scripts/test-serveur-fournisseurs.mjs",
     "test:serveur-grok": "node scripts/test-serveur-grok.mjs",
+    "test:equipe-serveur": "electron scripts/test-equipe-serveur.cjs",
     "test:moteurs": "node --experimental-strip-types --test electron/moteurs/registre.test.mts electron/moteurs/codex-protocole.test.mts electron/moteurs/installation.test.mts electron/moteurs/acp.test.mts electron/utilisation.test.mts",
     "test:moteur-codex": "electron scripts/test-moteur-codex.cjs",
     "test:moteur-grok": "electron scripts/test-moteur-grok.cjs",
