@@ -13,6 +13,7 @@ import { estOutilNavigateur, executerOutilNavigateur, navigateurActif, OUTILS_NA
 import { DOSSIER_ARTEFACTS_LUS, lireArtefact } from "./artefacts";
 import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
 import { OUTIL_EQUIPE } from "./atelier-equipe";
+import { appelCarte, OUTIL_CARTE } from "./cartes-interactives";
 import { estOutilWorkflow, OUTILS_WORKFLOWS, OUTILS_WORKFLOWS_LIBRES } from "./workflows-outils";
 
 /**
@@ -340,7 +341,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...OUTILS_WORKFLOWS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE] });
+      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...OUTILS_WORKFLOWS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
@@ -384,6 +385,11 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
         }
       }
       if (nom === OUTIL_PROPOSER.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des agents.", true);
+      /* Une carte interactive : l'écran la pose d'après l'appel ; l'outil ne fait que la vérifier (cf. cartes-interactives.ts). */
+      if (nom === OUTIL_CARTE.name) {
+        const r = appelCarte(args);
+        return texte(r.texte, r.erreur);
+      }
       if (nom === OUTIL_EQUIPE.name && appelant.roleId !== "principal") return texte("Seul l'assistant compose une équipe avec la personne.", true);
       if (nom === OUTIL_CHOIX.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des réponses toutes prêtes.", true);
       /* Les workflows vivent dans l'écran (page Workflows) : relayés comme les fils (cf. workflows-outils.ts). */
@@ -451,7 +457,7 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
 /** Les outils de l'app qu'un agent peut utiliser sans demander, en accès « projet ». */
 export const OUTILS_APP = () => [
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
-  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT].map((o) => `mcp__klyra__${o.name}`),
+  ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX, OUTIL_CARTE, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT].map((o) => `mcp__klyra__${o.name}`),
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),
   // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès.
   ...OUTILS_WORKFLOWS_LIBRES.map((nom) => `mcp__klyra__${nom}`),

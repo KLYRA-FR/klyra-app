@@ -282,6 +282,46 @@ try {
       );
       verifier(await app.quand(`${derniere}?.innerText.includes('Ton équipe est née')`), "« Ton équipe est née »");
       verifier(await app.quand(`[...${table}.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Lancer')`), "une fois née, ses vraies demandes se lancent d’un clic");
+
+      // Les cartes interactives : une liste à valider, puis un formulaire ; ce qui est envoyé part comme un message.
+      const carteFil = `${derniere}?.querySelector('[data-carte]')`;
+      const dernierMessage = () => lireJson(path.join(donnees, "conversations.json")).messages.filter((m) => m.chatId === "dm-principal" && m.author.kind === "user").at(-1);
+      await ecrire("carte liste");
+      verifier(await app.quand(`${carteFil}?.dataset.genre === 'liste' && ${carteFil}.querySelectorAll('[data-element]').length === 3`, 60000), "Claude Code → proposer_carte : la liste à valider sous sa réponse");
+      verifier(await app.quand(`${derniere}?.innerText.includes('fin OK')`, 60000), "proposer_carte répond sans erreur");
+      verifier(await app.quand(`${carteFil}?.dataset.etat === 'ouverte'`), "la carte s’ouvre une fois la réponse finie");
+      await app.ev(`${carteFil}.querySelector('[data-element="annexe"]').click(); 0`);
+      verifier(await app.quand(`${carteFil}?.querySelector('[data-element="annexe"]')?.getAttribute('aria-checked') === 'false' && ${carteFil}.innerText.includes('2 / 3 gardés')`), "un élément retiré : 2 sur 3 gardés");
+      verifier(await app.cliquer("Valider la liste", carteFil), "« Valider la liste »");
+      verifier(
+        await surDisque(() => {
+          const t = dernierMessage()?.parts.map((p) => p.text ?? "").join("");
+          return t.startsWith("Le plan de la note : 2 sur 3 gardés.") && t.includes("Retirés :\n- Annexe technique");
+        }),
+        "ce qu’elle a validé part comme son message, lisible tel quel",
+      );
+      verifier(
+        await app.quand(`[...document.querySelectorAll('[data-carte]')].some((c) => c.dataset.genre === 'liste' && c.dataset.etat === 'envoyee' && c.innerText.includes('Envoyée'))`),
+        "la carte se fige, « Envoyée »",
+      );
+      // La réponse de l'agent à la carte, finie avant le message suivant.
+      await surDisque(() => {
+        const fil = lireJson(path.join(donnees, "conversations.json")).messages.filter((m) => m.chatId === "dm-principal");
+        return fil.at(-1)?.author.kind === "role" && fil.at(-1)?.statut === "fait";
+      }, 60000);
+      await ecrire("carte formulaire");
+      verifier(await app.quand(`${carteFil}?.dataset.genre === 'formulaire' && ${carteFil}.dataset.etat === 'ouverte'`, 60000), "un formulaire, prêt à remplir");
+      const envoyer = `[...${carteFil}.querySelectorAll('button')].find((b) => b.innerText.trim() === 'Envoyer')`;
+      verifier((await app.ev(`${envoyer}?.disabled`)) === true && (await app.ev(`${carteFil}.innerText`)).includes("Il manque Client"), "un champ requis vide : « Envoyer » attend");
+      verifier((await app.ev(`${carteFil}.innerText`)).includes("4000 €"), "le curseur pré-rempli par l’agent");
+      await app.saisir('[data-carte] [data-champ="client"] input', "Acme");
+      await app.ev(`[...${carteFil}.querySelectorAll('[data-champ="pages"] [role=checkbox]')].find((b) => b.innerText.trim() === 'Contact').click(); 0`);
+      verifier(await app.quand(`!(${envoyer}?.disabled)`), "rempli : « Envoyer » s’allume");
+      await app.cliquer("Envoyer", carteFil);
+      verifier(
+        await surDisque(() => dernierMessage()?.parts.map((p) => p.text ?? "").join("") === "Le brief du site\n- Client : Acme\n- Budget : 4000 €\n- Pages : Accueil, Contact"),
+        "le brief part comme son message, champ par champ",
+      );
       verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
       await app.fermer();
       app = null;
@@ -375,6 +415,17 @@ try {
           "VPS : un agent déjà dans l’équipe va dans existants (les mêmes règles que sur ce PC)",
         );
         verifier((await app.ev(`${derniere}?.querySelector('[data-carte-equipe]') === null`)) === true, "VPS : une carte d’équipe refusée ne reste pas dans le fil");
+
+        // Une carte interactive, servie par le VPS : deux pistes à départager.
+        await ecrire("carte comparaison");
+        const carteVps = `${derniere}?.querySelector('[data-carte]')`;
+        verifier(await app.quand(`${carteVps}?.dataset.genre === 'comparaison' && ${carteVps}.dataset.etat === 'ouverte' && ${carteVps}.innerText.includes('Recommandée')`, 60000), "VPS : la comparaison sous sa réponse");
+        await app.ev(`${carteVps}.querySelector('[data-piste="vive"]').click(); 0`);
+        verifier(await app.cliquer("Choisir « Vive »", carteVps), "VPS : « Choisir « Vive » »");
+        verifier(
+          await app.quand(`[...document.querySelectorAll('[data-auteur="user"]')].at(-1)?.innerText.includes('Quelle piste pour le logo ? : je choisis « Vive ».')`),
+          "VPS : son choix part comme son message",
+        );
         verifier(app.erreurs.length === 0, `VPS : aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
       } finally {
         serveur.kill();

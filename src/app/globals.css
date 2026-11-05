@@ -966,3 +966,41 @@ body[data-glisse] iframe {
     transition: none;
   }
 }
+
+/* ─── Cartes interactives (CarteInteractive) ─────────────────────── */
+
+/* Le curseur d'un formulaire : un rail fin, rempli en bleu jusqu'à la valeur (`--klyra-curseur`). */
+.klyra-curseur {
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.klyra-curseur::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-bleu-k1-500) var(--klyra-curseur, 0%), var(--color-fond-survol) var(--klyra-curseur, 0%));
+}
+
+.klyra-curseur::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: var(--color-fond-surface);
+  border: 2px solid var(--color-bleu-k1-500);
+  box-shadow: var(--shadow-ombre-sm);
+  transition: transform 160ms var(--ease-sortie);
+}
+
+.klyra-curseur:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+.klyra-curseur:focus-visible {
+  outline: 2px solid var(--color-bleu-k1-500);
+  outline-offset: 4px;
+  border-radius: 4px;
+}

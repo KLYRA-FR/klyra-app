@@ -19,6 +19,7 @@ import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lir
 import { lireJsonPartiel } from "./json-partiel";
 import { CONSIGNE_ATELIER } from "./atelier-agent";
 import { CONSIGNE_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe";
+import { CONSIGNE_CARTES, OUTIL_CARTE_CLAUDE } from "./cartes-interactives";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
@@ -275,7 +276,7 @@ interface Processus {
 }
 
 /** Les outils dont l’écran montre l’entrée pendant que le modèle l’écrit : la carte de l’atelier (d'un agent, d'une équipe), le workflow qui se construit. */
-const OUTILS_EN_DIRECT = new Set(["mcp__klyra__proposer_agent", OUTIL_EQUIPE_CLAUDE, "mcp__klyra__construire_workflow"]);
+const OUTILS_EN_DIRECT = new Set(["mcp__klyra__proposer_agent", OUTIL_EQUIPE_CLAUDE, OUTIL_CARTE_CLAUDE, "mcp__klyra__construire_workflow"]);
 
 /** Les fils : comment l'agent confie une tâche à un coéquipier (outils du serveur MCP de l'app). */
 /** Composio Connect : le serveur MCP « composio », rejoint avec le compte de la personne. */
@@ -312,7 +313,7 @@ function consigneAssistant(outilsApp: boolean): string {
   const equipe = actifs.length
     ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux ; n'en invente pas d'autre et n'ajoute personne pour finir une tâche. Quand une partie relève clairement de l'un d'eux, confie-la-lui avec un brief qui se suffit (objectif, contexte et chemins, contraintes, ce qui est permis ou non, critère de fin, le livrable attendu dans des fichiers et un compte rendu court), et reste responsable du suivi, de la cohérence et de ce que tu rends. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié.${outilsApp ? " Reprends le fil déjà ouvert sur le sujet (lister_fils) plutôt que d'en ouvrir un autre." : ""} Le retour arrive de lui-même : ne le surveille pas en boucle. Au plus trois travaux confiés en même temps, seulement s'ils sont indépendants ; au plus deux reprises avec un défaut précis, puis dis le blocage. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
     : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-  const proposer = outilsApp ? ` ${CONSIGNE_ATELIER} ${CONSIGNE_EQUIPE}` : "";
+  const proposer = outilsApp ? ` ${CONSIGNE_ATELIER} ${CONSIGNE_EQUIPE} ${CONSIGNE_CARTES}` : "";
   return `${qui} ${equipe} ${REGLES_COMMUNES}${proposer}`;
 }
 
@@ -332,7 +333,7 @@ function consigneAgent(id: string, outilsApp: boolean): string {
   const dossiers = manquants.length
     ? ` Certains dossiers de ta fiche ne sont pas encore configurés sur cet ordinateur (${manquants.join(", ")}, écrits {{chemin:…}}) : si tu en as besoin, dis-le à la personne au lieu de deviner un chemin.`
     : "";
-  return `${equipe} ${confier} ${LIVRER_EN_FICHIERS} ${REGLES_COMMUNES}${dossiers}`;
+  return `${equipe} ${confier} ${LIVRER_EN_FICHIERS} ${REGLES_COMMUNES}${outilsApp ? ` ${CONSIGNE_CARTES}` : ""}${dossiers}`;
 }
 
 /** Le chemin court (`runAgent`) : un seul tour, sans délégation possible. */

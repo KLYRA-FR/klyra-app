@@ -1,3 +1,4 @@
+import type { Carte, ReponseCarte } from "../../electron/cartes-interactives";
 import type { Chat, Etape, Message, MessagePart, Project, Role } from "@/types/domain";
 import { vueAtelier, vueEquipe, type ContexteAtelier, type PartieAtelierCompte, type PartieEquipeCompte } from "./atelier-compte";
 import { echanges, mesureActuelle, type MesureContexte } from "./contexte";
@@ -107,7 +108,9 @@ export type PartieCompte =
   /** L'atelier d'une équipe : la carte calculée par l'ordinateur (cf. atelier-compte.ts). */
   | PartieEquipeCompte
   /** Les réponses toutes prêtes sous une question de l'assistant (outil `proposer_choix`). */
-  | { type: "choix"; question: string; options: string[]; multiple: boolean };
+  | { type: "choix"; question: string; options: string[]; multiple: boolean }
+  /** Une carte interactive (outil `proposer_carte`) : le téléphone la remplit et l'envoie comme un message. */
+  | { type: "carte"; etapeId: string; carte: Carte; reponse?: ReponseCarte };
 
 function source(etape: Etape): Exclude<SourceFichier, "joint"> {
   return etape.outil === "Write" ? "cree" : etape.outil === "Read" ? "lu" : "modifie";
@@ -182,6 +185,16 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
       return atelier ? vueAtelier(part.etapeId, atelier, net, r.atelierCompact) : null;
     case "atelier-equipe":
       return atelier ? vueEquipe(part.etapeId, atelier, net, r.atelierCompact) : null;
+    // Une carte en cours d'écriture ne part pas ; chaque texte, sans chemin ni secret.
+    case "carte":
+      return part.provisoire
+        ? null
+        : {
+            type: "carte",
+            etapeId: part.etapeId.slice(0, 200),
+            carte: JSON.parse(JSON.stringify(part.carte), (_cle, v) => (typeof v === "string" ? net(v, 600) : v)) as Carte,
+            ...(part.reponse ? { reponse: JSON.parse(JSON.stringify(part.reponse), (_cle, v) => (typeof v === "string" ? net(v, 1000) : v)) as ReponseCarte } : {}),
+          };
     case "choix":
       return { type: "choix", question: net(part.question, 300), options: part.options.slice(0, 6).map((o) => net(o, 120)), multiple: part.multiple };
     // Un secret ne se colle jamais du téléphone (il passerait par le compte) : la demande part en une ligne.
@@ -276,7 +289,7 @@ export interface TravailCopie {
 }
 
 function poseUneQuestion(message: Message): boolean {
-  if (message.parts.some((p) => (p.type === "options" && p.options.length > 0) || (p.type === "actions" && p.actions.length > 0) || p.type === "choix" || (p.type === "coffre-demande" && !p.reponse))) return true;
+  if (message.parts.some((p) => (p.type === "options" && p.options.length > 0) || (p.type === "actions" && p.actions.length > 0) || p.type === "choix" || (p.type === "carte" && !p.reponse) || (p.type === "coffre-demande" && !p.reponse))) return true;
   const texte = message.parts
     .filter((p): p is Extract<MessagePart, { type: "text" }> => p.type === "text")
     .map((p) => p.text)

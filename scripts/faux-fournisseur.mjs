@@ -7,6 +7,7 @@
  * - « atelier <prénom> » : il complète la carte d'un agent à créer (outil `proposer_agent`) ;
  * - « choix <mot> » : il propose des réponses toutes prêtes (outil `proposer_choix`) ;
  * - « equipe <mot> » : il compose une équipe de deux agents (outil `proposer_equipe`) ;
+ * - « carte <genre> » : il pose une carte interactive (outil `proposer_carte`, liste, formulaire ou comparaison) ;
  * - « coffre <variable> » : il demande un secret à la personne (outil `coffre_demander`) ;
  * - « workflow <mot> » : il construit un workflow de trois étapes (outil `construire_workflow`) ;
  * - « lance <mot> » : il lance le dernier workflow construit dans la conversation (outil `lancer_workflow`) ;
@@ -30,12 +31,13 @@ const OUTILS_ORDRES = {
   atelier: "mcp__klyra__proposer_agent",
   choix: "mcp__klyra__proposer_choix",
   equipe: "mcp__klyra__proposer_equipe",
+  carte: "mcp__klyra__proposer_carte",
   workflow: "mcp__klyra__construire_workflow",
   lance: "mcp__klyra__lancer_workflow",
   coffre: "mcp__klyra__coffre_demander",
 };
 /** Les outils dont l'entrée arrive par petits morceaux, lentement : l'app la montre en direct. */
-const EN_DIRECT = new Set(["mcp__klyra__proposer_agent", "mcp__klyra__proposer_equipe", "mcp__klyra__construire_workflow"]);
+const EN_DIRECT = new Set(["mcp__klyra__proposer_agent", "mcp__klyra__proposer_equipe", "mcp__klyra__proposer_carte", "mcp__klyra__construire_workflow"]);
 function entreeOrdre(verbe, cible, corps) {
   if (verbe === "workflow")
     return {
@@ -65,6 +67,27 @@ function entreeOrdre(verbe, cible, corps) {
       epreuve: { normal: "Quoi de neuf chez nos trois concurrents ?", floue: "Regarde le marché.", horsMetier: "Corrige le bug du formulaire de contact." },
       voisins: [{ id: "nina", raison: "Elle suit déjà les propositions commerciales." }],
       routine: { nom: "Note de veille", consigne: "Rends la note de veille de la semaine.", quand: { type: "semaine", jour: 5, heure: "08:30" } },
+    };
+  if (verbe === "carte" && cible === "liste")
+    return { genre: "liste", titre: "Le plan de la note", elements: [{ id: "intro", texte: "Introduction" }, { id: "chiffres", texte: "Les chiffres du trimestre" }, { id: "annexe", texte: "Annexe technique" }] };
+  if (verbe === "carte" && cible === "formulaire")
+    return {
+      genre: "formulaire",
+      titre: "Le brief du site",
+      champs: [
+        { id: "client", libelle: "Client", type: "texte", requis: true },
+        { id: "budget", libelle: "Budget", type: "curseur", min: 1000, max: 9000, pas: 500, unite: "€", valeur: 4000 },
+        { id: "pages", libelle: "Pages", type: "multiple", options: ["Accueil", "Offre", "Contact"], valeur: ["Accueil"] },
+      ],
+    };
+  if (verbe === "carte")
+    return {
+      genre: "comparaison",
+      titre: "Quelle piste pour le logo ?",
+      options: [
+        { id: "sobre", titre: "Sobre", resume: "Le signe seul, en noir.", pour: ["Lisible partout"], contre: ["Moins de caractère"] },
+        { id: "vive", titre: "Vive", resume: "Le signe en bleu K1, avec les points.", pour: ["Se remarque"], recommandee: true },
+      ],
     };
   if (verbe === "equipe")
     return {
@@ -114,8 +137,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
     const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|equipe|workflow|lance|coffre) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|equipe|workflow|lance|coffre) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre) ([a-z0-9-]+)/m) : null;
     requetes.push({
       message: texteDe(dernier?.content ?? ""),
       sousAgent,

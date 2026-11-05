@@ -79,6 +79,8 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return entree.nom ? `Compose l’équipe ${court(entree.nom, 40)}` : "Compose une équipe";
     case "mcp__klyra__proposer_choix":
       return "Propose des réponses";
+    case "mcp__klyra__proposer_carte":
+      return `Prépare une carte : ${court(entree.titre, 50) || "à remplir"}`;
     case "mcp__klyra__publier_artefact":
       return `Publie dans Artefacts : ${court(entree.titre, 50) || "un rendu"}`;
     case "mcp__klyra__lire_artefact":
@@ -142,6 +144,8 @@ export function iconeEtape(outil: string): IconName {
       return "users-profiles-01";
     case "mcp__klyra__proposer_choix":
       return "list";
+    case "mcp__klyra__proposer_carte":
+      return "text-input-01";
     case "mcp__klyra__publier_artefact":
     case "mcp__klyra__lire_artefact":
     case "Skill":

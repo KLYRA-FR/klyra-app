@@ -1,9 +1,11 @@
 import type { AjoutFiche, MajAtelier } from "../../electron/atelier-agent";
 import type { MajEquipe } from "../../electron/atelier-equipe";
+import type { Carte, ReponseCarte } from "../../electron/cartes-interactives";
 import type { ResultatCas, TypeCas } from "../../electron/epreuve";
 
 export type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, RoutineProposee, VoisinAgent } from "../../electron/atelier-agent";
 export type { BrouillonEquipe, MajEquipe, MembreBrouillon } from "../../electron/atelier-equipe";
+export type { Carte, ReponseCarte } from "../../electron/cartes-interactives";
 
 /**
  * Modèle de données de l'app. Les données factices (src/data/mock.ts) et le
@@ -339,6 +341,11 @@ export type MessagePart =
       ecartes?: string[];
       crees?: Record<string, string>;
     }
+  /**
+   * Une carte interactive d'un agent (outil `proposer_carte`, cf. electron/cartes-interactives.ts) :
+   * la personne la remplit et l'envoie comme un message ; `reponse` garde ce qu'elle a envoyé d'ici.
+   */
+  | { type: "carte"; etapeId: string; carte: Carte; provisoire?: boolean; reponse?: ReponseCarte & { le: string } }
   /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
   | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }
   /**

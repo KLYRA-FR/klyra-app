@@ -23,6 +23,7 @@ import { useIdDirect, useRole } from "@/lib/workspace";
 import type { EtatAtelier } from "@/lib/atelier-agent";
 import { CarteAtelier, ChoixReponses } from "./CarteAtelier";
 import { CarteEquipe } from "./CarteEquipe";
+import { CarteInteractive } from "./CarteInteractive";
 import type { EtatEquipe } from "@/lib/atelier-equipe";
 import { CarteCoffre } from "./CarteCoffre";
 import { PastilleExtension } from "./PastilleExtension";
@@ -524,6 +525,8 @@ export function MessagePartView({
       return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} chatId={chatId} lieu={lieu} enDirect={enCours} />;
     case "atelier-equipe":
       return <CarteEquipe part={part} etat={etatEquipe?.(part.etapeId)} messageId={messageId} enDirect={enCours} onEnvoyer={onAction} />;
+    case "carte":
+      return <CarteInteractive part={part} messageId={messageId} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onEnvoyer={(t) => choix?.onRepondre(t)} />;
     case "choix":
       return <ChoixReponses part={part} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onRepondre={(t) => choix?.onRepondre(t)} />;
     case "coffre-demande":

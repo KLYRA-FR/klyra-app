@@ -30,6 +30,7 @@ import { RondAgent, useCartes } from "./AgentsChat";
 import { CarteAccordChat } from "./CarteAccordChat";
 import { CarteAtelierTelephone, ChoixTelephone, LigneAtelierTelephone } from "./AtelierTelephone";
 import { CarteEquipeTelephone, LigneEquipeTelephone } from "./EquipeTelephone";
+import { CarteInteractiveVue } from "@/components/chat/CarteInteractive";
 import { ActionsMessage, arreterLecture } from "./ActionsMessage";
 import type { MessageEnAttente } from "@/lib/telephone/chats";
 
@@ -347,6 +348,19 @@ function PartieFil({
       ) : partie.ligne ? (
         <LigneEquipeTelephone ligne={partie.ligne} />
       ) : null;
+    case "carte":
+      return (
+        <CarteInteractiveVue
+          etapeId={partie.etapeId}
+          carte={partie.carte}
+          envoyee={partie.reponse ?? null}
+          provisoire={false}
+          actif={choix?.actif ?? false}
+          repondu={choix?.repondu ?? null}
+          planning={[]}
+          onEnvoyer={(texte) => contexte.envoyer(texte, message.auteurId ? { a: message.auteurId } : {})}
+        />
+      );
     case "choix":
       return (
         <ChoixTelephone
