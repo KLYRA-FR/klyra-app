@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Evenement, Message, MessagePart } from "@/types/domain";
 import { messageCompte, lireParties } from "./copie-compte";
-import { appelCarte, dateLisible, dureeLisible, lireCarte, manquantsCarte, occupations, reponseNette, texteReponse, valeurDepart, type Carte } from "./cartes-interactives";
+import { appelCarte, dateLisible, dureeLisible, lireCarte, manquantsCarte, occupations, reponseNette, texteReponse, totalColonne, valeurDepart, type Carte, type LigneTableau } from "./cartes-interactives";
 
 const carte = (entree: Record<string, unknown>): Carte => {
   const r = lireCarte(entree);
@@ -86,6 +86,56 @@ describe("la réponse de la personne", () => {
     expect(dateLisible("2026-11-05")).toBe("jeudi 5 novembre");
     expect(dureeLisible(45)).toBe("45 min");
     expect(dureeLisible(120)).toBe("2 h");
+  });
+});
+
+describe("un tableau à compléter", () => {
+  const BUDGET = carte({
+    genre: "tableau",
+    titre: "Le budget du salon",
+    colonnes: [
+      { id: "poste", titre: "Poste", type: "texte", requis: true },
+      { id: "montant", titre: "Montant", type: "nombre", unite: "€", total: true },
+      { id: "qui", titre: "Qui paie", type: "choix", options: ["Nous", "Le client"] },
+      { id: "ok", titre: "Validé", type: "interrupteur" },
+      { titre: "Mauvaise", type: "choix", options: ["Seule"] },
+    ],
+    lignes: [{ poste: "Stand", montant: "1200,5", qui: "Nous", ok: true }, { Poste: "Badges", montant: "rien", qui: "Personne" }],
+  });
+
+  it("colonnes et lignes lues d'après leur type ; une colonne choix sans deux réponses écartée ; ajout par défaut", () => {
+    if (BUDGET.genre !== "tableau") throw new Error();
+    expect(BUDGET.colonnes.map((c) => c.id)).toEqual(["poste", "montant", "qui", "ok"]);
+    expect(BUDGET.ajout).toBe(true);
+    expect(BUDGET.lignes).toEqual([
+      { id: "ligne1", cellules: { poste: "Stand", montant: 1200.5, qui: "Nous", ok: true } },
+      { id: "ligne2", cellules: { poste: "Badges" } },
+    ]);
+    expect(totalColonne(BUDGET.colonnes[1], BUDGET.lignes)).toBe(1200.5);
+    expect(lireCarte({ genre: "tableau", titre: "x", colonnes: [] })).toHaveProperty("refus");
+    expect(lireCarte({ genre: "tableau", titre: "x", colonnes: [{ titre: "A", type: "texte" }], ajout: false })).toHaveProperty("refus");
+  });
+
+  it("ce qui manque : une ligne au moins, les colonnes requises remplies", () => {
+    expect(manquantsCarte(BUDGET, { lignes: [] })).toEqual(["au moins une ligne"]);
+    expect(manquantsCarte(BUDGET, { lignes: [{ id: "a", cellules: { montant: 3 } }] })).toEqual(["la colonne Poste"]);
+    expect(manquantsCarte(BUDGET, {})).toEqual([]);
+  });
+
+  it("le message : un tableau Markdown, les barres échappées, le total ; la réponse nettoyée", () => {
+    const lignes: LigneTableau[] = [
+      { id: "ligne1", cellules: { poste: "Stand | 3x3", montant: 1200, qui: "Nous", ok: true } },
+      { id: "ajout-x", cellules: { poste: "Badges", montant: 80, inconnue: "x" } },
+    ];
+    expect(texteReponse(BUDGET, { lignes })).toBe(
+      "Le budget du salon (2 lignes)\n\n| Poste | Montant | Qui paie | Validé |\n| --- | ---: | --- | --- |\n| Stand \\| 3x3 | 1200 € | Nous | oui |\n| Badges | 80 € | — | — |\n\nTotal Montant : 1280 €",
+    );
+    expect(reponseNette(BUDGET, { lignes })).toEqual({
+      lignes: [
+        { id: "ligne1", cellules: { poste: "Stand | 3x3", montant: 1200, qui: "Nous", ok: true } },
+        { id: "ajout-x", cellules: { poste: "Badges", montant: 80 } },
+      ],
+    });
   });
 });
 

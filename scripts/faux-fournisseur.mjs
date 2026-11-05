@@ -7,7 +7,7 @@
  * - « atelier <prénom> » : il complète la carte d'un agent à créer (outil `proposer_agent`) ;
  * - « choix <mot> » : il propose des réponses toutes prêtes (outil `proposer_choix`) ;
  * - « equipe <mot> » : il compose une équipe de deux agents (outil `proposer_equipe`) ;
- * - « carte <genre> » : il pose une carte interactive (outil `proposer_carte`, liste, formulaire ou comparaison) ;
+ * - « carte <genre> » : il pose une carte interactive (outil `proposer_carte`, liste, formulaire, tableau ou comparaison) ;
  * - « coffre <variable> » : il demande un secret à la personne (outil `coffre_demander`) ;
  * - « workflow <mot> » : il construit un workflow de trois étapes (outil `construire_workflow`) ;
  * - « lance <mot> » : il lance le dernier workflow construit dans la conversation (outil `lancer_workflow`) ;
@@ -78,6 +78,20 @@ function entreeOrdre(verbe, cible, corps) {
         { id: "client", libelle: "Client", type: "texte", requis: true },
         { id: "budget", libelle: "Budget", type: "curseur", min: 1000, max: 9000, pas: 500, unite: "€", valeur: 4000 },
         { id: "pages", libelle: "Pages", type: "multiple", options: ["Accueil", "Offre", "Contact"], valeur: ["Accueil"] },
+      ],
+    };
+  if (verbe === "carte" && cible === "tableau")
+    return {
+      genre: "tableau",
+      titre: "Le budget du salon",
+      colonnes: [
+        { id: "poste", titre: "Poste", type: "texte", requis: true },
+        { id: "montant", titre: "Montant", type: "nombre", unite: "€", total: true },
+        { id: "qui", titre: "Qui paie", type: "choix", options: ["Nous", "Le client"] },
+      ],
+      lignes: [
+        { poste: "Stand", montant: 1200, qui: "Nous" },
+        { poste: "Badges", montant: 80 },
       ],
     };
   if (verbe === "carte")

@@ -4,11 +4,17 @@ import { useId, useState, type ChangeEvent, type CSSProperties, type ReactNode }
 import { Input, Textarea } from "klyra-ui";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Interrupteur } from "@/components/reglages/ui";
-import { Bouton } from "@/components/ui/Bouton";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { CHAMP } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { rendezVousEntre } from "@/lib/agenda-equipe";
 import {
+  celluleLisible,
+  MAX_LIGNES,
+  totalColonne,
+  type Cellule,
+  type ColonneTableau,
+  type LigneTableau,
   dateLisible,
   dureeLisible,
   LIBELLES_GENRE,
@@ -42,6 +48,7 @@ const ICONES: Record<GenreCarte, IconName> = {
   comparaison: "layers-01",
   liste: "list",
   creneaux: "calendar-01",
+  tableau: "note-01",
 };
 
 const majuscule = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -53,6 +60,8 @@ function depart(carte: Carte): ReponseCarte {
       return { valeurs: Object.fromEntries(carte.champs.flatMap((c) => (valeurDepart(c) === null ? [] : [[c.id, valeurDepart(c)!]]))) };
     case "liste":
       return { coches: carte.elements.filter((e) => e.coche).map((e) => e.id) };
+    case "tableau":
+      return { lignes: carte.lignes };
     default:
       return {};
   }
@@ -173,6 +182,7 @@ export function CarteInteractiveVue({
         {carte.genre === "comparaison" && <Comparaison carte={carte} choix={vue.choix} figee={figee} onChoisir={(choix) => changer({ choix })} />}
         {carte.genre === "liste" && <Liste carte={carte} coches={vue.coches ?? []} figee={figee} onChange={(coches) => changer({ coches })} />}
         {carte.genre === "creneaux" && <Creneaux carte={carte} choisi={vue.creneau} figee={figee} planning={planning} onChoisir={(creneau) => changer({ creneau })} />}
+        {carte.genre === "tableau" && <Tableau carte={carte} lignes={vue.lignes ?? carte.lignes} figee={figee} onChange={(lignes) => changer({ lignes })} />}
         {(carte.genre === "comparaison" || carte.genre === "creneaux") && !figee && (reponse.choix !== undefined || reponse.creneau !== undefined) && (
           <Textarea
             size="sm"
@@ -211,6 +221,8 @@ function libelleEnvoi(carte: Carte, r: ReponseCarte): string {
       return "Valider la liste";
     case "creneaux":
       return "Confirmer le créneau";
+    case "tableau":
+      return "Envoyer le tableau";
   }
 }
 
@@ -584,4 +596,140 @@ function Creneaux({
       )}
     </div>
   );
+}
+
+/* ─── Tableau à compléter ──────────────────────────────────────── */
+
+/** Un identifiant pour une ligne ajoutée par la personne (distinct de ceux de l'agent). */
+const nouvelleLigne = (): LigneTableau => ({ id: `ajout-${Math.random().toString(36).slice(2, 8)}`, cellules: {} });
+
+function Tableau({
+  carte,
+  lignes,
+  figee,
+  onChange,
+}: {
+  carte: Extract<Carte, { genre: "tableau" }>;
+  lignes: LigneTableau[];
+  figee: boolean;
+  onChange: (lignes: LigneTableau[]) => void;
+}) {
+  const totaux = carte.colonnes.filter((c) => c.total);
+  const ecrire = (id: string, colonne: string, v: Cellule | null) =>
+    onChange(
+      lignes.map((l) => {
+        if (l.id !== id) return l;
+        const cellules = { ...l.cellules };
+        if (v === null || v === "") delete cellules[colonne];
+        else cellules[colonne] = v;
+        return { ...l, cellules };
+      }),
+    );
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="klyra-defilement-fin overflow-x-auto rounded-lg border border-bordure-subtile">
+        <table className="w-full border-collapse text-left text-ui-s">
+          <thead>
+            <tr className="bg-fond-surface-grise/60">
+              {carte.colonnes.map((c) => (
+                <th key={c.id} scope="col" className={cn("border-b border-bordure-subtile px-2.5 py-2 text-ui-2xs font-medium whitespace-nowrap text-texte-tertiaire", c.type === "nombre" && "text-right")}>
+                  {c.titre}
+                  {c.requis && " *"}
+                  {c.unite && <span className="font-normal"> ({c.unite})</span>}
+                </th>
+              ))}
+              {carte.ajout && !figee && <th aria-label="Retirer" className="w-9 border-b border-bordure-subtile" />}
+            </tr>
+          </thead>
+          <tbody>
+            {lignes.map((l, i) => (
+              <tr key={l.id} data-ligne={l.id} className="group/ligne border-b border-bordure-subtile last:border-b-0">
+                {carte.colonnes.map((c) => (
+                  <td key={c.id} className={cn("px-1.5 py-1 align-middle", c.type === "nombre" && "text-right")}>
+                    <CelluleVue colonne={c} valeur={l.cellules[c.id]} figee={figee} libelle={`${c.titre}, ligne ${i + 1}`} onChange={(v) => ecrire(l.id, c.id, v)} />
+                  </td>
+                ))}
+                {carte.ajout && !figee && (
+                  <td className="w-9 px-1 text-center">
+                    <BoutonIcone
+                      taille="mini"
+                      icone={<Icon name="x-01" size={14} />}
+                      libelle={`Retirer la ligne ${i + 1}`}
+                      className="opacity-60 group-hover/ligne:opacity-100 focus-visible:opacity-100"
+                      onClick={() => onChange(lignes.filter((x) => x.id !== l.id))}
+                    />
+                  </td>
+                )}
+              </tr>
+            ))}
+            {!lignes.length && (
+              <tr>
+                <td colSpan={carte.colonnes.length + 1} className="px-2.5 py-3 text-center text-ui-xs text-texte-tertiaire">
+                  Aucune ligne pour l’instant.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          {totaux.length > 0 && lignes.length > 0 && (
+            <tfoot>
+              <tr className="border-t border-bordure-defaut bg-fond-surface-grise/40">
+                {carte.colonnes.map((c, i) => (
+                  <td key={c.id} className={cn("px-2.5 py-2 text-ui-xs font-semibold text-texte-principal", c.type === "nombre" && "klyra-mono text-right")}>
+                    {c.total ? celluleLisible(c, totalColonne(c, lignes)) : i === 0 ? "Total" : ""}
+                  </td>
+                ))}
+                {carte.ajout && !figee && <td />}
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+      {carte.ajout && !figee && (
+        <div className="flex items-center justify-between gap-2">
+          <Bouton variant="discret" taille="mini" iconeGauche={<Icon name="plus-01" size={14} />} disabled={lignes.length >= MAX_LIGNES} onClick={() => onChange([...lignes, nouvelleLigne()])}>
+            Ajouter une ligne
+          </Bouton>
+          <span className="klyra-mono text-ui-2xs text-texte-tertiaire">
+            {lignes.length} / {MAX_LIGNES}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CelluleVue({ colonne: c, valeur, figee, libelle, onChange }: { colonne: ColonneTableau; valeur: Cellule | undefined; figee: boolean; libelle: string; onChange: (v: Cellule | null) => void }) {
+  if (figee) return <span className={cn("block px-1 py-1 text-ui-s", c.type === "nombre" && "klyra-mono", celluleLisible(c, valeur) ? "text-texte-principal" : "text-texte-tertiaire")}>{celluleLisible(c, valeur) || "—"}</span>;
+  switch (c.type) {
+    case "texte":
+    case "nombre":
+      return (
+        <input
+          type={c.type === "nombre" ? "number" : "text"}
+          aria-label={libelle}
+          value={valeur === undefined ? "" : String(valeur)}
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange(c.type === "nombre" ? (v === "" || Number.isNaN(Number(v)) ? null : Number(v)) : v);
+          }}
+          className={cn(
+            "h-8 w-full min-w-[96px] rounded-xs border border-transparent bg-transparent px-1.5 text-ui-s text-texte-principal outline-none transition-colors duration-[160ms] ease-sortie hover:border-bordure-subtile focus:border-focus focus:bg-fond-surface",
+            c.type === "nombre" && "klyra-mono text-right",
+          )}
+        />
+      );
+    case "choix":
+      return (
+        <ListeDeroulante
+          variante="compact"
+          libelle={libelle}
+          options={c.options.map((o) => ({ value: o, label: o }))}
+          value={typeof valeur === "string" ? valeur : ""}
+          placeholder="Choisir"
+          onChange={(v) => onChange(v)}
+        />
+      );
+    case "interrupteur":
+      return <Interrupteur actif={valeur === true} libelle={libelle} onChange={(v) => onChange(v)} />;
+  }
 }

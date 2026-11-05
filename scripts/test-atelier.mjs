@@ -322,6 +322,30 @@ try {
         await surDisque(() => dernierMessage()?.parts.map((p) => p.text ?? "").join("") === "Le brief du site\n- Client : Acme\n- Budget : 4000 €\n- Pages : Accueil, Contact"),
         "le brief part comme son message, champ par champ",
       );
+
+      // Un tableau à compléter : une cellule changée, une ligne ajoutée, le total recalculé.
+      await surDisque(() => {
+        const fil = lireJson(path.join(donnees, "conversations.json")).messages.filter((m) => m.chatId === "dm-principal");
+        return fil.at(-1)?.author.kind === "role" && fil.at(-1)?.statut === "fait";
+      }, 60000);
+      await ecrire("carte tableau");
+      verifier(await app.quand(`${carteFil}?.dataset.genre === 'tableau' && ${carteFil}.dataset.etat === 'ouverte' && ${carteFil}.querySelectorAll('[data-ligne]').length === 2`, 60000), "un tableau à compléter, deux lignes pré-remplies");
+      verifier((await app.ev(`${carteFil}.querySelector('tfoot')?.innerText ?? ''`)).includes("1280 €"), "le total de la colonne");
+      await app.saisir('[data-carte] [data-ligne="ligne2"] input[aria-label="Montant, ligne 2"]', "95");
+      verifier(await app.cliquer("Ajouter une ligne", carteFil), "« Ajouter une ligne »");
+      verifier(await app.quand(`${carteFil}?.querySelectorAll('[data-ligne]').length === 3 && ${carteFil}.innerText.includes('Il manque la colonne Poste')`), "une ligne vide : la colonne requise attend");
+      await app.saisir('[data-carte] input[aria-label="Poste, ligne 3"]', "Navette");
+      await app.saisir('[data-carte] input[aria-label="Montant, ligne 3"]', "40");
+      verifier(await app.quand(`(${carteFil}?.querySelector('tfoot')?.innerText ?? '').includes('1335 €')`), "le total suit les cellules");
+      verifier(await app.cliquer("Envoyer le tableau", carteFil), "« Envoyer le tableau »");
+      verifier(
+        await surDisque(
+          () =>
+            dernierMessage()?.parts.map((p) => p.text ?? "").join("") ===
+            "Le budget du salon (3 lignes)\n\n| Poste | Montant | Qui paie |\n| --- | ---: | --- |\n| Stand | 1200 € | Nous |\n| Badges | 95 € | — |\n| Navette | 40 € | — |\n\nTotal Montant : 1335 €",
+        ),
+        "le tableau part comme son message, en Markdown, avec le total",
+      );
       verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
       await app.fermer();
       app = null;

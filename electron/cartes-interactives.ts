@@ -1,7 +1,8 @@
 /**
  * Les cartes interactives d'un agent, dans le fil : au lieu d'une liste de questions, une carte que
- * la personne remplit et envoie d'un clic (outil `proposer_carte`). Quatre genres : un formulaire
- * (brief à remplir), une comparaison (pistes à départager), une liste à valider, des créneaux.
+ * la personne remplit et envoie d'un clic (outil `proposer_carte`). Cinq genres : un formulaire
+ * (brief à remplir), une comparaison (pistes à départager), une liste à valider, des créneaux, un
+ * tableau à compléter (lignes ajoutées ou retirées par la personne).
  * Ce qu'elle envoie part comme un message d'elle, lisible tel quel : l'agent le reçoit à son tour
  * suivant, comme une réponse écrite.
  *
@@ -11,7 +12,7 @@
 
 /* ─── Les formes ──────────────────────────────────────────────────── */
 
-export const GENRES = ["formulaire", "comparaison", "liste", "creneaux"] as const;
+export const GENRES = ["formulaire", "comparaison", "liste", "creneaux", "tableau"] as const;
 export type GenreCarte = (typeof GENRES)[number];
 
 export const TYPES_CHAMP = ["texte", "long", "nombre", "date", "choix", "multiple", "interrupteur", "curseur"] as const;
@@ -60,6 +61,32 @@ export interface Creneau {
   duree: number;
 }
 
+export const TYPES_COLONNE = ["texte", "nombre", "choix", "interrupteur"] as const;
+export type TypeColonne = (typeof TYPES_COLONNE)[number];
+
+export interface ColonneTableau {
+  id: string;
+  titre: string;
+  type: TypeColonne;
+  /** Pour `choix` : 2 à 8 réponses. */
+  options: string[];
+  unite: string;
+  requis: boolean;
+  /** Pour `nombre` : la somme de la colonne, sous le tableau. */
+  total: boolean;
+}
+
+export type Cellule = string | number | boolean;
+
+export interface LigneTableau {
+  id: string;
+  cellules: Record<string, Cellule>;
+}
+
+/** Au plus, dans un tableau. */
+export const MAX_COLONNES = 6;
+export const MAX_LIGNES = 20;
+
 interface Base {
   titre: string;
   intro: string;
@@ -69,7 +96,9 @@ export type Carte =
   | (Base & { genre: "formulaire"; champs: ChampCarte[] })
   | (Base & { genre: "comparaison"; options: OptionComparee[] })
   | (Base & { genre: "liste"; elements: ElementListe[] })
-  | (Base & { genre: "creneaux"; creneaux: Creneau[] });
+  | (Base & { genre: "creneaux"; creneaux: Creneau[] })
+  /** `ajout` : la personne peut ajouter et retirer des lignes. */
+  | (Base & { genre: "tableau"; colonnes: ColonneTableau[]; lignes: LigneTableau[]; ajout: boolean });
 
 /** Ce que la personne a rempli : les valeurs d'un formulaire, l'option choisie, les éléments gardés, le créneau. */
 export interface ReponseCarte {
@@ -77,6 +106,8 @@ export interface ReponseCarte {
   choix?: string;
   coches?: string[];
   creneau?: number;
+  /** Les lignes d'un tableau, telles qu'elle les a laissées. */
+  lignes?: LigneTableau[];
   /** Un mot à ajouter (comparaison, créneaux). */
   mot?: string;
 }
@@ -86,6 +117,7 @@ export const LIBELLES_GENRE: Record<GenreCarte, string> = {
   comparaison: "À départager",
   liste: "À valider",
   creneaux: "Un créneau à choisir",
+  tableau: "À compléter",
 };
 
 /* ─── L'outil ─────────────────────────────────────────────────────── */
@@ -95,7 +127,7 @@ const tableau = (description: string) => ({ type: "array", items: { type: "strin
 export const OUTIL_CARTE = {
   name: "proposer_carte",
   description:
-    "Montre sous ta réponse une carte que la personne remplit et envoie d'un clic, au lieu de lui poser une liste de questions. genre « formulaire » : les informations dont tu as besoin (champs), pré-remplies avec ce que tu sais déjà ; « comparaison » : 2 à 4 pistes à départager, avec leurs pour et contre, au plus une recommandée ; « liste » : des éléments à garder ou retirer (un plan, des tâches, des destinataires) ; « creneaux » : 2 à 8 créneaux proposés. Ce qu'elle envoie t'arrive dans son prochain message : termine ta réponse juste après l'appel.",
+    "Montre sous ta réponse une carte que la personne remplit et envoie d'un clic, au lieu de lui poser une liste de questions. genre « formulaire » : les informations dont tu as besoin (champs), pré-remplies avec ce que tu sais déjà ; « comparaison » : 2 à 4 pistes à départager, avec leurs pour et contre, au plus une recommandée ; « liste » : des éléments à garder ou retirer (un plan, des tâches, des destinataires) ; « creneaux » : 2 à 8 créneaux proposés ; « tableau » : des lignes à compléter (1 à 6 colonnes, des lignes pré-remplies, ajout: true si elle peut en ajouter). Ce qu'elle envoie t'arrive dans son prochain message : termine ta réponse juste après l'appel.",
   inputSchema: {
     type: "object",
     properties: {
@@ -142,6 +174,29 @@ export const OUTIL_CARTE = {
         description: "creneaux : 2 à 8 créneaux.",
         items: { type: "object", properties: { date: { type: "string", description: "AAAA-MM-JJ" }, heure: { type: "string", description: "HH:MM" }, duree: { type: "number", description: "En minutes." } }, required: ["date", "heure"] },
       },
+      colonnes: {
+        type: "array",
+        description: `tableau : 1 à ${MAX_COLONNES} colonnes.`,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            titre: { type: "string" },
+            type: { type: "string", enum: [...TYPES_COLONNE] },
+            options: tableau("choix : 2 à 8 réponses."),
+            unite: { type: "string" },
+            requis: { type: "boolean" },
+            total: { type: "boolean", description: "nombre : montrer la somme." },
+          },
+          required: ["titre", "type"],
+        },
+      },
+      lignes: {
+        type: "array",
+        description: `tableau : jusqu'à ${MAX_LIGNES} lignes pré-remplies, chacune un objet { id de colonne: valeur }.`,
+        items: { type: "object" },
+      },
+      ajout: { type: "boolean", description: "tableau : elle peut ajouter et retirer des lignes (vrai par défaut)." },
     },
     required: ["genre", "titre"],
   },
@@ -283,6 +338,58 @@ function lireCreneaux(v: unknown): Creneau[] {
     .slice(0, 8);
 }
 
+function lireColonnes(v: unknown): ColonneTableau[] {
+  if (!Array.isArray(v)) return [];
+  const pris = new Set<string>();
+  return v
+    .flatMap((x, i): ColonneTableau[] => {
+      if (!x || typeof x !== "object") return [];
+      const o = x as Record<string, unknown>;
+      const titre = texte(o.titre, 40);
+      const type = TYPES_COLONNE.find((t) => t === o.type);
+      if (!titre || !type) return [];
+      const options = type === "choix" ? [...new Set(liste(o.options, 8, 60))] : [];
+      if (type === "choix" && options.length < 2) return [];
+      return [{ id: identifiant(o.id, "colonne", i, pris), titre, type, options, unite: texte(o.unite, 12), requis: o.requis === true, total: type === "nombre" && o.total === true }];
+    })
+    .slice(0, MAX_COLONNES);
+}
+
+/** Une cellule, lue d'après le type de sa colonne ; null si vide ou invalide. */
+export function lireCellule(colonne: ColonneTableau, v: unknown): Cellule | null {
+  switch (colonne.type) {
+    case "texte":
+      return typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : typeof v === "number" ? String(v) : null;
+    case "nombre": {
+      const n = typeof v === "string" && v.trim() ? Number(v.replace(",", ".")) : v;
+      return typeof n === "number" && Number.isFinite(n) ? n : null;
+    }
+    case "choix":
+      return typeof v === "string" && colonne.options.includes(v.trim()) ? v.trim() : null;
+    case "interrupteur":
+      return typeof v === "boolean" ? v : null;
+  }
+}
+
+/** Des lignes nettoyées : seulement les colonnes connues et leurs valeurs valides ; ids stables et distincts. */
+export function lireLignes(colonnes: ColonneTableau[], v: unknown): LigneTableau[] {
+  if (!Array.isArray(v)) return [];
+  const pris = new Set<string>();
+  return v
+    .flatMap((x, i): LigneTableau[] => {
+      if (!x || typeof x !== "object") return [];
+      const o = x as Record<string, unknown>;
+      // Une ligne de l'agent : { colonne: valeur } ; une ligne gardée par l'écran : { id, cellules }.
+      const brut = (o.cellules && typeof o.cellules === "object" ? o.cellules : o) as Record<string, unknown>;
+      const cellules = Object.fromEntries(colonnes.flatMap((c) => {
+        const valeur = lireCellule(c, brut[c.id] ?? brut[c.titre]);
+        return valeur === null ? [] : [[c.id, valeur]];
+      }));
+      return [{ id: identifiant(o.cellules ? o.id : undefined, "ligne", i, pris), cellules }];
+    })
+    .slice(0, MAX_LIGNES);
+}
+
 /** La carte d'un appel à `proposer_carte`, ou la raison du refus. */
 export function lireCarte(entree: Record<string, unknown>): { carte: Carte } | { refus: string } {
   const genre = GENRES.find((g) => g === entree.genre);
@@ -305,6 +412,14 @@ export function lireCarte(entree: Record<string, unknown>): { carte: Carte } | {
     case "creneaux": {
       const creneaux = lireCreneaux(entree.creneaux);
       return creneaux.length >= 2 ? { carte: { ...base, genre, creneaux } } : { refus: "Propose de 2 à 8 créneaux distincts (date AAAA-MM-JJ, heure HH:MM)." };
+    }
+    case "tableau": {
+      const colonnes = lireColonnes(entree.colonnes);
+      if (!colonnes.length) return { refus: `Un tableau a de 1 à ${MAX_COLONNES} colonnes, chacune avec un titre et un type (2 réponses au moins pour choix).` };
+      const ajout = entree.ajout !== false;
+      const lignes = lireLignes(colonnes, entree.lignes);
+      if (!ajout && !lignes.length) return { refus: "Un tableau sans ajout de lignes a besoin de lignes pré-remplies." };
+      return { carte: { ...base, genre, colonnes, lignes, ajout } };
     }
   }
 }
@@ -373,8 +488,24 @@ export function manquantsCarte(carte: Carte, r: ReponseCarte): string[] {
       return [];
     case "creneaux":
       return r.creneau !== undefined && carte.creneaux[r.creneau] ? [] : ["un créneau"];
+    case "tableau": {
+      const lignes = r.lignes ?? carte.lignes;
+      if (!lignes.length) return ["au moins une ligne"];
+      return carte.colonnes.filter((c) => c.requis && lignes.some((l) => l.cellules[c.id] === undefined || l.cellules[c.id] === "")).map((c) => `la colonne ${c.titre}`);
+    }
   }
 }
+
+/** Une cellule telle qu'elle s'écrit : « oui », « 1 200 € » ; vide si rien. */
+export function celluleLisible(c: ColonneTableau, v: Cellule | undefined): string {
+  if (v === undefined || v === "") return "";
+  if (c.type === "interrupteur") return v === true ? "oui" : "non";
+  if (c.type === "nombre" && typeof v === "number") return `${nombreLisible(v)}${c.unite ? ` ${c.unite}` : ""}`;
+  return String(v);
+}
+
+/** La somme d'une colonne de nombres. */
+export const totalColonne = (c: ColonneTableau, lignes: LigneTableau[]) => lignes.reduce((t, l) => t + (typeof l.cellules[c.id] === "number" ? (l.cellules[c.id] as number) : 0), 0);
 
 /** Le message que la carte envoie en son nom : lisible tel quel, par l'agent comme dans le fil. */
 export function texteReponse(carte: Carte, r: ReponseCarte): string {
@@ -404,6 +535,15 @@ export function texteReponse(carte: Carte, r: ReponseCarte): string {
       const c = r.creneau !== undefined ? carte.creneaux[r.creneau] : undefined;
       return `${carte.titre} : ${c ? `le ${dateLisible(c.date)} à ${c.heure} (${dureeLisible(c.duree)})` : "aucun"}.${mot}`;
     }
+    case "tableau": {
+      const lignes = r.lignes ?? carte.lignes;
+      const cellule = (t: string) => t.replace(/\|/g, "\\|").replace(/\s+/g, " ") || "—";
+      const entete = `| ${carte.colonnes.map((c) => cellule(c.titre)).join(" | ")} |`;
+      const separation = `| ${carte.colonnes.map((c) => (c.type === "nombre" ? "---:" : "---")).join(" | ")} |`;
+      const corps = lignes.map((l) => `| ${carte.colonnes.map((c) => cellule(celluleLisible(c, l.cellules[c.id]))).join(" | ")} |`);
+      const totaux = carte.colonnes.filter((c) => c.total).map((c) => `Total ${c.titre} : ${celluleLisible(c, totalColonne(c, lignes))}`);
+      return [`${carte.titre} (${lignes.length} ligne${lignes.length > 1 ? "s" : ""})`, "", entete, separation, ...corps, ...(totaux.length ? ["", ...totaux] : [])].join("\n").concat(mot);
+    }
   }
 }
 
@@ -418,5 +558,7 @@ export function reponseNette(carte: Carte, r: ReponseCarte): ReponseCarte {
       return { coches: carte.elements.filter((e) => r.coches?.includes(e.id) ?? e.coche).map((e) => e.id) };
     case "creneaux":
       return { creneau: r.creneau, ...(r.mot?.trim() ? { mot: r.mot.trim().slice(0, 1000) } : {}) };
+    case "tableau":
+      return { lignes: lireLignes(carte.colonnes, r.lignes ?? carte.lignes) };
   }
 }
