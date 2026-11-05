@@ -38,6 +38,9 @@ export function creerRelaisWorkflows(options) {
   function appeler(appelant, nom, args) {
     if (!estOutilWorkflow(nom)) return Promise.resolve(texte("Outil inconnu.", true));
     if (!appelant?.conversation) return Promise.resolve(texte("Conversation inconnue : les workflows ne s'utilisent que depuis une conversation.", true));
+    /* Sans app ouverte, le moteur de ce serveur répond ; seule la construction, qui se regarde se faire, attend l'app. */
+    const local = options.local?.();
+    if (!options.ecouteurs() && local) return Promise.resolve(local.outilAgent(appelant, nom, args && typeof args === "object" ? args : {}));
     if (!options.ecouteurs())
       return Promise.resolve(texte("L'app KLYRA n'est pas ouverte sur l'ordinateur de la personne : ses workflows y vivent et ne sont pas joignables. Dis-lui de l'ouvrir.", true));
     const id = randomUUID();

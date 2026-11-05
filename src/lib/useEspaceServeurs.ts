@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { getBridge } from "@/lib/bridge";
 import { changements, elementsDuServeur, fusionner, memoDe, paquets, type EtatEspace, type LectureEspace } from "@/lib/espace-sync";
 import { useServeursRelies } from "@/lib/lieux";
+import type { ExecutionWorkflow } from "@/types/workflows";
 
 /** Un serveur est relu à ce rythme, pour ce qu'un autre appareil y a écrit. */
 const RELECTURE_MS = 60_000;
@@ -19,7 +20,18 @@ type Etat = EtatEspace & { travail: Record<string, unknown>; charge: boolean };
  * garde sa copie dans `conversations.json` : un serveur qui ne répond pas ne fait rien perdre. Le premier
  * passage y envoie tout ce que ce PC avait pour lui. Un serveur pas à jour ne le connaît pas : rien ne change.
  */
-export function useEspaceServeurs(state: Etat, stateRef: RefObject<Etat>, fusionnerEtat: (etat: EtatEspace) => void) {
+export function useEspaceServeurs(
+  state: Etat,
+  stateRef: RefObject<Etat>,
+  fusionnerEtat: (etat: EtatEspace) => void,
+  suites: { execution: (execution: ExecutionWorkflow) => void; notification: (titre: string, texte: string, workflowId: string) => void; serveurLu: (lieu: string) => void },
+) {
+  /* Pour chaque serveur lu : ses workflows tournent-ils sur lui ? Absent : pas encore lu. */
+  const [moteurs, setMoteurs] = useState<Record<string, boolean>>({});
+  const suitesRef = useRef(suites);
+  useEffect(() => {
+    suitesRef.current = suites;
+  });
   const serveurs = useServeursRelies();
   const memos = useRef(new Map<string, Map<string, string>>());
   const revisions = useRef(new Map<string, number>());
@@ -59,10 +71,17 @@ export function useEspaceServeurs(state: Etat, stateRef: RefObject<Etat>, fusion
     if (!pont || anciens.current.has(lieu) || enCours.current.has(lieu)) return;
     const r = await pont.lire(lieu, revisions.current.get(lieu));
     if (!r.ok) {
-      if (r.code === "serveur-ancien") anciens.current.add(lieu);
+      if (r.code === "serveur-ancien") {
+        anciens.current.add(lieu);
+        setMoteurs((m) => ({ ...m, [lieu]: false }));
+      }
       return;
     }
     const lu = r.data as LectureEspace;
+    if (!memos.current.has(lieu)) {
+      setMoteurs((m) => ({ ...m, [lieu]: lu.moteurWorkflows === true }));
+      suitesRef.current.serveurLu(lieu);
+    }
     if (!lu.inchange) {
       fusionnerEtat(fusionner(stateRef.current, lu, lieu, travaille));
       memos.current.set(lieu, memoDe(lu.elements ?? []));
@@ -70,6 +89,18 @@ export function useEspaceServeurs(state: Etat, stateRef: RefObject<Etat>, fusion
     }
     await envoyer.current(lieu);
   });
+
+  /* Ce qu'un serveur annonce : l'avancée d'un workflow, une notification, un espace à relire. */
+  useEffect(() => {
+    const pont = getBridge()?.espace;
+    if (!pont?.surEvenement) return;
+    return pont.surEvenement((lieu, brut) => {
+      const event = (brut ?? {}) as { type?: string; execution?: ExecutionWorkflow; titre?: string; texte?: string; workflowId?: string };
+      if (event.type === "execution" && event.execution) suitesRef.current.execution(event.execution);
+      else if (event.type === "workflow-notification") suitesRef.current.notification(String(event.titre ?? ""), String(event.texte ?? ""), String(event.workflowId ?? ""));
+      else if (event.type === "espace") void lire.current(lieu);
+    });
+  }, []);
 
   /* La lecture au démarrage et à l'arrivée d'un serveur, puis régulière. */
   const adresses = serveurs.map((s) => s.adresse).join("\n");
@@ -100,4 +131,7 @@ export function useEspaceServeurs(state: Etat, stateRef: RefObject<Etat>, fusion
     },
     [],
   );
+
+  /** Où tournent les workflows d'un serveur : sur lui, dans cette app (serveur pas à jour), ou pas encore su. */
+  return useCallback((lieu: string): "serveur" | "app" | "inconnu" => (lieu in moteurs ? (moteurs[lieu] ? "serveur" : "app") : "inconnu"), [moteurs]);
 }

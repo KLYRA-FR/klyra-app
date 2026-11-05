@@ -36,6 +36,8 @@ export interface LectureEspace {
   inchange?: boolean;
   elements?: ElementEspace[];
   supprimes?: Partial<Record<TypeEspace, Record<string, number>>>;
+  /** Les workflows de ce serveur tournent sur lui : l'app ne les lance plus elle-même. */
+  moteurWorkflows?: boolean;
 }
 
 /** Une empreinte courte du contenu, pour ne renvoyer que ce qui a changé. */
@@ -88,6 +90,8 @@ export function changements(elements: ElementEspace[], memo: ReadonlyMap<string,
     const k = cle(e.type, e.id);
     const h = empreinte(e.valeur);
     suivant.set(k, h);
+    /* Une exécution est écrite par le moteur du serveur : l'app n'y envoie que celles qu'il ne connaît pas (l'historique). */
+    if (e.type === "execution" && memo.has(k)) continue;
     if (memo.get(k) !== h) aEcrire.push(e);
   }
   const aRetirer: { type: TypeEspace; id: string }[] = [];
@@ -163,7 +167,8 @@ export function fusionner(etat: EtatEspace, lu: LectureEspace, lieu: string, tra
     messages,
     projects: ranger(etat.projects, de<Project>("projet"), retires.projet, (l, x) => plusRecent(l.updatedAt, x.updatedAt), (p) => ({ ...p, lieu })),
     workflows: ranger(etat.workflows, de<Workflow>("workflow"), retires.workflow, (l, x) => plusRecent(l.majLe, x.majLe), (w) => ({ ...w, lieu })),
-    executions: ranger(etat.executions, de<ExecutionWorkflow>("execution"), retires.execution, () => false),
+    /* Le serveur fait foi sur ses exécutions : c'est lui qui les fait tourner. */
+    executions: ranger(etat.executions, de<ExecutionWorkflow>("execution"), retires.execution, () => true),
     rendus: ranger(etat.rendus, de<Rendu>("rendu"), retires.rendu, () => false),
   };
 }

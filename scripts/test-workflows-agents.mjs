@@ -15,7 +15,7 @@
  *   xvfb-run -a node scripts/test-workflows-agents.mjs   (sous Linux sans bac à sable : -- --no-sandbox)
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { demarrerFournisseur } from "./faux-fournisseur.mjs";
@@ -210,6 +210,22 @@ try {
     );
     verifier(conversations().workflows.find((w) => w.titre === "Bonjour vps")?.lieu === adresse, "VPS : le workflow appartient à ce serveur");
     verifier(!(await app.ev(`document.body.innerText`)).includes("Bonjour essai"), "VPS : les workflows de ce PC ne sont pas proposés");
+
+    // Lancé depuis l'app, il tourne sur le serveur : son agent y répond, le serveur écrit l'exécution, l'app la suit.
+    verifier(await app.quand(`[...document.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Lancer le workflow' && !b.disabled)`, 30000), "VPS : le bouton pour lancer le workflow");
+    await app.cliquer("Lancer le workflow");
+    const executionsVps = () => {
+      const dossier = path.join(vps, "donnees", "espace", "execution");
+      return existsSync(dossier) ? readdirSync(dossier).map((f) => JSON.parse(readFileSync(path.join(dossier, f), "utf8")).valeur) : [];
+    };
+    let finie = null;
+    for (let i = 0; i < 240 && !finie; i++) {
+      await attendre(250);
+      finie = executionsVps().find((e) => ["fait", "erreur", "arrete"].includes(e.statut));
+    }
+    verifier(finie?.statut === "fait", `VPS : l’exécution va au bout sur le serveur (${finie?.statut ?? "pas finie"}${finie?.erreur ? ` : ${finie.erreur}` : ""})`);
+    verifier(await surDisque(() => conversations().executions?.some((e) => e.id === finie?.id && e.statut === "fait"), 15000), "VPS : l’app a suivi l’exécution jusqu’au bout");
+    verifier(await surDisque(() => conversations().messages?.some((m) => m.chatId === finie?.chatId && m.author?.kind === "role"), 15000), "VPS : la réponse de l’agent est dans la conversation du workflow");
     await app.ev(`(() => { localStorage.removeItem("klyra:lieu-actif"); window.dispatchEvent(new Event("klyra:lieu-actif")); })()`);
     verifier(await app.quand(`!document.body.innerText.includes("Bonjour vps")`), "Ce PC : le workflow du VPS n’y est pas");
     verifier(fournisseur.requetes.some((q) => q.resultats.some((r) => !r.erreur && r.texte.includes("Workflow créé : « Bonjour vps »"))), "VPS : la réponse revient à l’agent du serveur");

@@ -19,7 +19,10 @@ export const appelEspaceVps = (origine: string, jeton: string | null, methode: s
 /** La connexion Composio d'un VPS. Seul le process principal l'appelle : les jetons ne vont jamais à l'écran. */
 export const appelComposioVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("composio", origine, jeton, methode, corps);
 
-async function appelVps(route: "equipe" | "coffre" | "espace" | "composio", origine: string, jeton: string | null, methode: string, corps: unknown, attente = ATTENTE_MS): Promise<unknown> {
+/** Les workflows qui tournent sur un VPS : les lancer, les arrêter, décider d'une approbation. */
+export const appelWorkflowsVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("workflows", origine, jeton, methode, corps);
+
+async function appelVps(route: "equipe" | "coffre" | "espace" | "composio" | "workflows", origine: string, jeton: string | null, methode: string, corps: unknown, attente = ATTENTE_MS): Promise<unknown> {
   if (!jeton) throw new AgentError("introuvable", "Ce PC n’est plus relié à ce VPS.");
   if (!/^[a-z-]{1,32}$/.test(methode)) throw new AgentError("introuvable", "Demande inconnue.");
   const controle = new AbortController();

@@ -254,7 +254,8 @@ export function creerAgents(options) {
               }
             : {}),
           ...(corps.skillsParAgent ? { skillsParAgent: validerSkillsParAgent(corps.skillsParAgent) } : {}),
-          reglagesLe: Date.now(),
+          ...(["demander", "projet", "tout"].includes(corps.acces) ? { acces: corps.acces } : {}),
+          ...(corps.configuration || corps.skillsParAgent ? { reglagesLe: Date.now() } : {}),
         });
         return appelerEquipe("reglages");
       }
@@ -395,7 +396,7 @@ export function creerAgents(options) {
   const composioServeur = creerComposioServeur({ donnees, coffre: coffreServeur, ...(options.fetch ? { fetch: options.fetch } : {}) });
   options.ia?.surComposio?.(composioServeur.mcp);
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
-  const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
+  const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0), local: () => moteurWorkflows });
   options.ia?.surWorkflows?.({ appeler: workflows.appeler });
   /** La configuration MCP d'une session : l'agent et la conversation en en-têtes (qui publie). */
   const mcpIa = (demande = {}) => options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation: demande.conversation ?? demande.contexte?.chatId ?? "" }) ?? null;
@@ -957,8 +958,34 @@ export function creerAgents(options) {
     return complete ? recue : "";
   };
 
+  /**
+   * Un appel au modèle, sans conversation ni outil (étapes LLM et conditions d'un workflow), dans un dossier
+   * vide supprimé après.
+   */
+  async function appelLibre({ prompt, systeme, modele, effort, signal }) {
+    const bin = trouverClaude();
+    if (!bin) return { ok: false, erreur: "Claude Code n’est pas installé sur le VPS." };
+    if (etat() !== "pret") return { ok: false, erreur: "Claude Code n’est pas connecté sur le VPS." };
+    if (signal?.aborted) return { ok: false, erreur: "Arrêté." };
+    const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-llm-"));
+    try {
+      const args = ["-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config", ...(modele ? ["--model", modele] : []), ...(effort ? ["--effort", effort] : []), ...(systeme?.trim() ? ["--append-system-prompt", systeme.trim()] : [])];
+      const r = await tourImprime(bin, args, dossier, prompt);
+      return r.erreur ? { ok: false, erreur: r.erreur } : { ok: true, texte: (r.texte ?? "").trim() };
+    } finally {
+      rmSync(dossier, { recursive: true, force: true });
+    }
+  }
+
+  /** L'accès choisi pour les agents de ce serveur : ses travaux sans personne (workflows planifiés) le suivent. */
+  const accesServeur = () => {
+    const a = lireFichierEquipe().acces;
+    return ["demander", "projet", "tout"].includes(a) ? a : "projet";
+  };
+  let moteurWorkflows = null;
+
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }
