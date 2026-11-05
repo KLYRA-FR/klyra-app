@@ -1030,7 +1030,7 @@ function registerBridge() {
       .update(JSON.stringify([generation(), assistant, fiches, configuration, skillsParAgent, empreinteSkills(skills)]))
       .digest("hex")
       .slice(0, 16);
-    return { fiches, assistant, configuration, skillsParAgent, skills, empreinte };
+    return { fiches, assistant, configuration, configurationEcran: lireReglages().configuration, skillsParAgent, skills, empreinte };
   };
   const depuisFenetre = (event: Electron.IpcMainInvokeEvent) => {
     const win = fenetrePrincipale;

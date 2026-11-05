@@ -835,9 +835,16 @@ test("chaque serveur garde son équipe : l'app la lit et la modifie ici, et ne l
     assert.equal((await equipe("meta-ecrire", { meta: { lou: { teinte: "violet" } } })).statut, 200);
     assert.deepEqual((await equipe("meta")).json.resultat, { lou: { teinte: "violet" } });
 
+    // Jamais réglés sur ce serveur : l'écran montre ce que le PC a copié, pas les valeurs par défaut.
+    assert.equal((await equipe("reglages")).json.resultat.configuration, null);
+    agents.recevoirFiches({ fiches: [], partielle: true, configuration: {}, configurationEcran: { memoireAgents: false, consignes: null }, empreinte: "e7" });
+    assert.deepEqual((await equipe("reglages")).json.resultat.configuration, { memoireAgents: false, consignes: null });
+    agents.recevoirFiches({ fiches: [], partielle: true, configuration: {}, configurationEcran: { memoireAgents: true, consignes: null }, empreinte: "e7b" });
+    assert.deepEqual((await equipe("reglages")).json.resultat.configuration, { memoireAgents: false, consignes: null }, "une fois là, le PC ne la remplace plus");
+
     // Réglés sur ce serveur, ses réglages restent à lui, même face à l'envoi complet d'une ancienne app.
     assert.equal((await equipe("reglages-ecrire", { configuration: { memoireAgents: false, consignes: "Du VPS" }, configurationEcran: { memoireAgents: false } })).statut, 200);
-    agents.recevoirFiches({ fiches: [], assistant: null, configuration: { memoireAgents: true, consignes: "Du PC", coffre: true }, empreinte: "e8" });
+    agents.recevoirFiches({ fiches: [], assistant: null, configuration: { memoireAgents: true, consignes: "Du PC", coffre: true }, configurationEcran: { memoireAgents: true }, empreinte: "e8" });
     assert.deepEqual((await equipe("reglages")).json.resultat.configuration, { memoireAgents: false });
     assert.equal(agents.empreinteEquipe(), "e8", "l'empreinte suit, pour que l'app ne renvoie pas sans fin");
     // Un fichier partiel reste complet : l'app ne le renvoie pas à chaque message.
