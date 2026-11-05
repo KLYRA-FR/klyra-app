@@ -39,7 +39,9 @@ beforeEach(() => {
   vi.stubGlobal("window", fenetre);
   vi.stubGlobal("localStorage", local);
   vi.stubGlobal("sessionStorage", temporaire);
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 202 })));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/espace/lire")
+    ? Response.json({ resultat: { revision: 0, elements: [] } })
+    : new Response(null, { status: 202 })));
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -139,11 +141,28 @@ describe("session locale de ce téléphone", () => {
     actualiserSessionTelephone({ membre: "compte-a", deconnecte: false, revoque: false });
     garderAccesFictifs();
     const reponse = Promise.withResolvers<Response>();
-    vi.mocked(fetch).mockReturnValueOnce(reponse.promise);
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ resultat: { revision: 0, elements: [] } })).mockReturnValueOnce(reponse.promise);
     const envoi = envoyerAuVps(message);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     actualiserSessionTelephone({ membre: "compte-b", deconnecte: false, revoque: false });
     reponse.resolve(new Response(null, { status: 202 }));
     await expect(envoi).resolves.toMatchObject({ ok: false });
+    vi.mocked(fetch).mockClear();
+    await verifierPurge();
+  });
+
+  test("une révocation pendant la lecture des réglages empêche le départ du message", async () => {
+    const { actualiserSessionTelephone } = await import("./session-locale");
+    const { envoyerAuVps } = await import("./vps-direct");
+    actualiserSessionTelephone({ membre: "compte-a", deconnecte: false, revoque: false });
+    garderAccesFictifs();
+    const reponse = Promise.withResolvers<Response>();
+    vi.mocked(fetch).mockReturnValueOnce(reponse.promise);
+    const envoi = envoyerAuVps(message);
+    actualiserSessionTelephone({ membre: null, deconnecte: true, revoque: true });
+    reponse.resolve(Response.json({ resultat: { revision: 0, elements: [] } }));
+    await expect(envoi).resolves.toMatchObject({ ok: false });
+    expect(fetch).toHaveBeenCalledOnce();
     vi.mocked(fetch).mockClear();
     await verifierPurge();
   });

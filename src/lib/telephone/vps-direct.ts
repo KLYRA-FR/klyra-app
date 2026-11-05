@@ -2,11 +2,13 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { jetonAppareil } from "@/lib/serveur-vps";
+import type { LectureEspace } from "@/lib/espace-sync";
+import type { Chat } from "@/types/domain";
 
 /**
- * Voie directe du téléphone vers un VPS, quand l'ordinateur est fermé. D'habitude, le téléphone écrit
- * au compte et l'ordinateur relaie (M-3) ; mais une conversation qui tourne sur un VPS peut avancer
- * sans lui : le téléphone, relié à ce VPS (Plus › Serveurs), lui envoie le message et lit la réponse.
+ * Voie directe du téléphone vers un VPS. Une conversation qui tourne sur un VPS ne dépend pas de
+ * l'ouverture d'un ordinateur : le téléphone, relié à ce VPS (Plus › Serveurs), lui envoie le message
+ * et lit la réponse. Les conversations de l'ordinateur gardent leur file dans le compte.
  * Le VPS garde la conversation et le texte du message avec la réponse : à sa réouverture, l'ordinateur
  * range l'échange dans la conversation (`electron/contexte-distant.ts`), puis le recopie dans le compte.
  * D'ici là, l'échange est gardé sur ce téléphone seulement.
@@ -17,11 +19,11 @@ const CLE = "klyra:telephone:vps-direct";
 /** Au-delà, un échange que le compte n'a toujours pas repris est oublié (le journal du VPS garde 24 h). */
 const GARDE_MS = 24 * 60 * 60 * 1000;
 
-export type Voie = "file" | "vps";
+export type Voie = "file" | "vps" | "non-relie";
 
-/** Ordinateur ouvert : il relaie, comme pour toute conversation. Fermé : le VPS directement, si ce téléphone y est relié. */
-export function voieEnvoi({ posteOuvert, lieu, jeton }: { posteOuvert: boolean; lieu: string | null | undefined; jeton: string | null }): Voie {
-  return !posteOuvert && lieu && jeton ? "vps" : "file";
+/** La destination appartient à la conversation. Un accès VPS perdu ne renvoie jamais le travail au PC. */
+export function voieEnvoi({ lieu, jeton }: { lieu: string | null | undefined; jeton: string | null }): Voie {
+  return lieu ? (jeton ? "vps" : "non-relie") : "file";
 }
 
 /** Ce qu'un VPS sait faire sans l'ordinateur : un simple message à un agent, sans pièce ni geste sur le fil. */
@@ -163,8 +165,8 @@ export async function envoyerAuVps(p: {
   agentId: string;
   titre: string;
   texte: string;
-  modele: string | null;
-  effort: string | null;
+  modele?: string | null;
+  effort?: string | null;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const depart = generation;
   const jeton = jetonAppareil(p.adresse);
@@ -183,6 +185,20 @@ export async function envoyerAuVps(p: {
     autorisation: null,
   };
   try {
+    /* Le compte ne copie pas le fournisseur. Relire le fil sur sa machine préserve ChatGPT/Grok et
+       son modèle même si le téléphone n'a jamais ouvert cette conversation depuis le bureau. */
+    const lecture = await fetch(`${p.adresse}/klyra/v1/espace/lire`, {
+      method: "POST", headers: entetes(jeton), body: "{}", cache: "no-store", redirect: "error",
+    });
+    if (lecture.status === 401) return { ok: false, message: "Ce téléphone n’est plus relié à ce VPS : relie-le dans Plus › Serveurs." };
+    if (!lecture.ok) return { ok: false, message: "Les réglages de cette conversation ne se lisent pas sur le VPS. Réessaie après avoir vérifié le serveur." };
+    const lu = (await lecture.json()) as { resultat?: LectureEspace };
+    if (!Array.isArray(lu.resultat?.elements)) return { ok: false, message: "La conversation ne se lit pas sur le VPS. Réessaie après avoir vérifié le serveur." };
+    const valeur = lu.resultat.elements.find((e) => e.type === "conversation" && e.id === p.conversation)?.valeur as { chat?: Pick<Chat, "fournisseur" | "modele" | "effort"> } | undefined;
+    const chat = valeur?.chat;
+    const moteur = chat?.fournisseur || "claude";
+    if (!["claude", "codex", "grok"].includes(moteur)) return { ok: false, message: "Ce fournisseur n’est pas disponible sur ce téléphone." };
+    if (depart !== generation) return { ok: false, message: "Ce téléphone a été déconnecté : reconnecte-toi pour continuer." };
     const reponse = await fetch(`${p.adresse}${CHEMIN_AGENT}/envoyer`, {
       method: "POST",
       headers: entetes(jeton),
@@ -195,8 +211,9 @@ export async function envoyerAuVps(p: {
           prompt: p.texte,
           /* Le compte ne garde pas les sessions : le VPS reprend celle de cette conversation (`contexte.chatId`). */
           sessionId: null,
-          modele: p.modele,
-          effort: p.effort,
+          moteur,
+          modele: p.modele === undefined ? (chat?.modele ?? null) : p.modele,
+          effort: p.effort === undefined ? (chat?.effort ?? null) : p.effort,
           acces: "demander",
           dossier: null,
         },

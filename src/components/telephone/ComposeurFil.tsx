@@ -10,7 +10,7 @@ import { messageErreur } from "@/lib/compte";
 import { COMMANDE_COMPACTER, formaterJetons, MARGE_PLUS_TARD } from "@/lib/contexte";
 import type { Activite } from "@/lib/copie-compte";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
-import { bandeauComposeur, majuscule, support, supportOuOrdinateur } from "@/lib/poste-texte";
+import { bandeauComposeur, majuscule, support } from "@/lib/poste-texte";
 import { lieuDeHote, lireIdDirect, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { surRepondre } from "@/lib/repondre";
 import { jetonAppareil } from "@/lib/serveur-vps";
@@ -18,6 +18,7 @@ import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skil
 import { ASSISTANT, conseilDuFil, mentionDans, mentionEnCours, type ConversationLue } from "@/lib/telephone/chats";
 import { garderCitation, lireCitation, type CitationBrouillon } from "@/lib/telephone/citation";
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
+import { envoiSimple, voieEnvoi } from "@/lib/telephone/vps-direct";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
 import { ajouterPieces, MAX_PIECES, nomCapture, taillePiece, texteParDefaut } from "@/lib/telephone/pieces";
 import { useAnnonce } from "./Annonce";
@@ -320,17 +321,18 @@ export function ComposeurFil({
   const modeleActuel = choix ?? lireModele(conversation?.modele);
   const postesOuverts = [...(postes ?? [])].sort((a, b) => b.dernierSignal - a.dernierSignal);
   const posteVise = postesOuverts.find((p) => p.cle === posteChoisi) ?? postesOuverts[0];
-  /* Conversation d'un VPS relié à ce téléphone : ordinateur fermé, le message part directement au VPS (`envoi.ts`). */
+  /* La destination est celle de la conversation, indépendamment des ordinateurs ouverts (`envoi.ts`). */
   const serveurs = useServeursRelies();
   /* Une conversation directe pas encore copiée dans le compte : son id dit son serveur. */
   const hote = lireIdDirect(origine)?.hote;
-  const lieu = conversation?.lieu ?? (hote ? lieuDeHote(hote) : null);
-  const directVps = !ouvert && !!lieu && origine.startsWith("dm-") && !!jetonAppareil(lieu);
-  const bandeau = ouvert
-    ? null
-    : directVps && principal
-      ? `${majuscule(supportOuOrdinateur(principal))} est fermé : ton message part directement à ${nomLieu(lieu, serveurs)}.`
-      : bandeauComposeur(principal);
+  const lieu = conversation ? (conversation.lieu ?? null) : hote ? lieuDeHote(hote) : null;
+  const directVps = !!lieu && origine.startsWith("dm-") && envoiSimple({ citation }, pieces.length);
+  const voie = voieEnvoi({ lieu, jeton: lieu ? jetonAppareil(lieu) : null });
+  const bandeau = directVps
+    ? voie === "vps"
+      ? `Ton message part directement à ${nomLieu(lieu, serveurs)}.`
+      : "Ce téléphone n’est plus relié à ce VPS : relie-le dans Plus › Serveurs."
+    : ouvert ? null : bandeauComposeur(principal);
   /* Le destinataire effectif : le choix explicite, sinon la première mention reconnue, sinon l'assistant (E2-33). */
   const effectif = destinataire ?? mentionDans(texte, cartes ?? []) ?? ASSISTANT;
 
@@ -437,7 +439,7 @@ export function ComposeurFil({
       options.effort = choix.effort;
     }
     if (nouveauProjet && !conversation) options.nouveau = { projetId: nouveauProjet };
-    if (postesOuverts.length >= 2 && posteVise) options.poste = posteVise.cle;
+    if (!lieu && postesOuverts.length >= 2 && posteVise) options.poste = posteVise.cle;
     if (citation) options.citation = citation;
     setEnvoi(true);
     setDeposees(0);
@@ -584,7 +586,9 @@ export function ComposeurFil({
                 {libelleModele(modeleActuel)}
                 <Icon name="chevron-down" size={14} className="text-icone-secondaire" />
               </button>
-              {postesOuverts.length >= 2 && posteVise ? (
+              {lieu ? (
+                <span className={PUCE}>Sur {nomLieu(lieu, serveurs)}</span>
+              ) : postesOuverts.length >= 2 && posteVise ? (
                 <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("poste")}>
                   Sur {support(posteVise)}
                   <Icon name="chevron-down" size={14} className="text-icone-secondaire" />

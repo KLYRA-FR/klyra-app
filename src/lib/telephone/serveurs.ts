@@ -31,7 +31,6 @@ export function ligneServeur({
   agents,
   retard = false,
   verifieLe,
-  sur,
   horsLigne = false,
 }: {
   etat: EtatServeur;
@@ -55,7 +54,7 @@ export function ligneServeur({
       return { etiquette: "Répond", ton: "bleue", phrase: verifieLe && agents === "pret" ? `${detail} · vérifié à ${heure(verifieLe)}` : detail };
     }
     case "silence":
-      return { etiquette: "Ne répond pas", ton: "orange", phrase: `S’il est éteint, la connexion échoue. Tes messages passent par ${sur}.` };
+      return { etiquette: "Ne répond pas", ton: "orange", phrase: "La connexion échoue : les messages directs restent à réessayer vers ce serveur." };
     case "invitation":
       return { etiquette: "Plus relié", ton: "orange", phrase: "Relance la commande sur le VPS et colle le nouveau lien." };
     case "version":

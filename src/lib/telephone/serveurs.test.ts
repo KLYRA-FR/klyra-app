@@ -17,7 +17,7 @@ describe("une ligne de serveur (E8-12, E8-49)", () => {
 
   test("pas de réponse : jamais un arrêt annoncé, et le chemin réel des messages", () => {
     const l = ligneServeur({ etat: "joint", sonde: "silence", sur });
-    expect(l).toEqual({ etiquette: "Ne répond pas", ton: "orange", phrase: "S’il est éteint, la connexion échoue. Tes messages passent par ton Mac." });
+    expect(l).toEqual({ etiquette: "Ne répond pas", ton: "orange", phrase: "La connexion échoue : les messages directs restent à réessayer vers ce serveur." });
     expect(l.phrase).not.toMatch(/arrêté|éteint\./);
   });
 
