@@ -11,6 +11,7 @@ import {
   type EtatAtelier,
   type Pilier,
 } from "@/lib/atelier-agent";
+import { bilanEquipe, membresNouveaux, membresVus, type EtatEquipe } from "@/lib/atelier-equipe";
 import { comparable, nomDejaPris, nomPropre } from "@/lib/noms-agents";
 import { libellePlanning } from "@/lib/routines-affichage";
 import type { Role, RoleTeinte } from "@/types/domain";
@@ -73,9 +74,47 @@ export interface CarteAtelierCompte {
 
 export type PartieAtelierCompte = { type: "atelier-agent"; etapeId: string; ligne?: LigneAtelierCompte; carte?: CarteAtelierCompte };
 
+/* ─── L'atelier d'une équipe ──────────────────────────────────────── */
+
+/** Un agent de la carte d'équipe, tel que le téléphone le montre. */
+export interface MembreEquipeCompte {
+  cle: string;
+  /** L'identifiant de son agent s'il est né, sinon sa clé (son dessin en vient). */
+  id: string;
+  nom: string;
+  role: string;
+  mission: string;
+  teinte: RoleTeinte;
+  remplis: Pilier[];
+  jetons: number;
+  cree: boolean;
+  ecarte: boolean;
+  pris: string | null;
+}
+
+/** Le dernier appel de sa série : la carte d'équipe entière, calculée par l'ordinateur. */
+export interface CarteEquipeCompte {
+  nom: string;
+  but: string;
+  membres: MembreEquipeCompte[];
+  existants: { id: string; raison: string }[];
+  exemples: { demande: string; membre: string; nom: string }[];
+  /** Les fiches qui restent à écrire. */
+  jetons: number;
+  aCreer: number;
+  manques: string[];
+  nee: boolean;
+  remplacee: boolean;
+  provisoire: boolean;
+}
+
+export type PartieEquipeCompte = { type: "atelier-equipe"; etapeId: string; ligne?: { nom: string; arrivent: { id: string; nom: string; teinte: RoleTeinte }[] }; carte?: CarteEquipeCompte };
+
 /** Ce que l'ordinateur sait de la conversation pour réduire ses cartes. */
 export interface ContexteAtelier {
   etats: Map<string, EtatAtelier>;
+  /** L'atelier d'une équipe, plié de même ; absent : ses cartes ne partent pas. */
+  equipes?: Map<string, EtatEquipe>;
   /** Les agents actifs (pour un prénom déjà pris, un agent déjà créé, ses voisins). */
   roles: Pick<Role, "id" | "name" | "tag" | "teinte">[];
   teinteDe: (id: string) => RoleTeinte;
@@ -164,6 +203,60 @@ export function vueAtelier(etapeId: string, contexte: ContexteAtelier, net: (tex
             { nom: net(b.routine.nom, 80), consigne: net(b.routine.consigne, 2000), schedule: routine.schedule, planning: libellePlanning(routine.schedule) }
           : null,
       vps: contexte.vps,
+    },
+  };
+}
+
+/** La carte d'équipe d'un appel, telle que le téléphone l'affiche (mêmes règles que la carte du bureau). */
+export function vueEquipe(etapeId: string, contexte: ContexteAtelier, net: (texte: string, max: number) => string, compact: boolean): PartieEquipeCompte | null {
+  const etat = contexte.equipes?.get(etapeId);
+  if (!etat) return null;
+  const b = etat.apres;
+  if (!etat.dernier) {
+    return {
+      type: "atelier-equipe",
+      etapeId: etapeId.slice(0, 200),
+      ligne: {
+        nom: net(b.nom, 60),
+        arrivent: membresNouveaux(etat)
+          .slice(0, 6)
+          .map((m) => ({ id: m.cle.slice(0, 80), nom: nomPropre(m.agent.nom).slice(0, 80), teinte: etat.teintes[m.cle] ?? contexte.teinteDe(m.cle) })),
+      },
+    };
+  }
+  const vus = membresVus(etat, contexte.roles, contexte.teinteDe);
+  const bilan = bilanEquipe(etat, vus);
+  const court = (max: number, petit: number) => (compact ? petit : max);
+  const nomDe = (cle: string) => vus.find((x) => x.m.cle === cle)?.nom ?? contexte.roles.find((r) => r.id === cle)?.name ?? cle;
+  return {
+    type: "atelier-equipe",
+    etapeId: etapeId.slice(0, 200),
+    carte: {
+      nom: net(b.nom, 60),
+      but: net(b.but, court(300, 160)),
+      membres: vus.map((x) => ({
+        cle: x.m.cle.slice(0, 80),
+        id: (x.idCree ?? x.m.cle).slice(0, 80),
+        nom: x.nom.slice(0, 80),
+        role: net(x.m.agent.role, 120),
+        mission: net(x.m.agent.mission || x.m.agent.description, court(400, 160)),
+        teinte: x.teinte,
+        remplis: [...piliersRemplis(x.m.agent)],
+        jetons: jetonsBrouillon(x.m.agent),
+        cree: !!x.idCree,
+        ecarte: x.ecarte,
+        pris: x.pris?.name.slice(0, 80) ?? null,
+      })),
+      existants: b.existants
+        .filter((e) => contexte.roles.some((r) => r.id === e.id))
+        .map((e) => ({ id: e.id.slice(0, 80), raison: net(e.raison, court(200, 100)) })),
+      exemples: b.exemples.map((e) => ({ demande: net(e.demande, court(200, 120)), membre: e.membre.slice(0, 80), nom: nomDe(e.membre).slice(0, 80) })),
+      jetons: bilan.jetons,
+      aCreer: bilan.aCreer.length,
+      manques: bilan.manques.map((m) => net(m, 160)),
+      nee: bilan.nee,
+      remplacee: bilan.remplacee,
+      provisoire: etat.provisoire,
     },
   };
 }

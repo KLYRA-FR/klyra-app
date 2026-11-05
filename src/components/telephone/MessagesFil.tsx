@@ -29,6 +29,7 @@ import { usePostes, useSupport } from "./poste";
 import { RondAgent, useCartes } from "./AgentsChat";
 import { CarteAccordChat } from "./CarteAccordChat";
 import { CarteAtelierTelephone, ChoixTelephone, LigneAtelierTelephone } from "./AtelierTelephone";
+import { CarteEquipeTelephone, LigneEquipeTelephone } from "./EquipeTelephone";
 import { ActionsMessage, arreterLecture } from "./ActionsMessage";
 import type { MessageEnAttente } from "@/lib/telephone/chats";
 
@@ -339,6 +340,12 @@ function PartieFil({
         <CarteAtelierTelephone etapeId={partie.etapeId} carte={partie.carte} conversation={contexte.origine} />
       ) : partie.ligne ? (
         <LigneAtelierTelephone ligne={partie.ligne} />
+      ) : null;
+    case "atelier-equipe":
+      return partie.carte ? (
+        <CarteEquipeTelephone etapeId={partie.etapeId} carte={partie.carte} conversation={contexte.origine} />
+      ) : partie.ligne ? (
+        <LigneEquipeTelephone ligne={partie.ligne} />
       ) : null;
     case "choix":
       return (

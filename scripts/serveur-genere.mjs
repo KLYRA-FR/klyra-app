@@ -20,7 +20,8 @@
  * - `serveur/workflows-moteur-coeur.mjs`, `serveur/workflows-types.mjs` et `serveur/planning-passages.mjs` : le moteur
  *   des workflows, le même que dans l'app (src/lib/workflows/moteur.ts, src/types/workflows.ts, src/lib/planning.ts) ;
  * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
- *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture).
+ *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture) ; `serveur/atelier-equipe.mjs` :
+ *   l'atelier d'une équipe (electron/atelier-equipe.ts).
  * - `serveur/version-code.mjs` : la version du code du serveur (electron/version-serveur.ts), montée ici dès que
  *   `empreinteCodeServeur` change. Le VPS ne se met pas à jour seul : c'est ce numéro qui révèle un serveur en retard.
  *   Conflit de fusion sur ce fichier : relancer ce script, il repart de la plus haute version et écrit un fichier propre.
@@ -49,6 +50,7 @@ const FICHIERS = [
   ["electron/epreuve.ts", "serveur/epreuve.mjs"],
   ["electron/json-partiel.ts", "serveur/json-partiel.mjs"],
   ["electron/atelier-agent.ts", "serveur/atelier-agent.mjs"],
+  ["electron/atelier-equipe.ts", "serveur/atelier-equipe.mjs"],
   ["electron/navigateur/definitions.ts", "serveur/navigateur-definitions.mjs"],
   ["electron/coffre-regles.ts", "serveur/coffre-regles.mjs"],
   ["electron/coffre-definitions.ts", "serveur/coffre-definitions.mjs"],

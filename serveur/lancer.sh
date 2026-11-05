@@ -164,6 +164,7 @@ curl -fsSL "$SOURCE/workflows-outils.mjs" -o "$CODE_DIR/workflows-outils.mjs"
 curl -fsSL "$SOURCE/epreuve.mjs" -o "$CODE_DIR/epreuve.mjs"
 curl -fsSL "$SOURCE/json-partiel.mjs" -o "$CODE_DIR/json-partiel.mjs"
 curl -fsSL "$SOURCE/atelier-agent.mjs" -o "$CODE_DIR/atelier-agent.mjs"
+curl -fsSL "$SOURCE/atelier-equipe.mjs" -o "$CODE_DIR/atelier-equipe.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────

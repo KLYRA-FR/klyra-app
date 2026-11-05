@@ -1,7 +1,9 @@
 import type { AjoutFiche, MajAtelier } from "../../electron/atelier-agent";
+import type { MajEquipe } from "../../electron/atelier-equipe";
 import type { ResultatCas, TypeCas } from "../../electron/epreuve";
 
 export type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, RoutineProposee, VoisinAgent } from "../../electron/atelier-agent";
+export type { BrouillonEquipe, MajEquipe, MembreBrouillon } from "../../electron/atelier-equipe";
 
 /**
  * Modèle de données de l'app. Les données factices (src/data/mock.ts) et le
@@ -321,6 +323,21 @@ export type MessagePart =
        * deux le voient. Retirés au chargement : un essai coupé par la fermeture de l'app ne reprend pas.
        */
       essais?: TypeCas[];
+    }
+  /**
+   * L'atelier d'une équipe (outil `proposer_equipe`) : ce que cet appel a appris. La carte plie tous
+   * les appels de la conversation (`src/lib/atelier-equipe.ts`). Les choix de la personne sont notés
+   * sur la carte affichée : `teintes` et `crees` par clé de membre, `ecartes` la liste entière.
+   */
+  | {
+      type: "atelier-equipe";
+      etapeId: string;
+      maj: MajEquipe;
+      /** L'entrée encore en cours d'écriture par le modèle (les cartes arrivent en direct). */
+      provisoire?: boolean;
+      teintes?: Record<string, RoleTeinte>;
+      ecartes?: string[];
+      crees?: Record<string, string>;
     }
   /** Des réponses toutes prêtes sous la question de l'assistant (outil `proposer_choix`). */
   | { type: "choix"; etapeId: string; question: string; options: string[]; multiple: boolean }

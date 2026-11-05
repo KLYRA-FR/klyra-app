@@ -6,6 +6,7 @@
  * - « liste <agent> » : il liste les fils ouverts de cet agent (outil `lister_fils`) ;
  * - « atelier <prénom> » : il complète la carte d'un agent à créer (outil `proposer_agent`) ;
  * - « choix <mot> » : il propose des réponses toutes prêtes (outil `proposer_choix`) ;
+ * - « equipe <mot> » : il compose une équipe de deux agents (outil `proposer_equipe`) ;
  * - « coffre <variable> » : il demande un secret à la personne (outil `coffre_demander`) ;
  * - « workflow <mot> » : il construit un workflow de trois étapes (outil `construire_workflow`) ;
  * - « lance <mot> » : il lance le dernier workflow construit dans la conversation (outil `lancer_workflow`) ;
@@ -28,12 +29,13 @@ const OUTILS_ORDRES = {
   liste: "mcp__klyra__lister_fils",
   atelier: "mcp__klyra__proposer_agent",
   choix: "mcp__klyra__proposer_choix",
+  equipe: "mcp__klyra__proposer_equipe",
   workflow: "mcp__klyra__construire_workflow",
   lance: "mcp__klyra__lancer_workflow",
   coffre: "mcp__klyra__coffre_demander",
 };
 /** Les outils dont l'entrée arrive par petits morceaux, lentement : l'app la montre en direct. */
-const EN_DIRECT = new Set(["mcp__klyra__proposer_agent", "mcp__klyra__construire_workflow"]);
+const EN_DIRECT = new Set(["mcp__klyra__proposer_agent", "mcp__klyra__proposer_equipe", "mcp__klyra__construire_workflow"]);
 function entreeOrdre(verbe, cible, corps) {
   if (verbe === "workflow")
     return {
@@ -63,6 +65,20 @@ function entreeOrdre(verbe, cible, corps) {
       epreuve: { normal: "Quoi de neuf chez nos trois concurrents ?", floue: "Regarde le marché.", horsMetier: "Corrige le bug du formulaire de contact." },
       voisins: [{ id: "nina", raison: "Elle suit déjà les propositions commerciales." }],
       routine: { nom: "Note de veille", consigne: "Rends la note de veille de la semaine.", quand: { type: "semaine", jour: 5, heure: "08:30" } },
+    };
+  if (verbe === "equipe")
+    return {
+      nom: `Studio ${cible}`,
+      but: "Sortir la newsletter et les posts de la semaine sans y passer le week-end.",
+      membres: [
+        { id: "redac", nom: "Romy", role: "Rédaction", mission: "Écrit la newsletter et les posts à partir des notes de la semaine.", livrables: ["La newsletter en Markdown"], limites: ["Publier : jamais sans ton accord."] },
+        { id: "visuels", nom: "Basile", role: "Visuels", mission: "Prépare les visuels des posts au format de chaque réseau." },
+      ],
+      exemples: [
+        { demande: "La newsletter de mai", membre: "redac" },
+        { demande: "Trois visuels pour le salon", membre: "Basile" },
+        { demande: "Organise ma semaine", membre: "principal" },
+      ],
     };
   if (verbe === "coffre") return { variable: cible, nom: "Clé d’essai", genre: "cle-api", service: "essai.klyra.fr", raison: "Pour l’essai du coffre." };
   if (verbe === "choix") return { question: "Quand l’appeler ?", options: ["Chaque vendredi", "Avant un rendez-vous", "Quand je cite un concurrent"], multiple: true };
@@ -98,8 +114,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
     const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|workflow|lance|coffre) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|workflow|lance|coffre) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|equipe|workflow|lance|coffre) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|equipe|workflow|lance|coffre) ([a-z0-9-]+)/m) : null;
     requetes.push({
       message: texteDe(dernier?.content ?? ""),
       sousAgent,

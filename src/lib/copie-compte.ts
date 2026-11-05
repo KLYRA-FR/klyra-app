@@ -1,8 +1,8 @@
 import type { Chat, Etape, Message, MessagePart, Project, Role } from "@/types/domain";
-import { vueAtelier, type ContexteAtelier, type PartieAtelierCompte } from "./atelier-compte";
+import { vueAtelier, vueEquipe, type ContexteAtelier, type PartieAtelierCompte, type PartieEquipeCompte } from "./atelier-compte";
 import { echanges, mesureActuelle, type MesureContexte } from "./contexte";
 
-export type { CarteAtelierCompte, ContexteAtelier, LigneAtelierCompte, ResultatCompte } from "./atelier-compte";
+export type { CarteAtelierCompte, CarteEquipeCompte, ContexteAtelier, LigneAtelierCompte, MembreEquipeCompte, ResultatCompte } from "./atelier-compte";
 
 const TEXTE_MAX = 8000;
 const PARTIES_MAX = 20_000;
@@ -104,6 +104,8 @@ export type PartieCompte =
   | { type: "actions"; actions: { label: string; primary: boolean }[] }
   /** L'atelier d'un agent : la carte calculée par l'ordinateur (cf. atelier-compte.ts). */
   | PartieAtelierCompte
+  /** L'atelier d'une équipe : la carte calculée par l'ordinateur (cf. atelier-compte.ts). */
+  | PartieEquipeCompte
   /** Les réponses toutes prêtes sous une question de l'assistant (outil `proposer_choix`). */
   | { type: "choix"; question: string; options: string[]; multiple: boolean };
 
@@ -178,6 +180,8 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
       };
     case "atelier-agent":
       return atelier ? vueAtelier(part.etapeId, atelier, net, r.atelierCompact) : null;
+    case "atelier-equipe":
+      return atelier ? vueEquipe(part.etapeId, atelier, net, r.atelierCompact) : null;
     case "choix":
       return { type: "choix", question: net(part.question, 300), options: part.options.slice(0, 6).map((o) => net(o, 120)), multiple: part.multiple };
     // Un secret ne se colle jamais du téléphone (il passerait par le compte) : la demande part en une ligne.

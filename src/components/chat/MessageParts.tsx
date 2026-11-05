@@ -22,6 +22,8 @@ import { confierAEditeur } from "@/lib/proposition-agent";
 import { useIdDirect, useRole } from "@/lib/workspace";
 import type { EtatAtelier } from "@/lib/atelier-agent";
 import { CarteAtelier, ChoixReponses } from "./CarteAtelier";
+import { CarteEquipe } from "./CarteEquipe";
+import type { EtatEquipe } from "@/lib/atelier-equipe";
 import { CarteCoffre } from "./CarteCoffre";
 import { PastilleExtension } from "./PastilleExtension";
 import type {
@@ -474,6 +476,7 @@ export function MessagePartView({
   chatId = "",
   lieu = null,
   etatAtelier,
+  etatEquipe,
   choix,
   onCoffre,
 }: {
@@ -495,6 +498,8 @@ export function MessagePartView({
   lieu?: string | null;
   /** L'atelier d'un agent plié sur toute la conversation (cf. plierAteliers). */
   etatAtelier?: (etapeId: string) => EtatAtelier | undefined;
+  /** L'atelier d'une équipe plié sur toute la conversation (cf. plierEquipes). */
+  etatEquipe?: (etapeId: string) => EtatEquipe | undefined;
   /** Les réponses toutes prêtes : encore ouvertes, ou ce que la personne a répondu. */
   choix?: { actif: boolean; repondu: string | null; onRepondre: (texte: string) => void };
   /** La réponse à une demande de secret : notée sur la carte, puis écrite à l'agent (jamais la valeur). */
@@ -517,6 +522,8 @@ export function MessagePartView({
       return <CartePropositionAgent part={part} remplacee={remplacee} />;
     case "atelier-agent":
       return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} chatId={chatId} lieu={lieu} enDirect={enCours} />;
+    case "atelier-equipe":
+      return <CarteEquipe part={part} etat={etatEquipe?.(part.etapeId)} messageId={messageId} enDirect={enCours} onEnvoyer={onAction} />;
     case "choix":
       return <ChoixReponses part={part} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onRepondre={(t) => choix?.onRepondre(t)} />;
     case "coffre-demande":

@@ -9,6 +9,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { ouvrirPanneauAgent } from "./PanneauLateral";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { plierAteliers, type EtatAtelier } from "@/lib/atelier-agent";
+import { plierEquipes, type EtatEquipe } from "@/lib/atelier-equipe";
 import { cn } from "@/lib/cn";
 import { formatDaySeparator, formatJourHeure, formatTime, isSameDay } from "@/lib/format";
 import { departsAvant, estAvantDepart } from "@/lib/contexte";
@@ -154,6 +155,7 @@ function RoleMessage({
   travail,
   propositionCourante,
   ateliers,
+  equipes,
   repondu,
   onAction,
 }: {
@@ -167,6 +169,8 @@ function RoleMessage({
   propositionCourante: string | null;
   /** L'atelier d'un agent, plié sur toute la conversation. */
   ateliers: Map<string, EtatAtelier>;
+  /** L'atelier d'une équipe, plié sur toute la conversation. */
+  equipes: Map<string, EtatEquipe>;
   /** Ce que la personne a écrit après ce message, s'il y a lieu (réponses toutes prêtes). */
   repondu: string | null;
   onAction: (label: string, roleId: RoleId) => void;
@@ -230,6 +234,7 @@ function RoleMessage({
             chatId={chat.id}
             lieu={chat.lieu ?? null}
             etatAtelier={(id) => ateliers.get(id)}
+            etatEquipe={(id) => equipes.get(id)}
             choix={{ actif: derniere && repondu === null && !enCours, repondu, onRepondre: (texte) => onAction(texte, roleId) }}
             onAutorisation={(demandeId, decision) => repondreAutorisation(message.id, demandeId, decision)}
             onCoffre={(etapeId, etat, texte) => {
@@ -403,6 +408,8 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
 
   /* L'atelier d'un agent : tous ses appels pliés dans l'ordre (cf. atelier-agent.ts). */
   const ateliers = useMemo(() => plierAteliers(messages), [messages]);
+  /* L'atelier d'une équipe, de même (cf. atelier-equipe.ts). */
+  const equipes = useMemo(() => plierEquipes(messages), [messages]);
 
   /* Pour les réponses toutes prêtes : le premier message de la personne après chaque réponse. */
   const reponses = useMemo(() => {
@@ -474,6 +481,7 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
                       travail={travail?.messageId === message.id ? travail : null}
                       propositionCourante={propositionCourante}
                       ateliers={ateliers}
+                      equipes={equipes}
                       repondu={reponses.get(message.id) ?? null}
                       onAction={(label, roleId) => sendMessage(chatId, label, roleId)}
                     />

@@ -344,6 +344,64 @@ body {
   }
 }
 
+/* ─── Atelier d'une équipe (CarteEquipe) ─────────────────────────── */
+
+/* La table : une grille de points, sur laquelle les agents sont posés en éventail. */
+.klyra-tablee {
+  container-type: inline-size;
+  background-color: var(--color-fond-page);
+  background-image: radial-gradient(circle, var(--color-bordure-defaut) 1px, transparent 1.5px);
+  background-size: 12px 12px;
+  background-position: center;
+}
+
+/* Une carte de l'éventail : `--i` son rang depuis le centre, `--arc` sa descente, `--angle` l'écart. */
+.klyra-carte-membre {
+  --pas: min(104px, 17cqw);
+  width: min(124px, 22cqw);
+  transform: translateX(-50%) translate(calc(var(--i) * var(--pas)), calc(var(--arc) * 1px)) rotate(calc(var(--i) * var(--angle)));
+  transform-origin: 50% 100%;
+  transition:
+    transform 320ms var(--ease-sortie),
+    filter 220ms var(--ease-sortie),
+    opacity 220ms var(--ease-sortie);
+}
+
+/* Survolée ou choisie, elle se lève et se redresse, au-dessus des autres. */
+.klyra-carte-membre:hover,
+.klyra-carte-membre:focus-visible,
+.klyra-carte-membre[aria-pressed="true"] {
+  transform: translateX(-50%) translate(calc(var(--i) * var(--pas)), calc(var(--arc) * 1px - 18px)) rotate(0deg);
+  z-index: 30 !important;
+}
+
+/* Laissée de côté : grise, un peu effacée. */
+.klyra-carte-membre[data-ecarte] {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+/* Un agent qui arrive pendant que l'assistant écrit : sa carte est distribuée depuis le bas. */
+.klyra-carte-distribuee {
+  animation: klyra-distribuer 640ms var(--ease-sortie) backwards;
+}
+
+@keyframes klyra-distribuer {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translate(0, 140px) rotate(-22deg) scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-carte-membre {
+    transition: none;
+  }
+  .klyra-carte-distribuee {
+    animation: none;
+  }
+}
+
 /* Pendant qu'on étire un panneau, les aperçus (iframe) ne captent pas la souris. */
 body[data-glisse] iframe {
   pointer-events: none;

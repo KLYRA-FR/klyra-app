@@ -10,8 +10,9 @@
  *  - « Créer l'agent » : la fiche écrite (sans mémoire), active dans Mes agents, à soi, la carte
  *    « Dans ton équipe », l'agent dans la barre latérale.
  * Puis, si Claude Code est là (KLYRA_CLAUDE_PATH), le vrai Claude Code face à un faux fournisseur
- * local (aucun compte, aucune dépense) : l'assistant appelle `proposer_agent` et `proposer_choix` par
- * le serveur MCP de l'app, la carte et les réponses paraissent dans le fil, l'outil lui répond.
+ * local (aucun compte, aucune dépense) : l'assistant appelle `proposer_agent`, `proposer_choix` et
+ * `proposer_equipe` par le serveur MCP de l'app, la carte et les réponses paraissent dans le fil,
+ * l'outil lui répond ; l'équipe : ses agents sur la table, un laissé de côté puis repris, tous créés.
  * Enfin la même chose sur un VPS : un vrai serveur KLYRA local (dossier jetable) avec ce Claude Code,
  * relié à l'app ; l'app n'a pas de Claude Code, donc l'épreuve ne peut tourner que sur le serveur.
  * Prérequis : `pnpm build && pnpm build:electron`.
@@ -244,6 +245,43 @@ try {
         ),
         "les réponses proposées sous sa réponse, à cocher puis envoyer (rien de coché : « Envoyer » grisé)",
       );
+
+      // L'atelier d'une équipe : les agents arrivent sur la table, l'assistant sait où en est l'équipe, tous naissent d'un clic.
+      const avantEquipe = fournisseur.requetes.length;
+      const table = `${derniere}?.querySelector('[data-carte-equipe]')`;
+      await ecrire("equipe contenu");
+      verifier(await app.quand(`${derniere}?.innerText.includes('compose ton équipe')`, 60000), "l’équipe se compose pendant que l’assistant remplit l’outil");
+      verifier(
+        await app.quand(`${table}?.querySelectorAll('[data-membre]').length === 2 && ${derniere}.innerText.includes('Atelier · nouvelle équipe') && ${derniere}.innerText.includes('Studio contenu')`, 60000),
+        "Claude Code → proposer_equipe : la carte d’équipe, deux agents sur la table",
+      );
+      verifier(await app.quand(`${derniere}?.innerText.includes('fin OK')`, 60000), "proposer_equipe répond sans erreur");
+      verifier(
+        fournisseur.requetes.slice(avantEquipe).some((q) => q.resultats.some((r) => !r.erreur && r.texte.includes("Équipe « Studio contenu » à jour : 2 agents"))),
+        "l’assistant reçoit où en est l’équipe",
+      );
+      const texteTable = await app.ev(`${table}?.innerText ?? ''`);
+      verifier(texteTable.includes("Qui s’en charge") && texteTable.includes("La newsletter de mai") && texteTable.includes("Trois visuels pour le salon"), "qui serait responsable de ses vraies demandes");
+      await app.ev(`${table}.querySelector('[data-membre="visuels"]').click(); 0`);
+      verifier(await app.quand(`${table}?.querySelector('[data-membre="visuels"]')?.getAttribute('aria-pressed') === 'true' && ${table}.innerText.includes('Prépare les visuels')`), "un agent choisi sur la table : son détail");
+      await app.cliquer("Le laisser de côté", table);
+      verifier(await app.quand(`${table}?.querySelector('[data-membre="visuels"]')?.hasAttribute('data-ecarte') && ${table}.innerText.includes('1 agent à créer')`), "Basile laissé de côté : un agent à créer");
+      await app.cliquer("Le reprendre dans l’équipe", table);
+      verifier(await app.quand(`!${table}?.querySelector('[data-membre="visuels"]')?.hasAttribute('data-ecarte') && ${table}.innerText.includes('2 agents à créer')`), "repris dans l’équipe");
+      verifier(await app.cliquer("Créer l’équipe", table), "« Créer l’équipe »");
+      verifier((await ficheEcrite("redac")) && (await ficheEcrite("visuels")), "Romy et Basile sont créés, leurs fiches dans le dossier de l’app");
+      verifier(!existsSync(path.join(poste, "redac.md")), "rien n’est écrit sur le poste");
+      const romy = readFileSync(path.join(agents, "redac.md"), "utf8");
+      verifier(/^displayName: Romy$/m.test(romy) && romy.includes("## Ce que je ne fais pas\n\n- Publier : jamais sans ton accord.") && !/^memory:/m.test(romy), "la fiche de Romy : prénom, piliers, sans mémoire");
+      verifier(
+        await surDisque(() => {
+          const mes = lireJson(path.join(donnees, "mes-agents.json"));
+          return mes.agents.redac?.actif === true && mes.agents.visuels?.actif === true;
+        }),
+        "les deux actifs dans Mes agents",
+      );
+      verifier(await app.quand(`${derniere}?.innerText.includes('Ton équipe est née')`), "« Ton équipe est née »");
+      verifier(await app.quand(`[...${table}.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Lancer')`), "une fois née, ses vraies demandes se lancent d’un clic");
       verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
       await app.fermer();
       app = null;
@@ -323,8 +361,20 @@ try {
         const journalPc = path.join(donnees, "consommation.jsonl");
         verifier(existsSync(journalPc) && readFileSync(journalPc, "utf8").includes("Claude Code"), "VPS : ce que l’épreuve a consommé est inscrit dans le journal de ce PC");
         await app.cliquer("Créer l’agent", derniere);
-        verifier(await ficheEcrite("zoe"), "VPS : Zoe est créée, sa fiche sur ce PC (la source des agents)");
-        verifier(readFileSync(path.join(agents, "zoe.md"), "utf8").includes("- Le code et les bugs : je passe la main."), "VPS : sa fiche garde la phrase ajoutée");
+        // Chaque serveur a son équipe (serveur/equipe.mjs) : la fiche s'écrit sur le VPS, pas sur ce PC.
+        const ficheVps = path.join(vps, "donnees", "equipe", "zoe.md");
+        verifier(await surDisque(() => /\n---\n[\s\S]*\n$/.test(readFileSync(ficheVps, "utf8"))) && !existsSync(path.join(agents, "zoe.md")), "VPS : Zoe est créée, sa fiche dans l’équipe du VPS");
+        verifier(existsSync(ficheVps) && readFileSync(ficheVps, "utf8").includes("- Le code et les bugs : je passe la main."), "VPS : sa fiche garde la phrase ajoutée");
+
+        // L'atelier d'une équipe, servi par le VPS avec les mêmes règles : Romy et Basile y sont déjà, ils vont dans existants.
+        const avantEquipeVps = fournisseur.requetes.length;
+        await ecrire("equipe vps");
+        verifier(await app.quand(`${derniere}?.innerText.includes('fin REFUS')`, 60000), "VPS : proposer_equipe, servi par le VPS, lui répond");
+        verifier(
+          fournisseur.requetes.slice(avantEquipeVps).some((q) => q.resultats.some((r) => r.erreur && r.texte.includes("existants"))),
+          "VPS : un agent déjà dans l’équipe va dans existants (les mêmes règles que sur ce PC)",
+        );
+        verifier((await app.ev(`${derniere}?.querySelector('[data-carte-equipe]') === null`)) === true, "VPS : une carte d’équipe refusée ne reste pas dans le fil");
         verifier(app.erreurs.length === 0, `VPS : aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
       } finally {
         serveur.kill();
