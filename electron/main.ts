@@ -171,6 +171,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDos
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
+import { appelEquipeVps } from "./equipe-vps";
 import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
@@ -418,6 +419,19 @@ function registerBridge() {
   composio("composio:connecter", (contexte, service, configuration) => espaceComposio.connecter(contexte, service, configuration));
   composio("composio:deconnecter", (contexte, compte) => espaceComposio.deconnecter(contexte, compte));
   composio("composio:console", () => shell.openExternal("https://dashboard.composio.dev"));
+  /* L'équipe d'un VPS : la première fois, une copie des agents actifs de ce PC ; ensuite, elle vit là-bas. */
+  handle("agents:vps", async (lieu: string, methode: string, corps: unknown) => {
+    if (!originesServeurs().includes(lieu)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    const jeton = jetonServeur(lieu);
+    if (methode === "lister") {
+      const etat = (await appelEquipeVps(lieu, jeton, "etat")) as { initialise?: boolean } | null;
+      if (!etat?.initialise) {
+        const { fiches, assistant } = equipePourVps();
+        await appelEquipeVps(lieu, jeton, "initialiser", { fiches, assistant, teinte: mesAgents().assistant.teinte });
+      }
+    }
+    return appelEquipeVps(lieu, jeton, methode, corps);
+  });
   handle("agents:list", async () => {
     const listing = await listAgents();
     watchAgents();

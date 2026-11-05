@@ -10,6 +10,7 @@
  * Chaque événement part dans le journal (`journal.mjs`) avec le numéro de la réponse (requestId) :
  * l'app le lit en direct, et rattrape ce qu'elle a manqué en se reconnectant.
  */
+import { creerEquipe } from "./equipe.mjs";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -117,20 +118,26 @@ export function creerAgents(options) {
   const dossierAgents = path.join(home, ".claude", "agents");
   const fichierEquipe = path.join(donnees, "equipe.json");
 
-  /** Les agents actifs du PC et le nom de l'assistant, envoyés par l'app avec les fiches. */
+  /* L'équipe de ce serveur : ses fiches et « Mes agents » vivent ici (cf. equipe.mjs). */
+  const equipeServeur = creerEquipe({ donnees, dossierClaude: path.join(home, ".claude") });
+
+  /** Son équipe, et ce que l'app lui envoie encore (configuration, skills). */
   const lireEquipe = () => {
+    let equipe = {};
     try {
-      const equipe = JSON.parse(readFileSync(fichierEquipe, "utf8"));
-      return {
-        assistant: typeof equipe.assistant === "string" ? equipe.assistant : null,
-        actifs: Array.isArray(equipe.actifs) ? equipe.actifs : [],
-        configuration: configurationValide(equipe.configuration),
-        skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
-        empreinte: equipe.empreinte ?? "",
-      };
+      equipe = JSON.parse(readFileSync(fichierEquipe, "utf8"));
     } catch {
-      return { assistant: null, actifs: [], configuration: configurationValide(null), skillsParAgent: validerSkillsParAgent(null), empreinte: "" };
+      /* Rien reçu : les valeurs par défaut. */
     }
+    return {
+      assistant: equipeServeur.assistant(),
+      actifs: equipeServeur.actifs(),
+      configuration: configurationValide(equipe.configuration),
+      skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
+      empreinte: `${equipeServeur.empreinte()}:${equipe.empreinte ?? ""}`,
+      /* Ce que l'app a envoyé en dernier : elle s'en sert pour ne pas renvoyer deux fois. */
+      recue: equipe.empreinte ?? "",
+    };
   };
 
   const trouverClaude = () => {
@@ -169,7 +176,9 @@ export function creerAgents(options) {
   /* ─── Fiches ────────────────────────────────────────────────────── */
 
   /**
-   * Remplace les fiches du VPS par celles des agents actifs du PC. Le dossier des fiches n'a pas d'autre source.
+   * Ce que l'app envoie au VPS : la configuration et les skills. Les fiches et l'assistant ne sont plus pris
+   * ici : le serveur a sa propre équipe (equipe.mjs). Une ancienne app qui les envoie encore ne les écrase pas ;
+   * un serveur sans équipe prend sa première copie (`initialiser`).
    * Si `skills` est un tableau, la bibliothèque de l'app (`donnees/bibliotheque-skills`) devient exactement ces dossiers.
    * Sans le champ (ancien PC) : cette bibliothèque n'est pas touchée. `~/.claude/skills` ne l'est jamais.
    */
@@ -180,20 +189,11 @@ export function creerAgents(options) {
     if (valides.length !== fiches.length) throw new Error("fiches");
     if (corps.skills !== undefined && !Array.isArray(corps.skills)) throw new Error("fiches");
     const skills = Array.isArray(corps.skills) ? normaliserSkillsRecues(corps.skills) : null;
-    mkdirSync(dossierAgents, { recursive: true });
-    const gardes = new Set(valides.map((f) => `${f.id}.md`));
-    for (const nom of readdirSync(dossierAgents)) {
-      if (nom.endsWith(".md") && !gardes.has(nom)) rmSync(path.join(dossierAgents, nom), { force: true });
-    }
-    for (const f of valides) writeFileSync(path.join(dossierAgents, `${f.id}.md`), f.contenu, { mode: 0o600 });
+    if (!equipeServeur.initialise()) equipeServeur.appeler("initialiser", { fiches: valides, assistant: corps.assistant });
     if (skills !== null) ecrireBibliotheque(path.join(donnees, "bibliotheque-skills"), skills);
-    const actifs = valides.map((f) => ({ id: f.id, nom: typeof f.nom === "string" && f.nom.trim() ? f.nom.trim().slice(0, 80) : f.id }));
-    const assistant = typeof corps.assistant === "string" ? corps.assistant.trim().slice(0, 80) || null : null;
     writeFileSync(
       fichierEquipe,
       JSON.stringify({
-        assistant,
-        actifs,
         configuration: configurationValide(corps.configuration),
         skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
         empreinte: String(corps.empreinte ?? "").slice(0, 80),
@@ -869,5 +869,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().recue, fermerTout, claude, codex, grok };
 }

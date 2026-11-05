@@ -11,6 +11,8 @@ const adresseConvex = process.argv.find((a) => a.startsWith("--klyra-convex="))?
 contextBridge.exposeInMainWorld("klyra", {
   agents: {
     list: () => ipcRenderer.invoke("agents:list"),
+    /* L'équipe d'un VPS relié (serveur/equipe.mjs) : mêmes gestes que pour celle de ce PC. */
+    vps: (lieu: string, methode: string, corps: unknown) => ipcRenderer.invoke("agents:vps", lieu, methode, corps),
     write: (name: string, content: string, expectedModifiedAt: number | null) =>
       ipcRenderer.invoke("agents:write", name, content, expectedModifiedAt),
     create: (name: string, content: string) => ipcRenderer.invoke("agents:create", name, content),

@@ -64,6 +64,7 @@
     "test:convex": "vitest run convex",
     "test:document-isole": "node --experimental-strip-types --test electron/document-isole.test.mts",
     "test:selecteur": "node scripts/test-selecteur-serveur.mjs",
+    "test:equipe-serveur": "node scripts/test-equipe-serveur.mjs",
     "test:mobile": "vitest run src/lib/mobile.test.ts src/lib/poste-texte.test.ts convex/telephone.test.ts && node --test serveur/qr.test.mjs",
     "test:reglages-mobile": "node scripts/test-mobile.mjs",
     "test:telephone-agents": "vitest run src/lib/telephone",

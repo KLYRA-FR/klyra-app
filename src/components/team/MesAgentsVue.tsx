@@ -162,7 +162,7 @@ function HorsDeMesAgents({ agents }: { agents: AgentLocal[] }) {
 /** Mes agents (`/equipe`) : l'assistant, les agents actifs, la place du prochain, puis ce qui est hors de Mes agents. */
 export function MesAgentsVue() {
   const router = useRouter();
-  const { roles, tous, mes, status } = useAgents();
+  const { roles, tous, mes, status, serveurAncien } = useAgents();
   const { chats } = useWorkspace().state;
   const bibliotheque = useBibliotheque();
   const decrire = useDecrireAAssistant();
@@ -183,6 +183,11 @@ export function MesAgentsVue() {
     <div className="flex flex-col gap-5">
       {mes?.depart === "reprise" && <NoteReprise nombre={agents.length} />}
       <LigneEtatBibliotheque recus={recus} />
+      {serveurAncien && (
+        <p role="note" className="m-0 rounded-md bg-fond-surface-grise px-3 py-2 text-ui-s text-texte-secondaire">
+          Ce serveur n’est pas encore à jour : il utilise l’équipe de ce PC. Relance la commande d’installation sur le VPS pour qu’il garde la sienne.
+        </p>
+      )}
       <ChiffresEquipe agents={agents.length} exemple={status === "exemple"} />
 
       {/* L'assistant d'abord, puis les agents actifs, puis la place du prochain. */}

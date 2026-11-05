@@ -43,7 +43,7 @@ export type AgentsMeta = Record<string, { tag?: string; teinte?: string; nom?: s
 
 export class AgentError extends Error {
   constructor(
-    public code: "nom-invalide" | "conflit" | "existe-deja" | "introuvable" | "modifie-localement",
+    public code: "nom-invalide" | "conflit" | "existe-deja" | "introuvable" | "modifie-localement" | "serveur-ancien" | "serveur",
     message: string,
   ) {
     super(message);

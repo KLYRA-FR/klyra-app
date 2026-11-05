@@ -722,3 +722,82 @@ test("la session de chaque agent par conversation est retenue, et gardée entre 
     rmSync(dossier, { recursive: true, force: true });
   }
 });
+
+test("chaque serveur garde son équipe : l'app la lit et la modifie ici, et ne l'écrase plus", async () => {
+  const dossier = dossierJetable();
+  const home = path.join(dossier, "home");
+  mkdirSync(home, { recursive: true });
+  const agents = creerAgents({ home, donnees: path.join(dossier, "donnees"), nomServeur: "VPS", publier: () => {}, spontane: () => {}, claude: null });
+  const ecoute = await ecouter({ dossier: path.join(dossier, "donnees"), port: 0, agents });
+  const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(path.join(dossier, "donnees")), nom: "PC" } })).json.jeton;
+  const equipe = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/equipe/${methode}`, { methode: "POST", jeton, corps });
+  const claude = (id) => path.join(home, ".claude", "agents", `${id}.md`);
+  const fiche = (nom) => `---\nname: ${nom}\ndisplayName: ${nom.toUpperCase()}\n---\nConsignes de ${nom}.`;
+  try {
+    assert.equal((await appel(ecoute.port, "/klyra/v1/equipe/etat", { methode: "POST", corps: {} })).statut, 401);
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.equipePropre, true);
+    assert.equal((await equipe("etat")).json.resultat.initialise, false);
+
+    // Une première copie, une seule fois.
+    const copie = (await equipe("initialiser", { fiches: [{ id: "lou", contenu: fiche("lou") }], assistant: "Cicco" })).json.resultat;
+    assert.equal(copie.copie, true);
+    assert.equal(copie.mes.assistant.nom, "Cicco");
+    assert.ok(existsSync(claude("lou")));
+    assert.equal((await equipe("initialiser", { fiches: [{ id: "autre", contenu: fiche("autre") }] })).json.resultat.copie, false);
+    assert.ok(!existsSync(claude("autre")));
+
+    // Une fiche créée ici, puis désactivée : elle reste au serveur, sans être chargée par Claude Code.
+    assert.equal((await equipe("creer", { id: "iris", contenu: fiche("iris") })).statut, 200);
+    assert.ok(existsSync(claude("iris")));
+    assert.equal((await equipe("creer", { id: "iris", contenu: fiche("iris") })).json.erreur, "existe-deja");
+    assert.equal((await equipe("creer", { id: "../x", contenu: "x" })).json.erreur, "nom-invalide");
+    assert.equal((await equipe("activer", { id: "iris", actif: false })).json.resultat.agents.iris.actif, false);
+    assert.ok(!existsSync(claude("iris")));
+    assert.deepEqual((await equipe("lister")).json.resultat.agents.map((a) => a.name).sort(), ["iris", "lou"]);
+    assert.deepEqual(agents.equipeServeur.actifs(), [{ id: "lou", nom: "LOU" }]);
+
+    // Écrire garde l'ancienne version, et refuse d'écraser une fiche changée entre-temps.
+    const avant = (await equipe("lister")).json.resultat.agents.find((a) => a.name === "lou");
+    assert.equal((await equipe("ecrire", { id: "lou", contenu: fiche("lou") + "\nSuite.", attendu: avant.modifiedAt })).statut, 200);
+    assert.equal((await equipe("ecrire", { id: "lou", contenu: "x", attendu: 1 })).json.erreur, "conflit");
+    assert.match(readFileSync(claude("lou"), "utf8"), /Suite\./);
+    const versions = (await equipe("historique", { id: "lou" })).json.resultat;
+    assert.equal(versions.length, 1);
+    assert.equal((await equipe("version", { id: "lou", version: versions[0].id })).json.resultat, fiche("lou"));
+
+    // Ses préférences restent ici.
+    assert.equal((await equipe("meta-ecrire", { meta: { lou: { teinte: "violet" } } })).statut, 200);
+    assert.deepEqual((await equipe("meta")).json.resultat, { lou: { teinte: "violet" } });
+
+    // L'envoi d'une ancienne app n'écrase plus l'équipe.
+    agents.recevoirFiches({ fiches: [{ id: "intrus", nom: "Intrus", contenu: fiche("intrus") }], assistant: "Autre", empreinte: "e9" });
+    assert.equal(agents.empreinteEquipe(), "e9");
+    assert.ok(!existsSync(claude("intrus")));
+    assert.ok(existsSync(claude("lou")));
+    assert.equal(agents.equipeServeur.assistant(), "Cicco");
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("un serveur qui recevait les fiches du PC garde ces agents comme son équipe", async () => {
+  const dossier = dossierJetable();
+  const donnees = path.join(dossier, "donnees");
+  const agentsClaude = path.join(dossier, "home", ".claude", "agents");
+  mkdirSync(agentsClaude, { recursive: true });
+  mkdirSync(donnees, { recursive: true });
+  writeFileSync(path.join(agentsClaude, "hugo.md"), "---\nname: hugo\n---\nCode.");
+  writeFileSync(path.join(donnees, "equipe.json"), JSON.stringify({ assistant: "Cicco", actifs: [{ id: "hugo", nom: "Hugo" }], empreinte: "x" }));
+  const { creerEquipe } = await import("./equipe.mjs");
+  const equipe = creerEquipe({ donnees, dossierClaude: path.join(dossier, "home", ".claude") });
+  try {
+    assert.equal(equipe.initialise(), true);
+    assert.equal(equipe.assistant(), "Cicco");
+    assert.deepEqual(equipe.actifs(), [{ id: "hugo", nom: "hugo" }]);
+    assert.ok(existsSync(path.join(agentsClaude, "hugo.md")));
+    assert.ok(existsSync(path.join(donnees, "equipe", "hugo.md")));
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});

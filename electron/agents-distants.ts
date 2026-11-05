@@ -160,6 +160,7 @@ const enCours = new Map<string, string>();
 /** Les réponses déjà montrées à l'interface (demandées ici, ou ouvertes en spontané). */
 const connues = new Set<string>();
 const equipeEnvoyee = new Map<string, string>();
+const equipePropre = new Set<string>();
 
 let curseurs: Record<string, { instance: string; seq: number }> | null = null;
 let ecriture: Promise<void> = Promise.resolve();
@@ -397,14 +398,18 @@ export function oublierServeur(origine: string) {
   connexions.delete(origine);
   jetonDe.delete(origine);
   equipeEnvoyee.delete(origine);
+  equipePropre.delete(origine);
 }
 
 /** Envoie au VPS les fiches des agents actifs et les dossiers des skills allumées, si cela a changé depuis le dernier envoi. */
 export async function synchroniserEquipe(origine: string): Promise<void> {
   const equipe = liaison?.equipe();
   if (!equipe || equipeEnvoyee.get(origine) === equipe.empreinte) return;
-  const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", equipe);
+  /* Un serveur qui garde sa propre équipe ne reçoit plus les fiches de ce PC : seulement sa configuration et ses skills. */
+  const corps = equipePropre.has(origine) ? { ...equipe, fiches: [], assistant: null } : equipe;
+  const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", corps);
   if (recu.status !== 200) throw new Error("fiches");
+  if ((recu.json as { equipePropre?: unknown } | null)?.equipePropre === true) equipePropre.add(origine);
   equipeEnvoyee.set(origine, equipe.empreinte);
 }
 
