@@ -16,7 +16,7 @@ import { optionsRetenues, PILIERS, texteDuChoix, type Pilier } from "@/lib/ateli
 import { cn } from "@/lib/cn";
 import type { CarteAtelierCompte, LigneAtelierCompte, PartieCompte } from "@/lib/copie-compte";
 import { jouer } from "@/lib/sons/sons";
-import { idDirect } from "@/lib/telephone/chats";
+import { useDirectEspace } from "@/lib/telephone/espace";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import { ecrireBrouillon, lireBrouillon, nouvelleRoutine } from "@/lib/telephone/routines-telephone";
 import type { RoleTeinte } from "@/types/domain";
@@ -55,6 +55,7 @@ export function LigneAtelierTelephone({ ligne }: { ligne: LigneAtelierCompte }) 
 /* ─── La carte entière ─────────────────────────────────────────── */
 
 export function CarteAtelierTelephone({ etapeId, carte, conversation }: { etapeId: string; carte: CarteAtelierCompte; conversation: string }) {
+  const direct = useDirectEspace();
   const router = useRouter();
   const sur = useSupport();
   const { carte: carteAgent } = useCartes();
@@ -151,7 +152,7 @@ export function CarteAtelierTelephone({ etapeId, carte, conversation }: { etapeI
       <div className="flex flex-wrap gap-2">
         {cree ? (
           <>
-            <Link href={`/chat?id=${encodeURIComponent(idDirect(cree))}`} className="flex h-11 items-center gap-2 rounded-xs px-4 text-ui font-medium text-texte-inverse no-underline klyra-surface-sombre">
+            <Link href={`/chat?id=${encodeURIComponent(direct(cree))}`} className="flex h-11 items-center gap-2 rounded-xs px-4 text-ui font-medium text-texte-inverse no-underline klyra-surface-sombre">
               <Icon name="message-square" size={16} />
               Lui écrire
             </Link>

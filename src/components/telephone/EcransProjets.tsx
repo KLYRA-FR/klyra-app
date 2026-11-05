@@ -22,6 +22,7 @@ import { usePostes, useSupport } from "./poste";
 import { VisionneuseTelephone } from "./VisionneuseTelephone";
 import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 import { CaseRonde, CHAMP_TELEPHONE } from "./Controles";
+import { useConversationsEspace, useProjetsEspace } from "@/lib/telephone/espace";
 
 /**
  * Projets, projet, dossier et visionneuse (spec mobile T-10 à T-13). Routes : /projets, puis
@@ -44,8 +45,8 @@ function actionsProjet(ouvert: boolean, modifier: () => void): ActionMenu[] {
 
 /** T-10. Une colonne : nom, ligne, statut, chats, épingle. Les cartes viennent du compte (M-4). */
 export function ProjetsTelephone() {
-  const projets = useQuery(api.conversationsCompte.projets, {});
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const projets = useProjetsEspace();
+  const conversations = useConversationsEspace();
   const sur = useSupport();
   const { ouvert } = usePostes();
   const [menu, setMenu] = useState<{ origine: string; nom: string } | null>(null);
@@ -284,7 +285,7 @@ function OngletsProjet({ projetId, nom, onglet }: { projetId: string; nom: strin
 
 /** « Chats du projet » (compte) et « Nouveau chat dans {nom}… » (file, écran du fil). */
 function ChatsDuProjet({ projetId, nom }: { projetId: string; nom: string }) {
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const conversations = useConversationsEspace();
   const liste = (conversations ?? [])
     .filter((c) => c.projetId === projetId)
     .sort((a, b) => Number(!!b.epingleLe) - Number(!!a.epingleLe) || b.misAJour.localeCompare(a.misAJour));

@@ -8,6 +8,7 @@ import { usePostes } from "@/components/telephone/poste";
 import { jetonAppareil } from "@/lib/serveur-vps";
 import { ecrireOptions, type OptionsMessage } from "./options";
 import { envoiSimple, envoyerAuVps, voieEnvoi } from "./vps-direct";
+import { lieuDeHote, lireIdDirect } from "@/lib/lieux";
 
 export interface Envoi {
   conversationOrigine: string;
@@ -32,15 +33,17 @@ export function useEnvoyerMessage() {
   return useCallback(
     async ({ conversationOrigine, texte, options = {}, pieces = [], surPiece }: Envoi): Promise<Id<"messagesFile"> | null> => {
       const conversation = conversations?.find((c) => c.origine === conversationOrigine);
-      const lieu = conversation?.lieu ?? null;
-      if (conversation && conversationOrigine.startsWith("dm-") && envoiSimple(options, pieces.length)) {
+      /* Une conversation directe pas encore copiée dans le compte : son id dit son serveur (`dm-<agent>@<hôte>`). */
+      const direct = lireIdDirect(conversationOrigine);
+      const lieu = conversation?.lieu ?? (direct?.hote ? lieuDeHote(direct.hote) : null);
+      if ((conversation || lieu) && direct && envoiSimple(options, pieces.length)) {
         if (voieEnvoi({ posteOuvert: ouvert, lieu, jeton: lieu ? jetonAppareil(lieu) : null }) === "vps" && lieu) {
-          const agentId = conversationOrigine.slice(3);
+          const agentId = direct.roleId;
           const r = await envoyerAuVps({
             adresse: lieu,
             conversation: conversationOrigine,
             agentId,
-            titre: conversation.titre,
+            titre: conversation?.titre ?? agentId,
             texte,
             modele: options.modele ?? null,
             effort: options.effort ?? null,

@@ -14,7 +14,7 @@ import { PRINCIPAL } from "@/data/agents";
 import { roleFromContent } from "@/lib/agents";
 import type { Lien } from "@/lib/lien-bibliotheque";
 import { useLecturePoste } from "@/lib/poste/client";
-import { idDirect } from "@/lib/workspace";
+import { useDirectEspace } from "@/lib/telephone/espace";
 import { ID_ASSISTANT, libelleRetour, roleLisible, teinteSure, texteConversations } from "@/lib/telephone/agents";
 import type { ApercuPartage, FicheLue } from "@/lib/telephone/gestes-agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
@@ -102,6 +102,7 @@ export function roleDeFiche(f: Extract<FicheLue, { type: "agent" }>): Role {
 }
 
 export function FicheAgentTelephone({ id }: { id: string }) {
+  const direct = useDirectEspace();
   const router = useRouter();
   const params = useSearchParams();
   const sur = useSupport();
@@ -197,7 +198,7 @@ export function FicheAgentTelephone({ id }: { id: string }) {
           </div>
           <div className="flex flex-wrap gap-2">
             {statut === "actif" ? (
-              <BoutonPrincipal href={`/chat?id=${encodeURIComponent(idDirect(id))}`} className="flex-1">
+              <BoutonPrincipal href={`/chat?id=${encodeURIComponent(direct(id))}`} className="flex-1">
                 Écrire
               </BoutonPrincipal>
             ) : null}

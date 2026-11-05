@@ -426,6 +426,7 @@ export function carteProjet(projet: Project) {
     accroche: projet.subtitle,
     statut: projet.status,
     epingle: projet.pinned,
+    lieu: projet.lieu ?? null,
   };
 }
 

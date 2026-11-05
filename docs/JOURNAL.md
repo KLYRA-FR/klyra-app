@@ -340,3 +340,4 @@ Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app
 - **05/11/2026** — Composio par serveur : chaque VPS a son compte Composio Connect, gardé chiffré, connecté depuis le navigateur de l’ordinateur, et ses agents Claude Code s’en servent sans le PC.
 - **05/11/2026** — PC fermé, le VPS range lui-même la réponse d’un agent dans sa conversation. Le message de la personne part sur le serveur dès l’envoi.
 - **05/11/2026** — Les workflows d’un serveur tournent sur lui, PC éteint : même moteur que l’app, planifiés, webhooks, approbations. L’app suit en direct et ne les lance plus elle-même.
+- **05/11/2026** — Le téléphone choisit son serveur, sans toucher à celui de l’ordinateur : Chats, recherche, projets, routines, workflows et agents suivent. Rappels et calendrier restent communs.

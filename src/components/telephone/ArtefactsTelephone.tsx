@@ -14,6 +14,7 @@ import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
 import { NotePoste, VueLecture } from "./etats";
 import { usePostes } from "./poste";
+import { useLieuActif } from "@/lib/lieux";
 
 /**
  * Artefacts sur le téléphone (spec mobile T-20) : la liste est sur l'ordinateur (Poste). Ordinateur
@@ -37,7 +38,10 @@ export function ArtefactsTelephone() {
   const [menu, setMenu] = useState(false);
   const [lien, setLien] = useState(false);
   const [sync, setSync] = useState(false);
-  const memoire = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
+  /* Les artefacts de claude.ai sont à l'ordinateur, comme au bureau : un VPS n'en a pas. */
+  const lieu = useLieuActif();
+  const lus = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
+  const memoire = lieu && lus ? { ...lus, artefacts: [] } : lus;
 
   const apres = (ok: unknown) => {
     if (ok) lecture.relancer();

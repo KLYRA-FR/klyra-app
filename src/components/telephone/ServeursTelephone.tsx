@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { getBridge } from "@/lib/bridge";
-import { signalerCarnet } from "@/lib/lieux";
+import { retenirLieu, signalerCarnet, useLieuActif } from "@/lib/lieux";
 import { useCompte } from "@/lib/compte";
 import {
   CLE_CARNET,
@@ -75,6 +75,7 @@ function Guide() {
 export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const router = useRouter();
   const compte = useCompte();
+  const lieuActif = useLieuActif();
   const [carnet, setCarnet] = useState<Carnet>(() => (typeof window === "undefined" ? carnetVide() : lireCarnet(localStorage.getItem(CLE_CARNET))));
   const [saisie, setSaisie] = useState("");
   const [ajout, setAjout] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("ajouter"));
@@ -240,13 +241,23 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
           {carnet.liste.map((serveur) => {
             return (
               <li key={serveur.id} className="border-b border-bordure-subtile py-3">
-                {/* La machine active se choisit dans le sélecteur du rail : ici, l'état et les gestes. */}
+                {/* Le serveur affiché se choisit ici, pour ce téléphone seulement : l'ordinateur garde le sien. */}
                 <div className="flex min-h-11 w-full flex-col justify-center text-left">
                   <span className="text-body-s text-texte-principal">{serveur.nom}</span>
                   <span className="text-ui-xs text-texte-secondaire">{serveur.adresse}</span>
                   <span className="text-ui-xs text-texte-secondaire">{libelleServeur(serveur.etat, sondes[serveur.id], agentsVps[serveur.id], retards[serveur.id])}</span>
                 </div>
                 <span className="mt-1 flex gap-4">
+                  {serveur.etat === "joint" ? (
+                    <button
+                      type="button"
+                      aria-pressed={lieuActif === serveur.adresse}
+                      className="min-h-11 text-ui font-medium text-texte-accent"
+                      onClick={() => retenirLieu(lieuActif === serveur.adresse ? null : serveur.adresse)}
+                    >
+                      {lieuActif === serveur.adresse ? "Affiché ici : revenir sur l’ordinateur" : "Afficher sur ce téléphone"}
+                    </button>
+                  ) : null}
                   {serveur.etat === "joint" ? (
                     <button type="button" className="min-h-11 text-ui text-texte-principal" onClick={() => setCarnet((etat) => quitterServeur(etat, serveur.id))}>
                       Quitter

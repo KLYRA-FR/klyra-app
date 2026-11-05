@@ -19,6 +19,21 @@ export const PREFIXE_FIL = "klyra-fil-";
 
 export const idDirect = (roleId: string) => `${DIRECT}${roleId}`;
 
+/**
+ * La conversation directe avec un agent sur un serveur (`lieu` null : l'ordinateur) : celle qui existe, même sous
+ * un id d'avant ; sinon `dm-<agent>@<hôte>` sur un VPS, comme au bureau (`idDirect`, src/lib/lieux.ts).
+ */
+export function idDirectDe(roleId: string, lieu: string | null, conversations: readonly { origine: string; kind?: string; lieu?: string | null; parent?: string | null }[]): string {
+  const existante = conversations.find((c) => !c.parent && (c.origine === idDirect(roleId) || c.origine.startsWith(`${idDirect(roleId)}@`)) && (c.lieu ?? null) === lieu);
+  if (existante) return existante.origine;
+  if (!lieu) return idDirect(roleId);
+  try {
+    return `${idDirect(roleId)}@${new URL(lieu).host}`;
+  } catch {
+    return `${idDirect(roleId)}@${lieu}`;
+  }
+}
+
 /** Les suggestions de l'accueil du bureau : chacune remplit le composeur, sans rien envoyer. */
 export const SUGGESTIONS = [
   { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine" },
@@ -106,7 +121,7 @@ export interface LigneAgent {
  * « Mes agents » (l'assistant, puis les agents actifs), « Conversations d'équipe » (les autres, les
  * plus récentes d'abord). Les fils vivent dans le chat de leur agent.
  */
-export function sections(conversations: ConversationLue[], cartes: CarteAgentLue[], nom: (id: string) => string, posteOuvert = true, horsLigne = false) {
+export function sections(conversations: ConversationLue[], cartes: CarteAgentLue[], nom: (id: string) => string, posteOuvert = true, horsLigne = false, lieu: string | null = null) {
   const equipe = conversations.filter((c) => c.kind === "equipe");
   const epinglees = equipe
     .filter((c) => c.epingleLe)
@@ -117,7 +132,7 @@ export function sections(conversations: ConversationLue[], cartes: CarteAgentLue
     .filter((a) => a.actif || a.origine === ASSISTANT)
     .sort((a, b) => (a.origine === ASSISTANT ? -1 : b.origine === ASSISTANT ? 1 : a.nom.localeCompare(b.nom, "fr")));
   const agents: LigneAgent[] = actifs.map((carte) => {
-    const conversation = parOrigine.get(idDirect(carte.origine));
+    const conversation = parOrigine.get(idDirectDe(carte.origine, lieu, conversations));
     const filActif = conversations.find((c) => !c.archiveLe && parentDe(c) === idDirect(carte.origine) && activiteDe(c));
     return { carte, conversation, etat: etatLigne(conversation, nom, posteOuvert, horsLigne) ?? etatLigne(filActif, nom, posteOuvert, horsLigne) };
   });

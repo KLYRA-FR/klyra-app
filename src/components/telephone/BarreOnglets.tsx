@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
 import { nombreATraiter } from "@/lib/telephone/chats";
 import { ongletDe } from "@/lib/telephone/retour";
+import { dansEspace, useLieuActif } from "@/lib/lieux";
 
 const ONGLETS: { href: string; label: string; icon: IconName }[] = [
   { href: "/chats", label: "Chats", icon: "message-square" },
@@ -39,7 +40,8 @@ export function BarreOnglets({ vertical = false }: { vertical?: boolean }) {
   const pathname = usePathname();
   const { etat } = useCompte();
   const conversations = useQuery(api.conversationsCompte.liste, etat === "connecte" ? {} : "skip");
-  const attente = nombreATraiter(conversations ?? []);
+  const lieu = useLieuActif();
+  const attente = nombreATraiter((conversations ?? []).filter((c) => dansEspace(c.lieu, lieu)));
 
   return (
     <nav

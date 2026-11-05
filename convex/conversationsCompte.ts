@@ -260,6 +260,7 @@ const vCarteProjet = v.object({
   accroche: v.string(),
   statut: v.string(),
   epingle: v.boolean(),
+  lieu: v.optional(v.union(v.string(), v.null())),
 });
 
 export const importerProjets = mutation({
@@ -278,6 +279,7 @@ export const importerProjets = mutation({
         accroche: court(entree.accroche, 200),
         statut: court(entree.statut, 40),
         epingle: entree.epingle,
+        lieu: entree.lieu ? court(entree.lieu, 300) : null,
       };
       const existante = await ctx.db
         .query("cartesProjets")
@@ -423,6 +425,7 @@ export const projets = query({
       accroche: v.string(),
       statut: v.string(),
       epingle: v.boolean(),
+      lieu: v.union(v.string(), v.null()),
     }),
   ),
   handler: async (ctx) => {
@@ -431,7 +434,7 @@ export const projets = query({
       .query("cartesProjets")
       .withIndex("by_membre_and_origine", (q) => q.eq("membreId", moi._id))
       .take(200);
-    return lignes.map((p) => ({ origine: p.origine, nom: p.nom, accroche: p.accroche, statut: p.statut, epingle: p.epingle }));
+    return lignes.map((p) => ({ origine: p.origine, nom: p.nom, accroche: p.accroche, statut: p.statut, epingle: p.epingle, lieu: p.lieu ?? null }));
   },
 });
 

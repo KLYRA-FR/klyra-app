@@ -15,6 +15,7 @@ import { GrappeChat, RondAgent, useCartes } from "./AgentsChat";
 import { useHorsLigne } from "./BandeauReseau";
 import { EtatEcran } from "./etats";
 import { Etiquette, GroupeListe, LigneListe, SectionListe } from "./Liste";
+import { useConversationsEspace } from "@/lib/telephone/espace";
 
 const PORTEES: { id: Portee; libelle: string }[] = [
   { id: "tout", libelle: "Tout" },
@@ -56,7 +57,7 @@ export function RechercheTelephone() {
   const [requete, setRequete] = useState("");
   const [portee, setPortee] = useState<Portee>(dansConversation ? "conversation" : "tout");
   const champ = useRef<HTMLInputElement>(null);
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const conversations = useConversationsEspace();
   const { nom } = useCartes();
 
   /* Au fil de la frappe, sans une requête par lettre. */

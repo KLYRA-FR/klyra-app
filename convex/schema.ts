@@ -314,6 +314,8 @@ export default defineSchema({
     accroche: v.string(),
     statut: v.string(),
     epingle: v.boolean(),
+    /** Le VPS du projet ; absent : l'ordinateur. Le téléphone montre l'espace du serveur qu'il a choisi. */
+    lieu: v.optional(v.union(v.string(), v.null())),
   }).index("by_membre_and_origine", ["membreId", "origine"]),
 
   /** Message écrit sur le téléphone : il part sur l'ordinateur à son ouverture. */
