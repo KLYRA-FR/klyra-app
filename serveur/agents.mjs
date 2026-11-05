@@ -13,7 +13,7 @@
 import { creerEquipe } from "./equipe.mjs";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
@@ -31,8 +31,7 @@ import {
   lireSouvenir,
   porteeDeLaFiche,
   promptAvecSkill,
-  skillsConnues,
-} from "./connaissances-agent.mjs";
+  skillsConnues, catalogueSkills } from "./connaissances-agent.mjs";
 import { ecrireBibliotheque, normaliserSkillsRecues, preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
@@ -121,20 +120,26 @@ export function creerAgents(options) {
   /* L'équipe de ce serveur : ses fiches et « Mes agents » vivent ici (cf. equipe.mjs). */
   const equipeServeur = creerEquipe({ donnees, dossierClaude: path.join(home, ".claude") });
 
-  /** Son équipe, et ce que l'app lui envoie encore (configuration, skills). */
-  const lireEquipe = () => {
-    let equipe = {};
+  const lireFichierEquipe = () => {
     try {
-      equipe = JSON.parse(readFileSync(fichierEquipe, "utf8"));
+      return JSON.parse(readFileSync(fichierEquipe, "utf8"));
     } catch {
-      /* Rien reçu : les valeurs par défaut. */
+      return {};
     }
+  };
+  const ecrireFichierEquipe = (contenu) => writeFileSync(fichierEquipe, JSON.stringify(contenu), { mode: 0o600 });
+
+  /** Son équipe et ses réglages. */
+  const lireEquipe = () => {
+    const equipe = lireFichierEquipe();
     return {
       assistant: equipeServeur.assistant(),
       actifs: equipeServeur.actifs(),
       configuration: configurationValide(equipe.configuration),
       skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
-      empreinte: `${equipeServeur.empreinte()}:${equipe.empreinte ?? ""}`,
+      /* La configuration telle que l'écran l'a choisie : il la relit pour ses interrupteurs. */
+      configurationEcran: equipe.configurationEcran ?? null,
+      empreinte: `${equipeServeur.empreinte()}:${equipe.empreinte ?? ""}:${equipe.reglagesLe ?? ""}`,
       /* Ce que l'app a envoyé en dernier : elle s'en sert pour ne pas renvoyer deux fois. */
       recue: equipe.empreinte ?? "",
     };
@@ -185,21 +190,71 @@ export function creerAgents(options) {
   function recevoirFiches(corps) {
     const fiches = Array.isArray(corps?.fiches) ? corps.fiches : null;
     if (!fiches || fiches.length > 100) throw new Error("fiches");
+    /* Une app à jour n'envoie plus que ce que ce PC peut servir au VPS (navigateur, Coffre). Le reste est au serveur. */
+    if (corps.partielle === true) {
+      const actuel = lireFichierEquipe();
+      const { navigateur, coffre } = corps.configuration ?? {};
+      ecrireFichierEquipe({ ...actuel, configuration: { ...actuel.configuration, navigateur: navigateur === true, coffre: coffre === true }, empreinte: String(corps.empreinte ?? "").slice(0, 80) });
+      return;
+    }
     const valides = fiches.filter((f) => f && typeof f.id === "string" && ID_AGENT.test(f.id) && typeof f.contenu === "string" && f.contenu.length <= 200_000);
     if (valides.length !== fiches.length) throw new Error("fiches");
     if (corps.skills !== undefined && !Array.isArray(corps.skills)) throw new Error("fiches");
     const skills = Array.isArray(corps.skills) ? normaliserSkillsRecues(corps.skills) : null;
     if (!equipeServeur.initialise()) equipeServeur.appeler("initialiser", { fiches: valides, assistant: corps.assistant });
     if (skills !== null) ecrireBibliotheque(path.join(donnees, "bibliotheque-skills"), skills);
-    writeFileSync(
-      fichierEquipe,
-      JSON.stringify({
-        configuration: configurationValide(corps.configuration),
-        skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
-        empreinte: String(corps.empreinte ?? "").slice(0, 80),
-      }),
-      { mode: 0o600 },
-    );
+    ecrireFichierEquipe({
+      ...lireFichierEquipe(),
+      configuration: configurationValide(corps.configuration),
+      skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
+      empreinte: String(corps.empreinte ?? "").slice(0, 80),
+    });
+  }
+
+  /** Les demandes de l'écran sur l'équipe de ce serveur : ses fiches (equipe.mjs), ses réglages et ses skills. */
+  function appelerEquipe(methode, corps = {}) {
+    switch (methode) {
+      case "reglages": {
+        const { configurationEcran, skillsParAgent } = lireEquipe();
+        return { configuration: configurationEcran, skillsParAgent };
+      }
+      case "reglages-ecrire": {
+        const actuel = lireFichierEquipe();
+        ecrireFichierEquipe({
+          ...actuel,
+          ...(corps.configuration
+            ? {
+                configuration: { ...configurationValide(corps.configuration), navigateur: actuel.configuration?.navigateur === true, coffre: actuel.configuration?.coffre === true },
+                configurationEcran: corps.configurationEcran ?? null,
+              }
+            : {}),
+          ...(corps.skillsParAgent ? { skillsParAgent: validerSkillsParAgent(corps.skillsParAgent) } : {}),
+          reglagesLe: Date.now(),
+        });
+        return appelerEquipe("reglages");
+      }
+      case "skills":
+        return catalogueSkills(path.join(home, ".claude"), corps.dossier ? projetValide(corps.dossier) : null);
+      case "skills-recevoir": {
+        /* Envoyées d'un autre serveur : ajoutées à sa bibliothèque, sans retirer les siennes. */
+        const recues = normaliserSkillsRecues(Array.isArray(corps.skills) ? corps.skills : []);
+        const dest = path.join(donnees, "bibliotheque-skills");
+        const attente = mkdtempSync(path.join(donnees, "skills-"));
+        try {
+          ecrireBibliotheque(attente, recues);
+          mkdirSync(dest, { recursive: true, mode: 0o700 });
+          for (const s of recues) {
+            rmSync(path.join(dest, s.dossier), { recursive: true, force: true });
+            cpSync(path.join(attente, s.dossier), path.join(dest, s.dossier), { recursive: true });
+          }
+        } finally {
+          rmSync(attente, { recursive: true, force: true });
+        }
+        return { ajoutees: recues.map((s) => s.dossier) };
+      }
+      default:
+        return equipeServeur.appeler(methode, corps);
+    }
   }
 
   /**
@@ -869,5 +924,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().recue, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().recue, fermerTout, claude, codex, grok };
 }

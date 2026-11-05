@@ -11,7 +11,7 @@ import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { useReglages } from "@/lib/reglages";
 import { useRoutines } from "@/lib/routines";
-import { useProject, useRole, useTravail, useWorkspace } from "@/lib/workspace";
+import { useProject, useRole, useTravail, useWorkspace, useAccesEspace } from "@/lib/workspace";
 import type { Chat } from "@/types/domain";
 import { contexteDe, useCompetencesAgent, useConsommationAgent, useMemoireAgent } from "./donnees";
 import { ChampEnLigne, Groupe, LigneReglage, TitreGroupe } from "./elements";
@@ -34,6 +34,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
   const { nouvelleConversation, state } = useWorkspace();
   const { tous, canEdit, save } = useAgents();
   const { reglages } = useReglages();
+  const acces = useAccesEspace();
   const routines = useRoutines();
   const [vue, setVue] = useState<Vue>("accueil");
   const [confirmer, setConfirmer] = useState(false);
@@ -169,9 +170,9 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
         <LigneReglage
           icone="shield-check"
           libelle="Accès"
-          valeur={NIVEAUX_ACCES.find((n) => n.id === state.acces)?.nom}
+          valeur={NIVEAUX_ACCES.find((n) => n.id === acces)?.nom}
           href="/reglages?section=agents&reglage=acces"
-          titre="Le même pour tous tes agents"
+          titre="Le même pour tous les agents de ce serveur"
         />
         <LigneReglage
           icone="folder"

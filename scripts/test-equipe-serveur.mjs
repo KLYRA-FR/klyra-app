@@ -90,6 +90,38 @@ try {
   verifier(existsSync(claudeVps("noe")), "VPS : Noé y est copié");
   verifier(existsSync(claudeVps("noe")) && readFileSync(claudeVps("noe"), "utf8").includes("Code."), "VPS : sa copie a ses consignes");
 
+  // Ses réglages : les consignes et les skills d'un serveur restent à ce serveur.
+  const lus = await vps("reglages");
+  verifier(lus.ok && lus.data.configuration, "VPS : il a ses réglages, copiés de ce PC la première fois");
+  const ecrits = await vps("reglages-ecrire", { configuration: { memoireAgents: false, consignes: "Consignes du VPS" }, configurationEcran: { ...lus.data.configuration, memoireAgents: false } });
+  verifier(ecrits.ok && ecrits.data.configuration.memoireAgents === false, "VPS : on y coupe la mémoire des agents");
+  const ceuxDuPc = await app.ev(`window.klyra.reglages.lire()`);
+  verifier(ceuxDuPc.ok && ceuxDuPc.data.configuration.memoireAgents === true, "Ce PC : sa mémoire reste allumée");
+  await app.ev(`window.klyra.claude.stream("essai-sync-2", { agent: null, prompt: "x", dossier: null, sessionId: null, modele: null, effort: null, acces: "demander", lieu: ${JSON.stringify(adresse)} }).catch(() => undefined)`);
+  await attendre(1000);
+  const apres = await vps("reglages");
+  verifier(apres.ok && apres.data.configuration.memoireAgents === false, "VPS : l’app ne remet pas ses réglages à ceux de ce PC");
+  const catalogue = await vps("skills", {});
+  verifier(catalogue.ok && Array.isArray(catalogue.data.poste), "VPS : il donne ses propres skills");
+  await app.aller("/reglages?section=computer-use");
+  await surServeur(adresse);
+  await app.quand(`document.querySelector('[role="note"]')`);
+
+  // L'accès des agents se choisit par serveur.
+  await app.aller("/reglages?section=agents&reglage=acces");
+  verifier(await app.quand(`document.querySelector('[role="radiogroup"][aria-label="Accès des agents"]')`), "le choix de l’accès s’ouvre");
+  const choisi = () => app.ev(`[...document.querySelectorAll('[role="radiogroup"][aria-label="Accès des agents"] [role="radio"]')].findIndex((b) => b.getAttribute("aria-checked") === "true")`);
+  const surPc = await (async () => { await surServeur(null); await attendre(300); return choisi(); })();
+  await surServeur(adresse);
+  await attendre(300);
+  const autre = surPc === 0 ? 1 : 0;
+  await app.ev(`document.querySelectorAll('[role="radiogroup"][aria-label="Accès des agents"] [role="radio"]')[${autre}].click()`);
+  await attendre(300);
+  verifier((await choisi()) === autre, "VPS : on change son accès");
+  await surServeur(null);
+  await attendre(300);
+  verifier((await choisi()) === surPc, "Ce PC : son accès n’a pas changé");
+
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
 } finally {
   await app?.fermer();

@@ -475,7 +475,7 @@ export function creerGestionnaire(options) {
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
       try {
         const corps = await lireCorpsRequete(req, CORPS_EQUIPE_MAX);
-        return repondre(res, 200, { resultat: agents.equipeServeur.appeler(url.pathname.slice(CHEMIN_EQUIPE.length + 1), corps ?? {}) });
+        return repondre(res, 200, { resultat: agents.appelerEquipe(url.pathname.slice(CHEMIN_EQUIPE.length + 1), corps ?? {}) });
       } catch (erreur) {
         if (erreur instanceof ErreurEquipe) return repondre(res, 400, { erreur: erreur.code, message: erreur.message });
         throw erreur;

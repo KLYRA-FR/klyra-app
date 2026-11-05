@@ -405,8 +405,10 @@ export function oublierServeur(origine: string) {
 export async function synchroniserEquipe(origine: string): Promise<void> {
   const equipe = liaison?.equipe();
   if (!equipe || equipeEnvoyee.get(origine) === equipe.empreinte) return;
-  /* Un serveur qui garde sa propre équipe ne reçoit plus les fiches de ce PC : seulement sa configuration et ses skills. */
-  const corps = equipePropre.has(origine) ? { ...equipe, fiches: [], assistant: null } : equipe;
+  /* Un serveur qui garde son équipe et ses réglages ne reçoit que ce que ce PC peut lui servir (navigateur, Coffre). */
+  const corps = equipePropre.has(origine)
+    ? { fiches: [], partielle: true, configuration: { navigateur: equipe.configuration.navigateur, coffre: equipe.configuration.coffre }, empreinte: equipe.empreinte }
+    : equipe;
   const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", corps);
   if (recu.status !== 200) throw new Error("fiches");
   if ((recu.json as { equipePropre?: unknown } | null)?.equipePropre === true) equipePropre.add(origine);

@@ -426,11 +426,24 @@ function registerBridge() {
     if (methode === "lister") {
       const etat = (await appelEquipeVps(lieu, jeton, "etat")) as { initialise?: boolean } | null;
       if (!etat?.initialise) {
-        const { fiches, assistant } = equipePourVps();
+        const { fiches, assistant, skills, skillsParAgent } = equipePourVps();
+        const reglage = lireReglages().configuration;
         await appelEquipeVps(lieu, jeton, "initialiser", { fiches, assistant, teinte: mesAgents().assistant.teinte });
+        await appelEquipeVps(lieu, jeton, "reglages-ecrire", {
+          configuration: { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes) },
+          configurationEcran: reglage,
+          skillsParAgent,
+        });
+        if (skills?.length) await appelEquipeVps(lieu, jeton, "skills-recevoir", { skills });
       }
     }
     return appelEquipeVps(lieu, jeton, methode, corps);
+  });
+  /* Les skills allumées de ce PC, envoyées à un VPS sur demande (Réglages › Agents, sur ce VPS). */
+  handle("agents:vps:skills-du-pc", async (lieu: string) => {
+    if (!originesServeurs().includes(lieu)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    const { skills } = equipePourVps();
+    return appelEquipeVps(lieu, jetonServeur(lieu), "skills-recevoir", { skills: skills ?? [] }) as Promise<{ ajoutees: string[] }>;
   });
   handle("agents:list", async () => {
     const listing = await listAgents();

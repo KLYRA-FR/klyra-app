@@ -305,6 +305,7 @@ export interface KlyraBridge {
   agents: {
     /** L'équipe d'un VPS relié, par `pontAgents` (src/lib/agents-pont.ts). Absent avant la relance de l'app. */
     vps?: (lieu: string, methode: string, corps: unknown) => Promise<Reponse<unknown>>;
+    skillsDuPcVersVps?: (lieu: string) => Promise<Reponse<{ ajoutees: string[] }>>;
     list: () => Promise<Reponse<AgentsListing>>;
     write: (name: string, content: string, expectedModifiedAt: number | null) => Promise<Reponse<AgentFile>>;
     create: (name: string, content: string) => Promise<Reponse<AgentFile>>;
