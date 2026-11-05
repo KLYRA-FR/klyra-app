@@ -126,7 +126,7 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
   const parOrigine = new Map(liste.map((c) => [c.origine, c]));
   /* Hors ligne, une copie d'activité ne dit plus rien du travail en cours (E2-07). */
   const vif = ouvert && !horsLigne;
-  const { epinglees, agents, equipe } = sections(liste, cartes ?? [], nom, vif);
+  const { epinglees, agents, equipe } = sections(liste, cartes ?? [], nom, ouvert, horsLigne);
   const traiter = aTraiter(liste, enAttente ?? []);
   const travail = auTravail(liste, vif);
   const titreDe = (origine: string) => {
@@ -137,7 +137,7 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
   const premierJour = charge && liste.length === 0;
 
   const ligneEquipe = (c: ConversationLue) => {
-    const etat = etatLigne(c, nom, vif);
+    const etat = etatLigne(c, nom, ouvert, horsLigne);
     return (
       <LigneListe
         key={c.origine}

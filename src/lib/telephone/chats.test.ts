@@ -93,6 +93,10 @@ describe("Chats (T-01)", () => {
     expect(etatLigne(conversation("dm-hugo", { activite: activite("question", "x") }), nom)).toEqual({ texte: "Attend ta réponse", enCours: false });
     expect(etatLigne(conversation("dm-hugo", { activite: activite("ecrit", "x") }), nom, false)).toBeNull();
     expect(etatLigne(conversation("dm-hugo", { activite: accord("x") }), nom, false)).toEqual({ texte: "Demande d’accord expirée", enCours: false });
+    /* Hors ligne (E2-07) : pas de faux « En cours », et un accord n'est pas déclaré expiré. */
+    expect(etatLigne(conversation("dm-hugo", { activite: activite("ecrit", "x") }), nom, true, true)).toBeNull();
+    expect(etatLigne(conversation("dm-hugo", { activite: accord("x") }), nom, true, true)).toEqual({ texte: "Attend ton accord", enCours: false });
+    expect(etatLigne(conversation("dm-hugo", { activite: activite("question", "x") }), nom, true, true)).toEqual({ texte: "Attend ta réponse", enCours: false });
   });
 
   test("À traiter : accords puis questions, les plus anciens d'abord, puis les messages en attente ; une question déjà répondue sort", () => {

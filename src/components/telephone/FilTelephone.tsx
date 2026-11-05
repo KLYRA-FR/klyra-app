@@ -87,7 +87,7 @@ export function FilTelephone() {
   /* C-2b : jamais « Conversation » ; le fil d'un agent porte son nom (l'assistant par défaut). */
   const titre = equipe ? (conversation?.titre ?? "Nouvelle conversation") : nom(agent ?? conversation?.roleIds[0] ?? ASSISTANT);
   /* La ligne sous le nom : ce que fait l'agent, sinon son rôle (jamais répété) ; le projet et l'équipe pour une conversation d'équipe. */
-  const etat = etatLigne(conversation, nom, ouvert);
+  const etat = etatLigne(conversation, nom, ouvert, horsLigne);
   const sous = etat
     ? etat.texte
     : equipe

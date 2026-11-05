@@ -67,9 +67,12 @@ export function attendUneAction(c: Pick<ConversationLue, "activite" | "archiveLe
  * Le texte d'état d'une ligne, comme la barre latérale du bureau. `nom` : le prénom d'un agent.
  * Ordinateur fermé, plus rien ne s'écrit : seuls l'accord (expiré, P-11) et la question restent.
  */
-export function etatLigne(c: ConversationLue | undefined, nom: (id: string) => string, posteOuvert = true): { texte: string; enCours: boolean } | null {
+export function etatLigne(c: ConversationLue | undefined, nom: (id: string) => string, posteOuvert = true, horsLigne = false): { texte: string; enCours: boolean } | null {
   const activite = activiteDe(c);
   if (!c || !activite) return null;
+  /* Hors ligne, la copie ne dit plus si l'agent travaille (E2-07) ; un accord reste une demande, sans « En cours » ni expiration affirmée. */
+  if (horsLigne && posteOuvert && activite.etat === "accord") return { texte: c.kind === "equipe" ? `${nom(activite.roleId)} attend ton accord` : "Attend ton accord", enCours: false };
+  if (horsLigne && activite.etat !== "question" && activite.etat !== "accord") return null;
   if (!posteOuvert && activite.etat === "accord") return { texte: "Demande d’accord expirée", enCours: false };
   if (!posteOuvert && activite.etat !== "question") return null;
   const equipe = c.kind === "equipe";
@@ -103,7 +106,7 @@ export interface LigneAgent {
  * « Mes agents » (l'assistant, puis les agents actifs), « Conversations d'équipe » (les autres, les
  * plus récentes d'abord). Les fils vivent dans le chat de leur agent.
  */
-export function sections(conversations: ConversationLue[], cartes: CarteAgentLue[], nom: (id: string) => string, posteOuvert = true) {
+export function sections(conversations: ConversationLue[], cartes: CarteAgentLue[], nom: (id: string) => string, posteOuvert = true, horsLigne = false) {
   const equipe = conversations.filter((c) => c.kind === "equipe");
   const epinglees = equipe
     .filter((c) => c.epingleLe)
@@ -116,7 +119,7 @@ export function sections(conversations: ConversationLue[], cartes: CarteAgentLue
   const agents: LigneAgent[] = actifs.map((carte) => {
     const conversation = parOrigine.get(idDirect(carte.origine));
     const filActif = conversations.find((c) => !c.archiveLe && parentDe(c) === idDirect(carte.origine) && activiteDe(c));
-    return { carte, conversation, etat: etatLigne(conversation, nom, posteOuvert) ?? etatLigne(filActif, nom, posteOuvert) };
+    return { carte, conversation, etat: etatLigne(conversation, nom, posteOuvert, horsLigne) ?? etatLigne(filActif, nom, posteOuvert, horsLigne) };
   });
   return { epinglees, agents, equipe: autres };
 }
