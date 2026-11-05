@@ -52,6 +52,7 @@ export function creerIa(options) {
   let navigateur = null;
   /** Le Coffre de KLYRA, sur le PC (cf. coffre.mjs) : `actif()`, `appeler(appelant, nom, arguments)`. */
   let coffre = null;
+  let composio = null;
   /** Les workflows, sur le PC de la personne : `appeler(appelant, nom, arguments)` (cf. workflows.mjs). */
   let workflows = null;
 
@@ -258,7 +259,7 @@ export function creerIa(options) {
       ...(typeof appelant.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(appelant.agent) ? { "X-Klyra-Agent": appelant.agent } : {}),
       ...(typeof appelant.conversation === "string" && /^[A-Za-z0-9_.:@-]{1,120}$/.test(appelant.conversation) ? { "X-Klyra-Conversation": appelant.conversation } : {}),
     };
-    return JSON.stringify({ mcpServers: { klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}`, ...qui } } } });
+    return JSON.stringify({ mcpServers: { ...(composio?.() ? { composio: composio() } : {}), klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}`, ...qui } } } });
   }
 
   return {
@@ -281,6 +282,10 @@ export function creerIa(options) {
     /** Branche les outils du Coffre de KLYRA : `actif()` (le PC le sert), `appeler(appelant, nom, arguments)`. */
     surCoffre: (relais) => {
       coffre = relais;
+    },
+    /** Branche le serveur MCP de Composio de ce serveur, s'il est connecté. */
+    surComposio: (fn) => {
+      composio = fn;
     },
     /** Branche les outils des workflows : `appeler(appelant, nom, arguments)`, relayé au PC. */
     surWorkflows: (relais) => {

@@ -4,7 +4,7 @@
  * quand la conversation le demande (`moteur: "codex"`). Les IA à consulter (ia.mjs) leur sont données
  * par l'outil MCP `demander_ia`, et l'atelier d'un agent à l'assistant (`proposer_agent`,
  * `proposer_choix`, son épreuve : atelier-agent.mjs et epreuve.mjs, les mêmes règles que sur le PC).
- * Ce qui n'existe que sur le PC n'est pas là : outils des fils, Composio, planning, pièces jointes,
+ * Ce qui n'existe que sur le PC n'est pas là : outils des fils, planning, pièces jointes,
  * consommation détaillée.
  *
  * Chaque événement part dans le journal (`journal.mjs`) avec le numéro de la réponse (requestId) :
@@ -41,6 +41,7 @@ import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coffre.mjs";
 import { creerCoffreServeur } from "./coffre-serveur.mjs";
+import { creerComposioServeur } from "./composio-serveur.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
@@ -66,6 +67,8 @@ function configurationValide(c) {
     coffre: c?.coffre === true,
   };
 }
+
+const CONSIGNE_COMPOSIO = "Pour les apps de la personne (Gmail, Slack, Notion, Google Agenda…), utilise le serveur MCP composio : c'est la connexion de ce serveur. Une app pas encore connectée te donne un lien d'autorisation : transmets-le à la personne.";
 
 /** Les mêmes que dans l'app (electron/claude.ts) : ne pas les changer d'un seul côté. */
 const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente aucun fait : ni prix, ni délai, ni autorisation, ni horaire, coordonnée, chiffre ou promesse au nom de quelqu'un ; ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien. Ce qui se mesure (tests, liens, contrastes, rendu) se vérifie avec ce que le projet et le poste offrent déjà : trouve l'outil qu'il faut par une recherche ciblée (which, chemins habituels), n'installe rien et ne fouille pas des dossiers sans rapport sans accord, et dis ce qui n'a pas pu être vérifié.`;
@@ -335,7 +338,7 @@ export function creerAgents(options) {
 
   const listeAgents = (agents) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
   const ici = () =>
-    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
+    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les fils de l'app n'existent pas ici.${composioServeur.mcp() ? ` ${CONSIGNE_COMPOSIO}` : ""} Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
 
   function consigneAssistant() {
     const { assistant, actifs } = lireEquipe();
@@ -366,6 +369,9 @@ export function creerAgents(options) {
   const coffreServeur = creerCoffreServeur({ donnees });
   const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees, local: coffreServeur });
   options.ia?.surCoffre?.({ actif: () => true, appeler: coffre.appeler });
+  /* Les apps de la personne par Composio : la connexion de ce serveur, à lui seul (cf. composio-serveur.mjs). */
+  const composioServeur = creerComposioServeur({ donnees, coffre: coffreServeur, ...(options.fetch ? { fetch: options.fetch } : {}) });
+  options.ia?.surComposio?.(composioServeur.mcp);
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
   const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
   options.ia?.surWorkflows?.({ appeler: workflows.appeler });
@@ -475,7 +481,7 @@ export function creerAgents(options) {
     consignesKlyra: () => lireEquipe().configuration.consignes,
     estActif,
     mcp: mcpIa,
-    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.mcp() ? 1 : 0}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.codex !== undefined ? { codex: options.codex } : {}),
   });
@@ -489,7 +495,7 @@ export function creerAgents(options) {
     consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
     consignesKlyra: () => lireEquipe().configuration.consignes,
     mcp: mcpIa,
-    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.mcp() ? 1 : 0}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.grok !== undefined ? { grok: options.grok } : {}),
   });
@@ -926,5 +932,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, coffreServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().recue, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().recue, fermerTout, claude, codex, grok };
 }

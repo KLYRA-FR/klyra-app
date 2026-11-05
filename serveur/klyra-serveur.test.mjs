@@ -855,3 +855,44 @@ test("l'espace d'un serveur : ses éléments restent ici, retirés comme écrits
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("Composio : chaque serveur a son compte, gardé chiffré, et ses agents le joignent sans le PC", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const ia = creerIa({ donnees: dossier, version: "1" });
+  await ia.demarrer();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "VPS", publier: () => {}, spontane: () => {}, ia, claude: null });
+  const ecoute = await ecouter({ dossier, port: 0, agents, ia });
+  const jetons = { clientId: "client-1", acces: "acces-secret", renouvellement: "renouveau-secret", expireLe: Date.now() + 3_600_000, compte: "corentin@exemple.fr" };
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const composio = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/composio/${methode}`, { methode: "POST", jeton, corps });
+    assert.equal((await appel(ecoute.port, "/klyra/v1/composio/etat", { methode: "POST", corps: {} })).statut, 401);
+    assert.equal((await composio("etat")).json.resultat.connecte, false);
+    assert.equal(JSON.parse(ia.configMcp({ agent: "hugo", conversation: "c" })).mcpServers.composio, undefined);
+
+    assert.equal((await composio("adopter", { jetons: { acces: "sans le reste" } })).statut, 400);
+    const adopte = (await composio("adopter", { jetons })).json.resultat;
+    assert.deepEqual([adopte.connecte, adopte.compte], [true, "corentin@exemple.fr"]);
+    assert.ok(!JSON.stringify(adopte).includes("acces-secret"), "l'état ne donne jamais un jeton");
+    assert.ok(!readFileSync(path.join(dossier, "composio-connect.json"), "utf8").includes("acces-secret"), "rien en clair sur le disque");
+
+    const mcp = JSON.parse(ia.configMcp({ agent: "hugo", conversation: "c" })).mcpServers;
+    assert.equal(mcp.composio.url, "https://connect.composio.dev/mcp");
+    assert.equal(mcp.composio.headers.Authorization, "Bearer acces-secret");
+    assert.ok(mcp.klyra);
+
+    // Relu au redémarrage : le compte reste à ce serveur.
+    const relu = creerAgents({ home, donnees: dossier, nomServeur: "VPS", publier: () => {}, spontane: () => {}, claude: null });
+    assert.equal((await relu.composioServeur.appeler("etat")).connecte, true);
+
+    assert.equal((await composio("deconnecter")).json.resultat.connecte, false);
+    assert.equal(JSON.parse(ia.configMcp({ agent: "hugo", conversation: "c" })).mcpServers.composio, undefined);
+    assert.ok(!existsSync(path.join(dossier, "composio-connect.json")));
+  } finally {
+    await ecoute.fermer();
+    ia.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

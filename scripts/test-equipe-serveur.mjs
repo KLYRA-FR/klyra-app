@@ -144,6 +144,13 @@ try {
     const refuse = await app.ev(`window.klyra.coffre.vps(${JSON.stringify(adresse)}, "lire", { id: "x" })`);
     verifier(!refuse.ok, "l’écran ne peut pas demander une valeur au VPS");
   }
+  // Composio : le compte du serveur, pas celui de ce PC.
+  const composioVps = await app.ev(`window.klyra.composio.connect.vps.etat(${JSON.stringify(adresse)})`);
+  verifier(composioVps.ok && composioVps.data.connecte === false, "VPS : Composio n’y est pas connecté, quoi qu’il en soit de ce PC");
+  await surServeur(adresse);
+  await app.aller("/marketplace");
+  verifier(await app.quand(`document.body.innerText.includes("le compte de ce serveur")`), "Marketplace, sur le VPS : la page dit que c’est le compte du serveur");
+  verifier(!(await app.ev(`document.body.innerText`)).includes("Mode développeur"), "Marketplace, sur le VPS : pas de clé de projet");
   await surServeur(adresse);
   await app.aller("/reglages?section=coffre");
   verifier(await app.quand(`document.body.innerText.includes("à lui seul")`), "Réglages › Coffre, sur le VPS : la page dit que c’est le sien, et comment il est protégé");

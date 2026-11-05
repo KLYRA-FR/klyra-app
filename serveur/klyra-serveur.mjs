@@ -30,6 +30,7 @@ export const CHEMIN_FICHIERS = "/klyra/v1/fichiers";
 export const CHEMIN_EQUIPE = "/klyra/v1/equipe";
 export const CHEMIN_COFFRE = "/klyra/v1/coffre";
 export const CHEMIN_ESPACE = "/klyra/v1/espace";
+export const CHEMIN_COMPOSIO = "/klyra/v1/composio";
 export const CHEMIN_ROUTINES = "/klyra/v1/routines";
 export const CHEMIN_MOTEURS = "/klyra/v1/moteurs";
 export const CHEMIN_IA = "/klyra/v1/ia";
@@ -330,6 +331,7 @@ export function creerGestionnaire(options) {
     ...(agents?.equipeServeur ? { equipePropre: true } : {}),
     ...(agents?.coffreServeur ? { coffrePropre: true } : {}),
     ...(espace ? { espacePropre: true } : {}),
+    ...(agents?.composioServeur ? { composioPropre: true } : {}),
     ...(fichiers ? { projets: fichiers.racine } : {}),
     ...(routines ? { routines: true } : {}),
     /* Réglages du serveur › Fournisseurs : moteurs (Claude Code, Codex) et IA à consulter. */
@@ -499,6 +501,18 @@ export function creerGestionnaire(options) {
       } catch (erreur) {
         if (erreur instanceof ErreurEspace) return repondre(res, 400, { erreur: "espace", message: erreur.message });
         throw erreur;
+      }
+    }
+
+    if (url.pathname.startsWith(`${CHEMIN_COMPOSIO}/`)) {
+      if (!agents?.composioServeur) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+      try {
+        const corps = await lireCorpsRequete(req);
+        return repondre(res, 200, { resultat: await agents.composioServeur.appeler(url.pathname.slice(CHEMIN_COMPOSIO.length + 1), corps ?? {}) });
+      } catch (erreur) {
+        return repondre(res, 400, { erreur: "composio", message: erreur instanceof Error ? erreur.message : "Composio illisible." });
       }
     }
 

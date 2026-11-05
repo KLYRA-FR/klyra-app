@@ -211,6 +211,12 @@ contextBridge.exposeInMainWorld("klyra", {
       connecter: () => ipcRenderer.invoke("composio:connect:connecter"),
       annuler: () => ipcRenderer.invoke("composio:connect:annuler"),
       deconnecter: () => ipcRenderer.invoke("composio:connect:deconnecter"),
+      vps: {
+        etat: (lieu: string) => ipcRenderer.invoke("composio:connect:vps:etat", lieu),
+        connecter: (lieu: string) => ipcRenderer.invoke("composio:connect:vps:connecter", lieu),
+        annuler: () => ipcRenderer.invoke("composio:connect:vps:annuler"),
+        deconnecter: (lieu: string) => ipcRenderer.invoke("composio:connect:vps:deconnecter", lieu),
+      },
     },
   },
   planning: {

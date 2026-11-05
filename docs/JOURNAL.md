@@ -332,3 +332,4 @@ Puis, dans Claude : « Lis `docs/JOURNAL.md` et `CLAUDE.md`, on continue l’app
 - **05/11/2026** — Réglages des agents par serveur : accès, configuration KLYRA et skills suivent le serveur affiché et restent sur le VPS. Computer Use et Navigateur disent qu’ils agissent sur cet ordinateur.
 - **05/11/2026** — Coffre par serveur : le VPS garde le sien, ses agents s’en servent sans le PC, un secret n’y arrive que copié un par un. Sans trousseau sur un VPS : chiffré avec une clé gardée à côté, et l’écran dit cette limite.
 - **05/11/2026** — Le VPS garde son espace : conversations, messages, tickets, projets, workflows, exécutions et livrables, envoyés à mesure par l’app. Un second appareil les retrouve. Le PC garde sa copie.
+- **05/11/2026** — Composio par serveur : chaque VPS a son compte Composio Connect, gardé chiffré, connecté depuis le navigateur de l’ordinateur, et ses agents Claude Code s’en servent sans le PC.
