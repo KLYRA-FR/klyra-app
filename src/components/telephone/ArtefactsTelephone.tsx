@@ -392,6 +392,7 @@ function ListeMiens({
       {liste.rendusServeur ? <NoteServeur nombre={liste.rendusServeur} /> : null}
       {lienMenu ? (
         <MenuLien
+          key={lienMenu.id}
           artefact={lienMenu}
           projets={liste.projets}
           partage={partageDe(lienMenu)}
@@ -399,7 +400,7 @@ function ListeMiens({
           onFermer={() => setLienMenu(null)}
           onPartage={() => {
             setEclaire(lienMenu.id);
-            annoncer(`« ${lienMenu.titre} » partagé avec l’équipe.`);
+            annoncer({ texte: `« ${lienMenu.titre} » partagé avec l’équipe.`, icone: "check-01" });
           }}
         />
       ) : null}
@@ -454,7 +455,7 @@ function MenuLien({ artefact, projets, partage, relire, onFermer, onPartage }: {
               confirmation: { titre: "Retirer de la liste ?", texte: "L’artefact reste sur claude.ai.", confirmer: "Retirer" },
               onChoisir: () =>
                 void agir("artefacts.retirer", { id: artefact.id }).then((ok) => {
-                  if (ok) annoncer("Retiré de la liste.");
+                  if (ok) annoncer({ texte: "Retiré de la liste.", icone: "check-01" });
                   else annoncer({ texte: "Le retrait n’a pas abouti : l’artefact reste dans la liste.", erreur: true });
                   relire();
                 }),
@@ -594,7 +595,7 @@ function FeuilleModifier({ artefact, projets, onFermer, onFait }: { artefact: Ar
   const enregistrer = async () => {
     const ok = await agir("artefacts.modifier", { id: artefact.id, titre, description, projetId: projet || null });
     if (!ok) return;
-    annoncer("Artefact modifié.");
+    annoncer({ texte: "Artefact modifié.", icone: "check-01" });
     onFermer();
     onFait();
   };
@@ -635,7 +636,7 @@ function FeuilleLien({ projets, onFermer, onFait }: { projets: ListeArtefacts["p
     if (erreurs.url || erreurs.titre) return;
     const ok = await agir("artefacts.ajouter", { url: url.trim(), titre, projetId: projet || null });
     if (!ok) return;
-    annoncer("Lien ajouté à la liste.");
+    annoncer({ texte: "Lien ajouté à la liste.", icone: "check-01" });
     onFermer();
     onFait();
   };
@@ -709,7 +710,7 @@ function MenuRendu({ rendu, sur, relire, onFermer }: { rendu: RenduLu; sur: stri
           note,
           onChoisir: () =>
             void agir("rendus.ouvrir", { id: rendu.id }).then((ok) => {
-              if (ok) annoncer(`Ouvert sur ${sur}.`);
+              if (ok) annoncer({ texte: `Ouvert sur ${sur}.`, icone: "check-01" });
               else annoncer({ texte: `Ce rendu n’a pas pu s’ouvrir sur ${sur}.`, erreur: true });
             }),
         },
@@ -725,7 +726,7 @@ function MenuRendu({ rendu, sur, relire, onFermer }: { rendu: RenduLu; sur: stri
           confirmation: { titre: "Retirer de la liste ?", texte: "La copie gardée par KLYRA est supprimée, et son partage avec l’équipe s’il y en a un ; l’original de l’agent et ce que tu as enregistré ailleurs restent.", confirmer: "Retirer" },
           onChoisir: () =>
             void agir("rendus.retirer", { id: rendu.id }).then((ok) => {
-              if (ok) annoncer("Retiré de la liste.");
+              if (ok) annoncer({ texte: "Retiré de la liste.", icone: "check-01" });
               else annoncer({ texte: "Le retrait n’a pas abouti : le rendu reste dans la liste.", erreur: true });
               relire();
             }),
@@ -751,7 +752,7 @@ function PageApercu({ id, rendu, liste, relire }: { id: string; rendu: RenduLu |
   const image = lecture.etat === "ok" ? imageApercu(lecture.data.image) : null;
   const ouvrir = () =>
     void agir("rendus.ouvrir", { id }).then((ok) => {
-      if (ok) annoncer(`Ouvert sur ${sur}.`);
+      if (ok) annoncer({ texte: `Ouvert sur ${sur}.`, icone: "check-01" });
     });
   return (
     <PagePleine
@@ -890,7 +891,7 @@ function OngletEquipe({ pages, relire }: { pages: PageEquipe[] | null; relire: (
           }
         />
       ) : null}
-      {menu ? <MenuEquipe artefact={menu} onFermer={() => setMenu(null)} /> : null}
+      {menu ? <MenuEquipe key={menu._id} artefact={menu} onFermer={() => setMenu(null)} /> : null}
     </div>
   );
 }
@@ -951,7 +952,7 @@ function MenuEquipe({ artefact, onFermer }: { artefact: ArtefactEquipe; onFermer
                     confirmation: { titre: "Ne plus partager avec l’équipe ?", texte: "L’artefact reste sur claude.ai et dans tes artefacts.", confirmer: "Ne plus partager" },
                     onChoisir: () =>
                       void equipe.retirer(artefact._id).then(
-                        () => annoncer(`« ${artefact.titre} » n’est plus partagé.`),
+                        () => annoncer({ texte: `« ${artefact.titre} » n’est plus partagé.`, icone: "check-01" }),
                         (e: unknown) => annoncer({ texte: e instanceof Error ? e.message : messageErreur(e), erreur: true }),
                       ),
                   },
@@ -977,7 +978,7 @@ function FeuilleModifierEquipe({ artefact, onFermer }: { artefact: ArtefactEquip
     setErreur(null);
     try {
       await equipe.modifier(artefact._id, { titre: titre.trim(), description: description.trim() });
-      annoncer("Artefact modifié.");
+      annoncer({ texte: "Artefact modifié.", icone: "check-01" });
       onFermer();
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));

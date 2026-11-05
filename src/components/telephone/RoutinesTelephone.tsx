@@ -34,6 +34,7 @@ import {
 } from "@/lib/telephone/routines-telephone";
 import type { RoleTeinte } from "@/types/domain";
 import type { Routine, RoutineInput, RoutineRun } from "@/types/routines";
+import { useAnnonce } from "./Annonce";
 import { MenuPage } from "./CommunAgentsTelephone";
 import { BOUTON_INACTIF } from "./Controles";
 import { EnteteTelephone } from "./EnteteTelephone";
@@ -41,7 +42,7 @@ import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMen
 import { FormulaireRoutineTelephone, type ContexteRoutine } from "./FormulaireRoutineTelephone";
 import { Carte, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { useTirerPourRelire } from "./TirerPourRelire";
-import { EtatEcran, NotePoste, VueLecture, useBandeau, useVueGardeeAffichee } from "./etats";
+import { EtatEcran, NotePoste, VueLecture, useVueGardeeAffichee } from "./etats";
 import { usePostes, useSupport } from "./poste";
 
 /**
@@ -220,7 +221,8 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
   const tirer = useTirerPourRelire(relancer, { enCours: lecture.relecture });
   const { faire, occupe } = useGestePoste();
   const uneFois = useUneFois();
-  const [bandeau, annoncer] = useBandeau();
+  const annonce = useAnnonce();
+  const annoncer = (texte: string) => annonce({ texte, icone: "check-01" });
   const [brouillon, setBrouillon] = useState<BrouillonRoutine | null>(lireBrouillon);
   const [edition, setEdition] = useState<Edition | null>(null);
   const [tour, setTour] = useState(0);
@@ -495,7 +497,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
       </div>
       {data?.actif && agent.actif ? (
         <div className="shrink-0 border-t border-bordure-defaut bg-fond-page px-4 py-3">
-          <BoutonPrincipal className="w-full" disabled={indisponible} onClick={() => commencer(null)}>
+          <BoutonPrincipal className={cn("w-full", BOUTON_INACTIF)} disabled={indisponible} onClick={() => commencer(null)}>
             Nouvelle routine
           </BoutonPrincipal>
           {!ouvert ? <NotePoste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
@@ -546,7 +548,6 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
           onFermer={() => setConfirmation(null)}
         />
       ) : null}
-      {bandeau}
     </div>
   );
 }
@@ -616,6 +617,7 @@ function CarteRoutineTelephone({
   onExecutions(): void;
 }) {
   const id = useId();
+  const gardee = !!useVueGardeeAffichee();
   const nomAgent = nomDe(r.agentId);
   const appui = useAppuiLong(onMenu);
   const consigne = useRef<HTMLParagraphElement>(null);
@@ -739,9 +741,11 @@ function CarteRoutineTelephone({
               {derniere.error || derniere.result ? <p className={cn("line-clamp-2 break-words whitespace-pre-wrap", derniere.error && "text-texte-erreur")}>{derniere.error || derniere.result}</p> : null}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-1">
                 {lienRun(derniere) ? <LienCarte href={lienRun(derniere)!}>Voir la conversation</LienCarte> : null}
-                <LienCarte chevron onClick={onExecutions}>
-                  Exécutions
-                </LienCarte>
+                {gardee ? null : (
+                  <LienCarte chevron onClick={onExecutions}>
+                    Exécutions
+                  </LienCarte>
+                )}
               </div>
             </>
           ) : (

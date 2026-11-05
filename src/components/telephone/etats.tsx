@@ -373,7 +373,7 @@ export function LectureGardee({
         <BandeauVueGardee lu={vue.lu} />
       </div>
       {verrou ? (
-        <fieldset disabled className="m-0 min-w-0 border-0 p-0" aria-label={`Lecture seule : ${sur} est fermé`}>
+        <fieldset disabled className="m-0 min-w-0 border-0 p-0" aria-label={horsLigne ? "Lecture seule : ce téléphone est hors ligne" : `Lecture seule : ${sur} est fermé`}>
           {children}
         </fieldset>
       ) : (

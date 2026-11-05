@@ -87,7 +87,7 @@ export function CaseRonde({ faite }: { faite: boolean }) {
 }
 
 /** Un `Bouton` sombre ou blanc désactivé, comme aux maquettes : gris plein, sans bord (`b desactive`). */
-export const BOUTON_INACTIF = "disabled:border-transparent disabled:bg-fond-survol disabled:bg-none disabled:text-texte-tertiaire disabled:opacity-100";
+export const BOUTON_INACTIF = "klyra-bouton-inactif";
 
 /**
  * Les segments d'une page poussée (§ 6.3) : rail de 2 px, segments de 40 px touchés sur 44, un nombre

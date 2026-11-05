@@ -48,7 +48,7 @@ import { estEtape } from "@/types/workflows";
 import { useAnnonce } from "./Annonce";
 import { AvatarConstructeur, BandeauConstructionTelephone, couleurChantier, verbeChantier } from "./ChantierTelephone";
 import { MenuPage } from "./CommunAgentsTelephone";
-import { CHAMP_KLYRA_UI, MessageErreur } from "./Controles";
+import { BOUTON_INACTIF, CHAMP_KLYRA_UI, MessageErreur } from "./Controles";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, useFermerFeuille } from "./Feuille";
 import { Carte, CLASSE_GROUPE, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
@@ -72,7 +72,8 @@ const fmtJour = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numer
 /** « Aujourd'hui, 09:12 », « lun. 3 nov., 09:12 » : comme l'historique du bureau. */
 function quandCourt(iso: string): string {
   const d = new Date(iso);
-  return `${d.toDateString() === new Date().toDateString() ? "Aujourd’hui" : fmtJour.format(d)}, ${fmtHeure.format(d)}`;
+  const hier = new Date(Date.now() - 86_400_000);
+  return `${d.toDateString() === new Date().toDateString() ? "Aujourd’hui" : d.toDateString() === hier.toDateString() ? "Hier" : fmtJour.format(d)}, ${fmtHeure.format(d)}`;
 }
 
 function duree(e: ResumeExecution): string {
@@ -123,13 +124,14 @@ function useActionsWorkflow({ relancer, executions, onSupprime }: { relancer: ()
   const sur = useSupport();
   const { ouvert } = usePostes();
   const { faire, occupe } = useGestePoste();
-  const annoncer = useAnnonce();
+  const annonce = useAnnonce();
+  const annoncer = (texte: string) => annonce({ texte, icone: "check-01" });
   /* Le menu joue sa sortie pendant que la feuille suivante monte : deux états, pas un. */
   const [menu, setMenu] = useState<WorkflowMenu | null>(null);
   const [suite, setSuite] = useState<{ genre: "renommer" | "versions"; wf: WorkflowMenu } | null>(null);
   const geste = async <T,>(type: string, args: Record<string, unknown>, message: string, apres?: (data: T) => void) => {
     const r = await faire<T>(type, args);
-    if (!r.ok) annoncer({ texte: messageGeste(r, sur), erreur: true });
+    if (!r.ok) annonce({ texte: messageGeste(r, sur), erreur: true });
     else {
       annoncer(message);
       apres?.(r.data);
@@ -538,14 +540,14 @@ export function WorkflowTelephone({ id, versionId, executionsOuvertes = false }:
       </div>
       {data && travaux ? (
         <div className="shrink-0 border-t border-bordure-defaut bg-fond-page px-4 py-3">
-          <BoutonPrincipal className="w-full" disabled>
+          <BoutonPrincipal className={cn("w-full", BOUTON_INACTIF)} disabled>
             En construction…
           </BoutonPrincipal>
         </div>
       ) : data && !lectureSeule ? (
         <div className="shrink-0 border-t border-bordure-defaut bg-fond-page px-4 py-3">
           {erreur ? <MessageErreur className="pb-2">{erreur}</MessageErreur> : null}
-          <BoutonPrincipal className="w-full" disabled={indisponible || !!data.enCours || total === 0 || lecture.relecture} onClick={lancer}>
+          <BoutonPrincipal className={cn("w-full", BOUTON_INACTIF)} disabled={indisponible || !!data.enCours || total === 0 || lecture.relecture} onClick={lancer}>
             {data.enCours ? "En cours…" : "Lancer le workflow"}
           </BoutonPrincipal>
           {!ouvert ? <NotePoste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
