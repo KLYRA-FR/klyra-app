@@ -486,7 +486,7 @@ export function ServeursTelephone() {
             </>
           ) : (
             <>
-              <p className="mx-1 text-ui leading-[1.45] text-texte-secondaire">Tes messages passent par {sur}. Quand il est fermé, ceux que tu écris aux agents d’un serveur relié ici lui parviennent directement.</p>
+              <p className="mx-1 text-ui leading-[1.45] text-texte-secondaire">Les messages simples aux agents du serveur choisi lui parviennent directement. Les pièces jointes et les gestes sur un fil passent encore par {sur}.</p>
               <SectionListe titre="Reliés à ce téléphone" compte={carnet.liste.length}>
                 <GroupeListe>
                   {carnet.liste.map((s) => {

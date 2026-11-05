@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, ViewTransition, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ongletDe, rangDansLApp } from "@/lib/telephone/retour";
+import { clePageTelephone, ongletDe, rangDansLApp } from "@/lib/telephone/retour";
 import { FournisseurAnnonce } from "./Annonce";
 import { FournisseurReseau } from "./BandeauReseau";
 import { useCompte, useSocketOuvert } from "@/lib/compte";
@@ -346,6 +346,7 @@ function PageInstallation({ installation, tablette }: { installation: ReturnType
 export function CoqueTelephone() {
   const pathname = usePathname();
   const params = useSearchParams();
+  const page = clePageTelephone(pathname, params);
   const router = useRouter();
   const compte = useCompte();
   useRetenirPoste();
@@ -386,8 +387,8 @@ export function CoqueTelephone() {
               <PageInstallation installation={installation} tablette={tablette} />
             ) : connecte || serveurs ? (
               /* Seule la zone de contenu glisse ou se fond (§ 2.6) ; la barre d'onglets ne bouge pas. Une
-                 page par chemin : un paramètre remplacé (onglet segmenté, fiche ouverte) ne remonte pas l'écran. */
-              <ViewTransition key={pathname} enter={sens} exit={sens} default="none">
+                 page par destination : les sous-pages changent de clé, les filtres et recherches gardent l'écran. */
+              <ViewTransition key={page} enter={sens} exit={sens} default="none">
                 <div data-contenu-telephone className="flex min-h-0 flex-1 flex-col">
                   {tablette ? <EcranTablette pathname={pathname} /> : ecran(pathname)}
                 </div>
@@ -410,14 +411,19 @@ export function CoqueTelephone() {
  */
 function useSensDeNavigation(): "klyra-page" | "none" {
   const pathname = usePathname();
+  const recherche = useSearchParams().toString();
   const avant = useRef<{ onglet: string; rang: number } | null>(null);
   useLayoutEffect(() => {
     const ici = { onglet: ongletDe(pathname), rang: rangDansLApp(window.history.state) };
     const precedent = avant.current;
     avant.current = ici;
-    if (!precedent) return;
+    if (!precedent) {
+      /* La numérotation remet l'entrée à zéro dans son effet de montage, après cet effet de layout. */
+      avant.current = { ...ici, rang: 0 };
+      return;
+    }
     document.documentElement.dataset.sens =
       precedent.onglet !== ici.onglet ? "onglet" : ici.rang > precedent.rang ? "avant" : ici.rang < precedent.rang ? "arriere" : "aucun";
-  }, [pathname]);
+  }, [pathname, recherche]);
   return typeof document !== "undefined" && "startViewTransition" in document ? "klyra-page" : "none";
 }
