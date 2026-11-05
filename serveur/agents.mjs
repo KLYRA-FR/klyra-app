@@ -67,6 +67,16 @@ function configurationValide(c) {
   };
 }
 
+/**
+ * `equipe.json` contient-il tout ce que ce serveur y écrit ? Un fichier d'un ancien serveur porte la bonne
+ * empreinte sans ce que celui-ci ne savait pas garder (toute la configuration, ou le Coffre seul).
+ */
+function equipeComplete(equipe) {
+  const { configuration, skillsParAgent } = equipe;
+  return Boolean(configuration && typeof configuration === "object" && skillsParAgent && typeof skillsParAgent === "object")
+    && Object.keys(configurationValide(null)).every((champ) => champ in configuration);
+}
+
 /** Les mêmes que dans l'app (electron/claude.ts) : ne pas les changer d'un seul côté. */
 const REGLES_COMMUNES = `L'auteur vérifie lui-même ce qu'il livre et dit ce qu'il a contrôlé ; une relecture par un agent de contrôle (QA) n'a lieu que si la personne l'a demandée pour ce livrable. L'accès que l'app donne (fichiers, commandes, accès complet) ne vaut pas accord : envoyer, publier, payer, supprimer, engager un prix ou un délai, toucher à la production ou aux données réelles demandent l'accord de la personne qui décide ; ce qu'elle a déjà autorisé ne se redemande pas. N'invente aucun fait : ni prix, ni délai, ni autorisation, ni horaire, coordonnée, chiffre ou promesse au nom de quelqu'un ; ce qui manque reste visible, marqué [à compléter], sans faux numéro ni faux lien. Ce qui se mesure (tests, liens, contrastes, rendu) se vérifie avec ce que le projet et le poste offrent déjà : trouve l'outil qu'il faut par une recherche ciblée (which, chemins habituels), n'installe rien et ne fouille pas des dossiers sans rapport sans accord, et dis ce qui n'a pas pu être vérifié.`;
 const UN_RESPONSABLE = `Un livrable, un responsable : un livrable va entier à un seul agent, celui de sa partie principale, qui fait aussi les petites parties voisines (les textes d'une page qu'il intègre, par exemple). Plusieurs agents seulement pour des parties lourdes et indépendantes, menées en parallèle, jamais en relais de l'un à l'autre : chaque passage de main fait tout relire. Une tâche que tu ferais en quelques minutes, fais-la toi-même ; si la personne demande expressément son équipe, suis-la avec le moins d'agents possible.`;
@@ -140,9 +150,11 @@ export function creerAgents(options) {
       skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
       /* La configuration telle que l'écran l'a choisie : il la relit pour ses interrupteurs. */
       configurationEcran: equipe.configurationEcran ?? null,
-      empreinte: `${equipeServeur.empreinte()}:${equipe.empreinte ?? ""}:${equipe.reglagesLe ?? ""}`,
+      /* Une session repart quand l'équipe ou ses réglages changent, pas selon le PC qui a écrit le dernier. */
+      empreinte: `${equipeServeur.empreinte()}:${JSON.stringify([configurationValide(equipe.configuration), equipe.skillsParAgent ?? null, equipe.skillsLe ?? 0])}`,
       /* Ce que l'app a envoyé en dernier : elle s'en sert pour ne pas renvoyer deux fois. */
       recue: equipe.empreinte ?? "",
+      complete: equipeComplete(equipe),
     };
   };
 
@@ -192,23 +204,30 @@ export function creerAgents(options) {
     const fiches = Array.isArray(corps?.fiches) ? corps.fiches : null;
     if (!fiches || fiches.length > 100) throw new Error("fiches");
     /* Une app à jour n'envoie plus que ce que ce PC peut servir au VPS (navigateur, Coffre). Le reste est au serveur. */
-    if (corps.partielle === true) {
-      const actuel = lireFichierEquipe();
-      const { navigateur, coffre } = corps.configuration ?? {};
-      ecrireFichierEquipe({ ...actuel, configuration: { ...actuel.configuration, navigateur: navigateur === true, coffre: coffre === true }, empreinte: String(corps.empreinte ?? "").slice(0, 80) });
-      return;
-    }
     const valides = fiches.filter((f) => f && typeof f.id === "string" && ID_AGENT.test(f.id) && typeof f.contenu === "string" && f.contenu.length <= 200_000);
     if (valides.length !== fiches.length) throw new Error("fiches");
     if (corps.skills !== undefined && !Array.isArray(corps.skills)) throw new Error("fiches");
+    const actuel = lireFichierEquipe();
+    /* Réglés sur ce serveur, ses réglages sont à lui : un envoi complet d'une ancienne app ne les remet pas à ceux du PC. */
+    if (corps.partielle === true || actuel.reglagesLe) {
+      const { navigateur, coffre } = corps.configuration ?? {};
+      ecrireFichierEquipe({
+        ...actuel,
+        configuration: { ...configurationValide(actuel.configuration), navigateur: navigateur === true, coffre: coffre === true },
+        skillsParAgent: validerSkillsParAgent(actuel.skillsParAgent),
+        empreinte: String(corps.empreinte ?? "").slice(0, 80),
+      });
+      return;
+    }
     const skills = Array.isArray(corps.skills) ? normaliserSkillsRecues(corps.skills) : null;
     if (!equipeServeur.initialise()) equipeServeur.appeler("initialiser", { fiches: valides, assistant: corps.assistant });
     if (skills !== null) ecrireBibliotheque(path.join(donnees, "bibliotheque-skills"), skills);
     ecrireFichierEquipe({
-      ...lireFichierEquipe(),
+      ...actuel,
       configuration: configurationValide(corps.configuration),
       skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
       empreinte: String(corps.empreinte ?? "").slice(0, 80),
+      skillsLe: skills !== null ? Date.now() : actuel.skillsLe,
     });
   }
 
@@ -251,6 +270,7 @@ export function creerAgents(options) {
         } finally {
           rmSync(attente, { recursive: true, force: true });
         }
+        ecrireFichierEquipe({ ...lireFichierEquipe(), skillsLe: Date.now() });
         return { ajoutees: recues.map((s) => s.dossier) };
       }
       default:
@@ -923,8 +943,14 @@ export function creerAgents(options) {
     utilisation: () => utilisationClaude,
   };
 
+  /** L'empreinte annoncée à l'app : vide si le fichier n'est pas complet, pour qu'elle renvoie l'équipe. */
+  const empreinteEquipe = () => {
+    const { recue, complete } = lireEquipe();
+    return complete ? recue : "";
+  };
+
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, coffreServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().recue, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, coffreServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

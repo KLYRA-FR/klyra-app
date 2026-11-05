@@ -21,11 +21,11 @@ export type Saisie =
   | { ok: false; message: string };
 
 export type Lecture =
-  | { ok: true; nom: string; version: string; agents?: string }
+  | { ok: true; nom: string; version: string; agents?: string; versionCode?: number }
   | { ok: false; message: string };
 
 export type Appairage =
-  | { ok: true; nom: string; version: string; jeton: string }
+  | { ok: true; nom: string; version: string; jeton: string; versionCode?: number }
   | { ok: false; message: string };
 
 function estIpv4(hote: string): boolean {
@@ -90,7 +90,9 @@ export function lireCorps(statut: number, corps: unknown): Lecture {
     return { ok: false, message: MESSAGE_REPONSE };
   }
   const agents = typeof recu.agents === "string" && ["pret", "absent", "non-connecte"].includes(recu.agents) ? { agents: recu.agents } : {};
-  return { ok: true, nom: recu.nom.trim().slice(0, 80), version: recu.version.trim().slice(0, 40), ...agents };
+  /* Absente ou illisible : un serveur d'avant ce contrôle, ce que `serveurEnRetard` traite comme un retard. */
+  const versionCode = Number.isSafeInteger(recu.versionCode) && (recu.versionCode as number) > 0 ? { versionCode: recu.versionCode as number } : {};
+  return { ok: true, nom: recu.nom.trim().slice(0, 80), version: recu.version.trim().slice(0, 40), ...agents, ...versionCode };
 }
 
 /** Réponse de `POST /klyra/v1/appairer`. Le jeton ne sort jamais de là où il est gardé. */

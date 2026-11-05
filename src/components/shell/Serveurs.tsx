@@ -6,7 +6,7 @@ import { Icon, type IconName } from "@/components/icons/Icon";
 import { useConfirmation } from "@/components/ui/Modale";
 import { cn } from "@/lib/cn";
 import { idDirect, lireIdDirect, modifierCarnet, nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
-import { EVENEMENT_AJOUTER, interroger, libelleServeur, retirer, retirerServeur, sondeDe, type ServeurConnu, type Sonde } from "@/lib/serveur-vps";
+import { EVENEMENT_AJOUTER, interroger, libelleServeur, retardDe, retirer, retirerServeur, sondeDe, type ServeurConnu, type Sonde } from "@/lib/serveur-vps";
 import { useWorkspace } from "@/lib/workspace";
 import type { Chat, Message } from "@/types/domain";
 
@@ -16,6 +16,7 @@ const SONDE_MS = 60_000;
 interface Etat {
   sonde: Sonde;
   agents?: string;
+  retard: boolean;
 }
 
 function useEtatsServeurs(serveurs: ServeurConnu[], ouvert: boolean): Record<string, Etat> {
@@ -26,7 +27,7 @@ function useEtatsServeurs(serveurs: ServeurConnu[], ouvert: boolean): Record<str
       for (const serveur of serveurs) {
         void interroger(serveur.adresse, controle.signal).then((lecture) => {
           if (controle.signal.aborted) return;
-          setEtats((avant) => ({ ...avant, [serveur.adresse]: { sonde: sondeDe(lecture), agents: lecture.ok ? lecture.agents : undefined } }));
+          setEtats((avant) => ({ ...avant, [serveur.adresse]: { sonde: sondeDe(lecture), agents: lecture.ok ? lecture.agents : undefined, retard: retardDe(lecture) } }));
         });
       }
     };
@@ -179,7 +180,7 @@ export function useServeurs(ouvert: boolean, fermer: (rendreFocus: boolean) => v
   const actif = serveurs.find((s) => s.adresse === lieu) ?? null;
   const nom = nomLieu(lieu, serveurs);
   const sonde = actif ? etats[actif.adresse]?.sonde : undefined;
-  const etatActif = actif ? libelleServeur("joint", sonde, etats[actif.adresse]?.agents) : "Les agents tournent ici";
+  const etatActif = actif ? libelleServeur("joint", sonde, etats[actif.adresse]?.agents, etats[actif.adresse]?.retard) : "Les agents tournent ici";
   const { chats, messages } = state;
   const nonLus = useMemo(() => nonLusParServeur({ chats, messages }), [chats, messages]);
 
@@ -238,7 +239,7 @@ export function ListeServeurs({ s, aller }: { s: Serveurs; aller: (chemin: strin
             choisi={choisi}
             icone="globe-01"
             nom={serveur.nom}
-            detail={libelleServeur("joint", etat?.sonde, etat?.agents)}
+            detail={libelleServeur("joint", etat?.sonde, etat?.agents, etat?.retard)}
             sonde={etat?.sonde ?? "attente"}
             nonLus={nonLus[serveur.adresse]}
             onClick={() => choisir(serveur.adresse)}

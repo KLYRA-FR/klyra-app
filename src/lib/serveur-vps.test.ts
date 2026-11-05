@@ -4,6 +4,7 @@ import {
   MESSAGE_INVITATION,
   MESSAGE_REPONSE,
   MESSAGE_VERSION,
+  VERSION_CODE_SERVEUR,
   ajouterServeur,
   carnetVide,
   choisirServeur,
@@ -12,11 +13,14 @@ import {
   lireCarnet,
   lireCorps,
   lienCopie,
+  libelleServeur,
   lireSaisie,
   placePour,
   quitterServeur,
+  retardDe,
   retirer,
   retirerServeur,
+  serveurEnRetard,
 } from "./serveur-vps";
 
 const klyra = { adresse: "https://klyra-vps.exemple:8787", nom: "Klyra-vps", version: "1" };
@@ -189,5 +193,45 @@ describe("appel au VPS", () => {
     await expect(interroger("https://exemple.test")).resolves.toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
     await retirer("https://exemple.test");
     await expect(interroger("https://exemple.test")).resolves.toEqual({ ok: false, message: MESSAGE_INVITATION });
+  });
+});
+
+describe("la version du code du serveur", () => {
+  const corps = { produit: "klyra-serveur", protocole: 1, nom: "Klyra-VPS", version: "1" };
+
+  test("elle est lue à part du protocole", () => {
+    const lu = lireCorps(200, { ...corps, versionCode: 7 });
+    expect(lu).toEqual({ ok: true, nom: "Klyra-VPS", version: "1", versionCode: 7 });
+  });
+
+  test("un ancien serveur, qui n’en renvoie pas, reste accepté mais n’est pas à jour", () => {
+    const lu = lireCorps(200, corps);
+    expect(lu).toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    expect(retardDe(lu)).toBe(true);
+  });
+
+  test.each([["texte", "9999"], ["zéro", 0], ["négative", -1], ["décimale", 1.5], ["nulle", null]])("une version illisible (%s) compte comme absente", (_nom, versionCode) => {
+    const lu = lireCorps(200, { ...corps, versionCode });
+    expect(lu).toEqual({ ok: true, nom: "Klyra-VPS", version: "1" });
+    expect(retardDe(lu)).toBe(true);
+  });
+
+  test("seul un code plus ancien que celui attendu est en retard", () => {
+    expect(serveurEnRetard(undefined)).toBe(true);
+    expect(serveurEnRetard(VERSION_CODE_SERVEUR - 1)).toBe(true);
+    expect(serveurEnRetard(VERSION_CODE_SERVEUR)).toBe(false);
+    expect(serveurEnRetard(VERSION_CODE_SERVEUR + 1)).toBe(false);
+  });
+
+  test("un serveur qui ne répond pas n’a pas d’âge connu", () => {
+    expect(retardDe({ ok: false, message: MESSAGE_VERSION })).toBe(false);
+  });
+
+  test("le libellé le dit, seulement quand le serveur répond", () => {
+    expect(libelleServeur("joint", "repond", "pret", true)).toBe("Répond · à mettre à jour");
+    expect(libelleServeur("joint", "repond", "pret", false)).toBe("Répond · agents prêts");
+    expect(libelleServeur("joint", "repond", "pret")).toBe("Répond · agents prêts");
+    expect(libelleServeur("joint", "silence", undefined, true)).toBe("Ne répond pas");
+    expect(libelleServeur("quitte", "repond", "pret", true)).toBe("Quitté");
   });
 });

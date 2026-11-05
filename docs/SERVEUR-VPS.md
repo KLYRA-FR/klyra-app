@@ -16,9 +16,19 @@ curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lan
 - publie le serveur par **Tailscale** (`tailscale serve --https=8791`) si le VPS y est connecté : adresse privée et fixe, `https://<machine>.<réseau>.ts.net:8791`. Sinon, service `klyra-tunnel` (tunnel Cloudflare gratuit, adresse qui change au redémarrage) ;
 - affiche un lien `klyra://rejoindre?adresse=…&code=…` et son QR, valables **10 minutes et une seule fois**.
 
-Relancer la commande met le serveur à jour et donne un nouveau lien ; les appareils déjà reliés le restent. Tout oublier : `curl … | sudo sh -s -- revoquer-tout`. Arrêter : `sudo systemctl disable --now klyra-serveur klyra-tunnel`. Le service OpenBot ne s’arrête pas.
+Relancer la commande met le serveur à jour et donne un nouveau lien ; les appareils déjà reliés le restent (elle redémarre le service : un agent en plein travail s’arrête). Tout oublier : `curl … | sudo sh -s -- revoquer-tout`. Arrêter : `sudo systemctl disable --now klyra-serveur klyra-tunnel`. Le service OpenBot ne s’arrête pas.
 
 Réglages facultatifs : `KLYRA_SERVEUR_NOM` (nom de la machine par défaut) et `KLYRA_SERVEUR_PORT` (8791), passés après `sudo` : `… | sudo KLYRA_SERVEUR_NOM="Klyra-VPS" sh`.
+
+## Un serveur en retard
+
+L’app se met à jour seule, pas le serveur : il garde son code jusqu’à ce qu’on relance la commande. Le protocole (`PROTOCOLE`, 1) ne bouge presque jamais, il ne révèle donc pas cet écart.
+
+- **La version du code** : `VERSION_CODE_SERVEUR` (`electron/version-serveur.ts`, généré en `serveur/version-code.mjs`), un entier distinct du protocole, renvoyé en `versionCode` par `GET /klyra/v1/serveur` et par l’appairage. `version` reste pour les apps qui l’exigent encore.
+- **Elle suit le code tout seul** : `node scripts/serveur-genere.mjs` la monte quand l’empreinte de `serveur/*.mjs` et de `lancer.sh` change (`scripts/empreinte-serveur.mjs`, sans les tests). `pnpm lint` et `test:serveur` échouent si elle n’a pas suivi. Deux PR qui touchent au serveur entrent en conflit sur ce fichier : relancer le script, il repart de la plus haute version et écrit un fichier propre.
+- **Côté app** : `serveurEnRetard` (`src/lib/serveur-vps.ts`). Plus ancien que la version attendue, ou pas de version lisible : en retard. Plus récent : rien à faire sur le VPS, c’est l’app qui n’a pas encore pris sa mise à jour. Un serveur qui ne répond pas n’a pas d’âge connu.
+- **Ce qu’on voit** : Réglages du serveur › Général donne l’avis et la commande (`AvisMiseAJour`), le sélecteur, l’écran Serveurs et Réglages › Mobile disent « Répond · à mettre à jour ». L’avis tombe de lui-même à la sonde suivante (une minute au plus). L’app ne met jamais le VPS à jour elle-même.
+- Test : `xvfb-run -a pnpm test:avis-serveur` (vrai serveur local dont le code est copié sans la version, puis relancé à jour).
 
 ## Appairage
 
@@ -36,7 +46,7 @@ Avec Node 22 ou plus récent, depuis ce dépôt : `KLYRA_SERVEUR_NOM="Klyra-VPS"
 
 - `lancer.sh` installe Claude Code pour `klyra` (`/var/lib/klyra/.local/bin/claude`) et le connecte à l’abonnement de la personne : `claude setup-token`, jeton collé dans le terminal, gardé dans `donnees/claude-token`. Plus tard : `curl … | sudo sh -s -- connecter-claude`.
 - `GET /klyra/v1/serveur` dit `agents: "pret" | "non-connecte" | "absent"`.
-- `serveur/agents.mjs` lance Claude Code comme l’app (un processus par conversation, `--permission-prompt-tool stdio`), dans `/var/lib/klyra/atelier`, avec les agents actifs de l’équipe du serveur. Ou Codex pour ChatGPT, quand la conversation le demande (`moteur: "codex"`, `serveur/codex.mjs`). Ni fils, ni Composio, ni planning, ni pièces jointes.
+- `serveur/agents.mjs` lance Claude Code comme l’app (un processus par conversation, `--permission-prompt-tool stdio`), dans `/var/lib/klyra/atelier`, avec les agents actifs de l’équipe du serveur. Ou Codex pour ChatGPT, quand la conversation le demande (`moteur: "codex"`, `serveur/codex.mjs`). Ni fils, ni Composio, ni planning, ni pièces jointes. L’app renvoie à un VPS ce qu’il a perdu ou qu’une mise à jour n’a pas gardé : elle lit l’empreinte qu’il annonce avant chaque envoi et à l’ouverture du flux.
 - Événements numérotés, gardés 24 h : `GET /klyra/v1/agent/evenements?depuis=N&instance=…` (SSE). Commandes : `POST /klyra/v1/agent/envoyer | autoriser | annuler`.
 - Dans l’app, `electron/agents-distants.ts` garde un flux par VPS relié (ouvert au démarrage, curseur dans `serveurs-curseurs.json`) et rend les mêmes événements que les agents du PC. Une réponse finie pendant que l’app était fermée s’ouvre à la réouverture.
 - **Le sélecteur de serveur** (menu de l’avatar › Serveurs, comme dans OpenBot) choisit **l’espace affiché** : « Ce PC » ou un VPS relié, avec son état (répond, ne répond pas, Claude Code à connecter), interrogé chaque minute et à l’ouverture du menu, et les réponses non lues de chaque autre serveur. Chaque serveur a ses conversations, ses projets et ses routines : la barre latérale, l’accueil, Projets, Routines, Tickets (tableau et nombre du rail), les chiffres de Mes agents et la recherche ne montrent que ceux du serveur choisi (`dansEspace`, `src/lib/lieux.ts`). Les outils des fils ne voient que le serveur de l’agent qui les appelle, et `planning.md` que ce PC. Les rappels et le calendrier sont à la personne : ils restent communs (la colonne « À moi » aussi). Ce qu’on crée va sur ce serveur. Une conversation ne change jamais de machine : le choix par conversation (`ChoixLieu`) n’existe plus, et un travail en cours continue sur sa machine pendant qu’on regarde un autre serveur.
