@@ -315,7 +315,12 @@ function PartieFil({
         </p>
       );
     case "passation":
-      return <Passation partie={partie} />;
+      /* Une ligne du fil, sur toute sa largeur : elle sort de la colonne de contenu (avatar 32 + espace 10). */
+      return (
+        <div className="-ml-[42px] flex w-[calc(100%+42px)] justify-center">
+          <Passation partie={partie} />
+        </div>
+      );
     case "proposition-agent":
       return <Proposition partie={partie} remplacee={remplacee} />;
     case "tasks":
@@ -438,7 +443,11 @@ function MessageAgent({
   const appui = useAppuiLong(() => setActions(true));
   const roleId = message.auteurId ?? "principal";
   const parties = useMemo(() => lireParties(message.parties), [message.parties]);
-  const visibles = parties.filter((p) => p.type !== "text" || p.text.trim());
+  const toutes = parties.filter((p) => p.type !== "text" || p.text.trim());
+  /* La passation qui ouvre le message passe avant l'avatar et le nom (§ 2). */
+  const nbTete = toutes.findIndex((p) => p.type !== "passation");
+  const tete = nbTete < 0 ? toutes : toutes.slice(0, nbTete);
+  const visibles = nbTete < 0 ? [] : toutes.slice(nbTete);
   const enCours = message.statut === "en-cours";
   const activite = contexte.activite?.messageId === message.origine ? contexte.activite : null;
   const texte = message.texte.trim();
@@ -446,7 +455,9 @@ function MessageAgent({
   const actionsEnClair = derniere && !(choix.actif && parties.some((p) => p.type === "choix"));
 
   return (
-    <div className={cn("grid grid-cols-[32px_minmax(0,1fr)] gap-x-2.5", !suite && "mt-4")}>
+    <div className={cn(!suite && "mt-4")}>
+    {tete.map((p, i) => (p.type === "passation" ? <div key={i} className="flex justify-center pb-3"><Passation partie={p} /></div> : null))}
+    <div className="grid grid-cols-[32px_minmax(0,1fr)] gap-x-2.5">
       <div className="pt-0.5">{!suite ? <RondAgent id={roleId} taille={32} /> : null}</div>
       <div className="flex min-w-0 flex-col items-start gap-1.5" {...(texte && !enCours ? appui : {})}>
         {!suite ? (
@@ -469,7 +480,7 @@ function MessageAgent({
           />
         ))}
         {/* Ordinateur fermé, l'activité tombe : une réponse interrompue ne « réfléchit » pas indéfiniment. */}
-        {enCours && contexte.activite ? <EnTravail roleId={roleId} depuis={activite?.depuis ?? message.creeLe} vide={visibles.length === 0} attente={activite?.etat === "accord"} /> : null}
+        {enCours && contexte.activite ? <EnTravail roleId={roleId} depuis={activite?.depuis ?? message.creeLe} vide={toutes.length === 0} attente={activite?.etat === "accord"} /> : null}
         {message.statut === "erreur" ? (
           <div role="alert" className="flex items-center gap-2 rounded-md border border-bordure-erreur bg-fond-surface py-1 pr-1 pl-3 text-ui text-texte-erreur">
             <span className="min-w-0 flex-1">{nom(roleId)} s’est arrêté sur une erreur.</span>
@@ -479,7 +490,12 @@ function MessageAgent({
           </div>
         ) : null}
         <ReactionsSousBulle message={message} contexte={contexte} />
-        {message.compaction && !enCours ? <p className="px-1 text-ui-xs font-medium text-texte-secondaire">Conversation résumée</p> : null}
+        {message.compaction && !enCours ? (
+          <p className="flex items-center gap-1 px-1 text-ui-xs text-texte-secondaire">
+            <Icon name="check-01" size={14} className="shrink-0" />
+            Conversation résumée
+          </p>
+        ) : null}
         {!enCours && texte ? (
           <div className="-ml-2 flex items-center text-ui-xs text-texte-secondaire">
             {actionsEnClair ? (
@@ -516,6 +532,7 @@ function MessageAgent({
         ) : null}
       </div>
       {actions ? <ActionsMessage message={message} contexte={contexte} conversation={contexte.conversation} onFermer={() => setActions(false)} /> : null}
+    </div>
     </div>
   );
 }

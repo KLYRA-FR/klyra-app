@@ -215,9 +215,12 @@ export function ComposeurFil({
   nouveauProjet,
   agentId,
   activite,
+  resumeAttendu = false,
   onNouveauFil,
   poignee,
 }: {
+  /** Un `/compact` attend sa réponse : le conseil se tait, un second appui le renverrait (§ 8). */
+  resumeAttendu?: boolean;
   /** Pour ouvrir « Modèle et effort » depuis les Détails (E2-45). */
   poignee?: Ref<{ ouvrirModele: () => void }>;
   origine: string;
@@ -243,6 +246,8 @@ export function ComposeurFil({
   const [deposees, setDeposees] = useState(0);
   /* L'arrêt demandé ne vaut que tant que l'agent travaille : dès que l'état reçu change, il ne s'affiche plus. */
   const [arretDemande, setArretDemande] = useState(false);
+  /* « Résumer » touché : une seule fois, le temps que la demande apparaisse dans la file du compte. */
+  const [resumeLance, setResumeLance] = useState(false);
   const [destinataire, setDestinataire] = useState<string | null>(null);
   const [choix, setChoix] = useState<Choix | null>(null);
   const [posteChoisi, setPosteChoisi] = useState<string | null>(null);
@@ -251,6 +256,12 @@ export function ComposeurFil({
   const [actif, setActif] = useState(0);
   const [listeFermee, setListeFermee] = useState(false);
   useImperativeHandle(poignee, () => ({ ouvrirModele: () => setFeuille("modele") }), []);
+  /* La réponse arrivée, le conseil peut revenir s'il reste justifié. */
+  const [attenduAvant, setAttenduAvant] = useState(resumeAttendu);
+  if (attenduAvant !== resumeAttendu) {
+    setAttenduAvant(resumeAttendu);
+    if (!resumeAttendu && resumeLance) setResumeLance(false);
+  }
   const champ = useRef<HTMLTextAreaElement>(null);
   const photo = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
@@ -444,9 +455,14 @@ export function ComposeurFil({
 
   /* E2-43 : `/compact` une seule fois, par le canal du fil ; « Résumé demandé » s'affiche dans le fil, jamais « résumé » avant la réponse. */
   const resumer = () => {
+    if (resumeLance) return;
+    setResumeLance(true);
     void envoyer({ conversationOrigine: origine, texte: COMMANDE_COMPACTER, options: {} }).then(
       () => annoncer("Résumé demandé"),
-      (err: unknown) => annoncer({ texte: messageErreur(err), erreur: true }),
+      (err: unknown) => {
+        setResumeLance(false);
+        annoncer({ texte: messageErreur(err), erreur: true });
+      },
     );
   };
 
@@ -462,8 +478,8 @@ export function ComposeurFil({
   const noteOccupe = arretEnCours ? `Arrêt demandé : ${qui} s’arrête dès que ${sur} le confirme.` : occupe && texte.trim() ? `Il partira quand ${qui} aura fini.` : null;
 
   return (
-    <div className="shrink-0 bg-fond-page px-2 pt-1 pb-[calc(8px+env(safe-area-inset-bottom))]">
-      <ConseilFil conversation={conversation} origine={origine} occupe={occupe} onResumer={resumer} onNouveauFil={() => onNouveauFil?.()} />
+    <div data-pied-telephone className="shrink-0 bg-fond-page px-2 pt-1 pb-[calc(8px+env(safe-area-inset-bottom))]">
+      <ConseilFil conversation={conversation} origine={origine} occupe={occupe || resumeAttendu || resumeLance} onResumer={resumer} onNouveauFil={() => onNouveauFil?.()} />
       {bandeau ? (
         <p className="mb-2 flex items-start gap-2 rounded-xl bg-fond-surface-grise px-3 py-2.5 text-ui text-texte-principal">
           <Icon name="clock-01" size={18} className="mt-px shrink-0 text-icone-secondaire" />

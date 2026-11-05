@@ -104,12 +104,31 @@ export function FournisseurAnnonce({ barreOnglets, children }: { barreOnglets: b
     window.addEventListener("pointercancel", lacher, true);
   };
 
+  /* Socle § 6.1 : au-dessus du pied d'une page (composeur du fil, action d'une page pleine), il ne couvre jamais Envoyer. Suivi tant que l'annonce est là : le pied grandit avec le texte, le clavier le déplace. */
+  const placer = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const caler = () => {
+      const pied = document.querySelector("[data-pied-telephone]");
+      el.style.bottom = pied ? `${Math.max(12, window.innerHeight - pied.getBoundingClientRect().top + 12)}px` : "";
+    };
+    caler();
+    const suivi = new ResizeObserver(caler);
+    const pied = document.querySelector("[data-pied-telephone]");
+    if (pied) suivi.observe(pied);
+    window.visualViewport?.addEventListener("resize", caler);
+    return () => {
+      suivi.disconnect();
+      window.visualViewport?.removeEventListener("resize", caler);
+    };
+  }, []);
+
   return (
     <ContexteAnnonce.Provider value={annoncer}>
       {children}
       {courante ? (
         <div
           key={courante.cle}
+          ref={placer}
           role={courante.erreur ? "alert" : "status"}
           data-sortie={sortie || undefined}
           onPointerDown={glisser}

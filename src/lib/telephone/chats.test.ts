@@ -5,6 +5,7 @@ import {
   agentsPourFil,
   conseilDuFil,
   estDemandeResume,
+  resumeEnAttente,
   aTraiter,
   auTravail,
   dureeDepuis,
@@ -178,6 +179,17 @@ describe("Conseil de contexte (E2-42)", () => {
     expect(conseilDuFil(c, { maintenant, masque: 84_000 })).toBeNull();
     expect(conseilDuFil(conversation("dm-hugo", { contexte: mesure({ masqueJusqua: 84_000 }) }), { maintenant })).toBeNull();
     expect(conseilDuFil(conversation("dm-hugo", { contexte: mesure({ jetons: 90_000 }) }), { maintenant, masque: 84_000 })).not.toBeNull();
+  });
+
+  test("une demande de résumé attend sa réponse : dans la file, puis jusqu'à une réponse achevée", () => {
+    const moi = (texte: string) => ({ auteurKind: "user", texte, statut: null });
+    const agent = (statut: string) => ({ auteurKind: "role", texte: "x", statut });
+    expect(resumeEnAttente([], [{ texte: "/compact" }])).toBe(true);
+    expect(resumeEnAttente([moi("/compact")], [])).toBe(true);
+    expect(resumeEnAttente([moi("/compact"), agent("en-cours")], [])).toBe(true);
+    expect(resumeEnAttente([moi("/compact"), agent("fait")], [])).toBe(false);
+    expect(resumeEnAttente([moi("Bonjour")], [])).toBe(false);
+    expect(resumeEnAttente(undefined, [])).toBe(false);
   });
 
   test("la demande de résumé se reconnaît, un mot qui commence pareil non", () => {

@@ -363,6 +363,16 @@ export function conseilDuFil(c: Pick<ConversationLue, "contexte" | "kind" | "par
 /** La demande de résumé : `/compact`, seul ou avec ses consignes (ligne système « Résumé demandé », E2-43). */
 export const estDemandeResume = estCommandeCompacter;
 
+/** Une demande de résumé attend sa réponse : encore dans la file, ou dernier message de la personne sans réponse achevée après lui. */
+export function resumeEnAttente(messages: { auteurKind: string; texte: string; statut: string | null }[] | undefined, enFile: { texte: string }[]): boolean {
+  if (enFile.some((m) => estDemandeResume(m.texte))) return true;
+  for (const m of [...(messages ?? [])].reverse()) {
+    if (m.auteurKind === "user") return estDemandeResume(m.texte);
+    if (m.statut !== "en-cours") return false;
+  }
+  return false;
+}
+
 /** Le texte d'une réponse à lire à voix haute, sans la mise en forme Markdown (comme au bureau). */
 export function texteParle(texte: string): string {
   return texte

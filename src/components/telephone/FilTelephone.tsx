@@ -8,7 +8,7 @@ import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ajouterAuBrouillon } from "@/lib/brouillons";
 import { messageErreur } from "@/lib/compte";
-import { activiteDe, agentDe, ASSISTANT, etatLigne, nouvelIdFil, SUGGESTIONS } from "@/lib/telephone/chats";
+import { activiteDe, agentDe, ASSISTANT, etatLigne, nouvelIdFil, resumeEnAttente, SUGGESTIONS } from "@/lib/telephone/chats";
 import { lireCitation } from "@/lib/telephone/citation";
 import { roleLisible } from "@/lib/telephone/agents";
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
@@ -210,7 +210,7 @@ export function FilTelephone() {
       />
       {agent && !equipe && conversations ? <FilsPuces agentId={agent} courant={id} conversations={conversations} onBandeau={montrer} /> : null}
       <MessagesFil messages={fil?.messages} coupe={fil?.coupe} enFile={enFile} contexte={contexte} vide={vide} apres={echanges.length ? <EchangesVps echanges={echanges} /> : null} />
-      <ComposeurFil key={id} origine={id} conversation={conversation} equipe={equipe} nouveauProjet={nouveauProjet} agentId={equipe ? null : agent} activite={activiteVive} onNouveauFil={nouveauFil} poignee={composeur} />
+      <ComposeurFil key={id} origine={id} conversation={conversation} equipe={equipe} nouveauProjet={nouveauProjet} agentId={equipe ? null : agent} activite={activiteVive} resumeAttendu={resumeEnAttente(fil?.messages, enFile)} onNouveauFil={nouveauFil} poignee={composeur} />
       {details ? (
         <DetailsFil
           origine={id}
