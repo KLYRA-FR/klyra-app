@@ -145,6 +145,8 @@ export interface VersionLue {
   at: string;
   raison: VersionWorkflow["raison"];
   etapes: number;
+  /** Elle est identique au workflow tel qu'il est maintenant. */
+  actuelle?: boolean;
 }
 
 /* ─── Ce que l'ordinateur envoie ───────────────────────────────── */
@@ -302,6 +304,16 @@ export const enTravaux = (c: ChantierLu | null | undefined) => !!c && c.phase !=
 export function libelleExecution(e: ResumeExecution, total: number): string {
   return enCoursExecution(e) ? `${LIBELLES_STATUT_EXECUTION[e.statut]} · ${e.faits}/${total}` : LIBELLES_STATUT_EXECUTION[e.statut];
 }
+
+/** La dernière exécution d'une ligne de la liste : l'accord attendu est nommé (E7-26). */
+export function libelleDerniere(d: ResumeExecution, total: number): { texte: string; accent: boolean } {
+  if (d.statut === "approbation") return { texte: `Attend ton accord${d.arret ? ` · ${d.arret}` : ""}`, accent: true };
+  if (d.statut === "en-cours") return { texte: libelleExecution(d, total), accent: true };
+  return { texte: libelleExecution(d, total), accent: false };
+}
+
+/** Le nom d'un fichier, jamais son chemin (socle § 8). */
+export const nomFichier = (chemin: string) => chemin.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
 
 /* ─── La mise à plat ───────────────────────────────────────────── */
 

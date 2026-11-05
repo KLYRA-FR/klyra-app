@@ -1,7 +1,8 @@
 "use client";
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, KeyboardEvent, ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
+import { BoutonIcone } from "@/components/ui/Bouton";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { cn } from "@/lib/cn";
 
@@ -82,5 +83,87 @@ export function CaseRonde({ faite }: { faite: boolean }) {
     <PixelCheck className="h-[13px] w-[18px]" />
   ) : (
     <span aria-hidden="true" className="size-6 shrink-0 rounded-full border-[1.5px] border-texte-tertiaire" />
+  );
+}
+
+/** Un `Bouton` sombre ou blanc désactivé, comme aux maquettes : gris plein, sans bord (`b desactive`). */
+export const BOUTON_INACTIF = "klyra-bouton-inactif";
+
+/**
+ * Les segments d'une page poussée (§ 6.3) : rail de 2 px, segments de 40 px touchés sur 44, un nombre
+ * discret. `nombre` absent : la source n'a pas été lue, on ne montre pas de faux zéro.
+ */
+export function Segments<T extends string>({
+  libelle,
+  valeur,
+  onChange,
+  segments,
+  className,
+}: {
+  libelle: string;
+  valeur: T;
+  onChange: (id: T) => void;
+  segments: { id: T; label: string; icone?: ReactNode; nombre?: number }[];
+  className?: string;
+}) {
+  const touche = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const rang = segments.findIndex((s) => s.id === valeur);
+    const suivant = segments[(rang + (e.key === "ArrowRight" ? 1 : segments.length - 1)) % segments.length];
+    e.preventDefault();
+    onChange(suivant.id);
+  };
+  return (
+    <div role="tablist" aria-label={libelle} onKeyDown={touche} className={cn("flex rounded-md-moins bg-fond-surface-grise p-0.5", className)}>
+      {segments.map((s) => {
+        const actif = s.id === valeur;
+        return (
+          <button
+            key={s.id}
+            type="button"
+            role="tab"
+            aria-selected={actif}
+            tabIndex={actif ? 0 : -1}
+            onClick={() => onChange(s.id)}
+            className={cn(
+              "relative flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[8px] border text-ui transition-colors duration-[120ms] ease-sortie after:absolute after:inset-x-0 after:-inset-y-0.5",
+              actif ? "border-bordure-defaut bg-fond-surface font-semibold text-texte-principal shadow-ombre-xs" : "border-transparent font-medium text-texte-secondaire",
+            )}
+          >
+            {s.icone}
+            <span className="truncate">{s.label}</span>
+            {s.nombre !== undefined ? <span className="font-normal text-texte-secondaire">{s.nombre}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Le champ de recherche d'une page (48 px, 16 px) : la loupe, « effacer » dès qu'il y a du texte. */
+export function ChampRecherche({ valeur, onChange, placeholder, libelle }: { valeur: string; onChange: (v: string) => void; placeholder: string; libelle: string }) {
+  return (
+    <div className="flex h-12 items-center gap-2.5 rounded-md border border-texte-tertiaire bg-fond-surface pr-1 pl-3.5 focus-within:border-bordure-champ-survol focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+      <Icon name="search-01" size={20} className="shrink-0 text-icone-secondaire" />
+      <input
+        role="searchbox"
+        enterKeyHint="search"
+        aria-label={libelle}
+        placeholder={placeholder}
+        value={valeur}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-full min-w-0 flex-1 bg-transparent text-body-s text-texte-principal outline-none placeholder:text-texte-secondaire"
+      />
+      {valeur ? <BoutonIcone variant="discret" className="size-11" libelle="Effacer la recherche" onClick={() => onChange("")} icone={<Icon name="x-01" size={20} />} /> : null}
+    </div>
+  );
+}
+
+/** Une rangée de puces qui défile à l'horizontale, jusqu'au bord de l'écran. */
+export function RangeePuces({ libelle, children }: { libelle: string; children: ReactNode }) {
+  return (
+    <div role="group" aria-label={libelle} className="-mx-4 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
+      {children}
+    </div>
   );
 }

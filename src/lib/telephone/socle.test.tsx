@@ -19,9 +19,9 @@ vi.mock("@/components/telephone/poste", () => {
 });
 
 const { PageOnglet, EnteteTelephone } = await import("@/components/telephone/EnteteTelephone");
-const { LigneListe, GroupeListe, SectionListe, Etiquette, TuileIcone } = await import("@/components/telephone/Liste");
-const { EtatEcran, PasDeReponse, ErreurPoste } = await import("@/components/telephone/etats");
-const { CaseRonde, CocheChoix, Puce } = await import("@/components/telephone/Controles");
+const { LigneListe, GroupeListe, SectionListe, Etiquette, TuileIcone, LigneChoix, ValeurLigne } = await import("@/components/telephone/Liste");
+const { EtatEcran, PasDeReponse, ErreurPoste, BandeauEtat } = await import("@/components/telephone/etats");
+const { CaseRonde, CocheChoix, Puce, Segments, ChampRecherche } = await import("@/components/telephone/Controles");
 
 const texte = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
@@ -92,3 +92,47 @@ describe("contrôles (§ 6.3)", () => {
     expect(renderToStaticMarkup(<CaseRonde faite={false} />)).toContain("rounded-full border-[1.5px] border-texte-tertiaire");
   });
 });
+
+describe("pièces ajoutées au lot 7", () => {
+  test("segments : un nombre seulement si la source a été lue (0 compris), le segment choisi annoncé", () => {
+    const html = renderToStaticMarkup(
+      <Segments
+        libelle="Artefacts"
+        valeur="b"
+        onChange={() => undefined}
+        segments={[
+          { id: "a", label: "Mes artefacts" },
+          { id: "b", label: "Équipe", nombre: 0 },
+        ]}
+      />,
+    );
+    expect(texte(html)).toBe("Mes artefacts Équipe 0");
+    expect(html).toContain('aria-selected="true"');
+    expect(html.match(/role="tab"/g)).toHaveLength(2);
+  });
+
+  test("choix unique : role radio et aria-checked ; la coche seulement sur la ligne choisie", () => {
+    const html = renderToStaticMarkup(
+      <ul>
+        <LigneChoix nom="Chaque jour" choisie onChoisir={() => undefined} />
+        <LigneChoix nom="Une fois" choisie={false} onChoisir={() => undefined} />
+      </ul>,
+    );
+    expect(html.match(/role="radio"/g)).toHaveLength(2);
+    expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
+  });
+
+  test("recherche : « effacer » seulement s'il y a du texte", () => {
+    const vide = renderToStaticMarkup(<ChampRecherche valeur="" onChange={() => undefined} placeholder="Chercher" libelle="Chercher" />);
+    const remplie = renderToStaticMarkup(<ChampRecherche valeur="devis" onChange={() => undefined} placeholder="Chercher" libelle="Chercher" />);
+    expect(vide).not.toContain("Effacer la recherche");
+    expect(remplie).toContain("Effacer la recherche");
+  });
+
+  test("une ligne de valeur et un bandeau : le ton d'erreur est une alerte", () => {
+    expect(texte(renderToStaticMarkup(<ValeurLigne>Chaque jour</ValeurLigne>))).toBe("Chaque jour");
+    expect(renderToStaticMarkup(<BandeauEtat ton="erreur" icone={null}>Non</BandeauEtat>)).toContain('role="alert"');
+    expect(renderToStaticMarkup(<BandeauEtat icone={null}>Oui</BandeauEtat>)).toContain('role="status"');
+  });
+});
+
