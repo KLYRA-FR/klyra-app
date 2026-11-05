@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getBridge, type FenetreUtilisation, type Utilisation } from "@/lib/bridge";
 import { COULEUR_CLAUDE } from "@/data/marques";
 import { cn } from "@/lib/cn";
+import { useComptesClaudeConnectes } from "@/lib/compte-claude";
 import { useLieuActif } from "@/lib/lieux";
 import { pret, useMoteurs, type EtatMoteur } from "@/lib/moteurs";
 
@@ -11,7 +12,7 @@ import { pret, useMoteurs, type EtatMoteur } from "@/lib/moteurs";
  * Utilisation de l'abonnement d'un fournisseur (Claude, ChatGPT, Grok), en anneaux concentriques : dehors
  * la semaine, dedans la session de 5 h ; Grok, un seul anneau, les crédits du mois. L'arc montre ce qui
  * reste. Le détail s'ouvre au survol, un clic met à jour. Dans le rail, un bouton par fournisseur connecté
- * du serveur affiché (`UtilisationRail`).
+ * du serveur affiché (`UtilisationRail`), et un par compte Claude supplémentaire de ce serveur.
  */
 
 /** Les fournisseurs dont on sait lire les limites d'abonnement, par moteur (cf. electron/utilisation.ts). */
@@ -29,33 +30,35 @@ const RELECTURE_MS = 60_000;
  * La dernière utilisation connue d'un moteur, sur ce PC (`lieu` null, mise à jour à chaque réponse
  * d'un agent) ou sur un VPS (relue au survol). `actualiser` la redemande : pour Claude Code sur ce PC,
  * une toute petite requête qui compte un peu, donc seulement au clic.
+ * `compte` : un compte Claude supplémentaire. Les agents ne s'en servent pas : rien ne le relit d'office,
+ * sur ce PC comme sur un VPS ; le clic fait la petite requête avec ce compte seul.
  */
-function useUtilisation(moteur: IdFournisseur, lieu: string | null) {
+function useUtilisation(moteur: IdFournisseur, lieu: string | null, compte: string | null = null) {
   const bridge = getBridge()?.moteurs;
   const [utilisation, setUtilisation] = useState<Utilisation | null>(null);
   const [enCours, setEnCours] = useState(false);
   const lueLe = useRef(0);
-  /* Relire ne coûte rien, sauf Claude Code sur ce PC (une requête au modèle). */
-  const gratuit = moteur !== "claude" || lieu !== null;
+  /* Relire ne coûte rien, sauf Claude Code sur ce PC et tout compte Claude supplémentaire (une requête au modèle). */
+  const gratuit = compte === null && (moteur !== "claude" || lieu !== null);
 
   const lire = useCallback(
     async (actualiser: boolean) => {
       if (!bridge?.utilisation) return;
       lueLe.current = Date.now();
-      const r = await bridge.utilisation(moteur, lieu, actualiser);
+      const r = await bridge.utilisation(moteur, lieu, actualiser, compte);
       if (r.ok) setUtilisation(r.data);
     },
-    [bridge, moteur, lieu],
+    [bridge, moteur, lieu, compte],
   );
 
   /* Un autre moteur ou un autre serveur est un autre bouton (clé dans UtilisationRail) : rien à remettre à zéro ici. */
   useEffect(() => {
     if (!bridge?.utilisation) return;
     lueLe.current = Date.now();
-    void bridge.utilisation(moteur, lieu, gratuit).then((r) => r.ok && setUtilisation(r.data));
-    if (lieu !== null || !bridge.onUtilisation) return;
+    void bridge.utilisation(moteur, lieu, gratuit, compte).then((r) => r.ok && setUtilisation(r.data));
+    if (lieu !== null || compte !== null || !bridge.onUtilisation) return;
     return bridge.onUtilisation((id, u) => id === moteur && setUtilisation(u));
-  }, [bridge, moteur, lieu, gratuit]);
+  }, [bridge, moteur, lieu, gratuit, compte]);
 
   const actualiser = async () => {
     if (!bridge?.utilisation || enCours) return;
@@ -146,6 +149,8 @@ function Detail({
   enCours,
   gratuit,
   lieu,
+  supplementaire,
+  email,
 }: {
   moteur: IdFournisseur;
   utilisation: Utilisation | null;
@@ -153,10 +158,14 @@ function Detail({
   enCours: boolean;
   gratuit: boolean;
   lieu: string | null;
+  /** Un compte Claude supplémentaire, que les agents n'utilisent pas. */
+  supplementaire: boolean;
+  /** Le compte, quand le serveur en a plusieurs. */
+  email: string | null;
 }) {
   const { nom, programme } = FOURNISSEURS[moteur];
-  /* Claude Code sur un VPS : la dernière reçue d'une session, le clic ne la redemande pas. */
-  const relisible = lieu === null || moteur !== "claude";
+  /* Claude Code sur un VPS : la dernière reçue d'une session, le clic ne la redemande pas (sauf un compte supplémentaire). */
+  const relisible = lieu === null || moteur !== "claude" || supplementaire;
   const [maintenant, setMaintenant] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setMaintenant(Date.now()), 30_000);
@@ -189,13 +198,20 @@ function Detail({
         <span className="text-ui-s font-semibold text-texte-principal">Utilisation de {nom}</span>
         <span className="text-ui-3xs text-texte-tertiaire">restant</span>
       </div>
+      {email && (
+        <span className="-mt-2 truncate text-ui-xs text-texte-secondaire">
+          {email} · {supplementaire ? "compte supplémentaire" : "compte des agents"}
+        </span>
+      )}
       {!disponible ? (
         <p className="m-0 text-ui-xs text-texte-tertiaire">Visible dans l’app de bureau.</p>
       ) : !utilisation ? (
         <p className="m-0 text-ui-xs leading-[1.45] text-texte-tertiaire">
           {enCours
             ? "Lecture…"
-            : moteur === "codex"
+            : supplementaire
+              ? "Les agents n’utilisent pas ce compte : ses limites se lisent au clic, par une toute petite requête faite avec lui."
+              : moteur === "codex"
               ? "ChatGPT n’a pas encore donné ses limites (rien à lire avec une clé API). Clic pour réessayer."
               : moteur === "grok"
                 ? "Grok n’a pas encore donné ses crédits du mois. Clic pour réessayer."
@@ -234,6 +250,8 @@ function BoutonAnneaux({
   children,
   className,
   placement,
+  compte = null,
+  email = null,
 }: {
   moteur: IdFournisseur;
   lieu: string | null;
@@ -241,9 +259,12 @@ function BoutonAnneaux({
   children?: ReactNode;
   className?: string;
   placement: "droite" | "dessus";
+  /** Un compte Claude supplémentaire (son id) ; null : le compte des agents. */
+  compte?: string | null;
+  email?: string | null;
 }) {
-  const { disponible, utilisation, enCours, actualiser, rafraichir, gratuit } = useUtilisation(moteur, lieu);
-  const { nom } = FOURNISSEURS[moteur];
+  const { disponible, utilisation, enCours, actualiser, rafraichir, gratuit } = useUtilisation(moteur, lieu, compte);
+  const nom = `${FOURNISSEURS[moteur].nom}${email ? ` (${email})` : ""}`;
   const [ouvert, setOuvert] = useState(false);
   const minuteur = useRef<ReturnType<typeof setTimeout>>(undefined);
   const programmer = (valeur: boolean, delai: number) => {
@@ -295,7 +316,7 @@ function BoutonAnneaux({
             placement === "droite" ? "bottom-0 left-full ml-2" : "bottom-full left-0 mb-2",
           )}
         >
-          <Detail moteur={moteur} utilisation={utilisation} disponible={disponible} enCours={enCours} gratuit={gratuit} lieu={lieu} />
+          <Detail moteur={moteur} utilisation={utilisation} disponible={disponible} enCours={enCours} gratuit={gratuit} lieu={lieu} supplementaire={compte !== null} email={email} />
         </div>
       )}
     </div>
@@ -316,26 +337,45 @@ function fournisseursAffiches(moteurs: EtatMoteur[] | null): IdFournisseur[] {
   return liste.length ? liste : ["claude"];
 }
 
-/** Dans le rail : les anneaux de chaque fournisseur connecté du serveur affiché, le détail au survol. */
+/**
+ * Dans le rail : les anneaux de chaque fournisseur connecté du serveur affiché, le détail au survol. Claude :
+ * celui du compte des agents, puis un par compte supplémentaire connecté sur ce serveur (Réglages du serveur ›
+ * Fournisseurs › Claude), chacun avec son adresse au survol.
+ */
 export function UtilisationRail() {
   const lieu = useLieuActif();
   const { moteurs } = useMoteurs(lieu);
+  const affiches = fournisseursAffiches(moteurs);
+  const comptes = useComptesClaudeConnectes(lieu, affiches.includes("claude"));
+  const supplementaires = comptes.filter((c) => !c.poste);
+  /* L'adresse du compte des agents ne sert qu'à distinguer ses anneaux de ceux des autres comptes. */
+  const emailAgents = supplementaires.length ? (comptes.find((c) => c.poste)?.email ?? null) : null;
+  const classe = "size-12 justify-center rounded-md p-0";
   return (
     <>
-      {fournisseursAffiches(moteurs).map((id) => (
-        <BoutonAnneaux key={`${lieu ?? ""}|${id}`} moteur={id} lieu={lieu} sombre placement="droite" className="size-12 justify-center rounded-md p-0" />
+      {affiches.map((id) => (
+        <Fragment key={`${lieu ?? ""}|${id}`}>
+          <BoutonAnneaux moteur={id} lieu={lieu} sombre placement="droite" className={classe} email={id === "claude" ? emailAgents : null} />
+          {id === "claude" &&
+            supplementaires.map((c) => (
+              <BoutonAnneaux key={`${lieu ?? ""}|claude|${c.id}`} moteur="claude" lieu={lieu} compte={c.id} email={c.email} sombre placement="droite" className={classe} />
+            ))}
+        </Fragment>
       ))}
     </>
   );
 }
 
-/** Dans Réglages › Claude : les anneaux de Claude sur ce PC et « Claude », sur une ligne de menu. */
-export function CarteUtilisation() {
+/**
+ * Dans Réglages › Claude : les anneaux de Claude et « Utilisation », sur une ligne de menu. Par défaut le compte
+ * des agents de ce PC ; `compte` : un compte supplémentaire (de ce PC ou du serveur `lieu`).
+ */
+export function CarteUtilisation({ lieu = null, compte = null, sousTitre = "Claude · semaine et 5 h" }: { lieu?: string | null; compte?: string | null; sousTitre?: string } = {}) {
   return (
-    <BoutonAnneaux moteur="claude" lieu={null} sombre={false} placement="dessus" className="h-11 w-full gap-3 rounded-sm px-2 text-left">
+    <BoutonAnneaux key={`${lieu ?? ""}|${compte ?? ""}`} moteur="claude" lieu={lieu} compte={compte} sombre={false} placement="dessus" className="h-11 w-full gap-3 rounded-sm px-2 text-left">
       <span className="flex min-w-0 flex-col">
         <span className="text-ui font-medium text-texte-secondaire">Utilisation</span>
-        <span className="text-ui-3xs text-texte-tertiaire">Claude · semaine et 5 h</span>
+        <span className="text-ui-3xs text-texte-tertiaire">{sousTitre}</span>
       </span>
     </BoutonAnneaux>
   );

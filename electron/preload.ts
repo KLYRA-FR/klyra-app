@@ -58,7 +58,7 @@ contextBridge.exposeInMainWorld("klyra", {
     versionDisponible: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:version-disponible", id, lieu ?? null),
     installer: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:installer", id, lieu ?? null),
     mettreAJour: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:mettre-a-jour", id, lieu ?? null),
-    utilisation: (id: string, lieu?: string | null, actualiser?: boolean) => ipcRenderer.invoke("moteurs:utilisation", id, lieu ?? null, actualiser === true),
+    utilisation: (id: string, lieu?: string | null, actualiser?: boolean, compte?: string | null) => ipcRenderer.invoke("moteurs:utilisation", id, lieu ?? null, actualiser === true, compte ?? null),
     onUtilisation: (callback: (id: string, u: unknown) => void) => {
       const listener = (_e: unknown, id: string, u: unknown) => callback(id, u);
       ipcRenderer.on("moteurs:utilisation", listener);
@@ -98,10 +98,16 @@ contextBridge.exposeInMainWorld("klyra", {
     compte: () => ipcRenderer.invoke("claude:compte"),
     connexion: () => ipcRenderer.invoke("claude:connexion"),
     deconnexion: () => ipcRenderer.invoke("claude:deconnexion"),
-    comptes: () => ipcRenderer.invoke("claude:comptes"),
-    verifierCompte: (id: string) => ipcRenderer.invoke("claude:comptes:verifier", id),
-    connecterCompte: (id?: string) => ipcRenderer.invoke("claude:comptes:connexion", id),
-    deconnecterCompte: (id: string) => ipcRenderer.invoke("claude:comptes:deconnexion", id),
+    comptes: (lieu?: string | null) => ipcRenderer.invoke("claude:comptes", lieu ?? null),
+    verifierCompte: (id: string, lieu?: string | null) => ipcRenderer.invoke("claude:comptes:verifier", id, lieu ?? null),
+    connecterCompte: (id?: string, lieu?: string | null) => ipcRenderer.invoke("claude:comptes:connexion", id ?? null, lieu ?? null),
+    codeCompte: (id: string, code: string, lieu?: string | null) => ipcRenderer.invoke("claude:comptes:code", id, code, lieu ?? null),
+    deconnecterCompte: (id: string, lieu?: string | null) => ipcRenderer.invoke("claude:comptes:deconnexion", id, lieu ?? null),
+    onComptes: (callback: (lieu: string | null) => void) => {
+      const listener = (_e: unknown, lieu: string | null) => callback(lieu ?? null);
+      ipcRenderer.on("claude:comptes:change", listener);
+      return () => ipcRenderer.removeListener("claude:comptes:change", listener);
+    },
     actualiserUtilisation: () => ipcRenderer.invoke("claude:utilisation:actualiser"),
     onUtilisation: (callback: (u: unknown) => void) => {
       const listener = (_e: unknown, u: unknown) => callback(u);

@@ -100,16 +100,76 @@ function CompteClaudeUnique() {
   );
 }
 
-export function ComptesClaude() {
-  const { comptes, action, erreur, relire, agir } = useComptesClaude();
-  const installe = comptes?.some((c) => c.installe);
+/** Sur un VPS, le code que la page Anthropic affiche à la fin de la connexion, collé ici puis donné au serveur. */
+function SaisieCode({ desactive, envoyer, rouvrir }: { desactive: boolean; envoyer: (code: string) => void; rouvrir: () => void }) {
+  const [code, setCode] = useState("");
   return (
-    <Groupe titre="Comptes" description="Ajoute un compte sans déconnecter les autres. Tes agents gardent le compte qu’ils utilisent déjà.">
-      <div id="reglage-compte-claude" className="klyra-reglage scroll-mt-6">
+    <form
+      className="mt-3 flex flex-col gap-2 rounded-md bg-fond-page p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (code.trim()) envoyer(code.trim());
+      }}
+    >
+      <p role="status" className="m-0 text-ui-s leading-[1.45] text-texte-principal">
+        La page Anthropic s’est ouverte dans ton navigateur. Connecte le compte voulu, valide, puis colle ici le code affiché à la fin.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          size="sm"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={code}
+          placeholder="Code de connexion"
+          onChange={(e) => setCode(e.target.value)}
+          className={cn(CHAMP, "klyra-mono min-w-0 flex-1")}
+          aria-label="Code de connexion affiché par Anthropic"
+        />
+        <Bouton type="submit" variant="sombre" taille="compact" disabled={desactive || !code.trim()}>
+          Valider
+        </Bouton>
+        <Bouton variant="discret" taille="compact" disabled={desactive} onClick={rouvrir}>
+          Rouvrir la page
+        </Bouton>
+      </div>
+    </form>
+  );
+}
+
+const facturation = (methode: string | null) =>
+  methode === "claude.ai" ? "Comprise dans l’abonnement claude.ai" : methode === "console" ? "À l’usage (Console Anthropic)" : methode === "jeton" ? "Jeton longue durée de l’abonnement" : methode ?? "—";
+
+/**
+ * Les comptes Claude de ce PC (`lieu` absent) ou d'un VPS relié : les mêmes gestes, sauf le compte des agents
+ * d'un VPS, posé par « connecter-claude » sur le serveur. `repli` : ce qui s'affiche si le serveur ne connaît pas
+ * encore les comptes (version ancienne).
+ */
+export function ComptesClaude({ lieu = null, repli }: { lieu?: string | null; repli?: ReactNode }) {
+  const { comptes, action, erreur, relire, agir, envoyerCode } = useComptesClaude(lieu);
+  const installe = comptes?.some((c) => c.installe);
+  const serveur = lieu !== null;
+  if (serveur && !comptes && erreur && repli) {
+    return (
+      <>
+        {repli}
+        <Erreur>{erreur}</Erreur>
+      </>
+    );
+  }
+  const attente = comptes?.some((c) => c.attenteCode);
+  return (
+    <Groupe
+      titre="Comptes"
+      description={serveur ? "Ajoute un compte sans déconnecter les autres. Les agents de ce serveur gardent le compte qu’ils utilisent déjà." : "Ajoute un compte sans déconnecter les autres. Tes agents gardent le compte qu’ils utilisent déjà."}
+    >
+      <div id={serveur ? "reglage-compte-claude-vps" : "reglage-compte-claude"} className="klyra-reglage scroll-mt-6">
         {!comptes && <Ligne libelle="Vérification des comptes Claude…" />}
         {comptes?.map((compte, index) => {
           const nom = compte.email ?? (compte.poste ? "Compte des agents" : `Compte Claude ${index + 1}`);
           const enCours = action?.id === compte.id ? action.type : null;
+          /* Le compte des agents d'un VPS se pose sur le serveur (jeton longue durée) : ni connexion ni déconnexion d'ici. */
+          const fixe = serveur && compte.poste;
           return (
             <section key={compte.id} aria-label={nom} className="border-b border-bordure-subtile py-4">
               <div className="flex flex-wrap items-center gap-3">
@@ -119,14 +179,24 @@ export function ComptesClaude() {
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="break-words text-ui font-semibold text-texte-principal">{nom}</span>
                   <span className="text-ui-xs text-texte-tertiaire">
-                    {compte.erreur ? "Vérification impossible" : !compte.installe ? "Claude Code est introuvable sur ce poste" : compte.connecte ? `Connecté${compte.abonnement ? ` · ${nomAbonnement(compte.abonnement)}` : ""}` : "Pas connecté"}
+                    {compte.erreur
+                      ? "Vérification impossible"
+                      : !compte.installe
+                        ? `Claude Code est introuvable sur ${serveur ? "ce serveur" : "ce poste"}`
+                        : compte.connecte
+                          ? `Connecté${compte.methode === "jeton" ? " par un jeton longue durée" : ""}${compte.abonnement ? ` · ${nomAbonnement(compte.abonnement)}` : ""}`
+                          : compte.attenteCode
+                            ? "En attente du code"
+                            : "Pas connecté"}
                   </span>
-                  <span className="text-ui-xs text-texte-secondaire">{compte.poste ? "Compte utilisé par les agents" : "Compte supplémentaire"}</span>
+                  <span className="text-ui-xs text-texte-secondaire">
+                    {compte.poste ? (serveur ? "Compte utilisé par les agents de ce serveur" : "Compte utilisé par les agents") : "Compte supplémentaire"}
+                  </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {compte.installe && !compte.erreur && (
+                  {compte.installe && !compte.erreur && !fixe && !compte.attenteCode && (
                     <Bouton variant="blanc" taille="md" disabled={!!action} onClick={() => void agir(compte.connecte ? "deconnexion" : "connexion", compte.id)}>
-                      {enCours === "connexion" ? "En attente du navigateur…" : enCours === "deconnexion" ? "Déconnexion…" : compte.connecte ? "Se déconnecter" : "Se connecter"}
+                      {enCours === "connexion" ? (serveur ? "Ouverture de la page…" : "En attente du navigateur…") : enCours === "deconnexion" ? "Déconnexion…" : compte.connecte ? "Se déconnecter" : "Se connecter"}
                     </Bouton>
                   )}
                   <Bouton variant="discret" taille="md" disabled={!!action} iconeGauche={<Icon name="refresh-01" size={20} />} onClick={() => void agir("verification", compte.id)}>
@@ -134,10 +204,30 @@ export function ComptesClaude() {
                   </Bouton>
                 </div>
               </div>
+              {compte.attenteCode && (
+                <SaisieCode desactive={!!action} envoyer={(code) => void envoyerCode(compte.id, code)} rouvrir={() => void agir("connexion", compte.id)} />
+              )}
+              {enCours === "code" && <p role="status" className="m-0 mt-2 text-ui-xs text-texte-tertiaire">Vérification du code sur le serveur…</p>}
+              {fixe && (
+                <p className="m-0 mt-2 text-ui-xs leading-[1.45] text-texte-tertiaire">
+                  {compte.connecte ? (
+                    "Pour changer le compte des agents, relance « connecter-claude » sur le VPS."
+                  ) : (
+                    <>
+                      Sur le VPS, lance : <span className="klyra-mono select-all">curl -fsSL https://raw.githubusercontent.com/KLYRA-FR/klyra-app/main/serveur/lancer.sh | sudo sh -s -- connecter-claude</span>
+                    </>
+                  )}
+                </p>
+              )}
               {compte.connecte && (
                 <>
-                  <Detail libelle="Organisation">{compte.organisation ?? "—"}</Detail>
-                  <Detail libelle="Facturation">{compte.methode === "claude.ai" ? "Comprise dans l’abonnement claude.ai" : compte.methode === "console" ? "À l’usage (Console Anthropic)" : compte.methode ?? "—"}</Detail>
+                  {compte.organisation && <Detail libelle="Organisation">{compte.organisation}</Detail>}
+                  <Detail libelle="Facturation">{facturation(compte.methode)}</Detail>
+                  {!compte.poste && (
+                    <div className="-mx-2 px-0 py-1">
+                      <CarteUtilisation lieu={lieu} compte={compte.id} sousTitre="Ce compte · semaine et 5 h" />
+                    </div>
+                  )}
                 </>
               )}
               {compte.erreur ? <Erreur>{compte.erreur}</Erreur> : compte.installe && <Detail libelle="Vérifié">à {heure.format(compte.verifieLe)}</Detail>}
@@ -146,19 +236,19 @@ export function ComptesClaude() {
         })}
         {installe && (
           <div className="py-4">
-            <BoutonPrincipal disabled={!!action} onClick={() => void agir("connexion")}>
-              {action?.id === "nouveau" ? "En attente du navigateur…" : "Ajouter un compte Claude"}
+            <BoutonPrincipal disabled={!!action || attente} onClick={() => void agir("connexion")}>
+              {action?.id === "nouveau" ? (serveur ? "Ouverture de la page…" : "En attente du navigateur…") : "Ajouter un compte Claude"}
             </BoutonPrincipal>
           </div>
         )}
-        {action?.type === "connexion" && (
+        {action?.type === "connexion" && !serveur && (
           <p role="status" className="m-0 rounded-md bg-fond-page p-3 text-ui-s text-texte-principal">
             Connecte le compte voulu sur la page Anthropic ouverte dans ton navigateur, puis reviens ici.
           </p>
         )}
         {erreur && <Erreur>{erreur}</Erreur>}
         {!comptes && erreur && <Bouton variant="discret" taille="md" onClick={() => void relire()}>Réessayer</Bouton>}
-        {comptes?.[0]?.installe && (
+        {!serveur && comptes?.[0]?.installe && (
           <>
             <Detail libelle="Claude Code">{comptes[0].version ? `Version ${comptes[0].version}` : "—"}</Detail>
             <Ligne libelle="Emplacement"><Valeur mono>{comptes[0].chemin?.replace(/^\/Users\/[^/]+/, "~")}</Valeur></Ligne>
