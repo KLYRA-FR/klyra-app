@@ -1,6 +1,6 @@
 # Composio dans KLYRA
 
-Ouvrir **Réglages → Composio**, après « Autres IA ». Cet espace utilise uniquement Composio. Il ne lit pas la session du CLI, les comptes d’un VPS, ni les connexions d’autres outils.
+Ouvrir **Réglages → Composio**, après « Autres IA ». Cet espace utilise uniquement Composio. Il ne lit pas la session du CLI, les comptes d’un VPS, ni les connexions d’autres outils. Composio Connect a aussi un compte par VPS relié (voir `SERVEUR-VPS.md`) ; le mode développeur ci-dessous reste à ce poste.
 
 ## Configuration sur chaque poste
 

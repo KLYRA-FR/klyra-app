@@ -305,6 +305,9 @@ export type EvenementDictee =
 
 export interface KlyraBridge {
   agents: {
+    /** L'équipe d'un VPS relié, par `pontAgents` (src/lib/agents-pont.ts). Absent avant la relance de l'app. */
+    vps?: (lieu: string, methode: string, corps: unknown) => Promise<Reponse<unknown>>;
+    skillsDuPcVersVps?: (lieu: string) => Promise<Reponse<{ ajoutees: string[] }>>;
     list: () => Promise<Reponse<AgentsListing>>;
     write: (name: string, content: string, expectedModifiedAt: number | null) => Promise<Reponse<AgentFile>>;
     create: (name: string, content: string) => Promise<Reponse<AgentFile>>;
@@ -575,6 +578,11 @@ export interface KlyraBridge {
     /** Relie une pull request ou enregistre un fait déjà lu. Absent avant la relance de l'app. */
     github?: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; work_id?: string | null; disposition?: string; operations?: string[] }>>;
   };
+  /** L'espace gardé par un VPS (cf. useEspaceServeurs). Absent avant la relance de l'app. */
+  espace?: {
+    lire: (lieu: string, depuis?: number) => Promise<Reponse<unknown>>;
+    ecrire: (lieu: string, corps: { elements: unknown[]; supprimes: unknown[] }) => Promise<Reponse<{ revision: number }>>;
+  };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;
     read: () => Promise<Reponse<unknown>>;
@@ -649,10 +657,21 @@ export interface KlyraBridge {
       connecter: () => Promise<Reponse<boolean>>;
       annuler: () => Promise<Reponse<void>>;
       deconnecter: () => Promise<Reponse<void>>;
+      /** La connexion Composio d'un VPS. Absent avant la relance de l'app. */
+      vps?: {
+        etat: (lieu: string) => Promise<Reponse<EtatConnect>>;
+        connecter: (lieu: string) => Promise<Reponse<boolean>>;
+        annuler: () => Promise<Reponse<void>>;
+        deconnecter: (lieu: string) => Promise<Reponse<unknown>>;
+      };
     };
   };
   /** Le Coffre de KLYRA (cf. electron/coffre.ts) : jamais une valeur dans ce sens. Absent avant la relance de l'app. */
   coffre?: {
+    /** Le Coffre d'un VPS, par `useCoffreKlyra`. Absents avant la relance de l'app. */
+    vps?: (lieu: string, methode: string, corps: unknown) => Promise<Reponse<unknown>>;
+    copierVps?: (lieu: string, id: string) => Promise<Reponse<{ delai: number }>>;
+    copierVers?: (id: string, lieu: string) => Promise<Reponse<void>>;
     etat: () => Promise<Reponse<EtatCoffre>>;
     /** `remplacer` : la personne remplace exprès le secret qui porte déjà ce nom de variable. */
     ajouter: (entree: EntreeSecretCoffre, remplacer?: boolean) => Promise<Reponse<SecretCoffre>>;

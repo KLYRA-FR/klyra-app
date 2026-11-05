@@ -252,7 +252,7 @@ function Vps({ serveurs }: { serveurs: ServeurConnu[] }) {
         const lu = sondes[s.id];
         return (
           <Ligne key={s.id} id={i === 0 ? "mobile-vps" : undefined} libelle={s.nom} description={s.adresse}>
-            <Pastille ton={lu?.sonde === "repond" ? "ok" : "neutre"} texte={libelleServeur(s.etat, lu?.sonde, lu?.agents)} />
+            <Pastille ton={lu?.sonde === "repond" ? "ok" : "neutre"} texte={libelleServeur(s.etat, lu?.sonde, lu?.agents, lu?.retard)} />
           </Ligne>
         );
       })}

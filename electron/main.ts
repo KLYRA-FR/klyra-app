@@ -112,7 +112,7 @@ import {
 import { ecrirePlanning } from "./planning";
 import { ajouterMcpDirect, APPS_MCP, chargerMcpDirects, listerMcpDirects, retirerMcpDirect } from "./mcp-direct";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
-import { composioConnect, espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio } from "./composio";
+import { composioConnect, espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio, annulerComposioVps, connecterComposioVps, connexionVpsEnCours } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
 import { lireConsommation, lireJournal } from "./consommation";
 import { rattraperHistorique } from "./historique";
@@ -134,7 +134,7 @@ import {
 import { etatApercu, poserApercuTest, surApercu } from "./ordinateur/apercu";
 import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./ordinateur/pilote";
 import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
-import { ajouterSecret, copierSecret, etatCoffre, modifierSecret, remplacerValeurSecret, retirerSecret, signalerCoffre, surChangementCoffre } from "./coffre";
+import { ajouterSecret, copierSecret, copierValeur, secretACopier, etatCoffre, modifierSecret, remplacerValeurSecret, retirerSecret, signalerCoffre, surChangementCoffre } from "./coffre";
 import { executerPourServeur, navigateurActif } from "./navigateur/outils";
 import { executerCoffrePourServeur } from "./coffre-outils";
 import {
@@ -171,6 +171,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDos
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
+import { appelCoffreVps, appelComposioVps, appelEquipeVps, appelEspaceVps } from "./equipe-vps";
 import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
@@ -413,11 +414,57 @@ function registerBridge() {
   composio("composio:connect:connecter", () => composioConnect.connecter());
   composio("composio:connect:annuler", () => composioConnect.annuler());
   composio("composio:connect:deconnecter", () => composioConnect.deconnecter());
+  /* La connexion Composio d'un VPS : mêmes gestes, le compte est celui de ce serveur. */
+  const composioVps = (lieu: unknown) => {
+    const origine = String(lieu);
+    if (!originesServeurs().includes(origine)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    return { origine, jeton: jetonServeur(origine) };
+  };
+  composio("composio:connect:vps:etat", async (lieu) => {
+    const { origine, jeton } = composioVps(lieu);
+    const etat = (await appelComposioVps(origine, jeton, "etat")) as Record<string, unknown>;
+    return { ...etat, enCours: connexionVpsEnCours() };
+  });
+  composio("composio:connect:vps:connecter", (lieu) => {
+    const { origine, jeton } = composioVps(lieu);
+    return connecterComposioVps((jetons) => appelComposioVps(origine, jeton, "adopter", { jetons }));
+  });
+  composio("composio:connect:vps:annuler", () => annulerComposioVps());
+  composio("composio:connect:vps:deconnecter", (lieu) => {
+    const { origine, jeton } = composioVps(lieu);
+    return appelComposioVps(origine, jeton, "deconnecter");
+  });
   composio("composio:retirer", (contexte) => espaceComposio.retirerConfiguration(contexte));
   composio("composio:selectionner", (contexte, service, compte) => espaceComposio.selectionner(contexte, service, compte));
   composio("composio:connecter", (contexte, service, configuration) => espaceComposio.connecter(contexte, service, configuration));
   composio("composio:deconnecter", (contexte, compte) => espaceComposio.deconnecter(contexte, compte));
   composio("composio:console", () => shell.openExternal("https://dashboard.composio.dev"));
+  /* L'équipe d'un VPS : la première fois, une copie des agents actifs de ce PC ; ensuite, elle vit là-bas. */
+  handle("agents:vps", async (lieu: string, methode: string, corps: unknown) => {
+    if (!originesServeurs().includes(lieu)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    const jeton = jetonServeur(lieu);
+    if (methode === "lister") {
+      const etat = (await appelEquipeVps(lieu, jeton, "etat")) as { initialise?: boolean } | null;
+      if (!etat?.initialise) {
+        const { fiches, assistant, skills, skillsParAgent } = equipePourVps();
+        const reglage = lireReglages().configuration;
+        await appelEquipeVps(lieu, jeton, "initialiser", { fiches, assistant, teinte: mesAgents().assistant.teinte });
+        await appelEquipeVps(lieu, jeton, "reglages-ecrire", {
+          configuration: { memoireAgents: reglage.memoireAgents, consignes: consigneKlyra(reglage.consignes) },
+          configurationEcran: reglage,
+          skillsParAgent,
+        });
+        if (skills?.length) await appelEquipeVps(lieu, jeton, "skills-recevoir", { skills });
+      }
+    }
+    return appelEquipeVps(lieu, jeton, methode, corps);
+  });
+  /* Les skills allumées de ce PC, envoyées à un VPS sur demande (Réglages › Agents, sur ce VPS). */
+  handle("agents:vps:skills-du-pc", async (lieu: string) => {
+    if (!originesServeurs().includes(lieu)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    const { skills } = equipePourVps();
+    return appelEquipeVps(lieu, jetonServeur(lieu), "skills-recevoir", { skills: skills ?? [] }) as Promise<{ ajoutees: string[] }>;
+  });
   handle("agents:list", async () => {
     const listing = await listAgents();
     watchAgents();
@@ -983,7 +1030,7 @@ function registerBridge() {
       .update(JSON.stringify([generation(), assistant, fiches, configuration, skillsParAgent, empreinteSkills(skills)]))
       .digest("hex")
       .slice(0, 16);
-    return { fiches, assistant, configuration, skillsParAgent, skills, empreinte };
+    return { fiches, assistant, configuration, configurationEcran: lireReglages().configuration, skillsParAgent, skills, empreinte };
   };
   const depuisFenetre = (event: Electron.IpcMainInvokeEvent) => {
     const win = fenetrePrincipale;
@@ -1057,6 +1104,26 @@ function registerBridge() {
     if (wc && !wc.isDestroyed()) wc.send("coffre:change");
   });
   const champsSecret = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+  /* Le Coffre d'un VPS : la valeur reste ici ou là-bas, jamais à l'écran (`lire` n'est pas une demande permise). */
+  const coffreVps = (lieu: unknown) => {
+    const origine = texteNav(lieu, 500);
+    if (!originesServeurs().includes(origine)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    return { origine, jeton: jetonServeur(origine) };
+  };
+  navigateur("coffre:vps", (lieu, methode, corps) => {
+    const { origine, jeton } = coffreVps(lieu);
+    if (typeof methode !== "string" || !["etat", "ajouter", "modifier", "valeur", "retirer"].includes(methode)) throw new AgentError("introuvable", "Demande inconnue.");
+    return appelCoffreVps(origine, jeton, methode, corps);
+  });
+  navigateur("coffre:vps:copier", async (lieu, id) => {
+    const { origine, jeton } = coffreVps(lieu);
+    return copierValeur(String(await appelCoffreVps(origine, jeton, "lire", { id: texteNav(id, 100) })));
+  });
+  /* Un secret de ce PC, copié sur un serveur à la demande de la personne : un par un, jamais d'office. */
+  navigateur("coffre:copier-vers", async (id, lieu) => {
+    const { origine, jeton } = coffreVps(lieu);
+    await appelCoffreVps(origine, jeton, "ajouter", { entree: secretACopier(texteNav(id, 100)) });
+  });
   navigateur("coffre:etat", () => etatCoffre());
   navigateur("coffre:ajouter", (entree, remplacer) => {
     const e = champsSecret(entree);
@@ -1158,6 +1225,13 @@ function registerBridge() {
   // Le même passage que le minuteur de 15 minutes. Il écrit une alerte, jamais dans le fil.
   handle("superagent:passage", () => passageWatchdog());
   handle("superagent:github", (brut: unknown) => noterGithub(brut));
+  /* L'espace gardé par un VPS (serveur/espace.mjs). */
+  const espaceVps = (lieu: string) => {
+    if (!originesServeurs().includes(lieu)) throw new AgentError("introuvable", "Ce VPS n’est plus relié.");
+    return jetonServeur(lieu);
+  };
+  handle("espace:lire", (lieu: string, depuis: unknown) => appelEspaceVps(lieu, espaceVps(lieu), "lire", typeof depuis === "number" ? { depuis } : {}));
+  handle("espace:ecrire", (lieu: string, corps: unknown) => appelEspaceVps(lieu, espaceVps(lieu), "ecrire", corps));
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
   ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {

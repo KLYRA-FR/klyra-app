@@ -28,7 +28,7 @@ export const SECTIONS_SERVEUR: SectionServeur[] = [
     description: "Ce serveur : où il est, sa version, et les moteurs qui font travailler les agents.",
     entrees: [
       { id: "serveur-nom", titre: "Nom du serveur", mots: "machine ordinateur vps" },
-      { id: "serveur-version", titre: "Version de KLYRA sur ce serveur", mots: "numero" },
+      { id: "serveur-version", titre: "Version du code de ce serveur", mots: "numero mise a jour retard ancien commande lancer" },
       { id: "serveur-moteurs", titre: "Moteurs installés", mots: "claude code codex grok build versions" },
       { id: "diagnostic-serveur", titre: "Ce que ce serveur ajoute", mots: "claude.md plugins skills mcp configuration jetons diagnostic" },
     ],

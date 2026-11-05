@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Textarea } from "klyra-ui";
 import { Bouton } from "@/components/ui/Bouton";
 import { getBridge, unwrap } from "@/lib/bridge";
-import { useReglages } from "@/lib/reglages";
+import { useReglagesAgents } from "@/lib/reglages-agents";
 import {
   CONFIGURATION_RECOMMANDEE,
   estRecommandee,
@@ -155,7 +155,7 @@ export function DiagnosticDuPoste({ lieu = null }: { lieu?: string | null } = {}
  * réglage à part (configuration-klyra.ts). Rien n'est appliqué sans la personne.
  */
 export function GroupeConfigurationKlyra() {
-  const { reglages, erreur, changerConfiguration } = useReglages();
+  const { reglages, erreur, changerConfiguration } = useReglagesAgents();
   if (!reglages) return null;
   const configuration = reglages.configuration;
   const recommandee = estRecommandee(configuration);

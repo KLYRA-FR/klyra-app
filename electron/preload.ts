@@ -11,6 +11,9 @@ const adresseConvex = process.argv.find((a) => a.startsWith("--klyra-convex="))?
 contextBridge.exposeInMainWorld("klyra", {
   agents: {
     list: () => ipcRenderer.invoke("agents:list"),
+    /* L'équipe d'un VPS relié (serveur/equipe.mjs) : mêmes gestes que pour celle de ce PC. */
+    vps: (lieu: string, methode: string, corps: unknown) => ipcRenderer.invoke("agents:vps", lieu, methode, corps),
+    skillsDuPcVersVps: (lieu: string) => ipcRenderer.invoke("agents:vps:skills-du-pc", lieu),
     write: (name: string, content: string, expectedModifiedAt: number | null) =>
       ipcRenderer.invoke("agents:write", name, content, expectedModifiedAt),
     create: (name: string, content: string) => ipcRenderer.invoke("agents:create", name, content),
@@ -208,6 +211,12 @@ contextBridge.exposeInMainWorld("klyra", {
       connecter: () => ipcRenderer.invoke("composio:connect:connecter"),
       annuler: () => ipcRenderer.invoke("composio:connect:annuler"),
       deconnecter: () => ipcRenderer.invoke("composio:connect:deconnecter"),
+      vps: {
+        etat: (lieu: string) => ipcRenderer.invoke("composio:connect:vps:etat", lieu),
+        connecter: (lieu: string) => ipcRenderer.invoke("composio:connect:vps:connecter", lieu),
+        annuler: () => ipcRenderer.invoke("composio:connect:vps:annuler"),
+        deconnecter: (lieu: string) => ipcRenderer.invoke("composio:connect:vps:deconnecter", lieu),
+      },
     },
   },
   planning: {
@@ -279,6 +288,10 @@ contextBridge.exposeInMainWorld("klyra", {
     /** Relie une pull request ou enregistre un fait déjà lu. N'écrit rien sur GitHub. */
     github: (fait: unknown) => ipcRenderer.invoke("superagent:github", fait),
   },
+  espace: {
+    lire: (lieu: string, depuis?: number) => ipcRenderer.invoke("espace:lire", lieu, depuis),
+    ecrire: (lieu: string, corps: unknown) => ipcRenderer.invoke("espace:ecrire", lieu, corps),
+  },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */
     avantFermeture: (callback: () => void) => {
@@ -347,6 +360,10 @@ contextBridge.exposeInMainWorld("klyra", {
   /* Le Coffre (electron/coffre.ts) : une valeur part vers le main, jamais l'inverse. */
   coffre: {
     etat: () => ipcRenderer.invoke("coffre:etat"),
+    /* Le Coffre d'un VPS : mêmes gestes ; une valeur ne revient jamais à l'écran. */
+    vps: (lieu: string, methode: string, corps: unknown) => ipcRenderer.invoke("coffre:vps", lieu, methode, corps),
+    copierVps: (lieu: string, id: string) => ipcRenderer.invoke("coffre:vps:copier", lieu, id),
+    copierVers: (id: string, lieu: string) => ipcRenderer.invoke("coffre:copier-vers", id, lieu),
     ajouter: (entree: unknown, remplacer?: boolean) => ipcRenderer.invoke("coffre:ajouter", entree, remplacer === true),
     modifier: (id: string, champs: unknown) => ipcRenderer.invoke("coffre:modifier", id, champs),
     remplacerValeur: (id: string, valeur: string) => ipcRenderer.invoke("coffre:valeur", id, valeur),

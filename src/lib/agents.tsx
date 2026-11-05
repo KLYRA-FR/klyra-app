@@ -16,6 +16,8 @@ import {
   type MesAgents,
   type OrigineAgent,
 } from "@/lib/bridge";
+import { useLieuActif } from "@/lib/lieux";
+import { pontAgents, type PontAgents } from "@/lib/agents-pont";
 import { ROLE_TEINTES, type Role, type RoleFile, type RoleTeinte } from "@/types/domain";
 
 /**
@@ -133,6 +135,10 @@ interface AgentsApi {
   meta: AgentsMeta;
   canEdit: boolean;
   reload: () => Promise<void>;
+  /** Le serveur affiché n'est pas encore à jour : il n'a pas d'équipe à lui, et c'est celle de ce PC. */
+  serveurAncien: boolean;
+  /** Copie un agent sur un autre serveur (null : ce PC). Refuse si un agent de ce nom y est déjà. */
+  copierVers: (id: string, cible: string | null) => Promise<void>;
   nommerAssistant: (nom: string, teinte?: RoleTeinte | null) => Promise<void>;
   activer: (id: string, actif: boolean) => Promise<void>;
   /** Ajoute à Mes agents une fiche déjà sur l'ordinateur. */
@@ -191,14 +197,28 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [dir, setDir] = useState<string | null>(null);
 
+  /* L'équipe du serveur affiché. Un serveur pas encore à jour n'a pas d'équipe à lui : celle de ce PC, et l'écran le dit. */
+  const lieu = useLieuActif();
+  const [ancien, setAncien] = useState<string | null>(null);
+  const lieuEquipe = lieu && lieu !== ancien && bridge?.agents.vps ? lieu : null;
+  const pont = useMemo<PontAgents | null>(() => (bridge ? pontAgents(bridge, lieuEquipe) : null), [bridge, lieuEquipe]);
+  /* Ce que voit l'écran pendant le changement de serveur : rien de l'équipe d'avant. */
+  const [equipeVue, setEquipeVue] = useState<string | null>(lieuEquipe);
+  if (equipeVue !== lieuEquipe) {
+    setEquipeVue(lieuEquipe);
+    setFiles([]);
+    setMes(null);
+    setMeta({});
+    setStatus(bridge ? "chargement" : "exemple");
+    setError(null);
+  }
+
   const reload = useCallback(async () => {
-    if (!bridge) return;
+    if (!pont) return;
     try {
-      const [listing, reglages, choix] = await Promise.all([
-        bridge.agents.list().then(unwrap),
-        bridge.agents.readMeta().then(unwrap),
-        bridge.agents.mes().then(unwrap),
-      ]);
+      /* La liste d'abord : sur un VPS neuf, c'est elle qui crée son équipe (cf. `agents:vps`). */
+      const listing = unwrap(await pont.list());
+      const [reglages, choix] = await Promise.all([pont.readMeta().then(unwrap), pont.mes().then(unwrap)]);
       setDir(listing.dir);
       metaRef.current = reglages;
       setMeta(reglages);
@@ -214,21 +234,33 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       setStatus("disque");
       setError(null);
     } catch (e) {
+      if (e instanceof BridgeError && e.code === "serveur-ancien" && lieuEquipe) {
+        setAncien(lieuEquipe);
+        return;
+      }
       setStatus("erreur");
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [bridge]);
+  }, [pont, lieuEquipe]);
 
   useEffect(() => {
     if (!bridge) return;
-    // Premier chargement, puis à chaque changement des fichiers sur le disque.
     const first = setTimeout(() => void reload(), 0);
+    /* Sur un VPS, une relecture régulière : aucun signal n'arrive de ses fichiers. */
+    if (lieuEquipe) {
+      const minuterie = setInterval(() => void reload(), 30_000);
+      return () => {
+        clearTimeout(first);
+        clearInterval(minuterie);
+      };
+    }
+    // Premier chargement, puis à chaque changement des fichiers sur le disque.
     const stop = bridge.agents.onChange(() => void reload());
     return () => {
       clearTimeout(first);
       stop();
     };
-  }, [bridge, reload]);
+  }, [bridge, reload, lieuEquipe]);
 
   const tous = useMemo<AgentLocal[]>(
     () =>
@@ -253,10 +285,10 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     [mes, tous],
   );
 
-  const requireBridge = useCallback(() => {
-    if (!bridge) throw new BridgeError("navigateur", "Disponible seulement dans l’app de bureau.");
-    return bridge;
-  }, [bridge]);
+  const requirePont = useCallback(() => {
+    if (!pont) throw new BridgeError("navigateur", "Disponible seulement dans l’app de bureau.");
+    return pont;
+  }, [pont]);
 
   /* Les préférences d'un agent : on remplace ce qui est donné, le reste (modèle choisi…) est gardé. */
   const saveMeta = useCallback(
@@ -274,16 +306,30 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       if (JSON.stringify(voulu) === JSON.stringify(current)) return;
       const next = { ...metaRef.current, [id]: voulu };
       metaRef.current = next;
-      unwrap(await requireBridge().agents.writeMeta(next));
+      unwrap(await requirePont().writeMeta(next));
       setMeta(next);
     },
-    [requireBridge],
+    [requirePont],
   );
 
   const pris = useCallback((id: string) => id === PRINCIPAL.id || filesRef.current.some((f) => f.name === id), []);
 
+  const serveurAncien = !!lieu && lieu === ancien;
+
   const api = useMemo<AgentsApi>(
     () => ({
+      serveurAncien,
+      copierVers: async (id, cible) => {
+        if (!bridge) throw new BridgeError("navigateur", "Disponible seulement dans l’app de bureau.");
+        const fiche = filesRef.current.find((f) => f.name === id);
+        if (!fiche) throw new BridgeError("introuvable", "Cette fiche n’existe plus.");
+        /* Une copie : un agent distinct, avec ses discussions et sa mémoire. Rien n'écrase un agent déjà là. */
+        const autre = pontAgents(bridge, cible);
+        unwrap(await autre.create(id, fiche.content));
+        const { tag, teinte, nom } = metaRef.current[id] ?? {};
+        const reglages = unwrap(await autre.readMeta());
+        unwrap(await autre.writeMeta({ ...reglages, [id]: { ...(tag ? { tag } : {}), ...(teinte ? { teinte } : {}), ...(nom ? { nom } : {}) } }));
+      },
       roles,
       tous,
       mes,
@@ -295,19 +341,19 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       canEdit: status === "disque",
       reload,
       nommerAssistant: async (nom, teinte = null) => {
-        setMes(unwrap(await requireBridge().agents.nommerAssistant(nom, teinte)));
+        setMes(unwrap(await requirePont().nommerAssistant(nom, teinte)));
       },
       activer: async (id, actif) => {
-        setMes(unwrap(await requireBridge().agents.activer(id, actif)));
+        setMes(unwrap(await requirePont().activer(id, actif)));
       },
       ajouter: async (id) => {
-        setMes(unwrap(await requireBridge().agents.ajouter(id)));
+        setMes(unwrap(await requirePont().ajouter(id)));
       },
       identifiantLibre: (propose) => identifiantLibre(propose, pris),
       installer: async (def, { id, origine, valeurs = {} }) => {
         const local = ficheLocale(def.contenu, id, valeurs, metaRef.current[id]?.modele);
         const { mes: choix } = unwrap(
-          await requireBridge().agents.installer(id, local, origine, origine.type === "bibliotheque" ? def.contenu : null),
+          await requirePont().installer(id, local, origine, origine.type === "bibliotheque" ? def.contenu : null),
         );
         setMes(choix);
         await reload();
@@ -317,17 +363,17 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         const local = ficheLocale(partage, id, origine.type === "bibliotheque" ? origine.valeurs : {}, metaRef.current[id]?.modele);
         const fiche = filesRef.current.find((f) => f.name === id);
         const { mes: choix } = unwrap(
-          await requireBridge().agents.appliquer(id, local, origine, partage, fiche?.file.modifiedAt ?? null, forcer),
+          await requirePont().appliquer(id, local, origine, partage, fiche?.file.modifiedAt ?? null, forcer),
         );
         setMes(choix);
         await reload();
       },
       changerOrigine: async (id, origine) => {
-        setMes(unwrap(await requireBridge().agents.changerOrigine(id, origine)));
+        setMes(unwrap(await requirePont().changerOrigine(id, origine)));
       },
-      definitionRecue: async (id) => unwrap(await requireBridge().agents.definitionRecue(id)),
+      definitionRecue: async (id) => unwrap(await requirePont().definitionRecue(id)),
       save: async (id, content, reglage, expectedModifiedAt) => {
-        unwrap(await requireBridge().agents.write(id, content, expectedModifiedAt));
+        unwrap(await requirePont().write(id, content, expectedModifiedAt));
         await saveMeta(id, reglage);
         await reload();
       },
@@ -351,7 +397,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         // L'ordre change tout de suite à l'écran ; un échec d'écriture le remet comme avant.
         metaRef.current = next;
         setMeta(next);
-        const r = await requireBridge().agents.writeMeta(next);
+        const r = await requirePont().writeMeta(next);
         if (!r.ok) {
           metaRef.current = avant;
           setMeta(avant);
@@ -362,28 +408,28 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         const fiche = filesRef.current.find((f) => f.name === id);
         if (!fiche) throw new BridgeError("introuvable", `La fiche « ${id} » n’existe plus sur le disque.`);
         const origine = mes?.agents[id]?.origine;
-        const partage = origine?.type === "bibliotheque" ? unwrap(await requireBridge().agents.definitionRecue(id)) : null;
+        const partage = origine?.type === "bibliotheque" ? unwrap(await requirePont().definitionRecue(id)) : null;
         if (origine?.type === "bibliotheque" && partage) {
           /* Agent reçu : le modèle est une préférence, la fiche est réécrite depuis la version suivie. */
           await saveMeta(id, { modele });
           const local = ficheLocale(partage, id, origine.valeurs, modele);
-          setMes(unwrap(await requireBridge().agents.appliquer(id, local, origine, partage, fiche.file.modifiedAt, false)).mes);
+          setMes(unwrap(await requirePont().appliquer(id, local, origine, partage, fiche.file.modifiedAt, false)).mes);
         } else {
           const { frontmatter, body } = parseAgentFile(fiche.content);
-          unwrap(await requireBridge().agents.write(id, serializeAgentFile({ frontmatter: setFields(frontmatter, { model: modele }), body }), fiche.file.modifiedAt));
+          unwrap(await requirePont().write(id, serializeAgentFile({ frontmatter: setFields(frontmatter, { model: modele }), body }), fiche.file.modifiedAt));
         }
         await reload();
       },
       create: async (id, content, reglage) => {
-        unwrap(await requireBridge().agents.create(id, content));
+        unwrap(await requirePont().create(id, content));
         await saveMeta(id, reglage);
         await reload();
       },
-      history: async (id) => unwrap(await requireBridge().agents.history(id)),
-      readVersion: async (id, versionId) => unwrap(await requireBridge().agents.readVersion(id, versionId)),
-      reveal: async (id) => unwrap(await requireBridge().agents.reveal(id)),
+      history: async (id) => unwrap(await requirePont().history(id)),
+      readVersion: async (id, versionId) => unwrap(await requirePont().readVersion(id, versionId)),
+      reveal: async (id) => unwrap(await requirePont().reveal(id)),
     }),
-    [roles, tous, mes, status, error, dir, meta, reload, requireBridge, saveMeta, pris],
+    [roles, tous, mes, status, error, dir, meta, reload, requirePont, saveMeta, pris, serveurAncien, bridge],
   );
 
   return <AgentsContext.Provider value={api}>{children}</AgentsContext.Provider>;

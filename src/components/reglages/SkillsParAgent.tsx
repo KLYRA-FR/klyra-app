@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Bouton } from "@/components/ui/Bouton";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useAgents } from "@/lib/agents";
-import { getBridge, unwrap } from "@/lib/bridge";
-import { useReglages } from "@/lib/reglages";
+import { getBridge, unwrap, type Reponse } from "@/lib/bridge";
+import { dansEspace } from "@/lib/lieux";
+import { useReglagesAgents } from "@/lib/reglages-agents";
 import { useWorkspace } from "@/lib/workspace";
 import { definirSkill, figerChoix, skillRecue, type OrigineSkill } from "../../../electron/skills-par-agent";
 import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau } from "./ui";
@@ -24,9 +25,14 @@ interface SkillVue {
 export function SkillsParAgent() {
   const { roles } = useAgents();
   const { state } = useWorkspace();
-  const { reglages, erreur, changerSkills } = useReglages();
-  const pont = getBridge()?.reglages?.skillsDisponibles;
-  const projets = state.projects.filter((p) => p.folder && !p.lieu);
+  const { lieu, reglages, erreur, changerSkills } = useReglagesAgents();
+  const bridge = getBridge();
+  const pontVps = bridge?.agents.vps;
+  /* Les skills du serveur affiché, et les projets de ce serveur. */
+  const pont = lieu && pontVps
+    ? (dossier: string | null) => pontVps(lieu, "skills", { dossier }) as Promise<Reponse<{ poste: { nom: string; description: string }[]; projet: { nom: string; description: string }[] }>>
+    : bridge?.reglages?.skillsDisponibles;
+  const projets = state.projects.filter((p) => p.folder && dansEspace(p.lieu, lieu));
   const [projetId, setProjetId] = useState<string | null>(null);
   const projet = projets.find((p) => p.id === projetId) ?? projets[0] ?? null;
   const [agentId, setAgentId] = useState("principal");
@@ -37,8 +43,23 @@ export function SkillsParAgent() {
   const [importEnCours, setImportEnCours] = useState(false);
   const [importPosteEnCours, setImportPosteEnCours] = useState(false);
   const [compte, setCompte] = useState<string | null>(null);
-  const pontImport = getBridge()?.reglages?.importerSkills;
-  const pontPoste = getBridge()?.reglages?.importerSkillsPoste;
+  /* Importer depuis un dossier ou depuis ~/.claude/skills, c'est sur ce PC. Sur un VPS : envoyer celles de ce PC. */
+  const pontImport = lieu ? undefined : bridge?.reglages?.importerSkills;
+  const pontPoste = lieu ? undefined : bridge?.reglages?.importerSkillsPoste;
+  const envoyerDuPc = async () => {
+    if (!lieu || !bridge?.agents.skillsDuPcVersVps) return;
+    setEchec(null);
+    setImportEnCours(true);
+    try {
+      const { ajoutees } = unwrap(await bridge.agents.skillsDuPcVersVps(lieu));
+      setCompte(ajoutees.length ? `${ajoutees.length} skill${ajoutees.length > 1 ? "s" : ""} de ce PC envoyée${ajoutees.length > 1 ? "s" : ""} sur ce serveur.` : "Aucune skill allumée sur ce PC à envoyer.");
+      setRelecture((n) => n + 1);
+    } catch (e) {
+      setEchec(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportEnCours(false);
+    }
+  };
 
   useEffect(() => {
     if (!pont) return;
@@ -58,7 +79,9 @@ export function SkillsParAgent() {
     return () => {
       actif = false;
     };
-  }, [pont, projet?.folder, relecture]);
+    // `pont` change à chaque rendu sur un VPS : on suit le serveur, pas la fonction.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lieu, projet?.folder, relecture]);
 
   const annoncer = (resultat: { ajoutees: string[]; dejaLa: string[] } | null, vide: string) => {
     if (!resultat) return;
@@ -152,6 +175,14 @@ export function SkillsParAgent() {
                 />
               )}
             </div>
+            {lieu && bridge?.agents.skillsDuPcVersVps && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Bouton type="button" variant="blanc" taille="compact" disabled={importEnCours} onClick={() => void envoyerDuPc()}>
+                  {importEnCours ? "Envoi…" : "Envoyer les skills allumées de ce PC"}
+                </Bouton>
+                {compte && <span className="text-ui-xs text-texte-tertiaire">{compte}</span>}
+              </div>
+            )}
             {(pontImport || pontPoste) && (
               <div className="flex flex-wrap items-center gap-2">
                 {pontPoste && (

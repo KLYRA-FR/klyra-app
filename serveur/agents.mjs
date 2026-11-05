@@ -4,15 +4,16 @@
  * quand la conversation le demande (`moteur: "codex"`). Les IA à consulter (ia.mjs) leur sont données
  * par l'outil MCP `demander_ia`, et l'atelier d'un agent à l'assistant (`proposer_agent`,
  * `proposer_choix`, son épreuve : atelier-agent.mjs et epreuve.mjs, les mêmes règles que sur le PC).
- * Ce qui n'existe que sur le PC n'est pas là : outils des fils, Composio, planning, pièces jointes,
+ * Ce qui n'existe que sur le PC n'est pas là : outils des fils, planning, pièces jointes,
  * consommation détaillée.
  *
  * Chaque événement part dans le journal (`journal.mjs`) avec le numéro de la réponse (requestId) :
  * l'app le lit en direct, et rattrape ce qu'elle a manqué en se reconnectant.
  */
+import { creerEquipe } from "./equipe.mjs";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
@@ -30,8 +31,7 @@ import {
   lireSouvenir,
   porteeDeLaFiche,
   promptAvecSkill,
-  skillsConnues,
-} from "./connaissances-agent.mjs";
+  skillsConnues, catalogueSkills } from "./connaissances-agent.mjs";
 import { ecrireBibliotheque, normaliserSkillsRecues, preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
@@ -40,6 +40,8 @@ import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coffre.mjs";
+import { creerCoffreServeur } from "./coffre-serveur.mjs";
+import { creerComposioServeur } from "./composio-serveur.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
@@ -64,6 +66,17 @@ function configurationValide(c) {
     /** Le PC sert son Coffre aux agents du VPS (une version plus ancienne ne le fait pas). */
     coffre: c?.coffre === true,
   };
+}
+
+const CONSIGNE_COMPOSIO = "Pour les apps de la personne (Gmail, Slack, Notion, Google Agenda…), utilise le serveur MCP composio : c'est la connexion de ce serveur. Une app pas encore connectée te donne un lien d'autorisation : transmets-le à la personne.";
+/**
+ * `equipe.json` contient-il tout ce que ce serveur y écrit ? Un fichier d'un ancien serveur porte la bonne
+ * empreinte sans ce que celui-ci ne savait pas garder (toute la configuration, ou le Coffre seul).
+ */
+function equipeComplete(equipe) {
+  const { configuration, skillsParAgent } = equipe;
+  return Boolean(configuration && typeof configuration === "object" && skillsParAgent && typeof skillsParAgent === "object")
+    && Object.keys(configurationValide(null)).every((champ) => champ in configuration);
 }
 
 /** Les mêmes que dans l'app (electron/claude.ts) : ne pas les changer d'un seul côté. */
@@ -117,20 +130,34 @@ export function creerAgents(options) {
   const dossierAgents = path.join(home, ".claude", "agents");
   const fichierEquipe = path.join(donnees, "equipe.json");
 
-  /** Les agents actifs du PC et le nom de l'assistant, envoyés par l'app avec les fiches. */
-  const lireEquipe = () => {
+  /* L'équipe de ce serveur : ses fiches et « Mes agents » vivent ici (cf. equipe.mjs). */
+  const equipeServeur = creerEquipe({ donnees, dossierClaude: path.join(home, ".claude") });
+
+  const lireFichierEquipe = () => {
     try {
-      const equipe = JSON.parse(readFileSync(fichierEquipe, "utf8"));
-      return {
-        assistant: typeof equipe.assistant === "string" ? equipe.assistant : null,
-        actifs: Array.isArray(equipe.actifs) ? equipe.actifs : [],
-        configuration: configurationValide(equipe.configuration),
-        skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
-        empreinte: equipe.empreinte ?? "",
-      };
+      return JSON.parse(readFileSync(fichierEquipe, "utf8"));
     } catch {
-      return { assistant: null, actifs: [], configuration: configurationValide(null), skillsParAgent: validerSkillsParAgent(null), empreinte: "" };
+      return {};
     }
+  };
+  const ecrireFichierEquipe = (contenu) => writeFileSync(fichierEquipe, JSON.stringify(contenu), { mode: 0o600 });
+
+  /** Son équipe et ses réglages. */
+  const lireEquipe = () => {
+    const equipe = lireFichierEquipe();
+    return {
+      assistant: equipeServeur.assistant(),
+      actifs: equipeServeur.actifs(),
+      configuration: configurationValide(equipe.configuration),
+      skillsParAgent: validerSkillsParAgent(equipe.skillsParAgent),
+      /* La configuration telle que l'écran l'a choisie : il la relit pour ses interrupteurs. */
+      configurationEcran: equipe.configurationEcran ?? null,
+      /* Une session repart quand l'équipe ou ses réglages changent, pas selon le PC qui a écrit le dernier. */
+      empreinte: `${equipeServeur.empreinte()}:${JSON.stringify([configurationValide(equipe.configuration), equipe.skillsParAgent ?? null, equipe.skillsLe ?? 0])}`,
+      /* Ce que l'app a envoyé en dernier : elle s'en sert pour ne pas renvoyer deux fois. */
+      recue: equipe.empreinte ?? "",
+      complete: equipeComplete(equipe),
+    };
   };
 
   const trouverClaude = () => {
@@ -169,37 +196,91 @@ export function creerAgents(options) {
   /* ─── Fiches ────────────────────────────────────────────────────── */
 
   /**
-   * Remplace les fiches du VPS par celles des agents actifs du PC. Le dossier des fiches n'a pas d'autre source.
+   * Ce que l'app envoie au VPS : la configuration et les skills. Les fiches et l'assistant ne sont plus pris
+   * ici : le serveur a sa propre équipe (equipe.mjs). Une ancienne app qui les envoie encore ne les écrase pas ;
+   * un serveur sans équipe prend sa première copie (`initialiser`).
    * Si `skills` est un tableau, la bibliothèque de l'app (`donnees/bibliotheque-skills`) devient exactement ces dossiers.
    * Sans le champ (ancien PC) : cette bibliothèque n'est pas touchée. `~/.claude/skills` ne l'est jamais.
    */
   function recevoirFiches(corps) {
     const fiches = Array.isArray(corps?.fiches) ? corps.fiches : null;
     if (!fiches || fiches.length > 100) throw new Error("fiches");
+    /* Une app à jour n'envoie plus que ce que ce PC peut servir au VPS (navigateur, Coffre). Le reste est au serveur. */
     const valides = fiches.filter((f) => f && typeof f.id === "string" && ID_AGENT.test(f.id) && typeof f.contenu === "string" && f.contenu.length <= 200_000);
     if (valides.length !== fiches.length) throw new Error("fiches");
     if (corps.skills !== undefined && !Array.isArray(corps.skills)) throw new Error("fiches");
-    const skills = Array.isArray(corps.skills) ? normaliserSkillsRecues(corps.skills) : null;
-    mkdirSync(dossierAgents, { recursive: true });
-    const gardes = new Set(valides.map((f) => `${f.id}.md`));
-    for (const nom of readdirSync(dossierAgents)) {
-      if (nom.endsWith(".md") && !gardes.has(nom)) rmSync(path.join(dossierAgents, nom), { force: true });
-    }
-    for (const f of valides) writeFileSync(path.join(dossierAgents, `${f.id}.md`), f.contenu, { mode: 0o600 });
-    if (skills !== null) ecrireBibliotheque(path.join(donnees, "bibliotheque-skills"), skills);
-    const actifs = valides.map((f) => ({ id: f.id, nom: typeof f.nom === "string" && f.nom.trim() ? f.nom.trim().slice(0, 80) : f.id }));
-    const assistant = typeof corps.assistant === "string" ? corps.assistant.trim().slice(0, 80) || null : null;
-    writeFileSync(
-      fichierEquipe,
-      JSON.stringify({
-        assistant,
-        actifs,
-        configuration: configurationValide(corps.configuration),
-        skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
+    const actuel = lireFichierEquipe();
+    /* Réglés sur ce serveur, ses réglages sont à lui : un envoi complet d'une ancienne app ne les remet pas à ceux du PC. */
+    if (corps.partielle === true || actuel.reglagesLe) {
+      const { navigateur, coffre } = corps.configuration ?? {};
+      ecrireFichierEquipe({
+        ...actuel,
+        configuration: { ...configurationValide(actuel.configuration), navigateur: navigateur === true, coffre: coffre === true },
+        /* Jamais choisie ici (équipe reçue avant, ou envoi passé avant l'écran) : l'écran montre ce qui a été copié, pas les valeurs par défaut. */
+        configurationEcran: actuel.configurationEcran ?? corps.configurationEcran ?? null,
+        skillsParAgent: validerSkillsParAgent(actuel.skillsParAgent),
         empreinte: String(corps.empreinte ?? "").slice(0, 80),
-      }),
-      { mode: 0o600 },
-    );
+      });
+      return;
+    }
+    const skills = Array.isArray(corps.skills) ? normaliserSkillsRecues(corps.skills) : null;
+    if (!equipeServeur.initialise()) equipeServeur.appeler("initialiser", { fiches: valides, assistant: corps.assistant });
+    if (skills !== null) ecrireBibliotheque(path.join(donnees, "bibliotheque-skills"), skills);
+    ecrireFichierEquipe({
+      ...actuel,
+      configuration: configurationValide(corps.configuration),
+      configurationEcran: corps.configurationEcran ?? actuel.configurationEcran ?? null,
+      skillsParAgent: validerSkillsParAgent(corps.skillsParAgent),
+      empreinte: String(corps.empreinte ?? "").slice(0, 80),
+      skillsLe: skills !== null ? Date.now() : actuel.skillsLe,
+    });
+  }
+
+  /** Les demandes de l'écran sur l'équipe de ce serveur : ses fiches (equipe.mjs), ses réglages et ses skills. */
+  function appelerEquipe(methode, corps = {}) {
+    switch (methode) {
+      case "reglages": {
+        const { configurationEcran, skillsParAgent } = lireEquipe();
+        return { configuration: configurationEcran, skillsParAgent };
+      }
+      case "reglages-ecrire": {
+        const actuel = lireFichierEquipe();
+        ecrireFichierEquipe({
+          ...actuel,
+          ...(corps.configuration
+            ? {
+                configuration: { ...configurationValide(corps.configuration), navigateur: actuel.configuration?.navigateur === true, coffre: actuel.configuration?.coffre === true },
+                configurationEcran: corps.configurationEcran ?? null,
+              }
+            : {}),
+          ...(corps.skillsParAgent ? { skillsParAgent: validerSkillsParAgent(corps.skillsParAgent) } : {}),
+          reglagesLe: Date.now(),
+        });
+        return appelerEquipe("reglages");
+      }
+      case "skills":
+        return catalogueSkills(path.join(home, ".claude"), corps.dossier ? projetValide(corps.dossier) : null);
+      case "skills-recevoir": {
+        /* Envoyées d'un autre serveur : ajoutées à sa bibliothèque, sans retirer les siennes. */
+        const recues = normaliserSkillsRecues(Array.isArray(corps.skills) ? corps.skills : []);
+        const dest = path.join(donnees, "bibliotheque-skills");
+        const attente = mkdtempSync(path.join(donnees, "skills-"));
+        try {
+          ecrireBibliotheque(attente, recues);
+          mkdirSync(dest, { recursive: true, mode: 0o700 });
+          for (const s of recues) {
+            rmSync(path.join(dest, s.dossier), { recursive: true, force: true });
+            cpSync(path.join(attente, s.dossier), path.join(dest, s.dossier), { recursive: true });
+          }
+        } finally {
+          rmSync(attente, { recursive: true, force: true });
+        }
+        ecrireFichierEquipe({ ...lireFichierEquipe(), skillsLe: Date.now() });
+        return { ajoutees: recues.map((s) => s.dossier) };
+      }
+      default:
+        return equipeServeur.appeler(methode, corps);
+    }
   }
 
   /**
@@ -279,7 +360,7 @@ export function creerAgents(options) {
 
   const listeAgents = (agents) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
   const ici = () =>
-    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les outils de l'app (fils, Composio) n'existent pas ici. Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}${configurationDe().coffre ? `\n\n${CONSIGNE_COFFRE} Le coffre est sur l'ordinateur de la personne ; un fichier où tu écris un secret est sur ce VPS, sous ton dossier.` : ""}`;
+    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les fils de l'app n'existent pas ici.${composioServeur.mcp() ? ` ${CONSIGNE_COMPOSIO}` : ""} Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
 
   function consigneAssistant() {
     const { assistant, actifs } = lireEquipe();
@@ -306,9 +387,13 @@ export function creerAgents(options) {
   /* Le navigateur de KLYRA, sur le PC de la personne : les appels lui sont relayés par le journal (cf. navigateur.mjs). */
   const navigateur = creerRelaisNavigateur({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
   options.ia?.surNavigateur?.({ actif: () => configurationDe().navigateur, appeler: navigateur.appeler });
-  /* Le Coffre de KLYRA, sur le PC de la personne : relayé par le journal, jamais une valeur dedans (cf. coffre.mjs). */
-  const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees });
-  options.ia?.surCoffre?.({ actif: () => configurationDe().coffre, appeler: coffre.appeler });
+  /* Le Coffre de ce serveur : à lui seul, ses agents s'en servent sans le PC, jamais une valeur dans une réponse. */
+  const coffreServeur = creerCoffreServeur({ donnees });
+  const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees, local: coffreServeur });
+  options.ia?.surCoffre?.({ actif: () => true, appeler: coffre.appeler });
+  /* Les apps de la personne par Composio : la connexion de ce serveur, à lui seul (cf. composio-serveur.mjs). */
+  const composioServeur = creerComposioServeur({ donnees, coffre: coffreServeur, ...(options.fetch ? { fetch: options.fetch } : {}) });
+  options.ia?.surComposio?.(composioServeur.mcp);
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
   const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
   options.ia?.surWorkflows?.({ appeler: workflows.appeler });
@@ -418,7 +503,7 @@ export function creerAgents(options) {
     consignesKlyra: () => lireEquipe().configuration.consignes,
     estActif,
     mcp: mcpIa,
-    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.mcp() ? 1 : 0}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.codex !== undefined ? { codex: options.codex } : {}),
   });
@@ -432,7 +517,7 @@ export function creerAgents(options) {
     consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
     consignesKlyra: () => lireEquipe().configuration.consignes,
     mcp: mcpIa,
-    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}`,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.mcp() ? 1 : 0}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.grok !== undefined ? { grok: options.grok } : {}),
   });
@@ -802,7 +887,7 @@ export function creerAgents(options) {
           // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
-          ...(mcp && configuration.coffre ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
+          ...(mcp ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
           // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
           ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
         );
@@ -866,8 +951,14 @@ export function creerAgents(options) {
     utilisation: () => utilisationClaude,
   };
 
+  /** L'empreinte annoncée à l'app : vide si le fichier n'est pas complet, pour qu'elle renvoie l'équipe. */
+  const empreinteEquipe = () => {
+    const { recue, complete } = lireEquipe();
+    return complete ? recue : "";
+  };
+
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe: () => lireEquipe().empreinte, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

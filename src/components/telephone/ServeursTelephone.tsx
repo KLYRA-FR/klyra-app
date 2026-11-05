@@ -25,34 +25,17 @@ import {
   retirer,
   retirerServeur,
   libelleServeur,
+  retardDe,
   sondeDe,
   type Carnet,
   type Sonde,
 } from "@/lib/serveur-vps";
+import { Commande } from "@/components/serveur/Commande";
 import { useSupport } from "./poste";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { CHAMP_TELEPHONE, MessageErreur } from "./Controles";
 
 const CHAMP = CHAMP_TELEPHONE;
-
-/** Une commande à copier, sur une ligne qui peut se couper. */
-function Commande({ texte }: { texte: string }) {
-  const [copie, setCopie] = useState(false);
-  const copier = () => {
-    void navigator.clipboard?.writeText(texte).then(() => {
-      setCopie(true);
-      setTimeout(() => setCopie(false), 2000);
-    });
-  };
-  return (
-    <div className="flex items-start gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
-      <code className="min-w-0 flex-1 text-ui-xs leading-[1.6] [overflow-wrap:anywhere] text-texte-principal">{texte}</code>
-      <Bouton variant="blanc" taille="compact" onClick={copier} className="relative after:absolute after:inset-x-0 after:-inset-y-1.5">
-        {copie ? "Copiée" : "Copier"}
-      </Bouton>
-    </div>
-  );
-}
 
 function Etape({ numero, titre, children }: { numero: number; titre: string; children: ReactNode }) {
   return (
@@ -98,6 +81,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
   const [sondes, setSondes] = useState<Record<string, Sonde>>({});
+  const [retards, setRetards] = useState<Record<string, boolean>>({});
   const [agentsVps, setAgentsVps] = useState<Record<string, string>>({});
   const [repris, setRepris] = useState(false);
   const dernierRepris = useRef<string | null>(null);
@@ -138,6 +122,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
       void interroger(serveur.adresse, controle.signal).then((lecture) => {
         if (controle.signal.aborted) return;
         setSondes((etat) => ({ ...etat, [serveur.id]: sondeDe(lecture) }));
+        setRetards((etat) => ({ ...etat, [serveur.id]: retardDe(lecture) }));
         if (lecture.ok && lecture.agents) setAgentsVps((etat) => ({ ...etat, [serveur.id]: lecture.agents! }));
       });
     }
@@ -259,7 +244,7 @@ export function EcranServeurs({ cadre }: { cadre: "telephone" | "bureau" }) {
                 <div className="flex min-h-11 w-full flex-col justify-center text-left">
                   <span className="text-body-s text-texte-principal">{serveur.nom}</span>
                   <span className="text-ui-xs text-texte-secondaire">{serveur.adresse}</span>
-                  <span className="text-ui-xs text-texte-secondaire">{libelleServeur(serveur.etat, sondes[serveur.id], agentsVps[serveur.id])}</span>
+                  <span className="text-ui-xs text-texte-secondaire">{libelleServeur(serveur.etat, sondes[serveur.id], agentsVps[serveur.id], retards[serveur.id])}</span>
                 </div>
                 <span className="mt-1 flex gap-4">
                   {serveur.etat === "joint" ? (

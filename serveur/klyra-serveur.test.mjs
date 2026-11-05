@@ -7,6 +7,7 @@ import { creerAgents } from "./agents.mjs";
 import { filtreSkills, nomsSkills } from "./connaissances-agent.mjs";
 import { preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { creerIa } from "./ia.mjs";
+import { VERSION_CODE_SERVEUR } from "./version-code.mjs";
 import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, CHEMIN_RENDUS, DUREE_CODE_MS, cleConversation, contexteTelephone, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
 function dossierJetable() {
@@ -33,12 +34,61 @@ async function appel(port, chemin, { methode = "GET", jeton, corps } = {}) {
   return { statut: reponse.status, json, texte, origine: reponse.headers.get("access-control-allow-origin") };
 }
 
+test("un equipe.json écrit par un ancien serveur n’annonce pas d’empreinte : l’app renvoie l’équipe", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  const fichier = path.join(dossier, "equipe.json");
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const annonce = async () => (await appel(ecoute.port, CHEMIN, { jeton })).json.equipe;
+    const base = { assistant: "Cicco", actifs: [], empreinte: "e1" };
+    const configuration = { memoireAgents: true, consignes: null, navigateur: false, coffre: true };
+
+    assert.equal(await annonce(), "", "aucun fichier");
+    writeFileSync(fichier, JSON.stringify(base));
+    assert.equal(await annonce(), "", "sans configuration");
+    writeFileSync(fichier, JSON.stringify({ ...base, configuration: { memoireAgents: true, consignes: null, navigateur: false }, skillsParAgent: {} }));
+    assert.equal(await annonce(), "", "sans le Coffre");
+    writeFileSync(fichier, JSON.stringify({ ...base, configuration }));
+    assert.equal(await annonce(), "", "sans les skills par agent");
+    writeFileSync(fichier, JSON.stringify({ ...base, configuration, skillsParAgent: {} }));
+    assert.equal(await annonce(), "e1", "fichier complet");
+
+    // Ce que ce serveur écrit lui-même est toujours complet, même sans configuration reçue : pas d'envoi en boucle.
+    writeFileSync(fichier, JSON.stringify(base));
+    assert.equal((await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [], assistant: "Cicco", empreinte: "e1" } })).json.equipe, "e1");
+    assert.equal(await annonce(), "e1");
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("le client et le VPS partagent les chemins", () => {
   const lecture = readFileSync(new URL("../electron/lecture-serveur.ts", import.meta.url), "utf8");
   assert.match(lecture, /export const CHEMIN_SERVEUR = "\/klyra\/v1\/serveur"/);
   assert.match(lecture, /export const CHEMIN_APPAIRER = "\/klyra\/v1\/appairer"/);
   assert.match(lecture, /export const CHEMIN_APPAREIL = "\/klyra\/v1\/appareil"/);
   assert.equal(CHEMIN, "/klyra/v1/serveur");
+});
+
+test("lancer.sh pose tout ce que le serveur importe, sinon il ne démarre plus sur le VPS", () => {
+  const ici = import.meta.dirname;
+  const poses = new Set([...readFileSync(path.join(ici, "lancer.sh"), "utf8").matchAll(/\$SOURCE\/([\w.-]+\.mjs)/g)].map((m) => m[1]));
+  const vus = new Set();
+  const suivre = (nom) => {
+    if (vus.has(nom)) return;
+    vus.add(nom);
+    const code = readFileSync(path.join(ici, nom), "utf8");
+    for (const [, importe] of code.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["']\.\/([\w.-]+\.mjs)["']/g)) suivre(importe);
+  };
+  suivre("klyra-serveur.mjs");
+  assert.ok(vus.has("version-code.mjs"), "le serveur lit sa version");
+  assert.deepEqual([...vus].filter((nom) => !poses.has(nom)), []);
 });
 
 test("un code s’échange une fois contre un jeton, qui ouvre le serveur", async () => {
@@ -62,7 +112,8 @@ test("un code s’échange une fois contre un jeton, qui ouvre le serveur", asyn
     assert.equal(encore.statut, 401, "un code ne sert qu’une fois");
 
     const lu = await appel(ecoute.port, CHEMIN, { jeton });
-    assert.deepEqual(lu.json, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1", agents: "absent", equipe: "" });
+    assert.deepEqual(lu.json, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1", versionCode: VERSION_CODE_SERVEUR, agents: "absent", equipe: "" });
+    assert.equal(appaire.json.versionCode, VERSION_CODE_SERVEUR, "l’appairage annonce aussi la version du code");
     assert.equal((await appel(ecoute.port, CHEMIN, { jeton: `${jeton.slice(0, -2)}xx` })).statut, 401);
 
     // Le serveur ne garde que des empreintes.
@@ -436,7 +487,7 @@ test("la mémoire d'un agent du VPS, la configuration KLYRA reçue avec l'équip
   }
 });
 
-test("le Coffre des agents du VPS : relayé au PC par le journal, la valeur jamais dedans", async () => {
+test("le Coffre d'un serveur : à lui seul, sans le PC, jamais une valeur en clair ni dans le journal", async () => {
   const dossier = dossierJetable();
   const home = dossierJetable();
   const journal = creerJournal();
@@ -446,34 +497,49 @@ test("le Coffre des agents du VPS : relayé au PC par le journal, la valeur jama
   const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents, ia });
   try {
     const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
-    const equipe = (configuration, empreinte) => appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches: [], assistant: null, configuration, empreinte } });
     const config = JSON.parse(ia.configMcp({ agent: "hugo", conversation: "dm-hugo" })).mcpServers.klyra;
     const mcp = async (method, params = {}) => (await (await fetch(config.url, { method: "POST", headers: config.headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) })).json()).result;
-    // Un PC qui ne sert pas son coffre (ancienne version) : pas d'outils.
-    assert.equal((await equipe({ memoireAgents: true, consignes: null }, "c0")).statut, 200);
-    assert.ok(!(await mcp("tools/list")).tools.some((t) => t.name.startsWith("coffre_")));
-    assert.equal((await equipe({ memoireAgents: true, consignes: null, coffre: true }, "c1")).statut, 200);
-    assert.deepEqual((await mcp("tools/list")).tools.filter((t) => t.name.startsWith("coffre_")).map((t) => t.name), ["coffre_lister", "coffre_demander", "coffre_enregistrer", "coffre_ecrire_fichier"]);
-    // Sans PC à l'écoute : dit tout de suite.
-    const seul = await mcp("tools/call", { name: "coffre_lister", arguments: {} });
-    assert.equal(seul.isError, true);
-    assert.match(seul.content[0].text, /pas ouverte/);
+    const coffre = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/coffre/${methode}`, { methode: "POST", jeton, corps });
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.coffrePropre, true);
 
-    // Le PC suit le journal : l'appel y arrive, sans la valeur ; le PC la lit une fois par la route, puis répond.
-    const VALEUR = "ghp_JamaisDansLeJournal_7";
-    const flux = lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.event?.type === "coffre"));
-    await new Promise((r) => setTimeout(r, 200));
-    const reponse = mcp("tools/call", { name: "coffre_enregistrer", arguments: { variable: "GITHUB_TOKEN", nom: "Jeton GitHub", valeur: VALEUR } });
-    const { recus } = await flux;
-    const evenement = recus.find((e) => e.event?.type === "coffre").event;
-    assert.deepEqual([evenement.nom, evenement.agent, evenement.conversation, evenement.arguments.variable], ["coffre_enregistrer", "hugo", "dm-hugo", "GITHUB_TOKEN"]);
-    assert.ok(!JSON.stringify(recus).includes(VALEUR), "la valeur n'est pas dans le journal");
-    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", corps: { requestId: evenement.id, lire: true } })).statut, 401, "un appareil inconnu ne lit rien");
-    const lue = await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, lire: true } });
-    assert.deepEqual([lue.statut, lue.json.valeur], [200, VALEUR]);
-    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, lire: true } })).statut, 404, "lue une seule fois");
-    assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/coffre`, { methode: "POST", jeton, corps: { requestId: evenement.id, resultat: { texte: "Rangé dans le coffre : GITHUB_TOKEN" } } })).json.ok, true);
-    assert.match((await reponse).content[0].text, /Rangé dans le coffre : GITHUB_TOKEN/);
+    // Aucun PC à l'écoute : les outils sont là et répondent quand même.
+    assert.deepEqual((await mcp("tools/list")).tools.filter((t) => t.name.startsWith("coffre_")).map((t) => t.name), ["coffre_lister", "coffre_demander", "coffre_enregistrer", "coffre_ecrire_fichier"]);
+    const vide = await mcp("tools/call", { name: "coffre_lister", arguments: {} });
+    assert.ok(!vide.isError);
+    assert.doesNotMatch(vide.content[0].text, /GITHUB_TOKEN/);
+
+    // Un agent range un secret : ni dans le journal, ni en clair sur le disque, ni dans sa réponse.
+    const VALEUR = "ghp_JamaisEnClair_7";
+    const rangee = await mcp("tools/call", { name: "coffre_enregistrer", arguments: { variable: "GITHUB_TOKEN", nom: "Jeton GitHub", valeur: VALEUR } });
+    assert.match(rangee.content[0].text, /Rangé dans le coffre : GITHUB_TOKEN/);
+    assert.ok(!rangee.content[0].text.includes(VALEUR));
+    assert.ok(!readFileSync(path.join(dossier, "coffre.json"), "utf8").includes(VALEUR));
+    assert.equal((await mcp("tools/call", { name: "coffre_enregistrer", arguments: { variable: "GITHUB_TOKEN", nom: "Autre", valeur: "x" } })).isError, true, "un agent n'écrase pas un secret");
+
+    // Écrit dans un fichier du serveur, sans le voir ; refusé dans les données du serveur.
+    const fichier = path.join(home, "projet", ".env");
+    mkdirSync(path.dirname(fichier), { recursive: true });
+    const ecrit = await mcp("tools/call", { name: "coffre_ecrire_fichier", arguments: { variable: "GITHUB_TOKEN", chemin: fichier } });
+    assert.ok(!ecrit.isError, ecrit.content[0].text);
+    assert.ok(!ecrit.content[0].text.includes(VALEUR));
+    assert.match(readFileSync(fichier, "utf8"), /GITHUB_TOKEN=/);
+    assert.equal((await mcp("tools/call", { name: "coffre_ecrire_fichier", arguments: { variable: "GITHUB_TOKEN", chemin: path.join(dossier, ".env") } })).isError, true);
+
+    // L'écran : sans jeton, rien ; la liste ne donne jamais la valeur ; un secret interdit aux agents leur reste fermé.
+    assert.equal((await appel(ecoute.port, "/klyra/v1/coffre/etat", { methode: "POST", corps: {} })).statut, 401);
+    const etat = (await coffre("etat")).json.resultat;
+    assert.equal(etat.secrets.length, 1);
+    assert.ok(!JSON.stringify(etat).includes(VALEUR) && !("valeur" in etat.secrets[0]));
+    const id = etat.secrets[0].id;
+    assert.equal((await coffre("lire", { id })).json.resultat, VALEUR);
+    assert.equal((await coffre("modifier", { id, champs: { agents: false } })).json.resultat.agents, false);
+    assert.equal((await mcp("tools/call", { name: "coffre_ecrire_fichier", arguments: { variable: "GITHUB_TOKEN", chemin: fichier } })).isError, true);
+    assert.equal((await coffre("ajouter", { entree: { variable: "CLE_PC", nom: "Copiée du PC", valeur: "abc" } })).statut, 200);
+    assert.equal((await coffre("ajouter", { entree: { variable: "CLE_PC", nom: "Encore", valeur: "def" } })).statut, 400);
+    assert.equal((await coffre("ajouter", { entree: { variable: "CLE_PC", nom: "Remplacée", valeur: "def" }, remplacer: true })).statut, 200);
+    assert.equal((await coffre("retirer", { id })).statut, 200);
+    assert.deepEqual((await coffre("etat")).json.resultat.secrets.map((x) => x.variable), ["CLE_PC"]);
+    assert.ok(!JSON.stringify(journal.depuis?.(0) ?? []).includes(VALEUR));
   } finally {
     await ecoute.fermer();
     ia.fermer();
@@ -723,6 +789,80 @@ test("la session de chaque agent par conversation est retenue, et gardée entre 
   }
 });
 
+test("chaque serveur garde son équipe : l'app la lit et la modifie ici, et ne l'écrase plus", async () => {
+  const dossier = dossierJetable();
+  const home = path.join(dossier, "home");
+  mkdirSync(home, { recursive: true });
+  const agents = creerAgents({ home, donnees: path.join(dossier, "donnees"), nomServeur: "VPS", publier: () => {}, spontane: () => {}, claude: null });
+  const ecoute = await ecouter({ dossier: path.join(dossier, "donnees"), port: 0, agents });
+  const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(path.join(dossier, "donnees")), nom: "PC" } })).json.jeton;
+  const equipe = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/equipe/${methode}`, { methode: "POST", jeton, corps });
+  const claude = (id) => path.join(home, ".claude", "agents", `${id}.md`);
+  const fiche = (nom) => `---\nname: ${nom}\ndisplayName: ${nom.toUpperCase()}\n---\nConsignes de ${nom}.`;
+  try {
+    assert.equal((await appel(ecoute.port, "/klyra/v1/equipe/etat", { methode: "POST", corps: {} })).statut, 401);
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.equipePropre, true);
+    assert.equal((await equipe("etat")).json.resultat.initialise, false);
+
+    // Une première copie, une seule fois.
+    const copie = (await equipe("initialiser", { fiches: [{ id: "lou", contenu: fiche("lou") }], assistant: "Cicco" })).json.resultat;
+    assert.equal(copie.copie, true);
+    assert.equal(copie.mes.assistant.nom, "Cicco");
+    assert.ok(existsSync(claude("lou")));
+    assert.equal((await equipe("initialiser", { fiches: [{ id: "autre", contenu: fiche("autre") }] })).json.resultat.copie, false);
+    assert.ok(!existsSync(claude("autre")));
+
+    // Une fiche créée ici, puis désactivée : elle reste au serveur, sans être chargée par Claude Code.
+    assert.equal((await equipe("creer", { id: "iris", contenu: fiche("iris") })).statut, 200);
+    assert.ok(existsSync(claude("iris")));
+    assert.equal((await equipe("creer", { id: "iris", contenu: fiche("iris") })).json.erreur, "existe-deja");
+    assert.equal((await equipe("creer", { id: "../x", contenu: "x" })).json.erreur, "nom-invalide");
+    assert.equal((await equipe("activer", { id: "iris", actif: false })).json.resultat.agents.iris.actif, false);
+    assert.ok(!existsSync(claude("iris")));
+    assert.deepEqual((await equipe("lister")).json.resultat.agents.map((a) => a.name).sort(), ["iris", "lou"]);
+    assert.deepEqual(agents.equipeServeur.actifs(), [{ id: "lou", nom: "LOU" }]);
+
+    // Écrire garde l'ancienne version, et refuse d'écraser une fiche changée entre-temps.
+    const avant = (await equipe("lister")).json.resultat.agents.find((a) => a.name === "lou");
+    assert.equal((await equipe("ecrire", { id: "lou", contenu: fiche("lou") + "\nSuite.", attendu: avant.modifiedAt })).statut, 200);
+    assert.equal((await equipe("ecrire", { id: "lou", contenu: "x", attendu: 1 })).json.erreur, "conflit");
+    assert.match(readFileSync(claude("lou"), "utf8"), /Suite\./);
+    const versions = (await equipe("historique", { id: "lou" })).json.resultat;
+    assert.equal(versions.length, 1);
+    assert.equal((await equipe("version", { id: "lou", version: versions[0].id })).json.resultat, fiche("lou"));
+
+    // Ses préférences restent ici.
+    assert.equal((await equipe("meta-ecrire", { meta: { lou: { teinte: "violet" } } })).statut, 200);
+    assert.deepEqual((await equipe("meta")).json.resultat, { lou: { teinte: "violet" } });
+
+    // Jamais réglés sur ce serveur : l'écran montre ce que le PC a copié, pas les valeurs par défaut.
+    assert.equal((await equipe("reglages")).json.resultat.configuration, null);
+    agents.recevoirFiches({ fiches: [], partielle: true, configuration: {}, configurationEcran: { memoireAgents: false, consignes: null }, empreinte: "e7" });
+    assert.deepEqual((await equipe("reglages")).json.resultat.configuration, { memoireAgents: false, consignes: null });
+    agents.recevoirFiches({ fiches: [], partielle: true, configuration: {}, configurationEcran: { memoireAgents: true, consignes: null }, empreinte: "e7b" });
+    assert.deepEqual((await equipe("reglages")).json.resultat.configuration, { memoireAgents: false, consignes: null }, "une fois là, le PC ne la remplace plus");
+
+    // Réglés sur ce serveur, ses réglages restent à lui, même face à l'envoi complet d'une ancienne app.
+    assert.equal((await equipe("reglages-ecrire", { configuration: { memoireAgents: false, consignes: "Du VPS" }, configurationEcran: { memoireAgents: false } })).statut, 200);
+    agents.recevoirFiches({ fiches: [], assistant: null, configuration: { memoireAgents: true, consignes: "Du PC", coffre: true }, configurationEcran: { memoireAgents: true }, empreinte: "e8" });
+    assert.deepEqual((await equipe("reglages")).json.resultat.configuration, { memoireAgents: false });
+    assert.equal(agents.empreinteEquipe(), "e8", "l'empreinte suit, pour que l'app ne renvoie pas sans fin");
+    // Un fichier partiel reste complet : l'app ne le renvoie pas à chaque message.
+    agents.recevoirFiches({ fiches: [], partielle: true, configuration: { navigateur: true, coffre: true }, empreinte: "e8b" });
+    assert.equal(agents.empreinteEquipe(), "e8b");
+
+    // L'envoi d'une ancienne app n'écrase plus l'équipe.
+    agents.recevoirFiches({ fiches: [{ id: "intrus", nom: "Intrus", contenu: fiche("intrus") }], assistant: "Autre", empreinte: "e9" });
+    assert.equal(agents.empreinteEquipe(), "e9");
+    assert.ok(!existsSync(claude("intrus")));
+    assert.ok(existsSync(claude("lou")));
+    assert.equal(agents.equipeServeur.assistant(), "Cicco");
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
 test("repartie à zéro sur le PC : le VPS ne reprend pas la session qu'il retient, le téléphone suit la neuve", async () => {
   const dossier = dossierJetable();
   const journal = creerJournal();
@@ -751,5 +891,106 @@ test("repartie à zéro sur le PC : le VPS ne reprend pas la session qu'il retie
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("un serveur qui recevait les fiches du PC garde ces agents comme son équipe", async () => {
+  const dossier = dossierJetable();
+  const donnees = path.join(dossier, "donnees");
+  const agentsClaude = path.join(dossier, "home", ".claude", "agents");
+  mkdirSync(agentsClaude, { recursive: true });
+  mkdirSync(donnees, { recursive: true });
+  writeFileSync(path.join(agentsClaude, "hugo.md"), "---\nname: hugo\n---\nCode.");
+  writeFileSync(path.join(donnees, "equipe.json"), JSON.stringify({ assistant: "Cicco", actifs: [{ id: "hugo", nom: "Hugo" }], empreinte: "x" }));
+  const { creerEquipe } = await import("./equipe.mjs");
+  const equipe = creerEquipe({ donnees, dossierClaude: path.join(dossier, "home", ".claude") });
+  try {
+    assert.equal(equipe.initialise(), true);
+    assert.equal(equipe.assistant(), "Cicco");
+    assert.deepEqual(equipe.actifs(), [{ id: "hugo", nom: "hugo" }]);
+    assert.ok(existsSync(path.join(agentsClaude, "hugo.md")));
+    assert.ok(existsSync(path.join(donnees, "equipe", "hugo.md")));
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("l'espace d'un serveur : ses éléments restent ici, retirés comme écrits, et un seul numéro dit si ça a changé", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "VPS", publier: () => {}, spontane: () => {}, claude: null });
+  const ecoute = await ecouter({ dossier, port: 0, agents });
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const espace = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/espace/${methode}`, { methode: "POST", jeton, corps });
+    assert.equal((await appel(ecoute.port, "/klyra/v1/espace/lire", { methode: "POST", corps: {} })).statut, 401);
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.espacePropre, true);
+    assert.deepEqual((await espace("lire")).json.resultat, { revision: 0, elements: [], supprimes: {} });
+
+    const conversation = { chat: { id: "dm-iris@vps:8791", title: "Iris" }, messages: [{ id: "m1", chatId: "dm-iris@vps:8791" }] };
+    const ecrit = await espace("ecrire", { elements: [{ type: "conversation", id: "dm-iris@vps:8791", valeur: conversation }, { type: "projet", id: "p1", valeur: { id: "p1" } }] });
+    assert.equal(ecrit.json.resultat.revision, 1);
+    assert.deepEqual((await espace("lire", { depuis: 1 })).json.resultat, { revision: 1, inchange: true });
+    const lu = (await espace("lire", { depuis: 0 })).json.resultat;
+    assert.deepEqual(lu.elements.find((e) => e.type === "conversation").valeur, conversation);
+    assert.equal(lu.elements.length, 2);
+
+    // Retiré : il part, et l'autre appareil le saura. Réécrit plus tard : il revient.
+    assert.equal((await espace("ecrire", { supprimes: [{ type: "projet", id: "p1" }] })).json.resultat.revision, 2);
+    const apres = (await espace("lire")).json.resultat;
+    assert.deepEqual(apres.elements.map((e) => e.id), ["dm-iris@vps:8791"]);
+    assert.ok(apres.supprimes.projet.p1);
+    await espace("ecrire", { elements: [{ type: "projet", id: "p1", valeur: { id: "p1" } }] });
+    assert.ok(!(await espace("lire")).json.resultat.supprimes.projet.p1);
+
+    // Ce qui n'en est pas est refusé, et rien ne sort du dossier.
+    assert.equal((await espace("ecrire", { elements: [{ type: "../../etc", id: "x", valeur: 1 }] })).statut, 400);
+    assert.equal((await espace("ecrire", { elements: [{ type: "projet", id: "", valeur: 1 }] })).statut, 400);
+    assert.equal((await espace("autre")).statut, 400);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Composio : chaque serveur a son compte, gardé chiffré, et ses agents le joignent sans le PC", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const ia = creerIa({ donnees: dossier, version: "1" });
+  await ia.demarrer();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "VPS", publier: () => {}, spontane: () => {}, ia, claude: null });
+  const ecoute = await ecouter({ dossier, port: 0, agents, ia });
+  const jetons = { clientId: "client-1", acces: "acces-secret", renouvellement: "renouveau-secret", expireLe: Date.now() + 3_600_000, compte: "corentin@exemple.fr" };
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const composio = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/composio/${methode}`, { methode: "POST", jeton, corps });
+    assert.equal((await appel(ecoute.port, "/klyra/v1/composio/etat", { methode: "POST", corps: {} })).statut, 401);
+    assert.equal((await composio("etat")).json.resultat.connecte, false);
+    assert.equal(JSON.parse(ia.configMcp({ agent: "hugo", conversation: "c" })).mcpServers.composio, undefined);
+
+    assert.equal((await composio("adopter", { jetons: { acces: "sans le reste" } })).statut, 400);
+    const adopte = (await composio("adopter", { jetons })).json.resultat;
+    assert.deepEqual([adopte.connecte, adopte.compte], [true, "corentin@exemple.fr"]);
+    assert.ok(!JSON.stringify(adopte).includes("acces-secret"), "l'état ne donne jamais un jeton");
+    assert.ok(!readFileSync(path.join(dossier, "composio-connect.json"), "utf8").includes("acces-secret"), "rien en clair sur le disque");
+
+    const mcp = JSON.parse(ia.configMcp({ agent: "hugo", conversation: "c" })).mcpServers;
+    assert.equal(mcp.composio.url, "https://connect.composio.dev/mcp");
+    assert.equal(mcp.composio.headers.Authorization, "Bearer acces-secret");
+    assert.ok(mcp.klyra);
+
+    // Relu au redémarrage : le compte reste à ce serveur.
+    const relu = creerAgents({ home, donnees: dossier, nomServeur: "VPS", publier: () => {}, spontane: () => {}, claude: null });
+    assert.equal((await relu.composioServeur.appeler("etat")).connecte, true);
+
+    assert.equal((await composio("deconnecter")).json.resultat.connecte, false);
+    assert.equal(JSON.parse(ia.configMcp({ agent: "hugo", conversation: "c" })).mcpServers.composio, undefined);
+    assert.ok(!existsSync(path.join(dossier, "composio-connect.json")));
+  } finally {
+    await ecoute.fermer();
+    ia.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });

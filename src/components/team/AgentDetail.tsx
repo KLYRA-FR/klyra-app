@@ -9,6 +9,7 @@ import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { Markdown } from "@/components/ui/Markdown";
+import { useLieuActif, useServeursRelies } from "@/lib/lieux";
 import { useAgents } from "@/lib/agents";
 import { annoncer } from "@/lib/annonces";
 import { useBibliotheque } from "@/lib/bibliotheque";
@@ -148,7 +149,9 @@ export function AgentDetail({ role }: { role: Role }) {
 
 function FicheAgent({ role }: { role: Role }) {
   const router = useRouter();
-  const { canEdit, reveal, tous, roles, activer, ajouter } = useAgents();
+  const { canEdit, reveal, tous, roles, activer, ajouter, copierVers } = useAgents();
+  const lieuActif = useLieuActif();
+  const serveurs = useServeursRelies();
   const { state } = useWorkspace();
   const versDirect = useIdDirect();
   const compte = useCompte();
@@ -213,6 +216,20 @@ function FicheAgent({ role }: { role: Role }) {
     /* Sa version gardée face au modèle : la comparaison reste à portée, sans bandeau. */
     if (lien.type === "modele" && lien.ecartee) {
       lignes.push({ id: "comparer", icone: "refresh-01", titre: "Comparer au modèle KLYRA", onChoisir: () => router.push(`/equipe?agent=${role.id}&mode=maj`) });
+    }
+    /* Les autres serveurs : une copie, un agent distinct là-bas. */
+    const autres = [...(lieuActif ? [{ adresse: null as string | null, nom: "Ce PC" }] : []), ...serveurs.filter((s) => s.adresse !== lieuActif).map((s) => ({ adresse: s.adresse as string | null, nom: s.nom }))];
+    for (const serveur of autres) {
+      lignes.push({
+        id: `copier-${serveur.adresse ?? "pc"}`,
+        icone: "copy-right",
+        titre: `Copier vers ${serveur.nom}`,
+        onChoisir: () =>
+          void agir(async () => {
+            await copierVers(role.id, serveur.adresse);
+            annoncer(`${role.name} copié sur ${serveur.nom}.`);
+          }),
+      });
     }
     lignes.push({ id: "desactiver", icone: "stop-01", titre: "Désactiver", separee: lignes.length > 0, onChoisir: () => void desactiver() });
   } else if (statut === "desactive") {

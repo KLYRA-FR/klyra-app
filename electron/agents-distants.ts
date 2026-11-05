@@ -6,6 +6,7 @@ import { enregistrerConsommation } from "./consommation";
 import { ligneValide } from "./consommation-ecart";
 import type { AgentEvent, StreamOptions } from "./moteurs/types";
 import { contexteDe, type ContexteReponse } from "./contexte-distant";
+import { CHEMIN_SERVEUR } from "./lecture-serveur";
 import type { SkillEnvoyee } from "./preparation-fournisseur";
 import type { SkillsParAgent } from "./skills-par-agent";
 
@@ -66,6 +67,8 @@ export interface Equipe {
    * ses sessions : messages du PC, du téléphone PC fermé, routines du serveur.
    */
   configuration: { memoireAgents: boolean; consignes: string | null; navigateur?: boolean; coffre?: boolean };
+  /** La même, telle que l'écran la relit : un serveur qui n'en a pas encore l'affiche au lieu des valeurs par défaut. */
+  configurationEcran?: unknown;
   /** Skills reçues par chaque agent. Un ancien serveur ignore le champ : tout reste reçu. */
   skillsParAgent: SkillsParAgent;
   /**
@@ -160,6 +163,7 @@ const enCours = new Map<string, string>();
 /** Les réponses déjà montrées à l'interface (demandées ici, ou ouvertes en spontané). */
 const connues = new Set<string>();
 const equipeEnvoyee = new Map<string, string>();
+const equipePropre = new Set<string>();
 
 let curseurs: Record<string, { instance: string; seq: number }> | null = null;
 let ecriture: Promise<void> = Promise.resolve();
@@ -189,7 +193,7 @@ function noterCurseur(origine: string, instance: string, seq: number) {
   }, 500);
 }
 
-async function requete(origine: string, chemin: string, methode: "POST" | "PUT", corps: unknown): Promise<{ status: number; json: unknown }> {
+async function requete(origine: string, chemin: string, methode: "GET" | "POST" | "PUT", corps?: unknown): Promise<{ status: number; json: unknown }> {
   const jeton = jetonDe.get(origine)?.() ?? null;
   if (!jeton) throw new Error("jeton");
   const controle = new AbortController();
@@ -198,7 +202,7 @@ async function requete(origine: string, chemin: string, methode: "POST" | "PUT",
     const reponse = await net.fetch(`${origine}${chemin}`, {
       method: methode,
       headers: { Authorization: `Bearer ${jeton}`, "Content-Type": "application/json" },
-      body: JSON.stringify(corps),
+      body: corps === undefined ? undefined : JSON.stringify(corps),
       signal: controle.signal,
       redirect: "error",
       cache: "no-store",
@@ -313,6 +317,8 @@ async function lireFlux(origine: string, signal: AbortSignal): Promise<void> {
   const url = `${origine}/klyra/v1/agent/evenements?depuis=${curseur?.seq ?? 0}&instance=${encodeURIComponent(curseur?.instance ?? "")}`;
   const reponse = await net.fetch(url, { headers: { Authorization: `Bearer ${jeton}` }, signal, cache: "no-store", redirect: "error" });
   if (!reponse.ok || !reponse.body) throw new Error(`statut ${reponse.status}`);
+  // Le serveur vient peut-être d'être mis à jour, app ouverte : il retrouve l'équipe sans attendre le prochain message.
+  void synchroniserEquipe(origine).catch(() => undefined);
   const lecteur = reponse.body.getReader();
   const decodeur = new TextDecoder();
   let tampon = "";
@@ -397,13 +403,41 @@ export function oublierServeur(origine: string) {
   connexions.delete(origine);
   jetonDe.delete(origine);
   equipeEnvoyee.delete(origine);
+  equipePropre.delete(origine);
 }
 
-/** Envoie au VPS les fiches des agents actifs et les dossiers des skills allumées, si cela a changé depuis le dernier envoi. */
+/**
+ * L'empreinte de l'équipe qu'a le VPS : "" s'il n'en a pas, ou pas toute (cf. `empreinteEquipe`, serveur/agents.mjs).
+ * null s'il ne la donne pas (serveur trop ancien). Un VPS qui ne répond pas : l'erreur remonte.
+ */
+async function empreinteDuServeur(origine: string): Promise<string | null> {
+  const recu = await requete(origine, CHEMIN_SERVEUR, "GET");
+  const corps = recu.json as { equipe?: unknown; equipePropre?: unknown; equipeInitialisee?: unknown } | null;
+  if (corps?.equipePropre === true && corps.equipeInitialisee !== false) equipePropre.add(origine);
+  else equipePropre.delete(origine);
+  const equipe = corps?.equipe;
+  return recu.status === 200 && typeof equipe === "string" ? equipe : null;
+}
+
+/**
+ * Envoie au VPS les fiches des agents actifs, la configuration et les dossiers des skills allumées, si le VPS
+ * n'a pas cette équipe : il a pu être mis à jour ou perdre son fichier depuis le dernier envoi.
+ * Une fois au moins par lancement de l'app, même si les empreintes sont égales : un serveur d'avant
+ * `equipeComplete` annonce la bonne empreinte sur un fichier qui a perdu la configuration.
+ */
 export async function synchroniserEquipe(origine: string): Promise<void> {
   const equipe = liaison?.equipe();
-  if (!equipe || equipeEnvoyee.get(origine) === equipe.empreinte) return;
-  const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", equipe);
+  if (!equipe) return;
+  const surLeServeur = await empreinteDuServeur(origine);
+  if (equipeEnvoyee.get(origine) === equipe.empreinte && (surLeServeur === null || surLeServeur === equipe.empreinte)) return;
+  /*
+   * Un serveur qui garde son équipe et ses réglages ne reçoit que ce que ce PC peut lui servir (navigateur, Coffre).
+   * S'il est neuf (`equipeInitialisee` faux), il reçoit tout, une seule fois : c'est sa première copie.
+   */
+  const corps = equipePropre.has(origine)
+    ? { fiches: [], partielle: true, configuration: { navigateur: equipe.configuration.navigateur, coffre: equipe.configuration.coffre }, configurationEcran: equipe.configurationEcran, empreinte: equipe.empreinte }
+    : equipe;
+  const recu = await requete(origine, "/klyra/v1/agents/fiches", "PUT", corps);
   if (recu.status !== 200) throw new Error("fiches");
   equipeEnvoyee.set(origine, equipe.empreinte);
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useLieuActif } from "@/lib/lieux";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
@@ -42,6 +43,7 @@ export function Marketplace() {
 
 /** La Marketplace en page seule (ancienne adresse) ; le menu mène aux Réglages. */
 export function MarketplaceScreen() {
+  const lieu = useLieuActif();
   return (
     <div className="h-full overflow-y-auto">
       <div className="@container mx-auto flex w-full max-w-[960px] flex-col gap-8 px-5 pt-5 pb-8">
@@ -51,6 +53,11 @@ export function MarketplaceScreen() {
           </h1>
           <p className="m-0 text-ui-s text-texte-secondaire">Les apps que tes agents peuvent utiliser.</p>
         </header>
+        {lieu && (
+          <p role="note" className="m-0 rounded-md bg-fond-surface-grise px-3 py-2 text-ui-s text-texte-secondaire">
+            Composio a ici le compte de ce serveur. Les apps directes et le mode développeur restent ceux de cet ordinateur : les agents de ce serveur ne s’en servent pas.
+          </p>
+        )}
         <CarteComposio />
         <AppsDirectes />
       </div>
@@ -62,14 +69,30 @@ export function MarketplaceScreen() {
 
 /** Composio Connect : la connexion par le navigateur, avec le compte Composio de la personne. */
 function useComposioConnect() {
-  const pont = getBridge()?.composio?.connect;
+  const brut = getBridge()?.composio?.connect;
+  /* Le compte Composio du serveur affiché : chacun le sien. */
+  const lieu = useLieuActif();
+  const [ancien, setAncien] = useState<string | null>(null);
+  const vps = lieu && lieu !== ancien ? brut?.vps : undefined;
+  const pont = useMemo(() => {
+    if (!brut) return undefined;
+    if (!vps || !lieu) return brut;
+    return {
+      etat: () => vps.etat(lieu),
+      connecter: () => vps.connecter(lieu),
+      annuler: () => vps.annuler(),
+      deconnecter: () => vps.deconnecter(lieu),
+    };
+  }, [brut, vps, lieu]);
   const [etat, setEtat] = useState<EtatConnect | null>(null);
   const [erreur, setErreur] = useState("");
   const relire = useCallback(async () => {
     if (!pont) return;
     const r = await pont.etat();
     if (r.ok) setEtat(r.data);
-  }, [pont]);
+    else if (r.code === "serveur-ancien" && lieu) setAncien(lieu);
+    else setErreur(r.message);
+  }, [pont, lieu]);
   useEffect(() => {
     const debut = window.setTimeout(() => void relire(), 0);
     window.addEventListener("focus", relire);
@@ -84,7 +107,7 @@ function useComposioConnect() {
     await relire();
   };
   return {
-    pont, etat, erreur, connecter, relire,
+    pont, etat, erreur, connecter, relire, surVps: !!vps,
     annuler: async () => { await pont?.annuler(); await relire(); },
     deconnecter: async () => { await pont?.deconnecter(); await relire(); },
   };
@@ -132,12 +155,12 @@ function CarteComposio() {
         Connecté{etat.compte ? <> en tant que <span className="font-medium text-texte-principal">{etat.compte}</span></> : ""}. Tes agents branchent une app la première fois qu’ils en ont besoin : Composio te donne un lien à valider.
       </p>}
       {(connect.erreur || etat?.erreur) && !etat?.enCours && <Erreur>{connect.erreur || etat?.erreur}</Erreur>}
-      <details open={dev || !!api.etat?.configure} onToggle={(e) => setDev(e.currentTarget.open)} className="border-t border-bordure-subtile pt-4">
+      {!connect.surVps && <details open={dev || !!api.etat?.configure} onToggle={(e) => setDev(e.currentTarget.open)} className="border-t border-bordure-subtile pt-4">
         <summary className="cursor-pointer text-ui-xs text-texte-tertiaire">Mode développeur : clé de projet</summary>
         <div className="mt-4 flex flex-col gap-4">
           <ModeDeveloppeur key={api.scope} api={api} />
         </div>
-      </details>
+      </details>}
       {confirmation}
     </section>
   );
