@@ -255,7 +255,7 @@ function CeTelephone() {
                 <Link href="/serveurs" className="flex min-h-11 items-center justify-between gap-3 py-2">
                   <span className="min-w-0">
                     <span className="block truncate text-ui text-texte-principal">{s.nom}</span>
-                    <span className="block text-ui-xs text-texte-secondaire">{libelleServeur(s.etat, sondes[s.id]?.sonde, sondes[s.id]?.agents)}</span>
+                    <span className="block text-ui-xs text-texte-secondaire">{libelleServeur(s.etat, sondes[s.id]?.sonde, sondes[s.id]?.agents, sondes[s.id]?.retard)}</span>
                   </span>
                   <Icon name="chevron-right" size={16} className="shrink-0 text-icone-secondaire" />
                 </Link>

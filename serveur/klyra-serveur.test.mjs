@@ -7,6 +7,7 @@ import { creerAgents } from "./agents.mjs";
 import { filtreSkills, nomsSkills } from "./connaissances-agent.mjs";
 import { preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { creerIa } from "./ia.mjs";
+import { VERSION_CODE_SERVEUR } from "./version-code.mjs";
 import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, CHEMIN_RENDUS, DUREE_CODE_MS, cleConversation, contexteTelephone, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
 function dossierJetable() {
@@ -75,17 +76,19 @@ test("le client et le VPS partagent les chemins", () => {
   assert.equal(CHEMIN, "/klyra/v1/serveur");
 });
 
-test("l'installation télécharge tous les fichiers du serveur", () => {
-  const lancer = readFileSync(new URL("./lancer.sh", import.meta.url), "utf8");
+test("lancer.sh pose tout ce que le serveur importe, sinon il ne démarre plus sur le VPS", () => {
+  const ici = import.meta.dirname;
+  const poses = new Set([...readFileSync(path.join(ici, "lancer.sh"), "utf8").matchAll(/\$SOURCE\/([\w.-]+\.mjs)/g)].map((m) => m[1]));
   const vus = new Set();
   const suivre = (nom) => {
     if (vus.has(nom)) return;
     vus.add(nom);
-    const code = readFileSync(new URL(`./${nom}`, import.meta.url), "utf8");
-    for (const m of code.matchAll(/from\s+"\.\/([^"]+\.mjs)"/g)) suivre(m[1]);
+    const code = readFileSync(path.join(ici, nom), "utf8");
+    for (const [, importe] of code.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["']\.\/([\w.-]+\.mjs)["']/g)) suivre(importe);
   };
   suivre("klyra-serveur.mjs");
-  for (const nom of vus) assert.ok(lancer.includes(`"$SOURCE/${nom}"`), `lancer.sh doit télécharger ${nom}`);
+  assert.ok(vus.has("version-code.mjs"), "le serveur lit sa version");
+  assert.deepEqual([...vus].filter((nom) => !poses.has(nom)), []);
 });
 
 test("un code s’échange une fois contre un jeton, qui ouvre le serveur", async () => {
@@ -109,7 +112,8 @@ test("un code s’échange une fois contre un jeton, qui ouvre le serveur", asyn
     assert.equal(encore.statut, 401, "un code ne sert qu’une fois");
 
     const lu = await appel(ecoute.port, CHEMIN, { jeton });
-    assert.deepEqual(lu.json, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1", agents: "absent", equipe: "" });
+    assert.deepEqual(lu.json, { produit: "klyra-serveur", protocole: 1, nom: "Klyra-vps", version: "1", versionCode: VERSION_CODE_SERVEUR, agents: "absent", equipe: "" });
+    assert.equal(appaire.json.versionCode, VERSION_CODE_SERVEUR, "l’appairage annonce aussi la version du code");
     assert.equal((await appel(ecoute.port, CHEMIN, { jeton: `${jeton.slice(0, -2)}xx` })).statut, 401);
 
     // Le serveur ne garde que des empreintes.
