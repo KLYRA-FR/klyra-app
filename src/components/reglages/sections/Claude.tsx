@@ -9,7 +9,7 @@ import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP } from "@/components/ui/Champ";
 import { getBridge, type RapportAdmin } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
-import { nomAbonnement, useCompteClaude } from "@/lib/compte-claude";
+import { nomAbonnement, useCompteClaude, useComptesClaude } from "@/lib/compte-claude";
 import { Erreur, Groupe, Ligne, Valeur } from "../ui";
 
 const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -23,7 +23,7 @@ function Detail({ libelle, children }: { libelle: string; children: ReactNode })
 }
 
 /** Le compte Claude du poste : l'état, le compte, l'abonnement, et la connexion. */
-function CompteClaude() {
+function CompteClaudeUnique() {
   const { disponible, compte, action, erreur, verifier, connecter, deconnecter } = useCompteClaude();
 
   if (!disponible) {
@@ -96,6 +96,75 @@ function CompteClaude() {
           <Detail libelle="Vérifié">à {heure.format(compte.verifieLe)}</Detail>
         </>
       )}
+    </Groupe>
+  );
+}
+
+export function ComptesClaude() {
+  const { comptes, action, erreur, relire, agir } = useComptesClaude();
+  const installe = comptes?.some((c) => c.installe);
+  return (
+    <Groupe titre="Comptes" description="Ajoute un compte sans déconnecter les autres. Tes agents gardent le compte qu’ils utilisent déjà.">
+      <div id="reglage-compte-claude" className="klyra-reglage scroll-mt-6">
+        {!comptes && <Ligne libelle="Vérification des comptes Claude…" />}
+        {comptes?.map((compte, index) => {
+          const nom = compte.email ?? (compte.poste ? "Compte des agents" : `Compte Claude ${index + 1}`);
+          const enCours = action?.id === compte.id ? action.type : null;
+          return (
+            <section key={compte.id} aria-label={nom} className="border-b border-bordure-subtile py-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <span aria-hidden="true" className={cn("flex size-10 shrink-0 items-center justify-center rounded-full", compte.connecte ? "klyra-orbe" : "bg-fond-surface-grise text-icone-secondaire")}>
+                  <Icon name={compte.connecte ? "check-01" : "users-profiles-01"} size={20} />
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="break-words text-ui font-semibold text-texte-principal">{nom}</span>
+                  <span className="text-ui-xs text-texte-tertiaire">
+                    {compte.erreur ? "Vérification impossible" : !compte.installe ? "Claude Code est introuvable sur ce poste" : compte.connecte ? `Connecté${compte.abonnement ? ` · ${nomAbonnement(compte.abonnement)}` : ""}` : "Pas connecté"}
+                  </span>
+                  <span className="text-ui-xs text-texte-secondaire">{compte.poste ? "Compte utilisé par les agents" : "Compte supplémentaire"}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {compte.installe && !compte.erreur && (
+                    <Bouton variant="blanc" taille="md" disabled={!!action} onClick={() => void agir(compte.connecte ? "deconnexion" : "connexion", compte.id)}>
+                      {enCours === "connexion" ? "En attente du navigateur…" : enCours === "deconnexion" ? "Déconnexion…" : compte.connecte ? "Se déconnecter" : "Se connecter"}
+                    </Bouton>
+                  )}
+                  <Bouton variant="discret" taille="md" disabled={!!action} iconeGauche={<Icon name="refresh-01" size={20} />} onClick={() => void agir("verification", compte.id)}>
+                    {enCours === "verification" ? "Vérification…" : "Vérifier"}
+                  </Bouton>
+                </div>
+              </div>
+              {compte.connecte && (
+                <>
+                  <Detail libelle="Organisation">{compte.organisation ?? "—"}</Detail>
+                  <Detail libelle="Facturation">{compte.methode === "claude.ai" ? "Comprise dans l’abonnement claude.ai" : compte.methode === "console" ? "À l’usage (Console Anthropic)" : compte.methode ?? "—"}</Detail>
+                </>
+              )}
+              {compte.erreur ? <Erreur>{compte.erreur}</Erreur> : compte.installe && <Detail libelle="Vérifié">à {heure.format(compte.verifieLe)}</Detail>}
+            </section>
+          );
+        })}
+        {installe && (
+          <div className="py-4">
+            <BoutonPrincipal disabled={!!action} onClick={() => void agir("connexion")}>
+              {action?.id === "nouveau" ? "En attente du navigateur…" : "Ajouter un compte Claude"}
+            </BoutonPrincipal>
+          </div>
+        )}
+        {action?.type === "connexion" && (
+          <p role="status" className="m-0 rounded-md bg-fond-page p-3 text-ui-s text-texte-principal">
+            Connecte le compte voulu sur la page Anthropic ouverte dans ton navigateur, puis reviens ici.
+          </p>
+        )}
+        {erreur && <Erreur>{erreur}</Erreur>}
+        {!comptes && erreur && <Bouton variant="discret" taille="md" onClick={() => void relire()}>Réessayer</Bouton>}
+        {comptes?.[0]?.installe && (
+          <>
+            <Detail libelle="Claude Code">{comptes[0].version ? `Version ${comptes[0].version}` : "—"}</Detail>
+            <Ligne libelle="Emplacement"><Valeur mono>{comptes[0].chemin?.replace(/^\/Users\/[^/]+/, "~")}</Valeur></Ligne>
+          </>
+        )}
+      </div>
     </Groupe>
   );
 }
@@ -222,7 +291,7 @@ function OrganisationConsole() {
 export function Claude() {
   return (
     <>
-      <CompteClaude />
+      {getBridge()?.claude.comptes ? <ComptesClaude /> : <CompteClaudeUnique />}
       <Groupe titre="Utilisation" description="Ce qu’il reste sur la session de 5 h et sur la semaine. Survole pour le détail, clique pour mettre à jour.">
         <div id="reglage-utilisation" className="klyra-reglage -mx-4 scroll-mt-6 px-2 py-2">
           <CarteUtilisation />
