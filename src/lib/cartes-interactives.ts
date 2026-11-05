@@ -36,3 +36,48 @@ export function occupations(creneau: Creneau, evenements: readonly Evenement[]):
     return d < fin && debut < f;
   });
 }
+
+/* ─── Le planning sur le téléphone ────────────────────────────────── */
+
+/** Les jours que couvrent des créneaux, pour lire le calendrier du compte (fin exclue). */
+export function fenetreCreneaux(creneaux: readonly Creneau[]): { debut: string; fin: string; finMs: number } | null {
+  if (!creneaux.length) return null;
+  const jours = creneaux.map((c) => c.date).sort();
+  const [a, m, j] = jours.at(-1)!.split("-").map(Number);
+  const lendemain = new Date(a, m - 1, j + 1);
+  const fin = `${lendemain.getFullYear()}-${String(lendemain.getMonth() + 1).padStart(2, "0")}-${String(lendemain.getDate()).padStart(2, "0")}`;
+  return { debut: jours[0], fin, finMs: lendemain.getTime() };
+}
+
+/** Un rendez-vous du calendrier du compte, tel que le compte le rend (une occurrence par jour). */
+export interface OccurrencePlanning {
+  id: string;
+  /** Le rendez-vous dont c'est une occurrence (une répétition en a une par jour). */
+  evenementId?: string;
+  titre: string;
+  jour: string;
+  debut: string | null;
+  fin: string | null;
+  jourEntier: boolean;
+}
+
+/**
+ * Le planning à croiser sur le téléphone : le calendrier du compte (déjà développé jour par jour) et
+ * les rendez-vous de l'ordinateur, s'il les a donnés. Un même rendez-vous du compte, copié sur
+ * l'ordinateur, ne compte qu'une fois.
+ */
+export function planningTelephone(compte: readonly OccurrencePlanning[] | null | undefined, poste: readonly Evenement[] | null | undefined): Evenement[] {
+  const duCompte: Evenement[] = (compte ?? []).map((o) => ({
+    id: o.id,
+    titre: o.titre,
+    date: o.jour,
+    debut: o.jourEntier ? null : o.debut,
+    fin: o.jourEntier ? null : o.fin,
+    notes: "",
+    projectId: null,
+    notifie: false,
+    occurrence: true,
+  }));
+  const ids = new Set((compte ?? []).map((o) => o.evenementId ?? o.id));
+  return [...duCompte, ...(poste ?? []).filter((e) => !e.compteId || !ids.has(e.compteId))];
+}
