@@ -59,13 +59,23 @@ describe("pièces jointes du téléphone", () => {
   });
 });
 
+describe("la citation d'une réponse (E2-40)", () => {
+  test("part avec le message, relue champ par champ ; incomplète, ignorée", () => {
+    const citation = { messageId: "m1", roleId: "hugo", extrait: "Le début de la réponse" };
+    expect(lireOptions(ecrireOptions({ citation }))).toEqual({ citation });
+    expect(lireOptions(JSON.stringify({ citation: { messageId: "m1", roleId: "hugo", extrait: "   " } }))).toEqual({});
+    expect(lireOptions(JSON.stringify({ citation: { messageId: "../x y", roleId: "hugo", extrait: "a" } }))).toEqual({});
+    expect(lireOptions(JSON.stringify({ citation: { messageId: "m1", roleId: "hugo", extrait: "a".repeat(400) } })).citation?.extrait).toHaveLength(280);
+  });
+});
+
 describe("export Markdown depuis le compte (T-03)", () => {
   test("le même document qu'au bureau, à partir de la copie du compte", () => {
     const document = exporterDepuisLeCompte({
       conversation: undefined,
       origine: "dm-hugo",
       messages: [
-        { origine: "m1", auteurKind: "user", auteurId: null, creeLe: "2026-11-01T10:00:00.000Z", texte: "Relance le build", parties: '[{"type":"text","text":"Relance le build"}]', statut: null },
+        { origine: "m1", auteurKind: "user", auteurId: null, creeLe: "2026-11-01T10:00:00.000Z", texte: "Relance le build", parties: '[{"type":"text","text":"Relance le build"}]', statut: null, reactions: [], compaction: false },
         {
           origine: "m2",
           auteurKind: "role",
@@ -74,6 +84,8 @@ describe("export Markdown depuis le compte (T-03)", () => {
           texte: "C'est relancé.",
           parties: '[{"type":"etapes","n":2},{"type":"text","text":"C\'est relancé."},{"type":"fichiers","fichiers":[{"nom":"log.txt","chemin":null}]}]',
           statut: "fait",
+          reactions: [],
+          compaction: false,
         },
       ],
       cartes: [{ origine: "hugo", nom: "Hugo", teinte: "vert", roleCourt: "Dev", actif: true }],

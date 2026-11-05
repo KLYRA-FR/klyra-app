@@ -302,6 +302,20 @@ export function sectionsRappels({
 
 /* ─── Reporter ────────────────────────────────────────────────────── */
 
+/** L'urgence en mots : « !! » seul ne se lit pas (§ 2). */
+export const NOMS_URGENCE: Record<0 | 1 | 2 | 3, string> = { 0: "Aucune", 1: "priorité basse", 2: "priorité moyenne", 3: "priorité haute" };
+
+/** Où poser la ligne « maintenant » : avant le premier élément à venir. Les éléments sans heure restent au-dessus. */
+export function placeMaintenant(elements: { debut: string | null }[], heure: string): number {
+  const i = elements.findIndex((e) => e.debut !== null && e.debut > heure);
+  return i === -1 ? elements.length : i;
+}
+
+/** La catégorie qui reprend les rappels d'une catégorie supprimée : la première qui reste, comme `planning.supprimerCategorie`. */
+export function categorieDeRepli<T extends { id: string }>(categories: readonly T[], id: string): T | null {
+  return categories.find((c) => c.id !== id) ?? null;
+}
+
 export const NOMS_REPORT: Record<Report, string> = { "une-heure": "Dans 1 h", "demain-matin": "Demain matin", lundi: "Lundi" };
 
 /** La cible écrite à droite, comme `MenuReporter` : « Aujourd'hui, 15:45 » pour Dans 1 h, le jour en clair pour les autres. */
