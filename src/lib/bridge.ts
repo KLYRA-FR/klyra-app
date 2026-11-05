@@ -152,6 +152,8 @@ export interface CompteClaudeLocal extends CompteClaude {
   id: string;
   poste: boolean;
   erreur?: string;
+  /** Sur un VPS : la page Anthropic est ouverte, le serveur attend le code qu'elle affiche. */
+  attenteCode?: boolean;
 }
 
 /** Un moteur d'agents sur ce poste (cf. electron/moteurs). */
@@ -369,7 +371,8 @@ export interface KlyraBridge {
     installer: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
     mettreAJour: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaude>>;
     /** Les limites de l'abonnement d'un moteur (5 h, semaine) ; `actualiser` : les relire. */
-    utilisation?: (id: string, lieu?: string | null, actualiser?: boolean) => Promise<Reponse<Utilisation | null>>;
+    /** `compte` : un compte Claude supplémentaire (sa propre lecture, au clic seulement). */
+    utilisation?: (id: string, lieu?: string | null, actualiser?: boolean, compte?: string | null) => Promise<Reponse<Utilisation | null>>;
     /** Celles de ce PC, reçues pendant le travail des agents. */
     onUtilisation?: (callback: (id: string, u: Utilisation) => void) => () => void;
     onProgression: (callback: (id: string, p: ProgressionMoteur, lieu: string | null) => void) => () => void;
@@ -401,10 +404,16 @@ export interface KlyraBridge {
     /** Ouvre la connexion Anthropic dans le navigateur et attend qu'elle soit validée. */
     connexion: () => Promise<Reponse<CompteClaude>>;
     deconnexion: () => Promise<Reponse<CompteClaude>>;
-    comptes?: () => Promise<Reponse<CompteClaudeLocal[]>>;
-    verifierCompte?: (id: string) => Promise<Reponse<CompteClaudeLocal>>;
-    connecterCompte?: (id?: string) => Promise<Reponse<CompteClaudeLocal>>;
-    deconnecterCompte?: (id: string) => Promise<Reponse<CompteClaudeLocal>>;
+    /** `lieu` : les comptes d'un VPS relié ; absent, ceux de ce PC. */
+    comptes?: (lieu?: string | null) => Promise<Reponse<CompteClaudeLocal[]>>;
+    verifierCompte?: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaudeLocal>>;
+    /** Sur ce PC, attend la fin de la connexion dans le navigateur ; sur un VPS, ouvre la page et rend le compte qui attend son code. */
+    connecterCompte?: (id?: string, lieu?: string | null) => Promise<Reponse<CompteClaudeLocal>>;
+    /** Sur un VPS : le code affiché par Anthropic à la fin de la connexion. */
+    codeCompte?: (id: string, code: string, lieu?: string | null) => Promise<Reponse<CompteClaudeLocal>>;
+    deconnecterCompte?: (id: string, lieu?: string | null) => Promise<Reponse<CompteClaudeLocal>>;
+    /** Un compte est arrivé ou parti (le lieu concerné, null pour ce PC). */
+    onComptes?: (callback: (lieu: string | null) => void) => () => void;
     actualiserUtilisation: () => Promise<Reponse<Utilisation | null>>;
     onUtilisation: (callback: (u: Utilisation) => void) => () => void;
   };

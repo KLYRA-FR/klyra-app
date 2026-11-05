@@ -6,16 +6,36 @@
  * Installer ou mettre à jour prend du temps : la demande lance un travail et répond tout de suite ;
  * l'app relit `travail` (étape, octets reçus, erreur) jusqu'à la fin.
  */
+import path from "node:path";
+import { ComptesClaude } from "./comptes-claude.mjs";
 import { commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation.mjs";
 
 /**
- * @param {{ home: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string>, utilisation?: () => object | null },
+ * `donnees` : les comptes Claude supplémentaires (un dossier de connexion chacun, `donnees/claude-comptes`, cf.
+ * electron/comptes-claude.ts). Le compte des agents reste celui de `connecter-claude`.
+ * @param {{ home: string, donnees?: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string>, utilisation?: () => object | null },
  *   codex: ReturnType<typeof import("./codex.mjs").creerCodex>, grok?: ReturnType<typeof import("./grok.mjs").creerGrok> }} options
  */
 export function creerMoteurs(options) {
   const { home, claude, codex, grok } = options;
   const travaux = new Map();
   let versionClaude = null;
+  /* Après `compte` (plus bas) : il n'est appelé qu'au moment d'une lecture. */
+  const comptesClaude = options.donnees
+    ? new ComptesClaude({
+        dossier: path.join(options.donnees, "claude-comptes"),
+        home,
+        binaire: claude.trouver,
+        /* Pas de navigateur sur un VPS : Claude Code donne la page, l'app l'ouvre sur le PC et rapporte le code. */
+        environnement: () => ({ ...process.env, HOME: home, BROWSER: "false", CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" }),
+        poste: {
+          lire: () => compte("claude"),
+          connecter: async () => { throw new Error("Le compte des agents de ce serveur se connecte sur le VPS, avec « connecter-claude »."); },
+          deconnecter: async () => { throw new Error("Le compte des agents de ce serveur se change sur le VPS, avec « connecter-claude »."); },
+          utilisation: async () => claude.utilisation?.() ?? null,
+        },
+      })
+    : null;
 
   const CATALOGUE = [
     { id: "claude", nom: "Claude Code", fournisseur: "Claude", paquet: "@anthropic-ai/claude-code", trouver: claude.trouver, installable: false },
@@ -63,7 +83,25 @@ export function creerMoteurs(options) {
 
   const modeles = (id) => (connu(id).id === "codex" ? codex.modeles() : id === "grok" ? grok.modeles() : Promise.resolve([]));
   /** Les limites de l'abonnement : Codex et Grok les relisent dans le compte ; Claude Code, la dernière reçue d'une session (sans requête). */
-  const utilisation = async (id, actualiser) => (connu(id).id === "codex" ? codex.utilisation(actualiser === true) : id === "grok" ? grok.utilisation(actualiser === true) : (claude.utilisation?.() ?? null));
+  const utilisation = async (id, actualiser, compteClaude) => {
+    if (connu(id).id === "codex") return codex.utilisation(actualiser === true);
+    if (id === "grok") return grok.utilisation(actualiser === true);
+    /* Un compte supplémentaire : relu par une toute petite requête faite avec lui seul (au clic). */
+    if (compteClaude && compteClaude !== "poste") return exigerComptes().utilisation(compteClaude, actualiser === true);
+    return claude.utilisation?.() ?? null;
+  };
+  const exigerComptes = () => {
+    if (!comptesClaude) throw new Error("Ce serveur ne gère pas plusieurs comptes Claude.");
+    return comptesClaude;
+  };
+  /** Réglages du serveur › Fournisseurs › Claude : les comptes de ce serveur (le compte des agents, puis les autres). */
+  const comptes = {
+    lister: () => exigerComptes().lister(),
+    verifier: (id) => exigerComptes().lire(String(id ?? "")),
+    commencer: (id) => exigerComptes().commencerConnexion(id === undefined || id === null ? undefined : String(id)),
+    terminer: (id, code) => exigerComptes().terminerConnexion(String(id ?? ""), code),
+    deconnecter: (id) => exigerComptes().deconnecter(String(id ?? "")),
+  };
   const versionDisponible = (id) => derniereVersionNpm(connu(id).paquet);
 
   /** Lance l'installation (Codex) ou la mise à jour ; un seul travail à la fois par moteur. */
@@ -140,5 +178,5 @@ export function creerMoteurs(options) {
     return codex.deconnecter();
   };
 
-  return { liste, compte, modeles, utilisation, versionDisponible, lancerTravail, connecter, relayerRetour, etatConnexion: (id) => (id === "grok" ? grok.etatConnexion() : codex.etatConnexion()), connecterAvecCle, deconnecter };
+  return { liste, compte, comptes, modeles, utilisation, versionDisponible, lancerTravail, connecter, relayerRetour, etatConnexion: (id) => (id === "grok" ? grok.etatConnexion() : codex.etatConnexion()), connecterAvecCle, deconnecter };
 }

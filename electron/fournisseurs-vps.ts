@@ -1,5 +1,6 @@
 import { net, shell } from "electron";
 import { createServer } from "node:http";
+import type { CompteClaudeLocal } from "./comptes-claude";
 import type { CompteMoteur, ModeleMoteur, Progression } from "./moteurs/types";
 import type { Utilisation } from "./utilisation";
 
@@ -77,9 +78,42 @@ export async function modelesVps(origine: string, jeton: string | null, id: stri
  * Les limites de l'abonnement d'un moteur du VPS (serveur/utilisation.mjs) ; null si le VPS ne les connaît pas.
  * `actualiser` : le VPS les relit (Codex : lecture du compte ; Claude Code : la dernière reçue, sans requête).
  */
-export async function utilisationVps(origine: string, jeton: string | null, id: string, actualiser: boolean): Promise<Utilisation | null> {
-  const json = await appel(origine, jeton, `/klyra/v1/moteurs/${idValide(id)}/utilisation${actualiser ? "?actualiser=1" : ""}`);
+export async function utilisationVps(origine: string, jeton: string | null, id: string, actualiser: boolean, compte?: string | null): Promise<Utilisation | null> {
+  const params = new URLSearchParams();
+  if (actualiser) params.set("actualiser", "1");
+  if (compte && compte !== "poste") params.set("compte", compte);
+  const requete = params.toString();
+  /* Un compte supplémentaire est relu par une petite requête au modèle : plus long qu'une lecture. */
+  const json = await appel(origine, jeton, `/klyra/v1/moteurs/${idValide(id)}/utilisation${requete ? `?${requete}` : ""}`, "GET", undefined, compte && actualiser ? 75_000 : ATTENTE_MS);
   return (json.utilisation as Utilisation | null) ?? null;
+}
+
+/* ─── Comptes Claude du VPS (serveur/comptes-claude.mjs) ─────────── */
+
+const COMPTES = "/klyra/v1/moteurs/claude/comptes";
+
+export async function comptesClaudeVps(origine: string, jeton: string | null): Promise<CompteClaudeLocal[]> {
+  const comptes = (await appel(origine, jeton, COMPTES, "GET", undefined, 60_000)).comptes;
+  if (!Array.isArray(comptes)) throw new Error(VIEUX_SERVEUR);
+  return comptes as CompteClaudeLocal[];
+}
+
+export async function verifierCompteClaudeVps(origine: string, jeton: string | null, id: string): Promise<CompteClaudeLocal> {
+  return (await appel(origine, jeton, `${COMPTES}/verifier`, "POST", { id }, 60_000)).compte as CompteClaudeLocal;
+}
+
+/** Lance la connexion sur le VPS : il rend la page Anthropic à ouvrir sur ce PC, puis attend le code. */
+export async function commencerCompteClaudeVps(origine: string, jeton: string | null, id?: string): Promise<{ compte: CompteClaudeLocal; url: string | null }> {
+  const json = await appel(origine, jeton, `${COMPTES}/connexion`, "POST", id === undefined ? {} : { id }, 60_000);
+  return { compte: json.compte as CompteClaudeLocal, url: typeof json.url === "string" ? json.url : null };
+}
+
+export async function codeCompteClaudeVps(origine: string, jeton: string | null, id: string, code: string): Promise<CompteClaudeLocal> {
+  return (await appel(origine, jeton, `${COMPTES}/code`, "POST", { id, code }, 120_000)).compte as CompteClaudeLocal;
+}
+
+export async function deconnecterCompteClaudeVps(origine: string, jeton: string | null, id: string): Promise<CompteClaudeLocal> {
+  return (await appel(origine, jeton, `${COMPTES}/deconnexion`, "POST", { id }, 60_000)).compte as CompteClaudeLocal;
 }
 
 export async function versionDisponibleVps(origine: string, jeton: string | null, id: string): Promise<string | null> {
