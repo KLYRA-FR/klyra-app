@@ -214,7 +214,11 @@ export const DELAI_PRESSE_PAPIERS = 30_000;
 export function copierSecret(id: string): { delai: number } {
   const e = lire().find((x) => x.id === id);
   if (!e) throw new Error("Ce secret n’est plus dans le coffre.");
-  const valeur = dechiffrer(e);
+  return copierValeur(dechiffrer(e));
+}
+
+/** Le presse-papiers, vidé au bout de 30 s : pour ce PC et pour la valeur rendue par un VPS. */
+export function copierValeur(valeur: string): { delai: number } {
   clipboard.writeText(valeur);
   if (effacement) clearTimeout(effacement);
   effacement = setTimeout(() => {
@@ -226,6 +230,13 @@ export function copierSecret(id: string): { delai: number } {
   }, DELAI_PRESSE_PAPIERS);
   effacement.unref?.();
   return { delai: DELAI_PRESSE_PAPIERS };
+}
+
+/** Un secret et sa valeur, pour le copier sur un serveur que la personne a choisi. */
+export function secretACopier(id: string): EntreeSecret {
+  const e = lire().find((x) => x.id === id);
+  if (!e) throw new Error("Ce secret n’est plus dans le coffre.");
+  return { variable: e.variable, nom: e.nom, genre: e.genre, service: e.service, note: e.note, agents: e.agents, valeur: dechiffrer(e) };
 }
 
 /* ─── Un agent écrit un secret dans un fichier ─────────────────── */

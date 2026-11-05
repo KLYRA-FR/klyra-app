@@ -1,5 +1,6 @@
 "use client";
 
+import { useLieuActif } from "@/lib/lieux";
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { Input } from "klyra-ui";
@@ -42,6 +43,7 @@ export function Marketplace() {
 
 /** La Marketplace en page seule (ancienne adresse) ; le menu mène aux Réglages. */
 export function MarketplaceScreen() {
+  const lieu = useLieuActif();
   return (
     <div className="h-full overflow-y-auto">
       <div className="@container mx-auto flex w-full max-w-[960px] flex-col gap-8 px-5 pt-5 pb-8">
@@ -51,6 +53,11 @@ export function MarketplaceScreen() {
           </h1>
           <p className="m-0 text-ui-s text-texte-secondaire">Les apps que tes agents peuvent utiliser.</p>
         </header>
+        {lieu && (
+          <p role="note" className="m-0 rounded-md bg-fond-surface-grise px-3 py-2 text-ui-s text-texte-secondaire">
+            Ces connexions sont celles de cet ordinateur. Les agents de ce serveur ne peuvent pas encore s’en servir.
+          </p>
+        )}
         <CarteComposio />
         <AppsDirectes />
       </div>

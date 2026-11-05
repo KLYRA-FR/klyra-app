@@ -654,6 +654,10 @@ export interface KlyraBridge {
   };
   /** Le Coffre de KLYRA (cf. electron/coffre.ts) : jamais une valeur dans ce sens. Absent avant la relance de l'app. */
   coffre?: {
+    /** Le Coffre d'un VPS, par `useCoffreKlyra`. Absents avant la relance de l'app. */
+    vps?: (lieu: string, methode: string, corps: unknown) => Promise<Reponse<unknown>>;
+    copierVps?: (lieu: string, id: string) => Promise<Reponse<{ delai: number }>>;
+    copierVers?: (id: string, lieu: string) => Promise<Reponse<void>>;
     etat: () => Promise<Reponse<EtatCoffre>>;
     /** `remplacer` : la personne remplace exprès le secret qui porte déjà ce nom de variable. */
     ajouter: (entree: EntreeSecretCoffre, remplacer?: boolean) => Promise<Reponse<SecretCoffre>>;

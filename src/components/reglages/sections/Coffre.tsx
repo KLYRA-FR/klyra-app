@@ -11,6 +11,7 @@ import type { SecretCoffre } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { GENRES_SECRET, useCoffreKlyra, variableProposee, type GenreSecret } from "@/lib/coffre";
 import { formatListDate } from "@/lib/format";
+import { useServeursRelies } from "@/lib/lieux";
 import { useRole } from "@/lib/workspace";
 import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau } from "../ui";
 
@@ -218,6 +219,18 @@ function LigneSecret({ coffre, secret, onRemplacer }: { coffre: Pont; secret: Se
     if (minuteur.current) window.clearTimeout(minuteur.current);
   }, []);
 
+  /* Un secret ne part sur un serveur que si la personne le choisit, un par un. */
+  const serveurs = useServeursRelies();
+  const [copieVers, setCopieVers] = useState<string | null>(null);
+  const copierVers = async (adresse: string, nom: string) => {
+    const oui = await demander({
+      titre: `Copier ${secret.nom} sur ${nom} ?`,
+      texte: `La valeur de ${secret.variable} sera envoyée sur ${nom}. Un serveur n’a pas de trousseau : elle y est chiffrée, mais un agent de ce serveur qui viserait exprès sa clé pourrait la lire.`,
+      confirmer: "Copier",
+    });
+    if (!oui) return;
+    if (await coffre.copierVers(secret.id, adresse)) setCopieVers(adresse);
+  };
   const copier = async () => {
     const r = await coffre.copier(secret.id);
     if (!r) return;
@@ -257,6 +270,11 @@ function LigneSecret({ coffre, secret, onRemplacer }: { coffre: Pont; secret: Se
         <Bouton variant="blanc" taille="mini" iconeGauche={<Icon name={copie ? "check-01" : "copy-left"} size={14} />} onClick={() => void copier()}>
           {copie ? "Copié" : "Copier"}
         </Bouton>
+        {!coffre.lieu && serveurs.map((s) => (
+          <Bouton key={s.adresse} variant="discret" taille="mini" onClick={() => void copierVers(s.adresse, s.nom)}>
+            {copieVers === s.adresse ? `Copié sur ${s.nom}` : `Copier vers ${s.nom}`}
+          </Bouton>
+        ))}
         <Bouton variant="discret" taille="mini" onClick={onRemplacer}>
           Remplacer
         </Bouton>
@@ -332,13 +350,18 @@ export function Coffre() {
     <>
       <Groupe
         titre="Clés et mots de passe"
-        description="Clés API, jetons et mots de passe, chacun chiffré par le trousseau de ton ordinateur. Ils ne quittent pas cet ordinateur et ne s’affichent jamais : « Copier » le met dans ton presse-papiers, vidé après 30 secondes."
+        description={coffre.lieu ? "Les clés API, jetons et mots de passe de ce serveur, à lui seul. Il n’a pas de trousseau : ils y sont chiffrés avec une clé gardée à côté, sous l’utilisateur klyra. Un agent de ce serveur qui viserait exprès cette clé pourrait les lire." : "Clés API, jetons et mots de passe, chacun chiffré par le trousseau de ton ordinateur. Ils ne quittent pas cet ordinateur et ne s’affichent jamais : « Copier » le met dans ton presse-papiers, vidé après 30 secondes."}
       >
         <Ligne id="coffre-secrets" libelle="Dans le coffre" pile>
           <ListeSecrets coffre={coffre} />
         </Ligne>
       </Groupe>
 
+      {coffre.lieu ? (
+        <Groupe titre="Connexions de sites">
+          <Ligne id="coffre-connexions" libelle="Connexions enregistrées" description="Elles restent dans le navigateur de cet ordinateur : les agents de ce serveur s’en servent à travers lui, l’ordinateur allumé et l’app ouverte." />
+        </Groupe>
+      ) : (
       <Groupe
         titre="Connexions de sites"
         description="Identifiant et mot de passe d’un site, pour le navigateur de KLYRA : « Remplir » est dans la barre de chaque onglet, et un agent que tu y autorises remplit la page de connexion sans voir le mot de passe."
@@ -347,6 +370,7 @@ export function Coffre() {
           <ListeCoffre />
         </Ligne>
       </Groupe>
+      )}
 
       <Groupe titre="Avec tes agents">
         <Ligne
