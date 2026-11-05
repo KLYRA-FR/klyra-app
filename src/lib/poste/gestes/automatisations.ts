@@ -3,7 +3,7 @@
 import { MODELES } from "@/components/chat/ChoixModele";
 import { useAgents } from "@/lib/agents";
 import { getBridge, type Reponse } from "@/lib/bridge";
-import { lieuParDefaut, useServeursRelies } from "@/lib/lieux";
+import { dansEspace, lieuParDefaut, useServeursRelies } from "@/lib/lieux";
 import { poste } from "@/lib/plateforme";
 import { tagLisible } from "@/lib/telephone/agents";
 import {
@@ -212,8 +212,13 @@ export function useGestesAutomatisations(): Gestes {
     /* ─── Workflows ─── */
 
     /** T-18 : « Tes workflows », le dernier modifié en tête ; en tête aussi, celui qu'un agent crée en ce moment. */
-    "workflows.liste": async (): Promise<LigneWorkflow[]> =>
-      listeWorkflows(state.workflows, state.executions, Object.values(lireChantiers()), agentDe, new Date().toISOString()),
+    "workflows.liste": async (brut): Promise<LigneWorkflow[]> => {
+      /* Le téléphone dit le serveur qu'il affiche ; sans lui (ancienne version) : tous. */
+      const args = objet(brut);
+      const lieu = "lieu" in args ? (typeof args.lieu === "string" ? args.lieu : null) : undefined;
+      const workflows = lieu === undefined ? state.workflows : state.workflows.filter((w) => dansEspace(w.lieu, lieu));
+      return listeWorkflows(workflows, state.executions, Object.values(lireChantiers()), agentDe, new Date().toISOString());
+    },
 
     /** T-19 : le graphe sans le dessin, les exécutions, et le détail de celle regardée. Un agent le construit : son graphe en cours. */
     "workflows.lire": async (brut): Promise<WorkflowLu> => {

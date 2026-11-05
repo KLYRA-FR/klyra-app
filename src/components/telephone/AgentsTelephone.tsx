@@ -9,7 +9,8 @@ import { Bouton } from "@/components/ui/Bouton";
 import { Onglets } from "@/components/ui/Onglets";
 import { useDecrireAAssistant } from "@/lib/decrire-a-assistant";
 import { useLecturePoste } from "@/lib/poste/client";
-import { idDirect } from "@/lib/workspace";
+import { useLieuActif } from "@/lib/lieux";
+import { useDirectEspace } from "@/lib/telephone/espace";
 import { ID_ASSISTANT, libelleRetour, texteConversations, type EtatsAgentsPoste, type LigneAgent } from "@/lib/telephone/agents";
 import type { ChiffresEquipe } from "@/lib/telephone/gestes-agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
@@ -76,6 +77,8 @@ function ListeAgentsTelephone() {
 
 /** Mes agents : l'assistant, les agents actifs, « Hors de Mes agents », puis l'équipe en chiffres (repliée). */
 function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
+  const lieu = useLieuActif();
+  const direct = useDirectEspace();
   const router = useRouter();
   const { liste } = useCartesAgents();
   const etats = useLecturePoste<EtatsAgentsPoste>("agents.etats", {});
@@ -102,12 +105,15 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
     void agir("agents.activer", { id: agent.id, actif: true }, `${agent.nom} est de retour dans tes agents.`).then((ok) => ok && etats.relancer());
 
   const actions = (agent: LigneAgent): ActionMenu[] => {
-    const poste = { desactivee: !ouvert || occupe, note: ouvert ? undefined : <NotePoste /> };
+    /* Les fiches d'un VPS se modifient depuis l'app de bureau, sur ce serveur : ce geste-là irait à l'ordinateur. */
+    const poste = lieu
+      ? { desactivee: true, note: <span>Depuis l’app de bureau, sur ce serveur.</span> }
+      : { desactivee: !ouvert || occupe, note: ouvert ? undefined : <NotePoste /> };
     const fiche = { libelle: "Voir la fiche", onChoisir: () => router.push(`/equipe?agent=${encodeURIComponent(agent.id)}`) };
-    if (agent.id === ID_ASSISTANT) return [{ libelle: "Écrire", onChoisir: () => router.push(`/chat?id=${encodeURIComponent(idDirect(agent.id))}`) }, fiche];
+    if (agent.id === ID_ASSISTANT) return [{ libelle: "Écrire", onChoisir: () => router.push(`/chat?id=${encodeURIComponent(direct(agent.id))}`) }, fiche];
     if (agent.actif) {
       return [
-        { libelle: "Écrire", onChoisir: () => router.push(`/chat?id=${encodeURIComponent(idDirect(agent.id))}`) },
+        { libelle: "Écrire", onChoisir: () => router.push(`/chat?id=${encodeURIComponent(direct(agent.id))}`) },
         fiche,
         { libelle: "Désactiver", onChoisir: () => setDesactiver(agent), danger: true, ...poste },
       ];

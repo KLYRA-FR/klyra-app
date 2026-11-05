@@ -1,7 +1,5 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import type { IconName } from "@/components/icons/Icon";
 import { majuscule, texteRoutines } from "@/lib/poste-texte";
 import { nombreAValider } from "@/lib/telephone/tickets";
@@ -9,6 +7,7 @@ import { EnteteTelephone, PageOnglet } from "./EnteteTelephone";
 import { EtatEcran } from "./etats";
 import { Etiquette, GroupeListe, LigneListe, TuileIcone } from "./Liste";
 import { usePostes, useSupport } from "./poste";
+import { useConversationsEspace } from "@/lib/telephone/espace";
 
 /**
  * T-21 Plus : Tickets, Automatisations, Artefacts, Rechercher, Réglages, puis les serveurs reliés.
@@ -18,7 +17,7 @@ import { usePostes, useSupport } from "./poste";
 export function PlusTelephone() {
   const { principal, ouvert } = usePostes();
   const sur = useSupport();
-  const aValider = nombreAValider(useQuery(api.conversationsCompte.liste, {}), ouvert);
+  const aValider = nombreAValider(useConversationsEspace(), ouvert);
   return (
     <PageOnglet titre="Plus">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">

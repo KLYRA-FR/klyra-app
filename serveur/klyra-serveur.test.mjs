@@ -1044,3 +1044,20 @@ test("PC fermé : le serveur range lui-même la réponse dans sa conversation, s
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("le téléphone lit l'équipe du serveur depuis son navigateur : le préalable CORS passe", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "VPS", publier: () => {}, spontane: () => {}, claude: null });
+  const ecoute = await ecouter({ dossier, port: 0, agents });
+  try {
+    const r = await fetch(`http://127.0.0.1:${ecoute.port}/klyra/v1/equipe/lister`, { method: "OPTIONS", headers: { Origin: "https://app.klyra.fr", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization,content-type" } });
+    assert.ok(r.status < 300);
+    assert.ok(r.headers.get("access-control-allow-origin"));
+    assert.match(r.headers.get("access-control-allow-headers") ?? "", /authorization/i);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

@@ -26,6 +26,7 @@ import { useMenuChat } from "./MenuChat";
 import { MessagesFil, type ContexteFil } from "./MessagesFil";
 import { EchangesVps } from "./EchangesVps";
 import { useEchangesDirects } from "@/lib/telephone/vps-direct";
+import { useProjetsEspace } from "@/lib/telephone/espace";
 
 /**
  * Le composeur suit le clavier : quand il s'ouvre, le fil prend la hauteur visible de l'écran
@@ -62,7 +63,7 @@ export function FilTelephone() {
   const conversations = useQuery(api.conversationsCompte.liste, {});
   const fil = useQuery(api.conversationsCompte.messages, id ? { origine: id } : "skip");
   const attente = useQuery(api.conversationsCompte.enAttente, {});
-  const projets = useQuery(api.conversationsCompte.projets, nouveauProjet ? {} : "skip");
+  const projets = useProjetsEspace(!!nouveauProjet);
   const marquerLu = useMutation(api.operationsFile.marquerLu);
   const reagir = useMutation(api.operationsFile.reagir);
   const creerFil = useMutation(api.operationsFile.creerFil);

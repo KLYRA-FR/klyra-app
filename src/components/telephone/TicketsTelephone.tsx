@@ -28,6 +28,7 @@ import { AucunPoste, EtatEcran, Squelette } from "./etats";
 import { Carte, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { PrevenirOuverture } from "./PastillePoste";
 import { usePostes, useSupport } from "./poste";
+import { useConversationsEspace } from "@/lib/telephone/espace";
 
 const PRIORITES = ["Aucune", "Basse", "Moyenne", "Haute"] as const;
 const SANS_RESEAU = "Possible quand ce téléphone est en ligne";
@@ -55,7 +56,8 @@ export function TicketsTelephone() {
 /** Ce que la liste et le détail partagent. */
 function useLectureTickets() {
   const { etat } = useCompte();
-  const conversations = useQuery(api.conversationsCompte.liste, etat === "connecte" ? {} : "skip");
+  /* Les tickets du serveur choisi sur ce téléphone. */
+  const conversations = useConversationsEspace(etat === "connecte");
   const { demandes, envoyer } = useDemandeTicket();
   const { postes, principal, ouvert } = usePostes();
   const sur = useSupport();

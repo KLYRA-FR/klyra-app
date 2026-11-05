@@ -12,7 +12,7 @@ import { useCompte } from "@/lib/compte";
 import { formatListDate } from "@/lib/format";
 import { attenteEnvoi } from "@/lib/poste-texte";
 import { roleLisible } from "@/lib/telephone/agents";
-import { aTraiter, auTravail, etatLigne, idDirect, sections, ASSISTANT, SUGGESTIONS, type ConversationLue, type ElementATraiter } from "@/lib/telephone/chats";
+import { aTraiter, auTravail, etatLigne, sections, ASSISTANT, SUGGESTIONS, type ConversationLue, type ElementATraiter } from "@/lib/telephone/chats";
 import { bonjour, dateDuJour } from "@/lib/telephone/journee";
 import { CarteJournee, RailAuTravail } from "./AccueilChats";
 import { PageOnglet } from "./EnteteTelephone";
@@ -25,6 +25,8 @@ import { CarteAccordChat } from "./CarteAccordChat";
 import { useMenuChat } from "./MenuChat";
 import { NouveauChat } from "./NouveauChat";
 import { RechercheTelephone } from "./RechercheTelephone";
+import { useConversationsEspace, useDirectEspace } from "@/lib/telephone/espace";
+import { nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
 
 /** Le squelette n'apparaît qu'après 300 ms (spec § 5) : une liste rapide ne clignote pas. */
 export function useApres(ms: number, actif = true): boolean {
@@ -110,8 +112,11 @@ export function ChatsTelephone() {
 function ListeChats({ ecrire }: { ecrire: boolean }) {
   const router = useRouter();
   const { moi } = useCompte();
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const conversations = useConversationsEspace();
   const enAttente = useQuery(api.conversationsCompte.enAttente, {});
+  const lieu = useLieuActif();
+  const serveurs = useServeursRelies();
+  const direct = useDirectEspace();
   const { cartes, nom } = useCartes();
   const horsLigne = useHorsLigne();
   const { postes, ouvert } = usePostes();
@@ -126,7 +131,7 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
   const parOrigine = new Map(liste.map((c) => [c.origine, c]));
   /* Hors ligne, une copie d'activité ne dit plus rien du travail en cours (E2-07). */
   const vif = ouvert && !horsLigne;
-  const { epinglees, agents, equipe } = sections(liste, cartes ?? [], nom, ouvert, horsLigne);
+  const { epinglees, agents, equipe } = sections(liste, cartes ?? [], nom, ouvert, horsLigne, lieu);
   const traiter = aTraiter(liste, enAttente ?? []);
   const travail = auTravail(liste, vif);
   const titreDe = (origine: string) => {
@@ -166,6 +171,11 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
       grandTitre={bonjour(moi?.nom)}
       droite={
         <>
+      {lieu ? (
+        <Link href="/serveurs" className="mx-4 mt-1 block rounded-md bg-fond-surface-grise px-3 py-2 text-ui-s text-texte-secondaire">
+          Sur {nomLieu(lieu, serveurs)}. Changer de serveur
+        </Link>
+      ) : null}
           <BoutonIcone variant="discret" className="size-11" libelle="Rechercher" icone={<Icon name="search-01" size={24} />} onClick={() => router.push("/chats?vue=recherche")} />
           <BoutonIcone variant="discret" className="size-11" libelle="Nouveau chat" icone={<Icon name="message-plus-01" size={24} />} aria-haspopup="dialog" onClick={() => setNouveau(true)} />
         </>
@@ -231,8 +241,8 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
                       ligne2={`Avec ${nom(ASSISTANT)} · rien ne part avant que tu envoies`}
                       uneLigne
                       onClick={() => {
-                        ajouterAuBrouillon(idDirect(ASSISTANT), s.texte);
-                        router.push(`/chat?id=${encodeURIComponent(idDirect(ASSISTANT))}`);
+                        ajouterAuBrouillon(direct(ASSISTANT), s.texte);
+                        router.push(`/chat?id=${encodeURIComponent(direct(ASSISTANT))}`);
                       }}
                     />
                   ))}
@@ -246,7 +256,7 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
                 {agents.map(({ carte, conversation, etat }) => (
                   <LigneListe
                     key={carte.origine}
-                    href={`/chat?id=${encodeURIComponent(idDirect(carte.origine))}`}
+                    href={`/chat?id=${encodeURIComponent(direct(carte.origine))}`}
                     retrait="avatar"
                     debut={
                       <AvatarLigne nonLus={conversation?.nonLus ?? 0}>
@@ -259,7 +269,7 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
                     meta={etat?.enCours ? "En cours" : conversation?.extraitLe ? formatListDate(conversation.extraitLe) : null}
                     metaAccent={!!etat?.enCours}
                     ligne2={etat ? <span className={etat.enCours ? "text-texte-principal" : undefined}>{etat.texte}</span> : conversation?.extrait || "Pas encore de message"}
-                    onMenu={() => menu.ouvrir(idDirect(carte.origine), conversation)}
+                    onMenu={() => menu.ouvrir(direct(carte.origine), conversation)}
                   />
                 ))}
                 <LigneListe href="/equipe?creer=1" retrait="avatar" debut={<span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-fond-surface-grise text-icone-defaut"><Icon name="plus-01" size={22} /></span>} nom="Créer un agent" />

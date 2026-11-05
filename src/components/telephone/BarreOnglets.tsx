@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
 import { nombreATraiter } from "@/lib/telephone/chats";
 import { ongletDe } from "@/lib/telephone/retour";
+import { dansEspace, useLieuActif } from "@/lib/lieux";
 import { nombreAValider } from "@/lib/telephone/tickets";
 import { usePostes } from "./poste";
 
@@ -41,10 +42,13 @@ export function BarreOnglets({ vertical = false }: { vertical?: boolean }) {
   const pathname = usePathname();
   const { etat } = useCompte();
   const conversations = useQuery(api.conversationsCompte.liste, etat === "connecte" ? {} : "skip");
-  const attente = nombreATraiter(conversations ?? []);
+  const lieu = useLieuActif();
+  /* Ce qui attend sur le serveur choisi par ce téléphone. */
+  const ici = conversations?.filter((c) => dansEspace(c.lieu, lieu));
+  const attente = nombreATraiter(ici ?? []);
   const { ouvert } = usePostes();
   /* Le point de Plus : des tickets confirmés à valider (E4-01). Inconnu ou zéro : rien. */
-  const aValider = nombreAValider(conversations, ouvert) ?? 0;
+  const aValider = nombreAValider(ici, ouvert) ?? 0;
 
   return (
     <nav

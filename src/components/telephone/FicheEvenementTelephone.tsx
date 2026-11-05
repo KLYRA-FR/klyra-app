@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Icon } from "@/components/icons/Icon";
@@ -17,6 +17,7 @@ import { ConfirmationFeuille, Feuille } from "./Feuille";
 import { CHAMP_TELEPHONE, CaseFiche, ChampFiche, ErreurFiche, FeuilleChoixFiche, LigneChoixFiche, LigneDateFiche, LigneInterrupteurFiche, NoteEnregistrement, PageFiche } from "./FichePlanningTelephone";
 import { BandeauVueGardee } from "./etats";
 import { GroupeListe } from "./Liste";
+import { useProjetsEspace } from "@/lib/telephone/espace";
 
 const plusUneHeure = (heure: string) => {
   const [h, m] = heure.split(":").map(Number);
@@ -45,7 +46,7 @@ export function FicheEvenementTelephone({
   const modifier = useMutation(api.evenements.modifier);
   const supprimerCompte = useMutation(api.evenements.supprimer);
   const { membres } = useEquipe(false);
-  const projets = useQuery(api.conversationsCompte.projets, {});
+  const projets = useProjetsEspace();
   const occurrence = evenement?.source === "compte" ? evenement.occurrence : null;
   const local = evenement?.source === "poste" ? evenement.evenement : null;
   const surLePoste = local !== null;

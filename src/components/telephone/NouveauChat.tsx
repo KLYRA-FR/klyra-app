@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
-import { idDirect } from "@/lib/telephone/chats";
+import { useDirectEspace, useProjetsEspace } from "@/lib/telephone/espace";
 import { Feuille } from "./Feuille";
 import { SurLePoste } from "./etats";
 import { Etiquette, GroupeListe, LigneListe, TuileIcone } from "./Liste";
@@ -20,7 +18,8 @@ import { RondAgent, useCartes } from "./AgentsChat";
 export function NouveauChat({ onFermer }: { onFermer: () => void }) {
   const router = useRouter();
   const { cartes } = useCartes();
-  const projets = useQuery(api.conversationsCompte.projets, {});
+  const projets = useProjetsEspace();
+  const direct = useDirectEspace();
   const sur = useSupport();
   const [equipe, setEquipe] = useState(false);
   const agents = (cartes ?? [])
@@ -76,7 +75,7 @@ export function NouveauChat({ onFermer }: { onFermer: () => void }) {
             nom={agent.nom}
             ligne2={agent.origine === "principal" ? "Ton assistant · il répartit le travail" : agent.roleCourt}
             uneLigne
-            onClick={() => aller(`/chat?id=${encodeURIComponent(idDirect(agent.origine))}`)}
+            onClick={() => aller(`/chat?id=${encodeURIComponent(direct(agent.origine))}`)}
           />
         ))}
       </GroupeListe>

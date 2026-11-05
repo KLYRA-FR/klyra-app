@@ -11,7 +11,8 @@ import { MarqueRun } from "@/components/routines/MarqueRun";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { cn } from "@/lib/cn";
-import { useServeursRelies } from "@/lib/lieux";
+import { useLieuActif, useServeursRelies } from "@/lib/lieux";
+import { routinesDeLEspace } from "@/lib/telephone/espace";
 import { useGestePoste } from "@/lib/poste/client";
 import { dureeRun, libellePlanning, libelleRun, lienRun, quandRoutine, runActif } from "@/lib/routines-affichage";
 import { roleLisible } from "@/lib/telephone/agents";
@@ -73,7 +74,8 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
   const lecture = useLectureSuivie<RoutinesLues>("routines.liste", {}, { suivre: (d) => d.enCours.some(runActif) });
   const tirer = useTirerPourRelire(lecture.relancer, { enCours: lecture.relecture });
   const [brouillon] = useState(lireBrouillon);
-  const data = lecture.etat === "ok" ? lecture.data : null;
+  const lieu = useLieuActif();
+  const data = routinesDeLEspace(lecture.etat === "ok" ? lecture.data : null, lieu);
   /* Un lien vers une routine sans son agent (notification) mène à son agent, comme au bureau. */
   const cible = routineDemandee ? data?.routines.find((r) => r.id === routineDemandee) : undefined;
   useEffect(() => {
@@ -188,7 +190,8 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [erreurs, setErreurs] = useState<Record<string, Echec | undefined>>({});
   const [eclairee, setEclairee] = useState<string | null>(null);
-  const data = lecture.etat === "ok" ? lecture.data : null;
+  const lieu = useLieuActif();
+  const data = routinesDeLEspace(lecture.etat === "ok" ? lecture.data : null, lieu);
 
   const agent: AgentLu = data?.agents.find((a) => a.id === agentId) ?? { id: agentId, name: agentId, tag: "", title: "", teinte: "jaune" as RoleTeinte, actif: false, connu: false };
   const nomAgent = (id: string) => data?.agents.find((a) => a.id === id)?.name ?? id;
