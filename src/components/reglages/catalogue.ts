@@ -87,7 +87,7 @@ export const SECTIONS: SectionReglages[] = [
     icone: "stars",
     description: "Le compte par lequel tes agents travaillent, et ce qu’il en reste.",
     entrees: [
-      { id: "compte-claude", titre: "Compte Claude", mots: "connexion deconnexion abonnement anthropic email organisation claude code" },
+      { id: "compte-claude", titre: "Comptes Claude", mots: "connexion deconnexion abonnement anthropic email organisation claude code ajouter plusieurs comptes" },
       { id: "utilisation", titre: "Utilisation", mots: "quota limite session 5 h semaine consommation" },
       { id: "cle-admin", titre: "Organisation Console : usage et coût réels", mots: "cle admin api anthropic facturation cout reel console organisation" },
     ],

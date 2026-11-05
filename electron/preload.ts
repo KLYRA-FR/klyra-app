@@ -98,6 +98,10 @@ contextBridge.exposeInMainWorld("klyra", {
     compte: () => ipcRenderer.invoke("claude:compte"),
     connexion: () => ipcRenderer.invoke("claude:connexion"),
     deconnexion: () => ipcRenderer.invoke("claude:deconnexion"),
+    comptes: () => ipcRenderer.invoke("claude:comptes"),
+    verifierCompte: (id: string) => ipcRenderer.invoke("claude:comptes:verifier", id),
+    connecterCompte: (id?: string) => ipcRenderer.invoke("claude:comptes:connexion", id),
+    deconnecterCompte: (id: string) => ipcRenderer.invoke("claude:comptes:deconnexion", id),
     actualiserUtilisation: () => ipcRenderer.invoke("claude:utilisation:actualiser"),
     onUtilisation: (callback: (u: unknown) => void) => {
       const listener = (_e: unknown, u: unknown) => callback(u);

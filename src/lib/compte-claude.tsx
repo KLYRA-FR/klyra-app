@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { getBridge, type CompteClaude } from "@/lib/bridge";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { getBridge, type CompteClaude, type CompteClaudeLocal } from "@/lib/bridge";
 
 /**
  * Le compte Claude du poste : connecté ou non, quel compte, quel abonnement.
@@ -100,6 +100,60 @@ export function useCompteClaude(): CompteApi {
   const ctx = useContext(CompteContext);
   if (!ctx) throw new Error("useCompteClaude doit être utilisé dans <CompteClaudeProvider>");
   return ctx;
+}
+
+/** La liste des connexions ; le hook historique reste exclusivement celui des agents. */
+export function useComptesClaude() {
+  const pont = getBridge()?.claude;
+  const { verifier: verifierPoste } = useCompteClaude();
+  const [comptes, setComptes] = useState<CompteClaudeLocal[] | null>(null);
+  const [action, setAction] = useState<{ id: string; type: "connexion" | "deconnexion" | "verification" } | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const occupe = useRef(false);
+  const generation = useRef(0);
+
+  const relire = useCallback(async () => {
+    if (!pont?.comptes || occupe.current) return;
+    const lecture = ++generation.current;
+    try {
+      const r = await pont.comptes();
+      if (lecture !== generation.current) return;
+      if (r.ok) { setComptes(r.data); setErreur(null); }
+      else setErreur(r.message);
+    } catch {
+      if (lecture === generation.current) setErreur("Impossible de lire les comptes Claude. Réessaie.");
+    }
+  }, [pont]);
+
+  useEffect(() => {
+    let actif = true;
+    const lectures = generation;
+    void Promise.resolve().then(() => { if (actif) return relire(); });
+    return () => { actif = false; lectures.current++; };
+  }, [relire]);
+
+  const agir = useCallback(async (type: "connexion" | "deconnexion" | "verification", id?: string) => {
+    if (!pont || occupe.current) return;
+    occupe.current = true;
+    generation.current++;
+    setAction({ id: id ?? "nouveau", type });
+    setErreur(null);
+    try {
+      const r = type === "connexion" ? await pont.connecterCompte!(id)
+        : type === "deconnexion" ? await pont.deconnecterCompte!(id!) : await pont.verifierCompte!(id!);
+      if (r.ok) {
+        setComptes((avant) => [...(avant ?? []).filter((c) => c.id !== r.data.id), r.data].sort((a, b) => Number(b.poste) - Number(a.poste)));
+        if (r.data.poste) await verifierPoste();
+      } else setErreur(r.message);
+    } catch {
+      setErreur("L’action sur ce compte Claude a échoué. Réessaie.");
+    } finally {
+      occupe.current = false;
+      setAction(null);
+    }
+  }, [pont, verifierPoste]);
+
+  return { comptes, action, erreur, relire, agir };
 }
 
 /** « Max », « Pro »… : le nom de l'abonnement, tel qu'Anthropic l'affiche. */
