@@ -2,7 +2,7 @@
  * Chaque serveur a sa propre équipe, de bout en bout : un vrai serveur KLYRA local, l'app sur un profil
  * temporaire. Au premier passage, le VPS reçoit une copie des agents actifs du PC ; ensuite, ce qu'on
  * crée ici ou là-bas n'existe que là, et changer une fiche du PC n'écrase plus celle du VPS.
- * Prérequis : `pnpm build && pnpm build:electron`. Linux : `xvfb-run -a node scripts/test-equipe-serveur.mjs --no-sandbox`.
+ * Prérequis : `pnpm build && pnpm build:electron`. Linux : `xvfb-run -a node scripts/test-equipe-par-serveur.mjs --no-sandbox`.
  */
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
