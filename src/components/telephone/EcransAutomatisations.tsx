@@ -2,28 +2,26 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
-import { Onglets } from "@/components/ui/Onglets";
+import { Segments } from "./Controles";
 import { AgentsRoutinesTelephone, RoutinesAgentTelephone } from "./RoutinesTelephone";
 import { WorkflowsListeTelephone, WorkflowTelephone } from "./WorkflowsTelephone";
-import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 
 /**
- * Automatisations : routines et workflows (T-14 à T-19). Route : /routines, mêmes paramètres qu'au
- * bureau (`vue=routines|workflows`, `agent`, `routine`), plus `formulaire=1` (T-16 en page pleine),
- * `workflow` et `version` (T-19). Tout est lu et fait sur l'ordinateur ouvert ; une routine d'un VPS
- * y passe aussi, comme au bureau (le main la route vers son VPS).
+ * Automatisations : routines et workflows (lot 7). Route : /routines, mêmes paramètres qu'au bureau
+ * (`vue=routines|workflows`, `agent`, `routine`), plus `formulaire=1` (page pleine), `workflow`,
+ * `version` et `executions=1`. Tout est lu et fait sur l'ordinateur ouvert ; une routine d'un VPS y
+ * passe aussi, comme au bureau (le main la route vers son VPS).
  */
 export function AutomatisationsTelephone() {
   const recherche = useSearchParams();
   const router = useRouter();
   const vue = recherche.get("vue") === "workflows" ? "workflows" : "routines";
   const onglets = (
-    <Onglets<"routines" | "workflows">
+    <Segments<"routines" | "workflows">
       libelle="Automatisations"
       valeur={vue}
       onChange={(o) => router.replace(`/routines?vue=${o}`)}
-      className={ONGLETS_TELEPHONE}
-      onglets={[
+      segments={[
         { id: "routines", label: "Routines", icone: <Icon name="calendar-01" size={16} /> },
         { id: "workflows", label: "Workflows", icone: <Icon name="lightning-01" size={16} /> },
       ]}
@@ -32,7 +30,11 @@ export function AutomatisationsTelephone() {
 
   if (vue === "workflows") {
     const workflow = recherche.get("workflow");
-    return workflow ? <WorkflowTelephone key={workflow} id={workflow} versionId={recherche.get("version")} /> : <WorkflowsListeTelephone onglets={onglets} />;
+    return workflow ? (
+      <WorkflowTelephone key={workflow} id={workflow} versionId={recherche.get("version")} executionsOuvertes={recherche.get("executions") === "1"} />
+    ) : (
+      <WorkflowsListeTelephone onglets={onglets} />
+    );
   }
   const agent = recherche.get("agent");
   return agent ? (

@@ -92,11 +92,12 @@ export type LecturePoste<T> =
  * dernière réponse lue sur ce téléphone s'il y en a une (vue gardée, socle § 5.4). Relue quand il se
  * rouvre, et par `relancer` (tirer vers le bas, Réessayer). `args` à null : rien à lire pour l'instant.
  * `garder: false` : une lecture qui ne vaut que sur le moment (un aperçu calculé), jamais gardée.
+ * `horsLigne` : ce téléphone n'a plus le réseau : rien n'est demandé, la vue gardée se lit comme poste fermé.
  */
 export function useLecturePoste<T>(
   type: string,
   args: unknown | null,
-  options: { delai?: number; garder?: boolean } = {},
+  options: { delai?: number; garder?: boolean; horsLigne?: boolean } = {},
 ): LecturePoste<T> & { relancer: () => void } {
   const demander = useDemandePoste();
   const { etat: compte, moi } = useCompte();
@@ -111,7 +112,8 @@ export function useLecturePoste<T>(
   useEffect(() => {
     ouRanger.current = rangement;
   }, [rangement]);
-  const ferme = cle !== null && !charge && !ouvert && (postes?.length ?? 0) > 0;
+  const horsLigne = options.horsLigne ?? false;
+  const ferme = cle !== null && !charge && (!ouvert || horsLigne) && (postes?.length ?? 0) > 0;
   const ouRelire = ferme ? vueDe(principal?.cle) : null;
   const gardee = useMemo(() => (ouRelire ? lireVue<T>(ouRelire) : null), [ouRelire]);
   const [tour, setTour] = useState(0);
@@ -122,7 +124,7 @@ export function useLecturePoste<T>(
   const delai = options.delai;
 
   useEffect(() => {
-    if (cle === null || compte !== "connecte" || charge || !ouvert) return;
+    if (cle === null || compte !== "connecte" || charge || !ouvert || horsLigne) return;
     let actuelle = true;
     /* Le squelette n'apparaît qu'après 300 ms (spec § 5). */
     const lent = setTimeout(() => setLu((avant) => (avant?.demande === demande ? avant : { demande, lecture: { etat: "attente", lent: true } })), 300);
@@ -141,7 +143,7 @@ export function useLecturePoste<T>(
       actuelle = false;
       clearTimeout(lent);
     };
-  }, [type, cle, compte, ouvert, charge, demande, demander, delai]);
+  }, [type, cle, compte, ouvert, charge, demande, demander, delai, horsLigne]);
 
   const relancer = useCallback(() => setTour((n) => n + 1), []);
   if (cle !== null && !charge && postes?.length === 0) return { etat: "aucun", relancer };

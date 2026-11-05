@@ -46,7 +46,7 @@ export function agentsDesRoutines(roles: readonly Role[], tous: readonly { role:
     ...roles.map((r) => ({ id: r.id, name: r.name, tag: tagLisible(r), title: r.title, teinte: r.teinte, actif: true, connu: true })),
     ...[...new Set(routines.map((r) => r.agentId))].filter((id) => !actif(id)).map((id) => {
       const local = tous.find((a) => a.role.id === id)?.role;
-      return { id, name: local?.name ?? id, tag: local ? tagLisible(local) : "", title: local?.title ?? "", teinte: local?.teinte ?? ("jaune" as RoleTeinte), actif: false, connu: !!local };
+      return { id, name: local?.name ?? "Agent indisponible", tag: local ? tagLisible(local) : "", title: local?.title ?? "", teinte: local?.teinte ?? ("jaune" as RoleTeinte), actif: false, connu: !!local };
     }),
   ];
 }
@@ -256,3 +256,34 @@ export function ecrireBrouillon(brouillon: BrouillonRoutine | null) {
 
 /** Une demande au poste ne dépasse pas 64 000 caractères : au-delà, le compte la refuse. */
 export const DEMANDE_MAX = 60_000;
+
+/* ─── Ce que l'écran dit d'une exécution ───────────────────────── */
+
+const dateCivile = (d: Date, timezone: string) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+
+/** « demain, 09:00 », « aujourd'hui, 09:00 », « hier, 09:00 », sinon la date : dans le fuseau de la routine. */
+export function quandRelatif(at: string | null, timezone: string, maintenant = new Date()): string {
+  if (!at) return "—";
+  const d = new Date(at);
+  const ecart = Math.round((Date.parse(dateCivile(d, timezone)) - Date.parse(dateCivile(maintenant, timezone))) / 86_400_000);
+  if (ecart < -1 || ecart > 1) return new Intl.DateTimeFormat("fr-FR", { timeZone: timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(d);
+  const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: timezone, hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${ecart === 0 ? "aujourd’hui" : ecart === 1 ? "demain" : "hier"}, ${heure}`;
+}
+
+/**
+ * Une création restée sans réponse (ordinateur en veille) a pu aboutir : on relit avant de proposer un
+ * nouvel essai. La routine déjà créée : même agent, même nom, même consigne, créée depuis la demande.
+ */
+export function routineDejaCreee(routines: readonly Routine[], input: Pick<RoutineInput, "agentId" | "name" | "instruction">, depuis: string): Routine | undefined {
+  return routines.find((r) => r.agentId === input.agentId && r.name === input.name && r.instruction === input.instruction && r.createdAt >= depuis);
+}
+
+/**
+ * « Réessayer » après un geste sans réponse : seulement une fois la relecture finie, et jamais pour
+ * lancer une routine qui a maintenant son exécution (le premier appui est arrivé).
+ */
+export function essaiPossible(type: string, actif: boolean, relecture: boolean): boolean {
+  if (relecture) return false;
+  return !(type === "routines.executer" && actif);
+}

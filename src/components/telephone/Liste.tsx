@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { Compteur } from "@/components/ui/Compteur";
 import { Icon, type IconName } from "@/components/icons/Icon";
@@ -37,8 +37,9 @@ export function SectionListe({ titre, compte, compteAccent = false, lien, childr
 }
 
 /** Le groupe blanc qui porte des lignes : arrondi, filet intérieur, ombre légère. */
+export const CLASSE_GROUPE = "overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface shadow-ombre-xs";
 export function GroupeListe({ children, className }: { children: ReactNode; className?: string }) {
-  return <ul className={cn("overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface shadow-ombre-xs", className)}>{children}</ul>;
+  return <ul className={cn(CLASSE_GROUPE, className)}>{children}</ul>;
 }
 
 /** Une étiquette : un nom lisible, jamais un identifiant (C-2). */
@@ -55,12 +56,44 @@ export function Etiquette({ ton = "neutre", children }: { ton?: "neutre" | "bleu
   );
 }
 
-/** La tuile d'icône d'une ligne (36 px). `bleue` : l'élément mis en avant. */
-export function TuileIcone({ icone, bleue = false }: { icone: IconName; bleue?: boolean }) {
+/** La tuile d'icône d'une ligne (36 px). `bleue` : l'élément mis en avant. `grande` : l'en-tête d'un menu (44 px). */
+export function TuileIcone({ icone, bleue = false, grande = false }: { icone: IconName; bleue?: boolean; grande?: boolean }) {
   return (
-    <span aria-hidden="true" className={cn("flex size-9 shrink-0 items-center justify-center rounded-md-moins", bleue ? "bg-fond-teinte-bleue text-icone-accent" : "bg-fond-surface-grise text-icone-defaut")}>
-      <Icon name={icone} size={20} />
+    <span
+      aria-hidden="true"
+      className={cn("flex shrink-0 items-center justify-center rounded-md-moins", grande ? "size-11" : "size-9", bleue ? "bg-fond-teinte-bleue text-icone-accent" : "bg-fond-surface-grise text-icone-defaut")}
+    >
+      <Icon name={icone} size={grande ? 22 : 20} />
     </span>
+  );
+}
+
+/** Une valeur lue, avec un chevron explicite si elle ouvre un formulaire. */
+export function ValeurLigne({ children, chevron = false }: { children: ReactNode; chevron?: boolean }) {
+  if (!chevron) return <span className="shrink-0 text-right text-ui text-texte-secondaire">{children}</span>;
+  return (
+    <span className="flex max-w-[55%] shrink-0 items-center gap-1 text-ui text-texte-secondaire">
+      <span className="truncate">{children}</span>
+      {chevron ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
+    </span>
+  );
+}
+
+const FILET_LIGNE =
+  "[&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:right-0 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-bordure-defaut [&:not(:first-child)]:before:content-['']";
+
+/**
+ * Une ligne dont la valeur se règle avec le sélecteur du système (heure, date) : la valeur française à
+ * droite, le contrôle natif invisible par-dessus (D-6). `children` sans `valeur` : un champ visible.
+ */
+export function LigneSaisie({ icone, nom, valeur, erreur = false, children }: { icone?: IconName; nom: string; valeur?: ReactNode; erreur?: boolean; children: ReactNode }) {
+  return (
+    <li className={cn("relative flex min-h-14 items-center gap-3 py-2.5 pr-3 pl-4", icone ? "before:left-16" : "before:left-4", FILET_LIGNE, valeur !== undefined && "active:bg-fond-survol")}>
+      {icone ? <TuileIcone icone={icone} /> : null}
+      <span className={cn("min-w-0 flex-1 truncate text-body-s font-medium", erreur ? "text-texte-erreur" : "text-texte-principal")}>{nom}</span>
+      {valeur !== undefined ? <ValeurLigne chevron>{valeur}</ValeurLigne> : null}
+      {children}
+    </li>
   );
 }
 
@@ -92,9 +125,19 @@ export function LigneListe({
   raison,
   onMenu,
   menuVisible = false,
+  eclairee = false,
+  className,
+  style,
+  role,
+  coche,
 }: {
   /** Une ancre (un réglage trouvé par la recherche, éclairé en arrivant). */
   id?: string;
+  /** Revenue d'un geste réussi : elle s'éclaire 1 800 ms. */
+  eclairee?: boolean;
+  /** Sur la ligne elle-même (un chantier d'agent, sa couleur). */
+  className?: string;
+  style?: CSSProperties;
   href?: string;
   onClick?: () => void;
   debut?: ReactNode;
@@ -114,6 +157,9 @@ export function LigneListe({
   raison?: ReactNode;
   onMenu?: () => void;
   menuVisible?: boolean;
+  /** Toute la ligne est un interrupteur (`switch` et son état `coche`). */
+  role?: "switch";
+  coche?: boolean;
 }) {
   const appui = useAppuiLong(() => onMenu?.());
   const libelleMenu = `Actions pour ${typeof nom === "string" ? nom : "cet élément"}`;
@@ -146,24 +192,16 @@ export function LigneListe({
     !inactive && "active:bg-fond-survol data-[presse]:bg-fond-survol",
   );
   return (
-    <li
-      id={id}
-      className={cn(
-        "relative flex items-center",
-        id && "klyra-reglage scroll-mt-4",
-        "[&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:right-0 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-bordure-defaut [&:not(:first-child)]:before:content-['']",
-        RETRAITS[retrait],
-      )}
-    >
+    <li id={id} data-eclaire={eclairee || undefined} style={style} className={cn("klyra-telephone-eclaire relative flex items-center", id && "klyra-reglage scroll-mt-4", FILET_LIGNE, RETRAITS[retrait], className)}>
       {href && !inactive ? (
         <Link href={href} {...(onMenu ? appui : {})} className={classeCorps}>
           {corps}
         </Link>
-      ) : !onClick && !onMenu && !inactive ? (
+      ) : !onClick && !onMenu && !inactive && !role ? (
         /* Une valeur lue, ou une ligne dont le contrôle est à sa fin (un bouton n'en contient pas un autre). */
         <div className={classeCorps}>{corps}</div>
       ) : (
-        <button type="button" disabled={inactive || !onClick} onClick={onClick} {...(onMenu ? appui : {})} className={cn(classeCorps, "disabled:cursor-default")}>
+        <button type="button" role={role} aria-checked={role ? coche : undefined} disabled={inactive || !onClick} onClick={onClick} {...(onMenu ? appui : {})} className={cn(classeCorps, "disabled:cursor-default")}>
           {corps}
         </button>
       )}
@@ -189,11 +227,6 @@ export function SousSection({ children }: { children: ReactNode }) {
 /** Une phrase sous un groupe (ce qui reste, ce qui attend). */
 export function NoteListe({ children, className }: { children: ReactNode; className?: string }) {
   return <p className={cn("mx-1 mt-2.5 text-ui-xs leading-[1.4] text-texte-secondaire", className)}>{children}</p>;
-}
-
-/** Une valeur lue, à droite d'une ligne. */
-export function ValeurLigne({ children }: { children: ReactNode }) {
-  return <span className="shrink-0 text-right text-ui text-texte-secondaire">{children}</span>;
 }
 
 /**
@@ -258,15 +291,18 @@ export function LigneChoix({
   meta,
   etiquette,
   raison,
-  choisi,
-  inactive = false,
+  choisi: choisiDirect,
+  choisie,
+  inactive: inactiveDirect = false,
+  desactivee = false,
+  autoFocus = false,
   envoi = false,
   onChoisir,
   debut,
   finSiPasChoisi,
-}: {
+}: ({ choisi: boolean; choisie?: never } | { choisi?: never; choisie: boolean }) & {
   id?: string;
-  nom: string;
+  nom: ReactNode;
   ligne2?: ReactNode;
   /** Une tuile devant le nom : le filet se décale d'autant. */
   debut?: ReactNode;
@@ -275,11 +311,14 @@ export function LigneChoix({
   meta?: ReactNode;
   etiquette?: ReactNode;
   raison?: ReactNode;
-  choisi: boolean;
   inactive?: boolean;
+  desactivee?: boolean;
+  autoFocus?: boolean;
   envoi?: boolean;
   onChoisir?: () => void;
 }) {
+  const choisi = choisiDirect ?? choisie;
+  const inactive = inactiveDirect || desactivee;
   return (
     <li id={id} className={cn(ITEM_LISTE, debut ? "[&:not(:first-child)]:before:left-16" : undefined, id && "klyra-reglage scroll-mt-4")}>
       <button
@@ -287,6 +326,7 @@ export function LigneChoix({
         role="radio"
         aria-checked={choisi}
         aria-busy={envoi || undefined}
+        data-autofocus={autoFocus || undefined}
         disabled={inactive || envoi}
         onClick={onChoisir}
         className="flex min-h-14 w-full items-center gap-3 py-2.5 pr-3 pl-4 text-left transition-colors duration-[120ms] ease-sortie active:bg-fond-survol disabled:active:bg-transparent disabled:[&_[data-coche]]:opacity-45"
@@ -298,7 +338,7 @@ export function LigneChoix({
             {etiquette}
           </span>
           {inactive && raison ? <span className="mt-0.5 block text-ui-xs text-texte-secondaire">{raison}</span> : null}
-          {!inactive && ligne2 ? <span className="mt-0.5 line-clamp-2 block text-ui leading-[1.35] text-texte-secondaire">{ligne2}</span> : null}
+          {(!inactive || !raison) && ligne2 ? <span className="mt-0.5 line-clamp-2 block text-ui leading-[1.35] text-texte-secondaire">{ligne2}</span> : null}
         </span>
         {meta ? <span className="shrink-0 text-ui-xs text-texte-secondaire">{meta}</span> : null}
         {envoi ? (

@@ -15,6 +15,8 @@ import {
   lirePatchEtape,
   miseAPlat,
   restaurerVersion,
+  libelleDerniere,
+  nomFichier,
   resumeExecution,
   SORTIE_MAX,
   texteAnnotation,
@@ -216,5 +218,18 @@ describe("contenu d'une étape modifié depuis le téléphone", () => {
     ]);
     expect(restaure.versions[0].graphe).toBe(graphe);
     expect(code(() => restaurerVersion(wf, "absente", "v3", ""))).toBe("introuvable");
+  });
+});
+
+describe("ce que la liste dit d'un workflow", () => {
+  const execution = { id: "e", numero: 1, source: "manuel", erreur: null, debut: "", fin: null, seule: false, chatId: null, faits: 3 } as const;
+  test("l'accord attendu est nommé, en accent ; une exécution finie reste discrète", () => {
+    expect(libelleDerniere({ ...execution, statut: "approbation", arret: "Approbation" }, 7)).toEqual({ texte: "Attend ton accord · Approbation", accent: true });
+    expect(libelleDerniere({ ...execution, statut: "en-cours", arret: null }, 7)).toEqual({ texte: "En cours · 3/7", accent: true });
+    expect(libelleDerniere({ ...execution, statut: "fait", arret: null }, 7)).toEqual({ texte: "Réussie", accent: false });
+  });
+  test("un fichier se lit par son nom, jamais par son chemin", () => {
+    expect(nomFichier("/maison/camille/projets/devis.csv")).toBe("devis.csv");
+    expect(nomFichier("C:\\Users\\Camille\\devis.csv")).toBe("devis.csv");
   });
 });

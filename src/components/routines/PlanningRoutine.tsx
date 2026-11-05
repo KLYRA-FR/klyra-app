@@ -8,7 +8,7 @@ import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { cn } from "@/lib/cn";
 import type { RoutineSchedule } from "@/types/routines";
 
-const FREQUENCES = [
+export const FREQUENCES = [
   { value: "manual", label: "À la demande" },
   { value: "once", label: "Une fois" },
   { value: "hourly", label: "Toutes les heures" },
@@ -19,12 +19,12 @@ const FREQUENCES = [
   { value: "interval", label: "À intervalle régulier" },
 ] satisfies { value: RoutineSchedule["kind"]; label: string }[];
 
-const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-const VALEURS_JOURS = [1, 2, 3, 4, 5, 6, 0];
+export const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+export const VALEURS_JOURS = [1, 2, 3, 4, 5, 6, 0];
 const AIDE = "m-0 text-ui-xs leading-relaxed text-texte-secondaire";
 
 /** Date civile du fuseau choisi : le min du calendrier ne dépend pas du fuseau du poste. */
-function aujourdHui(timezone: string): string {
+export function aujourdHui(timezone: string): string {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
     const lire = (type: string) => parts.find((p) => p.type === type)?.value;
@@ -34,7 +34,7 @@ function aujourdHui(timezone: string): string {
   }
 }
 
-function resumeAvance(schedule: Extract<RoutineSchedule, { kind: "advanced" | "custom" }>): string {
+export function resumeAvance(schedule: Extract<RoutineSchedule, { kind: "advanced" | "custom" }>): string {
   if (schedule.kind === "custom") return `Cron : ${schedule.expression}`;
   const jours = schedule.days.kind === "every-day" ? "Tous les jours"
     : schedule.days.kind === "days-of-week" ? schedule.days.days.map((day) => JOURS[(day + 6) % 7]).join(", ")
@@ -42,6 +42,20 @@ function resumeAvance(schedule: Extract<RoutineSchedule, { kind: "advanced" | "c
   const heure = schedule.time.kind === "at-time" ? `à ${schedule.time.time}`
     : `toutes les ${schedule.time.amount} ${schedule.time.unit === "minutes" ? "minutes" : "heures"}`;
   return `${jours}, ${heure}. Mois : ${schedule.months.join(", ")}.`;
+}
+
+/** Le planning d'une autre fréquence, à partir du planning actuel : mêmes valeurs de départ partout. */
+export function planningDeType(kind: "manual" | "once" | "hourly" | "daily" | "weekdays" | "weekly" | "monthly" | "interval", value: RoutineSchedule, timezone: string): RoutineSchedule {
+  const heure = "time" in value && typeof value.time === "string" ? value.time : "09:00";
+  switch (kind) {
+    case "manual": return { kind };
+    case "once": return { kind, date: aujourdHui(timezone), time: heure };
+    case "hourly": return { kind, minute: 0 };
+    case "daily": case "weekdays": return { kind, time: heure };
+    case "weekly": return { kind, weekday: 1, time: heure };
+    case "monthly": return { kind, day: 1, time: heure };
+    case "interval": return { kind, amount: 1, unit: "hours", anchorAt: new Date().toISOString() };
+  }
 }
 
 /** Le calendrier est validé en dernier ressort par le moteur ; aucun minuteur ni calcul d'échéance ici. */
@@ -54,18 +68,9 @@ export function PlanningRoutine({ value, onChange, timezone, erreur, disabled = 
 }) {
   const id = useId();
   const avance = value.kind === "advanced" || value.kind === "custom";
-  const heure = "time" in value && typeof value.time === "string" ? value.time : "09:00";
   const erreurId = erreur ? `${id}-erreur` : undefined;
   const changerType = (kind: RoutineSchedule["kind"]) => {
-    switch (kind) {
-      case "manual": onChange({ kind }); break;
-      case "once": onChange({ kind, date: aujourdHui(timezone), time: heure }); break;
-      case "hourly": onChange({ kind, minute: 0 }); break;
-      case "daily": case "weekdays": onChange({ kind, time: heure }); break;
-      case "weekly": onChange({ kind, weekday: 1, time: heure }); break;
-      case "monthly": onChange({ kind, day: 1, time: heure }); break;
-      case "interval": onChange({ kind, amount: 1, unit: "hours", anchorAt: new Date().toISOString() }); break;
-    }
+    if (kind !== "advanced" && kind !== "custom") onChange(planningDeType(kind, value, timezone));
   };
 
   return (
