@@ -25,7 +25,12 @@ function monde() {
   const lances: { id: string; o: unknown }[] = [];
   let n = 0;
   const outils = creerOutilsWorkflows({
-    etat: () => etat,
+    /* Le serveur d'un agent se lit à sa conversation : `@vps` dans ces tests. */
+    etat: (a: { chatId: string }) => {
+      const lieu = a.chatId.endsWith("@vps") ? "https://vps" : null;
+      return { ...etat, workflows: etat.workflows.filter((w) => (w.lieu ?? null) === lieu) };
+    },
+    lieu: (a: { chatId: string }) => (a.chatId.endsWith("@vps") ? "https://vps" : null),
     agents: () => [{ id: "principal", nom: "Lou" }, { id: "designer", nom: "Iris" }],
     enregistrer: (wf) => {
       etat.workflows = [...etat.workflows.filter((w) => w.id !== wf.id), wf];
@@ -110,5 +115,17 @@ describe("un agent construit un workflow", () => {
     const lu = await outils.executer("lire_workflow", { workflow: id }, iris);
     expect(lu).toContain("Exécution n°1");
     expect(await outils.executer("lister_workflows", {}, iris)).toContain("« Page offres »");
+  });
+
+  it("ne montre et ne touche que les workflows du serveur de l'agent", async () => {
+    const { outils, etat } = monde();
+    const surVps = { chatId: "dm-designer@vps", roleId: "designer" };
+    const reponse = await outils.executer("construire_workflow", entree, surVps);
+    expect(reponse).toContain("Page offres");
+    expect(etat.workflows[0].lieu).toBe("https://vps");
+    expect(await outils.executer("lister_workflows", {}, iris)).toContain("Aucun workflow");
+    expect(await outils.executer("lister_workflows", {}, surVps)).toContain("Page offres");
+    await expect(outils.executer("lire_workflow", { workflow: etat.workflows[0].id }, iris)).rejects.toThrow("Aucun workflow");
+    await expect(outils.executer("lancer_workflow", { workflow: etat.workflows[0].id }, iris)).rejects.toThrow("Aucun workflow");
   });
 });

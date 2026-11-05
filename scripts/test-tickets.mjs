@@ -10,7 +10,9 @@
  * - « Remettre à faire », dans les réglages d'une carte, la ramène dans À faire ;
  * - « Confier à un agent » ouvre un fil avec le rappel pour brief, marque le rappel
  *   « Confié à … », met une pastille sur l'onglet du fil bloqué, et fermer le fil coche le rappel ;
- * - le planning des agents liste les tickets ouverts.
+ * - le planning des agents liste les tickets ouverts ;
+ * - chaque serveur a ses tickets : le tableau, le nombre du rail, les projets et planning.md ne
+ *   mélangent pas ce PC et un VPS, et « À moi » reste commun.
  * Prérequis : pnpm build && pnpm build:electron.
  *   xvfb-run -a node scripts/test-tickets.mjs          (sous Linux sans bac à sable : -- --no-sandbox)
  * KLYRA_CAPTURE=chemin.png enregistre une capture de la page.
@@ -26,6 +28,7 @@ if (fixes.length) throw new Error(`Test refusé : Claude reste accessible à ${f
 const { echecs, verifier } = verificateur();
 const TMP = mkdtempSync(path.join(os.tmpdir(), "klyra-tickets-"));
 const DONNEES = path.join(TMP, "userdata");
+const VPS = "https://vps.exemple:8791";
 const MAISON = path.join(TMP, "home");
 const FICHIER = path.join(DONNEES, "conversations.json");
 const PLANNING = path.join(MAISON, ".klyra", "planning", "planning.md");
@@ -71,6 +74,7 @@ writeFileSync(
       fil("klyra-fil-coupe01", "Réponse coupée", { etape: "en-cours" }),
       fil("klyra-fil-ferme01", "Fil fermé hier", { statut: "archive", etape: "a-valider", fermeLe: il(1) }),
       fil("klyra-fil-vieux01", "Fil fermé il y a longtemps", { statut: "archive", etape: "a-valider", fermeLe: il(20) }),
+      fil("klyra-fil-vps00001", "Ticket du VPS", { etape: "a-valider" }, { lieu: VPS }),
     ],
     messages: [reponse("klyra-fil-ancien01"), reponse("klyra-fil-valide01")],
     projects: [{ id: "durand", name: "Atelier Durand", subtitle: "", status: "en-cours", pinned: false, roleIds: ["principal"], brief: "Projet fictif", previewUrl: "", folder: path.join(TMP, "durand"), files: [], updatedAt: il(2) }],
@@ -174,6 +178,33 @@ try {
   }
   verifier(planning.includes("## Tickets ouverts") && planning.includes("Maquette de l’accueil (klyra-fil-bloque01) · Principal · à faire"), "planning.md liste les tickets ouverts");
   verifier(!planning.includes("Rapport hebdo (klyra-fil-valide01)"), "planning.md : le fil fermé n’y est plus");
+  verifier(!planning.includes("Ticket du VPS"), "planning.md, lu par les agents du PC : pas de ticket du VPS");
+
+  // Un espace par serveur : on passe sur le VPS (il ne répond pas, l'espace s'affiche quand même).
+  await app.aller("/tickets");
+  verifier(await app.quand(`document.querySelector('section[aria-label="À faire"]')?.innerText.includes("Préparer le brief Durand")`), "de retour au tableau, sur Ce PC");
+  verifier(!(await colonne("À valider")).includes("Ticket du VPS"), "sur Ce PC, le ticket du VPS n’apparaît pas");
+  const nombreRail = () => app.ev(`/(\\d+)\\s*à valider/.exec(document.querySelector('nav[aria-label="Navigation principale"] a[href="/tickets"]')?.innerText ?? "")?.[1] ?? "0"`);
+  verifier((await nombreRail()) === "1", `sur Ce PC, le rail ne compte pas le ticket du VPS (${await nombreRail()})`);
+  await app.ev(`(() => {
+    localStorage.setItem("klyra:serveurs", JSON.stringify({ actif: "vps", liste: [{ id: "vps", adresse: ${JSON.stringify(VPS)}, nom: "VPS", version: "1", etat: "joint" }] }));
+    localStorage.setItem("klyra:lieu-actif", ${JSON.stringify(VPS)});
+    window.dispatchEvent(new Event("klyra:carnet"));
+    window.dispatchEvent(new Event("klyra:lieu-actif"));
+  })()`);
+  verifier(await app.quand(`document.querySelector('section[aria-label="À valider"]')?.innerText.includes("Ticket du VPS")`), "sur le VPS, son ticket est là");
+  verifier(!(await colonne("À faire")).includes("Préparer le brief Durand"), "sur le VPS, les tickets du PC ont disparu");
+  verifier((await colonne("Terminé")).indexOf("Rapport hebdo") < 0, "sur le VPS, les tickets fermés du PC ont disparu");
+  const projets = await app.ev(`(() => { const b = [...document.querySelectorAll("button")].find((x) => x.innerText.includes("Tous les projets")); b?.click(); return true; })()`);
+  await attendre(200);
+  verifier(projets && !(await app.ev(`document.body.innerText`)).includes("Atelier Durand"), "sur le VPS, le filtre ne propose pas le projet du PC");
+  await app.touche("Escape", "Escape", 27);
+  verifier((await nombreRail()) === "1", `sur le VPS, le rail compte son seul ticket (${await nombreRail()})`);
+  const aMoiVps = await app.ev(`document.querySelector('section[aria-label="À moi"]')?.innerText ?? ""`);
+  verifier(aMoiVps.length > 0, "sur le VPS, la colonne À moi reste là");
+  await app.ev(`(() => { localStorage.removeItem("klyra:lieu-actif"); window.dispatchEvent(new Event("klyra:lieu-actif")); })()`);
+  verifier(await app.quand(`!document.querySelector('section[aria-label="À valider"]')?.innerText.includes("Ticket du VPS")`), "retour sur Ce PC : le ticket du VPS repart");
+
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
 } finally {
   await app.fermer();

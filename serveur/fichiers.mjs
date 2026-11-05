@@ -4,7 +4,7 @@
  * l'aperçu elle-même, sur le PC (`contenuFichier`).
  * Rien hors du dossier de klyra : ni l'arbre, ni la lecture, ni la création.
  */
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet.mjs";
 
@@ -83,5 +83,17 @@ export function creerFichiers(home) {
     }
   }
 
-  return { arbre, lire, creerDossier, consignes, ecrireConsignes, racine: racineKlyra };
+  /** Le fichier texte d'un workflow du VPS : un chemin relatif part de `documents/`, rien hors du dossier de klyra. */
+  async function ecrireTexte(chemin, texte) {
+    if (typeof chemin !== "string" || !chemin.trim()) throw new ErreurFichier("Chemin vide.");
+    const brut = chemin.trim();
+    const complet = path.isAbsolute(brut) ? path.resolve(brut) : brut.startsWith("~/") ? path.resolve(racineKlyra, brut.slice(2)) : path.resolve(racineKlyra, "documents", brut);
+    const rel = path.relative(racineKlyra, complet);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) throw new ErreurFichier(`Un fichier du VPS doit être sous ${racineKlyra}.`);
+    await mkdir(path.dirname(complet), { recursive: true });
+    await writeFile(complet, String(texte ?? ""), "utf8");
+    return complet;
+  }
+
+  return { arbre, lire, creerDossier, ecrireTexte, consignes, ecrireConsignes, racine: racineKlyra };
 }

@@ -590,6 +590,12 @@ test("les projets du VPS : arbre, lecture et création sous le dossier de klyra 
     assert.deepEqual((await consignes("POST")).json.consignes.propositions, []);
     assert.equal(readFileSync(path.join(projet, "AGENTS.md"), "utf8"), "Mes consignes.\n");
     assert.equal((await appel(ecoute.port, `/klyra/v1/fichiers/consignes?dossier=${encodeURIComponent("/etc")}&nom=x`, { jeton })).statut, 400);
+    // Le fichier d'un workflow du VPS : sous le dossier de klyra seulement.
+    const ecrit = await appel(ecoute.port, "/klyra/v1/fichiers/ecrire", { methode: "POST", jeton, corps: { chemin: "rapports/hebdo.md", texte: "Bonjour" } });
+    assert.equal(ecrit.statut, 200);
+    assert.equal(readFileSync(ecrit.json.chemin, "utf8"), "Bonjour");
+    assert.equal((await appel(ecoute.port, "/klyra/v1/fichiers/ecrire", { methode: "POST", jeton, corps: { chemin: "/etc/klyra-essai", texte: "non" } })).statut, 400);
+    assert.equal((await appel(ecoute.port, "/klyra/v1/fichiers/ecrire", { methode: "POST", corps: { chemin: "a.md", texte: "non" } })).statut, 401);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

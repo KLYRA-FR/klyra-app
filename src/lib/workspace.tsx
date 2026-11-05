@@ -16,6 +16,7 @@ import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCours } from "@/lib/atelier-agent";
 import { lireDemandeSecret } from "../../electron/coffre-regles";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
+import { renduDansEspace } from "@/lib/rendus-espace";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
@@ -753,7 +754,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const outilsWorkflows = useCallback(
     () =>
       (outilsWorkflowsRef.current ??= creerOutilsWorkflows({
-        etat: () => ({ workflows: stateRef.current.workflows, executions: stateRef.current.executions, projets: stateRef.current.projects }),
+        /* Un agent ne voit que les workflows et les projets du serveur où il travaille. */
+        etat: (a) => {
+          const { chats, workflows, executions, projects } = stateRef.current;
+          const lieu = lieuDeConversation(chats, a.chatId);
+          const ici = workflows.filter((w) => dansEspace(w.lieu, lieu));
+          const ids = new Set(ici.map((w) => w.id));
+          return { workflows: ici, executions: executions.filter((e) => ids.has(e.workflowId)), projets: projects.filter((p) => dansEspace(p.lieu, lieu)) };
+        },
+        lieu: (a) => lieuDeConversation(stateRef.current.chats, a.chatId),
         agents: () => rolesRef.current.map((r) => ({ id: r.id, nom: r.name })),
         enregistrer: (workflow) => {
           dispatch({ type: "workflow/enregistrer", workflow });
@@ -871,13 +880,15 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           evenements: comptePret ? [...state.evenements, ...(state.evenementsCompte ?? [])] : state.evenements,
           taches: state.taches,
           categories: state.categories,
-          routines: routinesLocales,
-          projects: state.projects,
+          /* Ce fichier est lu par les agents de ce PC : les routines, projets, fils et livrables d'un VPS n'y figurent pas.
+             Les rappels et le calendrier sont ceux de la personne : ils restent communs. */
+          routines: routinesLocales.filter((r) => dansEspace(r.lieu, null)),
+          projects: state.projects.filter((p) => dansEspace(p.lieu, null)),
           roles,
-          chats: state.chats,
+          chats: state.chats.filter((c) => dansEspace(c.lieu, null)),
           artefacts: state.artefacts,
-          rendus: state.rendus,
-          workflows: state.workflows,
+          rendus: state.rendus.filter((r) => renduDansEspace(r.origine, null)),
+          workflows: state.workflows.filter((w) => dansEspace(w.lieu, null)),
           personne: moi.name,
           sansEquipe: comptePret,
         }),
@@ -1848,7 +1859,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const outils = bridge?.outils;
     if (!outils) return;
     const executer = async (nom: string, args: Record<string, unknown>, appelant: { chatId: string; roleId: string }): Promise<string> => {
-      const { chats, messages, travail, projects } = stateRef.current;
+      const { chats: tousChats, messages, travail, projects: tousProjets } = stateRef.current;
+      /* Un agent ne voit et ne touche que les fils et les projets du serveur où il travaille. */
+      const lieuAppelant = lieuDeConversation(tousChats, appelant.chatId);
+      const chats = tousChats.filter((c) => dansEspace(c.lieu, lieuAppelant));
+      const projects = tousProjets.filter((p) => dansEspace(p.lieu, lieuAppelant));
       const roles = rolesRef.current;
       const nomDe = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
       const filDe = (id: unknown) => {
@@ -1883,7 +1898,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             if (garde.ok && !garde.data.ok) throw new Error("En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère.");
           }
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
-          const id = creerFil(agent, titre || brief, lanceur, ticket);
+          const id = creerFil(agent, titre || brief, lanceur, ticket, { lieu: lieuAppelant });
           if (!titre) titrer(id, brief);
           if (lanceur) {
             dispatch({ type: "chat/update", id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: true } } : c) });
@@ -2371,7 +2386,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /** Un appel au modèle, sans conversation ni outil (étapes LLM et conditions). */
   const appelLibre = useCallback(
-    (o: { prompt: string; systeme: string; modele: string | null; effort: string | null; signal: AbortSignal }) =>
+    (o: { prompt: string; systeme: string; modele: string | null; effort: string | null; signal: AbortSignal; lieu?: string | null }) =>
       new Promise<Resultat>((resoudre) => {
         if (!bridge) {
           setTimeout(() => resoudre({ ok: true, texte: "OUI. (Réponse simulée : l’app n’est pas ouverte sur le bureau.)" }), 800);
@@ -2395,7 +2410,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         o.signal.addEventListener("abort", () => void bridge.claude.cancel(id));
         const prompt = o.systeme.trim() ? `[Consigne système]\n${o.systeme.trim()}\n\n[Demande]\n${o.prompt}` : o.prompt;
         void bridge.claude
-          .stream(id, { agent: null, prompt, dossier: null, sessionId: null, modele: o.modele, effort: o.effort, acces: "demander" })
+          .stream(id, { agent: null, prompt, dossier: null, sessionId: null, modele: o.modele, effort: o.effort, acces: "demander", lieu: o.lieu ?? null })
           .then((r) => {
             if (r.ok) return;
             ecouteurs.current.delete(id);
@@ -2421,6 +2436,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             updatedAt: new Date().toISOString(),
             sessions: {},
             luJusqua: null,
+            /* Les agents d'un workflow travaillent sur son serveur. */
+            ...(wf.lieu ? { lieu: wf.lieu } : {}),
           };
           dispatch({ type: "chat/add", chat });
           stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
@@ -2438,7 +2455,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             signal.addEventListener("abort", () => resoudre({ ok: false, erreur: "Arrêté." }));
             envoyerRef.current(chatId, `Workflow « ${wf.titre} »\n\n${consigne}`, roleId, fichiers);
           }),
-        llm: appelLibre,
+        llm: (o) => appelLibre({ ...o, lieu: wf.lieu ?? null }),
         notifier: (titre, texte) => {
           pousserAuTelephone({ evenement: "workflow", titre, corps: texte, lien: lienWorkflow(wf.id) });
           // Les Réglages peuvent couper les notifications des workflows, ou leur son : alors celui de KLYRA.
@@ -2468,7 +2485,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         ecrireFichier: async (chemin, texte) => {
           const ecrire = bridge?.fichiers.ecrire;
           if (!ecrire) return { ok: false, erreur: "Relance l’app une fois pour qu’elle puisse écrire des fichiers." };
-          const r = await ecrire(chemin, texte);
+          /* Le fichier d'un workflow d'un VPS s'écrit sur ce VPS. */
+          const r = await ecrire(chemin, texte, wf.lieu ?? null);
           return r.ok ? { ok: true, texte: `Écrit dans ${r.data}.` } : { ok: false, erreur: r.message };
         },
         approbation: (etapeId, signal) =>
@@ -2777,6 +2795,13 @@ export function useProjects(): Project[] {
   const { projects } = useWorkspace().state;
   const espace = useLieuActif();
   return useMemo(() => projects.filter((p) => dansEspace(p.lieu, espace)), [projects, espace]);
+}
+
+/** Toutes les conversations de l'espace affiché (le serveur choisi), fils compris : ce qu'on compte et qu'on range ne mélange pas les serveurs. */
+export function useChatsEspace(): Chat[] {
+  const { chats } = useWorkspace().state;
+  const espace = useLieuActif();
+  return useMemo(() => chats.filter((c) => dansEspace(c.lieu, espace)), [chats, espace]);
 }
 
 /** La conversation directe avec un agent dans l'espace affiché (cf. `idDirect`). */
