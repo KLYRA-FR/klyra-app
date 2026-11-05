@@ -4,11 +4,15 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConversationLue } from "./chats";
 import { agentPourLibelle } from "./libelles-fil";
 
-const simule = vi.hoisted(() => ({ modele: "sonnet", lisible: true }));
+const simule = vi.hoisted(() => ({ modele: "sonnet", lisible: true, relie: false }));
 
 vi.mock("convex/react", () => ({ useQuery: () => undefined, useMutation: () => vi.fn(), useConvex: () => ({}) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/lib/telephone/envoi", () => ({ useEnvoyerMessage: () => vi.fn() }));
+vi.mock("@/lib/serveur-vps", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/serveur-vps")>(),
+  jetonAppareil: () => simule.relie ? "acces-fictif" : null,
+}));
 vi.mock("@/lib/telephone/espace", () => ({ useCartesEspace: () => [{ origine: "cicco", nom: "Cicco", roleCourt: "Coordination", actif: true, teinte: "ocre" }] }));
 vi.mock("@/lib/poste/client", () => ({
   useGestePoste: () => ({ faire: vi.fn(), occupe: false }),
@@ -32,7 +36,7 @@ const rendu = (origine: string, modele: string | null = null) => renderToStaticM
   <ComposeurFil origine={origine} conversation={conversation(origine, modele)} equipe={false} nouveauProjet={null} agentId={origine.slice(3)} activite={null} />,
 );
 
-beforeEach(() => { simule.modele = "sonnet"; simule.lisible = true; });
+beforeEach(() => { simule.modele = "sonnet"; simule.lisible = true; simule.relie = false; });
 
 describe("identité au bas du fil téléphone", () => {
   test("l’identité affichée enlève l’hôte sans réécrire l’origine ni le parent du fil", () => {
@@ -43,9 +47,10 @@ describe("identité au bas du fil téléphone", () => {
     expect(agentPourLibelle("klyra-fil-test", fil)).toBe("cicco");
     expect(fil.parent).toBe(origine);
   });
-  test("nomme l’agent direct et le modèle hérité de sa fiche", () => {
+  test("garde le prénom dans le champ et le modèle hérité sans puce agent", () => {
     const html = rendu("dm-cicco");
-    expect(html).toContain('aria-label="Agent : Cicco"');
+    expect(html).not.toContain('aria-label="Agent :');
+    expect(html).toContain('placeholder="Écris à Cicco…"');
     expect(html).toContain("Claude Sonnet 5.5");
   });
   test("une fiche héritée et un identifiant complet reprennent les alias du bureau", () => {
@@ -63,17 +68,17 @@ describe("identité au bas du fil téléphone", () => {
   });
   test("un suffixe VPS ne remplace pas le prénom par Un agent ; le choix du fil prime", () => {
     const html = rendu("dm-cicco@serveur.exemple:8791", '{"modele":"opus","effort":"high"}');
-    expect(html).toContain('aria-label="Agent : Cicco"');
+    expect(html).toContain('placeholder="Écris à Cicco…"');
     expect(html).toContain("Claude Opus 5.5");
     expect(html).not.toContain("Écris à Un agent");
     expect(html).not.toContain("Sur serveur.exemple");
-    expect(html).toMatch(/<span[^>]*aria-label="Agent : Cicco"/);
+    expect(html).not.toContain('aria-label="Agent :');
     expect(html).not.toContain('aria-label="Destinataire');
   });
-  test("le chemin direct garde un nom statique même si un ancien indicateur dit équipe", () => {
+  test("le chemin direct n’affiche aucune puce agent même si un ancien indicateur dit équipe", () => {
     const origine = "dm-cicco@serveur.exemple:8791";
     const html = renderToStaticMarkup(<ComposeurFil origine={origine} conversation={conversation(origine)} equipe nouveauProjet={null} agentId={null} activite={null} />);
-    expect(html).toMatch(/<span[^>]*aria-label="Agent : Cicco"/);
+    expect(html).not.toContain('aria-label="Agent :');
     expect(html).toContain("Écris à Cicco…");
     expect(html).not.toContain('aria-label="Destinataire');
     expect(html).not.toContain('aria-label="Mentionner un agent"');
@@ -83,12 +88,24 @@ describe("identité au bas du fil téléphone", () => {
     expect(html).toContain("gpt-exemple");
     expect(html).not.toContain("Claude Sonnet");
   });
-  test("aucune puce de machine avec deux postes ou un VPS ; le bandeau reste", () => {
+  test("aucune puce de machine avec deux postes ou un VPS ; l’avertissement de connexion reste", () => {
     expect(rendu("dm-cicco")).not.toMatch(/>Sur /);
     const origine = "dm-cicco@srv2083864";
     const html = renderToStaticMarkup(<ComposeurFil origine={origine} conversation={{ ...conversation(origine), lieu: "https://srv2083864" }} equipe={false} nouveauProjet={null} agentId="cicco" activite={null} />);
     expect(html).not.toMatch(/>Sur /);
     expect(html).toContain("Ce téléphone n’est plus relié à ce VPS");
-    expect(html).toMatch(/<span[^>]*aria-label="Agent : Cicco"/);
+    expect(html).not.toContain('aria-label="Agent :');
+  });
+  test("un VPS relié garde le champ et la puce modèle sans bandeau informatif ni puce agent", () => {
+    simule.relie = true;
+    const origine = "dm-cicco@srv2083864";
+    const html = renderToStaticMarkup(<ComposeurFil origine={origine} conversation={{ ...conversation(origine, '{"modele":"opus","effort":"high"}'), lieu: "https://srv2083864" }} equipe={false} nouveauProjet={null} agentId="cicco" activite={null} />);
+    expect(html).not.toContain("Ton message part directement à");
+    expect(html).not.toContain("Ce téléphone n’est plus relié");
+    expect(html).not.toContain('aria-label="Agent :');
+    expect(html).not.toContain('aria-label="Destinataire');
+    expect(html).not.toMatch(/>Sur /);
+    expect(html).toContain('placeholder="Écris à Cicco…"');
+    expect(html).toContain('aria-label="Modèle : Claude Opus 5.5 · Élevé"');
   });
 });
