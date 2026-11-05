@@ -94,6 +94,7 @@
     "test:conseil-contexte": "node scripts/test-conseil-contexte.mjs",
     "test:configuration": "node scripts/test-configuration-klyra.mjs",
     "test:resume-auto": "node scripts/test-resume-auto.mjs",
+    "test:repartir-a-zero": "node scripts/test-repartir-a-zero.mjs",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:projets-telephone": "vitest run src/lib/telephone/dossiers.test.ts src/lib/telephone/gestes-fichiers.test.ts src/lib/telephone/ecrans.test.tsx",
     "test:identite": "vitest run src/lib/identite.test.ts",

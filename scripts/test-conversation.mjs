@@ -296,7 +296,7 @@ try {
   await app.aller("/chat?id=dm-principal");
   await app.cliquer(BOUTON);
   e = await etat(app);
-  verifier(e.bouton && JSON.stringify(e.lignes) === JSON.stringify(["Exporter en Markdown…"]), "la conversation directe propose seulement l’export dans son menu");
+  verifier(e.bouton && e.lignes.length === 2 && e.lignes[0].startsWith("Repartir à zéro") && e.lignes[1] === "Exporter en Markdown…", `le chat d’un agent propose de repartir à zéro et l’export (${e.lignes.join(", ")})`);
   await app.touche("Escape", { vk: 27 });
   verifier(app.erreurs.length === 0, `aucune erreur dans la page après redémarrage${app.erreurs.length ? ` (${app.erreurs.join(" | ")})` : ""}`);
 } catch (e) {

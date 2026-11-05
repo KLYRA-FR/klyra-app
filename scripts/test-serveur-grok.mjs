@@ -154,7 +154,7 @@ try {
     const utilisation = (await appel("/klyra/v1/moteurs/grok/utilisation?actualiser=1")).json.utilisation;
     assert.deepEqual(utilisation?.mois, { utilise: 0.375, reinitialiseA: Date.parse("2026-12-01T00:00:00Z") });
     assert.deepEqual([utilisation.session, utilisation.semaine, utilisation.statut], [null, null, "allowed"]);
-    ok("abonnement Grok : crédits du mois servis par le VPS (x.ai/billing)");
+    ok("abonnement Grok : crédits du mois servis par le VPS (_x.ai/billing)");
     const deconnecte = (await appel("/klyra/v1/moteurs/grok/deconnecter", "POST", {})).json.compte;
     assert.equal(deconnecte.connecte, false);
     ok("abonnement Grok par code d’appareil (lien + code), e-mail lu sans jeton ; déconnexion");
