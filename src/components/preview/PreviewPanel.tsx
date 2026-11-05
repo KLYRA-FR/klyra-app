@@ -58,6 +58,14 @@ function useLargeur() {
 }
 
 
+/** Largeur de la rangée conversation + aperçu. On saute les enveloppes en `display: contents`
+ *  (elles mesurent 0 px et bloqueraient la poignée à la largeur minimale). */
+function largeurDisponible(el: HTMLElement | null) {
+  let parent = el?.parentElement ?? null;
+  while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+  return parent?.clientWidth || 1200;
+}
+
 /** Un onglet de l'aperçu : sa page, comme un onglet de navigateur. */
 interface OngletApercu {
   id: string;
@@ -161,7 +169,7 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
   const tirer = (depart: ReactPointerEvent) => {
     const x0 = depart.clientX;
     const l0 = largeur;
-    const max = () => (panneau.current?.parentElement?.clientWidth ?? 1200) - CONVERSATION_MIN;
+    const max = () => largeurDisponible(panneau.current) - CONVERSATION_MIN;
     const bouger = (e: PointerEvent) => setLargeur(Math.max(LARGEUR_MIN, Math.min(max(), l0 + x0 - e.clientX)));
     const lacher = () => {
       window.removeEventListener("pointermove", bouger);
