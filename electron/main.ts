@@ -1,4 +1,3 @@
-import { depotDuProjet, terminerCollaboration, tourCollaboration } from "./collaboration/pont.ts";
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -1138,9 +1137,6 @@ function registerBridge() {
     }
   }, 15 * 60_000);
   veilleTravaux.unref();
-  handle("collaboration:depot", (dossier: unknown) => depotDuProjet(dossier));
-  handle("collaboration:tour", (demande: unknown) => tourCollaboration(demande));
-  handle("collaboration:terminer", (demande: unknown) => terminerCollaboration(demande));
   handle("superagent:peut-ouvrir", () => peutOuvrir());
   handle("superagent:ouvrir", (brut: unknown) => noterOuverture(brut));
   handle("superagent:message", (brut: unknown) => noterMessage(brut));

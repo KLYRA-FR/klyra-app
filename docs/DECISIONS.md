@@ -13,8 +13,6 @@ Une ligne par décision structurante encore valable. Les détails restent dans l
 | — | Le journal super-agent reste sur le poste, rien ne part vers Convex | `docs/SUPERAGENT.md` |
 | 2026-11-04 | klyra-app est l'outil de référence de l'équipe. Le circuit multi-agents s'y construit, OpenBot n'est pas étendu | Corentin |
 | 2026-11-04 | Le circuit est une fonction de l'app pour tout projet de KLYRA-FR, pas un outil réservé à ce dépôt. Les Apps sont installées sur tous les dépôts de l'organisation, `accesDepots` limite par personne et par dépôt | Corentin, `docs/JETONS-GITHUB.md` |
-| 2026-11-04 | L'agent du circuit n'a aucun accès à GitHub : le code valide, pousse et ouvre la PR | `docs/consignes/collaboration.md` |
-| 2026-11-04 | Le circuit tourne sur le PC seulement pour l'instant : un projet sur un VPS n'y entre pas, l'écran le dit. À rattraper | `electron/collaboration/`, `src/lib/collaboration.tsx` |
 | 2026-11-04 | Le verrou d'une Issue est la création de sa branche, atomique sur GitHub, sans service à ajouter | `electron/collaboration/reservation.ts` |
 | 2026-11-04 | Pour le travail partagé, les Issues et les PR font foi. Une Issue est une unité de travail | `docs/consignes/collaboration.md` |
 | 2026-11-04 | Le dépôt reste public pendant le pilote : aucun nom de client dans les Issues, contenu d'auteurs extérieurs ignoré par les agents | Corentin |

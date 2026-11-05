@@ -208,8 +208,6 @@ export interface Fil {
   echeance?: string | null;
   /** Le projet concerné, pour filtrer. Pas `Chat.projectId` : le fil apparaîtrait dans les onglets des conversations du projet. */
   projetId?: string | null;
-  /** L'Issue GitHub que ce fil traite, et le dossier de travail de cette Issue (electron/collaboration/). */
-  collaboration?: { depot: string; numero: number; chemin: string } | null;
   /** Le rappel d'où vient ce fil (« Confier à un agent »). */
   rappel?: { source: "local" | "compte"; id: string } | null;
   /** Fermé (archivé) le : pour la colonne Terminé. Absent sur les fils fermés avant les tickets. */

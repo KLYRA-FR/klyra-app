@@ -152,13 +152,9 @@ export function creerClientGithub(depot: string, jeton: string, appeler: typeof 
   }
 
   return {
-    /**
-     * Les Issues portant ce label. Seul un membre peut poser un label : c'est lui qui fait entrer une
-     * Issue dans le circuit. GitHub met quelques secondes à lister une nouvelle Issue (vu le 04/11/2026) :
-     * le tour suivant la voit. L'API des Issues rend aussi les PR : elles sont écartées.
-     */
-    async issuesAvecLabel(label: string, etat: "open" | "all"): Promise<IssueLue[]> {
-      const lues = await json<IssueBrute[]>("issues", `/issues?state=${etat}&labels=${encodeURIComponent(label)}&per_page=${PAR_PAGE}`);
+    /** Les Issues prêtes pour un agent. L'API des Issues rend aussi les PR : elles sont écartées. */
+    async issuesPretes(label: string): Promise<IssueLue[]> {
+      const lues = await json<IssueBrute[]>("issues", `/issues?state=open&labels=${encodeURIComponent(label)}&per_page=${PAR_PAGE}`);
       return lues.filter((i) => i.pull_request === undefined).map(issueLue);
     },
 
@@ -206,22 +202,10 @@ export function creerClientGithub(depot: string, jeton: string, appeler: typeof 
       return r.ok;
     },
 
-    async brancheParDefaut(): Promise<string> {
-      return (await json<{ default_branch: string }>("depot", "")).default_branch;
-    },
-
     async shaBrancheParDefaut(): Promise<string> {
-      const nom = (await json<{ default_branch: string }>("depot", "")).default_branch;
-      const ref = await json<{ object: { sha: string } }>("reference", `/git/ref/heads/${encodeURIComponent(nom)}`);
+      const depotLu = await json<{ default_branch: string }>("depot", "");
+      const ref = await json<{ object: { sha: string } }>("reference", `/git/ref/heads/${encodeURIComponent(depotLu.default_branch)}`);
       return ref.object.sha;
-    },
-
-    /** Ouvre la PR. Refuse un secret ou un chemin personnel dans le titre ou le texte. */
-    async ouvrirPull(c: { titre: string; corps: string; tete: string; base: string }): Promise<number> {
-      verifierTexte(`${c.titre}\n${c.corps}`);
-      const r = await requete("ouverture de PR", "/pulls", { method: "POST", corps: { title: c.titre, body: c.corps, head: c.tete, base: c.base } });
-      if (!r.ok) throw new ErreurGithub(r.status, "ouverture de PR");
-      return ((await r.json()) as { number: number }).number;
     },
 
     /**

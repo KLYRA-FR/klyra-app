@@ -49,7 +49,7 @@
     "test:jetons-compte": "electron scripts/test-jetons-compte.cjs",
     "test:session-maj": "node scripts/test-session-maj.mjs",
     "test:consommation": "electron scripts/test-consommation.cjs",
-    "test:collaboration": "node --experimental-strip-types --test electron/collaboration/collaboration.test.mts electron/collaboration/runner.test.mts",
+    "test:collaboration": "node --experimental-strip-types --test electron/collaboration/collaboration.test.mts",
     "test:relais": "node --experimental-strip-types --test electron/ordinateur/relais.test.mts",
     "test:apercu-fenetre": "node --experimental-strip-types --test electron/ordinateur/apercu-cible.test.mts electron/ordinateur/navigateur-defaut.test.mts",
     "test:routines": "node scripts/test-routine-schedule.cjs && node scripts/test-routines.cjs && node scripts/test-routine-ipc.cjs && node scripts/test-routine-claude.cjs",

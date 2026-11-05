@@ -17,8 +17,6 @@ export interface Carte {
   statut: StatutCarte;
   /** Le compte GitHub de la personne responsable, pas celui de l'agent. */
   responsable: string;
-  /** Le poste qui fait tourner l'agent : une même personne peut en avoir deux. */
-  poste: string;
   agent: string;
   /** Fin du bail, en ISO. */
   bail: string;
@@ -44,11 +42,10 @@ export interface Carte {
   consommation: Record<string, number>;
 }
 
-export function nouvelleCarte(c: { responsable: string; poste: string; agent: string; maintenant: number; generation?: number }): Carte {
+export function nouvelleCarte(c: { responsable: string; agent: string; maintenant: number; generation?: number }): Carte {
   return {
     statut: "en-cours",
     responsable: c.responsable,
-    poste: c.poste,
     agent: c.agent,
     bail: new Date(c.maintenant + BAIL_MS).toISOString(),
     generation: c.generation ?? 0,
@@ -147,7 +144,6 @@ export function lireCarte(corps: string): Carte | null {
   const valide =
     STATUTS.includes(c.statut) &&
     estTexte(c.responsable) &&
-    estTexte(c.poste) &&
     estTexte(c.agent) &&
     estTexte(c.bail) &&
     estNombre(c.generation) &&

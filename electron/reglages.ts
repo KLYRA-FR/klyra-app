@@ -1,4 +1,3 @@
-import { COLLABORATION_PAR_DEFAUT, validerCollaboration, type ReglagesCollaboration } from "./collaboration/reglages.ts";
 import { app, desktopCapturer, shell, systemPreferences } from "electron";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -53,8 +52,6 @@ export interface Reglages {
   configuration: ConfigurationKlyra;
   /** Skills reçues par chaque agent (skills-par-agent.ts). Absent du fichier : tout est reçu, puis le premier lancement fige. */
   skillsParAgent: SkillsParAgent;
-  /** Le circuit des Issues (collaboration/) : compte GitHub, ce poste, projets activés. */
-  collaboration: ReglagesCollaboration;
 }
 
 export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "majPrete";
@@ -66,7 +63,6 @@ const PAR_DEFAUT: Reglages = {
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
   skillsParAgent: SKILLS_PAR_DEFAUT,
-  collaboration: COLLABORATION_PAR_DEFAUT,
 };
 
 const fichier = () => path.join(app.getPath("userData"), "reglages.json");
@@ -75,7 +71,7 @@ let courants: Reglages | null = null;
 
 /** Garde seulement les clés connues, de bon type ; le reste reprend la valeur par défaut. */
 function valider(brut: unknown): Reglages {
-  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; navigateur?: { agents?: unknown }; sons?: Record<string, unknown>; configuration?: unknown; skillsParAgent?: unknown; collaboration?: unknown } | null;
+  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; navigateur?: { agents?: unknown }; sons?: Record<string, unknown>; configuration?: unknown; skillsParAgent?: unknown } | null;
   const n = b?.notifications ?? {};
   const notifications = { ...PAR_DEFAUT.notifications };
   for (const cle of Object.keys(notifications) as (keyof PreferencesNotifications)[]) {
@@ -94,7 +90,6 @@ function valider(brut: unknown): Reglages {
     sons,
     configuration: validerConfiguration(b?.configuration),
     skillsParAgent: validerSkillsParAgent(b?.skillsParAgent),
-    collaboration: validerCollaboration(b?.collaboration),
   };
 }
 

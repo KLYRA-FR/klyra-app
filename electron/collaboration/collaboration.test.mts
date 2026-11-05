@@ -12,7 +12,7 @@ import { correspond, motifsCodeowners, relever, risqueDesChemins } from "./risqu
 import { cheminWorktree, depotDuDistant, environnementGit, preparerWorktree, retirerWorktree } from "./worktree.ts";
 
 const T0 = Date.parse("2026-11-04T12:00:00Z");
-const carteDe = (partiel: Partial<Carte> = {}): Carte => ({ ...nouvelleCarte({ responsable: "corentin", poste: "pc-1", agent: "hugo", maintenant: T0 }), ...partiel });
+const carteDe = (partiel: Partial<Carte> = {}): Carte => ({ ...nouvelleCarte({ responsable: "corentin", agent: "hugo", maintenant: T0 }), ...partiel });
 const pull = (partiel: Partial<EtatPull> = {}): EtatPull => ({ numero: 9, sha: "aaa", fusionnee: false, fermee: false, verifications: "vertes", risque: "moyen", ...partiel });
 const etat = (partiel: Partial<EtatIssue> = {}): EtatIssue => ({
   numero: 5,
@@ -22,7 +22,6 @@ const etat = (partiel: Partial<EtatIssue> = {}): EtatIssue => ({
   branche: false,
   pull: null,
   moi: "corentin",
-  poste: "pc-1",
   enCoursIci: false,
   maintenant: T0,
   sansCarteDepuis: null,
@@ -161,7 +160,7 @@ test("une Issue prête sans branche se réserve ; sans label, rien", () => {
 
 test("une Issue bloquée, terminée ou déjà en cours ici ne réveille aucun modèle", () => {
   assert.equal(prochaineAction(etat({ labels: [LABEL_BLOQUE, LABEL_PRET] })).type, "attendre");
-  assert.equal(prochaineAction(etat({ branche: true, carte: carteDe({ statut: "bloque" }), labels: [LABEL_BLOQUE] })).type, "attendre");
+  assert.equal(prochaineAction(etat({ branche: true, carte: carteDe({ statut: "bloque" }) })).type, "attendre");
   assert.equal(prochaineAction(etat({ branche: true, carte: carteDe({ statut: "termine" }), ouverte: false })).type, "attendre");
   assert.equal(prochaineAction(etat({ enCoursIci: true, branche: true, carte: carteDe() })).type, "attendre");
 });
@@ -170,12 +169,6 @@ test("le travail d'un autre poste : on attend pendant son bail, on reprend aprè
   const autre = carteDe({ responsable: "pelin", generation: 2 });
   assert.equal(prochaineAction(etat({ branche: true, carte: autre, maintenant: T0 + 1 })).type, "attendre");
   assert.deepEqual(prochaineAction(etat({ branche: true, carte: autre, maintenant: T0 + BAIL_MS })), { type: "reprendre", generation: 3 });
-});
-
-test("une même personne sur deux postes : le second attend le bail du premier", () => {
-  const carte = carteDe({ poste: "pc-1", generation: 0 });
-  assert.equal(prochaineAction(etat({ poste: "pc-2", branche: true, carte, maintenant: T0 + 1 })).type, "attendre");
-  assert.deepEqual(prochaineAction(etat({ poste: "pc-2", branche: true, carte, maintenant: T0 + BAIL_MS })), { type: "reprendre", generation: 1 });
 });
 
 test("une réservation interrompue, sans carte, se reprend seulement après le bail", () => {
@@ -238,8 +231,8 @@ test("deux postes réservent en même temps : un seul gagne, et une seule carte 
   const g = fauxGithub();
   const client = creerClientGithub("klyra-fr/projet", "jeton", g.faux);
   const [a, b] = await Promise.all([
-    reserver(client, { numero: 5, moi: "corentin", poste: "pc-1", agent: "hugo", maintenant: T0 }),
-    reserver(client, { numero: 5, moi: "pelin", poste: "pc-2", agent: "noe", maintenant: T0 }),
+    reserver(client, { numero: 5, moi: "corentin", agent: "hugo", maintenant: T0 }),
+    reserver(client, { numero: 5, moi: "pelin", agent: "noe", maintenant: T0 }),
   ]);
   assert.deepEqual([a.statut, b.statut].sort(), ["deja_prise", "prise"]);
   assert.equal(g.commentaires.length, 1);
@@ -253,7 +246,7 @@ test("deux postes reprennent en même temps : un seul gagne, la génération mon
   const client = creerClientGithub("klyra-fr/projet", "jeton", g.faux);
   await client.ecrireCarte(5, carteDe({ responsable: "corentin", resume: "déjà analysé", generation: 0 }));
   const lue = await client.lireCarte(5);
-  const reprise = (moi: string) => reprendre(client, { numero: 5, moi, poste: `poste-${moi}`, agent: "noe", maintenant: T0 + BAIL_MS, generation: 1, carte: lue?.carte ?? null });
+  const reprise = (moi: string) => reprendre(client, { numero: 5, moi, agent: "noe", maintenant: T0 + BAIL_MS, generation: 1, carte: lue?.carte ?? null });
   const [a, b] = await Promise.all([reprise("pelin"), reprise("clement")]);
   assert.deepEqual([a.statut, b.statut].sort(), ["deja_prise", "prise"]);
   assert.ok(g.refs.has(`refs/heads/${brancheReprise(5, 1)}`));

@@ -14,7 +14,6 @@ import { MessageSuppression } from "@/components/planning/MessageSuppression";
 import { RegionAnnonces } from "@/components/team/RegionAnnonces";
 import { useRaccourciRecherche, useRaccourciReglages } from "@/lib/raccourcis";
 import { BibliothequeProvider } from "@/lib/bibliotheque";
-import { CircuitGithub } from "@/lib/collaboration";
 import { CompteProvider } from "@/lib/compte";
 import { CLE_LIEN_ATTENTE } from "@/lib/serveur-vps";
 import { CompteClaudeProvider } from "@/lib/compte-claude";
@@ -190,7 +189,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     <WorkspaceProvider>
       <CompteClaudeProvider>
         <CompteProvider>
-          <CircuitGithub />
           <BibliothequeProvider>
             <div data-shell={isDesktopShell() ? "desktop" : "web"} className="h-full bg-fond-page">
               <SonsApp />
