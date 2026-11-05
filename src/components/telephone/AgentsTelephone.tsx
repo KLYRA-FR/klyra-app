@@ -24,7 +24,7 @@ import { ComparerFicheTelephone } from "./ComparerFicheTelephone";
 import { EditeurFicheTelephone } from "./EditeurFicheTelephone";
 import { PageOnglet } from "./EnteteTelephone";
 import { FicheAgentTelephone, HistoriqueFicheTelephone } from "./FicheAgentTelephone";
-import { ConfirmationFeuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
+import { ConfirmationFeuille, MenuFeuille, useAppuiLong, type ActionMenu, type ActionRapide } from "./Feuille";
 import { LecturesAgentTelephone } from "./LecturesAgentTelephone";
 import { LouAgentTelephone } from "./LouAgentTelephone";
 import { useAnnonce } from "./Annonce";
@@ -154,39 +154,29 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
     });
   };
 
-  const actions = (agent: LigneAgent): ActionMenu[] => {
+  const actions = (agent: LigneAgent): { rapides: ActionRapide[]; lignes: ActionMenu[] } => {
     const etat = etatDe(agent.id);
     const directe = directeDe(agent.id);
     const assistantCarte = agent.id === ID_ASSISTANT;
-    const ecrire = { libelle: "Écrire", onChoisir: () => router.push(`/chat?id=${encodeURIComponent(ecrireVers(agent.id))}`) };
-    const nouveauFil = {
-      libelle: "Nouveau fil",
-      onChoisir: () => {
-        const origine = nouvelIdFil();
-        void creerFil({ origine, roleId: agent.id })
-          .then(() => router.push(`/chat?id=${encodeURIComponent(origine)}`))
-          .catch((e: unknown) => setEchecFile(messageErreur(e)));
-      },
+    const ecrire = () => router.push(`/chat?id=${encodeURIComponent(ecrireVers(agent.id))}`);
+    const nouveauFil = () => {
+      const origine = nouvelIdFil();
+      void creerFil({ origine, roleId: agent.id })
+        .then(() => router.push(`/chat?id=${encodeURIComponent(origine)}`))
+        .catch((e: unknown) => setEchecFile(messageErreur(e)));
     };
+    const basculerEpingle = () => void agir("agents.preference", { id: agent.id, epingle: !etat?.epingle }, etat?.epingle ? `${agent.nom} n’est plus épinglé.` : `${agent.nom} épinglé.`).then((ok) => ok && etats.relancer());
+    const basculerSourdine = () => void agir("agents.preference", { id: agent.id, muet: !etat?.muet }, etat?.muet ? `${agent.nom} te prévient de nouveau.` : `${agent.nom} en sourdine.`).then((ok) => ok && etats.relancer());
     const fiche = { libelle: "Voir la fiche", onChoisir: () => router.push(`/equipe?agent=${encodeURIComponent(agent.id)}`) };
-    const listeActions: ActionMenu[] = [
-      ecrire,
-      nouveauFil,
-      ...(!assistantCarte
-        ? [
-            {
-              libelle: etat?.epingle ? "Désépingler" : "Épingler",
-              onChoisir: () => void agir("agents.preference", { id: agent.id, epingle: !etat?.epingle }, etat?.epingle ? `${agent.nom} n’est plus épinglé.` : `${agent.nom} épinglé.`).then((ok) => ok && etats.relancer()),
-              ...posteFerme,
-            },
-          ]
-        : []),
-      {
-        libelle: etat?.muet ? "En sourdine" : "Sourdine",
-        onChoisir: () => void agir("agents.preference", { id: agent.id, muet: !etat?.muet }, etat?.muet ? `${agent.nom} te prévient de nouveau.` : `${agent.nom} en sourdine.`).then((ok) => ok && etats.relancer()),
-        ...posteFerme,
-      },
+    const rapides: ActionRapide[] = [
+      { libelle: "Écrire", icone: "message-square", onChoisir: ecrire },
+      { libelle: "Nouveau fil", icone: "message-plus-01", onChoisir: nouveauFil },
     ];
+    const listeActions: ActionMenu[] = [];
+    if (ouvert && !assistantCarte) rapides.push({ libelle: etat?.epingle ? "Désépingler" : "Épingler", icone: etat?.epingle ? "pin-off-01" : "pin-01", actif: !!etat?.epingle, onChoisir: basculerEpingle });
+    if (ouvert) rapides.push({ libelle: "Sourdine", icone: "volume-01", actif: !!etat?.muet, onChoisir: basculerSourdine });
+    if (!ouvert && !assistantCarte) listeActions.push({ libelle: etat?.epingle ? "Désépingler" : "Épingler", onChoisir: basculerEpingle, ...posteFerme });
+    if (!ouvert) listeActions.push({ libelle: etat?.muet ? "En sourdine" : "Sourdine", onChoisir: basculerSourdine, ...posteFerme });
     if ((directe?.nonLus ?? 0) > 0 && directe) {
       listeActions.push({
         libelle: "Marquer comme lu",
@@ -226,7 +216,7 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
     if (!assistantCarte && !agent.actif) {
       listeActions.push({ libelle: libelleRetour(etat), onChoisir: () => remettre(agent), ...posteFerme });
     }
-    return listeActions;
+    return { rapides, lignes: listeActions };
   };
 
   const carte = (agent: LigneAgent, detail: string, grise = false) => {
@@ -327,7 +317,7 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
 
       <ChiffresTelephone />
 
-      {menu ? <MenuFeuille titre={menu.nom} actions={actions(menu)} onFermer={() => setMenu(null)} /> : null}
+      {menu ? <MenuFeuille titre={menu.nom} rapides={actions(menu).rapides} actions={actions(menu).lignes} onFermer={() => setMenu(null)} /> : null}
       {desactiver ? (
         <ConfirmationFeuille
           titre={`Désactiver ${desactiver.nom} ?`}
