@@ -34,9 +34,12 @@ export function Feuille({
   haute = false,
   role = "dialog",
   sansEnTete = false,
+  retour,
   children,
   pied,
 }: {
+  /** Une sous-page de la feuille (E2-38) : « ‹ » revient à la page d'avant, dans la même feuille. */
+  retour?: () => void;
   titre: string;
   sousTitre?: string;
   objet?: { visuel: ReactNode; sous?: string };
@@ -173,6 +176,7 @@ export function Feuille({
                   defile && "shadow-[inset_0_-1px_0_var(--color-bordure-defaut)]",
                 )}
               >
+                {retour ? <BoutonIcone variant="discret" className="-ml-3 size-11 shrink-0" libelle="Retour" onClick={retour} icone={<Icon name="chevron-left" size={22} />} /> : null}
                 {objet ? <span className="shrink-0">{objet.visuel}</span> : null}
                 <div className="min-w-0 flex-1">
                   <h2 id={id} className="truncate text-body-s font-semibold text-texte-principal">
@@ -229,6 +233,8 @@ export interface ActionMenu {
   separateurAvant?: boolean;
   /** Le menu se change en cette confirmation, dans la même feuille (§ 4.1). */
   confirmation?: { titre: string; texte?: string; confirmer: string };
+  /** Mène à une sous-page : la feuille reste ouverte, un chevron le dit. */
+  sousPage?: boolean;
 }
 
 /** Les actions rapides en tête d'un menu (grille de 4, `ActionsRapides` du bureau). */
@@ -249,13 +255,20 @@ export interface ActionRapide {
 export function MenuFeuille({
   titre,
   objet,
+  sousTitre,
   rapides,
+  entete,
+  retour,
   actions,
   onFermer,
 }: {
   titre: string;
+  sousTitre?: string;
   objet?: { visuel: ReactNode; sous?: string };
   rapides?: ActionRapide[];
+  /** Ce qui précède les lignes, propre à un écran (les réactions d'un message). */
+  entete?: ReactNode;
+  retour?: () => void;
   actions: ActionMenu[];
   onFermer: () => void;
 }) {
@@ -268,7 +281,8 @@ export function MenuFeuille({
     );
   }
   return (
-    <Feuille titre={titre} objet={objet} onFermer={onFermer}>
+    <Feuille titre={titre} sousTitre={sousTitre} objet={objet} retour={retour} onFermer={onFermer}>
+      {entete}
       <ContenuMenu rapides={rapides} actions={actions} onConfirmer={setAConfirmer} />
     </Feuille>
   );
@@ -276,8 +290,8 @@ export function MenuFeuille({
 
 function ContenuMenu({ rapides, actions, onConfirmer }: { rapides?: ActionRapide[]; actions: ActionMenu[]; onConfirmer: (a: ActionMenu) => void }) {
   const fermer = useFermerFeuille();
-  const choisir = (action: { onChoisir: () => void }) => {
-    fermer();
+  const choisir = (action: { onChoisir: () => void; sousPage?: boolean }) => {
+    if (!action.sousPage) fermer();
     action.onChoisir();
   };
   return (
@@ -321,6 +335,7 @@ function ContenuMenu({ rapides, actions, onConfirmer }: { rapides?: ActionRapide
                 {action.libelle}
                 {action.note ? <span className="mt-0.5 block text-ui-xs text-texte-secondaire">{action.note}</span> : null}
               </span>
+              {action.sousPage ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
             </button>
           </li>
         ))}

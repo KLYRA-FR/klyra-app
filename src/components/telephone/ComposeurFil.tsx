@@ -1,46 +1,52 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent, type Ref } from "react";
 import { EFFORTS, MODELES } from "@/components/chat/ChoixModele";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { garderBrouillon, lireBrouillons, surBrouillon } from "@/lib/brouillons";
 import { cn } from "@/lib/cn";
 import { messageErreur } from "@/lib/compte";
+import { COMMANDE_COMPACTER, formaterJetons, MARGE_PLUS_TARD } from "@/lib/contexte";
 import type { Activite } from "@/lib/copie-compte";
-import { useGestePoste } from "@/lib/poste/client";
+import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { bandeauComposeur, majuscule, support, supportOuOrdinateur } from "@/lib/poste-texte";
 import { nomLieu, useServeursRelies } from "@/lib/lieux";
+import { surRepondre } from "@/lib/repondre";
 import { jetonAppareil } from "@/lib/serveur-vps";
-import { ASSISTANT, mentionDans, mentionEnCours, type ConversationLue } from "@/lib/telephone/chats";
+import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skills";
+import { ASSISTANT, conseilDuFil, mentionDans, mentionEnCours, type ConversationLue } from "@/lib/telephone/chats";
+import { garderCitation, lireCitation, type CitationBrouillon } from "@/lib/telephone/citation";
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
 import { ajouterPieces, MAX_PIECES, nomCapture, taillePiece, texteParDefaut } from "@/lib/telephone/pieces";
+import { useAnnonce } from "./Annonce";
+import { useHorsLigne } from "./BandeauReseau";
+import { CocheChoix } from "./Controles";
 import { Feuille, MenuFeuille } from "./Feuille";
+import { GroupeListe, LigneListe } from "./Liste";
 import { usePostes, useSupport } from "./poste";
 import { RondAgent, useCartes } from "./AgentsChat";
 
-const PUCE = "flex h-11 shrink-0 items-center gap-1.5 rounded-xs border border-bordure-subtile bg-fond-surface px-3 text-ui text-texte-principal";
+/* Une puce : 36 px à voir, 44 px à toucher. */
+const PUCE =
+  "relative flex h-9 shrink-0 items-center gap-1 rounded-xs border border-bordure-subtile bg-fond-surface px-2.5 text-ui text-texte-principal after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']";
 
 type Choix = { modele: string | null; effort: string | null };
 
+const COMPACTER: SkillProposee = { nom: "compact", description: "Résume la conversation pour alléger les prochains appels" };
+
 function libelleModele(choix: Choix | null): string {
-  if (!choix?.modele) return "Modèle de la fiche";
+  if (!choix?.modele) return "Modèle";
   const nom = MODELES.find((m) => m.id === choix.modele)?.nom.replace("Claude ", "") ?? choix.modele;
   const effort = choix.modele !== "haiku" ? EFFORTS.find((e) => e.id === choix.effort)?.nom : undefined;
   return effort ? `${nom} · ${effort}` : nom;
 }
 
-/** « Modèle et effort » en feuille : ils partent avec le prochain message (File). */
+/** « Modèle et effort » en feuille (E2-34) : ils partent avec le prochain message ; fermer annule le choix provisoire. */
 function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; onChoisir: (choix: Choix) => void; onFermer: () => void }) {
   const [choix, setChoix] = useState<Choix>(actuel ?? { modele: null, effort: null });
-  const radio = (choisi: boolean) =>
-    cn("flex min-h-12 w-full items-center gap-3 border-b border-bordure-subtile text-left text-body-s last:border-b-0", choisi ? "font-medium text-texte-principal" : "text-texte-principal");
-  const rond = (choisi: boolean) => (
-    <span aria-hidden="true" className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", choisi ? "border-bleu-k1-500 bg-bleu-k1-500 text-texte-inverse" : "border-bordure-forte")}>
-      {choisi ? <Icon name="check-01" size={14} /> : null}
-    </span>
-  );
+  const radio = "flex min-h-12 w-full items-center gap-3 border-b border-bordure-subtile text-left text-body-s text-texte-principal last:border-b-0";
   return (
     <Feuille
       titre="Modèle et effort"
@@ -59,9 +65,9 @@ function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; 
       }
     >
       <div role="radiogroup" aria-label="Modèle">
-        <button type="button" role="radio" aria-checked={!choix.modele} className={radio(!choix.modele)} onClick={() => setChoix({ modele: null, effort: null })}>
-          {rond(!choix.modele)}
-          Celui de la fiche
+        <button type="button" role="radio" aria-checked={!choix.modele} className={radio} onClick={() => setChoix({ modele: null, effort: null })}>
+          <span className="min-w-0 flex-1">Celui de la fiche</span>
+          <CocheChoix choisi={!choix.modele} />
         </button>
         {MODELES.map((m) => (
           <button
@@ -69,11 +75,11 @@ function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; 
             type="button"
             role="radio"
             aria-checked={choix.modele === m.id}
-            className={radio(choix.modele === m.id)}
+            className={radio}
             onClick={() => setChoix((c) => ({ modele: m.id, effort: m.id === "haiku" ? null : (c.effort ?? "high") }))}
           >
-            {rond(choix.modele === m.id)}
-            {m.nom}
+            <span className="min-w-0 flex-1">{m.nom}</span>
+            <CocheChoix choisi={choix.modele === m.id} />
           </button>
         ))}
       </div>
@@ -101,10 +107,99 @@ function FeuilleModele({ actuel, onChoisir, onFermer }: { actuel: Choix | null; 
   );
 }
 
+interface Suggestion {
+  cle: string;
+  nom: string;
+  detail: string;
+  visuel?: React.ReactNode;
+}
+
+/** La liste au-dessus du champ (E2-31, E2-32) : au doigt ou au clavier, sans jamais envoyer ; le clavier du téléphone reste ouvert. */
+function ListeSuggestion({ libelle, suggestions, actif, aide, onChoisir }: { libelle: string; suggestions: Suggestion[]; actif: number; aide?: string | null; onChoisir: (s: Suggestion) => void }) {
+  return (
+    <div className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-[40vh] overflow-y-auto rounded-xl border border-bordure-subtile bg-fond-surface py-1 shadow-ombre-levee">
+      {aide ? <p className="px-3.5 py-2.5 text-ui text-texte-secondaire">{aide}</p> : null}
+      {suggestions.length ? (
+        <ul role="listbox" aria-label={libelle} id="composeur-suggestions">
+          {suggestions.map((s, i) => (
+            <li key={s.cle} role="option" aria-selected={i === actif} id={`composeur-suggestion-${i}`}>
+              <button
+                type="button"
+                /* Le champ garde le focus : le clavier ne se ferme pas au toucher. */
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onChoisir(s)}
+                className={cn("flex min-h-12 w-full items-center gap-2.5 px-3.5 py-1.5 text-left", i === actif && "bg-fond-survol")}
+              >
+                {s.visuel}
+                <span className="truncate text-body-s text-texte-principal">{s.nom}</span>
+                <span className="min-w-0 truncate text-ui-xs text-texte-secondaire">{s.detail}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** Le conseil de contexte au-dessus du composeur (E2-42) : la mesure copiée, jamais pendant une réponse, « Plus tard » retenu ici. */
+const cleMasque = (origine: string) => `klyra-telephone-contexte-${origine}`;
+
+function ConseilFil({ conversation, origine, occupe, onResumer, onNouveauFil }: { conversation: ConversationLue | undefined; origine: string; occupe: boolean; onResumer: () => void; onNouveauFil: () => void }) {
+  const { nom } = useCartes();
+  const [masque, setMasque] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(localStorage.getItem(cleMasque(origine))) || 0;
+  });
+  const [maintenant] = useState(() => Date.now());
+  const conseil = conseilDuFil(conversation, { maintenant, masque, occupe });
+  if (!conseil) return null;
+  const qui = nom(conseil.roleId);
+  const taille = formaterJetons(conseil.jetons);
+  const constat = conseil.cacheExpire
+    ? `Pause de plus d’une heure : ton prochain message ici fera relire ${taille} jetons à ${qui}, au prix fort.`
+    : `${qui} relit ${taille} jetons à chaque étape de cette conversation.`;
+  return (
+    <div role="status" className="mb-2 rounded-xl bg-fond-surface-grise px-3 py-2.5">
+      <p className="text-ui text-texte-principal">
+        {constat} <span className="text-texte-secondaire">{conseil.raison === "lourde" ? "Pour continuer ici, un résumé allège la suite." : conseil.filPossible ? "Pour un nouveau sujet, un fil neuf repart léger." : ""}</span>
+      </p>
+      <div className="mt-1 flex flex-wrap justify-end gap-1">
+        <button
+          type="button"
+          className="flex h-11 items-center rounded-xs px-3 text-ui font-medium text-texte-principal"
+          onClick={() => {
+            const suite = conseil.jetons + MARGE_PLUS_TARD;
+            setMasque(suite);
+            try {
+              localStorage.setItem(cleMasque(origine), String(suite));
+            } catch {
+              /* stockage indisponible : le conseil reviendra à la prochaine ouverture */
+            }
+          }}
+        >
+          Plus tard
+        </button>
+        {conseil.filPossible && conseil.raison === "pause" ? (
+          <button type="button" className="flex h-11 items-center rounded-xs bg-fond-surface px-3 text-ui font-medium text-texte-principal" onClick={onNouveauFil}>
+            Nouveau fil
+          </button>
+        ) : null}
+        {conseil.raison === "lourde" ? (
+          <button type="button" className="flex h-11 items-center rounded-xs bg-fond-surface px-3 text-ui font-medium text-texte-principal" onClick={onResumer}>
+            Résumer la conversation
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 /**
- * Le composeur du fil (T-02), collé en bas (le fil suit le clavier) : joindre, écrire (texte 16 px),
- * mentionner, destinataire, modèle, et Envoyer — ou « Mettre en attente » pendant que l'agent travaille,
- * avec Arrêter à côté (Poste). L'envoi passe par `useEnvoyerMessage` (File) ; le brouillon reste sur ce téléphone.
+ * Le composeur du fil (§ 2, E2-29 à E2-35), au bas de la zone visible : une carte comme au bureau, le
+ * champ (16 px, jusqu'à 40 % de la hauteur visible), puis joindre, destinataire, @, modèle, Arrêter et
+ * Envoyer. L'envoi passe par `useEnvoyerMessage` (File). Le brouillon et sa citation restent sur ce téléphone,
+ * par conversation ; un envoi refusé garde tout. Choisir une suggestion ou une option n'envoie jamais rien.
  */
 export function ComposeurFil({
   origine,
@@ -113,29 +208,43 @@ export function ComposeurFil({
   nouveauProjet,
   agentId,
   activite,
+  onNouveauFil,
+  poignee,
 }: {
+  /** Pour ouvrir « Modèle et effort » depuis les Détails (E2-45). */
+  poignee?: Ref<{ ouvrirModele: () => void }>;
   origine: string;
   conversation: ConversationLue | undefined;
   equipe: boolean;
   nouveauProjet: string | null;
   agentId: string | null;
   activite: Activite | null;
+  onNouveauFil?: () => void;
 }) {
   const envoyer = useEnvoyerMessage();
+  const annoncer = useAnnonce();
+  const horsLigne = useHorsLigne();
   const { postes, principal, ouvert } = usePostes();
   const sur = useSupport();
   const { cartes, nom } = useCartes();
   const arret = useGestePoste();
   const [texte, setTexte] = useState(() => (typeof window === "undefined" ? "" : (lireBrouillons()[origine]?.text ?? "")));
+  const [citation, setCitation] = useState<CitationBrouillon | null>(() => (typeof window === "undefined" ? null : lireCitation(origine)));
   const [pieces, setPieces] = useState<File[]>([]);
   const [alerte, setAlerte] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const [deposees, setDeposees] = useState(0);
+  /* L'arrêt demandé ne vaut que tant que l'agent travaille : dès que l'état reçu change, il ne s'affiche plus. */
+  const [arretDemande, setArretDemande] = useState(false);
   const [destinataire, setDestinataire] = useState<string | null>(null);
   const [choix, setChoix] = useState<Choix | null>(null);
   const [posteChoisi, setPosteChoisi] = useState<string | null>(null);
-  const [feuille, setFeuille] = useState<"joindre" | "mention" | "destinataire" | "modele" | "poste" | null>(null);
+  const [feuille, setFeuille] = useState<"joindre" | "destinataire" | "modele" | "poste" | null>(null);
+  const [curseur, setCurseur] = useState(0);
+  const [actif, setActif] = useState(0);
+  const [listeFermee, setListeFermee] = useState(false);
+  useImperativeHandle(poignee, () => ({ ouvrirModele: () => setFeuille("modele") }), []);
   const champ = useRef<HTMLTextAreaElement>(null);
-  const curseur = useRef(0);
   const photo = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const fichier = useRef<HTMLInputElement>(null);
@@ -144,29 +253,51 @@ export function ComposeurFil({
   useEffect(() => {
     garderBrouillon(origine, { text: texte, fichiers: [] });
   }, [origine, texte]);
-  /* Une suggestion de l'accueil s'ajoute au brouillon : focus, curseur à la fin, rien n'est envoyé. */
+  useEffect(() => {
+    garderCitation(origine, citation);
+  }, [origine, citation]);
+
+  const poserFocus = (position?: number) =>
+    requestAnimationFrame(() => {
+      const el = champ.current;
+      el?.focus();
+      if (position !== undefined) {
+        el?.setSelectionRange(position, position);
+        setCurseur(position);
+      }
+    });
+
+  /* Une suggestion de l'accueil, un passage cité, un envoi annulé s'ajoutent au brouillon : focus, curseur à la fin, rien n'est envoyé. */
   useEffect(
     () =>
       surBrouillon(origine, (suite) => {
         setTexte(suite);
-        requestAnimationFrame(() => {
-          const el = champ.current;
-          el?.focus();
-          el?.setSelectionRange(suite.length, suite.length);
-        });
+        poserFocus(suite.length);
       }),
     [origine],
   );
-  /* Le champ grandit avec le texte, jusqu'à six lignes environ. */
+  /* « Répondre » : la citation au-dessus du champ, retirable, sans toucher au texte. */
+  useEffect(
+    () =>
+      surRepondre(origine, (c) => {
+        setCitation(c);
+        poserFocus();
+      }),
+    [origine],
+  );
+  /* Le champ grandit avec le texte jusqu'à 40 % de la hauteur visible, puis défile. */
   useEffect(() => {
     const el = champ.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+    const plafond = (window.visualViewport?.height ?? window.innerHeight) * 0.4;
+    el.style.height = `${Math.min(el.scrollHeight, plafond)}px`;
   }, [texte]);
 
   const occupe = ouvert && !!activite && activite.etat !== "question";
-  const peutEnvoyer = (texte.trim().length > 0 || pieces.length > 0) && !envoi;
+  const arretEnCours = arretDemande && occupe;
+
+  const peutEnvoyer = (texte.trim().length > 0 || pieces.length > 0) && !envoi && !horsLigne;
   const actifs = (cartes ?? []).filter((c) => c.actif || c.origine === ASSISTANT);
   const modeleActuel = choix ?? lireModele(conversation?.modele);
   const postesOuverts = [...(postes ?? [])].sort((a, b) => b.dernierSignal - a.dernierSignal);
@@ -180,6 +311,38 @@ export function ComposeurFil({
     : directVps && principal
       ? `${majuscule(supportOuOrdinateur(principal))} est fermé : ton message part directement à ${nomLieu(lieu, serveurs)}.`
       : bandeauComposeur(principal);
+  /* Le destinataire effectif : le choix explicite, sinon la première mention reconnue, sinon l'assistant (E2-33). */
+  const effectif = destinataire ?? mentionDans(texte, cartes ?? []) ?? ASSISTANT;
+
+  /* La liste « @ » (équipe) ou « / » (E2-31, E2-32). */
+  const mention = equipe ? mentionEnCours(texte, curseur) : null;
+  const commande = commandeEnCours(texte, curseur);
+  const agentCompetences = agentId ?? (effectif || ASSISTANT);
+  const competences = useLecturePoste<{ skills: SkillProposee[]; avecClaude: boolean }>("fil.competences", commande !== null && conversation ? { conversation: origine, agent: agentCompetences } : null);
+  const donneesCompetences = competences.etat === "ok" ? competences.data : competences.etat === "ferme" ? (competences.gardee?.data ?? null) : null;
+  const suggestions: Suggestion[] = listeFermee
+    ? []
+    : mention
+      ? actifs
+          .filter((c) => c.nom.toLowerCase().includes(mention.requete.toLowerCase()))
+          .slice(0, 8)
+          .map((c) => ({ cle: c.origine, nom: c.nom, detail: c.origine === ASSISTANT ? "Il répartit le travail" : c.roleCourt, visuel: <RondAgent id={c.origine} taille={28} /> }))
+      : commande !== null && donneesCompetences
+        ? skillsProposees([...donneesCompetences.skills, ...(donneesCompetences.avecClaude ? [COMPACTER] : [])], commande).map((s) => ({ cle: s.nom, nom: `/${s.nom}`, detail: s.description }))
+        : [];
+  const aideListe = listeFermee
+    ? null
+    : mention && suggestions.length === 0
+      ? "Aucun agent à ce nom : continue d’écrire."
+      : commande !== null && !mention && !donneesCompetences
+        ? competences.etat === "attente"
+          ? `Demande à ${sur}…`
+          : `Les compétences seront visibles à l’ouverture de ${sur}. Tu peux écrire la commande.`
+        : commande !== null && !mention && suggestions.length === 0
+          ? "Aucune compétence à ce nom : continue d’écrire."
+          : null;
+  const listeOuverte = suggestions.length > 0 || !!aideListe;
+  const position = Math.min(actif, Math.max(0, suggestions.length - 1));
 
   const joindre = (liste: FileList | File[] | null) => {
     if (!liste?.length) return;
@@ -201,19 +364,45 @@ export function ComposeurFil({
     joindre(images.map((f) => (/^image\.\w+$/.test(f.name) || !f.name ? new File([f], nomCapture(f.type, new Date()), { type: f.type }) : f)));
   };
 
-  const inserer = (mot: string) => {
-    const position = curseur.current;
-    const enCours = mentionEnCours(texte, position);
-    const debut = enCours ? enCours.debut : position;
+  /* Un nom ou une commande à la place de ce qui est en cours de frappe : le curseur reste juste après. */
+  const remplacer = (debut: number, insere: string) => {
+    const apres = texte.slice(curseur);
     const avant = texte.slice(0, debut);
-    const apres = texte.slice(position);
-    const suite = `${avant}${avant && !/\s$/.test(avant) ? " " : ""}@${mot} ${apres}`;
+    const suite = `${avant}${insere}${apres}`;
     setTexte(suite);
-    const fin = suite.length - apres.length;
-    requestAnimationFrame(() => {
-      champ.current?.focus();
-      champ.current?.setSelectionRange(fin, fin);
-    });
+    setActif(0);
+    poserFocus(avant.length + insere.length);
+  };
+
+  const choisirSuggestion = (s: Suggestion) => {
+    if (mention) return remplacer(mention.debut, `@${s.nom} `);
+    remplacer(0, `${s.nom} `);
+  };
+
+  /* « @ » : le signe au curseur, et la liste s'ouvre ; le clavier reste. */
+  const ouvrirMention = () => {
+    const el = champ.current;
+    const ici = el?.selectionStart ?? texte.length;
+    const avant = texte.slice(0, ici);
+    const insere = `${avant && !/\s$/.test(avant) ? " " : ""}@`;
+    setListeFermee(false);
+    setTexte(`${avant}${insere}${texte.slice(ici)}`);
+    poserFocus(ici + insere.length);
+  };
+
+  const toucheListe = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || !listeOuverte) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setListeFermee(true);
+    } else if (suggestions.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      setActif((position + (e.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length);
+    } else if (suggestions.length && e.key === "Enter") {
+      e.preventDefault();
+      choisirSuggestion(suggestions[position]);
+    }
   };
 
   const soumettre = async () => {
@@ -229,112 +418,170 @@ export function ComposeurFil({
     }
     if (nouveauProjet && !conversation) options.nouveau = { projetId: nouveauProjet };
     if (postesOuverts.length >= 2 && posteVise) options.poste = posteVise.cle;
+    if (citation) options.citation = citation;
     setEnvoi(true);
+    setDeposees(0);
     setAlerte(null);
     try {
-      await envoyer({ conversationOrigine: origine, texte: texteParDefaut(texte, pieces.length), options, pieces });
+      await envoyer({ conversationOrigine: origine, texte: texteParDefaut(texte, pieces.length), options, pieces, surPiece: setDeposees });
       setTexte("");
       setPieces([]);
+      setCitation(null);
     } catch (err) {
+      /* Non accepté : le texte, la citation et les pièces restent, pour réessayer sans rien ressaisir. */
       setAlerte(messageErreur(err));
     } finally {
       setEnvoi(false);
     }
   };
 
+  /* E2-43 : `/compact` une seule fois, par le canal du fil ; « Résumé demandé » s'affiche dans le fil, jamais « résumé » avant la réponse. */
+  const resumer = () => {
+    void envoyer({ conversationOrigine: origine, texte: COMMANDE_COMPACTER, options: {} }).then(
+      () => annoncer("Résumé demandé"),
+      (err: unknown) => annoncer({ texte: messageErreur(err), erreur: true }),
+    );
+  };
+
+  /* Arrêter (E2-17) : la demande part ; seul l'état reçu de l'ordinateur dit que l'agent s'est arrêté. */
   const arreter = async () => {
     const r = await arret.faire("fil.arreter", { conversation: origine });
-    if (!r.ok) setAlerte(r.code === "delai" ? `${majuscule(sur)} ne répond pas.` : r.message || "L’agent n’a pas pu être arrêté.");
+    if (r.ok) setArretDemande(true);
+    else setAlerte(r.code === "delai" ? `${majuscule(sur)} ne répond pas.` : r.message || "L’agent n’a pas pu être arrêté.");
   };
 
   const placeholder = agentId ? `Écris à ${nom(agentId)}…` : equipe ? "Écris à l’équipe, ou @mentionne un agent…" : "Écris ton message…";
+  const qui = activite ? nom(activite.roleId) : null;
+  const noteOccupe = arretEnCours ? `Arrêt demandé : ${qui} s’arrête dès que ${sur} le confirme.` : occupe && texte.trim() ? `Il partira quand ${qui} aura fini.` : null;
 
   return (
-    <div className="shrink-0 border-t border-bordure-subtile bg-fond-surface px-3 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
-      {bandeau ? <p className="mb-2 text-ui text-texte-secondaire">{bandeau}</p> : null}
-      {pieces.length ? (
-        <ul aria-label="Pièces jointes" className="mb-2 flex gap-2 overflow-x-auto [scrollbar-width:none]">
-          {pieces.map((p, i) => (
-            <li key={`${p.name}-${p.size}-${p.lastModified}`} className="flex h-12 max-w-[220px] shrink-0 items-center gap-2 rounded-md border border-bordure-subtile bg-fond-page pl-3">
-              <Icon name={p.type.startsWith("image/") ? "image-01" : "file-01"} size={18} className="shrink-0 text-icone-secondaire" />
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate text-ui text-texte-principal">{p.name}</span>
-                <span className="text-ui-xs text-texte-secondaire">{taillePiece(p.size)}</span>
-              </span>
-              <BoutonIcone variant="discret" className="size-11 shrink-0" libelle={`Retirer ${p.name}`} icone={<Icon name="x-01" size={16} />} onClick={() => setPieces((liste) => liste.filter((_, j) => j !== i))} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {alerte ? (
-        <p role="alert" className="mb-2 text-ui text-texte-erreur">
-          {alerte}
+    <div className="shrink-0 bg-fond-page px-2 pt-1 pb-[calc(8px+env(safe-area-inset-bottom))]">
+      <ConseilFil conversation={conversation} origine={origine} occupe={occupe} onResumer={resumer} onNouveauFil={() => onNouveauFil?.()} />
+      {bandeau ? (
+        <p className="mb-2 flex items-start gap-2 rounded-xl bg-fond-surface-grise px-3 py-2.5 text-ui text-texte-principal">
+          <Icon name="clock-01" size={18} className="mt-px shrink-0 text-icone-secondaire" />
+          {bandeau}
         </p>
       ) : null}
-      {envoi && pieces.length ? (
-        <p role="status" className="mb-2 text-ui text-texte-secondaire">
-          Envoi des pièces jointes…
-        </p>
-      ) : null}
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void soumettre();
-        }}
-        className="flex items-end gap-1.5"
-      >
-        <BoutonIcone variant="discret" className="size-11 shrink-0" libelle="Joindre" aria-haspopup="dialog" icone={<Icon name="plus-01" size={22} />} onClick={() => setFeuille("joindre")} />
-        <textarea
-          ref={champ}
-          rows={1}
-          value={texte}
-          aria-label="Message"
-          placeholder={placeholder}
-          enterKeyHint="send"
-          onChange={(e) => {
-            setTexte(e.target.value);
-            curseur.current = e.target.selectionStart;
-            /* « @ » tapé en début de mot : la liste des agents actifs, dans une feuille. */
-            if (equipe && e.target.value.length > texte.length && mentionEnCours(e.target.value, e.target.selectionStart)?.requete === "") setFeuille("mention");
+      <div className="relative">
+        {listeOuverte ? <ListeSuggestion libelle={mention ? "Agents" : "Compétences"} suggestions={suggestions} actif={position} aide={aideListe} onChoisir={choisirSuggestion} /> : null}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void soumettre();
           }}
-          onSelect={(e) => {
-            curseur.current = e.currentTarget.selectionStart;
-          }}
-          onPaste={coller}
-          className="max-h-[168px] min-h-11 min-w-0 flex-1 resize-none rounded-md border border-bordure-champ bg-fond-page px-3 py-2.5 text-body-s leading-[1.4] text-texte-principal"
-        />
-        {occupe ? (
-          <BoutonIcone variant="blanc" className="size-11 shrink-0" libelle="Arrêter l’agent" disabled={arret.occupe} icone={<Icon name="stop-01" size={20} />} onClick={() => void arreter()} />
-        ) : null}
-        {!occupe || peutEnvoyer ? (
-          <BoutonIcone type="submit" variant="sombre" className="size-11 shrink-0" libelle={occupe ? "Mettre en attente" : "Envoyer"} disabled={!peutEnvoyer} icone={<Icon name="arrow-up" size={20} />} />
-        ) : null}
-      </form>
-
-      <div className="mt-2 flex gap-2 overflow-x-auto [scrollbar-width:none]">
-        {equipe ? (
-          <>
-            <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("destinataire")}>
-              <Icon name="users-profiles-01" size={18} className="text-icone-secondaire" />
-              {destinataire ? nom(destinataire) : nom(ASSISTANT)}
-            </button>
-            <button type="button" className={cn(PUCE, "min-w-11 justify-center")} aria-label="Mentionner un agent" aria-haspopup="dialog" onClick={() => setFeuille("mention")}>
-              @
-            </button>
-          </>
-        ) : null}
-        <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("modele")}>
-          {libelleModele(modeleActuel)}
-          <Icon name="chevron-down" size={16} className="text-icone-secondaire" />
-        </button>
-        {postesOuverts.length >= 2 && posteVise ? (
-          <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("poste")}>
-            Sur {support(posteVise)}
-            <Icon name="chevron-down" size={16} className="text-icone-secondaire" />
-          </button>
-        ) : null}
+          className="rounded-xl border border-bordure-subtile bg-fond-surface px-1.5 pt-1.5 pb-1 shadow-ombre-ambiante focus-within:border-bleu-k1-500"
+        >
+          {citation ? (
+            <div className="mb-1 flex items-start gap-1 rounded-md bg-fond-surface-grise py-1.5 pl-3">
+              <div className="min-w-0 flex-1 py-0.5">
+                <p className="text-ui-xs text-texte-secondaire">Réponse à {nom(citation.roleId)}</p>
+                <p className="line-clamp-2 text-ui text-texte-principal">{citation.extrait}</p>
+              </div>
+              <BoutonIcone variant="discret" className="size-11 shrink-0" libelle="Retirer la citation" icone={<Icon name="x-01" size={16} />} onClick={() => setCitation(null)} />
+            </div>
+          ) : null}
+          {pieces.length ? (
+            <ul aria-label="Pièces jointes" className="mb-1 flex gap-2 overflow-x-auto px-0.5 [scrollbar-width:none]">
+              {pieces.map((p, i) => (
+                <li key={`${p.name}-${p.size}-${p.lastModified}`} className="relative flex h-14 max-w-[220px] shrink-0 items-center gap-2 overflow-hidden rounded-md border border-bordure-subtile bg-fond-surface pl-3">
+                  <Icon name={p.type.startsWith("image/") ? "image-01" : "file-01"} size={20} className="shrink-0 text-icone-secondaire" />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-ui text-texte-principal">{p.name}</span>
+                    <span className="text-ui-xs text-texte-secondaire">
+                      {taillePiece(p.size)} · {envoi ? (i < deposees ? "déposée" : "envoi…") : "prêt"}
+                    </span>
+                  </span>
+                  {envoi ? (
+                    <span className="w-2 shrink-0" />
+                  ) : (
+                    <BoutonIcone variant="discret" className="size-11 shrink-0" libelle={`Retirer ${p.name}`} icone={<Icon name="x-01" size={16} />} onClick={() => setPieces((liste) => liste.filter((_, j) => j !== i))} />
+                  )}
+                  {/* Indéterminée : `fetch` ne mesure pas les octets envoyés. */}
+                  {envoi && i >= deposees ? (
+                    <span aria-hidden="true" className="absolute inset-x-0 bottom-0 flex h-0.5 overflow-hidden">
+                      <span className="klyra-chargement-navigateur flex-1" />
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {alerte ? (
+            <p role="alert" className="mx-2 mb-1 flex items-start gap-1.5 text-ui text-texte-erreur">
+              <Icon name="help-circle-contained" size={16} className="mt-0.5 shrink-0" />
+              {alerte}
+            </p>
+          ) : null}
+          {envoi && pieces.length ? (
+            <p role="status" className="mx-2 mb-1 text-ui text-texte-secondaire">
+              Envoi des pièces jointes… {deposees} sur {pieces.length}
+            </p>
+          ) : null}
+          <textarea
+            ref={champ}
+            rows={1}
+            value={texte}
+            aria-label="Message"
+            placeholder={placeholder}
+            enterKeyHint="send"
+            role={listeOuverte && suggestions.length ? "combobox" : undefined}
+            aria-expanded={listeOuverte && suggestions.length ? true : undefined}
+            aria-controls={listeOuverte && suggestions.length ? "composeur-suggestions" : undefined}
+            aria-activedescendant={listeOuverte && suggestions.length ? `composeur-suggestion-${position}` : undefined}
+            onChange={(e) => {
+              setTexte(e.target.value);
+              setCurseur(e.target.selectionStart);
+              setListeFermee(false);
+              setActif(0);
+            }}
+            onSelect={(e) => setCurseur(e.currentTarget.selectionStart)}
+            onKeyDown={toucheListe}
+            onPaste={coller}
+            className="block min-h-11 w-full resize-none bg-transparent px-2.5 py-2.5 text-body-s leading-[1.4] text-texte-principal outline-none placeholder:text-texte-secondaire"
+          />
+          <div className="flex items-center gap-0.5">
+            <BoutonIcone variant="discret" className="size-11 shrink-0" libelle="Joindre" aria-haspopup="dialog" icone={<Icon name="plus-01" size={22} />} onClick={() => setFeuille("joindre")} />
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1 pr-1 [scrollbar-width:none]">
+              {equipe ? (
+                <>
+                  <button type="button" className={PUCE} aria-haspopup="dialog" aria-label={`Destinataire : ${nom(effectif)}`} onClick={() => setFeuille("destinataire")}>
+                    <Icon name="user-profile-01" size={16} className="text-icone-secondaire" />
+                    {nom(effectif)}
+                    <Icon name="chevron-down" size={14} className="text-icone-secondaire" />
+                  </button>
+                  <button type="button" className={cn(PUCE, "min-w-11 justify-center")} aria-label="Mentionner un agent" onMouseDown={(e) => e.preventDefault()} onClick={ouvrirMention}>
+                    @
+                  </button>
+                </>
+              ) : null}
+              <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("modele")}>
+                {libelleModele(modeleActuel)}
+                <Icon name="chevron-down" size={14} className="text-icone-secondaire" />
+              </button>
+              {postesOuverts.length >= 2 && posteVise ? (
+                <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("poste")}>
+                  Sur {support(posteVise)}
+                  <Icon name="chevron-down" size={14} className="text-icone-secondaire" />
+                </button>
+              ) : null}
+            </div>
+            {occupe ? (
+              <BoutonIcone variant="blanc" className="relative size-9 shrink-0 after:absolute after:-inset-1 after:content-['']" libelle="Arrêter l’agent" disabled={arret.occupe || arretEnCours} icone={<Icon name="square" size={18} />} onClick={() => void arreter()} />
+            ) : null}
+            <BoutonIcone
+              type="submit"
+              variant={peutEnvoyer || envoi ? "sombre" : "gris"}
+              className="relative ml-1 size-9 shrink-0 after:absolute after:-inset-1 after:content-['']"
+              libelle={occupe ? "Mettre en attente" : "Envoyer"}
+              disabled={!peutEnvoyer}
+              icone={envoi ? <Icon name="loader-01" size={18} className="motion-safe:animate-spin" /> : <Icon name="arrow-up" size={20} />}
+            />
+          </div>
+        </form>
       </div>
+      {noteOccupe ? <p className="mt-1.5 px-2 text-ui-xs text-texte-secondaire">{noteOccupe}</p> : null}
+      {horsLigne && texte.trim() ? <p className="mt-1.5 px-2 text-ui-xs text-texte-secondaire">L’envoi attend le réseau : ton texte reste ici.</p> : null}
 
       <input ref={photo} type="file" accept="image/*" multiple hidden onChange={choisis} />
       <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={choisis} />
@@ -342,38 +589,42 @@ export function ComposeurFil({
 
       {feuille === "joindre" ? (
         <MenuFeuille
-          titre={`Joindre · ${MAX_PIECES} fichiers au plus, 20 Mo chacun`}
+          titre="Joindre"
+          sousTitre={`${MAX_PIECES} fichiers au plus, 20 Mo chacun`}
           onFermer={() => setFeuille(null)}
           actions={[
-            { libelle: "Photo", onChoisir: () => photo.current?.click() },
-            { libelle: "Appareil photo", onChoisir: () => camera.current?.click() },
-            { libelle: "Fichier", onChoisir: () => fichier.current?.click() },
+            { libelle: "Photo", icone: "image-01", onChoisir: () => photo.current?.click() },
+            { libelle: "Appareil photo", icone: "iphone-02", onChoisir: () => camera.current?.click() },
+            { libelle: "Fichier", icone: "file-01", note: "Une capture collée dans le champ se joint aussi.", onChoisir: () => fichier.current?.click() },
           ]}
         />
       ) : null}
-      {feuille === "mention" || feuille === "destinataire" ? (
-        <Feuille titre={feuille === "mention" ? "Mentionner un agent" : "Destinataire"} onFermer={() => setFeuille(null)}>
-          <ul>
-            {actifs.map((c) => (
-              <li key={c.origine}>
-                <button
-                  type="button"
-                  className="flex min-h-14 w-full items-center gap-3 border-b border-bordure-subtile py-2 text-left last:border-b-0"
-                  onClick={() => {
-                    setFeuille(null);
-                    if (feuille === "mention") inserer(c.nom);
-                    else setDestinataire(c.origine === ASSISTANT ? null : c.origine);
-                  }}
-                >
-                  <RondAgent id={c.origine} />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-body-s text-texte-principal">{c.nom}</span>
-                    <span className="truncate text-ui text-texte-secondaire">{c.origine === ASSISTANT ? "Il répartit le travail" : c.roleCourt}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+      {feuille === "destinataire" ? (
+        <Feuille titre="Destinataire" sousTitre={conversation?.titre} onFermer={() => setFeuille(null)}>
+          <GroupeListe>
+            <div role="radiogroup" aria-label="Destinataire">
+              {[...actifs]
+                .sort((x, y) => Number(y.origine === ASSISTANT) - Number(x.origine === ASSISTANT))
+                .map((c) => (
+                  <LigneListe
+                    key={c.origine}
+                    retrait="avatar"
+                    debut={<RondAgent id={c.origine} taille={40} />}
+                    nom={c.nom}
+                    ligne2={c.origine === ASSISTANT ? "Il répartit le travail" : c.roleCourt}
+                    uneLigne
+                    fin={<CocheChoix choisi={effectif === c.origine} />}
+                    onClick={() => {
+                      setFeuille(null);
+                      setDestinataire(c.origine === ASSISTANT ? null : c.origine);
+                      /* Après le fondu de la feuille, qui rend le focus à son déclencheur. */
+                      setTimeout(() => poserFocus(), 240);
+                    }}
+                  />
+                ))}
+            </div>
+          </GroupeListe>
+          <p className="mt-3 px-1 text-ui-xs text-texte-secondaire">Sans choix, {nom(ASSISTANT)} répartit le travail. Une @mention dans le message choisit aussi.</p>
         </Feuille>
       ) : null}
       {feuille === "modele" ? <FeuilleModele actuel={modeleActuel} onChoisir={setChoix} onFermer={() => setFeuille(null)} /> : null}
@@ -381,7 +632,7 @@ export function ComposeurFil({
         <MenuFeuille
           titre="Sur quel ordinateur ?"
           onFermer={() => setFeuille(null)}
-          actions={postesOuverts.map((p) => ({ libelle: `${p.nom}${p.ouvert ? "" : " · fermé"}`, onChoisir: () => setPosteChoisi(p.cle) }))}
+          actions={postesOuverts.map((p) => ({ libelle: p.nom, note: p.ouvert ? "Ouvert" : "Fermé : ton message attendra son ouverture", onChoisir: () => setPosteChoisi(p.cle) }))}
         />
       ) : null}
     </div>

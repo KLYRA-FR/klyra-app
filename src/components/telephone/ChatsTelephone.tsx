@@ -16,6 +16,7 @@ import { aTraiter, auTravail, etatLigne, idDirect, sections, ASSISTANT, SUGGESTI
 import { bonjour, dateDuJour } from "@/lib/telephone/journee";
 import { CarteJournee, RailAuTravail } from "./AccueilChats";
 import { PageOnglet } from "./EnteteTelephone";
+import { useHorsLigne } from "./BandeauReseau";
 import { AucunPoste, Squelette, useBandeau } from "./etats";
 import { Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { usePostes } from "./poste";
@@ -112,6 +113,7 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
   const conversations = useQuery(api.conversationsCompte.liste, {});
   const enAttente = useQuery(api.conversationsCompte.enAttente, {});
   const { cartes, nom } = useCartes();
+  const horsLigne = useHorsLigne();
   const { postes, ouvert } = usePostes();
   const [nouveau, setNouveau] = useState(ecrire);
   const [bandeau, montrer] = useBandeau();
@@ -122,9 +124,11 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
 
   const liste = (conversations ?? []).filter((c) => !c.archiveLe);
   const parOrigine = new Map(liste.map((c) => [c.origine, c]));
-  const { epinglees, agents, equipe } = sections(liste, cartes ?? [], nom, ouvert);
+  /* Hors ligne, une copie d'activité ne dit plus rien du travail en cours (E2-07). */
+  const vif = ouvert && !horsLigne;
+  const { epinglees, agents, equipe } = sections(liste, cartes ?? [], nom, vif);
   const traiter = aTraiter(liste, enAttente ?? []);
-  const travail = auTravail(liste, ouvert);
+  const travail = auTravail(liste, vif);
   const titreDe = (origine: string) => {
     const c = parOrigine.get(origine);
     return c && (c.kind === "equipe" || c.parent) ? c.titre : origine.startsWith("dm-") ? nom(origine.slice(3)) : c?.titre || "Cette conversation";
@@ -133,7 +137,7 @@ function ListeChats({ ecrire }: { ecrire: boolean }) {
   const premierJour = charge && liste.length === 0;
 
   const ligneEquipe = (c: ConversationLue) => {
-    const etat = etatLigne(c, nom, ouvert);
+    const etat = etatLigne(c, nom, vif);
     return (
       <LigneListe
         key={c.origine}

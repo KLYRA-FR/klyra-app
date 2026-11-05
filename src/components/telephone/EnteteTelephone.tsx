@@ -24,7 +24,13 @@ export function EnteteTelephone({
   pastille,
   onglet = false,
   defilee = false,
+  visuel,
+  sous,
 }: {
+  /** L'avatar devant le titre d'une page poussée (le fil, E2-16). */
+  visuel?: ReactNode;
+  /** La ligne sous le titre (rôle, état de l'agent). */
+  sous?: string | null;
   titre: string;
   retour?: () => void;
   parent?: string;
@@ -53,7 +59,13 @@ export function EnteteTelephone({
             {titre}
           </p>
         ) : (
-          <h1 className={cn("min-w-0 flex-1 truncate text-body-s font-semibold text-texte-principal", !surRetour && "pl-2")}>{titre}</h1>
+          <div className={cn("flex min-w-0 flex-1 items-center gap-2.5", !surRetour && "pl-2")}>
+            {visuel ? <span className="shrink-0">{visuel}</span> : null}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-body-s font-semibold text-texte-principal">{titre}</h1>
+              {sous ? <p className="truncate text-ui-xs text-texte-secondaire">{sous}</p> : null}
+            </div>
+          </div>
         )}
         {droite ? <div className="flex shrink-0 items-center">{droite}</div> : onglet ? <span aria-hidden="true" className="w-11 shrink-0" /> : null}
       </div>

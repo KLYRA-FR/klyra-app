@@ -2,6 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   actionsConversation,
   actionsReponse,
+  agentsPourFil,
+  conseilDuFil,
+  estDemandeResume,
   aTraiter,
   auTravail,
   dureeDepuis,
@@ -25,6 +28,7 @@ const conversation = (origine: string, extra: Partial<ConversationLue> = {}): Co
   titre: origine,
   projetId: null,
   projetNom: null,
+  contexte: null,
   roleIds: origine.startsWith("dm-") ? [origine.slice(3)] : ["principal"],
   misAJour: "2026-11-01T10:00:00.000Z",
   epingleLe: null,
@@ -111,11 +115,14 @@ describe("Chats (T-01)", () => {
 
   test("menus « ⋯ » : renommer l'équipe et les fils, épingler l'équipe seulement, le projet s'il y en a un", () => {
     expect(actionsConversation(conversation("dm-hugo"))).toEqual(["exporter"]);
-    expect(actionsConversation(conversation("dm-hugo"), { dansLeFil: true })).toEqual(["details", "exporter", "rechercher"]);
+    expect(actionsConversation(conversation("dm-hugo"), { dansLeFil: true })).toEqual(["details", "rechercher", "exporter", "reglages"]);
     expect(actionsConversation(conversation("klyra-fil-00000003", { roleIds: ["hugo"] }))).toEqual(["renommer", "exporter"]);
-    expect(actionsConversation(conversation("c1", { projetId: "p1" }))).toEqual(["renommer", "epingler", "exporter", "projet"]);
-    expect(actionsConversation(conversation("c1", { epingleLe: "x" }))).toEqual(["renommer", "desepingler", "exporter"]);
+    expect(actionsConversation(conversation("c1", { projetId: "p1" }))).toEqual(["epingler", "renommer", "projet", "exporter"]);
+    expect(actionsConversation(conversation("c1", { epingleLe: "x" }))).toEqual(["desepingler", "renommer", "exporter"]);
     expect(actionsConversation(undefined)).toEqual(["exporter"]);
+    /* E2-08 : « Marquer comme lu » s'il y a du non-lu, « Arrêter » seulement si l'agent travaille. */
+    expect(actionsConversation(conversation("dm-hugo", { nonLus: 2 }))).toEqual(["lu", "exporter"]);
+    expect(actionsConversation(conversation("dm-hugo"), { actif: true })).toEqual(["exporter", "arreter"]);
   });
 
   test("Au travail (D2-2) : seulement ordinateur ouvert, ni accord ni question, les plus récents d'abord, tâches comptées", () => {
@@ -147,22 +154,67 @@ describe("Chats (T-01)", () => {
   });
 });
 
+describe("Conseil de contexte (E2-42)", () => {
+  const mesure = (extra: Record<string, unknown> = {}) => JSON.stringify({ roleId: "hugo", jetons: 64_000, echanges: 52_000, le: "2026-11-04T12:00:00.000Z", masqueJusqua: 0, ...extra });
+  const maintenant = Date.parse("2026-11-04T12:10:00.000Z");
+
+  test("mêmes seuils que le bureau, jamais sans mesure ni pendant une réponse", () => {
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: mesure() }), { maintenant })).toMatchObject({ roleId: "hugo", jetons: 64_000, raison: "lourde", cacheExpire: false });
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: mesure({ echanges: 49_999 }) }), { maintenant })).toBeNull();
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: mesure() }), { maintenant, occupe: true })).toBeNull();
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: null }), { maintenant })).toBeNull();
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: "pas du json" }), { maintenant })).toBeNull();
+  });
+
+  test("reprise après une heure : un fil neuf là où il y en a, rien dans une conversation d'équipe", () => {
+    const tard = Date.parse("2026-11-04T13:30:00.000Z");
+    const pause = mesure({ echanges: 35_000 });
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: pause }), { maintenant: tard })).toMatchObject({ raison: "pause", filPossible: true });
+    expect(conseilDuFil(conversation("c1", { contexte: pause }), { maintenant: tard })).toBeNull();
+  });
+
+  test("« Plus tard » masque jusqu'à 20 000 jetons de plus, sur ce téléphone ou depuis le bureau", () => {
+    const c = conversation("dm-hugo", { contexte: mesure() });
+    expect(conseilDuFil(c, { maintenant, masque: 84_000 })).toBeNull();
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: mesure({ masqueJusqua: 84_000 }) }), { maintenant })).toBeNull();
+    expect(conseilDuFil(conversation("dm-hugo", { contexte: mesure({ jetons: 90_000 }) }), { maintenant, masque: 84_000 })).not.toBeNull();
+  });
+
+  test("la demande de résumé se reconnaît, un mot qui commence pareil non", () => {
+    expect(estDemandeResume("/compact")).toBe(true);
+    expect(estDemandeResume("/compact Garde les décisions")).toBe(true);
+    expect(estDemandeResume("/compacter")).toBe(false);
+  });
+});
+
+describe("En faire un fil (E2-41)", () => {
+  const actifs = ["hugo", "iris", "principal"];
+  test("l'auteur d'abord ; dans un fil, son agent ; dans une équipe, le choix des agents actifs", () => {
+    expect(agentsPourFil({ auteurId: "iris", conversation: conversation("c1"), actifs })).toEqual(["iris"]);
+    expect(agentsPourFil({ auteurId: null, conversation: conversation("dm-hugo"), actifs })).toEqual(["hugo"]);
+    expect(agentsPourFil({ auteurId: null, conversation: conversation("c1", { roleIds: ["hugo", "iris", "ancien"] }), actifs })).toEqual(["hugo", "iris"]);
+    expect(agentsPourFil({ auteurId: "ancien", conversation: conversation("c1"), actifs })).toEqual([]);
+  });
+});
+
 describe("Fil (T-02)", () => {
   test("actions d'une réponse : copier et écouter sur le téléphone, le reste par la file ; rien sans texte ni en cours", () => {
     const actions = actionsReponse({ texte: "Voilà", enCours: false, parle: false });
-    expect(actions.map((a) => `${a.libelle}:${a.voie}`)).toEqual([
-      "Copier:compte",
-      "Lire à voix haute:compte",
-      "Créer une branche dans une nouvelle conversation:file",
-      "Réessayer:file",
-      "Ajouter des détails:file",
-      "Plus concis:file",
-      "Rechercher sur le web:file",
-      "Changer de modèle:file",
+    expect(actions.map((a) => [a.id, a.voie])).toEqual([
+      ["repondre", "brouillon"],
+      ["citer", "brouillon"],
+      ["fil", "brouillon"],
+      ["copier", "telephone"],
+      ["ecouter", "telephone"],
+      ["reessayer", "file"],
+      ["brancher", "file"],
     ]);
-    expect(actionsReponse({ texte: "Voilà", enCours: false, parle: true })[1].libelle).toBe("Arrêter la lecture");
+    expect(actionsReponse({ texte: "Voilà", enCours: false, parle: true }).find((a) => a.id === "ecouter")?.libelle).toBe("Arrêter la lecture");
     expect(actionsReponse({ texte: "  ", enCours: false, parle: false })).toEqual([]);
-    expect(actionsReponse({ texte: "Voilà", enCours: true, parle: false })).toEqual([]);
+    /* Une réponse inachevée : ni réessai ni branche, la lecture et la copie restent. */
+    expect(actionsReponse({ texte: "Voilà", enCours: true, parle: false }).map((a) => a.id)).toEqual(["copier", "ecouter"]);
+    /* Ton propre message : rien à réessayer, rien à quoi « répondre ». */
+    expect(actionsReponse({ texte: "Voilà", enCours: false, parle: false, agent: false }).map((a) => a.id)).toEqual(["citer", "fil", "copier", "ecouter"]);
   });
 
   test("mentions : par prénom, rôle ou id, agents actifs seulement ; la mention en cours de frappe", () => {

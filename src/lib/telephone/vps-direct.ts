@@ -25,8 +25,8 @@ export function voieEnvoi({ posteOuvert, lieu, jeton }: { posteOuvert: boolean; 
 }
 
 /** Ce qu'un VPS sait faire sans l'ordinateur : un simple message à un agent, sans pièce ni geste sur le fil. */
-export function envoiSimple(options: { a?: string; reessayer?: unknown; brancher?: unknown; nouveau?: unknown }, pieces: number): boolean {
-  return pieces === 0 && !options.reessayer && !options.brancher && !options.nouveau && !options.a;
+export function envoiSimple(options: { a?: string; reessayer?: unknown; brancher?: unknown; nouveau?: unknown; citation?: unknown }, pieces: number): boolean {
+  return pieces === 0 && !options.reessayer && !options.brancher && !options.nouveau && !options.a && !options.citation;
 }
 
 export interface EchangeDirect {

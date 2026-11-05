@@ -104,7 +104,7 @@ export function CarteJournee() {
             <ul className="py-1">
               {journee.lignes.map((l) => (
                 <li key={l.cle}>
-                  <Link href={l.href} className="flex min-h-11 items-center gap-3 text-body-s text-texte-principal no-underline active:bg-fond-survol">
+                  <Link href={l.href} className="flex min-h-11 items-center gap-3 text-ui text-texte-principal no-underline active:bg-fond-survol">
                     <span className="w-12 shrink-0 font-semibold text-texte-accent tabular-nums">{l.heure ?? "Jour"}</span>
                     <span className="min-w-0 flex-1 truncate">{l.titre}</span>
                   </Link>

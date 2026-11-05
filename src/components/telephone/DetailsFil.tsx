@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { EFFORTS, MODELES } from "@/components/chat/ChoixModele";
 import { Icon } from "@/components/icons/Icon";
 import { Onglets } from "@/components/ui/Onglets";
 import { cn } from "@/lib/cn";
@@ -9,10 +10,11 @@ import { lireParties } from "@/lib/copie-compte";
 import { formatListDate } from "@/lib/format";
 import { useLecturePoste } from "@/lib/poste/client";
 import { agentDe, type ConversationLue } from "@/lib/telephone/chats";
+import { lireModele } from "@/lib/telephone/options";
 import type { MessageLu } from "@/lib/telephone/export";
 import { Feuille } from "./Feuille";
-import { PosteFerme, SurLePoste, VueLecture } from "./etats";
-import { usePostes } from "./poste";
+import { SurLePoste, VueLecture } from "./etats";
+import { GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { RondAgent, useCartes } from "./AgentsChat";
 
 type Onglet = "agent" | "fichiers" | "taches" | "apercu";
@@ -50,28 +52,54 @@ export function fichiersDuFil(messages: MessageLu[]): FichierFil[] {
   return [...parCle.values()].sort((a, b) => b.le.localeCompare(a.le));
 }
 
-function Agent({ conversation, origine }: { conversation: ConversationLue | undefined; origine: string }) {
+function Agent({ conversation, origine, onModele }: { conversation: ConversationLue | undefined; origine: string; onModele: () => void }) {
   const { nom, carte } = useCartes();
-  const { ouvert } = usePostes();
   const agent = agentDe(origine, conversation);
   const ids = agent ? [agent] : (conversation?.roleIds ?? []);
-  if (!ouvert) return <PosteFerme phrase={(sur) => `la fiche de ${agent ? nom(agent) : "chaque agent"} est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`} />;
+  const modele = lireModele(conversation?.modele);
+  const nomModele = modele?.modele ? MODELES.find((m) => m.id === modele.modele)?.nom.replace("Claude ", "") : null;
+  const effort = modele?.modele && modele.modele !== "haiku" ? EFFORTS.find((e) => e.id === modele.effort)?.nom : null;
+  const fiche = (id: string, ancre: string) => `/equipe?agent=${encodeURIComponent(id)}&section=${ancre}`;
+  /* Équipe : une entrée par participant, sans choisir un seul agent ; sa fiche porte Souvenirs, Compétences, Routines, Utilisation (lots 5 et 7). */
+  if (!agent) {
+    return (
+      <div className="pt-3">
+        <GroupeListe>
+          {ids.map((id) => (
+            <LigneListe key={id} href={`/equipe?agent=${encodeURIComponent(id)}`} retrait="avatar" debut={<RondAgent id={id} taille={40} />} nom={nom(id)} ligne2={carte(id)?.roleCourt} uneLigne fin="chevron" />
+          ))}
+        </GroupeListe>
+      </div>
+    );
+  }
   return (
-    <ul className="pt-2">
-      {ids.map((id) => (
-        <li key={id}>
-          <Link href={`/equipe?agent=${encodeURIComponent(id)}`} className="flex min-h-16 items-center gap-3 border-b border-bordure-subtile py-2 no-underline last:border-b-0">
-            <RondAgent id={id} />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-body-s text-texte-principal">{nom(id)}</span>
-              <span className="truncate text-ui text-texte-secondaire">{carte(id)?.roleCourt}</span>
-            </span>
-            <span className="text-ui text-texte-secondaire">Voir la fiche</span>
-            <Icon name="chevron-right" size={18} className="text-icone-secondaire" />
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-5 pt-3">
+      <Link href={`/equipe?agent=${encodeURIComponent(agent)}`} className="flex items-center gap-3 no-underline">
+        <RondAgent id={agent} taille={48} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-body font-semibold text-texte-principal">{nom(agent)}</span>
+          <span className="truncate text-ui text-texte-secondaire">{carte(agent)?.roleCourt}</span>
+        </span>
+      </Link>
+      <SectionListe titre="Cerveau">
+        <GroupeListe>
+          <LigneListe retrait="tuile" debut={<TuileIcone icone="stars" />} nom="Modèle" fin={<span className="flex items-center gap-1 text-ui text-texte-secondaire">{nomModele ? (effort ? `${nomModele} · ${effort}` : nomModele) : "Celui de la fiche"}<Icon name="chevron-right" size={18} className="text-icone-secondaire" /></span>} onClick={onModele} />
+        </GroupeListe>
+        <p className="mt-2 px-1 text-ui-xs text-texte-secondaire">Pour cette conversation. Sans choix, {nom(agent)} prend le modèle de sa fiche.</p>
+      </SectionListe>
+      <SectionListe titre="Connaissances">
+        <GroupeListe>
+          <LigneListe href={fiche(agent, "souvenirs")} retrait="tuile" debut={<TuileIcone icone="note-01" />} nom="Souvenirs" fin="chevron" />
+          <LigneListe href={fiche(agent, "competences")} retrait="tuile" debut={<TuileIcone icone="layers-01" />} nom="Compétences" fin="chevron" />
+        </GroupeListe>
+      </SectionListe>
+      <SectionListe titre="Actions">
+        <GroupeListe>
+          <LigneListe href={fiche(agent, "routines")} retrait="tuile" debut={<TuileIcone icone="clock-01" />} nom="Routines" fin="chevron" />
+          <LigneListe href={fiche(agent, "utilisation")} retrait="tuile" debut={<TuileIcone icone="clock-backward" />} nom="Utilisation" fin="chevron" />
+        </GroupeListe>
+      </SectionListe>
+    </div>
   );
 }
 
@@ -82,7 +110,7 @@ function Fichiers({ messages, projetId }: { messages: MessageLu[]; projetId: str
   if (!fichiers.length) {
     return (
       <div className="pt-6">
-        <p className="text-body-s text-texte-principal">Rien de modifié</p>
+        <p className="text-body-s text-texte-principal">Aucun fichier dans ces messages</p>
         <p className="mt-1 text-ui text-texte-secondaire">Les fichiers que tu joins et ceux que l’agent lit, crée ou modifie s’affichent ici.</p>
       </div>
     );
@@ -110,7 +138,6 @@ function Fichiers({ messages, projetId }: { messages: MessageLu[]; projetId: str
       {visibles.length === 0 ? <p className="text-ui text-texte-secondaire">Aucun fichier de ce genre.</p> : null}
       <ul>
         {visibles.map((f) => {
-          const dossier = f.chemin && f.chemin.includes("/") ? f.chemin.slice(0, f.chemin.lastIndexOf("/")) : null;
           const ligne = (
             <>
               <Icon name="file-01" size={20} className="shrink-0 text-icone-secondaire" />
@@ -118,7 +145,6 @@ function Fichiers({ messages, projetId }: { messages: MessageLu[]; projetId: str
                 <span className="truncate text-body-s text-texte-principal">{f.nom}</span>
                 <span className="truncate text-ui-xs text-texte-secondaire">
                   {SOURCES[f.source]} · {formatListDate(f.le)}
-                  {dossier ? ` · ${dossier}` : ""}
                 </span>
               </span>
             </>
@@ -169,9 +195,9 @@ function Taches({ conversation }: { conversation: ConversationLue | undefined })
       <p className="text-ui text-texte-secondaire">
         {faites} sur {taches.length} faites
       </p>
-      <ul>
+      <ul className="overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface">
         {taches.map((t, i) => (
-          <li key={i} className="flex min-h-11 items-start gap-3 py-2">
+          <li key={i} className="flex min-h-11 items-start gap-3 border-b border-bordure-subtile px-4 py-2.5 last:border-b-0">
             <span
               className={cn(
                 "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
@@ -223,18 +249,24 @@ export function DetailsFil({
   conversation,
   messages,
   onExporter,
+  onModele,
   onFermer,
 }: {
   origine: string;
   conversation: ConversationLue | undefined;
   messages: MessageLu[];
   onExporter: () => void;
+  onModele: () => void;
   onFermer: () => void;
 }) {
   const [onglet, setOnglet] = useState<Onglet>("agent");
+  const { nom } = useCartes();
+  const agentDuFil = agentDe(origine, conversation);
+  const sousTitre = conversation?.kind === "equipe" ? conversation.titre : agentDuFil ? [nom(agentDuFil), conversation?.parent ? conversation.titre : null].filter(Boolean).join(" · ") : undefined;
   return (
     <Feuille
       titre="Détails"
+      sousTitre={sousTitre}
       haute
       onFermer={onFermer}
       pied={
@@ -257,7 +289,7 @@ export function DetailsFil({
         ]}
       />
       <div role="tabpanel" aria-label={onglet}>
-        {onglet === "agent" ? <Agent conversation={conversation} origine={origine} /> : null}
+        {onglet === "agent" ? <Agent conversation={conversation} origine={origine} onModele={() => { onFermer(); onModele(); }} /> : null}
         {onglet === "fichiers" ? <Fichiers messages={messages} projetId={conversation?.projetId ?? null} /> : null}
         {onglet === "taches" ? <Taches conversation={conversation} /> : null}
         {onglet === "apercu" ? <Apercu origine={origine} conversation={conversation} /> : null}
