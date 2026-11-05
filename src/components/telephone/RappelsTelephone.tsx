@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { ICONES, NOMS_ICONES, PastilleCategorie } from "@/components/planning/Rappels";
 import { NOMS_TEINTES } from "@/components/roles/ChoixTeinte";
@@ -13,12 +14,15 @@ import { texteErreurPoste } from "@/lib/poste-texte";
 import { NOMS_REPORT, NOMS_URGENCE, categorieDeRepli, cibleReport, type RappelTelephone, type SectionRappels } from "@/lib/telephone/planning";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte } from "@/types/domain";
 import type { LecturePoste } from "@/lib/poste/client";
+import type { ConfieA } from "@/lib/telephone/tickets";
+import { RondAgent, useCartes } from "./AgentsChat";
+import { useAnnonce } from "./Annonce";
 import { useApres } from "./ChatsTelephone";
 import { SectionPoste, usePlanningTelephone } from "./ContextePlanningTelephone";
 import { CaseRonde } from "./Controles";
-import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
+import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, useFermerFeuille, type ActionMenu } from "./Feuille";
 import { AucunPoste, BandeauVueGardee, EtatEcran, NotePoste, Squelette } from "./etats";
-import { GroupeListe, TuileIcone } from "./Liste";
+import { GroupeListe, LigneListe, TuileIcone } from "./Liste";
 
 /**
  * T-06 Planning › Rappels : une section repliable par catégorie, puis « Ceux que j'ai assignés » et
@@ -150,7 +154,10 @@ function SectionRappelsTelephone({ section, replie, sansEnTete, onBasculer }: { 
  * la case est inactive, le menu dit pourquoi.
  */
 export function LigneRappel({ rappel, avecCategorie = false }: { rappel: RappelTelephone; avecCategorie?: boolean }) {
-  const { cocher, ouvrirRappel, noms, categories, occupes, posteOuvert, horsLigne } = usePlanningTelephone();
+  const { cocher, ouvrirRappel, noms, categories, occupes, posteOuvert, horsLigne, confieDe, sur } = usePlanningTelephone();
+  const { nom } = useCartes();
+  const confie = confieDe(rappel);
+  const mention = confie ? texteConfie(confie, nom(confie.roleId), sur, posteOuvert) : null;
   const enAttente = rappel.source === "poste" && !posteOuvert;
   const [menu, setMenu] = useState(false);
   const appui = useAppuiLong(() => setMenu(true));
@@ -185,10 +192,16 @@ export function LigneRappel({ rappel, avecCategorie = false }: { rappel: RappelT
           ) : null}
           {rappel.titre}
         </span>
-        {rappel.jour || personne || (avecCategorie && categorie) ? (
+        {rappel.jour || personne || mention || (avecCategorie && categorie) ? (
           <span className="text-ui-xs text-texte-secondaire">
             {rappel.jour ? <span className={cn(rappel.retard && !rappel.faite && "font-medium text-texte-erreur")}>{libellePeriode(rappel.jour, rappel.heure, rappel.fin)}</span> : null}
             {[rappel.jour ? "" : null, personne, avecCategorie ? categorie?.nom : null].filter((x) => x !== null && x !== undefined).join(" · ")}
+            {mention ? (
+              <>
+                {rappel.jour || personne || (avecCategorie && categorie) ? " · " : null}
+                <span className={cn("font-medium", mention.erreur ? "text-texte-erreur" : "text-texte-accent")}>{mention.texte}</span>
+              </>
+            ) : null}
           </span>
         ) : null}
       </button>
@@ -198,19 +211,100 @@ export function LigneRappel({ rappel, avecCategorie = false }: { rappel: RappelT
   );
 }
 
+/** Ce qui se dit d'un rappel confié : l'attribution faite, celle qui attend, ou celle à reprendre. */
+export function texteConfie(confie: ConfieA, nom: string, sur: string, posteOuvert: boolean): { texte: string; erreur?: boolean } {
+  switch (confie.etat) {
+    case "confie":
+      return { texte: `Confié à ${nom}` };
+    case "fait":
+      return { texte: `Fait par ${nom}` };
+    case "a-reessayer":
+      return { texte: "Attribution à réessayer", erreur: true };
+    default:
+      return { texte: posteOuvert ? "Attribution demandée…" : `${nom} s’y mettra à l’ouverture de ${sur}` };
+  }
+}
+
+/** Les agents actifs, l'assistant d'abord (E3-19) : le choix demande l'attribution, le rappel reste à sa place. */
+function ChoixAgent({ rappel }: { rappel: RappelTelephone }) {
+  const { confier, posteOuvert, sur, auTravail } = usePlanningTelephone();
+  const { cartes, nom, carte } = useCartes();
+  const annoncer = useAnnonce();
+  const fermer = useFermerFeuille();
+  const actifs = (cartes ?? []).filter((c) => c.actif).sort((a, b) => Number(b.origine === "principal") - Number(a.origine === "principal"));
+  const choisir = async (roleId: string) => {
+    fermer();
+    const erreur = await confier(rappel, roleId);
+    if (erreur) annoncer({ texte: erreur, erreur: true });
+    else if (!posteOuvert) annoncer({ texte: `${nom(roleId)} s’y mettra à l’ouverture de ${sur}`, icone: "clock-backward" });
+  };
+  return (
+    <>
+      {cartes === undefined ? (
+        <Squelette lignes={3} />
+      ) : actifs.length === 0 ? (
+        <EtatEcran forme="encadre" className="px-0" icone="users-profiles-01" titre="Aucun agent actif" texte={`Tes agents viennent de ${sur}.`} />
+      ) : (
+        <GroupeListe>
+          {actifs.map((a) => (
+            <LigneListe
+              key={a.origine}
+              retrait="avatar"
+              debut={<RondAgent id={a.origine} taille={44} />}
+              nom={a.nom}
+              ligne2={[carte(a.origine)?.roleCourt, auTravail.has(a.origine) ? "travaille en ce moment" : null].filter(Boolean).join(" · ") || undefined}
+              onClick={() => void choisir(a.origine)}
+            />
+          ))}
+        </GroupeListe>
+      )}
+      <p className="mt-2 px-1 text-ui-xs text-texte-secondaire">Le rappel reste ici, marqué « Confié à … ». Il se coche quand tu valides son ticket.</p>
+    </>
+  );
+}
+
+/** Rendu sans composant autour : passer du menu à sa sous-page garde la même feuille, et son entrée d'historique. */
+export const feuilleConfier = (rappel: RappelTelephone, onFermer: () => void, onRetour?: () => void) => (
+  <MenuFeuille titre="Confier à un agent" sousTitre={`« ${rappel.titre} »`} retour={onRetour} entete={<ChoixAgent rappel={rappel} />} actions={[]} onFermer={onFermer} />
+);
+
 /**
  * Le menu d'un rappel (E3-18, E3-21) : les reports que le moteur propose aujourd'hui, avec leur date
- * écrite ; « Planifier… » ; modifier ; supprimer. Un rappel de l'ordinateur lu dans la vue gardée se
- * lit seulement, et le menu dit pourquoi. « Confier à un agent » attend le contrat commun des lots 3 et 4.
+ * écrite ; « Planifier… » ; confier ; modifier ; supprimer. Un rappel de l'ordinateur lu dans la vue
+ * gardée se lit seulement, et le menu dit pourquoi. Déjà confié à un fil ouvert : « Voir le ticket »,
+ * pas de seconde attribution.
  */
 function MenuRappel({ rappel, categorie, onFermer }: { rappel: RappelTelephone; categorie: Categorie | undefined; onFermer: () => void }) {
-  const { reporter, supprimer, ouvrirRappel, posteOuvert, horsLigne, sur } = usePlanningTelephone();
+  const { reporter, supprimer, ouvrirRappel, posteOuvert, horsLigne, sur, aUnPoste, confieDe } = usePlanningTelephone();
+  const { nom } = useCartes();
+  const router = useRouter();
   const [maintenant] = useState(() => new Date());
+  const [agents, setAgents] = useState(false);
+  const confie = confieDe(rappel);
   const garde = rappel.source === "poste" && !posteOuvert;
-  const raison = garde ? `Ce rappel est sur ${sur}. Reporter et supprimer : possible quand il est ouvert.` : horsLigne ? "Possible quand ce téléphone est en ligne" : undefined;
+  const raison = garde ? `Ce rappel est sur ${sur}. Reporter, confier et supprimer : possible quand il est ouvert.` : horsLigne ? "Possible quand ce téléphone est en ligne" : undefined;
   const bloque = garde || horsLigne;
   const sous = [rappel.jour ? libellePeriode(rappel.jour, rappel.heure, rappel.fin) : null, categorie?.nom].filter(Boolean).join(" · ");
   const reportable = !rappel.faite && rappel.createur;
+  const fil = confie?.fil;
+  const ligneConfier: ActionMenu[] = rappel.faite
+    ? []
+    : confie?.etat === "confie" && fil
+      ? [{ libelle: "Voir le ticket", icone: "list", separateurAvant: reportable, onChoisir: () => router.push(`/tickets?id=${encodeURIComponent(fil)}`) }]
+      : confie?.etat === "attente"
+        ? [{ libelle: `Confié à ${nom(confie.roleId)}`, icone: "users-profiles-01", separateurAvant: reportable, desactivee: true, note: texteConfie(confie, nom(confie.roleId), sur, posteOuvert).texte, onChoisir: () => undefined }]
+        : [
+            {
+              libelle: confie?.etat === "a-reessayer" ? "Réessayer de confier" : "Confier à un agent",
+              icone: "users-profiles-01",
+              sousPage: true,
+              separateurAvant: reportable,
+              desactivee: bloque || !aUnPoste,
+              note: !aUnPoste ? "Possible quand un ordinateur est relié à ton compte" : bloque && !rappel.createur ? raison : undefined,
+              onChoisir: () => setAgents(true),
+            },
+          ];
+  if (agents) return feuilleConfier(rappel, onFermer, () => setAgents(false));
   const actions: ActionMenu[] = [
     ...(reportable
       ? [
@@ -226,7 +320,8 @@ function MenuRappel({ rappel, categorie, onFermer }: { rappel: RappelTelephone; 
           { libelle: "Planifier…", icone: "calendar-01" as const, desactivee: bloque, onChoisir: () => ouvrirRappel(rappel, "jour") },
         ]
       : []),
-    { libelle: garde ? "Voir le rappel" : "Modifier le rappel", icone: garde ? ("expand" as const) : ("pencil-01" as const), separateurAvant: reportable, onChoisir: () => ouvrirRappel(rappel) },
+    ...ligneConfier,
+    { libelle: garde ? "Voir le rappel" : "Modifier le rappel", icone: garde ? ("expand" as const) : ("pencil-01" as const), separateurAvant: reportable && ligneConfier.length === 0, onChoisir: () => ouvrirRappel(rappel) },
     ...(rappel.createur ? [{ libelle: "Supprimer", icone: "trash-01" as const, danger: !bloque, desactivee: bloque, separateurAvant: true, note: raison, onChoisir: () => supprimer(rappel) }] : []),
   ];
   return (

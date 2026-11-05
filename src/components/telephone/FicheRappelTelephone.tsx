@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -14,10 +15,13 @@ import { aujourdhui, libelleEcheance } from "@/lib/dates";
 import { texteErreurPoste } from "@/lib/poste-texte";
 import { echeanceLocale } from "@/lib/rappel-compte";
 import type { RappelTelephone } from "@/lib/telephone/planning";
+import { RondAgent, useCartes } from "./AgentsChat";
+import { useAnnonce } from "./Annonce";
 import { usePlanningTelephone } from "./ContextePlanningTelephone";
+import { feuilleConfier, texteConfie } from "./RappelsTelephone";
 import { CHAMP_TELEPHONE, ChampFiche, ErreurFiche, FeuilleChoixFiche, LigneChoixFiche, LigneDateFiche, NoteEnregistrement, PageFiche, RaisonFiche } from "./FichePlanningTelephone";
 import { BandeauVueGardee } from "./etats";
-import { GroupeListe } from "./Liste";
+import { GroupeListe, LigneListe, TuileIcone } from "./Liste";
 
 type Priorite = RappelTelephone["priorite"];
 const URGENCES: { valeur: Priorite; texte: string; libelle: string }[] = [
@@ -45,7 +49,12 @@ export function FicheRappelTelephone({
   onFermer: (enregistre?: { eclairage: string }) => void;
   onSupprimer: (rappel: RappelTelephone) => void;
 }) {
-  const { moiId, categories, noms, posteOuvert, horsLigne, gardeeLe, surPoste, sur, modifierCategorie } = usePlanningTelephone();
+  const { moiId, categories, noms, posteOuvert, horsLigne, gardeeLe, surPoste, sur, modifierCategorie, aUnPoste, confier, confieDe } = usePlanningTelephone();
+  const { cartes, nom } = useCartes();
+  const annoncer = useAnnonce();
+  const router = useRouter();
+  const [agentChoisi, setAgentChoisi] = useState<string | null>(null);
+  const confie = rappel ? confieDe(rappel) : null;
   const creer = useMutation(api.rappels.creer);
   const modifier = useMutation(api.rappels.modifier);
   const { membres } = useEquipe(false);
@@ -66,7 +75,7 @@ export function FicheRappelTelephone({
   const id = useId();
   const champJour = useRef<HTMLInputElement>(null);
   const champTitre = useRef<HTMLInputElement>(null);
-  const [feuille, setFeuille] = useState<"assigne" | "categorie" | null>(null);
+  const [feuille, setFeuille] = useState<"assigne" | "categorie" | "agent" | null>(null);
   const bloque = surLePoste && !posteOuvert;
   /* La catégorie n'a de sens que pour soi : un rappel assigné à quelqu'un d'autre n'en a pas. */
   const pourMoi = surLePoste || assigneA === moiId;
@@ -127,6 +136,12 @@ export function FicheRappelTelephone({
           assigneA: assigneA as Id<"membres">,
           liste: pourMoi && categories !== null && liste ? liste : null,
         });
+        /* Le rappel est créé, quoi qu'il arrive à l'attribution : il n'est jamais recréé (contrat, règle 5). */
+        if (agentChoisi) {
+          const echec = await confier({ source: "compte", id: nouveau }, agentChoisi);
+          if (echec) annoncer({ texte: "Rappel ajouté, attribution à réessayer", erreur: true });
+          else if (!posteOuvert) annoncer({ texte: `${nom(agentChoisi)} s’y mettra à l’ouverture de ${sur}`, icone: "clock-backward" });
+        }
         onFermer({ eclairage: nouveau });
         return;
       }
@@ -276,6 +291,30 @@ export function FicheRappelTelephone({
               <LigneChoixFiche libelle="Catégorie" icone="folder" valeur={rappel?.recu ? "Assignés par l’équipe" : "Sans catégorie"} note={`Les catégories sont sur ${sur}`} disabled onClick={() => undefined} />
             )
           ) : null}
+          {rappel?.faite ? null : confie?.etat === "confie" && confie.fil ? (
+            <LigneListe
+              retrait="tuile"
+              debut={<TuileIcone icone="users-profiles-01" />}
+              nom={`Confié à ${nom(confie.roleId)}`}
+              ligne2="Ticket en cours · voir le ticket"
+              fin={
+                <span className="flex shrink-0 items-center gap-2">
+                  <RondAgent id={confie.roleId} taille={28} />
+                  <Icon name="chevron-right" size={20} className="text-icone-secondaire" />
+                </span>
+              }
+              onClick={() => router.push(`/tickets?id=${encodeURIComponent(confie.fil as string)}`)}
+            />
+          ) : (
+            <LigneChoixFiche
+              libelle="Confier à un agent"
+              icone="users-profiles-01"
+              valeur={confie ? "" : agentChoisi ? nom(agentChoisi) : "Personne"}
+              note={confie ? texteConfie(confie, nom(confie.roleId), sur, posteOuvert).texte : !aUnPoste ? "Possible quand un ordinateur est relié à ton compte" : undefined}
+              disabled={bloque || horsLigne || !aUnPoste || confie?.etat === "attente"}
+              onClick={() => setFeuille("agent")}
+            />
+          )}
         </GroupeListe>
         <ChampFiche id={`${id}-notes`} libelle="Notes">
           <textarea
@@ -294,6 +333,17 @@ export function FicheRappelTelephone({
       </fieldset>
       {feuille === "assigne" ? (
         <FeuilleChoixFiche titre="Assigner à" options={optionsMembres.length > 0 ? optionsMembres : [{ valeur: assigneA, libelle: "Moi" }]} valeur={assigneA} onChoisir={setAssigneA} onFermer={() => setFeuille(null)} />
+      ) : null}
+      {feuille === "agent" && rappel ? feuilleConfier(rappel, () => setFeuille(null)) : null}
+      {feuille === "agent" && !rappel ? (
+        <FeuilleChoixFiche
+          titre="Confier à un agent"
+          options={[{ valeur: "", libelle: "Personne" }, ...(cartes ?? []).filter((c) => c.actif).map((c) => ({ valeur: c.origine, libelle: c.nom, visuel: <RondAgent id={c.origine} taille={36} /> }))]}
+          valeur={agentChoisi ?? ""}
+          onChoisir={(v) => setAgentChoisi(v || null)}
+          onFermer={() => setFeuille(null)}
+          note="Le rappel reste ici, marqué « Confié à … ». Il se coche quand tu valides son ticket."
+        />
       ) : null}
       {feuille === "categorie" ? (
         <FeuilleChoixFiche

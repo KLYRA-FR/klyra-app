@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { erreur, exigerMembre } from "./model/acces";
 import { REACTIONS, reactionValide } from "./model/reactions";
+import { revisionTicket } from "./model/tickets";
 
 /** Lots : une conversation tient ses messages à part, pour rester sous la taille d'un document. */
 const LOT_CONVERSATIONS = 40;
@@ -68,6 +69,8 @@ const vConversation = v.object({
   activite: v.optional(v.union(v.string(), v.null())),
   modele: v.optional(v.union(v.string(), v.null())),
   contexte: v.optional(v.union(v.string(), v.null())),
+  ticket: v.optional(v.union(v.string(), v.null())),
+  contratTickets: v.optional(v.number()),
 });
 
 /** Les champs ajoutés pour le téléphone : absents d'une version d'avant, ils restent tels quels. */
@@ -78,18 +81,23 @@ function champsTelephone(entree: {
   activite?: string | null;
   modele?: string | null;
   contexte?: string | null;
+  ticket?: string | null;
+  contratTickets?: number;
 }) {
   if (entree.parent && !origineValide(entree.parent)) throw erreur("conversation_invalide");
   if (entree.activite && !objetJson(entree.activite, 2000)) throw erreur("conversation_invalide");
   if (entree.modele && !objetJson(entree.modele, 200)) throw erreur("conversation_invalide");
   if (entree.contexte && !objetJson(entree.contexte, 200)) throw erreur("conversation_invalide");
-  const champs: Partial<Pick<Doc<"conversationsCompte">, "lieu" | "parent" | "archiveLe" | "activite" | "modele" | "contexte">> = {};
+  if (entree.ticket && !objetJson(entree.ticket, 2000)) throw erreur("conversation_invalide");
+  const champs: Partial<Pick<Doc<"conversationsCompte">, "lieu" | "parent" | "archiveLe" | "activite" | "modele" | "contexte" | "ticket" | "contratTickets">> = {};
   if (entree.lieu !== undefined) champs.lieu = entree.lieu ? court(entree.lieu, 300) : null;
   if (entree.parent !== undefined) champs.parent = entree.parent;
   if (entree.archiveLe !== undefined) champs.archiveLe = entree.archiveLe ? court(entree.archiveLe, 40) : null;
   if (entree.activite !== undefined) champs.activite = entree.activite;
   if (entree.modele !== undefined) champs.modele = entree.modele;
   if (entree.contexte !== undefined) champs.contexte = entree.contexte;
+  if (entree.ticket !== undefined) champs.ticket = entree.ticket;
+  if (entree.contratTickets !== undefined) champs.contratTickets = entree.contratTickets;
   return champs;
 }
 
@@ -123,8 +131,13 @@ export const importerConversations = mutation({
         ...champsTelephone(entree),
       };
       const existante = await parOrigine(ctx, moi._id, entree.origine);
-      if (existante) await ctx.db.patch("conversationsCompte", existante._id, ligne);
-      else await ctx.db.insert("conversationsCompte", ligne);
+      /* Une copie partie avant un accusé ne réécrit pas un état ancien par-dessus le nouveau (contrat, règle 4). */
+      const ancienTicket = existante?.ticket && entree.ticket !== undefined && revisionTicket(entree.ticket) < revisionTicket(existante.ticket);
+      const sansTicket = { ...ligne };
+      delete (sansTicket as { ticket?: unknown }).ticket;
+      const gardee = ancienTicket ? sansTicket : { ...ligne, ...(entree.ticket !== undefined && entree.ticket !== existante?.ticket ? { ticketLu: Date.now() } : {}) };
+      if (existante) await ctx.db.patch("conversationsCompte", existante._id, gardee);
+      else await ctx.db.insert("conversationsCompte", gardee);
       n += 1;
     }
     return n;
@@ -314,6 +327,9 @@ export const liste = query({
       activite: v.union(v.string(), v.null()),
       modele: v.union(v.string(), v.null()),
       contexte: v.union(v.string(), v.null()),
+      ticket: v.union(v.string(), v.null()),
+      contratTickets: v.union(v.number(), v.null()),
+      ticketLu: v.union(v.number(), v.null()),
     }),
   ),
   handler: async (ctx) => {
@@ -343,6 +359,9 @@ export const liste = query({
       activite: c.activite ?? null,
       modele: c.modele ?? null,
       contexte: c.contexte ?? null,
+      ticket: c.ticket ?? null,
+      contratTickets: c.contratTickets ?? null,
+      ticketLu: c.ticketLu ?? null,
     }));
   },
 });
