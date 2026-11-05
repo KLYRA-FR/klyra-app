@@ -7,7 +7,7 @@ import { AgentRond } from "@/components/roles/AgentRond";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { cn } from "@/lib/cn";
 import { FILTRES_PAR_DEFAUT, LIBELLES_ETAPES, tableauTickets, type ColonneTicket, type FiltresTickets } from "@/lib/tickets";
-import { useRoles, useWorkspace } from "@/lib/workspace";
+import { useChatsEspace, useProjects, useRoles, useWorkspace } from "@/lib/workspace";
 import { AMoi } from "./AMoi";
 import { CarteTicket } from "./CarteTicket";
 
@@ -64,6 +64,9 @@ function Colonne({ titre, nombre, accent, large, children }: { titre: string; no
 export function TicketsScreen() {
   const { state } = useWorkspace();
   const roles = useRoles();
+  /* Les tickets et les projets du serveur affiché. « À moi » (les rappels) reste commun : il est à la personne. */
+  const chats = useChatsEspace();
+  const projets = useProjects();
   /* Rien n'est rendu au build (AppShell attend l'ouverture) : le stockage se lit dès le premier rendu. */
   const [filtres, setFiltres] = useState<FiltresTickets>(lireFiltres);
   /* « Ses tickets » (clic droit sur un agent) : `/tickets?agent=…` filtre sur lui, sans toucher au reste. */
@@ -81,20 +84,22 @@ export function TicketsScreen() {
   };
 
   const travaille = (id: string) => !!state.travail[id];
-  const { colonnes, termines } = tableauTickets(state.chats, travaille, filtres, new Date(), tousTermines);
+  /* Un filtre retenu sur un projet d'un autre serveur ne vide pas ce tableau. */
+  const filtresIci = filtres.projet && !projets.some((p) => p.id === filtres.projet) ? { ...filtres, projet: null } : filtres;
+  const { colonnes, termines } = tableauTickets(chats, travaille, filtresIci, new Date(), tousTermines);
   const ouverts = colonnes["a-faire"].length + colonnes["en-cours"].length + colonnes.bloque.length + colonnes["a-valider"].length;
   const compteurs = (["en-cours", "a-valider", "bloque"] as const)
     .filter((c) => colonnes[c].length)
     .map((c) => `${colonnes[c].length} ${LIBELLES_ETAPES[c]}${c === "bloque" && colonnes[c].length > 1 ? "s" : ""}`);
 
   /* Les agents qui ont des fils, même désactivés depuis, en plus de ceux de Mes agents. */
-  const idsAgents = [...new Set([...roles.map((r) => r.id), ...state.chats.flatMap((c) => (c.fil ? [c.fil.roleId] : []))])];
+  const idsAgents = [...new Set([...roles.map((r) => r.id), ...chats.flatMap((c) => (c.fil ? [c.fil.roleId] : []))])];
   const nomAgent = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
   const optionsAgents = [
     { value: "", label: "Tous les agents" },
     ...idsAgents.map((id) => ({ value: id, label: nomAgent(id), icone: <AgentRond roleId={id} taille={18} /> })),
   ];
-  const optionsProjets = [{ value: "", label: "Tous les projets" }, ...state.projects.map((p) => ({ value: p.id, label: p.name }))];
+  const optionsProjets = [{ value: "", label: "Tous les projets" }, ...projets.map((p) => ({ value: p.id, label: p.name }))];
   const optionsOrigine = [
     { value: "tous" as const, label: "Lancés par tous" },
     { value: "moi" as const, label: "Lancés par moi" },
@@ -119,7 +124,7 @@ export function TicketsScreen() {
         </header>
         <div className="flex flex-wrap items-center gap-2">
           <ListeDeroulante variante="puce" libelle="Agent" icone={<Icon name="users-profiles-01" size={14} />} options={optionsAgents} value={filtres.agent ?? ""} onChange={(v) => changer({ agent: v || null })} largeurListe={240} />
-          <ListeDeroulante variante="puce" libelle="Projet" icone={<Icon name="projets-dossier" size={14} />} options={optionsProjets} value={filtres.projet ?? ""} onChange={(v) => changer({ projet: v || null })} largeurListe={240} />
+          <ListeDeroulante variante="puce" libelle="Projet" icone={<Icon name="projets-dossier" size={14} />} options={optionsProjets} value={filtresIci.projet ?? ""} onChange={(v) => changer({ projet: v || null })} largeurListe={240} />
           <ListeDeroulante variante="puce" libelle="Lancés par" options={optionsOrigine} value={filtres.origine} onChange={(v) => changer({ origine: v })} largeurListe={220} />
         </div>
         {ouverts === 0 && (
