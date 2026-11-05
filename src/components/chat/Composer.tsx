@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
@@ -10,7 +10,7 @@ import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { getBridge } from "@/lib/bridge";
 import { garderBrouillon, lireBrouillons, prendreDemandeEcriture, surBrouillon } from "@/lib/brouillons";
 import { cn } from "@/lib/cn";
-import { analyserCollage, estCaptureCollee } from "@/lib/collage";
+import { estCaptureCollee } from "@/lib/collage";
 import { estImage, nomFichier } from "@/lib/fichiers";
 import { useCompteClaude } from "@/lib/compte-claude";
 import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
@@ -23,9 +23,7 @@ import { PucesImages, VignettePiece } from "./ImageJointe";
 import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
 import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
-
-/** Pas plus de 10 fichiers par message. */
-export const MAX_FICHIERS = 10;
+import { useAjoutFichiers } from "./useAjoutFichiers";
 
 /** Les pièces jointes avant l'envoi : une vignette par image, une carte par autre fichier, avec la croix pour l'enlever. */
 export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer: (chemin: string) => void }) {
@@ -254,50 +252,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const [alerte, setAlerte] = useState<string | null>(null);
   const zone = useRef<HTMLDivElement>(null);
 
-  /* Les pièces jointes à jour même entre deux rendus : deux ajouts rapprochés (collages) ne s'écrasent pas. */
-  const fichiersRef = useRef(fichiers);
-  useEffect(() => {
-    fichiersRef.current = fichiers;
-  }, [fichiers]);
-  const ajouter = (chemins: string[]) => {
-    const tous = [...new Set([...fichiersRef.current, ...chemins.filter(Boolean)])];
-    setAlerte(tous.length > MAX_FICHIERS ? `${MAX_FICHIERS} fichiers au plus par message.` : null);
-    fichiersRef.current = tous.slice(0, MAX_FICHIERS);
-    setFichiers(fichiersRef.current);
-  };
-  const ajouterRef = useRef(ajouter);
-  useEffect(() => {
-    ajouterRef.current = ajouter;
-  });
-
-  /* Ctrl/Cmd+V dans le champ : une capture devient une pièce jointe ; du texte se colle normalement. */
-  const coller = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const colles = [...event.clipboardData.files];
-    const collage = analyserCollage(
-      event.clipboardData.getData("text/plain"),
-      colles.map((f) => ({ type: f.type, taille: f.size, chemin: bridge?.fichiers.cheminDe(f) ?? "" })),
-    );
-    if (collage.action === "texte") return;
-    event.preventDefault();
-    const enregistrer = bridge?.fichiers.enregistrerCollage;
-    if (!enregistrer) {
-      setAlerte("Joindre des fichiers marche dans l’app de bureau.");
-      return;
-    }
-    if (collage.chemins.length) ajouter(collage.chemins);
-    if (collage.alerte) setAlerte(collage.alerte);
-    if (collage.image === null) return;
-    if (fichiersRef.current.length >= MAX_FICHIERS) {
-      setAlerte(`${MAX_FICHIERS} fichiers au plus par message.`);
-      return;
-    }
-    const image = colles[collage.image];
-    void image
-      .arrayBuffer()
-      .then((contenu) => enregistrer(new Uint8Array(contenu), image.type))
-      .then((r) => (r.ok ? ajouterRef.current([r.data]) : setAlerte(r.message)))
-      .catch(() => setAlerte("L’image collée n’a pas pu être lue."));
-  };
+  const { ajouter, coller } = useAjoutFichiers(fichiers, setFichiers, setAlerte);
 
   /* Glisser des fichiers sur toute la conversation (la section qui contient le composeur). */
   useEffect(() => {
@@ -322,7 +277,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       e.preventDefault();
       profondeur = 0;
       setDepot(false);
-      ajouterRef.current([...(e.dataTransfer?.files ?? [])].map((f) => bridge.fichiers.cheminDe(f)));
+      ajouter([...(e.dataTransfer?.files ?? [])].map((f) => bridge.fichiers.cheminDe(f)));
     };
     section.addEventListener("dragenter", entrer);
     section.addEventListener("dragleave", sortir);
@@ -334,7 +289,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       section.removeEventListener("dragover", survoler);
       section.removeEventListener("drop", deposer);
     };
-  }, [bridge]);
+  }, [bridge, ajouter]);
 
   const joindre = async () => {
     if (!bridge) {

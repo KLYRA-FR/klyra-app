@@ -394,7 +394,34 @@ try {
   verifier((await onglets()) === 0 && (await app.ev("!!document.querySelector('aside[aria-label=\"Panneau de la conversation\"]')")), "fermer l’onglet : le panneau reste, sur ses onglets");
 
 
-  /* 14. L'image n'est plus sur le disque : le brouillon retombe sur la carte du fichier, sans vignette. */
+  /* 14. L'accueil : la même chose, et le message part avec l'image. */
+  await app.aller("/");
+  await app.quand("document.querySelector('textarea[aria-label=\"Message\"]')");
+  await app.focus();
+  await app.copierImage(IMAGE_3);
+  await app.ctrlV();
+  await app.quand("document.querySelector('button[aria-label=\"Ouvrir image.png\"] img')?.naturalWidth > 0");
+  e = await app.etat();
+  verifier(e.pieces.length === 1 && NOM.test(e.pieces[0]) && e.texte === "", `accueil, Ctrl+V : une pièce jointe « ${e.pieces[0]} », champ vide`);
+  const puceAccueil = await app.ev(`[...document.querySelector('textarea[aria-label="Message"]').closest('form').querySelectorAll('button')].some((b) => /^image\\.png \\d+ (o|Ko)$/.test(b.innerText.replace(/\\s+/g, ' ')))`);
+  verifier(puceAccueil === true, "accueil : la vignette et la puce, comme dans une conversation");
+  await app.capture("accueil-capture-collee");
+  await app.copierTexte("Du texte collé sur l’accueil.");
+  await app.ctrlV();
+  await app.quand("document.querySelector('textarea[aria-label=\"Message\"]').value.length > 0");
+  e = await app.etat();
+  verifier(e.texte === "Du texte collé sur l’accueil." && e.pieces.length === 1, "accueil, Ctrl+V de texte : le texte se colle, aucune pièce jointe en plus");
+  await app.collageSynthetique([{ octets: Buffer.from("II*\0").toString("base64"), type: "image/tiff", nom: "image.tiff" }]);
+  await app.quand("[...document.querySelectorAll('p[role=\"alert\"]')].some((p) => p.innerText.includes('Format'))");
+  e = await app.etat();
+  verifier(e.alerte.includes("Format d’image non pris en charge") && e.pieces.length === 1, "accueil, format non admis : le message s’affiche, rien de joint");
+  const avecAccueil = e.pieces[0];
+  await app.ev("document.querySelector('form button[type=\"submit\"]').click()");
+  await app.quand("location.search.includes('id=')");
+  await app.quand(`[...document.querySelectorAll('main button[title]')].some((b) => b.title.startsWith(${JSON.stringify(avecAccueil)}) && b.querySelector('img')?.naturalWidth > 0)`);
+  verifier(await app.ev(`[...document.querySelectorAll('main button[title]')].some((b) => b.title.startsWith(${JSON.stringify(avecAccueil)}) && b.querySelector('img')?.naturalWidth > 0)`), "accueil, envoi : la conversation s’ouvre, l’image est dans le fil");
+
+  /* 15. L'image n'est plus sur le disque : le brouillon retombe sur la carte du fichier, sans vignette. */
   const pieces = (await app.etat()).pieces;
   await attendre(1000);
   await app.fermer();
