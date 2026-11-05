@@ -393,6 +393,16 @@ body[data-glisse] iframe {
   100%    { background-color: transparent; }
 }
 
+/* Une fiche d'agent qui vient d'être enregistrée : le même éclairage, qui revient à sa surface blanche. */
+.klyra-eclaire-surface[data-eclaire] {
+  animation: klyra-eclaire-surface 1800ms var(--ease-sortie);
+}
+
+@keyframes klyra-eclaire-surface {
+  0%, 30% { background-color: var(--color-fond-teinte-bleue); }
+  100%    { background-color: var(--color-fond-surface); }
+}
+
 /* Un message ouvert depuis la recherche : il s'éclaire comme un réglage trouvé, avec un halo
    qui déborde du texte sans décaler la mise en page. L'éclairage tient lieu de contour de focus. */
 [data-message][data-eclaire] {

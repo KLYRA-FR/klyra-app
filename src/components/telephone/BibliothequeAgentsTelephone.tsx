@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { RondApercu } from "@/components/roles/AgentRond";
+import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { MODELES, roleFromContent } from "@/lib/agents";
 import { useBibliotheque, type DefinitionComplete } from "@/lib/bibliotheque";
 import { dateCourte, teinteDefinition } from "@/lib/bibliotheque-ui";
 import { useLecturePoste } from "@/lib/poste/client";
-import { agentDeLaBibliotheque, type EtatAgentPoste, type EtatsAgentsPoste } from "@/lib/telephone/agents";
+import { agentDeLaBibliotheque, roleLisible, type EtatAgentPoste, type EtatsAgentsPoste } from "@/lib/telephone/agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import type { RoleTeinte } from "@/types/domain";
-import { ErreurGeste, TitreGroupe, useCartesAgents } from "./CommunAgentsTelephone";
+import { ErreurGeste, HeroAgent, LigneAvecGeste, RondAgentTelephone, useCartesAgents } from "./CommunAgentsTelephone";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille } from "./Feuille";
+import { Etiquette, GroupeListe, LigneListe, SectionListe } from "./Liste";
 import { SectionsFiche } from "./FicheAgentTelephone";
 import { NotePoste, VueLecture } from "./etats";
 import { useSupport } from "./poste";
@@ -60,21 +60,17 @@ export function BibliothequeAgentsTelephone() {
   /** À droite d'une ligne : son état, ou le geste (désactivé poste fermé, P-7 dessous). */
   const etatLigne = (etat: ReturnType<typeof local>, nom: string, onAjouter: () => void, deMoi = false) => {
     if (deMoi) return <span className="text-ui-xs text-texte-secondaire">De toi</span>;
-    if (etat?.statut === "actif") return <span className="text-ui-xs text-texte-secondaire">Dans tes agents</span>;
+    if (etat?.statut === "actif") return <span className="text-ui-xs text-texte-secondaire">Ajouté</span>;
     const reactivable = etat?.statut === "desactive";
     return (
-      <span className="flex shrink-0 flex-col items-end gap-1">
-        <Bouton
-          variant={reactivable ? "blanc" : "sombre"}
-          taille="md"
-          disabled={!ouvert || occupe}
-          aria-label={reactivable ? `Réactiver ${nom}` : `Ajouter ${nom} à tes agents`}
-          onClick={reactivable ? () => reactiver(etat.id, nom) : onAjouter}
-        >
-          {reactivable ? "Réactiver" : "Ajouter"}
-        </Bouton>
-        {ouvert ? null : <NotePoste className="text-ui-xs text-texte-secondaire" />}
-      </span>
+      <Bouton
+        variant="blanc"
+        disabled={!ouvert || occupe}
+        aria-label={reactivable ? `Réactiver ${nom}` : `Ajouter ${nom} à tes agents`}
+        onClick={reactivable ? () => reactiver(etat.id, nom) : onAjouter}
+      >
+        {reactivable ? "Réactiver" : "Ajouter"}
+      </Bouton>
     );
   };
 
@@ -97,52 +93,61 @@ export function BibliothequeAgentsTelephone() {
 
   return (
     <>
-      <p className="mt-4 text-ui text-texte-secondaire">Les agents que les membres de ton équipe ont choisi de partager, et les modèles de KLYRA.</p>
+      <p className="mt-4 px-1 text-ui text-texte-secondaire">Les agents que les membres de ton équipe ont choisi de partager, et les modèles de KLYRA.</p>
+      {ouvert ? null : (
+        <div role="status" className="mt-3 flex items-start gap-2.5 rounded-xl bg-fond-surface-grise p-3 text-ui text-texte-principal">
+          <Icon name="clock-01" size={20} className="mt-px shrink-0 text-icone-secondaire" />
+          <p className="min-w-0">Tu peux lire les fiches. Les ajouter attend que KLYRA soit ouverte sur {sur}.</p>
+        </div>
+      )}
 
-      <TitreGroupe>Partagés par l’équipe</TitreGroupe>
-      {etatPartages ? <p className="text-ui text-texte-secondaire">{etatPartages}</p> : null}
-      {biblio.etat === "erreur" ? (
-        <Bouton variant="blanc" taille="md" className="mt-2" onClick={biblio.reessayer}>
-          Réessayer
-        </Bouton>
-      ) : null}
-      <ul>
-        {partages.map((d) => (
-          <LigneDefinition
-            key={d._id}
-            href={`/equipe?definition=${encodeURIComponent(d._id)}`}
-            slug={d.slug}
-            nom={d.nom}
-            teinte={teinteDefinition(d.slug, false)}
-            detail={`${d.role} · Par ${d.auteur.nom} · v${d.version} · ${dateCourte(d.majLe)}`}
-            etat={etatLigne(local({ definitionId: d._id }), d.nom, () => setAjout({ type: "partage", definitionId: d._id, nom: d.nom, auteur: d.auteur.nom, aConfigurer: d.dependances.map((x) => x.libelle) }), d.deMoi)}
-          />
-        ))}
-      </ul>
+      <SectionListe titre="Partagés par l’équipe" compte={partages.length || undefined} className="mt-4">
+        {etatPartages ? <p className="px-1 text-ui text-texte-secondaire">{etatPartages}</p> : null}
+        {biblio.etat === "erreur" ? (
+          <Bouton variant="blanc" taille="md" className="mt-2" onClick={biblio.reessayer}>
+            Réessayer
+          </Bouton>
+        ) : null}
+        {partages.length ? (
+          <GroupeListe>
+            {partages.map((d) => (
+              <LigneDefinition
+                key={d._id}
+                href={`/equipe?definition=${encodeURIComponent(d._id)}`}
+                slug={d.slug}
+                nom={d.nom}
+                teinte={teinteDefinition(d.slug, false)}
+                tag={roleLisible(d.role, d.slug)}
+                detail={`Par ${d.auteur.nom} · v${d.version} · ${dateCourte(d.majLe)}`}
+                etat={etatLigne(local({ definitionId: d._id }), d.nom, () => setAjout({ type: "partage", definitionId: d._id, nom: d.nom, auteur: d.auteur.nom, aConfigurer: d.dependances.map((x) => x.libelle) }), d.deMoi)}
+              />
+            ))}
+          </GroupeListe>
+        ) : null}
+      </SectionListe>
 
-      <TitreGroupe>Modèles KLYRA</TitreGroupe>
-      <p className="text-ui text-texte-secondaire">Les agents de départ de KLYRA. Ajoute seulement ceux qui te servent.</p>
-      {aAjouter >= 2 ? (
-        <>
-          <Bouton variant="blanc" taille="md" className="mt-2 w-full" disabled={!ouvert} onClick={() => setCollection(true)}>
+      <SectionListe titre="Modèles KLYRA" compte={modeles.length} className="mt-6">
+        <p className="mb-2 px-1 text-ui text-texte-secondaire">Les agents de départ de KLYRA. Ajoute seulement ceux qui te servent.</p>
+        {aAjouter >= 2 ? (
+          <Bouton variant="blanc" taille="md" className="mb-3 w-full" iconeGauche={<Icon name="plus-01" size={20} />} disabled={!ouvert} onClick={() => setCollection(true)}>
             Ajouter toute la collection
           </Bouton>
-          {ouvert ? null : <NotePoste />}
-        </>
-      ) : null}
-      <ul>
-        {modeles.map((m) => (
-          <LigneDefinition
-            key={m.name}
-            href={`/equipe?definition=${encodeURIComponent(`klyra:${m.name}`)}`}
-            slug={m.name}
-            nom={m.role.name}
-            teinte={m.role.teinte}
-            detail={`${m.role.tag} · KLYRA`}
-            etat={etatLigne(local({ modele: m.name }), m.role.name, () => setAjout({ type: "modele", nom: m.role.name, modele: m.name }))}
-          />
-        ))}
-      </ul>
+        ) : null}
+        <GroupeListe>
+          {modeles.map((m) => (
+            <LigneDefinition
+              key={m.name}
+              href={`/equipe?definition=${encodeURIComponent(`klyra:${m.name}`)}`}
+              slug={m.name}
+              nom={m.role.name}
+              teinte={m.role.teinte}
+              tag={m.role.tag}
+              detail={m.role.title}
+              etat={etatLigne(local({ modele: m.name }), m.role.name, () => setAjout({ type: "modele", nom: m.role.name, modele: m.name }))}
+            />
+          ))}
+        </GroupeListe>
+      </SectionListe>
       <ErreurGeste message={erreur?.message} className="mt-3" />
 
       {ajout ? (
@@ -173,19 +178,8 @@ export function BibliothequeAgentsTelephone() {
   );
 }
 
-function LigneDefinition({ href, slug, nom, teinte, detail, etat }: { href: string; slug: string; nom: string; teinte: RoleTeinte; detail: string; etat: ReactNode }) {
-  return (
-    <li className="flex min-h-16 items-center gap-3 border-b border-bordure-subtile py-2">
-      <Link href={href} className="flex min-h-12 min-w-0 flex-1 items-center gap-3 active:bg-fond-survol">
-        <RondApercu agentId={slug} nom={nom} teinte={teinte} taille={36} />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-body-s text-texte-principal">{nom}</span>
-          <span className="line-clamp-2 text-ui-xs text-texte-secondaire">{detail}</span>
-        </span>
-      </Link>
-      {etat}
-    </li>
-  );
+function LigneDefinition({ href, slug, nom, teinte, tag, detail, etat }: { href: string; slug: string; nom: string; teinte: RoleTeinte; tag: string; detail: string; etat: ReactNode }) {
+  return <LigneAvecGeste href={href} debut={<RondAgentTelephone agentId={slug} nom={nom} teinte={teinte} taille={40} />} nom={nom} etiquette={tag ? <Etiquette>{tag}</Etiquette> : null} ligne2={detail} geste={etat} />;
 }
 
 /** « Ajouter … à tes agents ? » : la même phrase qu'au bureau, les dossiers à choisir restent sur l'ordinateur. */
@@ -218,6 +212,7 @@ function FeuilleCollection({ onFermer, onFait }: { onFermer: () => void; onFait:
   return (
     <Feuille
       titre="Ajouter toute la collection ?"
+      sousTitre="Modèles KLYRA"
       onFermer={onFermer}
       pied={
         message ? (
@@ -238,27 +233,22 @@ function FeuilleCollection({ onFermer, onFait }: { onFermer: () => void; onFait:
         <VueLecture lecture={plan} ferme={(sur) => `tes agents sont sur ${sur}. La collection s’ajoute quand KLYRA y est ouverte.`}>
           {(p) => (
             <div className="flex flex-col gap-4 px-4">
-              <section>
-                <h3 className="text-ui font-medium text-texte-principal">Seront ajoutés</h3>
-                <ul className="mt-1 text-body-s text-texte-principal">
-                  {p.retenus.map((r) => (
-                    <li key={r.id} className="py-1">
-                      {r.nom} <span className="text-texte-secondaire">· {r.tag}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              <SectionListe titre="Seront ajoutés" compte={p.retenus.length}>
+                <GroupeListe>
+                  {p.retenus.map((r) => {
+                    const m = MODELES.find((x) => x.name === r.id);
+                    return <LigneListe key={r.id} debut={<RondAgentTelephone agentId={r.id} nom={r.nom} teinte={m?.role.teinte ?? teinteDefinition(r.id, false)} taille={32} />} retrait="tuile" nom={r.nom} etiquette={r.tag ? <Etiquette>{r.tag}</Etiquette> : null} />;
+                  })}
+                </GroupeListe>
+              </SectionListe>
               {p.ecartes.length ? (
-                <section>
-                  <h3 className="text-ui font-medium text-texte-principal">Ne seront pas ajoutés</h3>
-                  <ul className="mt-1 text-ui text-texte-secondaire">
+                <SectionListe titre="Ne seront pas ajoutés" compte={p.ecartes.length}>
+                  <GroupeListe>
                     {p.ecartes.map((r) => (
-                      <li key={r.id} className="py-1">
-                        {r.nom} · {r.raison}
-                      </li>
+                      <LigneListe key={r.id} nom={r.nom} ligne2={r.raison} />
                     ))}
-                  </ul>
-                </section>
+                  </GroupeListe>
+                </SectionListe>
               ) : null}
               <ErreurGeste message={message ?? erreur?.message} />
             </div>
@@ -322,32 +312,41 @@ export function DefinitionAgentTelephone({ id }: { id: string }) {
           </p>
         ) : (
           <>
-            <header className="flex items-center gap-3 pt-2">
-              <RondApercu agentId={slug} nom={nom} teinte={teinte} taille={64} />
-              <div className="min-w-0">
-                <h2 className="truncate text-h4 font-semibold text-texte-principal">{nom}</h2>
-                <p className="truncate text-ui text-texte-secondaire">
-                  {role.tag} · {auteur}
-                </p>
-              </div>
-            </header>
-            <div className="mt-4">
-              {deMoi ? (
-                <p className="text-ui text-texte-secondaire">Tu l’as partagé avec l’équipe.</p>
-              ) : etat?.statut === "actif" ? (
-                <p className="text-ui text-texte-secondaire">Dans tes agents.</p>
-              ) : (
-                <>
-                  <BoutonPrincipal
-                    className="w-full"
-                    disabled={!ouvert || occupe}
-                    onClick={() => (etat?.statut === "desactive" ? void agir("agents.activer", { id: etat.id, actif: true }, `${nom} réactivé.`).then((ok) => ok && relancer()) : setAjout(true))}
-                  >
-                    {etat?.statut === "desactive" ? "Réactiver" : "Ajouter à mes agents"}
-                  </BoutonPrincipal>
-                  {ouvert ? null : <NotePoste />}
-                </>
-              )}
+            <div className="pt-1">
+              <HeroAgent
+                agentId={slug}
+                nom={nom}
+                teinte={teinte}
+                role={role.tag}
+                titre={role.title}
+                etiquettes={
+                  <>
+                    <Etiquette>{modele ? "Modèle KLYRA" : auteur}</Etiquette>
+                    {lue?.definition?.dependances.length ? (
+                      <Etiquette>
+                        {lue.definition.dependances.length} dossier{lue.definition.dependances.length > 1 ? "s" : ""} à choisir
+                      </Etiquette>
+                    ) : null}
+                  </>
+                }
+                pied={lue?.definition ? `Partagé le ${dateCourte(lue.definition.majLe)}` : null}
+                actions={
+                  deMoi ? (
+                    <p className="text-ui text-texte-secondaire">Tu l’as partagé avec l’équipe.</p>
+                  ) : etat?.statut === "actif" ? (
+                    <p className="text-ui text-texte-secondaire">Dans tes agents.</p>
+                  ) : (
+                    <BoutonPrincipal
+                      className="flex-1"
+                      disabled={!ouvert || occupe}
+                      onClick={() => (etat?.statut === "desactive" ? void agir("agents.activer", { id: etat.id, actif: true }, `${nom} réactivé.`).then((ok) => ok && relancer()) : setAjout(true))}
+                    >
+                      {etat?.statut === "desactive" ? "Réactiver" : "Ajouter à mes agents"}
+                    </BoutonPrincipal>
+                  )
+                }
+              />
+              {ouvert ? null : <NotePoste className="mt-2 px-1" />}
               <ErreurGeste message={erreur?.message} className="mt-2" />
             </div>
             <div className="mt-4">

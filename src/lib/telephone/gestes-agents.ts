@@ -1,3 +1,4 @@
+import { cleJour } from "@/lib/consommation";
 import { LIMITES, preparerPublication } from "../../../convex/model/definitions";
 import { getField, parseAgentFile, serializeAgentFile, setFields } from "@/lib/agent-file";
 import type { AgentLocal, useAgents } from "@/lib/agents";
@@ -55,6 +56,7 @@ export interface DepsAgents {
     | "dir"
     | "save"
     | "saveReglage"
+    | "preferer"
     | "changerModele"
     | "create"
     | "activer"
@@ -84,6 +86,11 @@ export interface DepsAgents {
   enCours: (agentId: string) => boolean;
   routinesDe: (agentId: string) => Promise<number>;
   chiffres: () => ChiffresEquipe;
+  /**
+   * Lectures bornées au contexte de la conversation directe (lot 5, E5-35–38).
+   * Absentes : le téléphone dit que la lecture n'existe pas, il n'affiche pas un vide.
+   */
+  lectures?: LecturesAgents;
   lou: {
     /** Ce qui empêche Lou de travailler sur ce poste, ou null. */
     blocage: () => Promise<string | null>;
@@ -122,6 +129,88 @@ export type EtatLou =
   | { etat: "travail" }
   | { etat: "proposition"; resume: string; avant: string; apres: string }
   | { etat: "erreur"; message: string };
+
+/** Un souvenir listé : la référence sert à l'ouvrir, elle ne s'affiche pas. */
+export interface SouvenirListe {
+  ref: string;
+  titre: string;
+  extrait: string;
+  toujours: boolean;
+  modifieLe: number;
+}
+
+export interface SouvenirsLus {
+  /** La liste a été coupée par la source : le téléphone le dit. */
+  coupee: boolean;
+  souvenirs: SouvenirListe[];
+}
+
+export interface CompetenceLue {
+  nom: string;
+  resume: string;
+  /** Préchargée par la fiche. Les autres sont disponibles au besoin. */
+  prechargee: boolean;
+  /** D'où elle vient, tel que la source le dit : fiche, projet, poste, plugin. */
+  origine: "fiche" | "projet" | "poste" | "plugin";
+}
+
+/** Un appel du journal de consommation, tel que le poste le lit. Son contenu ne part jamais. */
+export interface AppelJournal {
+  at: number;
+  modele: string;
+  entree: number;
+  sortie: number;
+  cacheLu: number;
+  cacheEcrit: number;
+  /** Null : le journal n'a pas de coût. Jamais remplacé par zéro. */
+  coutUsd: number | null;
+}
+
+/** Le journal d'un agent, par jour (celui du poste) et par modèle : une année tient dans une réponse. */
+export interface UtilisationLue {
+  jours: {
+    jour: string;
+    modele: string;
+    appels: number;
+    entree: number;
+    sortie: number;
+    cacheLu: number;
+    cacheEcrit: number;
+    coutUsd: number;
+    appelsSansCout: number;
+  }[];
+}
+
+/** Le texte d'un souvenir, sans son en-tête YAML : ce sont ses métadonnées, pas ce qu'on lit. */
+export function sansEnTeteYaml(contenu: string): string {
+  return contenu.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trimStart();
+}
+
+export function agregerUtilisation(appels: AppelJournal[]): UtilisationLue {
+  const parCle = new Map<string, UtilisationLue["jours"][number]>();
+  for (const a of appels) {
+    const jour = cleJour(a.at);
+    const cle = `${jour}|${a.modele}`;
+    const ligne = parCle.get(cle) ?? { jour, modele: a.modele, appels: 0, entree: 0, sortie: 0, cacheLu: 0, cacheEcrit: 0, coutUsd: 0, appelsSansCout: 0 };
+    ligne.appels += 1;
+    ligne.entree += a.entree;
+    ligne.sortie += a.sortie;
+    ligne.cacheLu += a.cacheLu;
+    ligne.cacheEcrit += a.cacheEcrit;
+    if (a.coutUsd === null) ligne.appelsSansCout += 1;
+    else ligne.coutUsd += a.coutUsd;
+    parCle.set(cle, ligne);
+  }
+  return { jours: [...parCle.values()].sort((x, y) => x.jour.localeCompare(y.jour)) };
+}
+
+export interface LecturesAgents {
+  /** Null : l'agent n'a pas de mémoire, source lue. */
+  souvenirs: (id: string) => Promise<SouvenirsLus | null>;
+  souvenir: (id: string, ref: string) => Promise<{ titre: string; contenu: string; modifieLe: number }>;
+  competences: (id: string) => Promise<CompetenceLue[]>;
+  utilisation: (id: string) => Promise<AppelJournal[]>;
+}
 
 export interface ApercuPartage {
   titre: string;
@@ -263,15 +352,27 @@ export function gestesAgents(d: DepsAgents): Gestes {
     /** Ce que T-08 ne peut pas lire dans les cartes : désactivé ou jamais ajouté, origine dans la bibliothèque. */
     "agents.etats": async (): Promise<EtatsAgentsPoste> => {
       const assistant = a.roles[0];
+      const liens = await d.liens();
       return {
         assistant: { nom: assistant.name, teinte: assistant.teinte },
-        agents: a.tous.map((x) => ({
-          id: x.role.id,
-          statut: x.statut,
-          desactiveLe: x.entree?.desactiveLe ?? null,
-          definitionId: definitionDe(x.entree?.origine),
-          modele: x.entree?.origine.type === "modele" ? x.entree.origine.modele : null,
-        })),
+        agents: a.tous.map((x) => {
+          const reglage = a.meta[x.role.id] ?? {};
+          const lien = liens(x);
+          return {
+            id: x.role.id,
+            statut: x.statut,
+            desactiveLe: x.entree?.desactiveLe ?? null,
+            definitionId: definitionDe(x.entree?.origine),
+            modele: x.entree?.origine.type === "modele" ? x.entree.origine.modele : null,
+            masque: reglage.masque === true,
+            muet: reglage.muet === true,
+            epingle: !!reglage.epingleLe,
+            enCours: d.enCours(x.role.id),
+            titre: x.role.title,
+            competences: x.role.skills,
+            miseAJour: (lien.type === "modele" && lien.miseAJour !== null) || (lien.type === "recu" && !!lien.proposition),
+          };
+        }),
       };
     },
 
@@ -738,7 +839,85 @@ export function gestesAgents(d: DepsAgents): Gestes {
       }
       return { ok: true };
     },
+
+    /**
+     * Épingler, sourdine, masquer : les mêmes préférences que le menu du bureau (`preferer`).
+     * L'écriture attend le disque. L'assistant ne se masque pas et ne s'épingle pas.
+     */
+    "agents.preference": async (args) => {
+      exigerEcriture();
+      const o = objet(args);
+      const id = identifiant(o);
+      const masque = o.masque === undefined ? undefined : booleen(o, "masque");
+      const muet = o.muet === undefined ? undefined : booleen(o, "muet");
+      const epingle = o.epingle === undefined ? undefined : booleen(o, "epingle");
+      if (masque === undefined && muet === undefined && epingle === undefined) throw new ErreurPoste("arguments", "Demande illisible.");
+      if (id === ID_ASSISTANT && (masque !== undefined || epingle !== undefined)) {
+        throw new ErreurPoste("arguments", "L’assistant reste dans la liste.");
+      }
+      if (id !== ID_ASSISTANT) localExistant(id);
+      try {
+        await a.preferer(id, {
+          ...(masque !== undefined ? { masque } : {}),
+          ...(muet !== undefined ? { muet } : {}),
+          ...(epingle !== undefined ? { epingle } : {}),
+        });
+      } catch (e) {
+        traduire(e, ton);
+      }
+      return { ok: true };
+    },
+
+    /** Arrête le travail en cours de cet agent. Le téléphone ne le dit réussi qu'après ce retour. */
+    "agents.arreter": async (args) => {
+      const id = identifiant(objet(args));
+      if (id !== ID_ASSISTANT) localExistant(id);
+      d.arreter(id);
+      return { ok: true };
+    },
+
+    "agents.souvenirs": async (args): Promise<SouvenirsLus> => {
+      const id = identifiant(objet(args));
+      const lu = await lireOuIndisponible(d, () => d.lectures!.souvenirs(id));
+      return lu ?? { coupee: false, souvenirs: [] };
+    },
+
+    "agents.souvenir": async (args) => {
+      const o = objet(args);
+      const id = identifiant(o);
+      const ref = chaine(o, "ref", 300);
+      if (ref.includes("..") || ref.startsWith("/") || ref.startsWith("\\") || ref.includes("\\")) {
+        throw new ErreurPoste("arguments", "Demande illisible.");
+      }
+      const liste = await lireOuIndisponible(d, () => d.lectures!.souvenirs(id));
+      const ligne = liste?.souvenirs.find((s) => s.ref === ref);
+      if (!ligne) throw new ErreurPoste("introuvable", "Ce souvenir n’est pas dans la liste.");
+      const lu = await lireOuIndisponible(d, () => d.lectures!.souvenir(id, ref));
+      return { ...lu, contenu: sansEnTeteYaml(lu.contenu), titre: ligne.titre };
+    },
+
+    "agents.competences": async (args) => {
+      const id = identifiant(objet(args));
+      const competences = await lireOuIndisponible(d, () => d.lectures!.competences(id));
+      /* Ce que sa description dit qu'il couvre (`role.skills`), à part de ce qui est réellement chargé. */
+      return { competences, couvre: a.tous.find((x) => x.role.id === id)?.role.skills ?? [] };
+    },
+
+    "agents.utilisation": async (args): Promise<UtilisationLue> => {
+      const id = identifiant(objet(args));
+      return agregerUtilisation(await lireOuIndisponible(d, () => d.lectures!.utilisation(id)));
+    },
   };
+}
+
+async function lireOuIndisponible<T>(d: DepsAgents, lire: () => Promise<T>): Promise<T> {
+  if (!d.lectures) throw new ErreurPoste("indisponible", `Cette lecture se fait sur ${d.ton}.`);
+  try {
+    return await lire();
+  } catch (e) {
+    const message = e instanceof Error && e.message ? e.message : `Cette lecture se fait sur ${d.ton}.`;
+    throw new ErreurPoste("indisponible", message);
+  }
 }
 
 /** Le plan de « Ajouter toute la collection », comme au bureau. */

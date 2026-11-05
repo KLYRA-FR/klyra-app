@@ -10,8 +10,9 @@ import { getBridge, unwrap } from "@/lib/bridge";
 import { messageErreur, useCompte } from "@/lib/compte";
 import { lienDe } from "@/lib/lien-bibliotheque";
 import { poste } from "@/lib/plateforme";
-import { gestesAgents, type ChiffresEquipe, type DepsAgents } from "@/lib/telephone/gestes-agents";
+import { gestesAgents, type ChiffresEquipe, type CompetenceLue, type DepsAgents, type SouvenirsLus } from "@/lib/telephone/gestes-agents";
 import { useWorkspace } from "@/lib/workspace";
+import type { Chat } from "@/types/domain";
 import type { Gestes } from "../types";
 
 /** L'agent qui écrit les fiches : Lou (`prompty`), comme « Modifier avec Lou » du bureau. */
@@ -122,6 +123,56 @@ export function useGestesAgents(): Gestes {
       return r?.ok ? r.data.length : 0;
     },
     chiffres,
+    lectures: {
+      souvenirs: async (id) => {
+        const lire = bridge?.agents.memoire;
+        if (!lire) throw new Error(`Les souvenirs se lisent dans l’app de bureau, sur ${poste.ton}.`);
+        const r = await lire(id, contexteDirect(state.chats, id));
+        if (!r.ok) throw new Error(r.message);
+        if (!r.data) return null;
+        return {
+          coupee: r.data.coupee,
+          souvenirs: r.data.souvenirs.map((s) => ({
+            ref: s.id,
+            titre: sansChemin(s.titre) || "Souvenir",
+            extrait: sansChemin(s.description),
+            toujours: s.toujours,
+            modifieLe: s.modifieLe,
+          })),
+        } satisfies SouvenirsLus;
+      },
+      souvenir: async (id, ref) => {
+        const lire = bridge?.agents.souvenir;
+        if (!lire) throw new Error(`Les souvenirs se lisent dans l’app de bureau, sur ${poste.ton}.`);
+        const r = await lire(id, contexteDirect(state.chats, id), ref);
+        if (!r.ok) throw new Error(r.message);
+        return { titre: "Souvenir", contenu: r.data.contenu, modifieLe: r.data.modifieLe };
+      },
+      competences: async (id) => {
+        const lire = bridge?.agents.competences;
+        if (!lire) throw new Error(`Les compétences se lisent dans l’app de bureau, sur ${poste.ton}.`);
+        const chat = directDe(state.chats, id);
+        const r = await lire(id, chat?.lieu ? { dossier: null, lieu: chat.lieu } : { dossier: null });
+        if (!r.ok) throw new Error(r.message);
+        const ligne = (origine: CompetenceLue["origine"], prechargee: boolean) => (s: { nom: string; description: string }) =>
+          ({ nom: s.nom, resume: sansChemin(s.description), prechargee, origine }) satisfies CompetenceLue;
+        return [
+          ...r.data.fiche.map(ligne("fiche", true)),
+          ...r.data.projet.map(ligne("projet", false)),
+          ...r.data.poste.map(ligne("poste", false)),
+          ...(r.data.plugins ?? []).map(ligne("plugin", false)),
+        ];
+      },
+      utilisation: async (id) => {
+        const lire = bridge?.consommation?.lire;
+        if (!lire) throw new Error(`L’utilisation se lit dans l’app de bureau, sur ${poste.ton}.`);
+        const r = await lire();
+        if (!r.ok) throw new Error(r.message);
+        return r.data.entrees
+          .filter((e) => e.agent === id && e.klyra !== false)
+          .map((e) => ({ at: e.at, modele: e.modele, entree: e.jetons.entree, sortie: e.jetons.sortie, cacheLu: e.jetons.cacheLu, cacheEcrit: e.jetons.cacheEcrit, coutUsd: e.coutUsd }));
+      },
+    },
     lou: {
       blocage: async () => {
         if (!bridge) return `Lou travaille dans l’app de bureau, sur ${poste.ton}.`;
@@ -137,4 +188,20 @@ export function useGestesAgents(): Gestes {
       annuler: (requestId) => void bridge?.claude.cancel(requestId),
     },
   });
+}
+
+/** La conversation directe de cet agent, sur ce poste : le contexte des souvenirs et des compétences. */
+function directDe(chats: Chat[], id: string): Chat | undefined {
+  return chats.find((c) => c.kind === "direct" && !c.fil && c.roleIds.includes(id));
+}
+
+function contexteDirect(chats: Chat[], id: string) {
+  const chat = directDe(chats, id);
+  const sessionId = chat?.sessions[id] ?? null;
+  return chat?.lieu ? { dossier: null, sessionId, lieu: chat.lieu } : { dossier: null, sessionId };
+}
+
+/** Un chemin absolu ne part pas vers le téléphone. */
+function sansChemin(s: string): string {
+  return s.replace(/(?:\/(?:Users|home|var|opt)\/\S+|[A-Za-z]:\\[^\s]+)/g, "").replace(/\s+/g, " ").trim();
 }

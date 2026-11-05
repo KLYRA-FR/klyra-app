@@ -231,6 +231,8 @@ export interface ActionMenu {
   danger?: boolean;
   /** Un filet avant cette ligne. */
   separateurAvant?: boolean;
+  /** Mène à une autre page : un chevron le dit. */
+  chevron?: boolean;
   /** Le menu se change en cette confirmation, dans la même feuille (§ 4.1). */
   confirmation?: { titre: string; texte?: string; confirmer: string };
   /** Mène à une sous-page : la feuille reste ouverte, un chevron le dit. */
@@ -261,6 +263,7 @@ export function MenuFeuille({
   rapides,
   entete,
   retour,
+  noteRapides,
   actions,
   onFermer,
 }: {
@@ -271,6 +274,8 @@ export function MenuFeuille({
   /** Ce qui précède les lignes, propre à un écran (les réactions d'un message). */
   entete?: ReactNode;
   retour?: () => void;
+  /** Pourquoi des actions rapides sont inactives (P-7). */
+  noteRapides?: ReactNode;
   actions: ActionMenu[];
   onFermer: () => void;
 }) {
@@ -285,12 +290,12 @@ export function MenuFeuille({
   return (
     <Feuille titre={titre} sousTitre={sousTitre} objet={objet} retour={retour} onFermer={onFermer}>
       {entete}
-      <ContenuMenu rapides={rapides} actions={actions} onConfirmer={setAConfirmer} />
+      <ContenuMenu rapides={rapides} noteRapides={noteRapides} actions={actions} onConfirmer={setAConfirmer} />
     </Feuille>
   );
 }
 
-function ContenuMenu({ rapides, actions, onConfirmer }: { rapides?: ActionRapide[]; actions: ActionMenu[]; onConfirmer: (a: ActionMenu) => void }) {
+function ContenuMenu({ rapides, noteRapides, actions, onConfirmer }: { rapides?: ActionRapide[]; noteRapides?: ReactNode; actions: ActionMenu[]; onConfirmer: (a: ActionMenu) => void }) {
   const fermer = useFermerFeuille();
   const choisir = (action: { onChoisir: () => void; sousPage?: boolean }) => {
     if (!action.sousPage) fermer();
@@ -318,6 +323,7 @@ function ContenuMenu({ rapides, actions, onConfirmer }: { rapides?: ActionRapide
           ))}
         </div>
       ) : null}
+      {noteRapides ? <div className="pb-2">{noteRapides}</div> : null}
       <ul className="-mx-4 flex flex-col">
         {actions.map((action) => (
           <li key={action.libelle}>
@@ -332,13 +338,13 @@ function ContenuMenu({ rapides, actions, onConfirmer }: { rapides?: ActionRapide
                 "disabled:text-texte-tertiaire",
               )}
             >
-              {action.icone ? <Icon name={action.icone} size={20} className={cn("shrink-0", action.danger ? "text-texte-erreur" : action.desactivee ? "text-icone-secondaire" : "text-icone-defaut")} /> : null}
+              {action.icone ? <Icon name={action.icone} size={20} className={cn("shrink-0", action.desactivee ? "text-icone-secondaire" : action.danger ? "text-texte-erreur" : "text-icone-defaut")} /> : null}
               <span className="min-w-0 flex-1">
                 {action.libelle}
                 {action.note ? <span className="mt-0.5 block text-ui-xs text-texte-secondaire">{action.note}</span> : null}
               </span>
               {action.valeur ? <span className="shrink-0 text-ui text-texte-secondaire">{action.valeur}</span> : null}
-              {action.sousPage ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
+              {action.sousPage || action.chevron ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
             </button>
           </li>
         ))}

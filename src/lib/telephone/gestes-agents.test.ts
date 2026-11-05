@@ -1,3 +1,4 @@
+import { agregerUtilisation, sansEnTeteYaml } from "./gestes-agents";
 import { describe, expect, test, vi } from "vitest";
 import { getField, parseAgentFile } from "@/lib/agent-file";
 import type { AgentLocal } from "@/lib/agents";
@@ -69,6 +70,7 @@ function poste(options: { contenu?: string; empreinte?: string } = {}) {
     dir: "/Users/corentin/.claude/agents",
     save: vi.fn(async () => undefined),
     saveReglage: vi.fn(async () => undefined),
+    preferer: vi.fn(async () => undefined),
     changerModele: vi.fn(async () => undefined),
     create: vi.fn(async () => undefined),
     activer: vi.fn(async () => undefined),
@@ -193,6 +195,32 @@ describe("gestes « agents » : Mes agents", () => {
     expect((await refus(gestes["agents.activer"]({ id: "principal", actif: false }))).code).toBe("arguments");
   });
 
+  test("masquer et épingler passent par les préférences du bureau ; l'assistant ne se masque pas", async () => {
+    const { agents, gestes } = poste();
+    await gestes["agents.preference"]({ id: "dev", masque: true });
+    expect(agents.preferer).toHaveBeenCalledWith("dev", { masque: true });
+    expect((await refus(gestes["agents.preference"]({ id: "principal", masque: true }))).code).toBe("arguments");
+    expect(agents.preferer).toHaveBeenCalledTimes(1);
+  });
+
+  test("les souvenirs absents ne deviennent pas une liste vide", async () => {
+    const { gestes } = poste();
+    expect((await refus(gestes["agents.souvenirs"]({ id: "dev" }))).code).toBe("indisponible");
+  });
+
+  test("un souvenir hors de la liste lue est refusé", async () => {
+    const { deps, gestes } = poste();
+    deps.lectures = {
+      souvenirs: async () => ({ coupee: false, souvenirs: [{ ref: "notes.md", titre: "Notes", extrait: "", toujours: true, modifieLe: 1 }] }),
+      souvenir: vi.fn(async () => ({ titre: "Notes", contenu: "Texte", modifieLe: 1 })),
+      competences: async () => [],
+      utilisation: async () => [],
+    };
+    expect((await refus(gestes["agents.souvenir"]({ id: "dev", ref: "../secret.md" }))).code).toBe("arguments");
+    expect((await refus(gestes["agents.souvenir"]({ id: "dev", ref: "autre.md" }))).code).toBe("introuvable");
+    await expect(gestes["agents.souvenir"]({ id: "dev", ref: "notes.md" })).resolves.toMatchObject({ titre: "Notes", contenu: "Texte" });
+  });
+
   test("le nom de l'assistant suit les règles du bureau", async () => {
     const { agents, gestes } = poste();
     expect((await refus(gestes["agents.personnaliser"]({ id: "principal", nom: "Hugo", teinte: "rose" }))).code).toBe("invalide");
@@ -207,5 +235,29 @@ describe("gestes « agents » : Mes agents", () => {
     await expect(gestes["agents.creer"]({ ...creation, id: "juriste" })).resolves.toEqual({ id: "juriste" });
     const [, contenu] = agents.create.mock.calls[0] as unknown as [string, string];
     expect(getField(parseAgentFile(contenu).frontmatter, "name")).toBe("juriste");
+  });
+});
+
+describe("souvenir lu au téléphone", () => {
+  test("son en-tête YAML ne s'affiche pas, le reste est gardé", () => {
+    expect(sansEnTeteYaml("---\nname: Arrondi\ndescription: x\n---\n\nLigne par **ligne**.\n")).toBe("Ligne par **ligne**.\n");
+    expect(sansEnTeteYaml("Sans en-tête\n---\nsuite")).toBe("Sans en-tête\n---\nsuite");
+  });
+});
+
+describe("journal d'un agent", () => {
+  test("agrège par jour et par modèle, sans transformer un coût absent en zéro connu", () => {
+    const at = new Date(2026, 10, 5, 12).getTime();
+    const u = agregerUtilisation([
+      { at, modele: "a", entree: 1, sortie: 2, cacheLu: 3, cacheEcrit: 4, coutUsd: 0.5 },
+      { at: at + 1000, modele: "a", entree: 1, sortie: 0, cacheLu: 0, cacheEcrit: 0, coutUsd: null },
+      { at, modele: "b", entree: 5, sortie: 0, cacheLu: 0, cacheEcrit: 0, coutUsd: 1 },
+    ]);
+    expect(u.jours).toHaveLength(2);
+    const a = u.jours.find((l) => l.modele === "a")!;
+    expect(a.appels).toBe(2);
+    expect(a.entree).toBe(2);
+    expect(a.coutUsd).toBe(0.5);
+    expect(a.appelsSansCout).toBe(1);
   });
 });

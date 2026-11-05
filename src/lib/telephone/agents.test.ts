@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { agentDeLaBibliotheque, libelleRetour, listeMesAgents, roleLisible, tagLisible, teinteSure, texteConversations, texteErreurFiche } from "./agents";
+import { agentDeLaBibliotheque, classerActifs, competencesCarte, libelleRetour, seriesUtilisation, syntheseUtilisation, listeMesAgents, nonLusAgent, roleLisible, tagLisible, teinteSure, texteConversations, texteErreurFiche } from "./agents";
 
 const cartes = [
   { origine: "dev", nom: "Hugo", teinte: "vert", roleCourt: "Dev", actif: true },
@@ -54,6 +54,28 @@ describe("Mes agents sur le téléphone (T-08)", () => {
   });
 });
 
+describe("cartes du lot 5", () => {
+  const hugo = { id: "dev", nom: "Hugo" };
+  const iris = { id: "design", nom: "Iris" };
+
+  test("sans préférences lues, personne n'est masqué", () => {
+    expect(classerActifs([hugo, iris], null)).toEqual({ visibles: [hugo, iris], masques: [] });
+  });
+
+  test("un masqué quitte les cartes, un épinglé passe devant", () => {
+    const { visibles, masques } = classerActifs([hugo, iris], [
+      { id: "dev", masque: true, epingle: false },
+      { id: "design", masque: false, epingle: true },
+    ]);
+    expect(masques).toEqual([hugo]);
+    expect(visibles).toEqual([iris]);
+  });
+
+  test("les non-lus viennent des conversations du compte", () => {
+    expect(nonLusAgent("dev", [{ roleIds: ["dev"], nonLus: 2 }, { roleIds: ["design"], nonLus: 4 }])).toBe(2);
+  });
+});
+
 describe("rôle court affiché (C-2a)", () => {
   test("jamais l'id de l'agent : le rôle lisible, sinon le rôle de la fiche, sinon rien", () => {
     expect(roleLisible("redaction", "redaction")).toBe("");
@@ -64,5 +86,41 @@ describe("rôle court affiché (C-2a)", () => {
     expect(tagLisible({ id: "x", tag: "x" })).toBe("");
     const [carte] = listeMesAgents([{ origine: "redaction", nom: "Basile", teinte: "ocre", roleCourt: "redaction", actif: true }], []).actifs;
     expect(carte.roleCourt).toBe("");
+  });
+});
+
+describe("cartes et utilisation du lot 5", () => {
+  test("les compétences de la carte tiennent en entier", () => {
+    expect(competencesCarte(["Portail client", "Devis en ligne", "Tests"], 32)).toBe("Portail client · Devis en ligne");
+    expect(competencesCarte([])).toBe("");
+  });
+
+  const maintenant = new Date(2026, 10, 5, 12).getTime();
+  const ligne = (jour: string, modele: string, entree: number, coutUsd: number, appelsSansCout = 0) => ({ jour, modele, appels: 1 + appelsSansCout, entree, sortie: 0, cacheLu: 0, cacheEcrit: 0, coutUsd, appelsSansCout });
+
+  test("une période ne compte que ses jours, le coût absent reste à part", () => {
+    const s = syntheseUtilisation({ jours: [ligne("2026-11-04", "a", 100, 0.5), ligne("2026-11-03", "b", 300, 0, 1), ligne("2026-09-01", "a", 900, 2)] }, "7", maintenant);
+    expect(s.jetons).toBe(400);
+    expect(s.appels).toBe(3);
+    expect(s.appelsSansCout).toBe(1);
+    expect(s.coutUsd).toBe(0.5);
+    expect(s.modeles.map((m) => m.modele)).toEqual(["b", "a"]);
+  });
+
+  test("sans journal : aucun appel, jamais un coût à zéro présenté comme connu", () => {
+    const s = syntheseUtilisation({ jours: [] }, "30", maintenant);
+    expect(s.appels).toBe(0);
+    expect(s.appelsAvecCout).toBe(0);
+  });
+
+  test("une barre par jour, jours vides compris ; douze mois sur un an", () => {
+    const jours = seriesUtilisation({ jours: [ligne("2026-11-05", "a", 10, 0)] }, "7", maintenant);
+    expect(jours).toHaveLength(7);
+    expect(jours.at(-1)?.jetons).toBe(10);
+    expect(jours[0].jetons).toBe(0);
+    const mois = seriesUtilisation({ jours: [ligne("2026-11-05", "a", 10, 0), ligne("2026-10-02", "a", 5, 0)] }, "365", maintenant);
+    expect(mois).toHaveLength(12);
+    expect(mois.at(-1)?.jetons).toBe(10);
+    expect(mois.at(-2)?.jetons).toBe(5);
   });
 });
