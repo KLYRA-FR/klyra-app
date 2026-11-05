@@ -148,6 +148,12 @@ export interface CompteClaude {
   verifieLe: number;
 }
 
+export interface CompteClaudeLocal extends CompteClaude {
+  id: string;
+  poste: boolean;
+  erreur?: string;
+}
+
 /** Un moteur d'agents sur ce poste (cf. electron/moteurs). */
 export interface MoteurPoste {
   id: string;
@@ -395,6 +401,10 @@ export interface KlyraBridge {
     /** Ouvre la connexion Anthropic dans le navigateur et attend qu'elle soit validée. */
     connexion: () => Promise<Reponse<CompteClaude>>;
     deconnexion: () => Promise<Reponse<CompteClaude>>;
+    comptes?: () => Promise<Reponse<CompteClaudeLocal[]>>;
+    verifierCompte?: (id: string) => Promise<Reponse<CompteClaudeLocal>>;
+    connecterCompte?: (id?: string) => Promise<Reponse<CompteClaudeLocal>>;
+    deconnecterCompte?: (id: string) => Promise<Reponse<CompteClaudeLocal>>;
     actualiserUtilisation: () => Promise<Reponse<Utilisation | null>>;
     onUtilisation: (callback: (u: Utilisation) => void) => () => void;
   };

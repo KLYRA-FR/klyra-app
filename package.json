@@ -78,6 +78,7 @@
     "test:skills": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --no-warnings scripts/test-skills.mjs",
     "test:skills-par-agent": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/skills-par-agent.test.mts",
     "test:preparation": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/preparation-fournisseur.test.mts",
+    "test:comptes-claude": "node --experimental-strip-types --test electron/comptes-claude.test.mts && vitest run src/components/reglages/sections/Claude.test.tsx",
     "test:catalogue-agent": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --no-warnings scripts/test-catalogue-agent.mjs",
     "test:skills-codex": "node scripts/test-skills-codex.mjs",
     "test:consignes-projet": "node --experimental-strip-types --test electron/consignes-projet.test.mts && node scripts/test-consignes-projet.mjs",

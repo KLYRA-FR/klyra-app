@@ -75,6 +75,7 @@ import {
   connecterClaude,
   deconnecterClaude,
   derniereUtilisation,
+  environnementAgent,
   dossierExiste,
   findClaude,
   restaurerUtilisation,
@@ -85,6 +86,7 @@ import {
   type Utilisation,
 } from "./claude";
 import { moteurs } from "./moteurs";
+import { ComptesClaude } from "./comptes-claude";
 import { estGere } from "./moteurs/installation";
 import type { AgentEvent, Decision, Progression, StreamOptions } from "./moteurs/types";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
@@ -1263,6 +1265,19 @@ function registerBridge() {
   handle("claude:compte", () => compteClaude());
   handle("claude:connexion", () => connecterClaude());
   handle("claude:deconnexion", () => deconnecterClaude());
+  const comptesClaude = new ComptesClaude({
+    dossier: path.join(app.getPath("userData"), "claude-comptes"),
+    home: os.homedir(), binaire: findClaude, environnement: environnementAgent,
+    poste: { lire: compteClaude, connecter: connecterClaude, deconnecter: deconnecterClaude },
+  });
+  const idCompteClaude = (id: unknown): string => {
+    if (typeof id !== "string" || !id) throw new Error("Compte Claude invalide.");
+    return id;
+  };
+  handle("claude:comptes", () => comptesClaude.lister());
+  handle("claude:comptes:verifier", (id: unknown) => comptesClaude.lire(idCompteClaude(id)));
+  handle("claude:comptes:connexion", (id: unknown) => comptesClaude.connecter(id === undefined ? undefined : idCompteClaude(id)));
+  handle("claude:comptes:deconnexion", (id: unknown) => comptesClaude.deconnecter(idCompteClaude(id)));
   handle("claude:utilisation:actualiser", () => actualiserUtilisation());
 
   /* Réglages de l'app : notifications, lancement au démarrage, dossiers, mises à jour. */
