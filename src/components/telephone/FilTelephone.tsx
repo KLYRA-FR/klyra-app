@@ -13,6 +13,7 @@ import { lireCitation } from "@/lib/telephone/citation";
 import { roleLisible } from "@/lib/telephone/agents";
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
+import { agentPourLibelle } from "@/lib/telephone/libelles-fil";
 import { useAnnonce } from "./Annonce";
 import { useHorsLigne } from "./BandeauReseau";
 import { EnteteTelephone } from "./EnteteTelephone";
@@ -80,25 +81,26 @@ export function FilTelephone() {
 
   const conversation = conversations?.find((c) => c.origine === id);
   const agent = agentDe(id, conversation);
+  const agentAffiche = agentPourLibelle(id, conversation) ?? ASSISTANT;
   const equipe = conversation ? conversation.kind === "equipe" : !!nouveauProjet;
   const activite = activiteDe(conversation);
   /* Ordinateur fermé, plus rien ne s'écrit : l'activité copiée avant la fermeture ne vaut plus (sauf la question). */
   const activiteVive = activite && (ouvert || activite.etat === "question") ? activite : null;
   const projetNouveau = projets?.find((p) => p.origine === nouveauProjet);
   /* C-2b : jamais « Conversation » ; le fil d'un agent porte son nom (l'assistant par défaut). */
-  const titre = equipe ? (conversation?.titre ?? "Nouvelle conversation") : nom(agent ?? conversation?.roleIds[0] ?? ASSISTANT);
+  const titre = equipe ? (conversation?.titre ?? "Nouvelle conversation") : nom(agentAffiche);
   /* La ligne sous le nom : ce que fait l'agent, sinon son rôle (jamais répété) ; le projet et l'équipe pour une conversation d'équipe. */
   const etat = etatLigne(conversation, nom, ouvert, horsLigne);
   const sous = etat
     ? etat.texte
     : equipe
       ? [conversation?.projetNom ?? projetNouveau?.nom, conversation && conversation.roleIds.length > 1 ? `${conversation.roleIds.length} agents` : null].filter(Boolean).join(" · ")
-      : agent === ASSISTANT
+      : agentAffiche === ASSISTANT
         ? "Ton assistant"
-        : agent
-          ? roleLisible(carte(agent)?.roleCourt, agent)
+        : agentAffiche
+          ? roleLisible(carte(agentAffiche)?.roleCourt, agentAffiche)
           : null;
-  const visuel = equipe ? conversation ? <GrappeChat roleIds={conversation.roleIds} /> : null : <RondAgent id={agent ?? conversation?.roleIds[0] ?? ASSISTANT} taille={32} />;
+  const visuel = equipe ? conversation ? <GrappeChat roleIds={conversation.roleIds} /> : null : <RondAgent id={agentAffiche} taille={32} />;
   const enFile = (attente ?? []).filter((m) => m.conversationOrigine === id);
   /* Envoyés au VPS ordinateur fermé : affichés ici jusqu'à ce que le compte les ait repris. */
   const repris = useMemo(() => new Set((fil?.messages ?? []).map((m) => m.origine)), [fil?.messages]);
