@@ -99,6 +99,8 @@ function fixture() {
     "./epreuve": require(path.join(path.dirname(filename), "epreuve.js")),
     "./json-partiel": require(path.join(path.dirname(filename), "json-partiel.js")),
     "./atelier-agent": require(path.join(path.dirname(filename), "atelier-agent.js")),
+    "./atelier-equipe": require(path.join(path.dirname(filename), "atelier-equipe.js")),
+    "./cartes-interactives": require(path.join(path.dirname(filename), "cartes-interactives.js")),
     // Module pur : les outils du Coffre et leur consigne (sans Electron ni disque).
     "./coffre-definitions": require(path.join(path.dirname(filename), "coffre-definitions.js")),
     // Module pur : la lecture des limites de l'abonnement (rate_limit_event), sans effet.
