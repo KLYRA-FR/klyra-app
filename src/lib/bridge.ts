@@ -247,6 +247,8 @@ export interface StreamOptions {
   prompt: string;
   dossier: string | null;
   sessionId: string | null;
+  /** Sans `sessionId` : une session neuve, même si le VPS en retient une pour cette conversation (« Repartir à zéro »). */
+  sessionNeuve?: boolean;
   modele?: string | null;
   effort?: string | null;
   fichiers?: string[];
