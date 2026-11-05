@@ -226,12 +226,13 @@ export function FicheAgentTelephone({ id }: { id: string }) {
       libelle: "Partager avec l’équipe",
       icone: "upload-01",
       onChoisir: () => setPartage("partager"),
-      desactivee: poste.desactivee || agent.partage.raison !== null,
-      note: agent.partage.raison ? agent.partage.raison : poste.note,
+      /* Fermé, la feuille s'ouvre et dit pourquoi (E5-29) ; seul un blocage de la fiche l'empêche. */
+      desactivee: agent.partage.raison !== null,
+      note: agent.partage.raison ?? undefined,
     });
   }
   if (agent?.lien.type === "publie") {
-    actions.push({ libelle: "Publier une mise à jour", icone: "upload-01", onChoisir: () => setPartage("mettre-a-jour"), ...poste });
+    actions.push({ libelle: "Publier une mise à jour", icone: "upload-01", onChoisir: () => setPartage("mettre-a-jour") });
     actions.push({ libelle: "Retirer de la bibliothèque", icone: "x-01", onChoisir: () => setRetirer(true), ...poste });
   }
   if (agent?.modeleKlyra) actions.push({ libelle: "Comparer au modèle KLYRA", icone: "refresh-01", onChoisir: () => aller("maj"), ...poste });
@@ -599,7 +600,7 @@ function FeuillePartager({
   onFermer: () => void;
   onFait: (texte: string) => void;
 }) {
-  const apercu = useLecturePoste<ApercuPartage>("agents.apercuPartage", { id, mode });
+  const apercu = useLecturePoste<ApercuPartage>("agents.apercuPartage", { id, mode }, { garder: false });
   const { agir, occupe, ouvert, erreur } = useGesteTelephone();
   const pret = apercu.etat === "ok" && !apercu.data.blocage;
   const envoyer = async () => {

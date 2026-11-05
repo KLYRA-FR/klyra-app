@@ -181,6 +181,11 @@ export interface UtilisationLue {
   }[];
 }
 
+/** Le texte d'un souvenir, sans son en-tête YAML : ce sont ses métadonnées, pas ce qu'on lit. */
+export function sansEnTeteYaml(contenu: string): string {
+  return contenu.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trimStart();
+}
+
 export function agregerUtilisation(appels: AppelJournal[]): UtilisationLue {
   const parCle = new Map<string, UtilisationLue["jours"][number]>();
   for (const a of appels) {
@@ -888,7 +893,7 @@ export function gestesAgents(d: DepsAgents): Gestes {
       const ligne = liste?.souvenirs.find((s) => s.ref === ref);
       if (!ligne) throw new ErreurPoste("introuvable", "Ce souvenir n’est pas dans la liste.");
       const lu = await lireOuIndisponible(d, () => d.lectures!.souvenir(id, ref));
-      return { ...lu, titre: ligne.titre };
+      return { ...lu, contenu: sansEnTeteYaml(lu.contenu), titre: ligne.titre };
     },
 
     "agents.competences": async (args) => {

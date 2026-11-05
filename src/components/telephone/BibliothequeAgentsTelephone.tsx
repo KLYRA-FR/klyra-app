@@ -8,7 +8,7 @@ import { MODELES, roleFromContent } from "@/lib/agents";
 import { useBibliotheque, type DefinitionComplete } from "@/lib/bibliotheque";
 import { dateCourte, teinteDefinition } from "@/lib/bibliotheque-ui";
 import { useLecturePoste } from "@/lib/poste/client";
-import { agentDeLaBibliotheque, type EtatAgentPoste, type EtatsAgentsPoste } from "@/lib/telephone/agents";
+import { agentDeLaBibliotheque, roleLisible, type EtatAgentPoste, type EtatsAgentsPoste } from "@/lib/telephone/agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import type { RoleTeinte } from "@/types/domain";
 import { ErreurGeste, HeroAgent, LigneAvecGeste, RondAgentTelephone, useCartesAgents } from "./CommunAgentsTelephone";
@@ -94,7 +94,12 @@ export function BibliothequeAgentsTelephone() {
   return (
     <>
       <p className="mt-4 px-1 text-ui text-texte-secondaire">Les agents que les membres de ton équipe ont choisi de partager, et les modèles de KLYRA.</p>
-      {ouvert ? null : <NotePoste className="mt-2 px-1" />}
+      {ouvert ? null : (
+        <div role="status" className="mt-3 flex items-start gap-2.5 rounded-xl bg-fond-surface-grise p-3 text-ui text-texte-principal">
+          <Icon name="clock-01" size={20} className="mt-px shrink-0 text-icone-secondaire" />
+          <p className="min-w-0">Tu peux lire les fiches. Les ajouter attend que KLYRA soit ouverte sur {sur}.</p>
+        </div>
+      )}
 
       <SectionListe titre="Partagés par l’équipe" compte={partages.length || undefined} className="mt-4">
         {etatPartages ? <p className="px-1 text-ui text-texte-secondaire">{etatPartages}</p> : null}
@@ -112,7 +117,7 @@ export function BibliothequeAgentsTelephone() {
                 slug={d.slug}
                 nom={d.nom}
                 teinte={teinteDefinition(d.slug, false)}
-                tag={d.role}
+                tag={roleLisible(d.role, d.slug)}
                 detail={`Par ${d.auteur.nom} · v${d.version} · ${dateCourte(d.majLe)}`}
                 etat={etatLigne(local({ definitionId: d._id }), d.nom, () => setAjout({ type: "partage", definitionId: d._id, nom: d.nom, auteur: d.auteur.nom, aConfigurer: d.dependances.map((x) => x.libelle) }), d.deMoi)}
               />

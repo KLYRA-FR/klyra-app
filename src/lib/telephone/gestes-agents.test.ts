@@ -1,4 +1,4 @@
-import { agregerUtilisation } from "./gestes-agents";
+import { agregerUtilisation, sansEnTeteYaml } from "./gestes-agents";
 import { describe, expect, test, vi } from "vitest";
 import { getField, parseAgentFile } from "@/lib/agent-file";
 import type { AgentLocal } from "@/lib/agents";
@@ -235,6 +235,13 @@ describe("gestes « agents » : Mes agents", () => {
     await expect(gestes["agents.creer"]({ ...creation, id: "juriste" })).resolves.toEqual({ id: "juriste" });
     const [, contenu] = agents.create.mock.calls[0] as unknown as [string, string];
     expect(getField(parseAgentFile(contenu).frontmatter, "name")).toBe("juriste");
+  });
+});
+
+describe("souvenir lu au téléphone", () => {
+  test("son en-tête YAML ne s'affiche pas, le reste est gardé", () => {
+    expect(sansEnTeteYaml("---\nname: Arrondi\ndescription: x\n---\n\nLigne par **ligne**.\n")).toBe("Ligne par **ligne**.\n");
+    expect(sansEnTeteYaml("Sans en-tête\n---\nsuite")).toBe("Sans en-tête\n---\nsuite");
   });
 });
 
