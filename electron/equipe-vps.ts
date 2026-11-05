@@ -13,11 +13,17 @@ export const appelEquipeVps = (origine: string, jeton: string | null, methode: s
 /** Le Coffre d'un VPS. Seul le process principal l'appelle : une valeur ne va jamais à l'écran. */
 export const appelCoffreVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("coffre", origine, jeton, methode, corps);
 
-async function appelVps(route: "equipe" | "coffre", origine: string, jeton: string | null, methode: string, corps: unknown): Promise<unknown> {
+/** L'espace d'un VPS : tout lu d'un coup au démarrage, d'où une attente plus longue. */
+export const appelEspaceVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("espace", origine, jeton, methode, corps, 120_000);
+
+/** La connexion Composio d'un VPS. Seul le process principal l'appelle : les jetons ne vont jamais à l'écran. */
+export const appelComposioVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("composio", origine, jeton, methode, corps);
+
+async function appelVps(route: "equipe" | "coffre" | "espace" | "composio", origine: string, jeton: string | null, methode: string, corps: unknown, attente = ATTENTE_MS): Promise<unknown> {
   if (!jeton) throw new AgentError("introuvable", "Ce PC n’est plus relié à ce VPS.");
   if (!/^[a-z-]{1,32}$/.test(methode)) throw new AgentError("introuvable", "Demande inconnue.");
   const controle = new AbortController();
-  const delai = setTimeout(() => controle.abort(), ATTENTE_MS);
+  const delai = setTimeout(() => controle.abort(), attente);
   try {
     const reponse = await net.fetch(`${origine}/klyra/v1/${route}/${methode}`, {
       method: "POST",

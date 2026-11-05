@@ -188,6 +188,13 @@ export class ComposioConnect {
     this.#enCours?.annuler();
   }
 
+  /** Des jetons obtenus ailleurs : un VPS n'a pas de navigateur, l'app de la personne se connecte pour lui. */
+  async adopter(jetons: JetonsConnect): Promise<void> {
+    this.#jetons = jetons;
+    this.#erreur = null;
+    await this.d.ecrire(jetons);
+  }
+
   async deconnecter(): Promise<void> {
     this.#enCours?.annuler();
     this.#jetons = null;

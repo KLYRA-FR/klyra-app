@@ -17,6 +17,8 @@ import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCo
 import { lireDemandeSecret } from "../../electron/coffre-regles";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { renduDansEspace } from "@/lib/rendus-espace";
+import type { EtatEspace } from "@/lib/espace-sync";
+import { useEspaceServeurs } from "@/lib/useEspaceServeurs";
 import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
@@ -175,6 +177,7 @@ type WorkspaceAction =
   | { type: "evenement/supprimer"; id: string }
   | { type: "categories/changer"; categories: Categorie[] }
   | { type: "acces/choisir"; acces: Acces; lieu: string | null }
+  | { type: "espace/fusion"; etat: EtatEspace }
   | { type: "projet/enregistrer"; project: Project }
   | { type: "projet/supprimer"; id: string }
   | { type: "profil/enregistrer"; user: User }
@@ -285,6 +288,8 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       return { ...state, evenements: state.evenements.filter((e) => e.id !== action.id) };
     case "categories/changer":
       return { ...state, categories: action.categories };
+    case "espace/fusion":
+      return { ...state, ...action.etat };
     case "acces/choisir":
       return action.lieu ? { ...state, accesParServeur: { ...state.accesParServeur, [action.lieu]: action.acces } } : { ...state, acces: action.acces };
     case "projet/enregistrer": {
@@ -1862,6 +1867,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       },
     });
   }, []);
+
+  /* Chaque VPS garde son espace : relu au démarrage, tenu à jour à mesure (cf. useEspaceServeurs). */
+  const fusionnerEspace = useCallback((etat: EtatEspace) => {
+    stateRef.current = { ...stateRef.current, ...etat };
+    dispatch({ type: "espace/fusion", etat });
+  }, []);
+  useEspaceServeurs(state, stateRef, fusionnerEspace);
 
   /* Les outils des fils, appelés par les agents (serveur MCP de l'app, electron/ia.ts) : une tâche = un fil. */
   useEffect(() => {

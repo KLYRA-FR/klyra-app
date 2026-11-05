@@ -163,5 +163,5 @@ export function creerCoffreServeur({ donnees, maintenant = Date.now }) {
     }
   }
 
-  return { appeler, ajouter, pourAgents, valeurPourAgents };
+  return { appeler, ajouter, pourAgents, valeurPourAgents, chiffrerTexte: chiffrer, dechiffrerTexte: (valeur) => dechiffrer({ valeur, variable: "composio" }) };
 }

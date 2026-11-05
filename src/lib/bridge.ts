@@ -578,6 +578,11 @@ export interface KlyraBridge {
     /** Relie une pull request ou enregistre un fait déjà lu. Absent avant la relance de l'app. */
     github?: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; work_id?: string | null; disposition?: string; operations?: string[] }>>;
   };
+  /** L'espace gardé par un VPS (cf. useEspaceServeurs). Absent avant la relance de l'app. */
+  espace?: {
+    lire: (lieu: string, depuis?: number) => Promise<Reponse<unknown>>;
+    ecrire: (lieu: string, corps: { elements: unknown[]; supprimes: unknown[] }) => Promise<Reponse<{ revision: number }>>;
+  };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;
     read: () => Promise<Reponse<unknown>>;
@@ -652,6 +657,13 @@ export interface KlyraBridge {
       connecter: () => Promise<Reponse<boolean>>;
       annuler: () => Promise<Reponse<void>>;
       deconnecter: () => Promise<Reponse<void>>;
+      /** La connexion Composio d'un VPS. Absent avant la relance de l'app. */
+      vps?: {
+        etat: (lieu: string) => Promise<Reponse<EtatConnect>>;
+        connecter: (lieu: string) => Promise<Reponse<boolean>>;
+        annuler: () => Promise<Reponse<void>>;
+        deconnecter: (lieu: string) => Promise<Reponse<unknown>>;
+      };
     };
   };
   /** Le Coffre de KLYRA (cf. electron/coffre.ts) : jamais une valeur dans ce sens. Absent avant la relance de l'app. */
