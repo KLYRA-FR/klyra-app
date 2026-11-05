@@ -4,6 +4,7 @@ import { contexteDe } from "@/components/chat/reglages-agent/donnees";
 import { LOCAL } from "@/components/ui/Lien";
 import { getBridge } from "@/lib/bridge";
 import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
+import { lireCatalogueMoteurs } from "@/lib/moteurs";
 import { useWorkspace } from "@/lib/workspace";
 import { chaine, ErreurPoste, objet, type Gestes } from "../types";
 
@@ -23,6 +24,12 @@ export function useGestesFil(): Gestes {
     return chat;
   };
   return {
+    "fil.modeles": async (args) => {
+      const a = objet(args);
+      const id = chaine(a, "conversation", 200);
+      const chat = state.chats.find((c) => c.id === id);
+      return lireCatalogueMoteurs(chat?.lieu ?? null);
+    },
     "fil.arreter": async (args) => {
       const conversation = chaine(objet(args), "conversation", 200);
       if (!state.travail[conversation]) throw new ErreurPoste("fini", "L’agent a déjà fini.");

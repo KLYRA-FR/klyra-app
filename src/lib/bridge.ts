@@ -238,6 +238,7 @@ export interface ContexteReponse {
   titre: string;
   lieu: string;
   telephone?: { messageId: string; texte: string; creeLe: string };
+  choix?: { fournisseur: string; modele: string | null; effort: string | null };
 }
 
 export interface StreamOptions {

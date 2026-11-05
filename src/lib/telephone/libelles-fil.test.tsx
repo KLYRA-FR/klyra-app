@@ -18,7 +18,7 @@ vi.mock("@/lib/poste/client", () => ({
 }));
 vi.mock("@/components/telephone/poste", () => {
   const poste = { cle: "poste-essai", systeme: "mac", nom: "Mac de test", ouvert: true, dernierSignal: 0 };
-  return { usePostes: () => ({ postes: [poste], principal: poste, ouvert: true, charge: false }), useSupport: () => "ton Mac" };
+  return { usePostes: () => ({ postes: [poste, { ...poste, cle: "poste-2", nom: "PC de test" }], principal: poste, ouvert: true, charge: false }), useSupport: () => "ton Mac" };
 });
 
 const { ComposeurFil } = await import("@/components/telephone/ComposeurFil");
@@ -66,5 +66,29 @@ describe("identité au bas du fil téléphone", () => {
     expect(html).toContain('aria-label="Agent : Cicco"');
     expect(html).toContain("Claude Opus 5.5");
     expect(html).not.toContain("Écris à Un agent");
+    expect(html).not.toContain("Sur serveur.exemple");
+    expect(html).toMatch(/<span[^>]*aria-label="Agent : Cicco"/);
+    expect(html).not.toContain('aria-label="Destinataire');
+  });
+  test("le chemin direct garde un nom statique même si un ancien indicateur dit équipe", () => {
+    const origine = "dm-cicco@serveur.exemple:8791";
+    const html = renderToStaticMarkup(<ComposeurFil origine={origine} conversation={conversation(origine)} equipe nouveauProjet={null} agentId={null} activite={null} />);
+    expect(html).toMatch(/<span[^>]*aria-label="Agent : Cicco"/);
+    expect(html).toContain("Écris à Cicco…");
+    expect(html).not.toContain('aria-label="Destinataire');
+    expect(html).not.toContain('aria-label="Mentionner un agent"');
+  });
+  test("le nom d’un modèle ChatGPT n’est pas traduit en modèle Claude", () => {
+    const html = rendu("dm-cicco", '{"fournisseur":"codex","modele":"gpt-exemple","effort":"ultra"}');
+    expect(html).toContain("gpt-exemple");
+    expect(html).not.toContain("Claude Sonnet");
+  });
+  test("aucune puce de machine avec deux postes ou un VPS ; le bandeau reste", () => {
+    expect(rendu("dm-cicco")).not.toMatch(/>Sur /);
+    const origine = "dm-cicco@srv2083864";
+    const html = renderToStaticMarkup(<ComposeurFil origine={origine} conversation={{ ...conversation(origine), lieu: "https://srv2083864" }} equipe={false} nouveauProjet={null} agentId="cicco" activite={null} />);
+    expect(html).not.toMatch(/>Sur /);
+    expect(html).toContain("Ce téléphone n’est plus relié à ce VPS");
+    expect(html).toMatch(/<span[^>]*aria-label="Agent : Cicco"/);
   });
 });

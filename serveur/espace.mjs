@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { changerDeMoteur } from "./fournisseurs.mjs";
 
 export const TYPES_ESPACE = ["conversation", "projet", "workflow", "execution", "rendu"];
 
@@ -89,11 +90,19 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
     return { revision: etat.revision };
   }
 
+  /** Choix explicite du téléphone : relire et modifier seulement ce fil, sans réécrire ses messages. */
+  function choisirModele(chatId, roleId, titre, choix) {
+    const valeur = lireType("conversation").find((e) => e.id === chatId)?.valeur;
+    const chat = valeur?.chat ?? { id: chatId, kind: "direct", projectId: null, title: titre, roleIds: [roleId], sessions: {}, luJusqua: null };
+    const suivant = { ...changerDeMoteur(chat, choix.fournisseur), modele: choix.modele, effort: choix.effort, updatedAt: new Date(maintenant()).toISOString() };
+    ecrire({ elements: [{ type: "conversation", id: chatId, valeur: { chat: suivant, messages: valeur?.messages ?? [] } }] });
+  }
+
   /**
    * Une réponse finie alors qu'aucune app n'écoutait (PC fermé) : le serveur la range lui-même dans sa
    * conversation. L'app la complétera en rejouant le journal si elle revient dans les 24 h.
    */
-  function noterReponse({ requestId, event, sessionId, contexte, conversation, agent, ecritParServeur = true }) {
+  function noterReponse({ requestId, event, sessionId, contexte, conversation, agent, moteur = "claude", ecritParServeur = true }) {
     const chatId = contexte?.chatId ?? conversation;
     if (typeof chatId !== "string" || !chatId || typeof requestId !== "string") return;
     const roleId = contexte?.agentId ?? agent ?? "principal";
@@ -128,6 +137,7 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
       createdAt: date,
       parts: texte ? [{ type: "text", text: texte }] : [],
       statut: event?.ok === false ? "erreur" : "fait",
+      ...(moteur !== "claude" ? { moteur } : {}),
       ...(event?.ok === false && typeof event.erreur === "string" ? { erreur: event.erreur } : {}),
       /* L'app sait qu'elle peut remplacer ce texte seul par la réponse complète, si le journal la rejoue. */
       ...(ecritParServeur ? { ecritParServeur: true } : {}),
@@ -137,10 +147,10 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
   }
 
   function appeler(methode, corps = {}) {
-    if (methode === "lire") return lire(corps.depuis);
+    if (methode === "lire") return { ...lire(corps.depuis), choixModeleTelephone: true };
     if (methode === "ecrire") return ecrire(corps);
     throw new ErreurEspace("Ce serveur ne connaît pas cette demande.");
   }
 
-  return { appeler, lire, lireType, ecrire, noterReponse };
+  return { appeler, lire, lireType, ecrire, choisirModele, noterReponse };
 }

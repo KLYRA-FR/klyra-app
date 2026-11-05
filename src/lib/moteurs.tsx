@@ -26,15 +26,19 @@ const cleDe = (lieu?: string | null) => lieu || "";
 
 async function lire(lieu: string | null): Promise<void> {
   const cle = cleDe(lieu);
+  etats.set(cle, await lireCatalogueMoteurs(lieu));
+  signaler();
+}
+
+/** Lecture à la demande, aussi utilisée par le téléphone via le poste et pour valider ses choix. */
+export async function lireCatalogueMoteurs(lieu: string | null): Promise<{ moteurs: EtatMoteur[]; erreur: string | null }> {
   const bridge = getBridge()?.moteurs;
   if (!bridge) {
-    etats.set(cle, { moteurs: [], erreur: null });
-    return signaler();
+    return { moteurs: [], erreur: "Les fournisseurs ne se lisent pas sur ce poste." };
   }
   const liste = await bridge.liste(lieu);
   if (!liste.ok) {
-    etats.set(cle, { moteurs: [], erreur: liste.message });
-    return signaler();
+    return { moteurs: [], erreur: liste.message };
   }
   const suivant: EtatMoteur[] = await Promise.all(
     liste.data.map(async (moteur) => {
@@ -50,8 +54,7 @@ async function lire(lieu: string | null): Promise<void> {
       };
     }),
   );
-  etats.set(cle, { moteurs: suivant, erreur: null });
-  signaler();
+  return { moteurs: suivant, erreur: null };
 }
 
 /** Relit les moteurs d'une machine (après une connexion, une installation). */

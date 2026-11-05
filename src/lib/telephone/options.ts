@@ -1,4 +1,5 @@
 import type { FaconReessai } from "@/lib/workspace";
+import { FOURNISSEURS, type IdFournisseur } from "@/lib/fournisseurs";
 
 /**
  * Ce qui part avec un message écrit sur le téléphone (`messagesFile.options`, spec mobile T-02) :
@@ -6,6 +7,8 @@ import type { FaconReessai } from "@/lib/workspace";
  * conversation d'équipe, l'ordinateur visé. L'ordinateur relit tout (`lireOptions`) : rien n'est cru.
  */
 export interface OptionsMessage {
+  /** Présent : le fournisseur choisi pour cette conversation seulement. */
+  fournisseur?: IdFournisseur;
   /** Le destinataire dans une conversation d'équipe (« Destinataire », « @Hugo »). */
   a?: string;
   /** Présents : le modèle et l'effort choisis dans la feuille (null : ceux de la fiche). */
@@ -26,7 +29,7 @@ export interface OptionsMessage {
 export const FACONS: readonly FaconReessai[] = ["reessayer", "details", "concis", "web"];
 
 const ID = /^[\w.:-]{1,200}$/;
-const ALIAS = /^[a-z0-9][a-z0-9.-]{0,39}$/;
+const ALIAS = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/;
 const CLE_POSTE = /^[\w-]{8,80}$/;
 
 const texte = (v: unknown, motif: RegExp): string | undefined => (typeof v === "string" && motif.test(v) ? v : undefined);
@@ -43,6 +46,8 @@ export function lireOptions(json: string | null | undefined): OptionsMessage {
   }
   if (!brut) return {};
   const options: OptionsMessage = {};
+  const fournisseur = FOURNISSEURS.find((f) => f.id === brut.fournisseur)?.id;
+  if (fournisseur) options.fournisseur = fournisseur;
   const a = texte(brut.a, ID);
   if (a) options.a = a;
   if ("modele" in brut) options.modele = brut.modele === null ? null : (texte(brut.modele, ALIAS) ?? null);
@@ -81,12 +86,13 @@ export function ecrireOptions(options: OptionsMessage): string | null {
 }
 
 /** Le modèle et l'effort choisis pour une conversation, tels que l'ordinateur les copie (`conversationsCompte.modele`). */
-export function lireModele(json: string | null | undefined): { modele: string | null; effort: string | null } | null {
+export function lireModele(json: string | null | undefined): { fournisseur?: IdFournisseur; modele: string | null; effort: string | null } | null {
   if (!json) return null;
   try {
     const brut = objet(JSON.parse(json));
     if (!brut) return null;
-    return { modele: texte(brut.modele, ALIAS) ?? null, effort: texte(brut.effort, ALIAS) ?? null };
+    const fournisseur = FOURNISSEURS.find((f) => f.id === brut.fournisseur)?.id;
+    return { ...(fournisseur ? { fournisseur } : {}), modele: texte(brut.modele, ALIAS) ?? null, effort: texte(brut.effort, ALIAS) ?? null };
   } catch {
     return null;
   }

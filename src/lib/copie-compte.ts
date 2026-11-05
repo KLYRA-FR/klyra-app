@@ -396,7 +396,7 @@ export function conversationCompte(chat: Chat, duFil: Message[], projets: Projec
     parent: chat.fil ? `dm-${chat.fil.roleId}` : null,
     archiveLe: chat.fil?.statut === "archive" ? chat.updatedAt : null,
     activite: activite ? JSON.stringify(activite) : null,
-    modele: chat.modele || chat.effort ? JSON.stringify({ modele: chat.modele ?? null, effort: chat.effort ?? null }) : null,
+    modele: chat.fournisseur || chat.modele || chat.effort ? JSON.stringify({ ...(chat.fournisseur ? { fournisseur: chat.fournisseur } : {}), modele: chat.modele ?? null, effort: chat.effort ?? null }) : null,
     contexte: contexteCompte(chat),
     ticket: ticketCompte(chat, duFil, projets, poste),
     contratTickets: CONTRAT_TICKETS,

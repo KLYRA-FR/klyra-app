@@ -58,6 +58,7 @@ const FICHIERS = [
   ["src/types/workflows.ts", "serveur/workflows-types.mjs"],
   ["src/lib/workflows/moteur.ts", "serveur/workflows-moteur-coeur.mjs"],
   ["src/lib/planning.ts", "serveur/planning-passages.mjs"],
+  ["src/lib/fournisseurs.ts", "serveur/fournisseurs.mjs"],
 ];
 const VERSION = ["electron/version-serveur.ts", "serveur/version-code.mjs"];
 

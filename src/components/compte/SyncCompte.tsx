@@ -13,6 +13,7 @@ import type { ContexteAtelier } from "@/lib/copie-compte";
 import { getBridge } from "@/lib/bridge";
 import { FORMATS_IMAGE } from "@/lib/collage";
 import { findMention } from "@/lib/mentions";
+import { PAR_DEFAUT, EFFORTS as EFFORTS_FOURNISSEURS } from "@/lib/fournisseurs";
 import { lireOptions, pourCePoste } from "@/lib/telephone/options";
 import { useFermerTicket } from "@/components/tickets/useFermerTicket";
 import { filDuRappel, type RappelAConfier } from "@/lib/tickets";
@@ -112,8 +113,6 @@ export function SyncCompte({ actif }: { actif: boolean }) {
         const actifs = a.roles;
         const direct = chatId.startsWith("dm-") || chatId.startsWith(FIL);
         const destinataire = direct ? null : actifs.some((r) => r.id === options.a) ? options.a! : findMention(texte, actifs);
-        const modele = options.modele === null ? null : MODELES.find((m) => m.id === options.modele)?.id;
-        const effort = options.effort === null ? null : EFFORTS.find((e) => e.id === options.effort)?.id;
 
         if (options.nouveau && !existe) {
           const projet = w.state.projects.find((p) => p.id === options.nouveau!.projetId);
@@ -132,7 +131,18 @@ export function SyncCompte({ actif }: { actif: boolean }) {
           w.brancher(chatId, options.brancher.messageId);
           return;
         }
-        if (modele !== undefined && "modele" in options) w.choisirModele(chatId, modele, modele === "haiku" ? null : (effort ?? null));
+        if ("modele" in options || options.fournisseur) {
+          const chat = w.state.chats.find((c) => c.id === chatId);
+          const moteur = options.fournisseur ?? chat?.fournisseur ?? PAR_DEFAUT;
+          const modele = options.modele === null ? null : moteur === PAR_DEFAUT ? MODELES.find((m) => m.id === options.modele)?.id : options.modele;
+          const efforts = moteur === PAR_DEFAUT ? EFFORTS : EFFORTS_FOURNISSEURS;
+          const effort = modele === "haiku" ? null : efforts.find((e) => e.id === options.effort)?.id ?? null;
+          // Le moteur valide le modèle annoncé, comme au bureau ; une lecture réseau ratée ne perd pas le message.
+          if (modele !== undefined) {
+            if (options.fournisseur) w.choisirFournisseur(chatId, moteur, modele, effort);
+            else w.choisirModele(chatId, modele, effort);
+          }
+        }
         w.sendMessage(chatId, texte, destinataire, chemins, options.citation);
       } finally {
         /* Écrit sur ce disque ou abandonné : les pièces quittent le compte. */

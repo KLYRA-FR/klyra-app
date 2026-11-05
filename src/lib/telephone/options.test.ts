@@ -31,6 +31,12 @@ describe("options d'un message (File)", () => {
     expect(lireModele(null)).toBeNull();
     expect(lireModele("{")).toBeNull();
   });
+  test.each(["claude", "codex", "grok"] as const)("le fournisseur %s et ses identifiants de modèle passent sans altération", (fournisseur) => {
+    const choix = { fournisseur, modele: "fournisseur/modele-v2:latest", effort: "ultra" };
+    expect(lireOptions(ecrireOptions(choix))).toEqual(choix);
+    expect(lireModele(JSON.stringify(choix))).toEqual(choix);
+    expect(lireOptions('{"fournisseur":"inconnu"}')).toEqual({});
+  });
 });
 
 describe("pièces jointes du téléphone", () => {
