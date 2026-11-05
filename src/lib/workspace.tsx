@@ -638,8 +638,6 @@ interface WorkspaceApi {
   /** Qui tu es dans l'app, selon les règles de `src/lib/identite.ts`. */
   moi: Identite;
   choisirAcces: (acces: Acces) => void;
-  lancerIssue: (c: { depot: string; numero: number; titre: string; brief: string; chemin: string; agent: string; projetId: string }) => string;
-  issuesEnCours: (depot: string) => number[];
   enregistrerTache: (tache: Tache) => void;
   supprimerTache: (id: string) => void;
   restaurerTaches: () => RappelSupprime[];
@@ -1216,18 +1214,6 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           // Le ticket du fil : à valider, ou bloqué sur l'erreur.
           dispatch({ type: "chat/update", id: chatId, patch: (c) => (c.fil ? { ...c, fil: apresReponse(c.fil, { ok: event.ok, erreur: event.erreur }) } : c) });
           rapporterFil(chatId, messageId, event.ok);
-          {
-            /* Un fil du circuit : le code reprend la main (valider, pousser, ouvrir la PR). Cf. src/lib/collaboration.tsx. */
-            const filFini = stateRef.current.chats.find((c) => c.id === chatId)?.fil;
-            if (filFini?.collaboration) {
-              const finale = stateRef.current.messages.find((m) => m.id === messageId);
-              window.dispatchEvent(
-                new CustomEvent("klyra:collaboration-fin", {
-                  detail: { ...filFini.collaboration, agent: filFini.roleId, ok: event.ok, texte: finale ? texteDe(finale) : "", erreur: event.erreur ?? null },
-                }),
-              );
-            }
-          }
           if (stateRef.current.chats.some((c) => c.id === chatId && c.fil)) {
             const pont = getBridge()?.superagent;
             if (pont) {
@@ -1416,14 +1402,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             ? { skill: skillEnTete(texteDe(messageUtilisateur)) }
             : {}),
           // Sur un VPS, le dossier du PC n'existe pas : l'agent travaille dans son atelier là-bas.
-          dossier: chat.lieu ? null : chat.fil?.collaboration ? chat.fil.collaboration.chemin : chat.kind === "equipe" ? (project?.folder ?? null) : null,
+          dossier: chat.lieu ? null : chat.kind === "equipe" ? (project?.folder ?? null) : null,
           lieu: chat.lieu ?? null,
           dossierVps: chat.lieu && chat.kind === "equipe" && project?.lieu === chat.lieu ? project.folder : null,
           sessionId: chat.sessions[roleId] ?? null,
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
-          /* Le circuit tourne sans personne devant l'écran : ni plus, ni moins que « projet ». Activer le circuit vaut accord. */
-          acces: chat.fil?.collaboration ? "projet" : stateRef.current.acces,
+          acces: stateRef.current.acces,
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
           chatId,
           ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
@@ -1784,26 +1769,6 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     dispatch({ type: "chat/add", chat });
     stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
     return chat.id;
-  }, []);
-
-  /** Le fil d'une Issue du circuit : celui qui existe déjà reprend, sinon un nouveau, toujours sur ce poste. */
-  const lancerIssue = useCallback(
-    (c: { depot: string; numero: number; titre: string; brief: string; chemin: string; agent: string; projetId: string }) => {
-      const existant = stateRef.current.chats.find(
-        (chat) => chat.fil?.statut === "ouvert" && chat.fil.collaboration?.depot === c.depot && chat.fil.collaboration.numero === c.numero,
-      );
-      const agent = rolesRef.current.some((r) => r.id === c.agent) ? c.agent : "principal";
-      const id = existant?.id ?? creerFil(agent, `#${c.numero} ${c.titre}`, null, { priorite: 0, echeance: null, projetId: c.projetId, collaboration: { depot: c.depot, numero: c.numero, chemin: c.chemin } }, { lieu: null });
-      timers.current.push(setTimeout(() => envoyerRef.current(id, c.brief, null, [], false), 0));
-      return id;
-    },
-    [creerFil],
-  );
-
-  /** Les Issues d'un dépôt sur lesquelles un agent de ce poste travaille en ce moment. */
-  const issuesEnCours = useCallback((depot: string): number[] => {
-    const { chats, travail } = stateRef.current;
-    return chats.flatMap((chat) => (chat.fil?.collaboration?.depot === depot && travail[chat.id] ? [chat.fil.collaboration.numero] : []));
   }, []);
 
   const renommerChat = useCallback((chatId: string, titre: string) => {
@@ -2676,8 +2641,6 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       poserEvenementsCompte,
       moi,
       choisirAcces,
-      lancerIssue,
-      issuesEnCours,
       repondreAutorisation,
       marquerAtelier,
       repondreCoffre,
@@ -2733,8 +2696,6 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       retirerProjet,
       enregistrerProfil,
       choisirAcces,
-      lancerIssue,
-      issuesEnCours,
       repondreAutorisation,
       marquerAtelier,
       repondreCoffre,

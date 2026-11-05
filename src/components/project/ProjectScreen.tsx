@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar, EmptyState } from "klyra-ui";
 import { PromptBox } from "@/components/chat/PromptBox";
-import { CircuitProjet } from "@/components/project/CircuitProjet";
 import { TravauxProjet } from "@/components/project/TravauxProjet";
 import { BoutonEpingle } from "@/components/chat/BoutonEpingle";
 import { estEpinglee } from "@/lib/epinglage";
@@ -182,7 +181,6 @@ export function ProjectScreen() {
           )}
         </section>
 
-        <CircuitProjet project={project} />
         <TravauxProjet projectId={project.id} />
       </div>
     </div>

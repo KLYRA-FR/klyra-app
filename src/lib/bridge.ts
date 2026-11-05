@@ -3,8 +3,6 @@
  * Absent dans un navigateur (pnpm dev) : l'app passe alors en lecture seule.
  */
 
-import type { ReglagesCollaboration } from "../../electron/collaboration/reglages";
-import type { BilanTour as BilanTourCollaboration, FinEtape as FinEtapeCollaboration } from "../../electron/collaboration/types";
 import type { FileNode } from "@/types/domain";
 import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
@@ -553,12 +551,6 @@ export interface KlyraBridge {
   apercu?: {
     onAdresse: (callback: (url: string) => void) => () => void;
   };
-  /** Le circuit des Issues d'un projet (electron/collaboration/). Absent tant que l'app n'a pas été relancée. */
-  collaboration?: {
-    depot: (dossier: string) => Promise<Reponse<string | null>>;
-    tour: (demande: Record<string, unknown>) => Promise<Reponse<BilanTourCollaboration>>;
-    terminer: (demande: Record<string, unknown>) => Promise<Reponse<FinEtapeCollaboration>>;
-  };
   /** Journal des travaux sur les fils. Absent tant que l'app n'a pas été relancée. */
   superagent?: {
     peutOuvrir: () => Promise<Reponse<{ ok: boolean; places: number }>>;
@@ -778,8 +770,6 @@ export interface Reglages {
   configuration: ConfigurationKlyra;
   /** Skills reçues par chaque agent. Absent avant la relance : tout est reçu. */
   skillsParAgent: SkillsParAgent;
-  /** Le circuit des Issues. Absent avant la relance : rien n'est activé. */
-  collaboration: ReglagesCollaboration;
 }
 
 /** Le menu du clic droit dans une page (cf. electron/navigateur/navigateur.ts, `ParametresMenu`). */

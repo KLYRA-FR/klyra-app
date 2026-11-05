@@ -1,6 +1,10 @@
 # KLYRA — app de bureau
 
-L’outil de l’équipe KLYRA : des agents, des conversations, des projets et des automatisations, dans une app de bureau pour Mac et Windows. Les agents tournent sur le poste ou sur un VPS, et l’équipe partage ses comptes et sa bibliothèque par Convex.
+L’outil interne du studio : un chat façon Messages avec des rôles (Principal, Dev, UX/UI, DA), les projets, les fichiers. App de bureau Mac (Electron), parce qu’elle doit piloter des outils en local (terminaux, Claude Code).
+
+> **Phase actuelle : front en noir et blanc, données factices.** Le back (comptes, base de données, vrais agents) viendra ensuite.
+
+Maquettes : Figma, section « App KLYRA — wireframes desktop ».
 
 ## Lancer l’app
 
@@ -29,6 +33,23 @@ Une branche par sujet, une pull request, la vérification verte, puis la fusion 
 
 ## Où sont les choses
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) : la carte du dépôt.
-- [AGENTS.md](AGENTS.md) : les consignes pour les agents.
-- [docs/DECISIONS.md](docs/DECISIONS.md) : les décisions qui portent encore.
+| Dossier | Contenu |
+|---|---|
+| `electron/` | Process principal : la fenêtre, le chargement de l’app |
+| `src/app/` | Les pages (une par écran) |
+| `src/components/` | Les composants de l’app (chat, aperçu, barre latérale…), qui assemblent `klyra-ui` |
+| `src/types/domain.ts` | Le modèle de données : rôles, projets, chats, messages |
+| `src/data/mock.ts` | Les données factices, à la forme exacte des futures données |
+| `src/lib/workspace.tsx` | L’état de l’app et les hooks de lecture. **Le seul fichier à changer pour brancher le back.** |
+
+## Avancement
+
+- [x] Fondations : Electron + Next.js + `klyra-ui` en noir et blanc
+- [x] Barre latérale (navigation, projets, chats récents)
+- [x] Conversation : fil multi-rôles, tâches, options, journal de travail, aperçu du site
+- [ ] Accueil
+- [ ] Projets et fiche projet
+- [ ] Équipe et attribution des rôles
+- [ ] Fichiers (façon Finder)
+- [ ] Mémoire du projet
+- [ ] Palette ⌘K

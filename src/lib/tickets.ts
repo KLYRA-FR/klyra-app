@@ -22,7 +22,7 @@ import type { Chat, EtapeTicket, Fil, Message } from "@/types/domain";
 export type ColonneTicket = EtapeTicket | "termine";
 
 /** Ce qu'on donne à un fil à sa création ou après : priorité, échéance, projet, rappel d'origine. */
-export type ChampsTicket = Partial<Pick<Fil, "priorite" | "echeance" | "projetId" | "rappel" | "collaboration">>;
+export type ChampsTicket = Partial<Pick<Fil, "priorite" | "echeance" | "projetId" | "rappel">>;
 
 export const COLONNES: ColonneTicket[] = ["a-faire", "en-cours", "bloque", "a-valider", "termine"];
 

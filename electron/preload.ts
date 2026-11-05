@@ -264,11 +264,6 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("apercu:adresse", listener);
     },
   },
-  collaboration: {
-    depot: (dossier: string) => ipcRenderer.invoke("collaboration:depot", dossier),
-    tour: (demande: unknown) => ipcRenderer.invoke("collaboration:tour", demande),
-    terminer: (demande: unknown) => ipcRenderer.invoke("collaboration:terminer", demande),
-  },
   superagent: {
     peutOuvrir: () => ipcRenderer.invoke("superagent:peut-ouvrir"),
     ouvrir: (fait: unknown) => ipcRenderer.invoke("superagent:ouvrir", fait),
