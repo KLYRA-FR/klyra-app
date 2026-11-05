@@ -34,6 +34,12 @@ export interface EtatAgentPoste {
   definitionId: string | null;
   /** Le modèle KLYRA d'où il vient. */
   modele: string | null;
+  /** Préférences du poste. Absentes : une réponse d'avant ce lot, on ne devine pas. */
+  masque?: boolean;
+  muet?: boolean;
+  epingle?: boolean;
+  /** Travail en cours au moment de la lecture. Une vue gardée ne le fait pas pulser. */
+  enCours?: boolean;
 }
 
 export interface EtatsAgentsPoste {
@@ -112,6 +118,29 @@ export function listeMesAgents(
     actifs: autres.filter((c) => c.actif).map(ligne),
     hors: autres.filter((c) => !c.actif).map(ligne),
   };
+}
+
+/**
+ * Les actifs, une fois les préférences du poste lues. Sans ces préférences, personne n'est masqué.
+ * Les épinglés passent devant, l'ordre relatif du compte est gardé.
+ */
+export function classerActifs<T extends { id: string }>(
+  actifs: T[],
+  etats: { id: string; masque?: boolean; epingle?: boolean }[] | null,
+): { visibles: T[]; masques: T[] } {
+  if (!etats) return { visibles: actifs, masques: [] };
+  const parId = new Map(etats.map((e) => [e.id, e]));
+  const masques = actifs.filter((a) => parId.get(a.id)?.masque === true);
+  const visibles = actifs
+    .filter((a) => parId.get(a.id)?.masque !== true)
+    .slice()
+    .sort((a, b) => Number(parId.get(b.id)?.epingle === true) - Number(parId.get(a.id)?.epingle === true));
+  return { visibles, masques };
+}
+
+/** Non-lus des conversations du compte où cet agent parle. Le compte les a déjà comptés. */
+export function nonLusAgent(id: string, conversations: { roleIds: string[]; nonLus: number }[]): number {
+  return conversations.reduce((n, c) => n + (c.roleIds.includes(id) ? c.nonLus : 0), 0);
 }
 
 /** Le geste qui remet un agent dans Mes agents : « Réactiver » s'il a été désactivé, sinon « Ajouter à mes agents ». */

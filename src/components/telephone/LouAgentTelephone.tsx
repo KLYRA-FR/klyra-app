@@ -141,7 +141,7 @@ export function LouAgentTelephone({ id }: { id: string }) {
           {travail ? (
             <div className="flex flex-col gap-2">
               <p className="text-ui text-texte-secondaire" aria-live="polite">
-                Lou lit la fiche et prépare sa proposition. Ça prend en général une à deux minutes.
+                Lou lit la fiche et prépare sa proposition.
               </p>
               <Bouton variant="blanc" taille="md" onClick={() => void abandonner()}>
                 Annuler

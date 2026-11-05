@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { agentDeLaBibliotheque, libelleRetour, listeMesAgents, roleLisible, tagLisible, teinteSure, texteConversations, texteErreurFiche } from "./agents";
+import { agentDeLaBibliotheque, classerActifs, libelleRetour, listeMesAgents, nonLusAgent, roleLisible, tagLisible, teinteSure, texteConversations, texteErreurFiche } from "./agents";
 
 const cartes = [
   { origine: "dev", nom: "Hugo", teinte: "vert", roleCourt: "Dev", actif: true },
@@ -51,6 +51,28 @@ describe("Mes agents sur le téléphone (T-08)", () => {
     expect(agentDeLaBibliotheque(etats, { definitionId: "d1" })?.id).toBe("juriste-2");
     expect(agentDeLaBibliotheque(etats, { modele: "prompty" })?.statut).toBe("desactive");
     expect(agentDeLaBibliotheque(undefined, { modele: "prompty" })).toBeNull();
+  });
+});
+
+describe("cartes du lot 5", () => {
+  const hugo = { id: "dev", nom: "Hugo" };
+  const iris = { id: "design", nom: "Iris" };
+
+  test("sans préférences lues, personne n'est masqué", () => {
+    expect(classerActifs([hugo, iris], null)).toEqual({ visibles: [hugo, iris], masques: [] });
+  });
+
+  test("un masqué quitte les cartes, un épinglé passe devant", () => {
+    const { visibles, masques } = classerActifs([hugo, iris], [
+      { id: "dev", masque: true, epingle: false },
+      { id: "design", masque: false, epingle: true },
+    ]);
+    expect(masques).toEqual([hugo]);
+    expect(visibles).toEqual([iris]);
+  });
+
+  test("les non-lus viennent des conversations du compte", () => {
+    expect(nonLusAgent("dev", [{ roleIds: ["dev"], nonLus: 2 }, { roleIds: ["design"], nonLus: 4 }])).toBe(2);
   });
 });
 

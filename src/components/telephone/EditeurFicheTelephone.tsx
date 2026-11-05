@@ -262,7 +262,8 @@ function CreationFiche() {
   const sur = useSupport();
   const { cartes, liste } = useCartesAgents();
   const { agir, occupe, ouvert, erreur } = useGesteTelephone();
-  const [proposition] = useState(() => (params.get("proposition") ? reprendreBrouillonTelephone() : null));
+  const propositionDemandee = !!params.get("proposition");
+  const [proposition] = useState(() => (propositionDemandee ? reprendreBrouillonTelephone() : null));
   const [nom, setNom] = useState(proposition?.nom ?? "");
   const [tag, setTag] = useState(proposition?.role ?? "");
   const [teinte, setTeinte] = useState<RoleTeinte>(() => (proposition ? teinteDuNom(proposition.id || identifiantDe(proposition.nom)) : "bleu-k2"));
@@ -316,6 +317,10 @@ function CreationFiche() {
           <p className="rounded-md border border-bordure-subtile bg-fond-surface p-3 text-ui text-texte-secondaire">
             <span className="font-medium text-texte-principal">Préparé par {liste?.assistant.nom ?? "ton assistant"} à partir de ta demande.</span> Relis, ajuste ce qui doit
             l’être, puis crée l’agent.
+          </p>
+        ) : propositionDemandee ? (
+          <p className="rounded-md border border-bordure-subtile bg-fond-surface p-3 text-ui text-texte-secondaire">
+            Cette proposition n’est plus disponible. La fiche reste vide : tu peux la remplir.
           </p>
         ) : null}
         <div className="mt-3 flex items-center gap-3">

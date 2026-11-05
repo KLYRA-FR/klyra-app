@@ -23,6 +23,7 @@ import { AvantApresFiche } from "./AvantApresFiche";
 import { BoutonMenu, CHAMP_TELEPHONE, ChampTelephone, ErreurGeste, useCartesAgents } from "./CommunAgentsTelephone";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, type ActionMenu } from "./Feuille";
+import { GroupeListe, LigneListe } from "./Liste";
 import { NotePoste, VueLecture } from "./etats";
 import { useSupport } from "./poste";
 import { useRetour } from "./retour";
@@ -205,6 +206,11 @@ export function FicheAgentTelephone({ id }: { id: string }) {
               Voir ses conversations
             </Bouton>
           </div>
+          <GroupeListe>
+            <LigneListe nom="Souvenirs" fin="chevron" href={`/equipe?agent=${encodeURIComponent(id)}&mode=souvenirs`} />
+            <LigneListe nom="Compétences" fin="chevron" href={`/equipe?agent=${encodeURIComponent(id)}&mode=competences`} />
+            <LigneListe nom="Utilisation" fin="chevron" href={`/equipe?agent=${encodeURIComponent(id)}&mode=utilisation`} />
+          </GroupeListe>
           <ErreurGeste message={erreur?.message} />
         </header>
 

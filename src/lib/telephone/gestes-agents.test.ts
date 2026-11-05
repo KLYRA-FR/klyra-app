@@ -69,6 +69,7 @@ function poste(options: { contenu?: string; empreinte?: string } = {}) {
     dir: "/Users/corentin/.claude/agents",
     save: vi.fn(async () => undefined),
     saveReglage: vi.fn(async () => undefined),
+    preferer: vi.fn(async () => undefined),
     changerModele: vi.fn(async () => undefined),
     create: vi.fn(async () => undefined),
     activer: vi.fn(async () => undefined),
@@ -191,6 +192,32 @@ describe("gestes « agents » : Mes agents", () => {
     expect(deps.arreter).toHaveBeenCalledWith("dev");
     expect(agents.activer).toHaveBeenCalledWith("dev", false);
     expect((await refus(gestes["agents.activer"]({ id: "principal", actif: false }))).code).toBe("arguments");
+  });
+
+  test("masquer et épingler passent par les préférences du bureau ; l'assistant ne se masque pas", async () => {
+    const { agents, gestes } = poste();
+    await gestes["agents.preference"]({ id: "dev", masque: true });
+    expect(agents.preferer).toHaveBeenCalledWith("dev", { masque: true });
+    expect((await refus(gestes["agents.preference"]({ id: "principal", masque: true }))).code).toBe("arguments");
+    expect(agents.preferer).toHaveBeenCalledTimes(1);
+  });
+
+  test("les souvenirs absents ne deviennent pas une liste vide", async () => {
+    const { gestes } = poste();
+    expect((await refus(gestes["agents.souvenirs"]({ id: "dev" }))).code).toBe("indisponible");
+  });
+
+  test("un souvenir hors de la liste lue est refusé", async () => {
+    const { deps, gestes } = poste();
+    deps.lectures = {
+      souvenirs: async () => ({ coupee: false, souvenirs: [{ ref: "notes.md", titre: "Notes", extrait: "", toujours: true, modifieLe: 1 }] }),
+      souvenir: vi.fn(async () => ({ titre: "Notes", contenu: "Texte", modifieLe: 1 })),
+      competences: async () => [],
+      utilisation: async () => ({ entrees: [] }),
+    };
+    expect((await refus(gestes["agents.souvenir"]({ id: "dev", ref: "../secret.md" }))).code).toBe("arguments");
+    expect((await refus(gestes["agents.souvenir"]({ id: "dev", ref: "autre.md" }))).code).toBe("introuvable");
+    await expect(gestes["agents.souvenir"]({ id: "dev", ref: "notes.md" })).resolves.toMatchObject({ titre: "Notes", contenu: "Texte" });
   });
 
   test("le nom de l'assistant suit les règles du bureau", async () => {
