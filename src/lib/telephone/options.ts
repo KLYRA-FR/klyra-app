@@ -19,6 +19,8 @@ export interface OptionsMessage {
   nouveau?: { projetId: string };
   /** Avec deux ordinateurs ou plus : celui qui doit le prendre (sa clé). */
   poste?: string;
+  /** « Répondre » à une réponse d'agent : la même citation qu'au bureau, au-dessus du message. */
+  citation?: { messageId: string; roleId: string; extrait: string };
 }
 
 export const FACONS: readonly FaconReessai[] = ["reessayer", "details", "concis", "web"];
@@ -58,6 +60,12 @@ export function lireOptions(json: string | null | undefined): OptionsMessage {
   if (projet) options.nouveau = { projetId: projet };
   const poste = texte(brut.poste, CLE_POSTE);
   if (poste) options.poste = poste;
+  const citation = objet(brut.citation);
+  const citeId = texte(citation?.messageId, ID);
+  const citeRole = texte(citation?.roleId, ID);
+  if (citeId && citeRole && typeof citation?.extrait === "string" && citation.extrait.trim()) {
+    options.citation = { messageId: citeId, roleId: citeRole, extrait: citation.extrait.trim().slice(0, 280) };
+  }
   return options;
 }
 

@@ -7,6 +7,15 @@ export const REACTIONS = ["👍", "👎", "❤️", "😂", "🎉", "😮"] as c
 /** Longueur de l'extrait gardé avec une réponse : ce qu'il faut pour savoir de quoi on parle. */
 const EXTRAIT_MAX = 280;
 
+/** Un passage cité en Markdown, prêt pour le composeur. */
+export const citer = (texte: string) => `${texte.trim().split("\n").map((l) => `> ${l}`).join("\n")}\n\n`;
+
+/** Un titre de fil tiré du passage : sa première ligne, raccourcie. */
+export const titreDuPassage = (texte: string) => {
+  const ligne = texte.replace(/[#*_`>]/g, "").trim().split("\n")[0] ?? "";
+  return ligne.length > 60 ? `${ligne.slice(0, 57).trimEnd()}…` : ligne;
+};
+
 const EVENEMENT = "klyra:repondre";
 
 interface DemandeReponse {

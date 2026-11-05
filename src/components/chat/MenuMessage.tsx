@@ -7,20 +7,12 @@ import { ajouterAuBrouillon } from "@/lib/brouillons";
 import { estAvantDepart } from "@/lib/contexte";
 import { formatDaySeparator, formatTime, isSameDay } from "@/lib/format";
 import { raccourciDuSysteme } from "@/lib/plateforme";
+import { citer, titreDuPassage } from "@/lib/repondre";
 import { texteDe, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Message } from "@/types/domain";
 
 /** Ce que le clic droit vise : le message, et le texte surligné dedans s'il y en a. */
 export type CibleMessage = { message: Message; selection: string };
-
-/** Un passage cité en Markdown, prêt pour le composeur. */
-const citer = (texte: string) => `${texte.trim().split("\n").map((l) => `> ${l}`).join("\n")}\n\n`;
-
-/** Un titre de fil tiré du passage : sa première ligne, raccourcie. */
-const titreDe = (texte: string) => {
-  const ligne = texte.replace(/[#*_`>]/g, "").trim().split("\n")[0] ?? "";
-  return ligne.length > 60 ? `${ligne.slice(0, 57).trimEnd()}…` : ligne;
-};
 
 /**
  * Le clic droit sur un message : copier (la sélection d'abord), citer dans sa réponse, en faire
@@ -43,7 +35,7 @@ export function MenuMessage({ chat, cible, x, y, onFermer }: { chat: Chat; cible
   const quand = `${isSameDay(message.createdAt, new Date().toISOString()) ? "Aujourd’hui" : formatDaySeparator(message.createdAt)}, ${formatTime(message.createdAt)}`;
 
   const enFil = (roleId: string) => {
-    const id = creerFil(roleId, titreDe(passage) || undefined, null, undefined, { lieu: chat.lieu ?? null });
+    const id = creerFil(roleId, titreDuPassage(passage) || undefined, null, undefined, { lieu: chat.lieu ?? null });
     ajouterAuBrouillon(id, citer(passage));
     router.push(`/chat?id=${encodeURIComponent(id)}`);
   };

@@ -5,7 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../../convex/_generated/api";
 import type { LecturePoste, ResultatPoste } from "@/lib/poste/client";
 import { majuscule, texteErreurPoste } from "@/lib/poste-texte";
-import { BandeauVueGardee } from "./etats";
+import { AucunPoste, BandeauVueGardee, DemandeEnCours, ErreurPoste, PasDeReponse, PosteFerme } from "./etats";
 import type { Report } from "@/lib/report";
 import type { ElementJour, RappelTelephone } from "@/lib/telephone/planning";
 import type { Categorie, Evenement } from "@/types/domain";
@@ -26,6 +26,8 @@ export interface ElementAgenda extends ElementJour {
   /** Clé de la ligne (une occurrence d'un événement répété a la sienne). */
   cle: string;
   genre: "evenement" | "depart";
+  /** D'où vient la ligne : le compte reste actif, ce qui vient de l'ordinateur peut être une vue gardée. */
+  origine: "compte" | "poste";
   titre: string;
   fin: string | null;
   /** « Toute l'équipe », « Par Léa », l'agent d'une routine. */
@@ -42,6 +44,10 @@ export interface PlanningTelephoneApi {
   /** « ton Mac », « ton PC », le nom du poste. */
   sur: string;
   posteOuvert: boolean;
+  /** Ce téléphone est hors ligne : aucune écriture, les saisies restent dans la page. */
+  horsLigne: boolean;
+  /** La date de la vue gardée de l'ordinateur, s'il est fermé et qu'on en a une. */
+  gardeeLe: number | null;
   /** Un geste sur l'ordinateur ; réussi, le planning de l'ordinateur est relu. */
   surPoste: <T>(type: string, args: unknown) => Promise<ResultatPoste<T>>;
   /** null : l'ordinateur ne les a pas données (fermé, ou en cours de lecture). */
@@ -54,10 +60,33 @@ export interface PlanningTelephoneApi {
   occupes: ReadonlySet<string>;
   cocher: (rappel: RappelTelephone) => void;
   reporter: (rappel: RappelTelephone, report: Report) => void;
+  supprimer: (rappel: RappelTelephone) => void;
   ouvrirRappel: (rappel: RappelTelephone | null, champ?: "jour") => void;
   ouvrirEvenement: (evenement: EvenementTelephone | null) => void;
   /** La feuille d'une catégorie (nom, couleur, icône) ; null : une nouvelle. */
   modifierCategorie: (categorie: Categorie | null) => void;
+}
+
+/**
+ * D-8 : ce que l'ordinateur doit encore dire, dans sa propre section. Il ne cache jamais le compte et
+ * ne conclut rien sur ce qui y serait : en cours, sans réponse, en erreur, fermé sans vue gardée,
+ * ou aucun ordinateur relié. Lu, ou fermé avec une vue gardée : rien ici, l'écran montre les lignes.
+ */
+export function SectionPoste({ lecture, ferme }: { lecture: LecturePoste<unknown> & { relancer: () => void }; ferme: (sur: string) => string }) {
+  switch (lecture.etat) {
+    case "ok":
+      return null;
+    case "aucun":
+      return <AucunPoste forme="encadre" className="px-0 pb-0" phrase={ferme} />;
+    case "attente":
+      return <DemandeEnCours lent={lecture.lent} lignes={2} />;
+    case "ferme":
+      return lecture.gardee ? null : <PosteFerme forme="encadre" phrase={ferme} />;
+    case "delai":
+      return <PasDeReponse forme="encadre" relancer={lecture.relancer} />;
+    default:
+      return <ErreurPoste forme="encadre" code={lecture.code} message={lecture.message} relancer={lecture.relancer} />;
+  }
 }
 
 export const ContextePlanning = createContext<PlanningTelephoneApi | null>(null);
