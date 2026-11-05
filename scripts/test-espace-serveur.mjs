@@ -144,6 +144,21 @@ try {
     surProfil = JSON.parse(readFileSync(path.join(profilB, "conversations.json"), "utf8")).executions?.find((e) => e.workflowId === "wf-vps" && e.statut === "fait");
   }
   verifier(!!surProfil, "second appareil : l’exécution du serveur est dans sa copie");
+
+  // Un autre appareil change la conversation sans changer sa date : l'app la prend, et personne ne réécrit plus.
+  const fichierEtat = path.join(donnees, "espace", "etat.json");
+  const revision = () => JSON.parse(readFileSync(fichierEtat, "utf8")).revision;
+  const titreIci = () => JSON.parse(readFileSync(path.join(profilB, "conversations.json"), "utf8")).chats?.find((c) => c.id === "klyra-fil-vps000001")?.title;
+  const titreServeur = () => conversationsServeur().find((c) => c.id === "klyra-fil-vps000001")?.valeur.chat.title;
+  const copie = conversationsServeur().find((c) => c.id === "klyra-fil-vps000001").valeur;
+  const autreAppareil = { type: "conversation", id: "klyra-fil-vps000001", valeur: { ...copie, chat: { ...copie.chat, title: "Renommé ailleurs" } } };
+  const ecrit = await app.ev(`window.klyra.espace.ecrire(${JSON.stringify(adresse)}, { elements: [${JSON.stringify(autreAppareil)}], supprimes: [] })`);
+  verifier(ecrit?.ok === true, "un autre appareil écrit la même conversation, à la même date");
+  verifier(await attendreQue(() => titreIci() === "Renommé ailleurs", 200), `à date égale, l'app prend ce qu'un autre appareil a écrit (${titreIci()})`);
+  verifier(titreServeur() === "Renommé ailleurs", `elle ne réécrit pas son ancienne copie sur le serveur (${titreServeur()})`);
+  const revisionAvant = revision();
+  await attendre(65_000);
+  verifier(revision() === revisionAvant, `une relecture plus tard, plus aucune écriture (révision ${revisionAvant} → ${revision()})`);
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
 } finally {
   await app?.fermer();

@@ -129,22 +129,49 @@ export function paquets(aEcrire: ElementEspace[], tailleMax = 8_000_000): Elemen
 
 const plusRecent = (a: string | undefined, b: string | undefined) => !!a && (!b || a > b);
 
-function ranger<T extends { id: string }>(locaux: T[], lus: T[], retires: Record<string, number> | undefined, gagne: (lu: T, local: T) => boolean, lieu?: (t: T) => T): T[] {
+/**
+ * À date égale, ce que rend le serveur vient d'un autre appareil si la copie d'ici n'a pas bougé depuis le
+ * dernier échange (`memo`) : on la prend. Sans ça, chaque appareil réécrirait la sienne à chaque passage.
+ * Sans `memo` (premier passage après l'ouverture) ou si la copie d'ici a bougé, c'est elle qui part : elle
+ * peut porter ce qui n'a pas eu le temps d'être envoyé.
+ */
+const rejointLeServeur = (memo: ReadonlyMap<string, string> | undefined, type: TypeEspace, id: string, ici: unknown, lu: unknown) => {
+  if (!memo) return false;
+  const h = empreinte(ici);
+  return memo.get(cle(type, id)) === h && empreinte(lu) !== h;
+};
+
+/** Le plus récent gagne ; à date égale, voir `rejointLeServeur`. */
+const selonDate =
+  <T,>(date: (t: T) => string | undefined) =>
+  (lu: T, local: T, rejoint: () => boolean) =>
+    plusRecent(date(lu), date(local)) || (date(lu) === date(local) && rejoint());
+
+function ranger<T extends { id: string }>(
+  type: TypeEspace,
+  locaux: T[],
+  lus: T[],
+  retires: Record<string, number> | undefined,
+  memo: ReadonlyMap<string, string> | undefined,
+  gagne: (lu: T, local: T, rejoint: () => boolean) => boolean,
+  lieu?: (t: T) => T,
+): T[] {
   const parId = new Map(locaux.map((x) => [x.id, x]));
   for (const lu of lus) {
     const propre = lieu ? lieu(lu) : lu;
     const local = parId.get(lu.id);
-    if (!local || gagne(propre, local)) parId.set(lu.id, propre);
+    if (!local || gagne(propre, local, () => rejointLeServeur(memo, type, lu.id, local, lu))) parId.set(lu.id, propre);
   }
   for (const id of Object.keys(retires ?? {})) if (!lus.some((l) => l.id === id)) parId.delete(id);
   return [...parId.values()];
 }
 
 /**
- * Range ce que le serveur rend dans l'état de l'app. Le plus récent gagne ; ce qui n'existe qu'ici sera
- * envoyé ensuite. Une conversation où un agent écrit ne bouge pas, et rien d'un autre serveur n'est touché.
+ * Range ce que le serveur rend dans l'état de l'app. Le plus récent gagne ; à date égale, voir `rejointLeServeur`.
+ * Ce qui n'existe qu'ici sera envoyé ensuite. Une conversation où un agent écrit ne bouge pas, et rien d'un autre
+ * serveur n'est touché. `memo` : l'empreinte du dernier échange avec ce serveur.
  */
-export function fusionner(etat: EtatEspace, lu: LectureEspace, lieu: string, travaille: (chatId: string) => boolean = () => false): EtatEspace {
+export function fusionner(etat: EtatEspace, lu: LectureEspace, lieu: string, travaille: (chatId: string) => boolean = () => false, memo?: ReadonlyMap<string, string>): EtatEspace {
   const de = <T,>(type: TypeEspace) => (lu.elements ?? []).filter((e) => e.type === type).map((e) => e.valeur as T);
   const retires = lu.supprimes ?? {};
   const conversations = de<ValeurConversation>("conversation").filter((c) => c?.chat?.id && !travaille(c.chat.id));
@@ -153,6 +180,10 @@ export function fusionner(etat: EtatEspace, lu: LectureEspace, lieu: string, tra
   for (const c of conversations) {
     const local = avant.get(c.chat.id);
     if (!local || plusRecent(c.chat.updatedAt, local.updatedAt)) remplacees.add(c.chat.id);
+    else if (memo && c.chat.updatedAt === local.updatedAt) {
+      const ici: ValeurConversation = { chat: local, messages: etat.messages.filter((m) => m.chatId === local.id) };
+      if (rejointLeServeur(memo, "conversation", local.id, ici, c)) remplacees.add(local.id);
+    }
   }
   const retireesConv = Object.keys(retires.conversation ?? {}).filter((id) => !conversations.some((c) => c.chat.id === id) && dansEspace(avant.get(id)?.lieu, lieu) && !travaille(id));
   const chats = etat.chats.filter((c) => !retireesConv.includes(c.id) && !remplacees.has(c.id));
@@ -165,10 +196,10 @@ export function fusionner(etat: EtatEspace, lu: LectureEspace, lieu: string, tra
   return {
     chats,
     messages,
-    projects: ranger(etat.projects, de<Project>("projet"), retires.projet, (l, x) => plusRecent(l.updatedAt, x.updatedAt), (p) => ({ ...p, lieu })),
-    workflows: ranger(etat.workflows, de<Workflow>("workflow"), retires.workflow, (l, x) => plusRecent(l.majLe, x.majLe), (w) => ({ ...w, lieu })),
+    projects: ranger("projet", etat.projects, de<Project>("projet"), retires.projet, memo, selonDate((p) => p.updatedAt), (p) => ({ ...p, lieu })),
+    workflows: ranger("workflow", etat.workflows, de<Workflow>("workflow"), retires.workflow, memo, selonDate((w) => w.majLe), (w) => ({ ...w, lieu })),
     /* Le serveur fait foi sur ses exécutions : c'est lui qui les fait tourner. */
-    executions: ranger(etat.executions, de<ExecutionWorkflow>("execution"), retires.execution, () => true),
-    rendus: ranger(etat.rendus, de<Rendu>("rendu"), retires.rendu, () => false),
+    executions: ranger("execution", etat.executions, de<ExecutionWorkflow>("execution"), retires.execution, memo, () => true),
+    rendus: ranger("rendu", etat.rendus, de<Rendu>("rendu"), retires.rendu, memo, (_lu, _local, rejoint) => rejoint()),
   };
 }

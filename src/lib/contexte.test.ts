@@ -210,6 +210,7 @@ describe("repartir à zéro", () => {
     expect(apres.taches).toEqual([]);
     for (const champ of ["sessionsParLieu", "sessionsParMoteur", "contexte", "contexteMasqueJusqua", "amorce"] as const) expect(apres[champ]).toBeUndefined();
     expect(apres.departs).toEqual([ilYa(0)]);
+    expect(apres.updatedAt).toBe(ilYa(0));
     expect(apres.modele).toBe("opus");
     expect(apres.luJusqua).toBe(ilYa(10));
   });
@@ -252,7 +253,8 @@ describe("repartir à zéro", () => {
   });
 
   it("effacer retire aussi les départs et le masquage : il n'y a plus rien au-dessus", () => {
-    const videe = viderConversation(repartirAZero(chat(undefined, lourd), ilYa(1000)));
+    const videe = viderConversation(repartirAZero(chat(undefined, lourd), ilYa(1000)), ilYa(500));
+    expect(videe.updatedAt).toBe(ilYa(500));
     expect(videe.departs).toBeUndefined();
     expect(videe.contexteMasqueJusqua).toBeUndefined();
     expect(videe.sessions).toEqual({});

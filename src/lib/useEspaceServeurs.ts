@@ -83,7 +83,7 @@ export function useEspaceServeurs(
       suitesRef.current.serveurLu(lieu);
     }
     if (!lu.inchange) {
-      fusionnerEtat(fusionner(stateRef.current, lu, lieu, travaille));
+      fusionnerEtat(fusionner(stateRef.current, lu, lieu, travaille, memos.current.get(lieu)));
       memos.current.set(lieu, memoDe(lu.elements ?? []));
       revisions.current.set(lieu, lu.revision);
     }
