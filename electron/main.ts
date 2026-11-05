@@ -171,7 +171,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDos
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { arbreVps, consignesVps, creerDossierVps, lireFichierVps } from "./projets-vps";
+import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
   ajouterIaVps,
@@ -873,7 +873,11 @@ function registerBridge() {
     if (typeof chemin !== "string" || !path.isAbsolute(chemin)) throw new Error("Chemin invalide.");
     shell.showItemInFolder(chemin);
   });
-  handle("fichiers:ecrire", (chemin: string, texte: string) => ecrireFichierTexte(chemin, texte));
+  handle("fichiers:ecrire", (chemin: string, texte: string, lieu?: string | null) => {
+    if (!lieu) return ecrireFichierTexte(chemin, texte);
+    if (!originesServeurs().includes(lieu)) throw new Error("Ce VPS n’est plus relié.");
+    return ecrireFichierVps(lieu, jetonServeur(lieu), chemin, texte);
+  });
   handle("fichiers:coller", (octets: unknown, type: unknown) => enregistrerCollage(octets, type));
   handle("fichiers:recevoir", (octets: unknown, nom: unknown) => recevoirPiece(octets, nom));
   handle("webhooks:adresse", (secret: string) => adresseWebhook(secret));

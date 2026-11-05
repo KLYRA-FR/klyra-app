@@ -474,6 +474,10 @@ export function creerGestionnaire(options) {
         if (action === "arbre" && req.method === "GET") return repondre(res, 200, { noeuds: await fichiers.arbre(dossierProjet, url.searchParams.get("relatif") ?? "") });
         if (action === "lire" && req.method === "GET") return repondre(res, 200, await fichiers.lire(dossierProjet, url.searchParams.get("relatif") ?? ""));
         if (action === "dossier" && req.method === "POST") return repondre(res, 200, { dossier: await fichiers.creerDossier(dossierProjet) });
+        if (action === "ecrire" && req.method === "POST") {
+          const corps = await lireCorpsRequete(req, CORPS_FICHES_MAX);
+          return repondre(res, 200, { chemin: await fichiers.ecrireTexte(corps?.chemin, corps?.texte) });
+        }
         /* La carte « Consignes du projet » d'un projet du VPS : GET l'état (et ce qui serait écrit), POST l'écriture. */
         if (action === "consignes" && req.method === "GET") return repondre(res, 200, { consignes: fichiers.consignes(dossierProjet, url.searchParams.get("nom") ?? "") });
         if (action === "consignes" && req.method === "POST") return repondre(res, 200, { consignes: fichiers.ecrireConsignes(dossierProjet, url.searchParams.get("nom") ?? "") });

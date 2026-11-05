@@ -25,7 +25,10 @@ export interface Appelant {
 }
 
 export interface DependancesWorkflows {
-  etat: () => { workflows: Workflow[]; executions: ExecutionWorkflow[]; projets: { id: string; name: string }[] };
+  /** Ce que voit cet agent : les workflows et les projets du serveur où il travaille. */
+  etat: (a: Appelant) => { workflows: Workflow[]; executions: ExecutionWorkflow[]; projets: { id: string; name: string }[] };
+  /** Le serveur de cet agent (null : ce PC) : un workflow qu'il crée y reste. */
+  lieu?: (a: Appelant) => string | null;
   /** Les agents actifs (l'assistant compris). */
   agents: () => { id: string; nom: string }[];
   enregistrer: (wf: Workflow) => void;
@@ -52,13 +55,13 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
   const nouvelId = d.nouvelId ?? (() => crypto.randomUUID());
   const ctx = (): ContexteConstruction => ({ agents: d.agents() });
   const nomAgent = (id: string) => d.agents().find((a) => a.id === id)?.nom ?? id;
-  const projetDe = (id: string | null) => (id ? (d.etat().projets.find((p) => p.id === id)?.name ?? id) : null);
-  const trouver = (id: unknown) => {
-    const wf = d.etat().workflows.find((w) => w.id === String(id ?? "").trim());
+  const projetDe = (id: string | null, a: Appelant) => (id ? (d.etat(a).projets.find((p) => p.id === id)?.name ?? id) : null);
+  const trouver = (id: unknown, a: Appelant) => {
+    const wf = d.etat(a).workflows.find((w) => w.id === String(id ?? "").trim());
     if (!wf) throw new Error(`Aucun workflow « ${String(id ?? "")} ». lister_workflows donne les identifiants.`);
     return wf;
   };
-  const enCoursDe = (wfId: string) => d.etat().executions.find((e) => e.workflowId === wfId && (e.statut === "en-cours" || e.statut === "approbation"));
+  const enCoursDe = (wfId: string, a: Appelant) => d.etat(a).executions.find((e) => e.workflowId === wfId && (e.statut === "en-cours" || e.statut === "approbation"));
 
   /** Le chantier tel que la page le montre, d'après une construction. */
   const chantier = (a: Appelant, base: Partial<Chantier>, wfId: string, nouveau: boolean, titre: string, c: Construction, phase: Chantier["phase"]): Chantier => ({
@@ -80,8 +83,8 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
   });
 
   /** Le workflow visé par une demande : celui donné, ou un nouveau (son id est gardé d'un aperçu à l'autre). */
-  const cible = (demande: Demande, precedent: Chantier | null) => {
-    const existant = demande.workflow ? (d.etat().workflows.find((w) => w.id === demande.workflow) ?? null) : null;
+  const cible = (demande: Demande, precedent: Chantier | null, a: Appelant) => {
+    const existant = demande.workflow ? (d.etat(a).workflows.find((w) => w.id === demande.workflow) ?? null) : null;
     const id = existant?.id ?? (precedent?.nouveau ? precedent.workflowId : nouvelId());
     return { existant, id };
   };
@@ -96,9 +99,9 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
     /* Une construction finie juste avant reste un instant à l'écran : la nouvelle la remplace. */
     const precedent = avant?.phase === "ecrit" ? avant : null;
     const demande = lireDemande(entree, true);
-    if (demande.workflow && !d.etat().workflows.some((w) => w.id === demande.workflow)) return;
+    if (demande.workflow && !d.etat(a).workflows.some((w) => w.id === demande.workflow)) return;
     if (a.chatId.startsWith("wf-") && demande.workflow && a.chatId === `wf-${demande.workflow}`) return;
-    const { existant, id } = cible(demande, precedent);
+    const { existant, id } = cible(demande, precedent, a);
     const c = construire(existant?.graphe ?? GRAPHE_VIDE, demande, ctx(), true);
     poserChantier(cleDe(a), chantier(a, { etapeId, debut: precedent?.debut }, id, !existant, demande.titre ?? existant?.titre ?? "Nouveau workflow", c, "ecrit"));
   }
@@ -113,10 +116,10 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
     const demande = lireDemande(args);
     const avant = chantierDe(cleDe(a));
     const precedent = avant?.phase === "ecrit" ? avant : null;
-    const existant = demande.workflow ? trouver(demande.workflow) : null;
+    const existant = demande.workflow ? trouver(demande.workflow, a) : null;
     if (existant && a.chatId === `wf-${existant.id}`) throw new Error("Tu travailles dans une exécution de ce workflow : tu ne le modifies pas pendant qu'il tourne.");
     if (!existant && !demande.titre) throw new Error("Donne un titre au nouveau workflow (titre).");
-    if (demande.projet && !d.etat().projets.some((p) => p.id === demande.projet)) throw new Error(`Aucun projet « ${demande.projet} ».`);
+    if (demande.projet && !d.etat(a).projets.some((p) => p.id === demande.projet)) throw new Error(`Aucun projet « ${demande.projet} ».`);
     const base = existant?.graphe ?? GRAPHE_VIDE;
     const c = construire(base, demande, ctx());
     if (c.problemes.length) {
@@ -127,7 +130,7 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
       abandonner(a);
       throw new Error("Rien à construire : donne des étapes, des liens ou des retraits.");
     }
-    const { id } = cible(demande, existant ? null : precedent);
+    const { id } = cible(demande, existant ? null : precedent, a);
     const titre = demande.titre ?? existant?.titre ?? "Nouveau workflow";
     const debut = precedent?.debut ?? maintenant();
     /* Vu en train de s'écrire : les cartes sont déjà là. Sinon, la page les voit se poser une à une. */
@@ -154,7 +157,7 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
           majLe: date,
           versions: [{ id: nouvelId(), at: date, raison: "agent" as const, par: a.roleId, graphe: existant.graphe }, ...existant.versions].slice(0, 50),
         }
-      : { id, titre, graphe: c.graphe, projectId, creeLe: date, majLe: date, versions: [] };
+      : { id, titre, graphe: c.graphe, projectId, ...(d.lieu?.(a) ? { lieu: d.lieu(a) } : {}), creeLe: date, majLe: date, versions: [] };
     d.enregistrer(wf);
     const fini = chantier(a, { etapeId: null, debut }, id, !existant, titre, { ...c, enEcriture: null }, "fini");
     poserChantier(cleDe(a), fini);
@@ -165,9 +168,9 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
   }
 
   function lancerWorkflow(args: Record<string, unknown>, a: Appelant): string {
-    const wf = trouver(args.workflow);
+    const wf = trouver(args.workflow, a);
     if (a.chatId.startsWith("wf-")) throw new Error("Une étape d'un workflow ne lance pas de workflow : dis-le dans ta réponse, la personne choisira.");
-    const encours = enCoursDe(wf.id);
+    const encours = enCoursDe(wf.id, a);
     if (encours) throw new Error(`« ${wf.titre} » tourne déjà (exécution n°${encours.numero}, id ${encours.id}) : suis-la avec lire_workflow.`);
     const declencheurId = typeof args.declencheur === "string" && args.declencheur.trim() ? args.declencheur.trim() : null;
     if (declencheurId && !wf.graphe.noeuds.some((n) => n.id === declencheurId && n.type === "declencheur"))
@@ -175,7 +178,7 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
     const charge = typeof args.entree === "string" ? args.entree.slice(0, 100_000) : undefined;
     const execId = d.lancer(wf.id, { declencheurId, source: "agent", charge, lancePar: { roleId: a.roleId, chatId: a.chatId } });
     if (!execId) throw new Error("Le workflow n'a pas pu partir.");
-    const exec = d.etat().executions.find((e) => e.id === execId);
+    const exec = d.etat(a).executions.find((e) => e.id === execId);
     return `Exécution${exec ? ` n°${exec.numero}` : ""} de « ${wf.titre} » lancée (id ${execId}). La personne la suit en direct sur sa page Workflows. Suis-la avec lire_workflow (workflow ${wf.id}) : une étape agent prend souvent plusieurs minutes, une approbation attend la personne.`;
   }
 
@@ -183,18 +186,18 @@ export function creerOutilsWorkflows(d: DependancesWorkflows) {
   async function executer(nom: string, args: Record<string, unknown>, a: Appelant): Promise<string> {
     switch (nom) {
       case "lister_workflows": {
-        const { workflows, executions } = d.etat();
+        const { workflows, executions } = d.etat(a);
         if (!workflows.length) return "Aucun workflow pour l'instant. construire_workflow en crée un.";
         const tries = [...workflows].sort((x, y) => y.majLe.localeCompare(x.majLe));
-        return tries.map((w) => ligneWorkflow(w, executions, projetDe(w.projectId))).join("\n");
+        return tries.map((w) => ligneWorkflow(w, executions, projetDe(w.projectId, a))).join("\n");
       }
       case "lire_workflow": {
-        const wf = trouver(args.workflow);
-        const siennes = d.etat().executions.filter((e) => e.workflowId === wf.id);
+        const wf = trouver(args.workflow, a);
+        const siennes = d.etat(a).executions.filter((e) => e.workflowId === wf.id);
         const voulue = typeof args.execution === "string" && args.execution.trim() ? args.execution.trim() : null;
         const exec = voulue ? siennes.find((e) => e.id === voulue) : siennes[0];
         if (voulue && !exec) throw new Error(`Aucune exécution « ${voulue} » pour ce workflow.`);
-        return decrireWorkflow(wf, exec ?? null, { ctx: ctx(), projet: projetDe(wf.projectId), nomAgent });
+        return decrireWorkflow(wf, exec ?? null, { ctx: ctx(), projet: projetDe(wf.projectId, a), nomAgent });
       }
       case "construire_workflow":
         return construireWorkflow(args, a);

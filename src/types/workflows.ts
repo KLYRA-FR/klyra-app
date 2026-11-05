@@ -100,6 +100,8 @@ export interface Workflow {
   graphe: Graphe;
   /** Le projet où travaillent ses agents (dossier, conversation). */
   projectId: string | null;
+  /** Le VPS auquel il appartient (origine https) : ses agents y travaillent. Absent : ce PC. Un workflow ne change pas de serveur. */
+  lieu?: string | null;
   creeLe: string;
   majLe: string;
   versions: VersionWorkflow[];
