@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/icons/Icon";
+import { Icon, type IconName } from "@/components/icons/Icon";
 import { RondApercu } from "@/components/roles/AgentRond";
 import { dateUneFoisPassee } from "@/components/routines/CarteRoutine";
 import { apercuAgent } from "@/components/routines/ColonneAgents";
@@ -11,18 +11,21 @@ import { MarqueRun } from "@/components/routines/MarqueRun";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { cn } from "@/lib/cn";
-import { useLieuActif, useServeursRelies } from "@/lib/lieux";
-import { routinesDeLEspace } from "@/lib/telephone/espace";
+import { useServeursRelies } from "@/lib/lieux";
 import { useGestePoste } from "@/lib/poste/client";
-import { dureeRun, libellePlanning, libelleRun, lienRun, quandRoutine, runActif } from "@/lib/routines-affichage";
+import { majuscule } from "@/lib/poste-texte";
+import { dureeRun, libellePlanning, libelleRun, lienRun, runActif } from "@/lib/routines-affichage";
 import { roleLisible } from "@/lib/telephone/agents";
+import { useUneFois } from "@/lib/telephone/geste";
 import { messageGeste, useLectureSuivie } from "@/lib/telephone/lecture-suivie";
-import { useTirerPourRelire } from "./TirerPourRelire";
 import {
   ecrireBrouillon,
+  essaiPossible,
   initialeDe,
   lireBrouillon,
   nouvelleRoutine,
+  quandRelatif,
+  routineDejaCreee,
   valeursRoutine,
   type AgentLu,
   type BrouillonRoutine,
@@ -31,20 +34,27 @@ import {
 } from "@/lib/telephone/routines-telephone";
 import type { RoleTeinte } from "@/types/domain";
 import type { Routine, RoutineInput, RoutineRun } from "@/types/routines";
+import { MenuPage } from "./CommunAgentsTelephone";
+import { BOUTON_INACTIF } from "./Controles";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
 import { FormulaireRoutineTelephone, type ContexteRoutine } from "./FormulaireRoutineTelephone";
-import { VueLecture, useBandeau } from "./etats";
+import { Carte, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
+import { useTirerPourRelire } from "./TirerPourRelire";
+import { EtatEcran, NotePoste, VueLecture, useBandeau, useVueGardeeAffichee } from "./etats";
 import { usePostes, useSupport } from "./poste";
 
 /**
- * Automatisations › Routines sur le téléphone (spec mobile T-14 à T-17). La colonne des agents du
- * canevas devient le premier écran ; les routines d'un agent se lisent en colonne, l'agent en tête.
+ * Automatisations › Routines sur le téléphone (lot 7, E7-01 à E7-25). La colonne des agents du
+ * canevas devient le premier écran ; les routines d'un agent se lisent en cartes, l'agent en tête.
  * Tout passe par l'ordinateur ouvert (gestes `routines.*`) ; rien n'est gardé dans le compte.
  */
 
 export const urlRoutines = (agent?: string | null, routine?: string | null, formulaire = false) =>
   `/routines?vue=routines${agent ? `&agent=${encodeURIComponent(agent)}` : ""}${routine ? `&routine=${encodeURIComponent(routine)}` : ""}${formulaire ? "&formulaire=1" : ""}`;
+
+const ECLAIRAGE_MS = 1800;
+const PHRASE_AUCUN = "Les routines et les workflows tournent sur ton ordinateur.";
 
 /** P-6 des routines. Celles d'un VPS partent quand même (MO-T17) : dit seulement si ce téléphone en connaît un. */
 function usePhraseFermee() {
@@ -52,30 +62,54 @@ function usePhraseFermee() {
   return (sur: string) => `les routines sont sur ${sur}. Elles ne partent que quand KLYRA y est ouverte.${vps ? ` Celles d’un VPS y tournent même ${sur} fermé.` : ""}`;
 }
 
-/** Le moteur des routines ne tourne pas sur l'ordinateur : mêmes mots qu'au bureau. */
+/** Le moteur des routines ne tourne pas sur l'ordinateur (E7-06) : « Réessayer » relit, il ne le démarre pas. */
 function MoteurArrete({ erreur, relancer }: { erreur: string | null; relancer: () => void }) {
+  const sur = useSupport();
   return (
-    <div role="alert" className="mx-4 mt-6 rounded-xl border border-bordure-forte bg-fond-surface p-4">
-      <p className="text-body-s font-medium text-texte-principal">Les routines sont arrêtées</p>
-      <p className="mt-1 text-ui text-texte-secondaire">{erreur ?? "Le moteur des routines est indisponible."}</p>
-      <Bouton variant="blanc" taille="md" className="mt-3" onClick={relancer}>
-        Réessayer
-      </Bouton>
-    </div>
+    <EtatEcran
+      erreur
+      icone="help-circle-contained"
+      titre="Les routines sont arrêtées"
+      texte={erreur ?? `Le moteur des routines est indisponible sur ${sur}.`}
+      className="pt-8"
+      action={
+        <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="refresh-01" size={20} />} onClick={relancer}>
+          Réessayer
+        </Bouton>
+      }
+    />
   );
 }
 
-/* ─── T-14 : les agents ────────────────────────────────────────── */
+/** Le lien d'une carte : souligné, avec sa cible de 44 px. */
+function LienCarte({ href, onClick, chevron = false, children, disabled = false }: { href?: string; onClick?: () => void; chevron?: boolean; children: ReactNode; disabled?: boolean }) {
+  const classe = "-my-2.5 inline-flex min-h-11 items-center gap-0.5 text-ui font-medium text-texte-principal underline underline-offset-[3px] disabled:text-texte-tertiaire";
+  const contenu = (
+    <>
+      {children}
+      {chevron ? <Icon name="chevron-right" size={16} /> : null}
+    </>
+  );
+  return href ? (
+    <Link href={href} className={classe}>
+      {contenu}
+    </Link>
+  ) : (
+    <button type="button" disabled={disabled} onClick={onClick} className={classe}>
+      {contenu}
+    </button>
+  );
+}
+
+/* ─── E7-01 à E7-06 : les agents ───────────────────────────────── */
 
 export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets: ReactNode; routineDemandee: string | null }) {
   const router = useRouter();
-  const sur = useSupport();
   const ferme = usePhraseFermee();
   const lecture = useLectureSuivie<RoutinesLues>("routines.liste", {}, { suivre: (d) => d.enCours.some(runActif) });
   const tirer = useTirerPourRelire(lecture.relancer, { enCours: lecture.relecture });
   const [brouillon] = useState(lireBrouillon);
-  const lieu = useLieuActif();
-  const data = routinesDeLEspace(lecture.etat === "ok" ? lecture.data : null, lieu);
+  const data = lecture.etat === "ok" ? lecture.data : null;
   /* Un lien vers une routine sans son agent (notification) mène à son agent, comme au bureau. */
   const cible = routineDemandee ? data?.routines.find((r) => r.id === routineDemandee) : undefined;
   useEffect(() => {
@@ -84,67 +118,72 @@ export function AgentsRoutinesTelephone({ onglets, routineDemandee }: { onglets:
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Automatisations" parent="/plus" />
-      <div className="shrink-0 px-4 pb-2">{onglets}</div>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-4" {...tirer.props}>
+      <EnteteTelephone titre="Automatisations" parent="/plus" droite={<MenuPage titre="Automatisations" actions={[{ libelle: "Relire", icone: "refresh-01", onChoisir: lecture.relancer }]} />} />
+      <div className="min-h-0 flex-1 overflow-y-auto pb-6" {...tirer.props}>
         {tirer.indicateur}
-        <VueLecture lecture={lecture} ferme={ferme} lignes={5}>
-          {(d) =>
-            !d.actif ? (
-              <MoteurArrete erreur={d.erreur} relancer={lecture.relancer} />
-            ) : (
-              <nav aria-label="Agents" className="px-4">
-                {[true, false].map((actif) => {
-                  const groupe = d.agents.filter((a) => a.actif === actif);
-                  if (!groupe.length) return null;
-                  return (
-                    <section key={String(actif)} aria-label={actif ? "Mes agents" : "Hors de Mes agents"}>
-                      <h2 className="pt-4 pb-1 text-ui-xs font-medium text-texte-secondaire">{actif ? "Mes agents" : "Hors de Mes agents"}</h2>
-                      <ul>
-                        {groupe.map((a) => (
-                          <li key={a.id}>
-                            <Link href={urlRoutines(a.id)} className="flex min-h-16 items-center gap-3 border-b border-bordure-subtile py-2 active:bg-fond-survol">
-                              <RondApercu agentId={a.id} nom={a.name} teinte={a.teinte} taille={36} className={a.actif ? undefined : "opacity-60"} />
-                              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                <span className="flex min-w-0 items-center gap-1.5">
-                                  <span className="truncate text-body-s font-medium text-texte-principal">{a.name}</span>
-                                  {roleLisible(a.tag, a.id) ? (
-                                    <span className="shrink-0 rounded-sm bg-fond-surface-grise px-1.5 text-ui-xs text-texte-secondaire">{roleLisible(a.tag, a.id)}</span>
-                                  ) : null}
-                                </span>
-                                <span className="truncate text-ui-xs text-texte-secondaire">{apercuAgent(a, d.routines, d.enCours, brouillon?.valeurs.agentId, true)}</span>
-                              </span>
-                              <Icon name="chevron-right" size={16} className="shrink-0 text-icone-secondaire" />
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  );
-                })}
-              </nav>
-            )
-          }
+        <div className="px-4 pt-2 pb-4">{onglets}</div>
+        <VueLecture lecture={lecture} ferme={ferme} lignes={5} formeAucun="encadre" phraseAucun={PHRASE_AUCUN} gestes={null}>
+          {(d) => (!d.actif ? <MoteurArrete erreur={d.erreur} relancer={lecture.relancer} /> : <ListeAgents lues={d} brouillonDe={brouillon?.valeurs.agentId} />)}
         </VueLecture>
       </div>
-      {data?.actif ? (
-        <p className="shrink-0 border-t border-bordure-subtile px-4 py-3 text-ui-xs text-texte-secondaire">
-          <Icon name="clock-01" size={14} className="mr-1 inline text-icone-secondaire" />
-          Les routines partent de {sur} tant que KLYRA est ouverte. App fermée ou en veille, rien ne part.
-        </p>
-      ) : null}
     </div>
   );
 }
 
-/* ─── T-15 : les routines d'un agent ───────────────────────────── */
+/** Mes agents, puis Hors de Mes agents ; l'état de chacun écrit. Vue gardée : l'activité n'est plus en direct (E7-03). */
+function ListeAgents({ lues, brouillonDe }: { lues: RoutinesLues; brouillonDe?: string }) {
+  const sur = useSupport();
+  const gardee = !!useVueGardeeAffichee();
+  const enCours = gardee ? lues.enCours.filter((r) => r.status === "needs-attention") : lues.enCours;
+  return (
+    <nav aria-label="Agents" className="flex flex-col gap-4 px-4">
+      {[true, false].map((actif) => {
+        const groupe = lues.agents.filter((a) => a.actif === actif);
+        if (!groupe.length) return null;
+        const titre = actif ? "Mes agents" : "Hors de Mes agents";
+        return (
+          <SectionListe key={titre} titre={titre} compte={groupe.length}>
+            <GroupeListe>
+              {groupe.map((a) => {
+                const apercu = apercuAgent(a, lues.routines, enCours, brouillonDe, true).replace("Absent de cet ordinateur", `Absent de ${sur}`);
+                const attend = apercu === "Attend ton accord";
+                return (
+                  <LigneListe
+                    key={a.id}
+                    href={urlRoutines(a.id)}
+                    debut={<RondApercu agentId={a.id} nom={a.name} teinte={a.teinte} taille={40} className={a.actif ? undefined : "opacity-60"} />}
+                    retrait="avatar"
+                    nom={a.name}
+                    nonLu={attend}
+                    etiquette={roleLisible(a.tag, a.id) ? <Etiquette>{roleLisible(a.tag, a.id)}</Etiquette> : null}
+                    meta={apercu === "Routine en cours" ? "En cours" : undefined}
+                    metaAccent
+                    ligne2={attend ? <span className="font-semibold text-texte-accent">{apercu}</span> : apercu}
+                    uneLigne
+                    fin="chevron"
+                  />
+                );
+              })}
+            </GroupeListe>
+          </SectionListe>
+        );
+      })}
+      <p className="-mt-1 flex items-start gap-1.5 px-1 text-ui-xs leading-[1.4] text-texte-secondaire">
+        <Icon name="clock-01" size={16} className="shrink-0 text-icone-secondaire" />
+        Les routines partent de {sur} tant que KLYRA est ouverte. App fermée ou en veille, rien ne part.
+      </p>
+    </nav>
+  );
+}
+
+/* ─── E7-07 à E7-17 : les routines d'un agent ──────────────────── */
 
 interface Edition extends BrouillonRoutine {
   contexte: ContexteRoutine;
   /** L'adresse a montré le formulaire : si elle ne le montre plus (retour du système), il se ferme. */
   affichee: boolean;
 }
-type Echec = { message: string; reessayer: () => void };
+type Echec = { type: string; message: string; reessayer: () => void };
 interface Confirmation {
   titre: string;
   texte?: string;
@@ -180,6 +219,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
   const { relancer } = lecture;
   const tirer = useTirerPourRelire(relancer, { enCours: lecture.relecture });
   const { faire, occupe } = useGestePoste();
+  const uneFois = useUneFois();
   const [bandeau, annoncer] = useBandeau();
   const [brouillon, setBrouillon] = useState<BrouillonRoutine | null>(lireBrouillon);
   const [edition, setEdition] = useState<Edition | null>(null);
@@ -190,16 +230,15 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [erreurs, setErreurs] = useState<Record<string, Echec | undefined>>({});
   const [eclairee, setEclairee] = useState<string | null>(null);
-  const lieu = useLieuActif();
-  const data = routinesDeLEspace(lecture.etat === "ok" ? lecture.data : null, lieu);
+  /* Ce que l'écran montre : la lecture en direct, ou la vue gardée (lecture seule). */
+  const data = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
 
-  const agent: AgentLu = data?.agents.find((a) => a.id === agentId) ?? { id: agentId, name: agentId, tag: "", title: "", teinte: "jaune" as RoleTeinte, actif: false, connu: false };
-  const nomAgent = (id: string) => data?.agents.find((a) => a.id === id)?.name ?? id;
+  const agent: AgentLu = data?.agents.find((a) => a.id === agentId) ?? { id: agentId, name: "Agent indisponible", tag: "", title: "", teinte: "jaune" as RoleTeinte, actif: false, connu: false };
+  const nomAgent = (id: string) => data?.agents.find((a) => a.id === id)?.name ?? "Agent indisponible";
   const agentActif = (id: string) => !!data?.agents.some((a) => a.id === id && a.actif);
   const liste = (data?.routines ?? []).filter((r) => r.agentId === agentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const actifDe = (id: string) => data?.enCours.find((run) => run.routineId === id && runActif(run));
   const indisponible = !ouvert || occupe || !data?.actif;
-  const choisie = liste.find((r) => r.id === routineId) ?? null;
 
   /* Le formulaire est une page : « formulaire=1 » dans l'adresse, le retour du système le ferme (le brouillon reste). */
   if (edition && formulaire && !edition.affichee) setEdition({ ...edition, affichee: true });
@@ -213,9 +252,9 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
   useEffect(() => {
     if (!eclairee) return;
     document.querySelector(`[data-routine-carte="${CSS.escape(eclairee)}"]`)?.scrollIntoView({ block: "center" });
-    const minuteur = setTimeout(() => setEclairee(null), 2500);
+    const minuteur = setTimeout(() => setEclairee(null), ECLAIRAGE_MS);
     return () => clearTimeout(minuteur);
-  }, [eclairee, data]);
+  }, [eclairee]);
 
   const commencer = (initiale: Routine | null, valeurs?: RoutineInput, champAgent = false) => {
     if (!data) return;
@@ -240,24 +279,28 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
     setEdition(null);
     router.replace(urlRoutines(agentId, routineId));
   };
-  const annulerFormulaire = () => {
-    if (brouillon) setConfirmation({ titre: "Abandonner les modifications ?", texte: "Les changements de ce formulaire ne seront pas enregistrés.", confirmer: "Abandonner", action: fermerFormulaire });
-    else fermerFormulaire();
-  };
-  const enregistrer = async (input: RoutineInput) => {
-    if (!edition) return;
-    const r = await faire<Routine>("routines.enregistrer", { id: edition.initiale?.id ?? null, updatedAt: edition.initiale?.updatedAt ?? null, input });
-    if (!r.ok) {
-      if (r.code === "changee" || r.code === "supprimee") relancer();
-      throw Object.assign(new Error(messageGeste(r, sur)), { code: r.code });
-    }
+  const reussi = (routine: Routine, creee: boolean) => {
     ecrireBrouillon(null);
     setBrouillon(null);
     setEdition(null);
-    setEclairee(r.data.id);
-    annoncer(edition.initiale ? "Routine enregistrée." : "Routine créée.");
+    setEclairee(routine.id);
+    annoncer(creee ? "Routine créée." : "Routine enregistrée.");
     relancer();
-    router.replace(urlRoutines(r.data.agentId, r.data.id));
+    router.replace(urlRoutines(routine.agentId, routine.id));
+  };
+  const enregistrer = async (input: RoutineInput) => {
+    if (!edition) return;
+    const depuis = new Date(Date.now() - 60_000).toISOString();
+    const r = await faire<Routine>("routines.enregistrer", { id: edition.initiale?.id ?? null, updatedAt: edition.initiale?.updatedAt ?? null, input });
+    if (r.ok) return reussi(r.data, !edition.initiale);
+    if (r.code === "changee" || r.code === "supprimee") relancer();
+    /* Sans réponse, la création a pu aboutir : relire avant de proposer un nouvel essai (§ 3). */
+    if (r.code === "delai" && !edition.initiale) {
+      const relue = await faire<RoutinesLues>("routines.liste", { agentId: input.agentId });
+      const deja = relue.ok ? routineDejaCreee(relue.data.routines, input, depuis) : undefined;
+      if (deja) return reussi(deja, true);
+    }
+    throw Object.assign(new Error(r.code === "delai" ? `${majuscule(sur)} ne répond pas. Tes changements sont gardés sur cette page.` : messageGeste(r, sur)), { code: r.code });
   };
   const recharger = () => {
     const courante = data?.routines.find((r) => r.id === edition?.initiale?.id);
@@ -273,16 +316,18 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
     router.push(urlRoutines(agentId, routineId, true));
   };
 
-  const agir = async (r: Routine, type: string, args: Record<string, unknown>, message: string, apres?: () => void) => {
-    if (occupe) return;
-    setErreurs((e) => ({ ...e, [r.id]: undefined }));
-    const res = await faire(type, args);
-    if (res.ok) {
-      annoncer(message);
-      apres?.();
+  const agir = (r: Routine, type: string, args: Record<string, unknown>, message: string, apres?: () => void): Promise<void> =>
+    uneFois(async () => {
+      setErreurs((e) => ({ ...e, [r.id]: undefined }));
+      const res = await faire(type, args);
+      if (res.ok) {
+        annoncer(message);
+        apres?.();
+      } else setErreurs((e) => ({ ...e, [r.id]: { type, message: messageGeste(res, sur), reessayer: () => void agir(r, type, args, message, apres) } }));
+      /* Toujours relire : sans réponse, le geste a pu aboutir ; la carte le dira avant tout nouvel essai. */
       relancer();
-    } else setErreurs((e) => ({ ...e, [r.id]: { message: messageGeste(res, sur), reessayer: () => void agir(r, type, args, message, apres) } }));
-  };
+    });
+  const executer = (r: Routine) => void agir(r, "routines.executer", { id: r.id }, "Exécution ajoutée à la file de l’agent.", () => setEclairee(r.id));
   const pause = (r: Routine) => {
     /* Une « une fois » passée et en pause : on choisit une nouvelle date avant de la reprendre, comme au bureau. */
     if (!r.active && r.schedule.kind === "once" && !r.nextRunAt) commencer(r, { ...valeursRoutine(r), active: true });
@@ -294,7 +339,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
       titre: enFile ? "Annuler ce départ ?" : "Interrompre cette exécution ?",
       texte: "Le planning de la routine reste inchangé. Les messages déjà écrits sont conservés.",
       confirmer: enFile ? "Annuler le départ" : "Interrompre",
-      action: () => void agir(r, "routines.interrompre", { runId: run.id }, enFile ? "Départ annulé." : "Exécution interrompue."),
+      action: () => void agir(r, "routines.interrompre", { runId: run.id, statut: run.status }, enFile ? "Départ annulé." : "Exécution interrompue."),
     });
   };
   const supprimer = (r: Routine) =>
@@ -324,17 +369,20 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
     const relais = !!r.relais?.length;
     const actif = actifDe(r.id);
     const bloquerReprise = indisponible || (!r.active && (!agentActif(r.agentId) || relais));
+    const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
     return [
-      { libelle: "Modifier", desactivee: indisponible, onChoisir: () => commencer(r) },
-      ...(r.schedule.kind !== "manual" ? [{ libelle: r.active ? "Mettre en pause" : "Reprendre", desactivee: bloquerReprise, onChoisir: () => pause(r) }] : []),
-      { libelle: "Exécutions", onChoisir: () => ouvrirExecutions(r) },
-      ...(relais ? [{ libelle: `Garder seulement ${nomAgent(r.agentId)}`, desactivee: indisponible || !agentActif(r.agentId), onChoisir: () => simplifier(r) }] : []),
-      ...(!agentActif(r.agentId) ? [{ libelle: "Changer d’agent", desactivee: indisponible, onChoisir: () => commencer(r, undefined, true) }] : []),
+      { libelle: "Modifier", icone: "pencil-01", desactivee: indisponible, note, onChoisir: () => commencer(r) },
+      ...(r.schedule.kind !== "manual" ? [{ libelle: r.active ? "Mettre en pause" : "Reprendre", icone: (r.active ? "pause-01" : "play-01") as IconName, desactivee: bloquerReprise, note, onChoisir: () => pause(r) }] : []),
+      { libelle: "Exécutions", icone: "list", onChoisir: () => ouvrirExecutions(r) },
+      ...(relais ? [{ libelle: `Garder seulement ${nomAgent(r.agentId)}`, icone: "user-profile-01" as IconName, desactivee: indisponible || !agentActif(r.agentId), onChoisir: () => simplifier(r) }] : []),
+      ...(!agentActif(r.agentId) ? [{ libelle: "Changer d’agent", icone: "users-profiles-01" as IconName, desactivee: indisponible, onChoisir: () => commencer(r, undefined, true) }] : []),
       {
-        libelle: "Supprimer",
-        danger: true,
+        libelle: "Supprimer…",
+        icone: "trash-01",
+        danger: !actif,
+        separateurAvant: true,
         desactivee: indisponible || !!actif,
-        note: actif ? <p className="text-ui-xs text-texte-secondaire">Une exécution attend ou travaille déjà pour cette routine.</p> : undefined,
+        note: actif ? "Une exécution attend ou travaille déjà pour cette routine." : note,
         onChoisir: () => supprimer(r),
       },
     ];
@@ -344,60 +392,57 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone
-        titre={data ? `Routines de ${agent.name} · ${liste.length}` : "Routines"}
-        parent={urlRoutines()}
-        droite={
-          data && choisie ? (
-            <Bouton variant="discret" taille="compact" className="min-h-11" iconeGauche={<Icon name="list" size={16} />} onClick={() => setExecutions(choisie)}>
-              Exécutions
-            </Bouton>
-          ) : null
-        }
-      />
+      <EnteteTelephone titre={data ? `Routines de ${agent.name}` : "Routines"} parent={urlRoutines()} droite={<MenuPage titre={data ? `Routines de ${agent.name}` : "Routines"} actions={[{ libelle: "Relire", icone: "refresh-01", onChoisir: relancer }]} />} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-6" {...tirer.props}>
         {tirer.indicateur}
-        <VueLecture lecture={lecture} ferme={ferme}>
+        <VueLecture lecture={lecture} ferme={ferme} formeAucun="encadre" phraseAucun={PHRASE_AUCUN} gestes="Exécuter, mettre en pause et modifier">
           {(d) =>
             !d.actif ? (
               <MoteurArrete erreur={d.erreur} relancer={relancer} />
             ) : (
-              <div className="flex flex-col gap-3 px-4 pt-2">
+              <div className="flex flex-col gap-4 px-4 pt-2">
                 <CarteAgentTelephone agent={agent} sur={sur} />
-                <p className="flex items-center gap-2 text-ui-xs text-texte-secondaire" aria-hidden="true">
-                  <span className="h-px flex-1 bg-bordure-subtile" />
+                <p className="flex items-center gap-2.5 px-1 text-ui-xs text-texte-secondaire" aria-hidden="true">
+                  <span className="h-px flex-1 bg-bordure-defaut" />
                   confiées à {agent.name}
-                  <span className="h-px flex-1 bg-bordure-subtile" />
+                  <span className="h-px flex-1 bg-bordure-defaut" />
                 </p>
                 {brouillonVisible && brouillon ? (
-                  <section aria-label="Brouillon non enregistré" className="flex flex-col gap-2 rounded-xl border border-dashed border-bordure-forte bg-fond-surface p-4">
-                    <header className="flex items-center gap-2">
-                      <Icon name="pencil-01" size={16} className="text-icone-secondaire" />
-                      <h2 className="truncate text-body-s font-medium text-texte-principal">{brouillon.valeurs.name || "Nouvelle routine"}</h2>
+                  <section aria-label="Brouillon non enregistré" className="flex flex-col rounded-xl border border-dashed border-gris-k2-600 bg-fond-surface">
+                    <header className="flex min-h-[52px] items-center gap-2.5 pt-1 pr-4 pl-4">
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-xs bg-fond-surface-grise text-icone-secondaire">
+                        <Icon name="pencil-01" size={16} />
+                      </span>
+                      <h2 className="truncate text-body-s font-semibold text-texte-principal">{brouillon.valeurs.name || "Nouvelle routine"}</h2>
                     </header>
-                    <p className="text-ui-xs text-texte-secondaire">{libellePlanning(brouillon.valeurs.schedule)}</p>
-                    <p className="text-ui-xs text-texte-principal">Brouillon non enregistré</p>
-                    <div className="flex gap-2">
-                      <Bouton variant="sombre" taille="md" className="flex-1" disabled={indisponible} onClick={reprendreBrouillon}>
-                        Reprendre
-                      </Bouton>
-                      <Bouton
-                        variant="blanc"
-                        taille="md"
-                        className="flex-1"
-                        onClick={() =>
-                          setConfirmation({
-                            titre: "Abandonner ce brouillon ?",
-                            confirmer: "Abandonner",
-                            action: () => {
-                              ecrireBrouillon(null);
-                              setBrouillon(null);
-                            },
-                          })
-                        }
-                      >
-                        Abandonner
-                      </Bouton>
+                    <div className="flex flex-col gap-3 px-4 pb-4">
+                      <div>
+                        <p className="text-ui text-texte-secondaire">{libellePlanning(brouillon.valeurs.schedule)}</p>
+                        <p className="mt-0.5 text-ui font-medium text-texte-principal">Brouillon non enregistré</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Bouton variant="sombre" taille="md" className={cn("flex-1", BOUTON_INACTIF)} disabled={indisponible} onClick={reprendreBrouillon}>
+                          Reprendre
+                        </Bouton>
+                        <Bouton
+                          variant="blanc"
+                          taille="md"
+                          className="flex-1"
+                          onClick={() =>
+                            setConfirmation({
+                              titre: "Abandonner ce brouillon ?",
+                              texte: "La routine non enregistrée sera effacée de ce téléphone.",
+                              confirmer: "Abandonner",
+                              action: () => {
+                                ecrireBrouillon(null);
+                                setBrouillon(null);
+                              },
+                            })
+                          }
+                        >
+                          Abandonner
+                        </Bouton>
+                      </div>
                     </div>
                   </section>
                 ) : null}
@@ -409,29 +454,38 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
                     nomDe={nomAgent}
                     actif={actifDe(r.id)}
                     derniere={d.dernieres?.[r.id]}
-                    choisie={routineId === r.id}
                     eclairee={eclairee === r.id}
                     indisponible={indisponible}
+                    relecture={lecture.relecture}
                     erreur={erreurs[r.id]}
-                    onChoisir={() => router.replace(urlRoutines(agentId, r.id))}
                     onMenu={() => setMenu(r)}
-                    onExecuter={() => void agir(r, "routines.executer", { id: r.id }, "Exécution ajoutée à la file de l’agent.")}
+                    onExecuter={() => executer(r)}
                     onPause={() => pause(r)}
                     onInterrompre={(run) => interrompre(r, run)}
                     onSimplifier={() => simplifier(r)}
+                    onExecutions={() => ouvrirExecutions(r)}
                   />
                 ))}
                 {!liste.length && !brouillonVisible && agent.actif ? (
-                  <section className="flex flex-col gap-3 rounded-xl border border-dashed border-bordure-forte p-4">
-                    <h2 className="text-body-s font-medium text-texte-principal">Confie une tâche qui revient à {agent.name}</h2>
-                    <p className="text-ui text-texte-secondaire">Commence avec un exemple, puis adapte sa consigne avant de l’enregistrer.</p>
-                    <div className="flex flex-col gap-2">
+                  <section className="rounded-xl border border-bordure-subtile bg-fond-surface pt-4 pb-1 shadow-ombre-ambiante">
+                    <h2 className="px-4 text-body-s font-semibold text-texte-principal">Confie une tâche qui revient à {agent.name}</h2>
+                    <p className="mt-1 px-4 text-ui text-texte-secondaire">Commence avec un exemple, puis adapte sa consigne avant de l’enregistrer.</p>
+                    <ul className="mt-2">
                       {SUGGESTIONS.map((s) => (
-                        <Bouton key={s.name} variant="blanc" taille="md" className="justify-start" disabled={indisponible} onClick={() => commencer(null, { ...nouvelleRoutine(agentId, d.fuseau, d.lieu), ...s })}>
-                          {s.name}
-                        </Bouton>
+                        <LigneListe
+                          key={s.name}
+                          debut={<TuileIcone icone="clock-01" />}
+                          retrait="tuile"
+                          nom={s.name}
+                          ligne2={libellePlanning(s.schedule)}
+                          uneLigne
+                          fin="chevron"
+                          inactive={indisponible}
+                          raison={ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />}
+                          onClick={() => commencer(null, { ...nouvelleRoutine(agentId, d.fuseau, d.lieu), ...s })}
+                        />
                       ))}
-                    </div>
+                    </ul>
                   </section>
                 ) : null}
               </div>
@@ -440,10 +494,11 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
         </VueLecture>
       </div>
       {data?.actif && agent.actif ? (
-        <div className="shrink-0 border-t border-bordure-subtile px-4 py-3">
+        <div className="shrink-0 border-t border-bordure-defaut bg-fond-page px-4 py-3">
           <BoutonPrincipal className="w-full" disabled={indisponible} onClick={() => commencer(null)}>
             Nouvelle routine
           </BoutonPrincipal>
+          {!ouvert ? <NotePoste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
         </div>
       ) : null}
 
@@ -459,7 +514,7 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
           onRecharger={recharger}
           onEnregistrer={enregistrer}
           onChange={memoriser}
-          onAnnuler={annulerFormulaire}
+          onFermer={fermerFormulaire}
         />
       ) : null}
       {executions ? (
@@ -473,7 +528,14 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
           onFermer={() => setExecutions(null)}
         />
       ) : null}
-      {menu ? <MenuFeuille titre={menu.name} actions={actionsMenu(menu)} onFermer={() => setMenu(null)} /> : null}
+      {menu ? (
+        <MenuFeuille
+          titre={menu.name}
+          objet={{ visuel: <TuileIcone grande icone={menu.relais?.length ? "lock-01" : menu.active ? "clock-01" : "pause-01"} />, sous: `${nomAgent(menu.agentId)} · ${libellePlanning(menu.schedule).replace(/^./, (c) => c.toLowerCase())}` }}
+          actions={actionsMenu(menu)}
+          onFermer={() => setMenu(null)}
+        />
+      ) : null}
       {confirmation ? (
         <ConfirmationFeuille
           titre={confirmation.titre}
@@ -491,30 +553,31 @@ export function RoutinesAgentTelephone({ agentId, routineId, formulaire }: { age
 
 /** L'agent en tête de ses routines : le lien « confiée à » du canevas devient l'ordre de lecture. */
 function CarteAgentTelephone({ agent, sur }: { agent: AgentLu; sur: string }) {
+  const gardee = !!useVueGardeeAffichee();
   return (
-    <section aria-label={`Agent ${agent.name}`} className={cn("flex flex-col gap-2 rounded-xl border p-4", agent.actif ? "border-bordure-subtile bg-fond-surface" : "border-bordure-forte bg-fond-surface-douce")}>
-      <header className="flex items-center gap-3">
-        <RondApercu agentId={agent.id} nom={agent.name} teinte={agent.teinte} taille={40} className={agent.actif ? undefined : "opacity-60"} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-body-s font-medium text-texte-principal">{agent.name}</span>
-          <span className="truncate text-ui-xs text-texte-secondaire">
-            {[roleLisible(agent.tag, agent.id), agent.actif ? "Actif" : agent.connu ? "Désactivé" : `Absent de ${sur}`].filter(Boolean).join(" · ")}
-          </span>
-        </span>
-      </header>
-      {agent.title ? <p className="line-clamp-2 text-ui text-texte-secondaire">{agent.title}</p> : null}
-      {!agent.actif ? <p className="text-ui text-texte-secondaire">{agent.connu ? "Désactivé : ses routines ne partent pas." : `Absent de ${sur} : ses routines ne partent pas.`}</p> : null}
-      <div className="flex flex-wrap gap-x-4">
-        <Link className="flex min-h-11 items-center text-ui text-texte-principal underline underline-offset-2" href={`/chat?id=${encodeURIComponent(`dm-${agent.id}`)}`}>
-          Ouvrir la conversation
-        </Link>
-        {!agent.actif ? (
-          <Link className="flex min-h-11 items-center text-ui text-texte-principal underline underline-offset-2" href="/equipe">
-            Ouvrir l’équipe
-          </Link>
-        ) : null}
+    <Carte className={cn("px-4 py-3.5", !agent.actif && "border-bordure-forte bg-fond-surface-douce")}>
+      <div aria-label={`Agent ${agent.name}`} role="group">
+        <div className="flex items-center gap-3">
+          <RondApercu agentId={agent.id} nom={agent.name} teinte={agent.teinte} taille={44} className={agent.actif ? undefined : "opacity-60"} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-body-s font-semibold text-texte-principal">{agent.name}</p>
+            <p className="mt-px truncate text-ui text-texte-secondaire">{[roleLisible(agent.tag, agent.id), agent.actif ? "Actif" : agent.connu ? "Désactivé" : `Absent de ${sur}`].filter(Boolean).join(" · ")}</p>
+          </div>
+        </div>
+        {agent.title && !gardee ? <p className="mt-2.5 line-clamp-2 text-ui text-texte-secondaire">{agent.title}</p> : null}
+        {!agent.actif ? <p className="mt-2.5 text-ui text-texte-secondaire">{agent.connu ? "Désactivé : ses routines ne partent pas." : `Absent de ${sur} : ses routines ne partent pas.`}</p> : null}
+        <div className="mt-3.5 flex flex-wrap gap-x-4 gap-y-3 pb-1">
+          <LienCarte href={`/chat?id=${encodeURIComponent(`dm-${agent.id}`)}`} chevron>
+            Ouvrir la conversation
+          </LienCarte>
+          {!agent.actif ? (
+            <LienCarte href="/equipe" chevron>
+              Ouvrir l’équipe
+            </LienCarte>
+          ) : null}
+        </div>
       </div>
-    </section>
+    </Carte>
   );
 }
 
@@ -525,32 +588,32 @@ function CarteRoutineTelephone({
   nomDe,
   actif,
   derniere: lue,
-  choisie,
   eclairee,
   indisponible,
+  relecture,
   erreur,
-  onChoisir,
   onMenu,
   onExecuter,
   onPause,
   onInterrompre,
   onSimplifier,
+  onExecutions,
 }: {
   routine: Routine;
   agentActif: boolean;
   nomDe: (id: string) => string;
   actif?: RoutineRun;
   derniere?: { run: RoutineRun | null } | { erreur: string };
-  choisie: boolean;
   eclairee: boolean;
   indisponible: boolean;
+  relecture: boolean;
   erreur?: Echec;
-  onChoisir(): void;
   onMenu(): void;
   onExecuter(): void;
   onPause(): void;
   onInterrompre(run: RoutineRun): void;
   onSimplifier(): void;
+  onExecutions(): void;
 }) {
   const id = useId();
   const nomAgent = nomDe(r.agentId);
@@ -589,97 +652,97 @@ function CarteRoutineTelephone({
       : !r.active && dateUneFoisPassee(r)
         ? "Date passée · en pause"
         : !r.active
-          ? "En pause"
+          ? actif?.kind === "manual"
+            ? "En pause · une exécution manuelle part quand même"
+            : "En pause"
           : r.schedule.kind === "manual"
             ? "À lancer quand tu veux"
-            : `Prochaine : ${quandRoutine(r.nextRunAt, r.timezone)}`;
+            : `Prochaine : ${quandRelatif(r.nextRunAt, r.timezone)}`;
   const fuseauDifferent = r.timezone !== Intl.DateTimeFormat().resolvedOptions().timeZone;
   const ville = r.timezone.split("/").at(-1)?.replaceAll("_", " ") ?? r.timezone;
   const heure = actif ? new Intl.DateTimeFormat("fr-FR", { timeZone: r.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(actif.startedAt ?? actif.createdAt)) : null;
-  const bordure = eclairee || choisie
-    ? "border-bleu-k1-500"
-    : actif?.status === "running" || actif?.status === "needs-attention"
-      ? "border-bleu-k2-500"
-      : derniere?.status === "failed"
-        ? "border-bordure-erreur"
-        : relais || !agentActif
-          ? "border-bordure-forte"
-          : "border-bordure-subtile";
+  const contour = actif?.status === "running" || actif?.status === "needs-attention"
+    ? "border-[1.5px] border-bordure-accent-survol"
+    : derniere?.status === "failed"
+      ? "border-bordure-erreur"
+      : relais || !agentActif
+        ? "border-bordure-forte bg-fond-surface-douce"
+        : "border-bordure-subtile";
+  const peutReessayer = erreur ? essaiPossible(erreur.type, !!actif, relecture) : false;
 
   return (
     <section
       aria-labelledby={`${id}-titre`}
       aria-describedby={`${id}-agent`}
       data-routine-carte={r.id}
+      data-eclaire={eclairee || undefined}
       {...appui}
-      className={cn("flex flex-col rounded-xl border bg-fond-surface transition-[border-color] duration-[120ms] ease-sortie", bordure, (relais || !agentActif) && "bg-fond-surface-douce")}
+      className={cn("klyra-telephone-eclaire flex flex-col rounded-xl border bg-fond-surface shadow-ombre-ambiante transition-[border-color] duration-[120ms] ease-sortie", contour)}
     >
-      <header className="flex min-h-12 items-center gap-2 pl-4">
+      <header className="flex min-h-[52px] items-center gap-2.5 pt-1 pr-0.5 pl-4">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-xs bg-fond-surface-grise text-icone-secondaire">
           <Icon name={relais ? "lock-01" : !r.active ? "pause-01" : "clock-01"} size={16} />
         </span>
-        <button id={`${id}-titre`} type="button" onClick={onChoisir} className="min-h-11 min-w-0 flex-1 truncate text-left text-body-s font-medium text-texte-principal">
+        <h3 id={`${id}-titre`} className="min-w-0 flex-1 truncate text-body-s font-semibold text-texte-principal">
           {r.name}
-        </button>
+        </h3>
         <MarqueRun run={run} />
-        <BoutonIcone variant="discret" taille="md" libelle="Actions de la routine" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={onMenu} />
+        <BoutonIcone variant="discret" className="size-11" libelle={`Actions de ${r.name}`} aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={onMenu} />
       </header>
       <span id={`${id}-agent`} className="sr-only">
         Confiée à {nomAgent}
       </span>
       <div className="flex flex-col gap-3 px-4 pb-4">
         <div>
-          <p className="text-ui-xs text-texte-secondaire">
+          <p className="text-ui text-texte-secondaire">
             {libellePlanning(r.schedule)}
             {fuseauDifferent ? ` · heure de ${ville}` : ""}
           </p>
-          <p className="mt-0.5 text-ui-xs font-medium text-texte-principal">{etat}</p>
+          <p className="mt-0.5 text-ui font-medium text-texte-principal">{etat}</p>
         </div>
         <div>
-          <p
-            ref={consigne}
-            className={cn("rounded-md border border-bordure-subtile bg-fond-page px-3 py-2 text-ui leading-[1.45] break-words whitespace-pre-wrap text-texte-principal", !developpee && "line-clamp-4")}
-          >
+          <p ref={consigne} className={cn("rounded-md border border-bordure-subtile bg-fond-page px-3 py-2.5 text-ui leading-[1.45] break-words whitespace-pre-wrap text-texte-principal", !developpee && "line-clamp-3")}>
             {r.instruction}
           </p>
           {deborde || developpee ? (
-            <button type="button" aria-expanded={developpee} onClick={() => setDeveloppee((v) => !v)} className="min-h-11 text-ui-xs text-texte-secondaire underline underline-offset-2">
+            <button type="button" aria-expanded={developpee} onClick={() => setDeveloppee((v) => !v)} className="-mb-1 min-h-11 text-ui-xs text-texte-principal underline underline-offset-[3px]">
               {developpee ? "Réduire" : "Afficher toute la consigne"}
             </button>
           ) : null}
         </div>
-        <div className="flex flex-col gap-2 rounded-md bg-fond-surface-grise px-3 py-2 text-ui-xs text-texte-secondaire">
+        <div className="flex flex-col gap-2 rounded-md bg-fond-surface-grise px-3 py-2.5 text-ui leading-[1.4] text-texte-secondaire">
           {actif ? (
             <>
-              <p role="status" className="font-medium text-texte-principal">
-                {libelleRun(actif)} · depuis {heure}
+              <p role="status" className="flex items-center gap-1.5 font-medium text-texte-principal">
+                <MarqueRun run={actif} />
+                <span>
+                  <span className="font-semibold text-texte-accent">{libelleRun(actif)}</span> · depuis {heure}
+                </span>
               </p>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {actif.status === "needs-attention" ? <p>L’agent attend une autorisation.</p> : null}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <Bouton variant="blanc" taille="md" disabled={indisponible} onClick={() => onInterrompre(actif)}>
                   {actif.status === "queued" ? "Annuler le départ" : "Interrompre"}
                 </Bouton>
-                {lienRun(actif) ? (
-                  <Link href={lienRun(actif)!} className="flex min-h-11 items-center text-ui text-texte-principal underline underline-offset-2">
-                    {actif.status === "needs-attention" ? "Répondre dans la conversation" : "Ouvrir la conversation"}
-                  </Link>
-                ) : null}
+                {lienRun(actif) ? <LienCarte href={lienRun(actif)!}>{actif.status === "needs-attention" ? "Répondre dans la conversation" : "Ouvrir la conversation"}</LienCarte> : null}
               </div>
-              {actif.status === "needs-attention" ? <p>L’agent attend une autorisation.</p> : null}
             </>
           ) : derniere ? (
             <>
-              <p>
-                Dernière : {libelleRun(derniere)} · {quandRoutine(derniere.scheduledFor, r.timezone)}
-                {dureeRun(derniere) ? ` · ${dureeRun(derniere)}` : ""}
+              <p className="flex items-center gap-1.5 font-medium text-texte-principal">
+                <MarqueRun run={derniere} />
+                <span className="min-w-0">
+                  Dernière : {libelleRun(derniere)} · {quandRelatif(derniere.scheduledFor, r.timezone)}
+                  {dureeRun(derniere) ? ` · ${dureeRun(derniere)}` : ""}
+                </span>
               </p>
-              {derniere.error || derniere.result ? (
-                <p className={cn("line-clamp-2 break-words whitespace-pre-wrap", derniere.error && "text-texte-erreur")}>{derniere.error || derniere.result}</p>
-              ) : null}
-              {lienRun(derniere) ? (
-                <Link href={lienRun(derniere)!} className="flex min-h-11 items-center self-start text-ui text-texte-principal underline underline-offset-2">
-                  Voir la conversation
-                </Link>
-              ) : null}
+              {derniere.error || derniere.result ? <p className={cn("line-clamp-2 break-words whitespace-pre-wrap", derniere.error && "text-texte-erreur")}>{derniere.error || derniere.result}</p> : null}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-1">
+                {lienRun(derniere) ? <LienCarte href={lienRun(derniere)!}>Voir la conversation</LienCarte> : null}
+                <LienCarte chevron onClick={onExecutions}>
+                  Exécutions
+                </LienCarte>
+              </div>
             </>
           ) : (
             <p>{erreurLecture ? "Le dernier résultat est indisponible." : "Aucune exécution pour le moment."}</p>
@@ -706,29 +769,29 @@ function CarteRoutineTelephone({
                 ))}
               </ol>
             </details>
-            <Bouton variant="blanc" taille="md" className="self-start" disabled={indisponible || !agentActif} onClick={onSimplifier}>
+            <Bouton variant="blanc" taille="md" className="w-full" disabled={indisponible || !agentActif} onClick={onSimplifier}>
               Garder seulement {nomAgent}
             </Bouton>
           </div>
         ) : (
           <>
             <footer className="flex gap-2">
-              <Bouton variant="sombre" taille="md" className="flex-1" iconeGauche={<Icon name="play-01" size={16} />} disabled={indisponible || !agentActif || !!actif} onClick={onExecuter}>
+              <Bouton variant="sombre" taille="md" className={cn("flex-1 px-3", BOUTON_INACTIF)} iconeGauche={<Icon name="play-01" size={16} />} disabled={indisponible || !agentActif || !!actif} onClick={onExecuter}>
                 Exécuter
               </Bouton>
               {r.schedule.kind !== "manual" ? (
-                <Bouton variant="blanc" taille="md" className="flex-1" iconeGauche={<Icon name={r.active ? "pause-01" : "play-01"} size={16} />} disabled={bloquerReprise} onClick={onPause}>
+                <Bouton variant="blanc" taille="md" className={cn("flex-1 px-3", BOUTON_INACTIF)} iconeGauche={<Icon name={r.active ? "pause-01" : "play-01"} size={16} />} disabled={bloquerReprise} onClick={onPause}>
                   {r.active ? "Pause" : "Reprendre"}
                 </Bouton>
               ) : null}
             </footer>
-            {motif ? <p className="text-ui-xs text-texte-secondaire">{motif}</p> : null}
+            {motif ? <p className="-mt-1 text-ui-xs text-texte-secondaire">{motif}</p> : null}
           </>
         )}
-        {erreur ? (
-          <div role="alert" className="text-ui-xs text-texte-erreur">
-            <p className="mb-1 break-words">{erreur.message}</p>
-            <Bouton variant="blanc" taille="md" disabled={indisponible} onClick={erreur.reessayer}>
+        {erreur && (peutReessayer || erreur.type !== "routines.executer" || !actif) ? (
+          <div role="alert" className="flex flex-col gap-2 text-ui text-texte-erreur">
+            <p className="break-words">{erreur.message}</p>
+            <Bouton variant="blanc" taille="md" className="self-start text-texte-principal" disabled={indisponible || !peutReessayer} onClick={erreur.reessayer}>
               Réessayer
             </Bouton>
           </div>
@@ -738,7 +801,7 @@ function CarteRoutineTelephone({
   );
 }
 
-/* ─── T-17 : les exécutions d'une routine ──────────────────────── */
+/* ─── E7-24, E7-25 : les exécutions d'une routine ──────────────── */
 
 function FeuilleExecutions({
   routine: r,
@@ -757,103 +820,134 @@ function FeuilleExecutions({
   onInterrompre(run: RoutineRun): void;
   onFermer(): void;
 }) {
+  const sur = useSupport();
   const [limite, setLimite] = useState(50);
-  const id = useId();
   const lecture = useLectureSuivie<ExecutionsLues>("routines.executions", { id: r.id, limite }, { garde: r.id, suivre: () => !!actif });
   const bloque = !r.active || !agentActif || !!r.relais?.length;
+  const sous = [r.name, nomAgent(r.agentId)].join(" · ");
 
   return (
-    <Feuille titre="Exécutions" haute onFermer={onFermer}>
-      <p className="truncate pb-3 text-ui text-texte-secondaire">{r.name}</p>
-      <div className="-mx-4">
-        <VueLecture lecture={lecture} ferme={(sur) => `l’historique de cette routine est sur ${sur}. Il s’affiche quand KLYRA y est ouverte.`}>
+    <Feuille titre="Exécutions" sousTitre={sous} haute bordee onFermer={onFermer}>
+      <div className="-mx-4 pt-3">
+        <VueLecture lecture={lecture} ferme={(s) => `l’historique de cette routine est sur ${s}. Il s’affiche quand KLYRA y est ouverte.`} gestes={null}>
           {(data) => {
             const runs = actif ? [actif, ...data.runs.filter((run) => run.id !== actif.id)] : data.runs;
             return (
               <div className="flex flex-col gap-4 px-4">
                 {r.schedule.kind !== "manual" ? (
-                  <section aria-labelledby={`${id}-avenir`} className="flex flex-col gap-2 text-ui text-texte-secondaire">
-                    <h3 id={`${id}-avenir`} className="text-body-s font-medium text-texte-principal">
-                      À venir
-                    </h3>
-                    {bloque ? (
-                      <p>Aucun départ tant que la routine est en pause ou bloquée.</p>
-                    ) : data.dates.length ? (
-                      <ul className="flex list-disc flex-col gap-1 pl-5">
-                        {data.dates.map((date) => (
-                          <li key={date}>{quandRoutine(date, r.timezone)}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p>Aucun départ dans les sept prochains jours.</p>
-                    )}
-                    <p className="text-ui-xs">
-                      Au retour de veille ou après fermeture : {r.missedPolicy === "skip" ? "ignorer les échéances manquées" : "lancer une seule fois la dernière échéance manquée"}. Aucun rattrapage en rafale. Un
-                      retard de moins de cinq minutes est exécuté normalement.
-                    </p>
-                  </section>
+                  <SectionListe titre="À venir">
+                    <div className="rounded-md bg-fond-page px-3.5 py-3 text-ui leading-[1.5] text-texte-secondaire">
+                      {bloque ? (
+                        <p>Aucun départ tant que la routine est en pause ou bloquée.</p>
+                      ) : data.dates.length ? (
+                        <ul className="list-disc pl-[18px] text-texte-principal">
+                          {data.dates.map((date) => (
+                            <li key={date}>{quandRelatif(date, r.timezone)}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>Aucun départ dans les sept prochains jours.</p>
+                      )}
+                      {runs.length ? (
+                        <p className="mt-2 text-ui-xs">
+                          Au retour de veille ou après fermeture : {r.missedPolicy === "skip" ? "ignorer les échéances manquées" : "lancer une seule fois la dernière échéance manquée"}. Un retard de moins de cinq minutes est exécuté normalement.
+                        </p>
+                      ) : null}
+                    </div>
+                  </SectionListe>
                 ) : null}
-                <section aria-labelledby={`${id}-historique`}>
-                  <h3 id={`${id}-historique`} className="pb-2 text-body-s font-medium text-texte-principal">
-                    Exécutions
-                  </h3>
-                  {!runs.length ? <p className="text-ui text-texte-secondaire">Aucune exécution pour le moment.</p> : null}
-                  <ol className="flex flex-col">
-                    {runs.slice(0, limite).map((run) => {
-                      const lien = lienRun(run);
-                      const duree = dureeRun(run);
-                      const enCours = actif?.id === run.id;
-                      const changee = run.instruction !== r.instruction || run.routineName !== r.name || run.agentId !== r.agentId;
-                      return (
-                        <li key={run.id} className="flex flex-col gap-1 border-b border-bordure-subtile py-3 text-ui-xs text-texte-secondaire">
-                          <div className="flex items-center gap-2">
-                            <MarqueRun run={run} />
-                            <span className="min-w-0 flex-1 text-ui font-medium text-texte-principal" role={enCours ? "status" : undefined}>
-                              {libelleRun(run)}
-                            </span>
-                            <span className="shrink-0">{run.kind === "manual" ? "Manuelle" : "Planifiée"}</span>
-                          </div>
-                          <p>
-                            {quandRoutine(run.scheduledFor, r.timezone)}
-                            {duree ? ` · ${duree}` : ""}
-                          </p>
-                          {run.error ? <p className="line-clamp-2 break-words whitespace-pre-wrap text-texte-erreur">{run.error}</p> : null}
-                          {run.result ? <p className="line-clamp-2 break-words whitespace-pre-wrap">{run.result}</p> : null}
-                          {run.status === "needs-attention" ? <p>L’agent attend une autorisation.</p> : null}
-                          {changee ? (
-                            <details>
-                              <summary className="flex min-h-11 cursor-pointer items-center">Consigne et agent lors du lancement</summary>
-                              <p className="my-2 break-words">
-                                {run.routineName} · {nomAgent(run.agentId)}
-                              </p>
-                              <p className="my-2 break-words whitespace-pre-wrap">{run.instruction}</p>
-                            </details>
-                          ) : null}
-                          {lien ? (
-                            <Link href={lien} className="flex min-h-11 items-center self-start text-ui text-texte-principal underline underline-offset-2">
-                              {run.status === "needs-attention" ? "Répondre dans la conversation" : "Voir la conversation"}
-                            </Link>
-                          ) : null}
-                          {enCours ? (
-                            <Bouton taille="md" variant="blanc" className="self-start" disabled={indisponible} onClick={() => onInterrompre(run)}>
-                              {run.status === "queued" ? "Annuler le départ" : "Interrompre"}
-                            </Bouton>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                  {data.runs.length > limite ? (
-                    <Bouton taille="md" variant="blanc" className="mt-3" disabled={lecture.relecture} onClick={() => setLimite((n) => n + 50)}>
-                      Voir les exécutions précédentes
-                    </Bouton>
-                  ) : null}
-                </section>
+                {!runs.length ? (
+                  <EtatEcran
+                    forme="encadre"
+                    icone="list"
+                    titre="Aucune exécution pour le moment"
+                    texte={!bloque && data.dates[0] ? `La première partira ${quandRelatif(data.dates[0], r.timezone).replace(", ", " à ")}, si KLYRA est ouverte sur ${sur}.` : "Elle apparaîtra ici dès son premier départ."}
+                    className="px-0 pb-0"
+                  />
+                ) : (
+                  <SectionListe titre="Historique">
+                    <GroupeListe>
+                      {runs.slice(0, limite).map((run) => (
+                        <LigneExecution key={run.id} routine={r} run={run} enCours={actif?.id === run.id} nomAgent={nomAgent} indisponible={indisponible} onInterrompre={onInterrompre} />
+                      ))}
+                    </GroupeListe>
+                  </SectionListe>
+                )}
+                {data.runs.length > limite ? (
+                  <Bouton taille="md" variant="blanc" className="w-full" disabled={lecture.relecture} onClick={() => setLimite((n) => n + 50)}>
+                    Voir les exécutions précédentes
+                  </Bouton>
+                ) : null}
               </div>
             );
           }}
         </VueLecture>
       </div>
     </Feuille>
+  );
+}
+
+/** Une exécution : sa marque, son statut, sa date et sa durée ; la ligne ouvre sa conversation (compte). */
+function LigneExecution({
+  routine: r,
+  run,
+  enCours,
+  nomAgent,
+  indisponible,
+  onInterrompre,
+}: {
+  routine: Routine;
+  run: RoutineRun;
+  enCours: boolean;
+  nomAgent: (id: string) => string;
+  indisponible: boolean;
+  onInterrompre(run: RoutineRun): void;
+}) {
+  const lien = lienRun(run);
+  const duree = dureeRun(run);
+  const changee = run.instruction !== r.instruction || run.routineName !== r.name || run.agentId !== r.agentId;
+  const detail = run.missed ? (run.missed.reason === "busy" ? "L’agent travaillait déjà" : "KLYRA était fermée") : run.error || run.result;
+  return (
+    <>
+      <LigneListe
+        href={lien ?? undefined}
+        retrait="tuile"
+        debut={
+          <span aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-md-moins bg-fond-surface-grise text-icone-defaut">
+            <MarqueRun run={run} />
+          </span>
+        }
+        nom={<span role={enCours ? "status" : undefined}>{libelleRun(run)}</span>}
+        meta={run.kind === "manual" ? "Manuelle" : "Planifiée"}
+        ligne2={
+          <>
+            <span className="block truncate">
+              {majuscule(quandRelatif(run.scheduledFor, r.timezone))}
+              {duree ? ` · ${duree}` : ""}
+            </span>
+            {detail ? <span className={cn("block truncate", run.error && !run.missed && "text-texte-erreur")}>{detail}</span> : null}
+          </>
+        }
+        fin={lien ? "chevron" : undefined}
+      />
+      {enCours || changee ? (
+        <li className="flex flex-col gap-1 pr-4 pb-3 pl-16 text-ui-xs text-texte-secondaire">
+          {enCours ? (
+            <Bouton taille="md" variant="blanc" className="self-start" disabled={indisponible} onClick={() => onInterrompre(run)}>
+              {run.status === "queued" ? "Annuler le départ" : "Interrompre"}
+            </Bouton>
+          ) : null}
+          {changee ? (
+            <details>
+              <summary className="flex min-h-11 cursor-pointer items-center">Consigne et agent lors du lancement</summary>
+              <p className="my-2 break-words">
+                {run.routineName} · {nomAgent(run.agentId)}
+              </p>
+              <p className="my-2 break-words whitespace-pre-wrap">{run.instruction}</p>
+            </details>
+          ) : null}
+        </li>
+      ) : null}
+    </>
   );
 }

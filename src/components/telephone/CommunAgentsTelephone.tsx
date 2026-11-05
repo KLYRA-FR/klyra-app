@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Icon } from "@/components/icons/Icon";
 import { RondApercu } from "@/components/roles/AgentRond";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { listeMesAgents, type LigneAgent } from "@/lib/telephone/agents";
 import type { RoleTeinte } from "@/types/domain";
 import { MessageErreur } from "./Controles";
+import { MenuFeuille, type ActionMenu } from "./Feuille";
 import { useCartesEspace, useConversationsEspace } from "@/lib/telephone/espace";
 
 /**
@@ -32,6 +33,17 @@ export { PagePleine } from "./PagePleine";
 /** Le bouton « ⋯ » d'un en-tête ou d'une ligne (M-9 : le même menu que l'appui long). */
 export function BoutonMenu({ libelle, onClick }: { libelle: string; onClick: () => void }) {
   return <BoutonIcone variant="discret" taille="md" libelle={libelle} icone={<Icon name="dot-horizontal" size={20} />} onClick={onClick} />;
+}
+
+/** Le « ⋯ » d'une page et son menu : « Relire » y reste, à côté du geste de tirer (M-9). */
+export function MenuPage({ titre, actions }: { titre: string; actions: ActionMenu[] }) {
+  const [ouvert, setOuvert] = useState(false);
+  return (
+    <>
+      <BoutonIcone variant="discret" className="size-11" libelle="Plus d’options" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => setOuvert(true)} />
+      {ouvert ? <MenuFeuille titre={titre} actions={actions} onFermer={() => setOuvert(false)} /> : null}
+    </>
+  );
 }
 
 /** Un champ de formulaire du téléphone : libellé, contrôle en 16 px, aide ou erreur lisibles (AA). */

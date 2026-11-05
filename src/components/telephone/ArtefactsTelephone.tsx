@@ -1,198 +1,600 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "klyra-ui";
-import { Icon } from "@/components/icons/Icon";
-import { Bouton } from "@/components/ui/Bouton";
-import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
+import { Icon, type IconName } from "@/components/icons/Icon";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { useAbonnement } from "@/lib/bibliotheque";
+import { ArtefactsEquipeProvider, useArtefactsEquipe, type ArtefactEquipe, type EtatArtefactsEquipe } from "@/lib/artefacts-equipe";
 import { cn } from "@/lib/cn";
+import { codeErreur, messageErreur, useCompte } from "@/lib/compte";
 import { useLecturePoste } from "@/lib/poste/client";
-import { LIEN_ARTEFACT, type ArtefactLu, type ListeArtefacts } from "@/lib/telephone/gestes-artefacts";
+import { majuscule } from "@/lib/poste-texte";
+import { filtrerArtefacts, imageApercu, LIEN_ARTEFACT, type ArtefactLu, type ListeArtefacts, type RenduLu } from "@/lib/telephone/gestes-artefacts";
 import { useGesteTelephone } from "@/lib/telephone/geste";
-import { BoutonMenu, CHAMP_TELEPHONE, ChampTelephone, ErreurGeste } from "./CommunAgentsTelephone";
+import type { TypeRendu } from "@/types/domain";
+import { api } from "../../../convex/_generated/api";
+import { DESCRIPTION_MAX, lienArtefact } from "../../../convex/model/artefacts";
+import { useAnnonce } from "./Annonce";
+import { ChampTelephone, CHAMP_TELEPHONE, ErreurGeste, MenuPage } from "./CommunAgentsTelephone";
+import { ChampRecherche, Puce, RangeePuces, Segments } from "./Controles";
 import { EnteteTelephone } from "./EnteteTelephone";
-import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
-import { NotePoste, VueLecture } from "./etats";
-import { usePostes } from "./poste";
-import { useLieuActif } from "@/lib/lieux";
+import { ChoixFeuille, Feuille, MenuFeuille, useFermerFeuille, type ActionMenu, type OptionChoix } from "./Feuille";
+import { Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
+import { PagePleine } from "./PagePleine";
+import { useRetour } from "./retour";
+import { BandeauEtat, CarteSuite, DemandeEnCours, EtatEcran, NotePoste, PasDeReponse, ErreurPoste, Squelette, VueLecture, useVueGardeeAffichee } from "./etats";
+import { usePostes, useSupport } from "./poste";
 
 /**
- * Artefacts sur le téléphone (spec mobile T-20) : la liste est sur l'ordinateur (Poste). Ordinateur
- * fermé, sa dernière vue lue sur ce téléphone (socle § 5.4, C-1e) : « Ouvrir dans le navigateur »
- * n'a pas besoin de l'ordinateur et reste actif. Rien n'est gardé dans le compte (M-7).
+ * Artefacts sur le téléphone (lot 7, E7-39 à E7-60). Mes artefacts vit sur l'ordinateur : ses rendus
+ * d'agents et ses liens claude.ai, lus par `artefacts.liste` ; ordinateur fermé, sa dernière vue lue
+ * sur ce téléphone (les liens restent ouvrables et partageables). Équipe vit dans le compte
+ * (`convex/artefactsEquipe.ts`, `documentsKlyra`) : elle se lit sans ordinateur, rien n'en est gardé.
  */
 
-const date = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+const dateCourte = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
+const quand = (date: string | number) => dateCourte.format(new Date(date));
 
-/** Ouvre claude.ai dans le navigateur du téléphone. */
-function ouvrir(url: string) {
+const TYPES: Record<TypeRendu, { libelle: string; icone: IconName }> = {
+  page: { libelle: "Page", icone: "globe-01" },
+  image: { libelle: "Image", icone: "image-01" },
+  video: { libelle: "Vidéo", icone: "play-01" },
+  pdf: { libelle: "PDF", icone: "file-01" },
+  document: { libelle: "Document", icone: "file-01" },
+};
+
+const ECLAIRAGE_MS = 1800;
+const urlArtefacts = (equipe = false) => (equipe ? "/artefacts?onglet=equipe" : "/artefacts");
+/* Le rendu ouvert est dans l'adresse : le retour du système ferme l'aperçu (E7-44). */
+const urlApercu = (id: string) => `/artefacts?rendu=${encodeURIComponent(id)}`;
+
+/** Ouvre une page publique dans le navigateur du téléphone. */
+function ouvrirLien(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-export function ArtefactsTelephone() {
-  const { ouvert } = usePostes();
-  const lecture = useLecturePoste<ListeArtefacts>("artefacts.liste", {});
-  const { agir, occupe, bandeau, erreur } = useGesteTelephone();
-  const [recherche, setRecherche] = useState("");
-  const [projet, setProjet] = useState("");
-  const [menu, setMenu] = useState(false);
-  const [lien, setLien] = useState(false);
-  const [sync, setSync] = useState(false);
-  /* Les artefacts de claude.ai sont à l'ordinateur, comme au bureau : un VPS n'en a pas. */
-  const lieu = useLieuActif();
-  const lus = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
-  const memoire = lieu && lus ? { ...lus, artefacts: [] } : lus;
+function explorateur(sur: string): string {
+  return sur === "ton Mac" ? "le Finder" : sur === "ton PC" ? "l’Explorateur" : "le dossier";
+}
 
-  const apres = (ok: unknown) => {
-    if (ok) lecture.relancer();
+const TEXTES_EQUIPE: Record<Exclude<EtatArtefactsEquipe, "pret" | "chargement">, string> = {
+  indisponible: "Le compte d’équipe n’est pas disponible sur ce téléphone.",
+  deconnecte: "Connecte-toi à ton compte d’équipe pour voir les artefacts partagés.",
+  retire: "Ce compte ne fait plus partie de l’équipe.",
+  "hors-ligne": "Les artefacts de l’équipe reviendront avec le réseau.",
+  erreur: "Le serveur de l’équipe ne répond pas.",
+};
+
+/** Les pages HTML que l'équipe a partagées depuis Ce PC : lues dans le compte, sans adresse ni contenu. */
+interface PageEquipe {
+  _id: string;
+  titre: string;
+  description: string;
+  majLe: number;
+  auteur: { nom: string };
+  deMoi: boolean;
+}
+
+function usePagesEquipe(tour: number): PageEquipe[] | null {
+  const { etat } = useCompte();
+  const liste = useAbonnement(api.documentsKlyra.lister, etat === "connecte" ? { lieu: null } : null, tour);
+  return liste.valeur?.documents ?? null;
+}
+
+export function ArtefactsTelephone() {
+  return (
+    <ArtefactsEquipeProvider>
+      <Ecran />
+    </ArtefactsEquipeProvider>
+  );
+}
+
+function Ecran() {
+  const params = useSearchParams();
+  const onglet = params.get("onglet") === "equipe" ? "equipe" : "miens";
+  const renduOuvert = params.get("rendu");
+  const lecture = useLecturePoste<ListeArtefacts>("artefacts.liste", {});
+  const equipe = useArtefactsEquipe();
+  const [tourPages, setTourPages] = useState(0);
+  const pages = usePagesEquipe(tourPages);
+  const liste = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
+  const pretEquipe = equipe.etat === "pret" && pages !== null;
+  /* Un compte seulement quand la source a été lue : jamais de faux zéro. */
+  const nombreMiens = liste ? liste.rendus.length + liste.artefacts.length : undefined;
+  const nombreEquipe = pretEquipe ? equipe.artefacts.length + pages.length : undefined;
+  const relireEquipe = () => {
+    equipe.reessayer();
+    setTourPages((n) => n + 1);
   };
-  const synchroniser = async () => {
-    setSync(true);
-    const r = await agir<{ total: number; nouveaux: number }>("artefacts.synchroniser", {}, (x) => `${x.total} artefacts sur ton compte · ${x.nouveaux} nouveau${x.nouveaux > 1 ? "x" : ""}.`, { delai: 60_000 });
-    setSync(false);
-    apres(r);
-  };
-  const poste = { desactivee: !ouvert || occupe, note: ouvert ? undefined : <NotePoste /> };
-  const actions: ActionMenu[] = [
-    { libelle: "Relire claude.ai", onChoisir: () => void synchroniser(), ...poste },
-    {
-      libelle: "Refaire les aperçus",
-      onChoisir: () => void agir<{ lances: number }>("artefacts.apercus", {}, (x) => `Aperçus en cours sur l’ordinateur (${x.lances}).`),
-      ...poste,
-    },
-    { libelle: "Coller un lien claude.ai/artifact/…", onChoisir: () => setLien(true), ...poste },
-  ];
+
+  const rendu = renduOuvert ? (liste?.rendus.find((r) => r.id === renduOuvert) ?? null) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Artefacts" parent="/plus" droite={<BoutonMenu libelle="Plus d’options" onClick={() => setMenu(true)} />} />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-6">
-        {sync ? (
-          <p role="status" className="px-4 pb-2 text-ui text-texte-secondaire">
-            Lecture du compte…
-          </p>
-        ) : null}
-        <ErreurGeste message={erreur?.message} className="px-4 pb-2" />
-        {/* Vue gardée ou « fermé », jamais les deux (C-1e). Ses gestes sur l'ordinateur sont déjà désactivés (P-7) : la liste reste ouvrable. */}
-        <VueLecture
-          lecture={lecture}
-          lignes={5}
-          verrou={false}
-          gestes="Modifier et retirer"
-          ferme={(sur) => `la liste des artefacts est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`}
-        >
-          {(liste) => <ListeArtefactsTelephone liste={liste} recherche={recherche} setRecherche={setRecherche} projet={projet} setProjet={setProjet} onChange={apres} />}
-        </VueLecture>
-      </div>
-      {menu ? <MenuFeuille titre="Artefacts" actions={actions} onFermer={() => setMenu(false)} /> : null}
-      {lien ? <FeuilleLien projets={memoire?.projets ?? []} onFermer={() => setLien(false)} onFait={() => lecture.relancer()} /> : null}
-      {bandeau}
+      {onglet === "equipe" ? (
+        <>
+          <EnteteTelephone titre="Artefacts" parent="/plus" droite={<MenuPage titre="Artefacts" actions={[{ libelle: "Relire la liste", icone: "list", onChoisir: relireEquipe }]} />} />
+          <div className="min-h-0 flex-1 overflow-y-auto pb-6">
+            <div className="px-4 pt-2 pb-4">
+              <SegmentsArtefacts onglet="equipe" miens={nombreMiens} equipe={nombreEquipe} />
+            </div>
+            <OngletEquipe pages={pages} relire={relireEquipe} />
+          </div>
+        </>
+      ) : (
+        <OngletMiens lecture={lecture} liste={liste} nombreMiens={nombreMiens} nombreEquipe={nombreEquipe} />
+      )}
+      {renduOuvert ? <PageApercu id={renduOuvert} rendu={rendu} liste={liste} relire={lecture.relancer} /> : null}
     </div>
   );
 }
 
-function ListeArtefactsTelephone({
+function SegmentsArtefacts({ onglet, miens, equipe }: { onglet: "miens" | "equipe"; miens?: number; equipe?: number }) {
+  const router = useRouter();
+  return (
+    <Segments<"miens" | "equipe">
+      libelle="Artefacts"
+      valeur={onglet}
+      onChange={(o) => router.replace(urlArtefacts(o === "equipe"))}
+      segments={[
+        { id: "miens", label: "Mes artefacts", icone: <Icon name="user-profile-01" size={16} />, nombre: miens },
+        { id: "equipe", label: "Équipe", icone: <Icon name="users-profiles-01" size={16} />, nombre: equipe },
+      ]}
+    />
+  );
+}
+
+/* ─── E7-39 à E7-49, E7-55 à E7-60 : Mes artefacts ─────────────── */
+
+function OngletMiens({
+  lecture,
+  liste,
+  nombreMiens,
+  nombreEquipe,
+}: {
+  lecture: ReturnType<typeof useLecturePoste<ListeArtefacts>>;
+  liste: ListeArtefacts | null;
+  nombreMiens?: number;
+  nombreEquipe?: number;
+}) {
+  const { ouvert } = usePostes();
+  const { agir, occupe, bandeau, erreur } = useGesteTelephone();
+  const [recherche, setRecherche] = useState("");
+  const [projet, setProjet] = useState("");
+  const [lien, setLien] = useState(false);
+  const [sync, setSync] = useState(false);
+
+  const synchroniser = async () => {
+    setSync(true);
+    const r = await agir<{ total: number; nouveaux: number }>("artefacts.synchroniser", {}, (x) => `${x.total} artefact${x.total > 1 ? "s" : ""} sur ton compte claude.ai · ${x.nouveaux} nouveau${x.nouveaux > 1 ? "x" : ""}.`, { delai: 60_000 });
+    setSync(false);
+    if (r) lecture.relancer();
+  };
+  const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+  const avecClaude = liste?.claude ?? true;
+  const actions: ActionMenu[] = [
+    ...(avecClaude ? [{ libelle: "Relire claude.ai", icone: "refresh-01" as IconName, desactivee: !ouvert || occupe, note: note ?? "Ajoute à la liste ce que tu as publié sur claude.ai.", onChoisir: () => void synchroniser() }] : []),
+    {
+      libelle: "Refaire les aperçus",
+      icone: "image-01",
+      desactivee: !ouvert || occupe,
+      note: note ?? "Se refont sur l’ordinateur, en fond.",
+      onChoisir: () => void agir<{ lances: number }>("artefacts.apercus", {}, (x) => `Aperçus demandés à l’ordinateur (${x.lances}).`),
+    },
+    ...(avecClaude ? [{ libelle: "Ajouter un lien", icone: "plus-01" as IconName, desactivee: !ouvert || occupe, note, onChoisir: () => setLien(true) }] : []),
+    { libelle: "Relire la liste", icone: "list", onChoisir: lecture.relancer },
+  ];
+
+  return (
+    <>
+      <EnteteTelephone titre="Artefacts" parent="/plus" droite={<MenuPage titre="Artefacts" actions={actions} />} />
+      <div className="min-h-0 flex-1 overflow-y-auto pb-6">
+        <div className="px-4 pt-2 pb-4">
+          <SegmentsArtefacts onglet="miens" miens={nombreMiens} equipe={nombreEquipe} />
+        </div>
+        {sync ? (
+          <div className="px-4 pb-3">
+            <BandeauEtat icone={<Icon name="loader-01" size={20} className="motion-safe:animate-spin" />}>Lecture de claude.ai…</BandeauEtat>
+          </div>
+        ) : null}
+        <ErreurGeste message={erreur?.message} className="px-5 pb-3" />
+        {lecture.etat === "attente" ? (
+          <div aria-busy="true">
+            {lecture.lent ? (
+              <div className="px-4">
+                <ChampRecherche valeur={recherche} onChange={setRecherche} placeholder="Chercher un artefact…" libelle="Chercher un artefact" />
+              </div>
+            ) : null}
+            <DemandeEnCours lent={lecture.lent} lignes={5} />
+          </div>
+        ) : (
+          <VueLecture
+            lecture={lecture}
+            lignes={5}
+            verrou={false}
+            formeAucun="encadre"
+            phraseAucun="Les rendus de tes agents et ta liste d’artefacts sont sur ton ordinateur."
+            apresAucun={<p className="-mt-2 px-5 pb-6 text-ui-xs text-texte-secondaire">Les liens partagés par l’équipe sont dans l’onglet Équipe, même sans ordinateur.</p>}
+            carteFerme={<CarteEquipeFerme />}
+            gestes="Ouvrir un rendu, modifier, retirer"
+            ferme={(sur) => `tes artefacts sont listés sur ${sur}. Ils s’affichent ici quand KLYRA y est ouverte.`}
+          >
+            {(lue) => <ListeMiens liste={lue} recherche={recherche} setRecherche={setRecherche} projet={projet} setProjet={setProjet} relire={lecture.relancer} onAjouter={() => setLien(true)} />}
+          </VueLecture>
+        )}
+      </div>
+      {lien ? <FeuilleLien projets={liste?.projets ?? []} onFermer={() => setLien(false)} onFait={lecture.relancer} /> : null}
+      {bandeau}
+    </>
+  );
+}
+
+function CarteEquipeFerme() {
+  const sur = useSupport();
+  return <CarteSuite icone="users-profiles-01" texte={`Les liens partagés par l’équipe se lisent sans ${sur}.`} lien="Voir l’onglet Équipe" href={urlArtefacts(true)} />;
+}
+
+function ListeMiens({
   liste,
   recherche,
   setRecherche,
   projet,
   setProjet,
-  onChange,
+  relire,
+  onAjouter,
 }: {
   liste: ListeArtefacts;
   recherche: string;
   setRecherche: (v: string) => void;
   projet: string;
   setProjet: (v: string) => void;
-  onChange: (ok: unknown) => void;
+  relire: () => void;
+  onAjouter: () => void;
 }) {
-  const visibles = useMemo(() => {
-    const q = recherche.trim().toLowerCase();
-    return liste.artefacts.filter((a) => (!projet || a.projetId === projet) && (!q || `${a.titre} ${a.description}`.toLowerCase().includes(q)));
-  }, [liste, recherche, projet]);
+  const router = useRouter();
+  const sur = useSupport();
+  const { ouvert } = usePostes();
+  const gardee = !!useVueGardeeAffichee();
+  const annoncer = useAnnonce();
+  const equipe = useArtefactsEquipe();
+  const [lienMenu, setLienMenu] = useState<ArtefactLu | null>(null);
+  const [renduMenu, setRenduMenu] = useState<RenduLu | null>(null);
+  const [eclaire, setEclaire] = useState<string | null>(null);
+  useEffect(() => {
+    if (!eclaire) return;
+    const minuteur = setTimeout(() => setEclaire(null), ECLAIRAGE_MS);
+    return () => clearTimeout(minuteur);
+  }, [eclaire]);
+
+  const rendus = useMemo(() => filtrerArtefacts(liste.rendus, recherche, projet), [liste.rendus, recherche, projet]);
+  const liens = useMemo(() => filtrerArtefacts(liste.artefacts, recherche, projet), [liste.artefacts, recherche, projet]);
+  const total = liste.rendus.length + liste.artefacts.length;
+  const filtre = !!recherche.trim() || !!projet;
+  const partageDe = (a: ArtefactLu) => {
+    const url = lienArtefact(a.url);
+    return equipe.etat === "pret" && url ? equipe.artefacts.find((x) => x.url === url) : undefined;
+  };
+
+  if (!total) {
+    return (
+      <div className="flex flex-col">
+        <EtatEcran
+          forme="encadre"
+          icone="artefacts-forme"
+          titre="Rien pour l’instant"
+          texte={`Quand un agent livre une page, une maquette, une capture ou une vidéo, elle arrive ici.${liste.claude ? " Tu peux aussi y ajouter tes liens claude.ai." : ""}`}
+          action={
+            liste.claude ? (
+              <Bouton variant="blanc" taille="md" disabled={!ouvert} iconeGauche={<Icon name="plus-01" size={20} />} onClick={onAjouter}>
+                Ajouter un lien
+              </Bouton>
+            ) : null
+          }
+        />
+        {liste.claude && !ouvert ? <NotePoste className="-mt-3 px-5 pb-4 text-center text-ui-xs text-texte-secondaire" /> : null}
+        {liste.rendusServeur ? <NoteServeur nombre={liste.rendusServeur} /> : null}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-3 px-4">
-      <Input size="lg" type="search" placeholder="Chercher un artefact…" aria-label="Chercher un artefact" value={recherche} onChange={(e) => setRecherche(e.target.value)} className={CHAMP_TELEPHONE} />
-      {liste.projets.length ? (
-        <ListeDeroulante
-          libelle="Filtrer par projet"
-          value={projet}
-          options={[{ value: "", label: "Tous les projets" }, ...liste.projets.map((p) => ({ value: p.id, label: p.nom }))]}
-          onChange={setProjet}
-          className="min-h-11 text-body-s"
+    <div className="flex flex-col gap-4 px-4">
+      <div className="flex flex-col gap-3">
+        <ChampRecherche valeur={recherche} onChange={setRecherche} placeholder="Chercher un artefact…" libelle="Chercher un artefact" />
+        {liste.projets.length ? (
+          <RangeePuces libelle="Filtrer par projet">
+            <Puce choisie={!projet} onClick={() => setProjet("")}>
+              Tous les projets
+            </Puce>
+            {liste.projets.map((p) => (
+              <Puce key={p.id} choisie={projet === p.id} onClick={() => setProjet(p.id)}>
+                {p.nom}
+              </Puce>
+            ))}
+          </RangeePuces>
+        ) : null}
+      </div>
+      {filtre ? (
+        <p aria-live="polite" className="-mt-1.5 px-1 text-ui-xs text-texte-secondaire">
+          {rendus.length + liens.length} artefact{rendus.length + liens.length > 1 ? "s" : ""}
+        </p>
+      ) : null}
+      {filtre && !rendus.length && !liens.length ? (
+        <EtatEcran
+          forme="encadre"
+          icone="search-01"
+          titre="Aucun résultat"
+          className="px-0 pb-0"
+          action={
+            <Bouton
+              variant="blanc"
+              taille="md"
+              onClick={() => {
+                setRecherche("");
+                setProjet("");
+              }}
+            >
+              Effacer les filtres
+            </Bouton>
+          }
         />
       ) : null}
-      <p className="text-ui-xs text-texte-secondaire">
-        {visibles.length} artefact{visibles.length > 1 ? "s" : ""}
-      </p>
-      {visibles.length ? (
-        <ul>
-          {visibles.map((a) => (
-            <LigneArtefact key={a.id} artefact={a} projets={liste.projets} onChange={onChange} />
-          ))}
-        </ul>
-      ) : (
-        <p className="py-4 text-ui text-texte-secondaire">{liste.artefacts.length ? "Aucun artefact ne correspond." : "Aucun artefact pour l’instant."}</p>
-      )}
+      {rendus.length ? (
+        <SectionListe titre="Rendus des agents" compte={rendus.length}>
+          {/* Vue gardée : ces images et ces fichiers attendent l'ordinateur (E7-56). */}
+          <fieldset disabled={gardee} className={cn("m-0 min-w-0 border-0 p-0", gardee && "opacity-55")}>
+            <GroupeListe>
+              {rendus.map((r) => (
+                <LigneListe
+                  key={r.id}
+                  debut={<TuileIcone icone={TYPES[r.type].icone} />}
+                  retrait="tuile"
+                  nom={r.titre}
+                  etiquette={<Etiquette>{TYPES[r.type].libelle}</Etiquette>}
+                  ligne2={[r.agent, r.projet, quand(r.date)].filter(Boolean).join(" · ")}
+                  uneLigne
+                  onClick={() => (r.apercu ? router.push(urlApercu(r.id)) : setRenduMenu(r))}
+                  onMenu={() => setRenduMenu(r)}
+                  menuVisible
+                />
+              ))}
+            </GroupeListe>
+          </fieldset>
+        </SectionListe>
+      ) : null}
+      {liens.length ? (
+        <SectionListe titre="Artefacts claude.ai" compte={liens.length}>
+          <GroupeListe>
+            {liens.map((a) => (
+              <LigneListe
+                key={a.id}
+                debut={<TuileIcone icone="link" />}
+                retrait="tuile"
+                nom={a.titre}
+                etiquette={partageDe(a) ? <Etiquette ton="bleue">Partagé</Etiquette> : null}
+                ligne2={
+                  <>
+                    {[a.description, a.projet, quand(a.date)].filter(Boolean).join(" · ")}
+                    <span className="sr-only"> (s’ouvre dans le navigateur)</span>
+                  </>
+                }
+                eclairee={eclaire === a.id}
+                onClick={() => ouvrirLien(a.url)}
+                onMenu={() => setLienMenu(a)}
+                menuVisible
+              />
+            ))}
+          </GroupeListe>
+        </SectionListe>
+      ) : null}
+      {liste.rendusServeur ? <NoteServeur nombre={liste.rendusServeur} /> : null}
+      {lienMenu ? (
+        <MenuLien
+          artefact={lienMenu}
+          projets={liste.projets}
+          partage={partageDe(lienMenu)}
+          relire={relire}
+          onFermer={() => setLienMenu(null)}
+          onPartage={() => {
+            setEclaire(lienMenu.id);
+            annoncer(`« ${lienMenu.titre} » partagé avec l’équipe.`);
+          }}
+        />
+      ) : null}
+      {renduMenu ? <MenuRendu rendu={renduMenu} sur={sur} relire={relire} onFermer={() => setRenduMenu(null)} /> : null}
+    </div>
+  );
+
+}
+
+function NoteServeur({ nombre }: { nombre: number }) {
+  const sur = useSupport();
+  return (
+    <p className="px-5 pb-2 text-ui-xs text-texte-secondaire">
+      {nombre} rendu{nombre > 1 ? "s sont" : " est"} sur un serveur : à voir sur {sur}, dans l’espace de ce serveur.
+    </p>
+  );
+}
+
+/* ─── E7-42, E7-45 à E7-49 : un lien claude.ai ─────────────────── */
+
+function MenuLien({ artefact, projets, partage, relire, onFermer, onPartage }: { artefact: ArtefactLu; projets: ListeArtefacts["projets"]; partage?: ArtefactEquipe; relire: () => void; onFermer: () => void; onPartage: () => void }) {
+  const { ouvert } = usePostes();
+  const { agir, occupe } = useGesteTelephone();
+  const annoncer = useAnnonce();
+  const equipe = useArtefactsEquipe();
+  /* Le menu joue sa sortie pendant que la feuille suivante monte : il ne ferme tout que s'il n'y en a pas. */
+  const [menu, setMenu] = useState(true);
+  const [suite, setSuite] = useState<"modifier" | "partager" | null>(null);
+  const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+  const sansCompte = equipe.etat === "hors-ligne" ? "Possible quand ce téléphone est en ligne" : equipe.etat !== "pret" ? (equipe.etat === "chargement" ? "Lecture de l’équipe…" : TEXTES_EQUIPE[equipe.etat]) : undefined;
+  return (
+    <>
+      {menu ? (
+        <MenuFeuille
+          titre={artefact.titre}
+          objet={{ visuel: <TuileIcone grande icone="link" />, sous: ["Artefact claude.ai", artefact.projet].filter(Boolean).join(" · ") }}
+          onFermer={() => {
+            setMenu(false);
+            if (!suite) onFermer();
+          }}
+          actions={[
+            { libelle: "Ouvrir dans le navigateur", icone: "link-external", onChoisir: () => ouvrirLien(artefact.url) },
+            ...(partage ? [] : [{ libelle: "Partager avec l’équipe", icone: "users-profiles-plus" as IconName, desactivee: !!sansCompte, note: sansCompte, onChoisir: () => setSuite("partager") }]),
+            { libelle: "Modifier le titre et la description", icone: "pencil-01", desactivee: !ouvert || occupe, note, onChoisir: () => setSuite("modifier") },
+            {
+              libelle: "Retirer de la liste…",
+              icone: "trash-01",
+              danger: true,
+              separateurAvant: true,
+              desactivee: !ouvert || occupe,
+              note,
+              confirmation: { titre: "Retirer de la liste ?", texte: "L’artefact reste sur claude.ai.", confirmer: "Retirer" },
+              onChoisir: () =>
+                void agir("artefacts.retirer", { id: artefact.id }).then((ok) => {
+                  if (ok) annoncer("Retiré de la liste.");
+                  else annoncer({ texte: "Le retrait n’a pas abouti : l’artefact reste dans la liste.", erreur: true });
+                  relire();
+                }),
+            },
+          ]}
+        />
+      ) : null}
+      {suite === "modifier" ? <FeuilleModifier artefact={artefact} projets={projets} onFermer={onFermer} onFait={relire} /> : null}
+      {suite === "partager" ? <FeuillePartager artefact={artefact} partage={partage} onFermer={onFermer} onPartage={onPartage} /> : null}
+    </>
+  );
+}
+
+/** E7-45, E7-46 : un geste du compte, qui marche ordinateur fermé. La feuille reste ouverte jusqu'au résultat. */
+function FeuillePartager({ artefact, partage, onFermer, onPartage }: { artefact: ArtefactLu; partage?: ArtefactEquipe; onFermer: () => void; onPartage: () => void }) {
+  const equipe = useArtefactsEquipe();
+  const [phase, setPhase] = useState<"confirmer" | "envoi" | "erreur" | "deja">(partage ? "deja" : "confirmer");
+  const [erreur, setErreur] = useState<string | null>(null);
+  /* Arrivé fenêtre ouverte : quelqu'un l'a partagé entre-temps. Pendant notre envoi, c'est sans doute le nôtre. */
+  if (partage && phase !== "envoi" && phase !== "deja") setPhase("deja");
+  const indisponible = phase === "envoi" || equipe.etat === "pret" ? null : equipe.etat === "chargement" ? "Lecture de l’équipe…" : TEXTES_EQUIPE[equipe.etat];
+  return (
+    <Feuille titre={phase === "deja" ? "Déjà partagé avec l’équipe" : `Partager « ${artefact.titre} » avec l’équipe ?`} role="alertdialog" sansEnTete onFermer={onFermer}>
+      <ContenuPartager artefact={artefact} partage={partage} phase={phase} setPhase={setPhase} erreur={erreur} setErreur={setErreur} indisponible={indisponible} onPartage={onPartage} />
+    </Feuille>
+  );
+}
+
+function ContenuPartager({
+  artefact,
+  partage,
+  phase,
+  setPhase,
+  erreur,
+  setErreur,
+  indisponible,
+  onPartage,
+}: {
+  artefact: ArtefactLu;
+  partage?: ArtefactEquipe;
+  phase: "confirmer" | "envoi" | "erreur" | "deja";
+  setPhase: (p: "confirmer" | "envoi" | "erreur" | "deja") => void;
+  erreur: string | null;
+  setErreur: (e: string | null) => void;
+  indisponible: string | null;
+  onPartage: () => void;
+}) {
+  const equipe = useArtefactsEquipe();
+  const fermer = useFermerFeuille();
+  const envoyer = async () => {
+    if (phase === "envoi") return;
+    setPhase("envoi");
+    setErreur(null);
+    try {
+      await equipe.partager({ url: artefact.url, titre: artefact.titre, description: artefact.description.slice(0, DESCRIPTION_MAX) });
+    } catch (e) {
+      if (e instanceof Error && codeErreur(e.cause) === "deja_partage") setPhase("deja");
+      else {
+        setErreur(e instanceof Error ? e.message : String(e));
+        setPhase("erreur");
+      }
+      return;
+    }
+    onPartage();
+    fermer();
+  };
+  if (phase === "deja") {
+    return (
+      <div className="px-1">
+        <p className="mt-2 text-body-s text-texte-secondaire">{partage?.deMoi ? "Tu l’as déjà partagé : il est dans l’onglet Équipe." : partage ? `${partage.auteur.nom} l’a déjà partagé : il est dans l’onglet Équipe.` : "Cet artefact est déjà dans l’onglet Équipe."}</p>
+        <div className="mt-6">
+          <Bouton variant="sombre" taille="md" className="w-full" data-autofocus onClick={fermer}>
+            Fermer
+          </Bouton>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="px-1">
+      <p className="mt-2 text-body-s text-texte-secondaire">Chacun verra ce lien dans l’onglet Équipe.</p>
+      <BandeauEtat icone={<Icon name="link" size={20} />} className="mt-3.5">
+        Pour l’ouvrir, il faut aussi que l’artefact soit partagé sur claude.ai.
+      </BandeauEtat>
+      {phase === "erreur" && erreur ? (
+        <BandeauEtat ton="erreur" icone={<Icon name="help-circle-contained" size={20} />} className="mt-3">
+          <p className="font-medium">Le partage n’a pas abouti. Rien n’a été partagé.</p>
+          <p>{erreur}</p>
+        </BandeauEtat>
+      ) : null}
+      {indisponible ? <p className="mt-3 text-ui text-texte-secondaire">{indisponible}</p> : null}
+      <div className="mt-6 flex flex-col gap-2">
+        <Bouton variant="sombre" taille="md" className="w-full" disabled={phase === "envoi" || !!indisponible} onClick={() => void envoyer()}>
+          {phase === "envoi" ? "Partage…" : phase === "erreur" ? "Réessayer" : "Partager"}
+        </Bouton>
+        <Bouton variant="blanc" taille="md" className="w-full" data-autofocus disabled={phase === "envoi"} onClick={fermer}>
+          Annuler
+        </Bouton>
+      </div>
     </div>
   );
 }
 
-/** Une ligne : titre, « À quoi il sert », projet. Toucher l'ouvre dans le navigateur ; « ⋯ » et l'appui long, le menu. */
-function LigneArtefact({ artefact, projets, onChange }: { artefact: ArtefactLu; projets: ListeArtefacts["projets"]; onChange: (ok: unknown) => void }) {
-  const { ouvert } = usePostes();
-  const { agir, occupe, bandeau, erreur } = useGesteTelephone();
-  const [menu, setMenu] = useState(false);
-  const [edition, setEdition] = useState(false);
-  const [retirer, setRetirer] = useState(false);
-  const appui = useAppuiLong(() => setMenu(true));
-  const poste = { desactivee: !ouvert || occupe, note: ouvert ? undefined : <NotePoste /> };
+/** La ligne « Projet » d'une feuille : elle ouvre une feuille de choix (D-6). */
+function ChampProjet({ projets, valeur, onChange }: { projets: ListeArtefacts["projets"]; valeur: string; onChange: (v: string) => void }) {
+  const [choix, setChoix] = useState(false);
+  const options: OptionChoix<string>[] = [{ value: "", label: "Aucun" }, ...projets.map((p) => ({ value: p.id, label: p.nom }))];
   return (
-    <li className="border-b border-bordure-subtile" {...appui}>
-      <div className="flex min-h-16 items-center gap-2">
-        <a href={artefact.url} target="_blank" rel="noopener noreferrer" className="flex min-h-16 min-w-0 flex-1 flex-col justify-center py-2 active:bg-fond-survol">
-          <span className="truncate text-body-s text-texte-principal">{artefact.titre}</span>
-          {artefact.description ? <span className="line-clamp-2 text-ui-xs text-texte-secondaire">{artefact.description}</span> : null}
-          <span className="text-ui-xs text-texte-secondaire">{[artefact.projet, date.format(new Date(artefact.date))].filter(Boolean).join(" · ")}</span>
-        </a>
-        <BoutonMenu libelle={`Options de ${artefact.titre}`} onClick={() => setMenu(true)} />
-      </div>
-      <ErreurGeste message={erreur?.message} className="pb-2" />
-      {menu ? (
-        <MenuFeuille
-          titre={artefact.titre}
-          onFermer={() => setMenu(false)}
-          actions={[
-            { libelle: "Ouvrir dans le navigateur", onChoisir: () => ouvrir(artefact.url) },
-            { libelle: "Modifier le titre et la description", onChoisir: () => setEdition(true), ...poste },
-            { libelle: "Retirer de la liste", onChoisir: () => setRetirer(true), danger: true, ...poste },
-          ]}
-        />
-      ) : null}
-      {edition ? <FeuilleModifier artefact={artefact} projets={projets} onFermer={() => setEdition(false)} onFait={() => onChange(true)} /> : null}
-      {retirer ? (
-        <ConfirmationFeuille
-          titre="Retirer de la liste ?"
-          texte="L’artefact reste sur claude.ai."
-          confirmer="Retirer"
-          danger
-          onConfirmer={() => void agir("artefacts.retirer", { id: artefact.id }, "Retiré de la liste.").then(onChange)}
-          onFermer={() => setRetirer(false)}
-        />
-      ) : null}
-      {bandeau}
-    </li>
+    <div className="flex flex-col gap-2">
+      <span className="text-ui font-medium text-texte-principal">Projet</span>
+      <GroupeListe>
+        <LigneListe nom={options.find((o) => o.value === valeur)?.label ?? "Aucun"} fin="chevron" onClick={() => setChoix(true)} />
+      </GroupeListe>
+      {choix ? <ChoixFeuille titre="Projet" valeur={valeur} options={options} onChoisir={onChange} onFermer={() => setChoix(false)} /> : null}
+    </div>
+  );
+}
+
+/** Le pied d'une feuille à enregistrer : l'action, et pourquoi elle attend. */
+function PiedFeuille({ libelle, occupe, disabled, onValider, note }: { libelle: string; occupe: boolean; disabled: boolean; onValider: () => void; note?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Bouton variant="sombre" taille="md" className="w-full" disabled={disabled} onClick={onValider}>
+        {occupe ? `${libelle}…` : libelle}
+      </Bouton>
+      {note}
+    </div>
   );
 }
 
 function FeuilleModifier({ artefact, projets, onFermer, onFait }: { artefact: ArtefactLu; projets: ListeArtefacts["projets"]; onFermer: () => void; onFait: () => void }) {
   const { agir, occupe, ouvert, erreur } = useGesteTelephone();
+  const annoncer = useAnnonce();
   const [titre, setTitre] = useState(artefact.titre);
   const [description, setDescription] = useState(artefact.description);
   const [projet, setProjet] = useState(artefact.projetId ?? "");
   const enregistrer = async () => {
     const ok = await agir("artefacts.modifier", { id: artefact.id, titre, description, projetId: projet || null });
     if (!ok) return;
+    annoncer("Artefact modifié.");
     onFermer();
     onFait();
   };
@@ -200,34 +602,26 @@ function FeuilleModifier({ artefact, projets, onFermer, onFait }: { artefact: Ar
     <Feuille
       titre="Modifier le titre et la description"
       onFermer={onFermer}
-      pied={
-        <>
-          <Bouton variant="sombre" taille="md" className="w-full" disabled={!ouvert || occupe || !titre.trim()} onClick={() => void enregistrer()}>
-            {occupe ? "Enregistrement…" : "Enregistrer"}
-          </Bouton>
-          {ouvert ? null : <NotePoste />}
-        </>
-      }
+      pied={<PiedFeuille libelle={occupe ? "Enregistrement" : "Enregistrer"} occupe={occupe} disabled={!ouvert || occupe || !titre.trim()} onValider={() => void enregistrer()} note={ouvert ? null : <NotePoste className="px-1 text-ui-xs text-texte-secondaire" />} />}
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 pt-1">
         <ChampTelephone label="Titre" erreur={titre.trim() ? null : "Donne-lui un titre."}>
           <Input size="lg" value={titre} maxLength={200} onChange={(e) => setTitre(e.target.value)} className={CHAMP_TELEPHONE} />
         </ChampTelephone>
         <ChampTelephone label="À quoi il sert">
           <Input size="lg" value={description} maxLength={1000} onChange={(e) => setDescription(e.target.value)} className={CHAMP_TELEPHONE} />
         </ChampTelephone>
-        <ChampTelephone label="Projet">
-          <ListeDeroulante value={projet} options={[{ value: "", label: "Aucun" }, ...projets.map((p) => ({ value: p.id, label: p.nom }))]} onChange={setProjet} className="min-h-11 text-body-s" />
-        </ChampTelephone>
+        <ChampProjet projets={projets} valeur={projet} onChange={setProjet} />
         <ErreurGeste message={erreur?.message} />
       </div>
     </Feuille>
   );
 }
 
-/** « Coller un lien claude.ai/artifact/… » : l'artefact rejoint la liste de l'ordinateur. */
+/** E7-48 : « Coller » lit le presse-papiers après ce geste, sinon on saisit ; l'artefact rejoint la liste de l'ordinateur. */
 function FeuilleLien({ projets, onFermer, onFait }: { projets: ListeArtefacts["projets"]; onFermer: () => void; onFait: () => void }) {
   const { agir, occupe, ouvert, erreur } = useGesteTelephone();
+  const annoncer = useAnnonce();
   const [url, setUrl] = useState("");
   const [titre, setTitre] = useState("");
   const [projet, setProjet] = useState("");
@@ -241,6 +635,7 @@ function FeuilleLien({ projets, onFermer, onFait }: { projets: ListeArtefacts["p
     if (erreurs.url || erreurs.titre) return;
     const ok = await agir("artefacts.ajouter", { url: url.trim(), titre, projetId: projet || null });
     if (!ok) return;
+    annoncer("Lien ajouté à la liste.");
     onFermer();
     onFait();
   };
@@ -255,40 +650,355 @@ function FeuilleLien({ projets, onFermer, onFait }: { projets: ListeArtefacts["p
     <Feuille
       titre="Ajouter un lien"
       onFermer={onFermer}
-      pied={
-        <>
-          <Bouton variant="sombre" taille="md" className="w-full" disabled={!ouvert || occupe} onClick={() => void ajouter()}>
-            {occupe ? "Ajout…" : "Ajouter"}
-          </Bouton>
-          {ouvert ? null : <NotePoste />}
-        </>
-      }
+      pied={<PiedFeuille libelle={occupe ? "Ajout" : "Ajouter"} occupe={occupe} disabled={!ouvert || occupe} onValider={() => void ajouter()} note={ouvert ? null : <NotePoste className="px-1 text-ui-xs text-texte-secondaire" />} />}
     >
-      <div className="flex flex-col gap-4">
-        <ChampTelephone label="Lien" erreur={essai ? erreurs.url : null}>
+      <div className="flex flex-col gap-4 pt-1">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="lien-artefact" className="text-ui font-medium text-texte-principal">
+            Lien
+          </label>
           <span className="flex gap-2">
             <Input
+              id="lien-artefact"
               size="lg"
               value={url}
               inputMode="url"
               autoCapitalize="none"
               autoCorrect="off"
               placeholder="https://claude.ai/artifact/…"
+              aria-invalid={essai && !!erreurs.url}
               onChange={(e) => setUrl(e.target.value)}
               className={cn(CHAMP_TELEPHONE, "min-w-0 flex-1")}
             />
-            <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="copy-left" size={20} />} onClick={() => void coller()}>
+            <Bouton variant="blanc" taille="md" className="px-3" iconeGauche={<Icon name="copy-left" size={20} />} onClick={() => void coller()}>
               Coller
             </Bouton>
           </span>
-        </ChampTelephone>
+          <ErreurGeste message={essai ? erreurs.url : null} />
+        </div>
         <ChampTelephone label="Titre" erreur={essai ? erreurs.titre : null}>
           <Input size="lg" value={titre} maxLength={200} onChange={(e) => setTitre(e.target.value)} className={CHAMP_TELEPHONE} />
         </ChampTelephone>
-        <ChampTelephone label="Projet">
-          <ListeDeroulante value={projet} options={[{ value: "", label: "Aucun" }, ...projets.map((p) => ({ value: p.id, label: p.nom }))]} onChange={setProjet} className="min-h-11 text-body-s" />
-        </ChampTelephone>
+        <ChampProjet projets={projets} valeur={projet} onChange={setProjet} />
         <ErreurGeste message={erreur?.message} />
+      </div>
+    </Feuille>
+  );
+}
+
+/* ─── E7-43, E7-44, E7-49 : un rendu d'agent ───────────────────── */
+
+function MenuRendu({ rendu, sur, relire, onFermer }: { rendu: RenduLu; sur: string; relire: () => void; onFermer: () => void }) {
+  const router = useRouter();
+  const { ouvert } = usePostes();
+  const { agir, occupe } = useGesteTelephone();
+  const annoncer = useAnnonce();
+  const note = ouvert ? undefined : <NotePoste className="text-ui-xs text-texte-secondaire" />;
+  const tag = <Etiquette>Sur {sur}</Etiquette>;
+  return (
+    <MenuFeuille
+      titre={rendu.titre}
+      objet={{ visuel: <TuileIcone grande icone={TYPES[rendu.type].icone} />, sous: [TYPES[rendu.type].libelle, rendu.agent, rendu.projet].filter(Boolean).join(" · ") }}
+      onFermer={onFermer}
+      actions={[
+        { libelle: "Voir l’aperçu", icone: "expand", desactivee: !rendu.apercu || !ouvert, note: !rendu.apercu ? "Pas d’aperçu pour ce type de fichier." : note, onChoisir: () => router.push(urlApercu(rendu.id)) },
+        {
+          libelle: `Ouvrir sur ${sur}`,
+          icone: "link-external",
+          desactivee: !ouvert || occupe,
+          note,
+          onChoisir: () =>
+            void agir("rendus.ouvrir", { id: rendu.id }).then((ok) => {
+              if (ok) annoncer(`Ouvert sur ${sur}.`);
+              else annoncer({ texte: `Ce rendu n’a pas pu s’ouvrir sur ${sur}.`, erreur: true });
+            }),
+        },
+        { libelle: "Enregistrer dans un dossier…", icone: "download-02", desactivee: true, note: "Le dossier se choisit sur l’ordinateur.", fin: tag, onChoisir: () => undefined },
+        { libelle: `Montrer dans ${explorateur(sur)}`, icone: "folder-open-01", desactivee: true, note: "S’ouvre sur l’écran de l’ordinateur.", fin: tag, onChoisir: () => undefined },
+        {
+          libelle: "Retirer de la liste…",
+          icone: "trash-01",
+          danger: true,
+          separateurAvant: true,
+          desactivee: !ouvert || occupe,
+          note,
+          confirmation: { titre: "Retirer de la liste ?", texte: "La copie gardée par KLYRA est supprimée, et son partage avec l’équipe s’il y en a un ; l’original de l’agent et ce que tu as enregistré ailleurs restent.", confirmer: "Retirer" },
+          onChoisir: () =>
+            void agir("rendus.retirer", { id: rendu.id }).then((ok) => {
+              if (ok) annoncer("Retiré de la liste.");
+              else annoncer({ texte: "Le retrait n’a pas abouti : le rendu reste dans la liste.", erreur: true });
+              relire();
+            }),
+        },
+      ]}
+    />
+  );
+}
+
+/**
+ * E7-44 : l'aperçu est une image dessinée par l'ordinateur, jamais la page elle-même (pas de tunnel
+ * vers une adresse du poste). Son absence se dit : ce n'est pas un rendu vide.
+ */
+function PageApercu({ id, rendu, liste, relire }: { id: string; rendu: RenduLu | null; liste: ListeArtefacts | null; relire: () => void }) {
+  const onFermer = useRetour("/artefacts");
+  const sur = useSupport();
+  const { ouvert } = usePostes();
+  const lecture = useLecturePoste<{ image: string | null }>("rendus.apercu", { id }, { delai: 30_000, garder: false });
+  const { agir, occupe, erreur } = useGesteTelephone();
+  const annoncer = useAnnonce();
+  const [menu, setMenu] = useState(false);
+  const titre = rendu?.titre ?? "Aperçu";
+  const image = lecture.etat === "ok" ? imageApercu(lecture.data.image) : null;
+  const ouvrir = () =>
+    void agir("rendus.ouvrir", { id }).then((ok) => {
+      if (ok) annoncer(`Ouvert sur ${sur}.`);
+    });
+  return (
+    <PagePleine
+      titre={titre}
+      onFermer={onFermer}
+      droite={rendu ? <BoutonIcone variant="discret" className="size-11" libelle="Plus d’options" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => setMenu(true)} /> : undefined}
+      pied={
+        <div className="flex flex-col gap-2">
+          <BandeauEtat ton="info" icone={<Icon name="help-circle-contained" size={20} />}>
+            Aperçu dessiné par {sur}. La page, avec ses liens et ses formulaires, s’ouvre sur l’ordinateur.
+          </BandeauEtat>
+          <ErreurGeste message={erreur?.message} />
+          <Bouton variant="blanc" taille="md" className="w-full" disabled={!ouvert || occupe} iconeGauche={<Icon name="link-external" size={20} />} onClick={ouvrir}>
+            Ouvrir sur {sur}
+          </Bouton>
+          {!ouvert ? <NotePoste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
+        </div>
+      }
+    >
+      <div className="-mx-4 -mt-2 flex min-h-full flex-1 flex-col">
+        {rendu ? <p className="truncate border-b border-bordure-defaut px-4 pb-2.5 text-ui-xs text-texte-secondaire">{[TYPES[rendu.type].libelle, rendu.agent, rendu.projet, quand(rendu.date)].filter(Boolean).join(" · ")}</p> : null}
+        <div className="flex min-h-[320px] flex-1 items-center justify-center bg-fond-surface-grise p-4">
+          {lecture.etat === "ok" ? (
+            image ? (
+              // eslint-disable-next-line @next/next/no-img-element -- une image en data URL, dessinée par l'ordinateur
+              <img src={image} alt={`Aperçu de ${titre}`} className="h-auto max-h-full w-full rounded-[6px] object-contain shadow-ombre-md" />
+            ) : (
+              <EtatEcran forme="plein" icone="image-01" titre="Pas d’aperçu" texte={`${majuscule(sur)} n’a pas pu en dessiner une image. Le rendu reste entier sur l’ordinateur.`} className="p-0" />
+            )
+          ) : lecture.etat === "attente" ? (
+            <div className="w-full">
+              <DemandeEnCours lent={lecture.lent} lignes={2} />
+            </div>
+          ) : lecture.etat === "delai" ? (
+            <PasDeReponse relancer={lecture.relancer} />
+          ) : lecture.etat === "erreur" ? (
+            <ErreurPoste code={lecture.code} message={lecture.message} relancer={lecture.relancer} />
+          ) : (
+            <EtatEcran icone="computer" titre={lecture.etat === "aucun" ? "Aucun ordinateur relié" : `${majuscule(sur)} est fermé`} texte="L’aperçu est dessiné par l’ordinateur : il n’est pas gardé sur ce téléphone." className="p-0" />
+          )}
+        </div>
+      </div>
+      {menu && rendu && liste ? <MenuRendu rendu={rendu} sur={sur} relire={relire} onFermer={() => setMenu(false)} /> : null}
+    </PagePleine>
+  );
+}
+
+/* ─── E7-50 à E7-54 : l'onglet Équipe, lu dans le compte ───────── */
+
+function OngletEquipe({ pages, relire }: { pages: PageEquipe[] | null; relire: () => void }) {
+  const router = useRouter();
+  const equipe = useArtefactsEquipe();
+  const [recherche, setRecherche] = useState("");
+  const [menu, setMenu] = useState<ArtefactEquipe | null>(null);
+  const q = recherche.trim().toLowerCase();
+  const liens = equipe.artefacts.filter((a) => !q || `${a.titre} ${a.description} ${a.auteur.nom}`.toLowerCase().includes(q));
+  const docs = (pages ?? []).filter((d) => !q || `${d.titre} ${d.description} ${d.auteur.nom}`.toLowerCase().includes(q));
+
+  if (equipe.etat === "hors-ligne") return <EtatEcran icone="globe-01" titre="Hors ligne" texte={TEXTES_EQUIPE["hors-ligne"]} className="pt-8" />;
+  if (equipe.etat === "chargement" || (equipe.etat === "pret" && pages === null)) {
+    return (
+      <div aria-busy="true" className="px-4">
+        <Squelette lignes={4} />
+      </div>
+    );
+  }
+  if (equipe.etat !== "pret") {
+    return (
+      <EtatEcran
+        erreur={equipe.etat === "erreur"}
+        icone="help-circle-contained"
+        titre={equipe.etat === "erreur" ? (equipe.message ?? TEXTES_EQUIPE.erreur) : TEXTES_EQUIPE[equipe.etat]}
+        className="pt-8"
+        action={
+          equipe.etat === "erreur" ? (
+            <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="refresh-01" size={20} />} onClick={relire}>
+              Réessayer
+            </Bouton>
+          ) : null
+        }
+      />
+    );
+  }
+  if (!equipe.artefacts.length && !pages?.length) {
+    return (
+      <EtatEcran
+        forme="encadre"
+        icone="users-profiles-01"
+        titre="Rien de partagé pour l’instant"
+        texte="Dans Mes artefacts, partage un lien claude.ai avec l’équipe : chacun le retrouvera ici."
+        action={
+          <Bouton variant="blanc" taille="md" onClick={() => router.replace(urlArtefacts())}>
+            Voir Mes artefacts
+          </Bouton>
+        }
+      />
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3.5 px-4">
+      <p className="-mt-1 px-1 text-ui-xs leading-[1.4] text-texte-secondaire">Les liens que l’équipe partage : chacun y ajoute les siens depuis Mes artefacts.</p>
+      <ChampRecherche valeur={recherche} onChange={setRecherche} placeholder="Chercher un artefact…" libelle="Chercher un artefact" />
+      {liens.length ? (
+        <GroupeListe>
+          {liens.map((a) => (
+            <LigneListe
+              key={a._id}
+              debut={<TuileIcone icone="link" />}
+              retrait="tuile"
+              nom={a.titre}
+              ligne2={
+                <>
+                  {a.description ? <span className="block truncate">{a.description}</span> : null}
+                  <span className="block truncate">{a.deMoi ? "Partagé par toi" : `Partagé par ${a.auteur.nom}`} · {quand(a.majLe)}</span>
+                  <span className="sr-only"> (s’ouvre dans le navigateur)</span>
+                </>
+              }
+              onClick={() => ouvrirLien(a.url)}
+              onMenu={() => setMenu(a)}
+              menuVisible
+            />
+          ))}
+        </GroupeListe>
+      ) : null}
+      {docs.length ? <SectionPages docs={docs} /> : null}
+      {q && !liens.length && !docs.length ? (
+        <EtatEcran
+          forme="encadre"
+          icone="search-01"
+          titre="Aucun résultat"
+          className="px-0 pb-0"
+          action={
+            <Bouton variant="blanc" taille="md" onClick={() => setRecherche("")}>
+              Effacer les filtres
+            </Bouton>
+          }
+        />
+      ) : null}
+      {menu ? <MenuEquipe artefact={menu} onFermer={() => setMenu(null)} /> : null}
+    </div>
+  );
+}
+
+/** Les pages HTML partagées à l'équipe : elles se lisent dans la fenêtre isolée de l'ordinateur, pas ici. */
+function SectionPages({ docs }: { docs: PageEquipe[] }) {
+  const sur = useSupport();
+  return (
+    <SectionListe titre="Pages partagées" compte={docs.length}>
+      <GroupeListe>
+        {docs.map((d) => (
+          <LigneListe
+            key={d._id}
+            debut={<TuileIcone icone="globe-01" />}
+            retrait="tuile"
+            nom={d.titre}
+            etiquette={<Etiquette>Sur {sur}</Etiquette>}
+            ligne2={
+              <>
+                {d.description ? <span className="block truncate">{d.description}</span> : null}
+                <span className="block truncate">{d.deMoi ? "Partagé par toi" : `Partagé par ${d.auteur.nom}`} · {quand(d.majLe)}</span>
+              </>
+            }
+          />
+        ))}
+      </GroupeListe>
+    </SectionListe>
+  );
+}
+
+function MenuEquipe({ artefact, onFermer }: { artefact: ArtefactEquipe; onFermer: () => void }) {
+  const equipe = useArtefactsEquipe();
+  const annoncer = useAnnonce();
+  const [menu, setMenu] = useState(true);
+  const [modifier, setModifier] = useState(false);
+  const sous = `${artefact.deMoi ? "Partagé par toi" : `Partagé par ${artefact.auteur.nom}`} · ${quand(artefact.majLe)}`;
+  return (
+    <>
+      {menu ? (
+        <MenuFeuille
+          titre={artefact.titre}
+          objet={{ visuel: <TuileIcone grande icone="link" />, sous }}
+          onFermer={() => {
+            setMenu(false);
+            if (!modifier) onFermer();
+          }}
+          actions={[
+            { libelle: "Ouvrir dans le navigateur", icone: "link-external", onChoisir: () => ouvrirLien(artefact.url) },
+            ...(artefact.deMoi
+              ? [
+                  { libelle: "Modifier le titre et la description", icone: "pencil-01" as IconName, desactivee: equipe.etat !== "pret", onChoisir: () => setModifier(true) },
+                  {
+                    libelle: "Ne plus partager…",
+                    icone: "x-01" as IconName,
+                    danger: true,
+                    separateurAvant: true,
+                    desactivee: equipe.etat !== "pret",
+                    confirmation: { titre: "Ne plus partager avec l’équipe ?", texte: "L’artefact reste sur claude.ai et dans tes artefacts.", confirmer: "Ne plus partager" },
+                    onChoisir: () =>
+                      void equipe.retirer(artefact._id).then(
+                        () => annoncer(`« ${artefact.titre} » n’est plus partagé.`),
+                        (e: unknown) => annoncer({ texte: e instanceof Error ? e.message : messageErreur(e), erreur: true }),
+                      ),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ) : null}
+      {modifier ? <FeuilleModifierEquipe artefact={artefact} onFermer={onFermer} /> : null}
+    </>
+  );
+}
+
+function FeuilleModifierEquipe({ artefact, onFermer }: { artefact: ArtefactEquipe; onFermer: () => void }) {
+  const equipe = useArtefactsEquipe();
+  const annoncer = useAnnonce();
+  const [titre, setTitre] = useState(artefact.titre);
+  const [description, setDescription] = useState(artefact.description);
+  const [occupe, setOccupe] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const enregistrer = async () => {
+    setOccupe(true);
+    setErreur(null);
+    try {
+      await equipe.modifier(artefact._id, { titre: titre.trim(), description: description.trim() });
+      annoncer("Artefact modifié.");
+      onFermer();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOccupe(false);
+    }
+  };
+  return (
+    <Feuille
+      titre="Modifier le titre et la description"
+      onFermer={onFermer}
+      pied={<PiedFeuille libelle={occupe ? "Enregistrement" : "Enregistrer"} occupe={occupe} disabled={occupe || !titre.trim() || equipe.etat !== "pret"} onValider={() => void enregistrer()} />}
+    >
+      <div className="flex flex-col gap-4 pt-1">
+        <ChampTelephone label="Titre" erreur={titre.trim() ? null : "Donne-lui un titre."}>
+          <Input size="lg" value={titre} maxLength={80} onChange={(e) => setTitre(e.target.value)} className={CHAMP_TELEPHONE} />
+        </ChampTelephone>
+        <ChampTelephone label="À quoi il sert">
+          <Input size="lg" value={description} maxLength={DESCRIPTION_MAX} onChange={(e) => setDescription(e.target.value)} className={CHAMP_TELEPHONE} />
+        </ChampTelephone>
+        <ErreurGeste message={erreur} />
       </div>
     </Feuille>
   );

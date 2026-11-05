@@ -1,11 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { Compteur } from "@/components/ui/Compteur";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { CocheChoix } from "./Controles";
 import { useAppuiLong } from "./Feuille";
 
 /**
@@ -35,8 +36,9 @@ export function SectionListe({ titre, compte, compteAccent = false, lien, childr
 }
 
 /** Le groupe blanc qui porte des lignes : arrondi, filet intérieur, ombre légère. */
+export const CLASSE_GROUPE = "overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface shadow-ombre-xs";
 export function GroupeListe({ children, className }: { children: ReactNode; className?: string }) {
-  return <ul className={cn("overflow-hidden rounded-xl border border-bordure-subtile bg-fond-surface shadow-ombre-xs", className)}>{children}</ul>;
+  return <ul className={cn(CLASSE_GROUPE, className)}>{children}</ul>;
 }
 
 /** Une étiquette : un nom lisible, jamais un identifiant (C-2). */
@@ -53,12 +55,88 @@ export function Etiquette({ ton = "neutre", children }: { ton?: "neutre" | "bleu
   );
 }
 
-/** La tuile d'icône d'une ligne (36 px). `bleue` : l'élément mis en avant. */
-export function TuileIcone({ icone, bleue = false }: { icone: IconName; bleue?: boolean }) {
+/** La tuile d'icône d'une ligne (36 px). `bleue` : l'élément mis en avant. `grande` : l'en-tête d'un menu (44 px). */
+export function TuileIcone({ icone, bleue = false, grande = false }: { icone: IconName; bleue?: boolean; grande?: boolean }) {
   return (
-    <span aria-hidden="true" className={cn("flex size-9 shrink-0 items-center justify-center rounded-md-moins", bleue ? "bg-fond-teinte-bleue text-icone-accent" : "bg-fond-surface-grise text-icone-defaut")}>
-      <Icon name={icone} size={20} />
+    <span
+      aria-hidden="true"
+      className={cn("flex shrink-0 items-center justify-center rounded-md-moins", grande ? "size-11" : "size-9", bleue ? "bg-fond-teinte-bleue text-icone-accent" : "bg-fond-surface-grise text-icone-defaut")}
+    >
+      <Icon name={icone} size={grande ? 22 : 20} />
     </span>
+  );
+}
+
+/** La valeur d'une ligne de formulaire, et son chevron. */
+export function ValeurLigne({ children, chevron = true }: { children: ReactNode; chevron?: boolean }) {
+  return (
+    <span className="flex max-w-[55%] shrink-0 items-center gap-1 text-ui text-texte-secondaire">
+      <span className="truncate">{children}</span>
+      {chevron ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
+    </span>
+  );
+}
+
+const FILET_LIGNE =
+  "[&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:right-0 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-bordure-defaut [&:not(:first-child)]:before:content-['']";
+
+/** Une ligne de choix unique (D-6) : toute la ligne est la cible, la coche à droite. Dans un `radiogroup`. */
+export function LigneChoix({
+  nom,
+  ligne2,
+  debut,
+  etiquette,
+  choisie,
+  desactivee = false,
+  autoFocus = false,
+  onChoisir,
+}: {
+  nom: ReactNode;
+  ligne2?: ReactNode;
+  debut?: ReactNode;
+  etiquette?: ReactNode;
+  choisie: boolean;
+  desactivee?: boolean;
+  autoFocus?: boolean;
+  onChoisir: () => void;
+}) {
+  return (
+    <li className={cn("relative flex items-center before:left-4", FILET_LIGNE)}>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={choisie}
+        disabled={desactivee}
+        data-autofocus={autoFocus || undefined}
+        onClick={onChoisir}
+        className="flex min-h-[52px] min-w-0 flex-1 items-center gap-3 py-2.5 pr-3 pl-4 text-left transition-colors duration-[120ms] ease-sortie active:bg-fond-survol disabled:text-texte-tertiaire"
+      >
+        {debut}
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className={cn("min-w-0 truncate text-body-s", ligne2 ? "font-medium" : "font-normal")}>{nom}</span>
+            {etiquette}
+          </span>
+          {ligne2 ? <span className="mt-0.5 block text-ui leading-[1.35] text-texte-secondaire">{ligne2}</span> : null}
+        </span>
+        <CocheChoix choisi={choisie} />
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Une ligne dont la valeur se règle avec le sélecteur du système (heure, date) : la valeur française à
+ * droite, le contrôle natif invisible par-dessus (D-6). `children` sans `valeur` : un champ visible.
+ */
+export function LigneSaisie({ icone, nom, valeur, erreur = false, children }: { icone?: IconName; nom: string; valeur?: ReactNode; erreur?: boolean; children: ReactNode }) {
+  return (
+    <li className={cn("relative flex min-h-14 items-center gap-3 py-2.5 pr-3 pl-4", icone ? "before:left-16" : "before:left-4", FILET_LIGNE, valeur !== undefined && "active:bg-fond-survol")}>
+      {icone ? <TuileIcone icone={icone} /> : null}
+      <span className={cn("min-w-0 flex-1 truncate text-body-s font-medium", erreur ? "text-texte-erreur" : "text-texte-principal")}>{nom}</span>
+      {valeur !== undefined ? <ValeurLigne>{valeur}</ValeurLigne> : null}
+      {children}
+    </li>
   );
 }
 
@@ -89,7 +167,15 @@ export function LigneListe({
   raison,
   onMenu,
   menuVisible = false,
+  eclairee = false,
+  className,
+  style,
 }: {
+  /** Revenue d'un geste réussi : elle s'éclaire 1 800 ms. */
+  eclairee?: boolean;
+  /** Sur la ligne elle-même (un chantier d'agent, sa couleur). */
+  className?: string;
+  style?: CSSProperties;
   href?: string;
   onClick?: () => void;
   debut?: ReactNode;
@@ -141,13 +227,7 @@ export function LigneListe({
     !inactive && "active:bg-fond-survol data-[presse]:bg-fond-survol",
   );
   return (
-    <li
-      className={cn(
-        "relative flex items-center",
-        "[&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:right-0 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-bordure-defaut [&:not(:first-child)]:before:content-['']",
-        RETRAITS[retrait],
-      )}
-    >
+    <li data-eclaire={eclairee || undefined} style={style} className={cn("klyra-telephone-eclaire relative flex items-center", FILET_LIGNE, RETRAITS[retrait], className)}>
       {href && !inactive ? (
         <Link href={href} {...(onMenu ? appui : {})} className={classeCorps}>
           {corps}

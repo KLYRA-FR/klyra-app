@@ -162,7 +162,15 @@ export function useGestesAutomatisations(): Gestes {
 
     /** « Interrompre » ou « Annuler le départ ». */
     "routines.interrompre": async (brut) => {
-      const runId = lireId(objet(brut), "runId");
+      const args = objet(brut);
+      const runId = lireId(args, "runId");
+      /* La confirmation disait « Annuler ce départ » ou « Interrompre » : relire le statut avant d'envoyer. */
+      const vu = chaineOuNull(args, "statut", 40);
+      if (vu) {
+        const run = (await moteur((api) => api.enCours())).find((r) => r.id === runId);
+        if (!run) throw new ErreurPoste("terminee", "Cette exécution est déjà terminée.");
+        if ((run.status === "queued") !== (vu === "queued")) throw new ErreurPoste("statut-change", run.status === "queued" ? "Cette exécution attend encore son départ. Relis avant de l’arrêter." : "Cette exécution a déjà démarré. Relis avant de l’interrompre.");
+      }
       await moteur((api) => api.interrompre(runId));
       return null;
     },
@@ -328,12 +336,18 @@ export function useGestesAutomatisations(): Gestes {
     },
 
     "workflows.supprimer": async (brut) => {
-      supprimerWorkflow(workflowDe(objet(brut)).id);
+      const wf = workflowDe(objet(brut));
+      if (executionsDe(wf.id).some(enCoursExecution)) throw new ErreurPoste("en-cours", "Une exécution de ce workflow est en cours. Arrête-la avant de le supprimer.");
+      supprimerWorkflow(wf.id);
       return null;
     },
 
     "workflows.versions": async (brut): Promise<VersionLue[]> =>
-      workflowDe(objet(brut)).versions.map((v) => ({ id: v.id, at: v.at, raison: v.raison, etapes: v.graphe.noeuds.filter((n) => estEtape(n.type)).length })),
+      (() => {
+        const wf = workflowDe(objet(brut));
+        const actuel = JSON.stringify(wf.graphe);
+        return wf.versions.map((v) => ({ id: v.id, at: v.at, raison: v.raison, etapes: v.graphe.noeuds.filter((n) => estEtape(n.type)).length, actuelle: JSON.stringify(v.graphe) === actuel }));
+      })(),
 
     /** « Rendre actuelle » une version de l'historique. */
     "workflows.restaurer": async (brut) => {

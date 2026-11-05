@@ -1,11 +1,28 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useBandeau } from "@/components/telephone/etats";
 import { usePostes, useSupport } from "@/components/telephone/poste";
 import { useGestePoste } from "@/lib/poste/client";
 import { majuscule } from "@/lib/poste-texte";
 import { texteErreurFiche } from "./agents";
+
+/**
+ * Un geste à la fois (§ 3) : un second appui ne part pas, même avant que l'écran se redessine.
+ * `uneFois(geste)` ne le lance que si aucun autre n'est en cours.
+ */
+export function useUneFois() {
+  const verrou = useRef(false);
+  return useCallback(async (geste: () => Promise<void>) => {
+    if (verrou.current) return;
+    verrou.current = true;
+    try {
+      await geste();
+    } finally {
+      verrou.current = false;
+    }
+  }, []);
+}
 
 /**
  * Un geste du téléphone sur l'ordinateur, avec ce que l'écran en montre : « occupé », le bandeau

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { LigneChoix } from "./Liste";
 import { marquerFeuille } from "./retour";
 import { mouvementReduit, useZoneVisible, vibrer } from "./zone-visible";
 
@@ -32,6 +33,7 @@ export function Feuille({
   objet,
   onFermer,
   haute = false,
+  bordee = false,
   role = "dialog",
   sansEnTete = false,
   retour,
@@ -45,6 +47,8 @@ export function Feuille({
   objet?: { visuel: ReactNode; sous?: string };
   onFermer: () => void;
   haute?: boolean;
+  /** Un filet sous l'en-tête dès l'ouverture (une feuille haute qui se lit). */
+  bordee?: boolean;
   role?: "dialog" | "alertdialog";
   sansEnTete?: boolean;
   children: ReactNode;
@@ -173,7 +177,7 @@ export function Feuille({
                 className={cn(
                   "flex min-h-[52px] items-center gap-3 py-1 pr-1.5 pl-5 transition-shadow duration-[120ms] ease-sortie",
                   objet && "pt-2 pb-3 pl-4",
-                  defile && "shadow-[inset_0_-1px_0_var(--color-bordure-defaut)]",
+                  (defile || bordee) && "shadow-[inset_0_-1px_0_var(--color-bordure-defaut)]",
                 )}
               >
                 {retour ? <BoutonIcone variant="discret" className="-ml-3 size-11 shrink-0" libelle="Retour" onClick={retour} icone={<Icon name="chevron-left" size={22} />} /> : null}
@@ -233,6 +237,8 @@ export interface ActionMenu {
   separateurAvant?: boolean;
   /** Mène à une autre page : un chevron le dit. */
   chevron?: boolean;
+  /** Ce qui se pose à droite (« Sur ton Mac »). */
+  fin?: ReactNode;
   /** Le menu se change en cette confirmation, dans la même feuille (§ 4.1). */
   confirmation?: { titre: string; texte?: string; confirmer: string };
   /** Mène à une sous-page : la feuille reste ouverte, un chevron le dit. */
@@ -345,11 +351,74 @@ function ContenuMenu({ rapides, noteRapides, actions, onConfirmer }: { rapides?:
               </span>
               {action.valeur ? <span className="shrink-0 text-ui text-texte-secondaire">{action.valeur}</span> : null}
               {action.sousPage || action.chevron ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
+              {action.fin}
             </button>
           </li>
         ))}
       </ul>
     </>
+  );
+}
+
+/** Une option d'une feuille de choix : son nom, jamais un identifiant. */
+export interface OptionChoix<T extends string> {
+  value: T;
+  label: string;
+  note?: string;
+  debut?: ReactNode;
+  etiquette?: ReactNode;
+  desactivee?: boolean;
+}
+
+/**
+ * La feuille de choix unique (D-6) : la `ListeDeroulante` du bureau, sur le téléphone. Choisir met la
+ * valeur à jour et ferme la feuille ; rien d'autre n'est enregistré.
+ */
+export function ChoixFeuille<T extends string>({
+  titre,
+  sousTitre,
+  valeur,
+  options,
+  onChoisir,
+  onFermer,
+}: {
+  titre: string;
+  sousTitre?: string;
+  valeur: T;
+  options: OptionChoix<T>[];
+  onChoisir: (valeur: T) => void;
+  onFermer: () => void;
+}) {
+  return (
+    <Feuille titre={titre} sousTitre={sousTitre} onFermer={onFermer} haute={options.length > 10}>
+      <ContenuChoix titre={titre} valeur={valeur} options={options} onChoisir={onChoisir} />
+    </Feuille>
+  );
+}
+
+function ContenuChoix<T extends string>({ titre, valeur, options, onChoisir }: { titre: string; valeur: T; options: OptionChoix<T>[]; onChoisir: (valeur: T) => void }) {
+  const fermer = useFermerFeuille();
+  return (
+    <div role="radiogroup" aria-label={titre} className="-mx-4">
+      <ul>
+        {options.map((o) => (
+          <LigneChoix
+            key={o.value}
+            nom={o.label}
+            ligne2={o.note}
+            debut={o.debut}
+            etiquette={o.etiquette}
+            choisie={o.value === valeur}
+            desactivee={o.desactivee}
+            autoFocus={o.value === valeur}
+            onChoisir={() => {
+              onChoisir(o.value);
+              fermer();
+            }}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }
 

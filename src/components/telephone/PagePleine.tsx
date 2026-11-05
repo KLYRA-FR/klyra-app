@@ -18,6 +18,7 @@ export function PagePleine({
   titre,
   onFermer,
   modifie = false,
+  droite,
   pied,
   onEnvoyer,
   children,
@@ -26,6 +27,8 @@ export function PagePleine({
   onFermer?: () => void;
   /** Des modifications non enregistrées : fermer demande d'abord. */
   modifie?: boolean;
+  /** Une action à droite du titre (« ⋯ »). */
+  droite?: ReactNode;
   pied?: ReactNode;
   /** La page est un formulaire : Entrée dans un champ l'envoie. */
   onEnvoyer?: () => void;
@@ -60,7 +63,7 @@ export function PagePleine({
               <span className="size-11 shrink-0" />
             )}
             <h1 className="min-w-0 flex-1 truncate text-center text-body-s font-semibold text-texte-principal">{titre}</h1>
-            <span aria-hidden="true" className="size-11 shrink-0" />
+            {droite ?? <span aria-hidden="true" className="size-11 shrink-0" />}
           </div>
         </header>
       ) : null}

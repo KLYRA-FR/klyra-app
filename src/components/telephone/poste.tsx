@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useCompte } from "@/lib/compte";
 import { supportOuOrdinateur, type PosteLu } from "@/lib/poste-texte";
+import { useHorsLigne } from "./BandeauReseau";
 
 /**
  * Le seuil de `convex/postes.ts` (25 s), avec une marge pour l'horloge du téléphone. La requête du
@@ -27,6 +28,7 @@ export function usePostes() {
   const { etat } = useCompte();
   const lus = useQuery(api.postes.etat, etat === "connecte" ? {} : "skip");
   const maintenant = useHorloge(5000);
+  const horsLigne = useHorsLigne();
   const postes = useMemo(
     () => lus?.map((poste) => (poste.ouvert && maintenant - poste.dernierSignal > SILENCE_MS ? { ...poste, ouvert: false } : poste)),
     [lus, maintenant],
@@ -35,7 +37,9 @@ export function usePostes() {
   return {
     postes,
     principal,
-    ouvert: postes?.some((poste) => poste.ouvert) ?? false,
+    /* Hors ligne, aucune demande ne peut partir : la lecture montre sa vue gardée, les gestes attendent (§ 5.5). */
+    ouvert: !horsLigne && (postes?.some((poste) => poste.ouvert) ?? false),
+    horsLigne,
     charge: etat === "connecte" && postes === undefined,
   };
 }

@@ -1,5 +1,6 @@
 import { chaine, chaineOuNull, ErreurPoste, objet, type Gestes } from "@/lib/poste/types";
-import type { Artefact } from "@/types/domain";
+import { renduDansEspace } from "@/lib/rendus-espace";
+import type { Artefact, Rendu, TypeRendu } from "@/types/domain";
 
 /**
  * Les gestes « artefacts » que l'ordinateur fait pour le téléphone (spec mobile T-20). La liste
@@ -20,9 +21,41 @@ export interface ArtefactLu {
   date: string;
 }
 
+/**
+ * Un rendu d'agent de ce PC, tel que le téléphone le lit (lot 7, contrat ajouté) : jamais son chemin,
+ * l'`id` est le seul moyen de le désigner. `apercu` : l'ordinateur sait en dessiner une image.
+ */
+export interface RenduLu {
+  id: string;
+  titre: string;
+  description: string;
+  type: TypeRendu;
+  agent: string;
+  projetId: string | null;
+  projet: string | null;
+  date: string;
+  apercu: boolean;
+}
+
 export interface ListeArtefacts {
   artefacts: ArtefactLu[];
+  rendus: RenduLu[];
+  /** Les rendus restés sur un serveur : ils ne sont pas dans cet espace, mais ils existent. */
+  rendusServeur: number;
+  /** La source claude.ai est allumée sur l'ordinateur. */
+  claude: boolean;
   projets: { id: string; nom: string }[];
+}
+
+/** Ce que l'écran peut filtrer : un titre, une description, un projet. */
+export function filtrerArtefacts<T extends { titre: string; description: string; projetId: string | null }>(liste: readonly T[], recherche: string, projet: string): T[] {
+  const q = recherche.trim().toLowerCase();
+  return liste.filter((a) => (!projet || a.projetId === projet) && (!q || `${a.titre} ${a.description}`.toLowerCase().includes(q)));
+}
+
+/** Une image venue de l'ordinateur : seulement une image en data URL, jamais une page ni une adresse. */
+export function imageApercu(image: unknown): string | null {
+  return typeof image === "string" && /^data:image\/(png|jpeg|webp|gif);base64,/.test(image) ? image : null;
 }
 
 export interface DepsArtefacts {
@@ -37,9 +70,21 @@ export interface DepsArtefacts {
   session: () => Promise<boolean>;
   /** Refait l'aperçu d'un artefact ; null s'il n'a pas pu être fait. */
   vignette: (url: string) => Promise<string | null>;
+  rendus: () => Rendu[];
+  claude: () => boolean;
+  nomAgent: (id: string) => string | null;
+  /** L'image d'un rendu, dessinée par l'ordinateur ; `forcer` la redessine. */
+  vignetteRendu: (chemin: string, forcer: boolean) => Promise<string | null>;
+  /** Ouvre le rendu sur l'écran de l'ordinateur. Lève une erreur lisible si ça n'a pas marché. */
+  ouvrirRendu: (chemin: string) => Promise<void>;
+  /** Retire le partage de ce rendu du compte, s'il y en a un (le bureau fait pareil). */
+  retirerPartage: (origine: string) => Promise<void>;
+  retirerRendu: (id: string) => void;
 }
 
 const sansBarre = (url: string) => url.replace(/\/$/, "");
+/** Ce que l'ordinateur sait dessiner, comme la carte du bureau. */
+const apercuPossible = (r: Rendu) => !!r.chemin && (r.type === "page" || r.type === "image");
 
 export function gestesArtefacts(d: DepsArtefacts): Gestes {
   const existant = (id: string) => {
@@ -52,19 +97,45 @@ export function gestesArtefacts(d: DepsArtefacts): Gestes {
     return projetId;
   };
 
+  /* Séparation stricte : seul un rendu de ce PC se lit, s'ouvre ou se retire d'ici (comme l'espace « Ce PC »). */
+  const renduIci = (args: unknown) => {
+    const id = chaine(objet(args), "id", 100);
+    const rendu = d.rendus().find((r) => r.id === id && renduDansEspace(r.origine, null));
+    if (!rendu) throw new ErreurPoste("introuvable", `Ce rendu n’est plus dans la liste sur ${d.ton}.`);
+    return rendu;
+  };
+
   return {
     "artefacts.liste": async (): Promise<ListeArtefacts> => {
       const projets = d.projets();
+      const nomProjet = (id: string | null) => projets.find((p) => p.id === id)?.name ?? null;
+      const rendus = d.rendus();
+      const claude = d.claude();
       return {
-        artefacts: d
-          .artefacts()
+        claude,
+        rendusServeur: rendus.filter((r) => !renduDansEspace(r.origine, null)).length,
+        rendus: rendus
+          .filter((r) => renduDansEspace(r.origine, null))
+          .map((r) => ({
+            id: r.id,
+            titre: r.titre,
+            description: r.description,
+            type: r.type,
+            agent: d.nomAgent(r.roleId) ?? "Agent indisponible",
+            projetId: r.projectId,
+            projet: nomProjet(r.projectId),
+            date: r.misAJour,
+            apercu: apercuPossible(r),
+          }))
+          .sort((x, y) => y.date.localeCompare(x.date)),
+        artefacts: (claude ? d.artefacts() : [])
           .map((x) => ({
             id: x.id,
             titre: x.titre,
             description: x.description,
             url: x.url,
             projetId: x.projectId,
-            projet: projets.find((p) => p.id === x.projectId)?.name ?? null,
+            projet: nomProjet(x.projectId),
             date: x.misAJour ?? x.ajouteLe,
           }))
           .sort((x, y) => y.date.localeCompare(x.date)),
@@ -83,11 +154,44 @@ export function gestesArtefacts(d: DepsArtefacts): Gestes {
     /** Les aperçus se refont sur l'ordinateur, en fond : le téléphone n'attend pas chaque page. */
     "artefacts.apercus": async () => {
       if (!(await d.session())) throw new ErreurPoste("apercu", `Aperçu indisponible : connecte claude.ai une fois dans l’app sur ${d.ton}.`);
-      const urls = d.artefacts().map((x) => x.url);
+      const urls = d.claude() ? d.artefacts().map((x) => x.url) : [];
+      const copies = d.rendus().filter((r) => apercuPossible(r) && renduDansEspace(r.origine, null)).map((r) => r.chemin);
       void (async () => {
         for (const url of urls) await d.vignette(url).catch(() => null);
+        for (const chemin of copies) await d.vignetteRendu(chemin, true).catch(() => null);
       })();
-      return { lances: urls.length };
+      return { lances: urls.length + copies.length };
+    },
+
+    /** L'image d'un rendu, dessinée par l'ordinateur. Null : pas d'aperçu, ce n'est pas un rendu vide. */
+    "rendus.apercu": async (args) => {
+      const rendu = renduIci(args);
+      if (!apercuPossible(rendu)) return { image: null };
+      try {
+        return { image: imageApercu(await d.vignetteRendu(rendu.chemin, false)) };
+      } catch {
+        return { image: null };
+      }
+    },
+
+    /** « Ouvrir sur ton Mac » : le rendu s'ouvre sur l'écran de l'ordinateur, le téléphone ne reçoit rien. */
+    "rendus.ouvrir": async (args) => {
+      const rendu = renduIci(args);
+      if (!rendu.chemin) throw new ErreurPoste("introuvable", `Ce rendu n’a pas de copie sur ${d.ton}.`);
+      try {
+        await d.ouvrirRendu(rendu.chemin);
+      } catch (e) {
+        throw new ErreurPoste("erreur", `Ce rendu n’a pas pu s’ouvrir sur ${d.ton}.`, { cause: e });
+      }
+      return { ok: true };
+    },
+
+    /** Retirer : la copie de KLYRA part, l'original de l'agent reste (`retirerRendu`, `supprimerCopieRendu`). */
+    "rendus.retirer": async (args) => {
+      const rendu = renduIci(args);
+      await d.retirerPartage(rendu.origine);
+      d.retirerRendu(rendu.id);
+      return { ok: true };
     },
 
     "artefacts.modifier": async (args) => {

@@ -383,7 +383,9 @@ body[data-glisse] iframe {
   from { opacity: 0; }
 }
 
-/* Un réglage trouvé par la recherche : il s'éclaire en bleu pâle, puis s'éteint. */
+/* Un réglage trouvé par la recherche : il s'éclaire en bleu pâle, puis s'éteint. Pareil pour une ligne ou
+   une carte du téléphone revenue d'un geste réussi. */
+.klyra-telephone-eclaire[data-eclaire],
 .klyra-reglage[data-eclaire] {
   animation: klyra-eclaire 1800ms var(--ease-sortie);
 }
