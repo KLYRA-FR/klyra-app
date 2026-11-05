@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo, type ReactNode } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import Link from "next/link";
 import { Icon } from "@/components/icons/Icon";
 import { RondApercu } from "@/components/roles/AgentRond";
@@ -12,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { listeMesAgents, type LigneAgent } from "@/lib/telephone/agents";
 import type { RoleTeinte } from "@/types/domain";
 import { MessageErreur } from "./Controles";
+import { useCartesEspace, useConversationsEspace } from "@/lib/telephone/espace";
 
 /**
  * Pièces communes aux écrans Agents, Artefacts et Réglages du téléphone : les cartes d'agents du
@@ -20,8 +19,8 @@ import { MessageErreur } from "./Controles";
 
 /** Les cartes d'agents et les conversations du compte (M-4), rangées comme Mes agents. */
 export function useCartesAgents() {
-  const cartes = useQuery(api.conversationsCompte.agents, {});
-  const conversations = useQuery(api.conversationsCompte.liste, {});
+  const cartes = useCartesEspace();
+  const conversations = useConversationsEspace();
   const liste = useMemo(() => (cartes ? listeMesAgents(cartes, conversations ?? []) : null), [cartes, conversations]);
   const carte = (id: string): LigneAgent | null => (liste ? ([liste.assistant, ...liste.actifs, ...liste.hors].find((a) => a.id === id) ?? null) : null);
   return { cartes, conversations, liste, carte };

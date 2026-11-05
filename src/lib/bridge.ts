@@ -582,6 +582,8 @@ export interface KlyraBridge {
   espace?: {
     lire: (lieu: string, depuis?: number) => Promise<Reponse<unknown>>;
     ecrire: (lieu: string, corps: { elements: unknown[]; supprimes: unknown[] }) => Promise<Reponse<{ revision: number }>>;
+    workflows: (lieu: string, methode: "lancer" | "arreter" | "decider", corps: unknown) => Promise<Reponse<unknown>>;
+    surEvenement: (callback: (lieu: string, event: unknown) => void) => () => void;
   };
   conversations: {
     avantFermeture: (callback: () => void) => () => void;

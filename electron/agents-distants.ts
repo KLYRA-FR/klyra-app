@@ -25,6 +25,8 @@ export interface Fenetre {
   spontane: (requestId: string, sessionId: string, contexte: (ContexteReponse & { lieu: string }) | null) => void;
   /** Un livrable publié par un agent du VPS (`publier_artefact`, cf. serveur/rendus.mjs) : l'écran l'ajoute, sans le copier sur ce PC. */
   rendu: (origine: string, rendu: RenduVps) => void;
+  /** Ce qu'un VPS annonce de lui-même (cf. useEspaceServeurs). */
+  serveur?: (origine: string, event: unknown) => void;
 }
 
 /** L'annonce d'un livrable du VPS, vérifiée champ par champ. */
@@ -236,6 +238,11 @@ function distribuer(origine: string, entree: Entree) {
   if (typeof entree.requestId === "string" && entree.event) compterConsommation(entree.requestId, entree.event);
   const fenetre = liaison?.fenetre();
   if (!fenetre || typeof entree.requestId !== "string") return;
+  // Les workflows qui tournent sur le serveur : leur avancée, leurs notifications, un espace qui a changé.
+  if (entree.requestId === "workflows") {
+    if (entree.event) fenetre.serveur?.(origine, entree.event);
+    return;
+  }
   // Un outil du navigateur appelé par un agent du VPS : exécuté dans le navigateur de ce PC, résultat renvoyé au VPS.
   const appel = appelNavigateurDe(entree.event);
   if (appel) {

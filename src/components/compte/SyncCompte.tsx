@@ -6,7 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { EFFORTS, MODELES } from "@/components/chat/ChoixModele";
 import { lireClePoste } from "./SignalPoste";
-import { carteAgent, carteProjet, changements, conversationCompte, decoupages, messageCompte } from "@/lib/copie-compte";
+import { carteAgent, carteProjet, changements, conversationCompte, ticketCompte, decoupages, messageCompte } from "@/lib/copie-compte";
 import { teinteNouvelAgent, useAgents } from "@/lib/agents";
 import { plierAteliers } from "@/lib/atelier-agent";
 import type { ContexteAtelier } from "@/lib/copie-compte";
@@ -14,6 +14,9 @@ import { getBridge } from "@/lib/bridge";
 import { FORMATS_IMAGE } from "@/lib/collage";
 import { findMention } from "@/lib/mentions";
 import { lireOptions, pourCePoste } from "@/lib/telephone/options";
+import { useFermerTicket } from "@/components/tickets/useFermerTicket";
+import { filDuRappel, type RappelAConfier } from "@/lib/tickets";
+import { decisionDemande } from "@/lib/tickets-demandes";
 import { FIL, useWorkspace } from "@/lib/workspace";
 import type { Message } from "@/types/domain";
 
@@ -72,6 +75,14 @@ export function SyncCompte({ actif }: { actif: boolean }) {
   const prendreOperation = useMutation(api.operationsFile.prendre);
   const enAttente = useQuery(api.conversationsCompte.enAttente, actif ? {} : "skip");
   const operations = useQuery(api.operationsFile.aRejouer, actif ? {} : "skip");
+  const demandes = useQuery(api.ticketsCompte.aTraiter, actif ? {} : "skip");
+  const prendreDemande = useMutation(api.ticketsCompte.prendre);
+  const terminerDemande = useMutation(api.ticketsCompte.terminer);
+  const fermerTicket = useFermerTicket();
+  const fermerRef = useRef(fermerTicket);
+  useEffect(() => {
+    fermerRef.current = fermerTicket;
+  });
 
   /* Les derniers état et gestes, pour les boucles asynchrones. */
   const courant = useRef({ workspace, agents });
@@ -178,6 +189,67 @@ export function SyncCompte({ actif }: { actif: boolean }) {
     [prendreOperation],
   );
 
+  /*
+   * ─── Les demandes du téléphone sur les tickets ──────────────────
+   * Contrat des lots 3 et 4 : dans l'ordre, une demande déjà appliquée n'est pas rejouée, et l'accusé
+   * porte l'état final du fil. Un conflit ou un retrait se disent, sans rien faire.
+   */
+  const rejouerDemande = useCallback(
+    async (id: Id<"demandesTicket">) => {
+      const d = await prendreDemande({ id });
+      if (!d) return;
+      const finir = (etat: "confirmee" | "echouee", resultat: Record<string, unknown>, suite: { ticket?: string | null; retirer?: boolean } = {}) =>
+        terminerDemande({ id, etat, resultat: JSON.stringify(resultat), ...suite });
+      try {
+        const { workspace: w, agents: a } = courant.current;
+        const chats = w.state.chats;
+        const chatId = d.conversationOrigine;
+        const chat = chats.find((c) => c.id === chatId);
+        const valeur = JSON.parse(d.valeur) as Record<string, unknown>;
+
+        if (d.type === "confier") {
+          if (chat?.fil) return void (await finir("confirmee", { fil: chatId }));
+          const roleId = String(valeur.roleId);
+          const lu = valeur.rappel as { source: "local" | "compte"; id: string; titre?: string; notes?: string; echeance?: string | null; heure?: string | null; priorite?: 0 | 1 | 2 | 3 };
+          const existant = filDuRappel(chats, lu.source, lu.id);
+          if (existant && existant.fil.statut === "ouvert") return void (await finir("echouee", { code: "deja-confie", fil: existant.id }));
+          if (!a.roles.some((r) => r.id === roleId)) return void (await finir("echouee", { code: "retrait" }));
+          let rappel: RappelAConfier;
+          if (lu.source === "local") {
+            const tache = w.state.taches.find((t) => t.id === lu.id);
+            if (!tache) return void (await finir("echouee", { code: "rappel-inaccessible" }));
+            rappel = { source: "local", id: tache.id, titre: tache.titre, notes: tache.notes, echeance: tache.date, heure: tache.heure, priorite: tache.priorite };
+          } else {
+            rappel = { source: "compte", id: lu.id, titre: lu.titre ?? "", notes: lu.notes ?? "", echeance: lu.echeance ?? null, heure: lu.heure ?? null, priorite: lu.priorite ?? 0 };
+          }
+          w.confierRappel(rappel, roleId, chatId);
+          crees.current.add(chatId);
+          return void (await finir("confirmee", { fil: chatId }));
+        }
+
+        if (!chat?.fil) return void (await finir("echouee", { code: "retrait" }));
+        const duFil = w.state.messages.filter((m) => m.chatId === chatId);
+        const projets = w.state.projects;
+        if (chat.fil.demandes?.includes(d.demandeId)) return void (await finir("confirmee", {}, { ticket: ticketCompte(chat, duFil, projets, lireClePoste()) }));
+        const decision = decisionDemande(chat.fil, { type: d.type, valeur, revision: d.revision }, { travaille: !!w.state.travail[chatId], aReponse: duFil.some((m) => m.author.kind === "role" && m.statut !== "en-cours"), maintenant: new Date() });
+        if ("conflit" in decision) return void (await finir("echouee", { code: decision.conflit }));
+        let rappelCoche: string | null = null;
+        if (d.type === "fermer" || d.type === "supprimer") rappelCoche = await fermerRef.current(chatId, d.type === "supprimer");
+        else if (d.type === "rouvrir") w.rouvrirFil(chatId);
+        else if (d.type === "etape") w.majTicket(chatId, { etape: "a-faire" });
+        else if (d.type === "priorite") w.majTicket(chatId, { priorite: decision.fil.priorite });
+        const revision = (chat.fil.revision ?? 0) + 1;
+        const demandesAppliquees = [...(chat.fil.demandes ?? []), d.demandeId].slice(-20);
+        w.majTicket(chatId, { revision, demandes: demandesAppliquees });
+        const suivant = { ...chat, fil: { ...decision.fil, revision, demandes: demandesAppliquees } };
+        await finir("confirmee", rappelCoche ? { rappel: rappelCoche } : {}, d.type === "supprimer" ? { retirer: true } : { ticket: ticketCompte(suivant, duFil, projets, lireClePoste()) });
+      } catch {
+        await finir("echouee", { code: "erreur" }).catch(() => undefined);
+      }
+    },
+    [prendreDemande, terminerDemande],
+  );
+
   /* ─── Copier l'ordinateur dans le compte ─────────────────────── */
 
   const envoyes = useRef({ conversations: new Map<string, string>(), messages: new Map<string, string>(), agents: new Map<string, string>(), projets: new Map<string, string>(), origines: "" });
@@ -215,7 +287,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
       }
       const dossiers = new Map(chats.map((c) => [c.id, projects.find((p) => p.id === c.projectId)?.folder || null]));
 
-      const conversations = chats.flatMap((chat) => conversationCompte(chat, parChat.get(chat.id) ?? [], projects, travail[chat.id] ?? null) ?? []);
+      const conversations = chats.flatMap((chat) => conversationCompte(chat, parChat.get(chat.id) ?? [], projects, travail[chat.id] ?? null, lireClePoste()) ?? []);
       const c = changements(conversations, (x) => x.origine, memo.conversations);
       for (const lot of decoupages(c.lot, 40)) await importerConversations({ lot });
       for (const [k, v] of c.empreintes) memo.conversations.set(k, v);
@@ -279,11 +351,12 @@ export function SyncCompte({ actif }: { actif: boolean }) {
   }, [copier]);
 
   useEffect(() => {
-    if (!actif || !enAttente || !operations || !state.charge || agents.status === "chargement") return;
+    if (!actif || !enAttente || !operations || !demandes || !state.charge || agents.status === "chargement") return;
     const cle = lireClePoste();
     const file = [
       ...enAttente.filter((m) => pourCePoste(lireOptions(m.options), cle)).map((m) => ({ genre: "message" as const, id: m._id as string, creeLe: m.creeLe })),
       ...operations.map((o) => ({ genre: "operation" as const, id: o._id as string, creeLe: o.creeLe })),
+      ...demandes.filter((d) => d.prisLe === null || Date.now() - d.prisLe > 120_000).map((d) => ({ genre: "demande" as const, id: d._id as string, creeLe: d.creeLe })),
     ]
       .filter((e) => !vus.current.has(e.id))
       .sort((a, b) => a.creeLe - b.creeLe);
@@ -293,6 +366,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
       for (const e of file) {
         try {
           if (e.genre === "message") await reprendreMessage(e.id as Id<"messagesFile">);
+          else if (e.genre === "demande") await rejouerDemande(e.id as Id<"demandesTicket">);
           else await rejouerOperation(e.id as Id<"operationsFile">);
         } catch {
           /* Un élément illisible ne bloque pas les suivants. */
@@ -303,7 +377,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
         programmer(0);
       }
     });
-  }, [actif, enAttente, operations, state.charge, agents.status, reprendreMessage, rejouerOperation, programmer]);
+  }, [actif, enAttente, operations, demandes, state.charge, agents.status, reprendreMessage, rejouerOperation, rejouerDemande, programmer]);
 
   useEffect(() => {
     if (!actif || !state.charge || !fileVidee.current) return;

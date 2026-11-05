@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import { RondApercu, VisuelAgent } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
 import { cn } from "@/lib/cn";
 import { roleLisible } from "@/lib/telephone/agents";
 import type { CarteAgentLue } from "@/lib/telephone/chats";
+import { useCartesEspace } from "@/lib/telephone/espace";
 
 /**
  * Les agents vus du téléphone : leur carte d'identité copiée dans le compte (spec M-4), pas les fiches
@@ -18,7 +17,7 @@ import type { CarteAgentLue } from "@/lib/telephone/chats";
 const teinteSure = (teinte: string | undefined): RoleTeinte => (ROLE_TEINTES as string[]).includes(teinte ?? "") ? (teinte as RoleTeinte) : "ocre";
 
 export function useCartes() {
-  const cartes = useQuery(api.conversationsCompte.agents, {});
+  const cartes = useCartesEspace();
   return useMemo(() => {
     /* C-2a : un rôle court qui n'est que l'id de l'agent (« redaction ») ne s'affiche pas. */
     const parId = new Map((cartes ?? []).map((c) => [c.origine, { ...c, roleCourt: roleLisible(c.roleCourt, c.origine) }]));

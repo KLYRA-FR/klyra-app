@@ -17,6 +17,8 @@
  *   (règles, outils et leurs textes, écriture d'un secret dans un fichier hors de Git) ;
  * - `serveur/workflows-outils.mjs` : les outils des workflows pour les agents (electron/workflows-outils.ts) ;
  * - `serveur/composio-connect.mjs` : la connexion Composio d'un serveur (electron/composio-connect.ts) ;
+ * - `serveur/workflows-moteur-coeur.mjs`, `serveur/workflows-types.mjs` et `serveur/planning-passages.mjs` : le moteur
+ *   des workflows, le même que dans l'app (src/lib/workflows/moteur.ts, src/types/workflows.ts, src/lib/planning.ts) ;
  * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
  *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture).
  * - `serveur/version-code.mjs` : la version du code du serveur (electron/version-serveur.ts), montée ici dès que
@@ -53,6 +55,9 @@ const FICHIERS = [
   ["electron/coffre-fichier.ts", "serveur/coffre-fichier.mjs"],
   ["electron/workflows-outils.ts", "serveur/workflows-outils.mjs"],
   ["electron/composio-connect.ts", "serveur/composio-connect.mjs"],
+  ["src/types/workflows.ts", "serveur/workflows-types.mjs"],
+  ["src/lib/workflows/moteur.ts", "serveur/workflows-moteur-coeur.mjs"],
+  ["src/lib/planning.ts", "serveur/planning-passages.mjs"],
 ];
 const VERSION = ["electron/version-serveur.ts", "serveur/version-code.mjs"];
 
@@ -64,7 +69,7 @@ let perime = false;
 function generer(depuis, vers) {
   const source = readFileSync(new URL(`../${depuis}`, import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, removeComments: false, verbatimModuleSyntax: false } });
-  const code = outputText.replace(/(from\s+")\.\/([^"]+)(")/g, (_, avant, nom, apres) => {
+  const code = outputText.replace(/from\s+"@\/types\/workflows"/g, 'from "./workflows-types.mjs"').replace(/(from\s+")\.\/([^"]+?)(\.mjs)?(")/g, (_, avant, nom, _mjs, apres) => {
     const base = nom.replace(/\.(ts|js)$/, "");
     if (!GENERES.has(base)) throw new Error(`${depuis} importe ./${nom}, qui n’est pas généré pour le serveur.`);
     return `${avant}./${base}.mjs${apres}`;

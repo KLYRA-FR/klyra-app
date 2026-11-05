@@ -11,7 +11,7 @@ import { COMMANDE_COMPACTER, formaterJetons, MARGE_PLUS_TARD } from "@/lib/conte
 import type { Activite } from "@/lib/copie-compte";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { bandeauComposeur, majuscule, support, supportOuOrdinateur } from "@/lib/poste-texte";
-import { nomLieu, useServeursRelies } from "@/lib/lieux";
+import { lieuDeHote, lireIdDirect, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { surRepondre } from "@/lib/repondre";
 import { jetonAppareil } from "@/lib/serveur-vps";
 import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skills";
@@ -322,7 +322,9 @@ export function ComposeurFil({
   const posteVise = postesOuverts.find((p) => p.cle === posteChoisi) ?? postesOuverts[0];
   /* Conversation d'un VPS relié à ce téléphone : ordinateur fermé, le message part directement au VPS (`envoi.ts`). */
   const serveurs = useServeursRelies();
-  const lieu = conversation?.lieu ?? null;
+  /* Une conversation directe pas encore copiée dans le compte : son id dit son serveur. */
+  const hote = lireIdDirect(origine)?.hote;
+  const lieu = conversation?.lieu ?? (hote ? lieuDeHote(hote) : null);
   const directVps = !ouvert && !!lieu && origine.startsWith("dm-") && !!jetonAppareil(lieu);
   const bandeau = ouvert
     ? null

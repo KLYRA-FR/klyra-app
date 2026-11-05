@@ -9,6 +9,7 @@
  */
 import { ErreurEquipe } from "./equipe.mjs";
 import { creerEspace, ErreurEspace } from "./espace.mjs";
+import { creerMoteurWorkflows } from "./workflows-moteur.mjs";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer as creerHttp } from "node:http";
@@ -32,6 +33,9 @@ export const CHEMIN_EQUIPE = "/klyra/v1/equipe";
 export const CHEMIN_COFFRE = "/klyra/v1/coffre";
 export const CHEMIN_ESPACE = "/klyra/v1/espace";
 export const CHEMIN_COMPOSIO = "/klyra/v1/composio";
+export const CHEMIN_WORKFLOWS = "/klyra/v1/workflows";
+export const CHEMIN_WEBHOOK = "/klyra/v1/webhook";
+const WEBHOOK_MAX = 100_000;
 export const CHEMIN_ROUTINES = "/klyra/v1/routines";
 export const CHEMIN_MOTEURS = "/klyra/v1/moteurs";
 export const CHEMIN_IA = "/klyra/v1/ia";
@@ -144,6 +148,22 @@ p{margin:0;font-size:15px;line-height:1.35}
 </main></body></html>`;
 }
 
+/** Le corps brut d'un webhook ; null s'il est trop gros. */
+function lireTexteRequete(req, max) {
+  return new Promise((resolve) => {
+    let texte = "";
+    let trop = false;
+    req.setEncoding("utf8");
+    req.on("data", (morceau) => {
+      if (trop) return;
+      texte += morceau;
+      if (texte.length > max) trop = true;
+    });
+    req.on("end", () => resolve(trop ? null : texte));
+    req.on("error", () => resolve(null));
+  });
+}
+
 function lireCorpsRequete(req, max = CORPS_MAX) {
   return new Promise((resolve) => {
     let texte = "";
@@ -216,7 +236,7 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
   /* Conversation de chaque réponse en cours, et dernière session de chaque agent par conversation. */
   const conversations = new Map();
   let sessions = {};
-  let surFin = null;
+  const surFin = new Set();
   if (fichierSessions) {
     try {
       const lu = JSON.parse(readFileSync(fichierSessions, "utf8"));
@@ -249,14 +269,14 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
       ajouter({ requestId, sessionId: sessionId ?? null, event, ...(lie ? { contexte: lie } : {}) });
       retenirSession(requestId, sessionId);
       if (event?.type === "fin") {
-        surFin?.({ requestId, event, sessionId: sessionId ?? null, contexte: lie, cle: conversations.get(requestId) ?? null });
+        for (const fn of surFin) fn({ requestId, event, sessionId: sessionId ?? null, contexte: lie, cle: conversations.get(requestId) ?? null });
         contextes.delete(requestId);
         conversations.delete(requestId);
       }
     },
     /** Prévient quand une réponse finit : le serveur la range s'il n'y a personne pour le faire. */
-    surFin(fn) {
-      surFin = fn;
+    ecouterFin(fn) {
+      surFin.add(fn);
     },
     /** La réponse appartient à cette conversation (`cleConversation`) : sa session y sera retenue. */
     lierConversation(requestId, cle) {
@@ -322,7 +342,7 @@ export function creerGestionnaire(options) {
   /* L'espace du serveur (conversations, projets, workflows…) : là où il y a des agents. */
   const espace = options.espace ?? (agents ? creerEspace({ donnees: dossier }) : null);
   /* PC fermé, personne n'écoute : le serveur range lui-même la réponse dans sa conversation. */
-  journal?.surFin?.(({ requestId, event, sessionId, contexte, cle }) => {
+  journal?.ecouterFin?.(({ requestId, event, sessionId, contexte, cle }) => {
     if (!espace || journal.ecouteurs() > 0) return;
     const [conversation, agent] = typeof cle === "string" ? cle.split("|") : [];
     try {
@@ -331,6 +351,7 @@ export function creerGestionnaire(options) {
       /* Le journal la garde encore 24 h : l'app la rattrapera. */
     }
   });
+  const workflows = options.workflows ?? null;
   let echecs = 0;
 
   const appareilDe = (req) => {
@@ -350,6 +371,7 @@ export function creerGestionnaire(options) {
     ...(agents?.coffreServeur ? { coffrePropre: true } : {}),
     ...(espace ? { espacePropre: true } : {}),
     ...(agents?.composioServeur ? { composioPropre: true } : {}),
+    ...(workflows ? { workflowsPropres: true } : {}),
     ...(fichiers ? { projets: fichiers.racine } : {}),
     ...(routines ? { routines: true } : {}),
     /* Réglages du serveur › Fournisseurs : moteurs (Claude Code, Codex) et IA à consulter. */
@@ -509,13 +531,38 @@ export function creerGestionnaire(options) {
       }
     }
 
+    /* Le webhook d'un workflow : pas d'appareil, le secret de l'adresse fait foi. Rien ne dit s'il existe, sauf 202. */
+    if (url.pathname.startsWith(`${CHEMIN_WEBHOOK}/`)) {
+      if (!workflows) return repondre(res, 404, { erreur: "introuvable" });
+      if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+      const secret = url.pathname.slice(CHEMIN_WEBHOOK.length + 1);
+      if (!/^[A-Za-z0-9_-]{8,64}$/.test(secret)) return repondre(res, 404, { erreur: "introuvable" });
+      const corps = await lireTexteRequete(req, WEBHOOK_MAX);
+      if (corps === null) return repondre(res, 413, { erreur: "trop-gros" });
+      return workflows.webhook(secret, corps) ? repondre(res, 202, { ok: true }) : repondre(res, 404, { erreur: "introuvable" });
+    }
+
+    if (url.pathname.startsWith(`${CHEMIN_WORKFLOWS}/`)) {
+      if (!workflows) return repondre(res, 404, { erreur: "introuvable" });
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+      try {
+        const corps = await lireCorpsRequete(req, CORPS_EQUIPE_MAX);
+        return repondre(res, 200, { resultat: workflows.appeler(url.pathname.slice(CHEMIN_WORKFLOWS.length + 1), corps ?? {}) });
+      } catch (erreur) {
+        return repondre(res, 400, { erreur: "workflows", message: erreur instanceof Error ? erreur.message : "Demande illisible." });
+      }
+    }
+
     if (url.pathname.startsWith(`${CHEMIN_ESPACE}/`)) {
       if (!espace) return repondre(res, 404, { erreur: "introuvable" });
       if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
       try {
         const corps = await lireCorpsRequete(req, CORPS_EQUIPE_MAX);
-        return repondre(res, 200, { resultat: espace.appeler(url.pathname.slice(CHEMIN_ESPACE.length + 1), corps ?? {}) });
+        const resultat = espace.appeler(url.pathname.slice(CHEMIN_ESPACE.length + 1), corps ?? {});
+        /* L'app sait ainsi que les workflows de ce serveur tournent ici : elle ne les lance plus elle-même. */
+        return repondre(res, 200, { resultat: { ...resultat, ...(workflows ? { moteurWorkflows: true } : {}) } });
       } catch (erreur) {
         if (erreur instanceof ErreurEspace) return repondre(res, 400, { erreur: "espace", message: erreur.message });
         throw erreur;
@@ -782,20 +829,38 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane, ia, version: String(PROTOCOLE), ecouteurs: journal.ecouteurs });
   const moteurs = creerMoteurs({ home, claude: agents.claude, codex: agents.codex, grok: agents.grok });
   routines = creerRoutines({ donnees: dossier, home, envoyer: agents.envoyer, annuler: agents.annuler });
+  const fichiers = creerFichiers(home);
+  const espace = creerEspace({ donnees: dossier });
+  /* Les workflows du serveur tournent ici, PC éteint (cf. workflows-moteur.mjs). */
+  const workflows = creerMoteurWorkflows({
+    donnees: dossier,
+    espace,
+    journal,
+    envoyer: agents.envoyer,
+    annuler: agents.annuler,
+    appelLibre: agents.appelLibre,
+    ecrireFichier: (chemin, texte) => fichiers.ecrireTexte(chemin, texte),
+    cle: cleConversation,
+    acces: agents.accesServeur,
+  });
+  agents.brancherWorkflows(workflows);
   const ecoute = await ecouter({
     nom: process.env.KLYRA_SERVEUR_NOM,
     dossier,
     journal,
     agents,
-    fichiers: creerFichiers(home),
+    fichiers,
     routines,
     moteurs,
     ia,
+    espace,
+    workflows,
     port,
     hote: process.env.KLYRA_SERVEUR_HOTE ?? "127.0.0.1",
     cert: certChemin ? lireFichier(certChemin, "Certificat") : undefined,
     cle: cleChemin ? lireFichier(cleChemin, "Clé") : undefined,
   });
   routines.demarrer();
+  workflows.demarrer();
   process.stdout.write(`klyra-serveur ${ecoute.port}\n`);
 }

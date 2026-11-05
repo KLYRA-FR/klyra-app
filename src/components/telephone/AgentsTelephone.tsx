@@ -13,7 +13,8 @@ import { Onglets } from "@/components/ui/Onglets";
 import { messageErreur } from "@/lib/compte";
 import { useDecrireAAssistant } from "@/lib/decrire-a-assistant";
 import { useLecturePoste } from "@/lib/poste/client";
-import { idDirect } from "@/lib/workspace";
+import { useLieuActif } from "@/lib/lieux";
+import { useDirectEspace } from "@/lib/telephone/espace";
 import { classerActifs, competencesCarte, ID_ASSISTANT, libelleRetour, nonLusAgent, texteConversations, type EtatsAgentsPoste, type LigneAgent } from "@/lib/telephone/agents";
 import { nouvelIdFil } from "@/lib/telephone/chats";
 import type { ChiffresEquipe } from "@/lib/telephone/gestes-agents";
@@ -104,6 +105,8 @@ function ListeAgentsTelephone() {
 
 /** Mes agents : cartes teintées, l'assistant, les actifs, les masqués, « Hors de Mes agents », puis les chiffres. */
 function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
+  const lieu = useLieuActif();
+  const direct = useDirectEspace();
   const router = useRouter();
   const { liste, conversations } = useCartesAgents();
   const etats = useLecturePoste<EtatsAgentsPoste>("agents.etats", {});
@@ -152,10 +155,13 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
     ? [...classes.masques, ...liste.actifs.filter((a) => a.id === retraitEnCours && classes.masques.every((m) => m.id !== a.id))]
     : classes.masques;
   const directeDe = (id: string) => conversations?.find((c) => c.kind === "direct" && !c.parent && c.roleIds.includes(id));
-  const ecrireVers = (id: string) => directeDe(id)?.origine ?? idDirect(id);
+  const ecrireVers = (id: string) => directeDe(id)?.origine ?? direct(id);
   const remettre = (agent: LigneAgent) =>
     void agir("agents.activer", { id: agent.id, actif: true }, `${agent.nom} est de retour dans tes agents.`).then((ok) => ok && etats.relancer());
-  const posteFerme = { desactivee: !ouvert || occupe, note: ouvert ? undefined : <NotePoste /> };
+  /* Les fiches d'un VPS se modifient depuis l'app de bureau, sur ce serveur : ce geste-là irait à l'ordinateur. */
+  const posteFerme = lieu
+    ? { desactivee: true, note: <span>Depuis l’app de bureau, sur ce serveur.</span> }
+    : { desactivee: !ouvert || occupe, note: ouvert ? undefined : <NotePoste /> };
 
   const masquer = (agent: LigneAgent) => {
     setEnRetrait(agent.id);
@@ -191,8 +197,8 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
       { libelle: "Écrire", icone: "message-square", onChoisir: ecrire },
       { libelle: "Nouveau fil", icone: "message-plus-01", onChoisir: nouveauFil },
     ];
-    if (!assistantCarte) rapides.push({ libelle: etat?.epingle ? "Épinglé" : "Épingler", icone: "pin-01", actif: !!etat?.epingle, desactivee: !ouvert || occupe, onChoisir: basculerEpingle });
-    rapides.push({ libelle: "Sourdine", icone: etat?.muet ? "volume-01" : "bell-01", actif: !!etat?.muet, desactivee: !ouvert || occupe, onChoisir: basculerSourdine });
+    if (!assistantCarte) rapides.push({ libelle: etat?.epingle ? "Épinglé" : "Épingler", icone: "pin-01", actif: !!etat?.epingle, desactivee: posteFerme.desactivee, onChoisir: basculerEpingle });
+    rapides.push({ libelle: "Sourdine", icone: etat?.muet ? "volume-01" : "bell-01", actif: !!etat?.muet, desactivee: posteFerme.desactivee, onChoisir: basculerSourdine });
     const listeActions: ActionMenu[] = [];
     if ((directe?.nonLus ?? 0) > 0 && directe) {
       listeActions.push({
@@ -229,7 +235,7 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
           separateurAvant: true,
           onChoisir: () => masquer(agent),
           ...posteFerme,
-          note: ouvert ? "Il reste actif et appelable" : <NotePoste />,
+          note: posteFerme.note ?? "Il reste actif et appelable",
         },
         { libelle: "Désactiver…", icone: "lock-01", onChoisir: () => setDesactiver(agent), danger: true, ...posteFerme },
       );
@@ -314,7 +320,7 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
                   geste={
                     <Bouton
                       variant="blanc"
-                      disabled={!ouvert || occupe || agent.id === retraitEnCours}
+                      disabled={posteFerme.desactivee || agent.id === retraitEnCours}
                       onClick={() => {
                         setEnRetrait((id) => (id === agent.id ? null : id));
                         void agir("agents.preference", { id: agent.id, masque: false }, `${agent.nom} de retour dans la liste.`).then((ok) => ok && etats.relancer());
@@ -344,7 +350,7 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
                   nom={agent.nom}
                   ligne2={`${detail} · ${nbConversations(agent.id)}`}
                   geste={
-                    <Bouton variant="blanc" disabled={!ouvert || occupe} onClick={() => remettre(agent)}>
+                    <Bouton variant="blanc" disabled={posteFerme.desactivee} onClick={() => remettre(agent)}>
                       {libelleRetour(etat)}
                     </Bouton>
                   }
@@ -352,7 +358,7 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
               );
             })}
           </GroupeListe>
-          {ouvert ? null : <NotePoste className="mt-2 px-1" />}
+          {posteFerme.note ? <div className="mt-2 px-1 text-ui-xs text-texte-secondaire">{posteFerme.note}</div> : null}
         </SectionListe>
       ) : null}
       <ErreurGeste message={erreur?.message ?? echecFile} className="mt-3" />
@@ -367,7 +373,7 @@ function MesAgentsTelephone({ onCreer }: { onCreer: () => void }) {
             sous: [menu.id === ID_ASSISTANT ? "Ton assistant" : etatDe(menu.id)?.titre || menu.roleCourt, frais && etatDe(menu.id)?.enCours ? "travaille" : null, nonLusAgent(menu.id, conversations ?? []) ? `${nonLusAgent(menu.id, conversations ?? [])} non lu${nonLusAgent(menu.id, conversations ?? []) > 1 ? "s" : ""}` : null].filter(Boolean).join(" · ") || undefined,
           }}
           rapides={actions(menu).rapides}
-          noteRapides={ouvert ? undefined : <NotePoste />}
+          noteRapides={posteFerme.note}
           actions={actions(menu).lignes}
           onFermer={() => setMenu(null)}
         />

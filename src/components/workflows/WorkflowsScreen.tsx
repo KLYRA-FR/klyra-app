@@ -206,7 +206,7 @@ function Historique({
 /* ─── Un workflow ouvert ───────────────────────────────────────── */
 
 function Editeur({ wf, chantier }: { wf: Workflow; chantier: Chantier | null }) {
-  const { state, enregistrerWorkflow, lancerWorkflow, deciderApprobation } = useWorkspace();
+  const { state, enregistrerWorkflow, lancerWorkflow, deciderApprobation, moteurDuServeur } = useWorkspace();
   const roles = useRoles();
   /* Un agent construit ce workflow : le canevas montre son chantier, en lecture, jusqu'à l'enregistrement. */
   const construit = chantier && chantier.workflowId === wf.id ? chantier : null;
@@ -273,13 +273,20 @@ function Editeur({ wf, chantier }: { wf: Workflow; chantier: Chantier | null }) 
     if (wf.graphe !== avant && (grapheRef.current === avant || parAgent)) poser(wf.graphe);
   }, [wf.graphe, wf.versions]);
 
+  /* Sur un serveur à jour, le webhook est sur lui (il part même cet ordinateur éteint). */
+  const adresseDuWebhook = async (secret: string, ws: NonNullable<ReturnType<typeof getBridge>>["webhooks"]) => {
+    if (wf.lieu && moteurDuServeur(wf.lieu) === "serveur") return `${wf.lieu}/klyra/v1/webhook/${secret}`;
+    const r = await ws!.adresse(secret);
+    return r.ok ? r.data : null;
+  };
   /* Les adresses des webhooks déjà créés. */
   useEffect(() => {
     const ws = getBridge()?.webhooks;
     if (!ws) return;
     for (const [id, secret] of Object.entries(wf.webhooks ?? {}))
-      void ws.adresse(secret).then((r) => r.ok && setAdresses((a) => ({ ...a, [id]: r.data })));
-  }, [wf.webhooks]);
+      void adresseDuWebhook(secret, ws).then((adresse) => adresse && setAdresses((a) => ({ ...a, [id]: adresse })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `adresseDuWebhook` suit le serveur du workflow, relu ici.
+  }, [wf.webhooks, wf.lieu]);
 
   const executions = useMemo(() => state.executions.filter((e) => e.workflowId === wf.id), [state.executions, wf.id]);
   const enCours = executions.find((e) => e.statut === "en-cours" || e.statut === "approbation");
@@ -357,7 +364,7 @@ function Editeur({ wf, chantier }: { wf: Workflow; chantier: Chantier | null }) 
     const secret = Array.from(octets, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 24);
     enregistrerWorkflow({ ...wfRef.current, graphe: grapheRef.current, webhooks: { ...wfRef.current.webhooks, [noeudId]: secret } });
     const ws = getBridge()?.webhooks;
-    if (ws) void ws.adresse(secret).then((r) => r.ok && setAdresses((a) => ({ ...a, [noeudId]: r.data })));
+    if (ws) void adresseDuWebhook(secret, ws).then((adresse) => adresse && setAdresses((a) => ({ ...a, [noeudId]: adresse })));
     else setAdresses((a) => ({ ...a, [noeudId]: "Relance l’app une fois pour activer les webhooks." }));
   };
 
@@ -578,7 +585,7 @@ function BarrePortail({
 /* ─── L'écran ──────────────────────────────────────────────────── */
 
 export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
-  const { state } = useWorkspace();
+  const { state, moteurDuServeur } = useWorkspace();
   const espace = useLieuActif();
   const demande = useSearchParams().get("workflow");
   /* Un lien (notification, conversation) vers un workflow d'un autre serveur : on propose d'y passer. */
@@ -586,9 +593,9 @@ export function WorkflowsScreen({ entete }: { entete?: ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {ailleurs && <AutreServeur lieu={ailleurs.lieu ?? null} quoi={`Le workflow « ${ailleurs.titre} »`} />}
-      {espace && (
+      {espace && moteurDuServeur(espace) === "app" && (
         <p role="note" className="m-0 border-b border-bordure-subtile bg-fond-surface-grise px-5 py-2 text-ui-s text-texte-secondaire">
-          Ces workflows appartiennent à ce serveur et leurs agents y travaillent. Pour l’instant, ils ne se lancent que tant que l’app est ouverte sur cet ordinateur.
+          Ce serveur n’est pas encore à jour : ses workflows ne se lancent que tant que l’app est ouverte sur cet ordinateur. Relance la commande d’installation sur le VPS pour qu’ils tournent sur lui.
         </p>
       )}
       <div className="min-h-0 flex-1">

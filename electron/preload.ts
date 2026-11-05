@@ -291,6 +291,13 @@ contextBridge.exposeInMainWorld("klyra", {
   espace: {
     lire: (lieu: string, depuis?: number) => ipcRenderer.invoke("espace:lire", lieu, depuis),
     ecrire: (lieu: string, corps: unknown) => ipcRenderer.invoke("espace:ecrire", lieu, corps),
+    workflows: (lieu: string, methode: string, corps: unknown) => ipcRenderer.invoke("espace:workflows", lieu, methode, corps),
+    /* Ce qu'annonce un VPS de lui-même : l'avancée d'un workflow, une notification, un espace qui a changé. */
+    surEvenement: (callback: (lieu: string, event: unknown) => void) => {
+      const listener = (_e: unknown, lieu: string, event: unknown) => callback(lieu, event);
+      ipcRenderer.on("serveur:evenement", listener);
+      return () => ipcRenderer.removeListener("serveur:evenement", listener);
+    },
   },
   conversations: {
     /** L'app va se fermer : c'est le moment d'envoyer le dernier état. */

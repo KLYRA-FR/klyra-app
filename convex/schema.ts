@@ -271,6 +271,12 @@ export default defineSchema({
     modele: v.optional(v.union(v.string(), v.null())),
     /** La mesure de l'agent le plus lourd de la conversation, JSON court, sans contenu. Absent ou null : pas de mesure. */
     contexte: v.optional(v.union(v.string(), v.null())),
+    /** Le ticket du fil tel que l'ordinateur le copie (contrat des lots 3 et 4), JSON court. Null : pas un fil. Absent : version d'avant. */
+    ticket: v.optional(v.union(v.string(), v.null())),
+    /** La version du contrat Tickets que connaît l'ordinateur qui a copié cette ligne. Absent : un poste plus ancien. */
+    contratTickets: v.optional(v.number()),
+    /** Quand le compte a reçu ce ticket (horloge du serveur) : sa fraîcheur. */
+    ticketLu: v.optional(v.number()),
   })
     .index("by_membre_and_origine", ["membreId", "origine"])
     .index("by_membre_and_misAJour", ["membreId", "misAJour"]),
@@ -314,6 +320,8 @@ export default defineSchema({
     accroche: v.string(),
     statut: v.string(),
     epingle: v.boolean(),
+    /** Le VPS du projet ; absent : l'ordinateur. Le téléphone montre l'espace du serveur qu'il a choisi. */
+    lieu: v.optional(v.union(v.string(), v.null())),
   }).index("by_membre_and_origine", ["membreId", "origine"]),
 
   /** Message écrit sur le téléphone : il part sur l'ordinateur à son ouverture. */
@@ -335,6 +343,29 @@ export default defineSchema({
    * Un geste du téléphone sur une conversation (renommer, épingler, archiver un fil…), « Compte » dans
    * la spec : déjà appliqué à la copie du compte, il part sur l'ordinateur à son ouverture, dans l'ordre.
    */
+  /** Une demande du téléphone sur un ticket : acceptée, prise, puis confirmée ou échouée par l'ordinateur. */
+  demandesTicket: defineTable({
+    membreId: v.id("membres"),
+    demandeId: v.string(),
+    conversationOrigine: v.string(),
+    type: v.union(v.literal("priorite"), v.literal("etape"), v.literal("fermer"), v.literal("supprimer"), v.literal("rouvrir"), v.literal("confier")),
+    /** JSON court. */
+    valeur: v.string(),
+    /** « compte:<id> » ou « local:<id> » pour Confier. */
+    cleRappel: v.union(v.string(), v.null()),
+    etat: v.union(v.literal("en-attente"), v.literal("traitement"), v.literal("confirmee"), v.literal("echouee")),
+    /** La révision du ticket quand la demande est partie. */
+    revision: v.number(),
+    resultat: v.union(v.string(), v.null()),
+    creeLe: v.number(),
+    prisLe: v.union(v.number(), v.null()),
+    finiLe: v.union(v.number(), v.null()),
+  })
+    .index("by_membre_and_demande", ["membreId", "demandeId"])
+    .index("by_membre_and_etat_and_creeLe", ["membreId", "etat", "creeLe"])
+    .index("by_membre_and_creeLe", ["membreId", "creeLe"])
+    .index("by_membre_and_rappel", ["membreId", "cleRappel"]),
+
   operationsFile: defineTable({
     membreId: v.id("membres"),
     conversationOrigine: v.union(v.string(), v.null()),

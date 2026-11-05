@@ -30,6 +30,7 @@ import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, mot
 import { COMMANDE_RESUME_AUTO, estAvantDepart, estCommandeCompacter, formaterJetons, nouvelleMesure, peutRepartir, repartirAZero, resumeAvantEnvoi, resumePause, viderConversation } from "@/lib/contexte";
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
+import { notificationDeFin } from "@/lib/tickets-demandes";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import { creerOutilsWorkflows } from "@/lib/workflows/outils-agents";
 import { extraitMarkdown } from "@/lib/apercu/extrait";
@@ -620,7 +621,7 @@ interface WorkspaceApi {
    */
   creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, options?: OptionsFil) => string;
   /** Confie un rappel à un agent : un fil s'ouvre avec le rappel pour brief ; renvoie son id. */
-  confierRappel: (rappel: RappelAConfier, roleId: RoleId) => string;
+  confierRappel: (rappel: RappelAConfier, roleId: RoleId, idImpose?: string) => string;
   /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
   majTicket: (chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => void;
   renommerChat: (chatId: string, titre: string) => void;
@@ -654,6 +655,8 @@ interface WorkspaceApi {
   moi: Identite;
   /** L'accès des agents d'un serveur (absent : ce PC). */
   choisirAcces: (acces: Acces, lieu?: string | null) => void;
+  /** Où tournent les workflows d'un serveur : sur lui, dans cette app (serveur pas à jour), ou pas encore su. */
+  moteurDuServeur: (lieu: string) => "serveur" | "app" | "inconnu";
   enregistrerTache: (tache: Tache) => void;
   supprimerTache: (id: string) => void;
   restaurerTaches: () => RappelSupprime[];
@@ -1077,7 +1080,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const corps = extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? ""));
     void notifier(titre, corps, chatId, ok ? "agentFini" : "agentErreur");
     /* Le téléphone aussi, si la fenêtre n'a pas le focus (spec mobile § 8). */
-    pousserAuTelephone({ evenement: ok ? "agentFini" : "agentErreur", titre, corps, lien: lienMessage(chatId, messageId) });
+    pousserAuTelephone(notificationDeFin(stateRef.current.chats.find((c) => c.id === chatId), { ok, titre, corps, lien: lienMessage(chatId, messageId) }));
     return true;
   };
 
@@ -1296,7 +1299,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       let chat = stateRef.current.chats.find((c) => Object.values(c.sessions).includes(sessionId));
       let roleId = chat && Object.entries(chat.sessions).find(([, s]) => s === sessionId)?.[0];
       // Une routine tenue par un VPS : sa réponse va dans sa conversation, créée à sa première exécution.
-      if ((!chat || !roleId) && contexte && /^routine-/.test(contexte.chatId)) {
+      if ((!chat || !roleId) && contexte && /^(routine|wf)-/.test(contexte.chatId)) {
         roleId = contexte.agentId;
         chat = stateRef.current.chats.find((c) => c.id === contexte.chatId);
         if (!chat) {
@@ -1304,7 +1307,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             id: contexte.chatId,
             kind: "equipe",
             projectId: null,
-            title: `Routine « ${contexte.titre} »`,
+            title: contexte.chatId.startsWith("wf-") ? contexte.titre : `Routine « ${contexte.titre} »`,
             roleIds: [roleId],
             updatedAt: new Date().toISOString(),
             sessions: {},
@@ -1852,8 +1855,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, []);
 
   const confierRappel = useCallback(
-    (rappel: RappelAConfier, roleId: RoleId) => {
-      const id = creerFil(roleId, rappel.titre, null, { priorite: rappel.priorite, echeance: rappel.echeance, rappel: { source: rappel.source, id: rappel.id } });
+    (rappel: RappelAConfier, roleId: RoleId, idImpose?: string) => {
+      const id = creerFil(roleId, rappel.titre, null, { priorite: rappel.priorite, echeance: rappel.echeance, rappel: { source: rappel.source, id: rappel.id } }, idImpose ? { id: idImpose, lieu: null } : undefined);
       timers.current.push(setTimeout(() => envoyerRef.current(id, briefDuRappel(rappel), null, []), 0));
       return id;
     },
@@ -1878,7 +1881,22 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     stateRef.current = { ...stateRef.current, ...etat };
     dispatch({ type: "espace/fusion", etat });
   }, []);
-  useEspaceServeurs(state, stateRef, fusionnerEspace);
+  const moteurDuServeur = useEspaceServeurs(state, stateRef, fusionnerEspace, {
+    execution: (execution) => {
+      stateRef.current = { ...stateRef.current, executions: [execution, ...stateRef.current.executions.filter((x) => x.id !== execution.id)] };
+      dispatch({ type: "execution/enregistrer", execution });
+    },
+    notification: (titre, texte, workflowId) => {
+      notifierRappel(titre, texte);
+      pousserAuTelephone({ evenement: "workflow", titre, corps: texte, lien: lienWorkflow(workflowId) });
+    },
+    /* Ses travaux sans personne (workflows planifiés) suivent l'accès choisi pour ce serveur. */
+    serveurLu: (lieu) => void bridge?.agents.vps?.(lieu, "reglages-ecrire", { acces: accesDuServeur(stateRef.current, lieu) }),
+  });
+  const moteurRef = useRef(moteurDuServeur);
+  useEffect(() => {
+    moteurRef.current = moteurDuServeur;
+  }, [moteurDuServeur]);
 
   /* Les outils des fils, appelés par les agents (serveur MCP de l'app, electron/ia.ts) : une tâche = un fil. */
   useEffect(() => {
@@ -2245,7 +2263,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   const modifierProfil = useCallback((patch: Partial<User>) => dispatch({ type: "profil/modifier", patch }), []);
   const appliquerProfilCompte = useCallback((profil: ProfilCompte | null) => dispatch({ type: "compte/profil", profil }), []);
   const poserEvenementsCompte = useCallback((evenements: Evenement[] | null) => dispatch({ type: "compte/evenements", evenements }), []);
-  const choisirAcces = useCallback((acces: Acces, lieu: string | null = null) => dispatch({ type: "acces/choisir", acces, lieu }), []);
+  const choisirAcces = useCallback((acces: Acces, lieu: string | null = null) => {
+    dispatch({ type: "acces/choisir", acces, lieu });
+    if (lieu) void bridge?.agents.vps?.(lieu, "reglages-ecrire", { acces });
+  }, [bridge]);
   /* Les actions de rappels sont visibles immédiatement par les notifications,
      le prochain clic (ou blur) et la fermeture, avant le prochain rendu React. */
   const agirRappel = useCallback((action: Extract<WorkspaceAction, { type: "tache/enregistrer" | "tache/supprimer" | "tache/restaurer" | "tache/oublierSuppressions" | "tache/notifiee" }>) => {
@@ -2561,6 +2582,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     ) => {
       const trouve = stateRef.current.workflows.find((w) => w.id === id);
       if (!trouve) return null;
+      const surServeur = trouve.lieu ? moteurRef.current(trouve.lieu) : "app";
       const wf = options.seule ? trouve : avecVersion(trouve, "execution");
       if (wf !== trouve) {
         dispatch({ type: "workflow/enregistrer", workflow: wf });
@@ -2594,6 +2616,24 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         };
       };
       maj(exec);
+      /* Ce serveur fait tourner ses workflows : il reçoit la demande, et annonce l'avancée (cf. useEspaceServeurs). */
+      if (trouve.lieu && surServeur !== "app") {
+        const lieu = trouve.lieu;
+        const echec = (erreur: string) => maj({ ...exec, statut: "erreur", erreur, fin: new Date().toISOString() });
+        const pont = bridge?.espace;
+        if (!pont || surServeur === "inconnu") echec("Ce serveur ne répond pas : le workflow n’a pas pu partir.");
+        else {
+          void pont
+            .workflows(lieu, "lancer", {
+              workflow: wf,
+              options: { id: exec.id, declencheurId: exec.declencheurId, source: exec.source, charge: options.charge, seule: options.seule, lancePar: options.lancePar, acces: accesDuServeur(stateRef.current, lieu) },
+            })
+            .then((r) => {
+              if (!r.ok) echec(r.message);
+            });
+        }
+        return exec.id;
+      }
       const ctrl = new AbortController();
       controleurs.current.set(exec.id, ctrl);
       void executer(exec, { wf, outils: outilsPour(wf), maj, signal: ctrl.signal, charge: options.charge, sortiesConnues }).finally(() =>
@@ -2601,20 +2641,35 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       );
       return exec.id;
     },
-    [outilsPour],
+    [outilsPour, bridge],
   );
   useEffect(() => {
     lancerWorkflowRef.current = lancerWorkflow;
   }, [lancerWorkflow]);
+  /** Le serveur qui fait tourner cette exécution, s'il y en a un. */
+  const serveurDe = useCallback((e: ExecutionWorkflow | undefined) => {
+    const lieu = e ? stateRef.current.workflows.find((w) => w.id === e.workflowId)?.lieu : null;
+    return lieu && moteurRef.current(lieu) === "serveur" ? lieu : null;
+  }, []);
   const arreterExecution = useCallback((id: string) => {
-    controleurs.current.get(id)?.abort();
     const e = stateRef.current.executions.find((x) => x.id === id);
+    const lieu = serveurDe(e);
+    if (lieu) {
+      void bridge?.espace?.workflows(lieu, "arreter", { id });
+      return;
+    }
+    controleurs.current.get(id)?.abort();
     if (e?.chatId) arreter(e.chatId);
-  }, [arreter]);
+  }, [arreter, bridge, serveurDe]);
   const deciderApprobation = useCallback((etapeId: string, approuver: boolean) => {
+    const lieu = serveurDe(stateRef.current.executions.find((e) => e.etapes.some((s) => s.id === etapeId)));
+    if (lieu) {
+      void bridge?.espace?.workflows(lieu, "decider", { etapeId, approuver });
+      return;
+    }
     approbations.current.get(etapeId)?.(approuver);
     approbations.current.delete(etapeId);
-  }, []);
+  }, [bridge, serveurDe]);
 
   /* Les déclencheurs planifiés : toutes les 30 s, ceux dont l'heure est passée partent. */
   useEffect(() => {
@@ -2622,6 +2677,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const verifier = () => {
       const maintenant = new Date();
       for (const wf of stateRef.current.workflows) {
+        /* Ceux d'un serveur partent de lui, même cet ordinateur éteint. */
+        if (wf.lieu && moteurRef.current(wf.lieu) !== "app") continue;
         let prochaines = wf.prochaines ?? {};
         let change = false;
         for (const n of wf.graphe.noeuds) {
@@ -2656,7 +2713,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     return ecouter((secret, corps) => {
       for (const wf of stateRef.current.workflows)
         for (const [noeudId, s] of Object.entries(wf.webhooks ?? {}))
-          if (s === secret) lancerWorkflow(wf.id, { declencheurId: noeudId, source: "webhook", charge: corps });
+          if (s === secret && (!wf.lieu || moteurRef.current(wf.lieu) === "app")) lancerWorkflow(wf.id, { declencheurId: noeudId, source: "webhook", charge: corps });
     });
   }, [bridge, lancerWorkflow]);
 
@@ -2700,6 +2757,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       poserEvenementsCompte,
       moi,
       choisirAcces,
+      moteurDuServeur,
       repondreAutorisation,
       marquerAtelier,
       repondreCoffre,
@@ -2756,6 +2814,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       retirerProjet,
       enregistrerProfil,
       choisirAcces,
+      moteurDuServeur,
       repondreAutorisation,
       marquerAtelier,
       repondreCoffre,

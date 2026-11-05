@@ -51,6 +51,7 @@ import { NotePoste, SurLePoste, VueLecture, useBandeau } from "./etats";
 import { usePostes, useSupport } from "./poste";
 import { CHAMP_KLYRA_UI } from "./Controles";
 import { AvatarConstructeur, BandeauConstructionTelephone, couleurChantier, verbeChantier } from "./ChantierTelephone";
+import { useLieuActif } from "@/lib/lieux";
 
 /**
  * Automatisations › Workflows sur le téléphone (spec mobile T-18, T-19). Le canevas devient une
@@ -242,9 +243,10 @@ function FeuilleVersions({ id, onFermer, onChoisir }: { id: string; onFermer: ()
 export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
   const router = useRouter();
   /* Suivie pendant une exécution, et chaque seconde pendant qu'un agent construit un workflow. */
+  const lieu = useLieuActif();
   const lecture = useLectureSuivie<LigneWorkflow[]>(
     "workflows.liste",
-    {},
+    { lieu },
     {
       suivre: (l) => l.some((w) => (w.derniere && enCoursExecution(w.derniere)) || w.chantier),
       intervalle: (l) => (l.some((w) => enTravaux(w.chantier)) ? RELECTURE_CHANTIER_MS : 5000),

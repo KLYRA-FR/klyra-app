@@ -262,6 +262,26 @@ export async function interroger(adresse: string, signal?: AbortSignal): Promise
   return recu ? lireCorps(recu.status, recu.json) : { ok: false, message: MESSAGE_SILENCE };
 }
 
+/** L'équipe d'un VPS (serveur/equipe.mjs), lue par ce téléphone avec son jeton. null : il ne répond pas, ou n'en a pas à lui. */
+export async function lireEquipeServeur(adresse: string, signal?: AbortSignal) {
+  const jeton = lireJetons()[adresse];
+  if (!jeton) return null;
+  const appel = async <T,>(methode: string): Promise<T | null> => {
+    const recu = await appelDirect(
+      `${adresse}/klyra/v1/equipe/${methode}`,
+      { method: "POST", headers: { Authorization: `Bearer ${jeton}`, "Content-Type": "application/json" }, body: "{}" },
+      signal,
+    );
+    return recu?.status === 200 ? ((recu.json as { resultat?: T } | null)?.resultat ?? null) : null;
+  };
+  const [liste, mes, meta] = await Promise.all([
+    appel<{ agents: { name: string; content: string }[] }>("lister"),
+    appel<import("./bridge").MesAgents>("mes"),
+    appel<import("./bridge").AgentsMeta>("meta"),
+  ]);
+  return liste && mes ? { fiches: liste.agents, mes, meta: meta ?? {} } : null;
+}
+
 /** Échange le code du lien contre un jeton d’appareil, gardé là où l’app tourne. */
 export async function appairer(adresse: string, code: string): Promise<Lecture> {
   const electron = pont();

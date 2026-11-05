@@ -19,8 +19,7 @@ import {
   sections,
   type CarteAgentLue,
   type ConversationLue,
-  type MessageEnAttente,
-} from "./chats";
+  type MessageEnAttente, idDirectDe } from "./chats";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 const conversation = (origine: string, extra: Partial<ConversationLue> = {}): ConversationLue => ({
@@ -30,6 +29,9 @@ const conversation = (origine: string, extra: Partial<ConversationLue> = {}): Co
   projetId: null,
   projetNom: null,
   contexte: null,
+  ticket: null,
+  contratTickets: null,
+  ticketLu: null,
   roleIds: origine.startsWith("dm-") ? [origine.slice(3)] : ["principal"],
   misAJour: "2026-11-01T10:00:00.000Z",
   epingleLe: null,
@@ -246,5 +248,30 @@ describe("Fil (T-02)", () => {
     expect(nouvelIdFil()).toMatch(/^klyra-fil-[0-9a-f]{8}$/);
     expect(parentDe(conversation("klyra-fil-0000000a", { roleIds: ["hugo"] }))).toBe("dm-hugo");
     expect(parentDe(conversation("dm-hugo"))).toBeNull();
+  });
+});
+
+describe("la conversation directe d'un agent, par serveur", () => {
+  const vps = "https://vps.exemple:8791";
+  test("sur l'ordinateur : dm-<agent> ; sur un VPS : dm-<agent>@<hôte>", () => {
+    expect(idDirectDe("iris", null, [])).toBe("dm-iris");
+    expect(idDirectDe("iris", vps, [])).toBe("dm-iris@vps.exemple:8791");
+  });
+  test("reprend celle qui existe sur ce serveur, même sous un id d'avant", () => {
+    const anciennes = [{ origine: "dm-iris", lieu: vps }, { origine: "dm-iris@pc", lieu: null }];
+    expect(idDirectDe("iris", vps, anciennes)).toBe("dm-iris");
+    expect(idDirectDe("iris", null, anciennes)).toBe("dm-iris@pc");
+  });
+  test("ne prend ni un fil, ni un agent au nom proche", () => {
+    expect(idDirectDe("iris", vps, [{ origine: "dm-iris@vps", lieu: vps, parent: "dm-iris" }, { origine: "dm-iris2", lieu: vps }])).toBe("dm-iris@vps.exemple:8791");
+  });
+});
+
+describe("un serveur, sa liste", () => {
+  const vps = "https://vps.exemple:8791";
+  test("un agent du VPS ouvre sa conversation à lui, et ses fils comptent encore", () => {
+    const direct = conversation("dm-iris@vps.exemple:8791", { roleIds: ["iris"], lieu: vps });
+    const r = sections([direct], [{ origine: "iris", nom: "Iris", teinte: "violet", roleCourt: "", actif: true }] as never, () => "Iris", true, false, vps);
+    expect(r.agents[0].conversation?.origine).toBe("dm-iris@vps.exemple:8791");
   });
 });

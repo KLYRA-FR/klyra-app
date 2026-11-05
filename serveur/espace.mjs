@@ -43,25 +43,28 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
     }
   }
 
+  /** Les éléments d'un seul type : le moteur des workflows les relit souvent. */
+  function lireType(type) {
+    const dossier = path.join(racine, typeValide(type));
+    if (!existsSync(dossier)) return [];
+    const elements = [];
+    for (const nom of readdirSync(dossier)) {
+      if (!nom.endsWith(".json")) continue;
+      try {
+        const { id, valeur } = JSON.parse(readFileSync(path.join(dossier, nom), "utf8"));
+        elements.push({ type, id, valeur });
+      } catch {
+        /* Un fichier illisible n'empêche pas de lire le reste. */
+      }
+    }
+    return elements;
+  }
+
   /** Tout l'espace, ou seulement son numéro s'il n'a pas changé depuis `depuis`. */
   function lire(depuis) {
     const { revision, supprimes } = lireEtat();
     if (typeof depuis === "number" && depuis === revision) return { revision, inchange: true };
-    const elements = [];
-    for (const type of TYPES_ESPACE) {
-      const dossier = path.join(racine, type);
-      if (!existsSync(dossier)) continue;
-      for (const nom of readdirSync(dossier)) {
-        if (!nom.endsWith(".json")) continue;
-        try {
-          const { id, valeur } = JSON.parse(readFileSync(path.join(dossier, nom), "utf8"));
-          elements.push({ type, id, valeur });
-        } catch {
-          /* Un fichier illisible n'empêche pas de lire le reste. */
-        }
-      }
-    }
-    return { revision, elements, supprimes };
+    return { revision, elements: TYPES_ESPACE.flatMap(lireType), supprimes };
   }
 
   /** Ce que l'app a changé : des éléments à écrire, d'autres retirés. Un élément retiré le reste, même pour un autre appareil. */
@@ -90,7 +93,7 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
    * Une réponse finie alors qu'aucune app n'écoutait (PC fermé) : le serveur la range lui-même dans sa
    * conversation. L'app la complétera en rejouant le journal si elle revient dans les 24 h.
    */
-  function noterReponse({ requestId, event, sessionId, contexte, conversation, agent }) {
+  function noterReponse({ requestId, event, sessionId, contexte, conversation, agent, ecritParServeur = true }) {
     const chatId = contexte?.chatId ?? conversation;
     if (typeof chatId !== "string" || !chatId || typeof requestId !== "string") return;
     const roleId = contexte?.agentId ?? agent ?? "principal";
@@ -127,7 +130,7 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
       statut: event?.ok === false ? "erreur" : "fait",
       ...(event?.ok === false && typeof event.erreur === "string" ? { erreur: event.erreur } : {}),
       /* L'app sait qu'elle peut remplacer ce texte seul par la réponse complète, si le journal la rejoue. */
-      ecritParServeur: true,
+      ...(ecritParServeur ? { ecritParServeur: true } : {}),
     });
     const suite = { ...chat, updatedAt: date, sessions: { ...chat.sessions, ...(sessionId ? { [roleId]: sessionId } : {}) } };
     ecrire({ elements: [{ type: "conversation", id: chatId, valeur: { chat: suite, messages } }] });
@@ -139,5 +142,5 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
     throw new ErreurEspace("Ce serveur ne connaît pas cette demande.");
   }
 
-  return { appeler, lire, ecrire, noterReponse };
+  return { appeler, lire, lireType, ecrire, noterReponse };
 }
