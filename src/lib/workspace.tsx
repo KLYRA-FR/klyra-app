@@ -2640,7 +2640,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       );
       return exec.id;
     },
-    [outilsPour],
+    [outilsPour, bridge],
   );
   useEffect(() => {
     lancerWorkflowRef.current = lancerWorkflow;
