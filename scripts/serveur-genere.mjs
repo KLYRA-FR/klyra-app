@@ -18,12 +18,17 @@
  * - `serveur/workflows-outils.mjs` : les outils des workflows pour les agents (electron/workflows-outils.ts) ;
  * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
  *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture).
+ * - `serveur/version-code.mjs` : la version du code du serveur (electron/version-serveur.ts), montée ici dès que
+ *   `empreinteCodeServeur` change. Le VPS ne se met pas à jour seul : c'est ce numéro qui révèle un serveur en retard.
+ *   Conflit de fusion sur ce fichier : relancer ce script, il repart de la plus haute version et écrit un fichier propre.
  * Un import entre fichiers générés (`./epreuve` ou `./epreuve.ts`) devient `./epreuve.mjs` ; tout autre import relatif est refusé.
  *   node scripts/serveur-genere.mjs           → écrit les fichiers
  *   node scripts/serveur-genere.mjs --verifier → échoue si l'un n'est plus à jour (test:serveur)
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { empreinteCodeServeur } from "./empreinte-serveur.mjs";
 
 const FICHIERS = [
   ["electron/routines/schedule.ts", "serveur/horaires.mjs"],
@@ -47,12 +52,14 @@ const FICHIERS = [
   ["electron/coffre-fichier.ts", "serveur/coffre-fichier.mjs"],
   ["electron/workflows-outils.ts", "serveur/workflows-outils.mjs"],
 ];
+const VERSION = ["electron/version-serveur.ts", "serveur/version-code.mjs"];
 
 /** Le nom d'un fichier généré, sans dossier ni extension (`epreuve`). */
-const GENERES = new Set(FICHIERS.map(([, vers]) => vers.replace(/^serveur\//, "").replace(/\.mjs$/, "")));
+const GENERES = new Set([...FICHIERS, VERSION].map(([, vers]) => vers.replace(/^serveur\//, "").replace(/\.mjs$/, "")));
 
+const verifier = process.argv.includes("--verifier");
 let perime = false;
-for (const [depuis, vers] of FICHIERS) {
+function generer(depuis, vers) {
   const source = readFileSync(new URL(`../${depuis}`, import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, removeComments: false, verbatimModuleSyntax: false } });
   const code = outputText.replace(/(from\s+")\.\/([^"]+)(")/g, (_, avant, nom, apres) => {
@@ -62,11 +69,39 @@ for (const [depuis, vers] of FICHIERS) {
   });
   const contenu = `// Généré par scripts/serveur-genere.mjs depuis ${depuis} : ne pas modifier à la main.\n${code}`;
   const cible = new URL(`../${vers}`, import.meta.url);
-  if (!process.argv.includes("--verifier")) writeFileSync(cible, contenu);
+  if (!verifier) writeFileSync(cible, contenu);
   else if (readFileSync(cible, "utf8") !== contenu) {
     console.error(`${vers} n’est plus à jour : node scripts/serveur-genere.mjs`);
     perime = true;
   }
 }
+for (const [depuis, vers] of FICHIERS) generer(depuis, vers);
+
+/* Après les autres : l'empreinte couvre ce qui vient d'être généré. */
+const cheminVersion = new URL(`../${VERSION[0]}`, import.meta.url);
+const sourceVersion = readFileSync(cheminVersion, "utf8");
+const empreinte = empreinteCodeServeur(fileURLToPath(new URL("../serveur", import.meta.url)));
+const conflit = /^(<{7}|={7}|>{7})/m.test(sourceVersion);
+if (conflit || sourceVersion.match(/EMPREINTE_CODE_SERVEUR = "([^"]*)"/)?.[1] !== empreinte) {
+  if (verifier) {
+    console.error("Le code de serveur/ a changé sans monter sa version : node scripts/serveur-genere.mjs");
+    perime = true;
+  } else {
+    const version = Math.max(0, ...[...sourceVersion.matchAll(/VERSION_CODE_SERVEUR = (\d+)/g)].map((m) => Number(m[1]))) + 1;
+    writeFileSync(cheminVersion, `/**
+ * La version du code du serveur de VPS (\`serveur/*.mjs\` et \`lancer.sh\`), distincte du protocole : un VPS ne se met
+ * pas à jour seul, et son protocole peut rester le même alors que son code a du retard.
+ * L'app compare celle que le serveur annonce à celle-ci (\`serveurEnRetard\`, src/lib/serveur-vps.ts).
+ * Écrit par \`node scripts/serveur-genere.mjs\`, qui la monte quand l'empreinte change ; \`pnpm lint\` et \`test:serveur\`
+ * échouent si elle n'a pas suivi. Ne pas modifier à la main.
+ */
+export const VERSION_CODE_SERVEUR = ${version};
+export const EMPREINTE_CODE_SERVEUR = "${empreinte}";
+`);
+    console.log(`Code du serveur : version ${version}.`);
+  }
+}
+generer(...VERSION);
+
 if (perime) process.exit(1);
-if (process.argv.includes("--verifier")) console.log("Fichiers générés du serveur à jour.");
+if (verifier) console.log("Fichiers générés du serveur à jour.");
