@@ -14,6 +14,8 @@ import { planningPourAgents } from "@/lib/planning-agents";
 import { prochainPassage } from "@/lib/planning";
 import { lienMessage, lienWorkflow, pousserAuTelephone } from "@/lib/push";
 import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCours } from "@/lib/atelier-agent";
+import { appelEquipe, equipeEnCours, lireMajEquipe, OUTIL_EQUIPE_CLAUDE } from "@/lib/atelier-equipe";
+import { lireCarte, OUTIL_CARTE_CLAUDE, reponseNette } from "../../electron/cartes-interactives";
 import { lireDemandeSecret } from "../../electron/coffre-regles";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { renduDansEspace } from "@/lib/rendus-espace";
@@ -44,7 +46,9 @@ import type {
   Etape,
   EtapeTicket,
   MajAtelier,
+  MajEquipe,
   Message,
+  ReponseCarte,
   MessagePart,
   Project,
   Role,
@@ -61,6 +65,9 @@ import type {
 /** Une carte de l'atelier, et ce que l'écran peut y noter. */
 type PartAtelier = Extract<MessagePart, { type: "atelier-agent" }>;
 type PatchAtelier = Partial<Pick<PartAtelier, "teinte" | "cree" | "resultats" | "ajouts" | "essais">>;
+/** Une carte de l'atelier d'équipe, et ce que l'écran peut y noter. */
+type PartEquipe = Extract<MessagePart, { type: "atelier-equipe" }>;
+type PatchEquipe = Partial<Pick<PartEquipe, "teintes" | "ecartes" | "crees">>;
 
 /** Les catégories de rappels à la première ouverture. */
 const CATEGORIES_DE_DEPART: Categorie[] = [
@@ -472,6 +479,12 @@ function ajouterEtape(
   // L'atelier d'un agent : la carte se complète dans le fil (cf. atelier-agent.ts), après ses étapes.
   const maj = etape.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(entree) : null;
   if (maj) return poserAtelier(parts, etape.id, maj, false);
+  // L'atelier d'une équipe : la carte d'équipe se complète de même (cf. atelier-equipe.ts).
+  const majEquipe = etape.outil === OUTIL_EQUIPE_CLAUDE ? lireMajEquipe(entree) : null;
+  if (majEquipe) return poserEquipe(parts, etape.id, majEquipe, false);
+  // Une carte interactive : la personne la remplit sous la réponse (cf. cartes-interactives.ts).
+  const carte = etape.outil === OUTIL_CARTE_CLAUDE ? lireCarte(entree) : null;
+  if (carte && "carte" in carte) return poserCarte(parts, etape.id, carte.carte, false);
   // Des réponses toutes prêtes sous la question de l'assistant.
   const choix = etape.outil === "mcp__klyra__proposer_choix" ? lireChoix(entree) : null;
   if (choix) return [...parts, { type: "choix", etapeId: etape.id, ...choix }];
@@ -499,10 +512,29 @@ function poserAtelier(parts: MessagePart[], etapeId: string, maj: MajAtelier, pr
   });
 }
 
+/** La carte d'équipe pour cet appel : ajoutée, ou mise à jour si elle s'écrivait déjà en direct. */
+function poserEquipe(parts: MessagePart[], etapeId: string, maj: MajEquipe, provisoire: boolean): MessagePart[] {
+  const i = parts.findIndex((p) => p.type === "atelier-equipe" && p.etapeId === etapeId);
+  if (i === -1) return [...parts, { type: "atelier-equipe", etapeId, maj, ...(provisoire ? { provisoire } : {}) }];
+  return parts.map((p, j) => {
+    if (j !== i || p.type !== "atelier-equipe") return p;
+    const { provisoire: _ancien, ...reste } = p;
+    void _ancien;
+    return { ...reste, maj, ...(provisoire ? { provisoire } : {}) };
+  });
+}
+
+/** La carte interactive de cet appel : ajoutée, ou remplacée si elle s'écrivait déjà en direct. */
+function poserCarte(parts: MessagePart[], etapeId: string, carte: Extract<MessagePart, { type: "carte" }>["carte"], provisoire: boolean): MessagePart[] {
+  const i = parts.findIndex((p) => p.type === "carte" && p.etapeId === etapeId);
+  const part: MessagePart = { type: "carte", etapeId, carte, ...(provisoire ? { provisoire } : {}) };
+  return i === -1 ? [...parts, part] : parts.map((p, j) => (j === i ? part : p));
+}
+
 function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[] {
   const statut = ok ? "fait" : "erreur";
   // Une carte ou des réponses refusées par l'app (prénom déjà pris…) ne restent pas dans le fil.
-  const gardees = ok ? parts : parts.filter((p) => !((p.type === "proposition-agent" || p.type === "atelier-agent" || p.type === "choix" || p.type === "coffre-demande") && p.etapeId === id));
+  const gardees = ok ? parts : parts.filter((p) => !((p.type === "proposition-agent" || p.type === "atelier-agent" || p.type === "atelier-equipe" || p.type === "carte" || p.type === "choix" || p.type === "coffre-demande") && p.etapeId === id));
   return gardees.map((p) => {
     if (p.type === "passation" && p.etapeId === id) return { ...p, statut };
     if (p.type === "etapes")
@@ -668,6 +700,10 @@ interface WorkspaceApi {
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
   /** La carte de l'atelier d'un agent : la couleur choisie, l'épreuve, les ajouts, puis l'agent créé depuis elle. */
   marquerAtelier: (messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => void;
+  /** La carte de l'atelier d'une équipe : les couleurs, les membres laissés de côté, puis les agents créés depuis elle. */
+  marquerEquipe: (messageId: string, etapeId: string, patch: PatchEquipe | ((part: PartEquipe) => PatchEquipe)) => void;
+  /** Ce que la personne a envoyé depuis une carte interactive, noté sur la carte (le message part à côté). */
+  repondreCarte: (messageId: string, etapeId: string, reponse: ReponseCarte) => void;
   /** La réponse de la personne à une demande de secret (carte du Coffre) : jamais la valeur. */
   repondreCoffre: (messageId: string, etapeId: string, etat: "rangee" | "permise" | "refusee") => void;
   supprimerArtefact: (id: string) => void;
@@ -1164,6 +1200,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           // La carte de l'atelier s'écrit pendant que l'assistant remplit l'outil.
           const enCours = event.outil === "mcp__klyra__proposer_agent" ? lireMajAtelier(event.entree) : null;
           if (enCours) maj((m) => ({ ...m, parts: poserAtelier(m.parts, event.id, enCours, true) }));
+          // Une équipe qui se compose : ses cartes arrivent une à une.
+          const equipe = event.outil === OUTIL_EQUIPE_CLAUDE ? lireMajEquipe(event.entree) : null;
+          if (equipe) maj((m) => ({ ...m, parts: poserEquipe(m.parts, event.id, equipe, true) }));
+          // Une carte interactive qui s'écrit : elle paraît dès qu'elle est lisible, sans être remplissable.
+          const carte = event.outil === OUTIL_CARTE_CLAUDE ? lireCarte(event.entree) : null;
+          if (carte && "carte" in carte) maj((m) => ({ ...m, parts: poserCarte(m.parts, event.id, carte.carte, true) }));
           // Un workflow qui se construit : la page Workflows montre chaque étape posée.
           if (event.outil === "mcp__klyra__construire_workflow") outilsWorkflows().apercu({ chatId, roleId }, event.id, event.entree);
           break;
@@ -1218,7 +1260,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           maj((m) => {
             const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
             // Une carte restée en cours d'écriture (réponse arrêtée avant la fin de l'outil) n'est pas gardée.
-            const finies = m.parts.filter((p) => !(p.type === "atelier-agent" && p.provisoire));
+            const finies = m.parts.filter((p) => !((p.type === "atelier-agent" || p.type === "atelier-equipe" || p.type === "carte") && p.provisoire));
             const parts = !aDuTexte && event.texte ? ajouterTexte(finies, event.texte, true) : finies;
             return event.ok
               ? { ...m, parts, statut: "fait" }
@@ -2117,6 +2159,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           if (r.erreur) throw new Error(r.texte);
           return r.texte;
         }
+        case "proposer_equipe": {
+          // Le même appel que sur un VPS (electron/atelier-equipe.ts).
+          const equipe = roles.map((r) => ({ id: r.id, noms: [r.name, r.tag] }));
+          const r = appelEquipe(args, equipeEnCours(messages.filter((m) => m.chatId === appelant.chatId)), equipe);
+          if (r.erreur) throw new Error(r.texte);
+          return r.texte;
+        }
         default:
           throw new Error("Outil inconnu.");
       }
@@ -2374,6 +2423,29 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       patch: (m) => ({
         ...m,
         parts: m.parts.map((p) => (p.type === "atelier-agent" && p.etapeId === etapeId ? { ...p, ...(typeof patch === "function" ? patch(p) : patch) } : p)),
+      }),
+    });
+  }, []);
+
+  const marquerEquipe = useCallback((messageId: string, etapeId: string, patch: PatchEquipe | ((part: PartEquipe) => PatchEquipe)) => {
+    dispatch({
+      type: "message/update",
+      id: messageId,
+      patch: (m) => ({
+        ...m,
+        parts: m.parts.map((p) => (p.type === "atelier-equipe" && p.etapeId === etapeId ? { ...p, ...(typeof patch === "function" ? patch(p) : patch) } : p)),
+      }),
+    });
+  }, []);
+
+  const repondreCarte = useCallback((messageId: string, etapeId: string, reponse: ReponseCarte) => {
+    const le = new Date().toISOString();
+    dispatch({
+      type: "message/update",
+      id: messageId,
+      patch: (m) => ({
+        ...m,
+        parts: m.parts.map((p) => (p.type === "carte" && p.etapeId === etapeId ? { ...p, reponse: { ...reponseNette(p.carte, reponse), le } } : p)),
       }),
     });
   }, []);
@@ -2767,6 +2839,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       moteurDuServeur,
       repondreAutorisation,
       marquerAtelier,
+      marquerEquipe,
+      repondreCarte,
       repondreCoffre,
       reagir,
       enregistrerTache,
@@ -2824,6 +2898,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       moteurDuServeur,
       repondreAutorisation,
       marquerAtelier,
+      marquerEquipe,
+      repondreCarte,
       repondreCoffre,
       reagir,
       enregistrerTache,

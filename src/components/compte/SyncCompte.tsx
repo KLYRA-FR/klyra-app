@@ -9,6 +9,7 @@ import { lireClePoste } from "./SignalPoste";
 import { carteAgent, carteProjet, changements, conversationCompte, ticketCompte, decoupages, messageCompte } from "@/lib/copie-compte";
 import { teinteNouvelAgent, useAgents } from "@/lib/agents";
 import { plierAteliers } from "@/lib/atelier-agent";
+import { plierEquipes } from "@/lib/atelier-equipe";
 import type { ContexteAtelier } from "@/lib/copie-compte";
 import { getBridge } from "@/lib/bridge";
 import { FORMATS_IMAGE } from "@/lib/collage";
@@ -315,6 +316,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
         if (!contexte) {
           contexte = {
             etats: plierAteliers(parChat.get(chatId) ?? []),
+            equipes: plierEquipes(parChat.get(chatId) ?? []),
             roles: a.roles,
             teinteDe: teinteNouvelAgent,
             vps: !!chats.find((c) => c.id === chatId)?.lieu,
@@ -325,7 +327,7 @@ export function SyncCompte({ actif }: { actif: boolean }) {
       };
       const copiesMessages = messages.map((m) => {
         const dossier = dossiers.get(m.chatId) ?? null;
-        if (m.parts.some((p) => p.type === "atelier-agent")) return messageCompte(m, dossier, atelierDe(m.chatId));
+        if (m.parts.some((p) => p.type === "atelier-agent" || p.type === "atelier-equipe")) return messageCompte(m, dossier, atelierDe(m.chatId));
         const deja = copies.current.get(m);
         if (deja && deja.dossier === dossier) return deja.copie;
         const copie = messageCompte(m, dossier);

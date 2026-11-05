@@ -75,8 +75,12 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return `Demande à ${court(entree.ia, 20) || "une autre IA"} : ${court(entree.consigne, 50)}`;
     case "mcp__klyra__proposer_agent":
       return entree.nom ? `Complète la carte de ${court(entree.nom, 40)}` : "Complète la carte d’un agent";
+    case "mcp__klyra__proposer_equipe":
+      return entree.nom ? `Compose l’équipe ${court(entree.nom, 40)}` : "Compose une équipe";
     case "mcp__klyra__proposer_choix":
       return "Propose des réponses";
+    case "mcp__klyra__proposer_carte":
+      return `Prépare une carte : ${court(entree.titre, 50) || "à remplir"}`;
     case "mcp__klyra__publier_artefact":
       return `Publie dans Artefacts : ${court(entree.titre, 50) || "un rendu"}`;
     case "mcp__klyra__lire_artefact":
@@ -136,8 +140,12 @@ export function iconeEtape(outil: string): IconName {
       return "users-profiles-01";
     case "mcp__klyra__proposer_agent":
       return "users-profiles-plus";
+    case "mcp__klyra__proposer_equipe":
+      return "users-profiles-01";
     case "mcp__klyra__proposer_choix":
       return "list";
+    case "mcp__klyra__proposer_carte":
+      return "text-input-01";
     case "mcp__klyra__publier_artefact":
     case "mcp__klyra__lire_artefact":
     case "Skill":

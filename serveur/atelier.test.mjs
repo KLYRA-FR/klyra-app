@@ -11,7 +11,7 @@ import path from "node:path";
 import test from "node:test";
 import { creerAgents } from "./agents.mjs";
 import { creerIa } from "./ia.mjs";
-import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_FICHES, creerCode, creerJournal, ecouter } from "./klyra-serveur.mjs";
+import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_EQUIPE, CHEMIN_FICHES, creerCode, creerJournal, ecouter } from "./klyra-serveur.mjs";
 
 const jetable = () => mkdtempSync(path.join(tmpdir(), "klyra-atelier-"));
 
@@ -124,6 +124,24 @@ test("l'atelier d'un agent sur le VPS : outils de l'assistant, carte suivie, ref
     assert.match((await appeler({ options: ["Lundi", "Mardi"] }, config, "proposer_choix")).content[0].text, /Réponses affichées/);
     assert.equal((await appeler({ options: ["Seule"] }, config, "proposer_choix")).isError, true);
 
+    // Les cartes interactives : à chaque agent, vérifiées par le VPS comme sur le PC.
+    assert.ok(noms.includes("proposer_carte") && nomsLou.includes("proposer_carte"), "les cartes interactives pour l'assistant et pour chaque agent");
+    const carte = (args) => mcp(configLou, "tools/call", { name: "proposer_carte", arguments: args });
+    assert.match((await carte({ genre: "liste", titre: "Le plan", elements: ["Intro", "Chiffres"] })).content[0].text, /Carte affichée sous ta réponse/);
+    assert.equal((await carte({ genre: "comparaison", titre: "Une seule", options: [{ titre: "A" }] })).isError, true, "une comparaison sans deux pistes est refusée");
+
+    // L'atelier d'une équipe, suivi de même par conversation.
+    assert.ok(noms.includes("proposer_equipe") && !nomsLou.includes("proposer_equipe"), "l'atelier d'équipe : à l'assistant seulement");
+    const equipe = (args) => mcp(config, "tools/call", { name: "proposer_equipe", arguments: args });
+    assert.match((await equipe({ nom: "Studio", membres: [{ nom: "Nina", role: "Rédaction", mission: "Écrit la newsletter." }] })).content[0].text, /Équipe « Studio » à jour : 1 agent — Nina \(nina, Rédaction\)/);
+    assert.match((await equipe({ membres: [{ nom: "Léo", role: "Visuels" }] })).content[0].text, /2 agents[^]*Léo : sa mission/, "un membre de plus, les autres restent");
+    assert.equal((await equipe({ membres: [{ nom: "Lou" }] })).isError, true, "un agent déjà dans Mes agents va dans existants");
+    assert.match((await equipe({ existants: [{ id: "lou", raison: "Relit tout." }], exemples: [{ demande: "La newsletter de mai", membre: "Nina" }] })).content[0].text, /Avec ses agents actifs : lou/);
+    // Nina créée sur le PC, puis copiée au VPS : la carte suivante repart de zéro.
+    const nee = await appel(ecoute.port, `${CHEMIN_EQUIPE}/creer`, { methode: "POST", jeton, corps: { id: "nina", contenu: "---\nname: nina\ndisplayName: Nina\n---\nPrompt." } });
+    assert.equal(nee.statut, 200, JSON.stringify(nee.json));
+    assert.match((await equipe({ nom: "Autre" })).content[0].text, /Équipe « Autre » à jour : 0 agent\./, "après la naissance sur le PC, une autre carte");
+
     // L'épreuve sur le VPS : un raté, puis la phrase ajoutée, que l'assistant verra.
     const brouillon = (corps) => ({ id: "veille", description: "Veille.", corps, modele: "sonnet", fiche: `---\nname: veille\n---\n\n${corps}\n` });
     const cas = { type: "hors-metier", demande: "Corrige le bug du formulaire." };
@@ -152,8 +170,8 @@ test("l'atelier d'un agent sur le VPS : outils de l'assistant, carte suivie, ref
     const configSession = JSON.parse(session[session.indexOf("--mcp-config") + 1]);
     assert.equal(configSession.mcpServers.klyra.headers["X-Klyra-Conversation"], "dm-principal");
     assert.equal(configSession.mcpServers.klyra.headers["X-Klyra-Agent"], "principal");
-    assert.ok(session.includes("mcp__klyra__proposer_agent") && session.includes("mcp__klyra__proposer_choix"), "les outils de l'atelier permis en accès projet");
-    assert.match(session[session.indexOf("--append-system-prompt") + 1], /Pour créer un agent avec elle/);
+    assert.ok(session.includes("mcp__klyra__proposer_agent") && session.includes("mcp__klyra__proposer_equipe") && session.includes("mcp__klyra__proposer_choix") && session.includes("mcp__klyra__proposer_carte"), "les outils de l'atelier permis en accès projet");
+    assert.match(session[session.indexOf("--append-system-prompt") + 1], /Pour créer un agent avec elle[^]*Pour composer une équipe[^]*proposer_carte/);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

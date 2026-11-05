@@ -29,6 +29,8 @@ import { usePostes, useSupport } from "./poste";
 import { RondAgent, useCartes } from "./AgentsChat";
 import { CarteAccordChat } from "./CarteAccordChat";
 import { CarteAtelierTelephone, ChoixTelephone, LigneAtelierTelephone } from "./AtelierTelephone";
+import { CarteEquipeTelephone, LigneEquipeTelephone } from "./EquipeTelephone";
+import { CarteTelephone } from "./CarteTelephone";
 import { ActionsMessage, arreterLecture } from "./ActionsMessage";
 import type { MessageEnAttente } from "@/lib/telephone/chats";
 
@@ -340,6 +342,23 @@ function PartieFil({
       ) : partie.ligne ? (
         <LigneAtelierTelephone ligne={partie.ligne} />
       ) : null;
+    case "atelier-equipe":
+      return partie.carte ? (
+        <CarteEquipeTelephone etapeId={partie.etapeId} carte={partie.carte} conversation={contexte.origine} />
+      ) : partie.ligne ? (
+        <LigneEquipeTelephone ligne={partie.ligne} />
+      ) : null;
+    case "carte":
+      return (
+        <CarteTelephone
+          etapeId={partie.etapeId}
+          carte={partie.carte}
+          envoyee={partie.reponse ?? null}
+          actif={choix?.actif ?? false}
+          repondu={choix?.repondu ?? null}
+          onEnvoyer={(texte) => contexte.envoyer(texte, message.auteurId ? { a: message.auteurId } : {})}
+        />
+      );
     case "choix":
       return (
         <ChoixTelephone

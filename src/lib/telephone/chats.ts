@@ -2,7 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../../convex/_generated/api";
 import { lireActivite, type Activite } from "@/lib/copie-compte";
 import { DUREE_CACHE_MS, estCommandeCompacter, SEUIL_LOURD, SEUIL_REPRISE } from "@/lib/contexte";
-import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
+import { DEBUT_DEMANDE_AGENT, DEBUT_DEMANDE_EQUIPE } from "@/lib/decrire-a-assistant";
 
 /**
  * Les règles des écrans Chats et du fil sur le téléphone (spec mobile T-01, T-02), sans React :
@@ -39,6 +39,7 @@ export const SUGGESTIONS = [
   { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine" },
   { libelle: "Résume ce document", texte: "Résume ce document" },
   { libelle: "Crée-moi un agent pour…", texte: DEBUT_DEMANDE_AGENT },
+  { libelle: "Compose mon équipe pour…", texte: DEBUT_DEMANDE_EQUIPE },
 ];
 
 /** Un fil d'agent : sa conversation directe parente, sinon null. */

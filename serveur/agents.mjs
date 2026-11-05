@@ -2,7 +2,7 @@
  * Les agents sur le VPS : Claude Code lancé comme dans l'app (electron/claude.ts, streamAgent),
  * un processus par conversation, gardé ouvert entre les messages ; ou Codex pour ChatGPT (codex.mjs),
  * quand la conversation le demande (`moteur: "codex"`). Les IA à consulter (ia.mjs) leur sont données
- * par l'outil MCP `demander_ia`, et l'atelier d'un agent à l'assistant (`proposer_agent`,
+ * par l'outil MCP `demander_ia`, et l'atelier d'un agent ou d'une équipe à l'assistant (`proposer_agent`, `proposer_equipe`,
  * `proposer_choix`, son épreuve : atelier-agent.mjs et epreuve.mjs, les mêmes règles que sur le PC).
  * Ce qui n'existe que sur le PC n'est pas là : outils des fils, planning, pièces jointes,
  * consommation détaillée.
@@ -17,6 +17,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import os from "node:os";
 import path from "node:path";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
+import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe.mjs";
+import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
 import { lireJsonPartiel } from "./json-partiel.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
@@ -111,7 +113,7 @@ const OUTIL_IA = "mcp__klyra__demander_ia";
 const CONVERSATION = /^[A-Za-z0-9_.:@|-]{1,160}$/;
 /** L'entrée de cet outil est montrée pendant que le modèle l'écrit : la carte de l'atelier (cf. electron/claude.ts). */
 /** Les outils dont l'app montre l'entrée pendant que le modèle l'écrit : la carte de l'atelier, le workflow qui se construit. */
-const OUTILS_EN_DIRECT = new Set([`mcp__klyra__${OUTIL_PROPOSER.name}`, "mcp__klyra__construire_workflow"]);
+const OUTILS_EN_DIRECT = new Set([`mcp__klyra__${OUTIL_PROPOSER.name}`, OUTIL_EQUIPE_CLAUDE, OUTIL_CARTE_CLAUDE, "mcp__klyra__construire_workflow"]);
 
 const modeDe = (acces) => (acces === "demander" ? "manual" : acces === "projet" ? "auto" : "acceptEdits");
 
@@ -369,7 +371,7 @@ export function creerAgents(options) {
     const equipe = actifs.length
       ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant avec un brief qui se suffit (objectif, contexte et chemins, contraintes, critère de fin, le livrable attendu dans des fichiers et un compte rendu court) ; n'en invente pas d'autre. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
       : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_ATELIER}` : ""}`;
+    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_ATELIER} ${CONSIGNE_EQUIPE} ${CONSIGNE_CARTES}` : ""}`;
   }
 
   function consigneAgent(id) {
@@ -378,7 +380,7 @@ export function creerAgents(options) {
     const equipe = autres.length
       ? `Dans cette app, les agents que la personne a choisis sont : ${listeAgents(autres)}, et son assistant ${assistant ?? "l'assistant"} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais ta part et dis ce qui reste.`
       : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${assistant ?? "l'assistant"} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais ta part et dis ce qui reste.`;
-    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}`;
+    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_CARTES}` : ""}`;
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
@@ -419,12 +421,27 @@ export function creerAgents(options) {
     ateliers.set(cle, suivi);
     if (ateliers.size > 200) ateliers.delete(ateliers.keys().next().value);
   };
+  /** L'atelier d'une équipe, suivi de même par conversation (en mémoire, cf. atelier-equipe.mjs). */
+  const equipes = new Map();
+  const noterEquipe = (cle, suivi) => {
+    if (!cle) return;
+    equipes.delete(cle);
+    equipes.set(cle, suivi);
+    if (equipes.size > 200) equipes.delete(equipes.keys().next().value);
+  };
   options.ia?.brancherOutils?.({
-    lister: (appelant) => (appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_CHOIX] : []),
+    // Les cartes interactives à chaque agent ; l'atelier à l'assistant seul.
+    lister: (appelant) => [...(appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE],
     appeler: async (nom, args, appelant) => {
-      if (nom !== OUTIL_PROPOSER.name && nom !== OUTIL_CHOIX.name) return null;
+      if (nom === OUTIL_CARTE.name) return appelCarte(args);
+      if (nom !== OUTIL_PROPOSER.name && nom !== OUTIL_EQUIPE.name && nom !== OUTIL_CHOIX.name) return null;
       if (appelant.agent !== "principal") return { texte: "Seul l'assistant crée des agents avec la personne.", erreur: true };
       const cle = CONVERSATION.test(appelant.conversation) ? appelant.conversation : null;
+      if (nom === OUTIL_EQUIPE.name) {
+        const r = appelEquipe(args, (cle && equipes.get(cle)) || EQUIPE_VIDE, equipeAtelier());
+        if (!r.erreur) noterEquipe(cle, r.suivi);
+        return { texte: r.texte, erreur: r.erreur };
+      }
       const r = appelAtelier(nom, args, (cle && ateliers.get(cle)) || SUIVI_VIDE, equipeAtelier());
       if (!r.erreur) noterAtelier(cle, r.suivi);
       return { texte: r.texte, erreur: r.erreur };
@@ -884,7 +901,7 @@ export function creerAgents(options) {
         args.push(
           "--allowedTools",
           ...COMMANDES_AUTORISEES,
-          ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, ...(assistant ? OUTILS_ATELIER : [])] : []),
+          ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
           // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).

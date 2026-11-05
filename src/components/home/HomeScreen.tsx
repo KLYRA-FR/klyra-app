@@ -19,7 +19,7 @@ import { useAgents } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
 import { rendezVousEntre } from "@/lib/agenda-equipe";
 import { aujourdhui } from "@/lib/dates";
-import { DEBUT_DEMANDE_AGENT } from "@/lib/decrire-a-assistant";
+import { DEBUT_DEMANDE_AGENT, DEBUT_DEMANDE_EQUIPE } from "@/lib/decrire-a-assistant";
 import { deuxiemeBloc, premierBloc } from "@/lib/mouvement";
 import { findMention } from "@/lib/mentions";
 import { useIdDirect, useProjects, useRole, useRoles, useWorkspace } from "@/lib/workspace";
@@ -32,6 +32,7 @@ const SUGGESTIONS_ASSISTANT: { libelle: string; texte: string; icone: IconName }
   { libelle: "Aide-moi à organiser ma semaine", texte: "Aide-moi à organiser ma semaine", icone: "calendar-01" },
   { libelle: "Résume ce document", texte: "Résume ce document", icone: "file-01" },
   { libelle: "Crée-moi un agent pour…", texte: DEBUT_DEMANDE_AGENT, icone: "users-profiles-plus" },
+  { libelle: "Compose mon équipe pour…", texte: DEBUT_DEMANDE_EQUIPE, icone: "users-profiles-01" },
 ];
 
 /** La seconde moitié du bonjour : un mot pour se lancer. */

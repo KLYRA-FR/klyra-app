@@ -3,13 +3,13 @@
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/lib/agents";
-import { useDecrireAAssistant } from "@/lib/decrire-a-assistant";
+import { DEBUT_DEMANDE_EQUIPE, useDecrireAAssistant } from "@/lib/decrire-a-assistant";
 import { useRole } from "@/lib/workspace";
 import { MenuLignes, type Declencheur } from "./MenuLignes";
 
 /**
- * Créer un agent (spec §9.1) : le décrire à l'assistant d'abord, la fiche à remplir soi-même ensuite,
- * puis la bibliothèque. Ouvert par la carte « Nouvel agent », le « + » de « Mes agents » du panneau
+ * Créer un agent (spec §9.1) : le décrire à l'assistant d'abord (ou composer toute une équipe avec
+ * lui), la fiche à remplir soi-même ensuite, puis la bibliothèque. Ouvert par la carte « Nouvel agent », le « + » de « Mes agents » du panneau
  * et sa ligne « Créer un agent ».
  */
 export function MenuCreationAgent({
@@ -25,6 +25,7 @@ export function MenuCreationAgent({
   const { canEdit } = useAgents();
   const assistant = useRole("principal");
   const decrire = useDecrireAAssistant();
+  const composer = useDecrireAAssistant(DEBUT_DEMANDE_EQUIPE);
   const horsApp = canEdit ? undefined : "Dans l’app de bureau";
   return (
     <MenuLignes
@@ -40,6 +41,14 @@ export function MenuCreationAgent({
           detail: horsApp ?? "Dis-lui ce dont tu as besoin : il prépare la fiche.",
           desactivee: !canEdit,
           onChoisir: decrire,
+        },
+        {
+          id: "equipe",
+          icone: "users-profiles-01",
+          titre: `Composer une équipe avec ${assistant.name}`,
+          detail: horsApp ?? "Plusieurs agents d’un coup, d’après ce que tu fais chaque semaine.",
+          desactivee: !canEdit,
+          onChoisir: composer,
         },
         {
           id: "fiche",
