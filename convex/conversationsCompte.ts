@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { erreur, exigerMembre } from "./model/acces";
+import { REACTIONS, reactionValide } from "./model/reactions";
 
 /** Lots : une conversation tient ses messages à part, pour rester sous la taille d'un document. */
 const LOT_CONVERSATIONS = 40;
@@ -66,6 +67,7 @@ const vConversation = v.object({
   archiveLe: v.optional(v.union(v.string(), v.null())),
   activite: v.optional(v.union(v.string(), v.null())),
   modele: v.optional(v.union(v.string(), v.null())),
+  contexte: v.optional(v.union(v.string(), v.null())),
 });
 
 /** Les champs ajoutés pour le téléphone : absents d'une version d'avant, ils restent tels quels. */
@@ -75,16 +77,19 @@ function champsTelephone(entree: {
   archiveLe?: string | null;
   activite?: string | null;
   modele?: string | null;
+  contexte?: string | null;
 }) {
   if (entree.parent && !origineValide(entree.parent)) throw erreur("conversation_invalide");
   if (entree.activite && !objetJson(entree.activite, 2000)) throw erreur("conversation_invalide");
   if (entree.modele && !objetJson(entree.modele, 200)) throw erreur("conversation_invalide");
-  const champs: Partial<Pick<Doc<"conversationsCompte">, "lieu" | "parent" | "archiveLe" | "activite" | "modele">> = {};
+  if (entree.contexte && !objetJson(entree.contexte, 200)) throw erreur("conversation_invalide");
+  const champs: Partial<Pick<Doc<"conversationsCompte">, "lieu" | "parent" | "archiveLe" | "activite" | "modele" | "contexte">> = {};
   if (entree.lieu !== undefined) champs.lieu = entree.lieu ? court(entree.lieu, 300) : null;
   if (entree.parent !== undefined) champs.parent = entree.parent;
   if (entree.archiveLe !== undefined) champs.archiveLe = entree.archiveLe ? court(entree.archiveLe, 40) : null;
   if (entree.activite !== undefined) champs.activite = entree.activite;
   if (entree.modele !== undefined) champs.modele = entree.modele;
+  if (entree.contexte !== undefined) champs.contexte = entree.contexte;
   return champs;
 }
 
@@ -171,6 +176,8 @@ const vMessage = v.object({
   texte: v.string(),
   parties: v.string(),
   statut: vStatut,
+  reactions: v.optional(v.array(v.string())),
+  compaction: v.optional(v.boolean()),
 });
 
 /** Reprend les messages, par lots. La copie locale n'est pas touchée. */
@@ -195,6 +202,8 @@ export const importerMessages = mutation({
         texte: court(entree.texte, 8000),
         parties: entree.parties,
         statut: entree.statut,
+        ...(entree.reactions !== undefined ? { reactions: entree.reactions.filter(reactionValide).slice(0, REACTIONS.length) } : {}),
+        ...(entree.compaction !== undefined ? { compaction: entree.compaction } : {}),
       };
       const existant = await ctx.db
         .query("messagesCompte")
@@ -304,6 +313,7 @@ export const liste = query({
       archiveLe: v.union(v.string(), v.null()),
       activite: v.union(v.string(), v.null()),
       modele: v.union(v.string(), v.null()),
+      contexte: v.union(v.string(), v.null()),
     }),
   ),
   handler: async (ctx) => {
@@ -332,6 +342,7 @@ export const liste = query({
       archiveLe: c.archiveLe ?? null,
       activite: c.activite ?? null,
       modele: c.modele ?? null,
+      contexte: c.contexte ?? null,
     }));
   },
 });
@@ -350,6 +361,8 @@ export const messages = query({
         texte: v.string(),
         parties: v.string(),
         statut: vStatut,
+        reactions: v.array(v.string()),
+        compaction: v.boolean(),
       }),
     ),
   }),
@@ -370,6 +383,8 @@ export const messages = query({
         creeLe: m.creeLe,
         texte: m.texte,
         parties: m.parties,
+        reactions: m.reactions ?? [],
+        compaction: m.compaction === true,
         statut: m.statut,
       })),
     };
@@ -526,19 +541,18 @@ export const laisser = mutation({
   },
 });
 
-/** « Annuler l'envoi » : tant que l'ordinateur ne l'a pas pris, le message et ses pièces disparaissent. */
+/** « Annuler l'envoi » : tant que l'ordinateur ne l'a pas pris, le message et ses pièces disparaissent. Faux : il était déjà parti. */
 export const annuler = mutation({
   args: { id: v.id("messagesFile") },
-  returns: v.null(),
+  returns: v.boolean(),
   handler: async (ctx, { id }) => {
     const moi = await exigerMembre(ctx);
     const ligne = await ctx.db.get("messagesFile", id);
     if (!ligne || ligne.membreId !== moi._id) throw erreur("introuvable");
-    if (!ligne.pris) {
-      await effacerPieces(ctx, ligne);
-      await ctx.db.delete("messagesFile", id);
-    }
-    return null;
+    if (ligne.pris) return false;
+    await effacerPieces(ctx, ligne);
+    await ctx.db.delete("messagesFile", id);
+    return true;
   },
 });
 

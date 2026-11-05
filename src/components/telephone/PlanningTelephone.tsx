@@ -34,14 +34,13 @@ import { FicheEvenementTelephone } from "./FicheEvenementTelephone";
 import { PageFiche } from "./FichePlanningTelephone";
 import { FicheRappelTelephone } from "./FicheRappelTelephone";
 import { FeuilleCategorie, MenuRappels, RappelsTelephone } from "./RappelsTelephone";
+import { useHorsLigne } from "./BandeauReseau";
+import { FeuilleNotifications } from "./NotificationsRappels";
 import { usePostes, useSupport } from "./poste";
 import { ONGLETS_TELEPHONE } from "./CommunAgentsTelephone";
 import { useAnnonce } from "./Annonce";
 
 type Onglet = "agenda" | "rappels";
-
-/** Le temps pour annuler une suppression, comme `MessageSuppression` au bureau. */
-const ANNULATION_MS = 8000;
 
 const titreCourt = (titre: string) => (titre.length > 60 ? `${titre.slice(0, 59)}…` : titre);
 
@@ -70,6 +69,9 @@ export function PlanningTelephone() {
   const [aujourdhui, setAujourdhui] = useState(cleAujourdhui);
   const [voirFaits, setVoirFaits] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [notificationsOuvertes, setNotificationsOuvertes] = useState(false);
+  const horsLigne = useHorsLigne();
+  const notifications = useQuery(api.rappels.notifications, {});
   const [categorieEditee, setCategorieEditee] = useState<Categorie | "nouvelle" | null>(null);
   const [gardes, setGardes] = useState<ReadonlySet<string>>(() => new Set());
   const [occupes, setOccupes] = useState<ReadonlySet<string>>(() => new Set());
@@ -141,22 +143,21 @@ export function PlanningTelephone() {
   /* ─── Suppression d'un rappel : cachée tout de suite, écrite après le délai d'annulation ─── */
 
   const [enSuppression, setEnSuppression] = useState<RappelTelephone | null>(null);
-  const suppression = useRef<{ rappel: RappelTelephone; minuteur: ReturnType<typeof setTimeout> } | null>(null);
+  const suppression = useRef<{ rappel: RappelTelephone } | null>(null);
   const confirmerSuppression = useCallback(() => {
     const enCours = suppression.current;
     if (!enCours) return;
-    clearTimeout(enCours.minuteur);
     suppression.current = null;
     setEnSuppression(null);
     const { rappel } = enCours;
     if (rappel.source === "compte") {
-      void supprimerRappel({ rappelId: rappel.id as Id<"rappels"> }).catch((err: unknown) => setBandeau(messageErreur(err)));
+      void supprimerRappel({ rappelId: rappel.id as Id<"rappels"> }).catch((err: unknown) => annoncer({ texte: `${titreCourt(rappel.titre)} n’a pas été supprimé : ${messageErreur(err)}`, erreur: true }));
     } else {
       void surPoste("planning.supprimerRappel", { id: rappel.id }).then((r) => {
-        if (!r.ok) setBandeau(texteResultat(r, sur));
+        if (!r.ok) annoncer({ texte: `${titreCourt(rappel.titre)} n’a pas été supprimé : ${texteResultat(r, sur)}`, erreur: true });
       });
     }
-  }, [supprimerRappel, surPoste, sur, setBandeau]);
+  }, [supprimerRappel, surPoste, sur, annoncer]);
   const confirmerRef = useRef(confirmerSuppression);
   useEffect(() => {
     confirmerRef.current = confirmerSuppression;
@@ -166,18 +167,22 @@ export function PlanningTelephone() {
 
   const supprimer = (rappel: RappelTelephone) => {
     confirmerRef.current();
-    suppression.current = { rappel, minuteur: setTimeout(() => confirmerRef.current(), ANNULATION_MS) };
+    suppression.current = { rappel };
     setEnSuppression(rappel);
-    annoncer({ texte: "Rappel supprimé", action: { libelle: "Annuler", onChoisir: () => annulerRef.current() } });
+    /* Le délai est celui de l'annonce (8 s, suspendu sous le doigt) ; il finit, la mutation part. */
+    annoncer({ texte: "Rappel supprimé", action: { libelle: "Annuler", onChoisir: () => annulerRef.current() }, onFin: () => confirmerRef.current() });
   };
   const annulerSuppression = () => {
     const enCours = suppression.current;
     if (!enCours) return;
-    clearTimeout(enCours.minuteur);
     suppression.current = null;
     setEnSuppression(null);
     setBandeau(`Rappel restauré : ${titreCourt(enCours.rappel.titre)}.`);
-    eclairerEcheance(enCours.rappel.id);
+    /* E3-24 : la ligne à son rang, éclairée, le focus sur sa case. */
+    requestAnimationFrame(() => {
+      eclairerEcheance(enCours.rappel.id);
+      document.querySelector<HTMLElement>(`[data-echeance="${CSS.escape(enCours.rappel.id)}"] [role="checkbox"]`)?.focus();
+    });
   };
   const annulerRef = useRef(annulerSuppression);
   useEffect(() => {
@@ -223,6 +228,7 @@ export function PlanningTelephone() {
       (o): ElementAgenda => ({
         cle: o.id,
         genre: "evenement",
+        origine: "compte",
         titre: o.titre,
         jour: o.jour,
         debut: o.jourEntier ? null : o.debut,
@@ -239,6 +245,7 @@ export function PlanningTelephone() {
         (e): ElementAgenda => ({
           cle: `poste-${e.id}`,
           genre: "evenement",
+          origine: "poste",
           titre: e.titre,
           jour: e.date,
           debut: e.debut,
@@ -248,10 +255,12 @@ export function PlanningTelephone() {
           evenement: { source: "poste", evenement: e },
         }),
       );
-    const routines = (departs.etat === "ok" ? departs.data : []).flatMap((d): ElementAgenda[] => {
+    /* Fermé : les départs lus la dernière fois, dans la vue gardée. */
+    const routines = (departs.etat === "ok" ? departs.data : departs.etat === "ferme" ? (departs.gardee?.data ?? []) : []).flatMap((d): ElementAgenda[] => {
       const place = placerDepart(d.at);
       if (!place) return [];
-      return [{ cle: `depart-${d.routineId}-${d.at}`, genre: "depart", titre: d.nom, ...place, fin: null, detail: nomsAgents.get(d.agentId) ?? null, eclairage: null, evenement: null }];
+      const agent = nomsAgents.get(d.agentId);
+      return [{ cle: `depart-${d.routineId}-${d.at}`, genre: "depart", origine: "poste", titre: d.nom, ...place, fin: null, detail: agent ? `Routine de ${agent}` : "Routine", eclairage: null, evenement: null }];
     });
     return [...duCompte, ...locaux, ...routines];
   }, [occurrences, donnees, departs, agents, noms, moiId, fenetre]);
@@ -368,6 +377,8 @@ export function PlanningTelephone() {
     aujourdhui,
     sur,
     posteOuvert: ouvert,
+    horsLigne,
+    gardeeLe: vueGardee?.lu ?? null,
     surPoste,
     categories,
     noms,
@@ -375,6 +386,7 @@ export function PlanningTelephone() {
     occupes,
     cocher,
     reporter,
+    supprimer,
     ouvrirRappel,
     ouvrirEvenement,
     modifierCategorie: (categorie) => setCategorieEditee(categorie ?? "nouvelle"),
@@ -389,7 +401,7 @@ export function PlanningTelephone() {
     const rappel = ficheId ? ([...rappelsMes, ...rappelsAssignes].find((r) => r.id === ficheId && r.source === ficheSource) ?? null) : null;
     page =
       ficheId !== null && rappel === null ? (
-        <Introuvable charge={charge} texte="Ce rappel n’existe plus." lecture={lectureFiche} sur={sur} onRetour={() => fermerFiche()} />
+        <Introuvable charge={charge} texte="Ce rappel n’existe plus ou n’est plus accessible." lecture={lectureFiche} sur={sur} onRetour={() => fermerFiche()} />
       ) : (
         <FicheRappelTelephone
           key={ficheId ?? "nouveau"}
@@ -408,7 +420,7 @@ export function PlanningTelephone() {
     const evenement: EvenementTelephone | null = local ? { source: "poste", evenement: local } : occurrence ? { source: "compte", occurrence } : null;
     page =
       ficheId !== null && evenement === null ? (
-        <Introuvable charge={charge} texte="Cet événement n’existe plus." lecture={lectureFiche} sur={sur} onRetour={() => fermerFiche()} />
+        <Introuvable charge={charge} texte="Cet événement n’existe plus ou n’est plus accessible." lecture={lectureFiche} sur={sur} onRetour={() => fermerFiche()} />
       ) : (
         <FicheEvenementTelephone
           key={ficheId ?? "nouveau"}
@@ -426,15 +438,21 @@ export function PlanningTelephone() {
     <ContextePlanning.Provider value={contexte}>
       <PageOnglet
         titre="Planning"
-        sous={onglet === "rappels" && mes !== undefined ? `${aFaire} à faire` : undefined}
         droite={
-          onglet === "agenda" ? (
-            <Bouton variant="discret" className="h-11" onClick={() => setJour(cleAujourdhui())}>
-              Aujourd’hui
-            </Bouton>
-          ) : (
-            <BoutonIcone variant="discret" className="size-11" libelle="Options des rappels" icone={<Icon name="dot-horizontal" size={24} />} onClick={() => setMenu(true)} />
-          )
+          <>
+            <span className="relative">
+              <BoutonIcone
+                variant="discret"
+                className="size-11"
+                libelle={`Notifications${notifications?.nonLues ? `, ${notifications.nonLues} non lues` : ""}`}
+                aria-haspopup="dialog"
+                icone={<Icon name="bell-01" size={24} />}
+                onClick={() => setNotificationsOuvertes(true)}
+              />
+              {notifications?.nonLues ? <span aria-hidden="true" className="pointer-events-none absolute top-2 right-2 size-2 rounded-full bg-bleu-k1-500" /> : null}
+            </span>
+            <BoutonIcone variant="discret" className="size-11" libelle="Options du planning" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={24} />} onClick={() => setMenu(true)} />
+          </>
         }
       >
         <div className="shrink-0 px-4 pb-2">
@@ -442,7 +460,7 @@ export function PlanningTelephone() {
             libelle="Planning"
             onglets={[
               { id: "agenda", label: "Agenda" },
-              { id: "rappels", label: "Rappels" },
+              { id: "rappels", label: mes !== undefined ? `Rappels ${aFaire}` : "Rappels" },
             ]}
             valeur={onglet}
             onChange={(o) => router.replace(o === "rappels" ? "/planning?onglet=rappels" : "/planning")}
@@ -467,10 +485,9 @@ export function PlanningTelephone() {
             <RappelsTelephone
               sections={sections}
               charge={mes !== undefined && assignes !== undefined}
-              toutLu={poste.etat === "ok" || poste.etat === "aucun"}
+              poste={poste}
               surPoste={surPosteGarde}
             />
-            {surPosteGarde ? null : <LignePoste lecture={poste} ferme={`Catégories et rappels gardés sur ${sur} : visibles quand il est ouvert`} sur={sur} />}
           </div>
         )}
 
@@ -478,17 +495,38 @@ export function PlanningTelephone() {
           variant="sombre"
           taille="md"
           iconeGauche={<Icon name="plus-01" size={20} />}
+          disabled={horsLigne}
           onClick={() => (onglet === "rappels" ? ouvrirRappel(null) : ouvrirEvenement(null))}
-          className="absolute right-4 bottom-4 shadow-ombre-flottante"
+          className="absolute right-4 bottom-4 h-[46px] shadow-ombre-flottante"
         >
           {onglet === "rappels" ? "Rappel" : "Événement"}
         </Bouton>
 
-        {menu ? <MenuRappels voirFaits={voirFaits} faits={faits} onVoirFaits={setVoirFaits} onFermer={() => setMenu(false)} /> : null}
+        {menu ? (
+          <MenuRappels
+            voirFaits={voirFaits}
+            faits={faits}
+            onVoirFaits={setVoirFaits}
+            onRelire={() => {
+              relirePoste();
+              relireDeparts();
+            }}
+            onFermer={() => setMenu(false)}
+          />
+        ) : null}
+        {notificationsOuvertes ? (
+          <FeuilleNotifications
+            onOuvrir={(id) => {
+              setNotificationsOuvertes(false);
+              ouvrirFiche({ fiche: "rappel", id, source: "compte", onglet: "rappels" });
+            }}
+            onFermer={() => setNotificationsOuvertes(false)}
+          />
+        ) : null}
         {categorieEditee ? (
           <FeuilleCategorie
             categorie={categorieEditee === "nouvelle" ? null : categorieEditee}
-            nombre={categories?.length ?? 0}
+            categories={categories ?? []}
             onFermer={() => setCategorieEditee(null)}
           />
         ) : null}

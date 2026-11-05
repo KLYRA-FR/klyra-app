@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { erreur, exigerMembre } from "./model/acces";
+import { REACTIONS, reactionValide } from "./model/reactions";
 import { origineValide, parOrigine } from "./conversationsCompte";
 
 /**
@@ -12,7 +13,7 @@ import { origineValide, parOrigine } from "./conversationsCompte";
  * messages laissés (`messagesFile`). L'ordinateur prend chaque geste une fois, puis il est effacé.
  */
 
-const TYPES = ["renommer", "epingler", "creerFil", "archiverFil", "rouvrirFil", "lu"] as const;
+const TYPES = ["renommer", "epingler", "creerFil", "archiverFil", "rouvrirFil", "lu", "reagir"] as const;
 export type TypeOperation = (typeof TYPES)[number];
 const vType = v.union(
   v.literal("renommer"),
@@ -21,6 +22,7 @@ const vType = v.union(
   v.literal("archiverFil"),
   v.literal("rouvrirFil"),
   v.literal("lu"),
+  v.literal("reagir"),
 );
 
 /** Un fil se reconnaît à son id, comme au bureau (`FIL` de `src/lib/workspace.tsx`). */
@@ -77,7 +79,7 @@ export const epingler = mutation({
 
 /** « Nouveau fil » : l'id vient du téléphone, pour l'ouvrir tout de suite ; l'ordinateur crée le fil sous ce même id. */
 export const creerFil = mutation({
-  args: { origine: v.string(), roleId: v.string() },
+  args: { origine: v.string(), roleId: v.string(), titre: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const moi = await exigerMembre(ctx);
@@ -89,11 +91,12 @@ export const creerFil = mutation({
       .unique();
     if (!agent?.actif) throw erreur("introuvable");
     const maintenant = new Date().toISOString();
+    const titre = args.titre?.replace(/\s+/g, " ").trim().slice(0, 80) || null;
     await ctx.db.insert("conversationsCompte", {
       membreId: moi._id,
       origine: args.origine,
       kind: "direct",
-      titre: "Nouveau fil",
+      titre: titre ?? "Nouveau fil",
       projetId: null,
       projetNom: null,
       roleIds: [args.roleId],
@@ -109,7 +112,7 @@ export const creerFil = mutation({
       activite: null,
       modele: null,
     });
-    await empiler(ctx, moi._id, args.origine, "creerFil", { roleId: args.roleId });
+    await empiler(ctx, moi._id, args.origine, "creerFil", { roleId: args.roleId, ...(titre ? { titre } : {}) });
     return null;
   },
 });
@@ -158,6 +161,30 @@ export const marquerLu = mutation({
     if (!ligne || (ligne.nonLus === 0 && !question)) return null;
     await ctx.db.patch("conversationsCompte", ligne._id, { nonLus: 0, ...(question ? { activite: null } : {}) });
     await empiler(ctx, moi._id, ligne.origine, "lu", {});
+    return null;
+  },
+});
+
+/**
+ * Une réaction sur un message (E2-40) : une marque, jamais un message à l'agent. Le geste dit l'état voulu,
+ * pas une bascule : rejoué deux fois, il ne change rien de plus. L'ordinateur la reprend à son ouverture.
+ */
+export const reagir = mutation({
+  args: { messageOrigine: v.string(), emoji: v.string(), mise: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const moi = await exigerMembre(ctx);
+    if (!origineValide(args.messageOrigine) || !reactionValide(args.emoji)) throw erreur("conversation_invalide");
+    const message = await ctx.db
+      .query("messagesCompte")
+      .withIndex("by_membre_and_origine", (q) => q.eq("membreId", moi._id).eq("origine", args.messageOrigine))
+      .unique();
+    if (!message || message.auteurKind !== "role") throw erreur("introuvable");
+    const avant = message.reactions ?? [];
+    if (avant.includes(args.emoji) === args.mise) return null;
+    const reactions = args.mise ? [...avant, args.emoji] : avant.filter((e) => e !== args.emoji);
+    await ctx.db.patch("messagesCompte", message._id, { reactions: reactions.slice(0, REACTIONS.length) });
+    await empiler(ctx, moi._id, message.conversationOrigine, "reagir", { messageId: message.origine, emoji: args.emoji, mise: args.mise });
     return null;
   },
 });

@@ -27,6 +27,51 @@ async function compte() {
 }
 
 describe("gestes du téléphone sur les conversations (operationsFile)", () => {
+  const message = { conversationOrigine: "dm-hugo", origine: "m-1", auteurKind: "role" as const, auteurId: "hugo", creeLe: "2026-11-01T00:00:00.000Z", texte: "Voilà", parties: "[]", statut: "fait" as const };
+
+  test("une réaction se pose et se retire, sans message pour l'agent ; rejouée, elle ne change rien de plus", async () => {
+    const { moi } = await compte();
+    await moi.mutation(api.conversationsCompte.importerMessages, { lot: [message] });
+    await moi.mutation(api.operationsFile.reagir, { messageOrigine: "m-1", emoji: "👍", mise: true });
+    await moi.mutation(api.operationsFile.reagir, { messageOrigine: "m-1", emoji: "👍", mise: true });
+    const lu = await moi.query(api.conversationsCompte.messages, { origine: "dm-hugo" });
+    expect(lu.messages[0].reactions).toEqual(["👍"]);
+    const gestes = await moi.query(api.operationsFile.aRejouer, {});
+    expect(gestes.filter((g) => g.type === "reagir")).toHaveLength(1);
+    /* Une réaction n'est pas un message : rien dans la file de l'agent. */
+    expect(await moi.query(api.conversationsCompte.enAttente, {})).toEqual([]);
+    const pris = await moi.mutation(api.operationsFile.prendre, { id: gestes.find((g) => g.type === "reagir")!._id });
+    expect(JSON.parse(pris!.valeur)).toEqual({ messageId: "m-1", emoji: "👍", mise: true });
+
+    await moi.mutation(api.operationsFile.reagir, { messageOrigine: "m-1", emoji: "👍", mise: false });
+    expect((await moi.query(api.conversationsCompte.messages, { origine: "dm-hugo" })).messages[0].reactions).toEqual([]);
+  });
+
+  test("une réaction hors de la liste, ou sur un message de la personne, est refusée", async () => {
+    const { moi } = await compte();
+    await moi.mutation(api.conversationsCompte.importerMessages, { lot: [message, { ...message, origine: "m-2", auteurKind: "user" as const, auteurId: null }] });
+    await expect(moi.mutation(api.operationsFile.reagir, { messageOrigine: "m-1", emoji: "🦄", mise: true })).rejects.toThrow();
+    await expect(moi.mutation(api.operationsFile.reagir, { messageOrigine: "m-2", emoji: "👍", mise: true })).rejects.toThrow();
+    await expect(moi.mutation(api.operationsFile.reagir, { messageOrigine: "absent", emoji: "👍", mise: true })).rejects.toThrow();
+  });
+
+  test("la copie de l'ordinateur reprend les réactions ; une version d'avant, sans ce champ, ne les efface pas", async () => {
+    const { moi } = await compte();
+    await moi.mutation(api.conversationsCompte.importerMessages, { lot: [{ ...message, reactions: ["🎉", "🦄"] }] });
+    expect((await moi.query(api.conversationsCompte.messages, { origine: "dm-hugo" })).messages[0].reactions).toEqual(["🎉"]);
+    await moi.mutation(api.conversationsCompte.importerMessages, { lot: [message] });
+    expect((await moi.query(api.conversationsCompte.messages, { origine: "dm-hugo" })).messages[0].reactions).toEqual(["🎉"]);
+  });
+
+  test("un fil tiré d'un passage porte son titre, dans le compte et sur l'ordinateur", async () => {
+    const { moi } = await compte();
+    await moi.mutation(api.operationsFile.creerFil, { origine: "klyra-fil-9a9a9a9a", roleId: "hugo", titre: "  Relance   Cabinet Ostral " });
+    const c = (await moi.query(api.conversationsCompte.liste, {})).find((x) => x.origine === "klyra-fil-9a9a9a9a");
+    expect(c?.titre).toBe("Relance Cabinet Ostral");
+    const geste = (await moi.query(api.operationsFile.aRejouer, {})).find((g) => g.type === "creerFil")!;
+    expect(JSON.parse((await moi.mutation(api.operationsFile.prendre, { id: geste._id }))!.valeur)).toEqual({ roleId: "hugo", titre: "Relance Cabinet Ostral" });
+  });
+
   test("renommer et épingler s'appliquent tout de suite au compte, puis partent dans l'ordre", async () => {
     const { t, moi } = await compte();
     await moi.mutation(api.operationsFile.renommer, { conversationOrigine: equipe.origine, titre: "  Devis   2027 " });
