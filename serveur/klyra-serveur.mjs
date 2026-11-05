@@ -464,12 +464,24 @@ export function creerGestionnaire(options) {
       if (!moteurs) return repondre(res, 404, { erreur: "introuvable" });
       if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
       /* /klyra/v1/moteurs, ou /klyra/v1/moteurs/<id>/<action> */
-      const [id = "", action = ""] = url.pathname.slice(CHEMIN_MOTEURS.length + 1).split("/");
+      const [id = "", action = "", sous = ""] = url.pathname.slice(CHEMIN_MOTEURS.length + 1).split("/");
       try {
         if (!id && req.method === "GET") return repondre(res, 200, { moteurs: moteurs.liste() });
+        /* Les comptes Claude de ce serveur : /klyra/v1/moteurs/claude/comptes[/verifier|connexion|code|deconnexion]. */
+        if (id === "claude" && action === "comptes" && moteurs.comptes) {
+          if (!sous && req.method === "GET") return repondre(res, 200, { comptes: await moteurs.comptes.lister() });
+          if (req.method === "POST") {
+            const corps = (await lireCorpsRequete(req)) ?? {};
+            if (sous === "verifier") return repondre(res, 200, { compte: await moteurs.comptes.verifier(corps.id) });
+            if (sous === "connexion") return repondre(res, 200, await moteurs.comptes.commencer(corps.id));
+            if (sous === "code") return repondre(res, 200, { compte: await moteurs.comptes.terminer(corps.id, corps.code) });
+            if (sous === "deconnexion") return repondre(res, 200, { compte: await moteurs.comptes.deconnecter(corps.id) });
+          }
+          return repondre(res, 404, { erreur: "introuvable" });
+        }
         if (action === "compte" && req.method === "GET") return repondre(res, 200, { compte: await moteurs.compte(id), connexion: id === "codex" || id === "grok" ? moteurs.etatConnexion(id) : null });
         if (action === "modeles" && req.method === "GET") return repondre(res, 200, { modeles: await moteurs.modeles(id) });
-        if (action === "utilisation" && req.method === "GET") return repondre(res, 200, { utilisation: await moteurs.utilisation(id, url.searchParams.get("actualiser") === "1") });
+        if (action === "utilisation" && req.method === "GET") return repondre(res, 200, { utilisation: await moteurs.utilisation(id, url.searchParams.get("actualiser") === "1", url.searchParams.get("compte")) });
         if (action === "version-disponible" && req.method === "GET") return repondre(res, 200, { version: await moteurs.versionDisponible(id) });
         if ((action === "installer" || action === "mettre-a-jour") && req.method === "POST") return repondre(res, 202, { travail: moteurs.lancerTravail(id, action) });
         if (action === "connecter" && req.method === "POST") return repondre(res, 200, await moteurs.connecter(id, (await lireCorpsRequete(req))?.mode));
@@ -839,7 +851,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const ia = creerIa({ donnees: dossier, version: String(PROTOCOLE) });
   await ia.demarrer();
   const agents = creerAgents({ home, donnees: dossier, nomServeur, publier, spontane: journal.spontane, ia, version: String(PROTOCOLE), ecouteurs: journal.ecouteurs });
-  const moteurs = creerMoteurs({ home, claude: agents.claude, codex: agents.codex, grok: agents.grok });
+  const moteurs = creerMoteurs({ home, donnees: dossier, claude: agents.claude, codex: agents.codex, grok: agents.grok });
   routines = creerRoutines({ donnees: dossier, home, envoyer: agents.envoyer, annuler: agents.annuler });
   const fichiers = creerFichiers(home);
   const espace = creerEspace({ donnees: dossier });

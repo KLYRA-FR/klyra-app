@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getBridge, type CompteClaude, type CompteClaudeLocal } from "@/lib/bridge";
+import { getBridge, type CompteClaude, type CompteClaudeLocal, type Reponse } from "@/lib/bridge";
 
 /**
  * Le compte Claude du poste : connecté ou non, quel compte, quel abonnement.
@@ -102,12 +102,16 @@ export function useCompteClaude(): CompteApi {
   return ctx;
 }
 
-/** La liste des connexions ; le hook historique reste exclusivement celui des agents. */
-export function useComptesClaude() {
+/**
+ * La liste des connexions Claude de ce PC (`lieu` null) ou d'un VPS relié ; le hook historique reste
+ * exclusivement celui des agents. Sur un VPS, la connexion se fait en deux temps : la page Anthropic s'ouvre
+ * sur ce PC, puis la personne colle ici le code qu'elle affiche (`envoyerCode`).
+ */
+export function useComptesClaude(lieu: string | null = null) {
   const pont = getBridge()?.claude;
   const { verifier: verifierPoste } = useCompteClaude();
   const [comptes, setComptes] = useState<CompteClaudeLocal[] | null>(null);
-  const [action, setAction] = useState<{ id: string; type: "connexion" | "deconnexion" | "verification" } | null>(null);
+  const [action, setAction] = useState<{ id: string; type: "connexion" | "deconnexion" | "verification" | "code" } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const occupe = useRef(false);
   const generation = useRef(0);
@@ -116,14 +120,14 @@ export function useComptesClaude() {
     if (!pont?.comptes || occupe.current) return;
     const lecture = ++generation.current;
     try {
-      const r = await pont.comptes();
+      const r = await pont.comptes(lieu);
       if (lecture !== generation.current) return;
       if (r.ok) { setComptes(r.data); setErreur(null); }
       else setErreur(r.message);
     } catch {
       if (lecture === generation.current) setErreur("Impossible de lire les comptes Claude. Réessaie.");
     }
-  }, [pont]);
+  }, [pont, lieu]);
 
   useEffect(() => {
     let actif = true;
@@ -132,18 +136,21 @@ export function useComptesClaude() {
     return () => { actif = false; lectures.current++; };
   }, [relire]);
 
-  const agir = useCallback(async (type: "connexion" | "deconnexion" | "verification", id?: string) => {
+  const garder = useCallback((compte: CompteClaudeLocal) => {
+    setComptes((avant) => [...(avant ?? []).filter((c) => c.id !== compte.id), compte].sort((a, b) => Number(b.poste) - Number(a.poste)));
+  }, []);
+
+  const executer = useCallback(async (type: "connexion" | "deconnexion" | "verification" | "code", id: string | undefined, faire: () => Promise<Reponse<CompteClaudeLocal>>) => {
     if (!pont || occupe.current) return;
     occupe.current = true;
     generation.current++;
     setAction({ id: id ?? "nouveau", type });
     setErreur(null);
     try {
-      const r = type === "connexion" ? await pont.connecterCompte!(id)
-        : type === "deconnexion" ? await pont.deconnecterCompte!(id!) : await pont.verifierCompte!(id!);
+      const r = await faire();
       if (r.ok) {
-        setComptes((avant) => [...(avant ?? []).filter((c) => c.id !== r.data.id), r.data].sort((a, b) => Number(b.poste) - Number(a.poste)));
-        if (r.data.poste) await verifierPoste();
+        garder(r.data);
+        if (r.data.poste && lieu === null) await verifierPoste();
       } else setErreur(r.message);
     } catch {
       setErreur("L’action sur ce compte Claude a échoué. Réessaie.");
@@ -151,9 +158,39 @@ export function useComptesClaude() {
       occupe.current = false;
       setAction(null);
     }
-  }, [pont, verifierPoste]);
+  }, [pont, lieu, garder, verifierPoste]);
 
-  return { comptes, action, erreur, relire, agir };
+  const agir = useCallback((type: "connexion" | "deconnexion" | "verification", id?: string) => {
+    if (!pont) return Promise.resolve();
+    return executer(type, id, () =>
+      type === "connexion" ? pont.connecterCompte!(id, lieu) : type === "deconnexion" ? pont.deconnecterCompte!(id!, lieu) : pont.verifierCompte!(id!, lieu),
+    );
+  }, [pont, lieu, executer]);
+
+  const envoyerCode = useCallback((id: string, code: string) => {
+    if (!pont?.codeCompte) return Promise.resolve();
+    return executer("code", id, () => pont.codeCompte!(id, code, lieu));
+  }, [pont, lieu, executer]);
+
+  return { comptes, action, erreur, relire, agir, envoyerCode };
+}
+
+/**
+ * Les comptes Claude connectés, pour les anneaux du rail : relus à l'ouverture, au changement de serveur et
+ * quand un compte arrive ou part. Lecture du statut seulement (aucune requête au modèle).
+ */
+export function useComptesClaudeConnectes(lieu: string | null, actif: boolean): CompteClaudeLocal[] {
+  const pont = getBridge()?.claude;
+  const [lus, setLus] = useState<{ lieu: string | null; comptes: CompteClaudeLocal[] }>({ lieu, comptes: [] });
+  useEffect(() => {
+    if (!actif || !pont?.comptes) return;
+    let vivant = true;
+    const lire = () => void pont.comptes!(lieu).then((r) => { if (vivant && r.ok) setLus({ lieu, comptes: r.data.filter((c) => c.connecte && !c.erreur) }); }).catch(() => {});
+    lire();
+    const sans = pont.onComptes?.((ou) => { if (ou === lieu) lire(); });
+    return () => { vivant = false; sans?.(); };
+  }, [pont, lieu, actif]);
+  return actif && lus.lieu === lieu ? lus.comptes : [];
 }
 
 /** « Max », « Pro »… : le nom de l'abonnement, tel qu'Anthropic l'affiche. */

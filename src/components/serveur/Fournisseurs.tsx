@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
-import { Claude } from "@/components/reglages/sections/Claude";
+import { Claude, ComptesClaude } from "@/components/reglages/sections/Claude";
 import { ancreReglage, Erreur, Groupe, Ligne, Pastille, Valeur } from "@/components/reglages/ui";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { CHAMP } from "@/components/ui/Champ";
@@ -474,7 +474,7 @@ function Detail({ id, retour, lieu }: { id: string; retour: () => void; lieu: st
           </span>
         </div>
       </div>
-      {id === PAR_DEFAUT ? lieu ? <CompteClaudeVps m={m} /> : <Claude /> : id === "grok" || id === "codex" ? <CompteAbonnement id={id} m={m} lieu={lieu} /> : null}
+      {id === PAR_DEFAUT ? lieu ? <ComptesClaude lieu={lieu} repli={<CompteClaudeVps m={m} />} /> : <Claude /> : id === "grok" || id === "codex" ? <CompteAbonnement id={id} m={m} lieu={lieu} /> : null}
       <Moteur id={id} m={m} lieu={lieu} />
     </div>
   );

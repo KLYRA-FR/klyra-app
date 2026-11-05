@@ -86,7 +86,7 @@ import {
   type Utilisation,
 } from "./claude";
 import { moteurs } from "./moteurs";
-import { ComptesClaude } from "./comptes-claude";
+import { ComptesClaude, urlConnexionValide } from "./comptes-claude";
 import { estGere } from "./moteurs/installation";
 import type { AgentEvent, Decision, Progression, StreamOptions } from "./moteurs/types";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
@@ -179,9 +179,13 @@ import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs
 import {
   ajouterIaVps,
   catalogueIaVps,
+  codeCompteClaudeVps,
+  commencerCompteClaudeVps,
+  comptesClaudeVps,
   compteVps,
   connecterCleVps,
   connecterVps,
+  deconnecterCompteClaudeVps,
   deconnecterVps,
   listerIaVps,
   modelesVps,
@@ -190,6 +194,7 @@ import {
   testerIaVps,
   travailVps,
   utilisationVps,
+  verifierCompteClaudeVps,
   versionDisponibleVps,
 } from "./fournisseurs-vps";
 import { competencesVps, creerSouvenirVps, diagnosticVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
@@ -734,9 +739,61 @@ function registerBridge() {
   });
   /* Les limites de l'abonnement de chaque moteur (anneaux du rail) : la dernière connue, ou relue (`actualiser`).
      Celles de ce PC arrivent aussi d'elles-mêmes sur `moteurs:utilisation` pendant le travail des agents. */
-  handle("moteurs:utilisation", (id: string, lieu?: string | null, actualiser?: unknown) => {
+  /* Les comptes Claude (Réglages du serveur › Fournisseurs › Claude) : ceux de ce PC, chacun dans son dossier de
+     connexion, ou ceux d'un VPS (serveur/comptes-claude.mjs). Les agents gardent le compte qu'ils utilisent déjà. */
+  const comptesClaude = new ComptesClaude({
+    dossier: path.join(app.getPath("userData"), "claude-comptes"),
+    home: os.homedir(), binaire: findClaude, environnement: environnementAgent,
+    poste: {
+      lire: compteClaude, connecter: connecterClaude, deconnecter: deconnecterClaude,
+      utilisation: (actualiser) => (actualiser ? actualiserUtilisation() : Promise.resolve(derniereUtilisation())),
+    },
+  });
+  const idCompteClaude = (id: unknown): string => {
+    if (typeof id !== "string" || !id) throw new Error("Compte Claude invalide.");
+    return id;
+  };
+  /* Le rail relit ses anneaux quand un compte arrive ou part. */
+  const comptesChanges = <T>(lieu: unknown) => (r: T): T => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send("claude:comptes:change", vps(lieu));
+    return r;
+  };
+  handle("claude:comptes", (lieu?: unknown) => {
     const origine = vps(lieu);
-    if (origine) return utilisationVps(origine, jetonServeur(origine), id, actualiser === true);
+    return origine ? comptesClaudeVps(origine, jetonServeur(origine)) : comptesClaude.lister();
+  });
+  handle("claude:comptes:verifier", (id: unknown, lieu?: unknown) => {
+    const origine = vps(lieu);
+    return origine ? verifierCompteClaudeVps(origine, jetonServeur(origine), idCompteClaude(id)) : comptesClaude.lire(idCompteClaude(id));
+  });
+  handle("claude:comptes:connexion", async (id: unknown, lieu?: unknown) => {
+    const compte = id === undefined || id === null ? undefined : idCompteClaude(id);
+    const origine = vps(lieu);
+    if (!origine) return comptesClaude.connecter(compte).then(comptesChanges(lieu));
+    /* Le VPS n'a pas de navigateur : il donne la page Anthropic, ouverte ici ; le code revient par `claude:comptes:code`. */
+    const r = await commencerCompteClaudeVps(origine, jetonServeur(origine), compte);
+    const url = urlConnexionValide(r.url);
+    if (r.url && !url) throw new Error("Le serveur a donné une page de connexion inattendue : elle n’a pas été ouverte.");
+    if (url) await shell.openExternal(url);
+    return r.compte;
+  });
+  handle("claude:comptes:code", (id: unknown, code: unknown, lieu?: unknown) => {
+    const origine = vps(lieu);
+    if (!origine) throw new Error("Sur ce PC, la connexion se termine dans le navigateur.");
+    if (typeof code !== "string") throw new Error("Code invalide.");
+    return codeCompteClaudeVps(origine, jetonServeur(origine), idCompteClaude(id), code).then(comptesChanges(lieu));
+  });
+  handle("claude:comptes:deconnexion", (id: unknown, lieu?: unknown) => {
+    const origine = vps(lieu);
+    const fait = origine ? deconnecterCompteClaudeVps(origine, jetonServeur(origine), idCompteClaude(id)) : comptesClaude.deconnecter(idCompteClaude(id));
+    return fait.then(comptesChanges(lieu));
+  });
+  /* `compte` : un compte Claude supplémentaire (anneau à part dans le rail), relu seulement au clic. */
+  handle("moteurs:utilisation", (id: string, lieu?: string | null, actualiser?: unknown, compte?: unknown) => {
+    const origine = vps(lieu);
+    const supplementaire = id === "claude" && typeof compte === "string" && compte && compte !== "poste" ? compte : null;
+    if (origine) return utilisationVps(origine, jetonServeur(origine), id, actualiser === true, supplementaire);
+    if (supplementaire) return comptesClaude.utilisation(supplementaire, actualiser === true);
     return moteurConnu(id).utilisation?.(actualiser === true) ?? null;
   });
   for (const m of moteurs.liste()) {
@@ -1265,19 +1322,6 @@ function registerBridge() {
   handle("claude:compte", () => compteClaude());
   handle("claude:connexion", () => connecterClaude());
   handle("claude:deconnexion", () => deconnecterClaude());
-  const comptesClaude = new ComptesClaude({
-    dossier: path.join(app.getPath("userData"), "claude-comptes"),
-    home: os.homedir(), binaire: findClaude, environnement: environnementAgent,
-    poste: { lire: compteClaude, connecter: connecterClaude, deconnecter: deconnecterClaude },
-  });
-  const idCompteClaude = (id: unknown): string => {
-    if (typeof id !== "string" || !id) throw new Error("Compte Claude invalide.");
-    return id;
-  };
-  handle("claude:comptes", () => comptesClaude.lister());
-  handle("claude:comptes:verifier", (id: unknown) => comptesClaude.lire(idCompteClaude(id)));
-  handle("claude:comptes:connexion", (id: unknown) => comptesClaude.connecter(id === undefined ? undefined : idCompteClaude(id)));
-  handle("claude:comptes:deconnexion", (id: unknown) => comptesClaude.deconnecter(idCompteClaude(id)));
   handle("claude:utilisation:actualiser", () => actualiserUtilisation());
 
   /* Réglages de l'app : notifications, lancement au démarrage, dossiers, mises à jour. */

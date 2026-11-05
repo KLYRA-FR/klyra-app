@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, symlink, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
-import { ComptesClaude, environnementCompte } from "./comptes-claude.ts";
+import { codeConnexionValide, ComptesClaude, environnementCompte, urlConnexionValide, type ProcessusConnexion } from "./comptes-claude.ts";
 
 const original = {
   installe: true, chemin: "claude", version: "2.1.318", connecte: true, methode: "claude.ai",
@@ -36,6 +36,19 @@ async function contexte(t: TestContext) {
       });
     },
   };
+  /* Le vrai processus du faux CLI, l'entrée ouverte : la connexion en deux temps d'un serveur sans navigateur. */
+  const lancer = (_bin: string, args: string[], environnement: NodeJS.ProcessEnv): ProcessusConnexion => {
+    appels.push({ args, env: environnement });
+    const child = spawn(process.execPath, [fixture, ...args], { env: environnement, cwd: tmp });
+    const fin = new Promise<number | null>((resolve) => child.once("close", (code) => resolve(code)));
+    return {
+      surSortie: (cb) => { child.stdout.on("data", (d: Buffer) => cb(d.toString())); },
+      ecrire: (texte) => { child.stdin.write(texte); },
+      fin,
+      arreter: () => { child.kill(); },
+    };
+  };
+  Object.assign(options, { lancer, delais: { url: 5_000, code: 5_000 } });
   return { options, env, appels, actionsPoste, comptes: new ComptesClaude(options), poste: () => poste };
 }
 
@@ -156,6 +169,71 @@ test("un binaire disparu signale un échec sans laisser le verrou de connexion p
   await assert.rejects(comptes.connecter(), /Impossible de lancer Claude Code/);
   await assert.rejects(comptes.connecter(), /Impossible de lancer Claude Code/);
   assert.deepEqual(c.poste(), original);
+});
+
+test("serveur sans navigateur : la page d'Anthropic d'abord, le code ensuite, et le compte se connecte", async (t) => {
+  const c = await contexte(t);
+  Object.assign(c.env, { KLYRA_FAUX_DEUX_TEMPS: "1" });
+  const debut = await c.comptes.commencerConnexion();
+  assert.match(debut.url!, /^https:\/\/claude\.com\/cai\/oauth\/authorize\?/);
+  assert.equal(debut.compte.connecte, false);
+  assert.equal(debut.compte.attenteCode, true);
+  assert.equal((await c.comptes.lister()).find((x) => x.id === debut.compte.id)?.attenteCode, true);
+  /* Redemandée pendant l'attente, la même page. */
+  assert.equal((await c.comptes.commencerConnexion(debut.compte.id)).url, debut.url);
+  await assert.rejects(c.comptes.terminerConnexion(debut.compte.id, "pas un code !"), /bonne forme/);
+  const compte = await c.comptes.terminerConnexion(debut.compte.id, " bon-code#etat ");
+  assert.equal(compte.connecte, true);
+  assert.equal(compte.email, "second@example.test");
+  assert.equal(compte.attenteCode, undefined);
+  await assert.rejects(c.comptes.terminerConnexion(debut.compte.id, "bon-code#etat"), /expiré/);
+  assert.deepEqual(c.poste(), original);
+});
+
+test("un code refusé ne connecte rien et oblige à relancer la connexion", async (t) => {
+  const c = await contexte(t);
+  Object.assign(c.env, { KLYRA_FAUX_DEUX_TEMPS: "1" });
+  const debut = await c.comptes.commencerConnexion();
+  await assert.rejects(c.comptes.terminerConnexion(debut.compte.id, "mauvais-code#etat"), /pas été accepté/);
+  assert.equal((await c.comptes.lire(debut.compte.id)).connecte, false);
+  await assert.rejects(c.comptes.terminerConnexion(debut.compte.id, "bon-code#etat"), /expiré/);
+  const relance = await c.comptes.commencerConnexion(debut.compte.id);
+  assert.equal((await c.comptes.terminerConnexion(relance.compte.id, "bon-code#etat")).connecte, true);
+});
+
+test("une page qui n'est pas celle d'Anthropic n'est jamais rendue", async (t) => {
+  const c = await contexte(t);
+  Object.assign(c.env, { KLYRA_FAUX_DEUX_TEMPS: "1", KLYRA_FAUX_PAGE: "https://exemple.test/oauth/authorize?code=true" });
+  const comptes = new ComptesClaude({ ...c.options, delais: { url: 500 } });
+  await assert.rejects(comptes.commencerConnexion(), /à temps/);
+  assert.equal(urlConnexionValide("https://claude.com/cai/oauth/authorize?x=1"), "https://claude.com/cai/oauth/authorize?x=1");
+  assert.equal(urlConnexionValide("http://claude.com/cai/oauth/authorize"), null);
+  assert.equal(urlConnexionValide("https://claude.com.exemple.test/oauth/authorize"), null);
+  assert.equal(urlConnexionValide("https://moi@claude.com/oauth/authorize"), null);
+  assert.equal(urlConnexionValide("https://claude.com/autre"), null);
+  assert.equal(codeConnexionValide("abc def"), null);
+  assert.equal(codeConnexionValide("abc\nauth logout"), null);
+});
+
+test("les limites de chaque compte se lisent avec ce compte seul, sont gardées, et partent à la déconnexion", async (t) => {
+  const c = await contexte(t);
+  const second = await c.comptes.connecter();
+  assert.equal(await c.comptes.utilisation(second.id, false), null);
+  const lue = await c.comptes.utilisation(second.id, true);
+  assert.equal(lue?.session?.utilise, 0.25);
+  assert.equal(lue?.semaine?.utilise, 0.1);
+  const sonde = c.appels.at(-1)!;
+  assert.equal(sonde.args[0], "-p");
+  assert.equal(path.basename(sonde.env.CLAUDE_CONFIG_DIR!), second.id);
+  /* Gardées : un redémarrage les retrouve sans nouvelle requête. */
+  const avant = c.appels.length;
+  assert.equal((await new ComptesClaude(c.options).utilisation(second.id, false))?.session?.utilise, 0.25);
+  assert.equal(c.appels.length, avant);
+  /* Le compte des agents passe par sa propre lecture, jamais par la requête d'un autre compte. */
+  assert.equal(await c.comptes.utilisation("poste", true), null);
+  await c.comptes.deconnecter(second.id);
+  assert.equal(await new ComptesClaude(c.options).utilisation(second.id, false), null);
+  await assert.rejects(c.comptes.utilisation("../poste", false), /invalide/);
 });
 
 // Vérification facultative du vrai CLI : uniquement `--version` et `auth status` dans un dossier vide.
