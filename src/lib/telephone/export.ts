@@ -12,6 +12,8 @@ export interface MessageLu {
   texte: string;
   parties: string;
   statut: "en-cours" | "fait" | "erreur" | null;
+  reactions: string[];
+  compaction: boolean;
 }
 
 /** Les parties du compte ramenées aux blocs que l'export du bureau sait écrire. */

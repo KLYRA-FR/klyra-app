@@ -5,247 +5,256 @@ import { Icon } from "@/components/icons/Icon";
 import { ICONES, NOMS_ICONES, PastilleCategorie } from "@/components/planning/Rappels";
 import { NOMS_TEINTES } from "@/components/roles/ChoixTeinte";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
-import { PixelCheck } from "@/components/ui/PixelCheck";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { cn } from "@/lib/cn";
 import { libellePeriode } from "@/lib/dates";
 import { reportsProposes } from "@/lib/report";
 import { texteErreurPoste } from "@/lib/poste-texte";
-import { NOMS_REPORT, cibleReport, type RappelTelephone, type SectionRappels } from "@/lib/telephone/planning";
+import { NOMS_REPORT, NOMS_URGENCE, categorieDeRepli, cibleReport, type RappelTelephone, type SectionRappels } from "@/lib/telephone/planning";
 import { ROLE_TEINTES, type Categorie, type RoleTeinte } from "@/types/domain";
-import { usePlanningTelephone } from "./ContextePlanningTelephone";
-import { Feuille, MenuFeuille } from "./Feuille";
-import { BandeauVueGardee, NotePoste } from "./etats";
+import type { LecturePoste } from "@/lib/poste/client";
+import { useApres } from "./ChatsTelephone";
+import { SectionPoste, usePlanningTelephone } from "./ContextePlanningTelephone";
+import { CaseRonde } from "./Controles";
+import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong, type ActionMenu } from "./Feuille";
+import { AucunPoste, BandeauVueGardee, EtatEcran, NotePoste, Squelette } from "./etats";
+import { GroupeListe, TuileIcone } from "./Liste";
 
 /**
- * T-06 Planning › Rappels : une section repliable par catégorie au lieu des colonnes du bureau,
- * puis « Ceux que j'ai assignés » et « Assignés par l'équipe ». Une ligne : la coche (44 × 44),
- * le titre (ouvre T-07), l'échéance, « Reporter ».
+ * T-06 Planning › Rappels : une section repliable par catégorie, puis « Ceux que j'ai assignés » et
+ * « Assignés par l'équipe ». Une ligne : la case (44 × 44), le titre (ouvre la fiche), « ⋯ » (le menu).
+ * D-8 (C-1b) : « Tout est fait » seulement si le compte et l'ordinateur ont été lus. Sinon, le compte
+ * et l'ordinateur restent dans deux sections, et ce qui manque est dit à sa place.
  */
 export function RappelsTelephone({
   sections,
   charge,
-  toutLu,
+  poste,
   surPoste,
 }: {
   sections: SectionRappels[];
   charge: boolean;
-  /** L'ordinateur a été lu en direct, ou il n'y en a aucun : « Tout est fait » peut être vrai (D-8). */
-  toutLu: boolean;
+  poste: LecturePoste<unknown> & { relancer: () => void };
   /** Ordinateur fermé : ses rappels lus la dernière fois, à part et datés (S-22). */
   surPoste: { lu: number; rappels: RappelTelephone[] } | null;
 }) {
   const { sur } = usePlanningTelephone();
-  const [replies, setReplies] = useState<ReadonlySet<string>>(() => new Set());
+  /* Une catégorie vide part repliée ; toucher son en-tête inverse cet état. */
+  const [inverses, setInverses] = useState<ReadonlySet<string>>(() => new Set());
+  const chargement = useApres(300, !charge);
   const basculer = (id: string) =>
-    setReplies((avant) => {
+    setInverses((avant) => {
       const apres = new Set(avant);
       if (!apres.delete(id)) apres.add(id);
       return apres;
     });
 
   if (!charge) {
-    return (
-      <ul className="mt-2 flex flex-col gap-2" aria-busy="true">
-        {Array.from({ length: 6 }, (_, i) => (
-          <li key={i} className="h-12 rounded-md bg-fond-surface-grise" />
-        ))}
-      </ul>
-    );
+    return chargement ? (
+      <div className="mt-2" aria-busy="true">
+        <Squelette lignes={4} />
+      </div>
+    ) : null;
   }
-  /* D-8 (C-1b) : « Tout est fait » seulement si le compte et l'ordinateur sont lus, et vides. */
-  const rien = toutLu && sections.every((s) => s.rappels.length === 0);
+  const toutLu = poste.etat === "ok" || poste.etat === "aucun";
+  const rien = sections.every((s) => s.rappels.length === 0);
+  const separes = !toutLu;
+  const fermePhrase = (surQui: string) => `les catégories et les rappels gardés sur ${surQui} s’afficheront ici quand KLYRA y est ouverte.`;
   return (
     <div className="flex flex-col">
-      {rien ? <p className="py-4 text-body-s text-texte-secondaire">Tout est fait</p> : null}
-      {surPoste ? <h2 className="pt-3 pb-1 text-ui font-semibold text-texte-principal">Dans ton compte</h2> : null}
-      {surPoste && sections.every((s) => s.rappels.length === 0) ? <p className="py-2 text-ui text-texte-secondaire">Aucun rappel dans ton compte.</p> : null}
-      {sections.map((section, i) => (
-        <div key={section.id}>
-          {section.categorie && sections[i - 1]?.groupe !== "mes" ? (
-            <h2 className="pt-3 pb-1 text-ui font-medium text-texte-secondaire">Mes rappels</h2>
-          ) : null}
-          <SectionRappelsTelephone section={section} replie={replies.has(section.id)} onBasculer={() => basculer(section.id)} />
+      {rien && poste.etat === "ok" ? <EtatEcran forme="encadre" className="mt-2" icone="check-01" titre="Tout est fait" texte="Aucun rappel à faire." /> : null}
+      {separes ? (
+        <h2 className="flex min-h-11 items-center gap-1.5 px-1 text-ui font-semibold text-texte-principal">
+          Dans ton compte
+          <span className="font-normal text-texte-secondaire">{sections.reduce((n, s) => n + s.aFaire, 0)}</span>
+        </h2>
+      ) : null}
+      {separes && rien ? <p className="px-1 py-2 text-ui text-texte-secondaire">Aucun rappel dans ton compte.</p> : null}
+      {sections.map((section) => {
+        if (section.rappels.length === 0 && (separes || rien || !section.categorie)) return null;
+        const pliee = section.rappels.length === 0;
+        return <SectionRappelsTelephone key={section.id} section={section} sansEnTete={separes && !section.categorie && section.groupe === "mes"} replie={inverses.has(section.id) ? !pliee : pliee} onBasculer={() => basculer(section.id)} />;
+      })}
+      {poste.etat === "aucun" ? (
+        <div className="mt-4">
+          <AucunPoste forme="encadre" className="px-0 pb-0" phrase={fermePhrase} />
         </div>
-      ))}
-      {surPoste ? (
-        <section aria-label={`Sur ${sur}`} className="pt-4">
-          <h2 className="pb-2 text-ui font-semibold text-texte-principal">
-            Sur {sur} <span className="font-normal text-texte-secondaire">{surPoste.rappels.length}</span>
+      ) : null}
+      {separes ? (
+        <section aria-label={`Sur ${sur}`} className="pt-5">
+          <h2 className="flex min-h-11 items-center gap-1.5 px-1 text-ui font-semibold text-texte-principal">
+            Sur {sur}
+            {surPoste ? <span className="font-normal text-texte-secondaire">{surPoste.rappels.length}</span> : null}
           </h2>
-          <BandeauVueGardee lu={surPoste.lu} mot="Vus" />
-          <ul className="flex flex-col pt-1 pb-2">
-            {surPoste.rappels.map((rappel) => (
-              <LigneRappel key={`${rappel.source}-${rappel.id}`} rappel={rappel} avecCategorie />
-            ))}
-          </ul>
-          <NotePoste className="text-ui-xs text-texte-secondaire" />
+          {surPoste ? (
+            <>
+              <BandeauVueGardee lu={surPoste.lu} mot="Vus" className="mb-2" />
+              {surPoste.rappels.length > 0 ? (
+                <GroupeListe>
+                  {surPoste.rappels.map((rappel) => (
+                    <LigneRappel key={`${rappel.source}-${rappel.id}`} rappel={rappel} avecCategorie />
+                  ))}
+                </GroupeListe>
+              ) : (
+                <p className="px-1 py-2 text-ui text-texte-secondaire">Aucun rappel la dernière fois.</p>
+              )}
+              <NotePoste className="mt-2 px-1 text-ui-xs text-texte-secondaire" />
+            </>
+          ) : (
+            <SectionPoste lecture={poste} ferme={fermePhrase} />
+          )}
         </section>
       ) : null}
     </div>
   );
 }
 
-function SectionRappelsTelephone({ section, replie, onBasculer }: { section: SectionRappels; replie: boolean; onBasculer: () => void }) {
-  const { posteOuvert, modifierCategorie } = usePlanningTelephone();
+function SectionRappelsTelephone({ section, replie, sansEnTete, onBasculer }: { section: SectionRappels; replie: boolean; sansEnTete: boolean; onBasculer: () => void }) {
+  const { posteOuvert, horsLigne, modifierCategorie } = usePlanningTelephone();
   const id = useId();
   const { categorie } = section;
   return (
-    <section aria-label={section.titre}>
-      <div className="sticky top-0 z-10 flex items-center gap-2 bg-fond-page">
-        <button
-          type="button"
-          aria-expanded={!replie}
-          aria-controls={id}
-          onClick={onBasculer}
-          className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left active:bg-fond-survol"
-        >
-          <Icon name="chevron-down" size={20} className={cn("text-icone-secondaire transition-transform duration-[120ms] motion-reduce:transition-none", replie && "-rotate-90")} />
-          {categorie ? <PastilleCategorie categorie={categorie} taille={24} /> : null}
-          <span
-            className="min-w-0 truncate text-ui font-semibold text-texte-principal"
-            style={categorie ? { color: AGENT_PASTELS[categorie.teinte]?.encre } : undefined}
-          >
-            {section.titre}
-          </span>
-          <span className="shrink-0 text-ui text-texte-secondaire">{section.aFaire}</span>
-        </button>
-        {categorie && posteOuvert ? (
-          <BoutonIcone
-            taille="md"
-            libelle={`Modifier la catégorie ${categorie.nom}`}
-            icone={<Icon name="dot-horizontal" size={20} />}
-            onClick={() => modifierCategorie(categorie)}
-          />
-        ) : null}
-      </div>
-      {replie ? null : (
-        <ul id={id} className="flex flex-col pb-2">
-          {section.rappels.map((rappel) => (
-            <LigneRappel key={`${rappel.source}-${rappel.id}`} rappel={rappel} />
-          ))}
-          {section.rappels.length === 0 ? <li className="py-2 text-ui text-texte-secondaire">Aucun rappel.</li> : null}
-        </ul>
+    <section aria-label={section.titre} className="pb-1">
+      {sansEnTete ? null : (
+        <div className="sticky top-0 z-10 flex items-center gap-1 bg-fond-page">
+          <button type="button" aria-expanded={!replie} aria-controls={id} onClick={onBasculer} className="flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left active:bg-fond-survol">
+            <Icon name="chevron-down" size={18} className={cn("shrink-0 text-icone-secondaire transition-transform duration-[220ms] ease-sortie motion-reduce:transition-none", replie && "-rotate-90")} />
+            {categorie ? <PastilleCategorie categorie={categorie} taille={24} /> : null}
+            <span className="min-w-0 truncate text-ui font-semibold text-texte-principal">{section.titre}</span>
+            <span className="shrink-0 text-ui text-texte-secondaire" aria-label={`${section.aFaire} à faire`}>
+              {section.aFaire}
+            </span>
+          </button>
+          {categorie && posteOuvert && !horsLigne ? (
+            <BoutonIcone variant="discret" className="size-11" libelle={`Modifier la catégorie ${categorie.nom}`} aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => modifierCategorie(categorie)} />
+          ) : null}
+        </div>
+      )}
+      {replie && !sansEnTete ? null : (
+        <div id={id}>
+          <GroupeListe>
+            {section.rappels.map((rappel) => (
+              <LigneRappel key={`${rappel.source}-${rappel.id}`} rappel={rappel} />
+            ))}
+          </GroupeListe>
+        </div>
       )}
     </section>
   );
 }
 
 /**
- * Une ligne de rappel, ici et dans « À faire aujourd'hui » de l'agenda. Toute la ligne porte
- * `data-echeance` : elle s'éclaire après un report, une restauration ou un retour de T-07.
+ * Une ligne de rappel, ici et dans « À faire » de l'agenda : la case et le titre sont deux contrôles
+ * distincts, « ⋯ » ouvre le menu (appui long aussi). Toute la ligne porte `data-echeance` : elle
+ * s'éclaire après un report, une restauration ou un retour de la fiche. Lue dans une vue gardée :
+ * la case est inactive, le menu dit pourquoi.
  */
 export function LigneRappel({ rappel, avecCategorie = false }: { rappel: RappelTelephone; avecCategorie?: boolean }) {
-  const { cocher, ouvrirRappel, noms, categories, occupes, posteOuvert } = usePlanningTelephone();
-  /* Un rappel de l'ordinateur fermé vient de sa vue gardée : il se lit, il ne se coche pas. */
+  const { cocher, ouvrirRappel, noms, categories, occupes, posteOuvert, horsLigne } = usePlanningTelephone();
   const enAttente = rappel.source === "poste" && !posteOuvert;
-  const [report, setReport] = useState(false);
-  const categorie = avecCategorie ? categories?.find((c) => c.id === rappel.liste) : undefined;
+  const [menu, setMenu] = useState(false);
+  const appui = useAppuiLong(() => setMenu(true));
+  const categorie = rappel.liste ? categories?.find((c) => c.id === rappel.liste) : undefined;
   const nomAutre = rappel.autre ? (noms.get(rappel.autre) ?? "quelqu’un") : null;
   const personne = nomAutre ? (rappel.recu ? `Par ${nomAutre}` : `Assigné à ${nomAutre}`) : null;
+  const inactive = occupes.has(rappel.id) || enAttente || horsLigne;
 
   return (
-    <li data-echeance={rappel.id} className="flex items-center gap-2 border-b border-bordure-subtile last:border-b-0">
+    <li data-echeance={rappel.id} className="flex items-center border-b border-bordure-subtile pl-1 last:border-b-0">
       <button
         type="button"
         role="checkbox"
         aria-checked={rappel.faite}
         aria-label={rappel.faite ? `Rouvrir ${rappel.titre}` : `Terminer ${rappel.titre}`}
         aria-busy={occupes.has(rappel.id) || undefined}
-        disabled={occupes.has(rappel.id) || enAttente}
+        disabled={inactive}
         onClick={() => cocher(rappel)}
-        className="flex size-11 shrink-0 items-center justify-center rounded-xs active:bg-fond-survol disabled:opacity-60"
+        className="flex size-11 shrink-0 items-center justify-center rounded-full active:bg-fond-survol disabled:opacity-60"
       >
-        {rappel.faite ? (
-          <PixelCheck className="h-[13px] w-[18px]" />
-        ) : (
-          <span aria-hidden="true" className="size-5 rounded-xs border-[1.5px] border-bordure-forte" />
-        )}
+        <CaseRonde faite={rappel.faite} />
       </button>
-      <button type="button" onClick={() => ouvrirRappel(rappel)} className="flex min-h-12 min-w-0 flex-1 flex-col justify-center gap-0.5 py-2 text-left">
+      <button type="button" {...appui} onClick={() => ouvrirRappel(rappel)} className="flex min-h-14 min-w-0 flex-1 flex-col justify-center gap-0.5 py-2 pl-1 text-left">
         <span className={cn("text-body-s [overflow-wrap:anywhere]", rappel.faite ? "text-texte-secondaire line-through" : "text-texte-principal")}>
-          {rappel.priorite > 0 ? <span className="mr-1 font-semibold text-texte-accent">{"!".repeat(rappel.priorite)}</span> : null}
+          {rappel.priorite > 0 ? (
+            <>
+              <span aria-hidden="true" className="mr-1 font-semibold text-texte-accent">
+                {"!".repeat(rappel.priorite)}
+              </span>
+              <span className="sr-only">{NOMS_URGENCE[rappel.priorite]} : </span>
+            </>
+          ) : null}
           {rappel.titre}
         </span>
-        {rappel.jour || personne ? (
+        {rappel.jour || personne || (avecCategorie && categorie) ? (
           <span className="text-ui-xs text-texte-secondaire">
-            {rappel.jour ? (
-              <span className={cn(rappel.retard && !rappel.faite && "font-medium text-texte-erreur")}>{libellePeriode(rappel.jour, rappel.heure, rappel.fin)}</span>
-            ) : null}
-            {rappel.jour && personne ? " · " : null}
-            {personne}
+            {rappel.jour ? <span className={cn(rappel.retard && !rappel.faite && "font-medium text-texte-erreur")}>{libellePeriode(rappel.jour, rappel.heure, rappel.fin)}</span> : null}
+            {[rappel.jour ? "" : null, personne, avecCategorie ? categorie?.nom : null].filter((x) => x !== null && x !== undefined).join(" · ")}
           </span>
         ) : null}
       </button>
-      {categorie ? <PastilleCategorie categorie={categorie} taille={20} /> : null}
-      {!rappel.faite && rappel.createur && !enAttente ? (
-        <button type="button" onClick={() => setReport(true)} className="min-h-11 shrink-0 rounded-xs px-2 text-ui text-texte-secondaire active:bg-fond-survol">
-          {rappel.jour ? "Reporter" : "Planifier"}
-        </button>
-      ) : null}
-      {report ? <FeuilleReporter rappel={rappel} onFermer={() => setReport(false)} /> : null}
+      <BoutonIcone variant="discret" className="size-11 shrink-0" libelle={`Actions pour ${rappel.titre}`} aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => setMenu(true)} />
+      {menu ? <MenuRappel rappel={rappel} categorie={categorie} onFermer={() => setMenu(false)} /> : null}
     </li>
   );
 }
 
-/** `MenuReporter` en feuille : « Dans 1 h », « Demain matin », « Lundi » avec leur cible écrite, puis « Planifier… » (T-07). */
-function FeuilleReporter({ rappel, onFermer }: { rappel: RappelTelephone; onFermer: () => void }) {
-  const { reporter, ouvrirRappel } = usePlanningTelephone();
+/**
+ * Le menu d'un rappel (E3-18, E3-21) : les reports que le moteur propose aujourd'hui, avec leur date
+ * écrite ; « Planifier… » ; modifier ; supprimer. Un rappel de l'ordinateur lu dans la vue gardée se
+ * lit seulement, et le menu dit pourquoi. « Confier à un agent » attend le contrat commun des lots 3 et 4.
+ */
+function MenuRappel({ rappel, categorie, onFermer }: { rappel: RappelTelephone; categorie: Categorie | undefined; onFermer: () => void }) {
+  const { reporter, supprimer, ouvrirRappel, posteOuvert, horsLigne, sur } = usePlanningTelephone();
   const [maintenant] = useState(() => new Date());
-  const verbe = rappel.jour ? "Reporter" : "Planifier";
-  const ligne = "flex min-h-12 w-full items-center gap-3 text-left text-body-s text-texte-principal active:bg-fond-survol";
+  const garde = rappel.source === "poste" && !posteOuvert;
+  const raison = garde ? `Ce rappel est sur ${sur}. Reporter et supprimer : possible quand il est ouvert.` : horsLigne ? "Possible quand ce téléphone est en ligne" : undefined;
+  const bloque = garde || horsLigne;
+  const sous = [rappel.jour ? libellePeriode(rappel.jour, rappel.heure, rappel.fin) : null, categorie?.nom].filter(Boolean).join(" · ");
+  const reportable = !rappel.faite && rappel.createur;
+  const actions: ActionMenu[] = [
+    ...(reportable
+      ? [
+          ...reportsProposes(maintenant).map(
+            (choix): ActionMenu => ({
+              libelle: NOMS_REPORT[choix],
+              icone: choix === "une-heure" ? "clock-01" : "calendar-01",
+              valeur: cibleReport(choix, maintenant),
+              desactivee: bloque,
+              onChoisir: () => reporter(rappel, choix),
+            }),
+          ),
+          { libelle: "Planifier…", icone: "calendar-01" as const, desactivee: bloque, onChoisir: () => ouvrirRappel(rappel, "jour") },
+        ]
+      : []),
+    { libelle: garde ? "Voir le rappel" : "Modifier le rappel", icone: garde ? ("expand" as const) : ("pencil-01" as const), separateurAvant: reportable, onChoisir: () => ouvrirRappel(rappel) },
+    ...(rappel.createur ? [{ libelle: "Supprimer", icone: "trash-01" as const, danger: !bloque, desactivee: bloque, separateurAvant: true, note: raison, onChoisir: () => supprimer(rappel) }] : []),
+  ];
   return (
-    <Feuille titre={`${verbe} « ${rappel.titre} »`} onFermer={onFermer}>
-      <ul className="flex flex-col">
-        {reportsProposes(maintenant).map((choix) => {
-          const cible = cibleReport(choix, maintenant);
-          return (
-            <li key={choix} className="border-b border-bordure-subtile">
-              <button
-                type="button"
-                aria-label={`${NOMS_REPORT[choix]}, ${cible}`}
-                className={ligne}
-                onClick={() => {
-                  onFermer();
-                  reporter(rappel, choix);
-                }}
-              >
-                {NOMS_REPORT[choix]}
-                <span className="ml-auto text-ui text-texte-secondaire">{cible}</span>
-              </button>
-            </li>
-          );
-        })}
-        <li>
-          <button
-            type="button"
-            className={ligne}
-            onClick={() => {
-              onFermer();
-              ouvrirRappel(rappel, "jour");
-            }}
-          >
-            Planifier…
-          </button>
-        </li>
-      </ul>
-    </Feuille>
+    <MenuFeuille
+      titre={rappel.titre}
+      objet={{ visuel: categorie ? <PastilleCategorie categorie={categorie} taille={36} /> : <TuileIcone icone="list" />, sous: sous || undefined }}
+      entete={reportable ? <p className="px-1 pb-1 text-ui-xs font-medium text-texte-secondaire">{rappel.jour ? "Reporter" : "Planifier"}</p> : undefined}
+      onFermer={onFermer}
+      actions={actions}
+    />
   );
 }
 
-/** Le « ⋯ » des rappels : une catégorie de plus (sur l'ordinateur), et les terminés. */
+/** Le « ⋯ » du Planning (E3-25) : une catégorie de plus (sur l'ordinateur), les terminés, relire. */
 export function MenuRappels({
   voirFaits,
   faits,
   onVoirFaits,
+  onRelire,
   onFermer,
 }: {
   voirFaits: boolean;
   faits: number;
   onVoirFaits: (voir: boolean) => void;
+  onRelire: () => void;
   onFermer: () => void;
 }) {
-  const { posteOuvert, modifierCategorie } = usePlanningTelephone();
+  const { posteOuvert, horsLigne, modifierCategorie, sur } = usePlanningTelephone();
   return (
     <MenuFeuille
       titre="Rappels"
@@ -253,13 +262,15 @@ export function MenuRappels({
       actions={[
         {
           libelle: "Nouvelle catégorie",
+          icone: "plus-01",
           onChoisir: () => modifierCategorie(null),
-          desactivee: !posteOuvert,
-          note: posteOuvert ? undefined : <NotePoste />,
+          desactivee: !posteOuvert || horsLigne,
+          note: horsLigne ? "Possible quand ce téléphone est en ligne" : posteOuvert ? undefined : `Possible quand ${sur} est ouvert`,
         },
         voirFaits
-          ? { libelle: "Masquer les terminés", onChoisir: () => onVoirFaits(false) }
-          : { libelle: `Afficher les terminés (${faits})`, onChoisir: () => onVoirFaits(true) },
+          ? { libelle: "Masquer les terminés", icone: "check-01", onChoisir: () => onVoirFaits(false) }
+          : { libelle: `Afficher les terminés (${faits})`, icone: "check-01", onChoisir: () => onVoirFaits(true) },
+        { libelle: "Relire", icone: "refresh-01", onChoisir: onRelire },
       ]}
     />
   );
@@ -270,8 +281,11 @@ export function MenuRappels({
  * geste part au poste, désactivé quand il est fermé (P-7). Comme au bureau, supprimer une
  * catégorie range ses rappels dans la première qui reste.
  */
-export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: Categorie | null; nombre: number; onFermer: () => void }) {
-  const { posteOuvert, surPoste, sur } = usePlanningTelephone();
+export function FeuilleCategorie({ categorie, categories, onFermer }: { categorie: Categorie | null; categories: Categorie[]; onFermer: () => void }) {
+  const { posteOuvert, horsLigne, surPoste, sur } = usePlanningTelephone();
+  const nombre = categories.length;
+  const repli = categorie ? categorieDeRepli(categories, categorie.id) : null;
+  const [aSupprimer, setASupprimer] = useState(false);
   const [nom, setNom] = useState(categorie?.nom ?? "");
   const [teinte, setTeinte] = useState<RoleTeinte>(categorie?.teinte ?? ROLE_TEINTES[nombre % ROLE_TEINTES.length]);
   const [icone, setIcone] = useState(categorie?.icone ?? "list");
@@ -279,6 +293,8 @@ export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: C
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
   const idNom = useId();
+  const change = !categorie || nom.trim() !== categorie.nom || teinte !== categorie.teinte || icone !== categorie.icone;
+  const bloque = !posteOuvert || horsLigne;
 
   const agir = async (type: string, args: unknown) => {
     setOccupe(true);
@@ -304,10 +320,10 @@ export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: C
       onFermer={onFermer}
       pied={
         <div className="flex flex-col gap-1">
-          <Bouton variant="sombre" taille="md" className="w-full" disabled={!posteOuvert || occupe} onClick={enregistrer}>
+          <Bouton variant="sombre" taille="md" className="w-full" disabled={bloque || occupe || !change} onClick={enregistrer}>
             {categorie ? "Enregistrer" : "Créer la catégorie"}
           </Bouton>
-          {!posteOuvert ? <NotePoste /> : null}
+          {horsLigne ? <p className="mt-1 text-ui-xs text-texte-secondaire">Possible quand ce téléphone est en ligne</p> : !posteOuvert ? <NotePoste /> : null}
           {erreur ? (
             <p role="alert" className="text-ui text-texte-erreur">
               {erreur}
@@ -377,12 +393,21 @@ export function FeuilleCategorie({ categorie, nombre, onFermer }: { categorie: C
             variant="discret"
             taille="md"
             className="self-start text-texte-erreur"
-            disabled={!posteOuvert || occupe}
+            disabled={bloque || occupe}
             iconeGauche={<Icon name="trash-01" size={20} />}
-            onClick={() => void agir("planning.supprimerCategorie", { id: categorie.id })}
+            onClick={() => setASupprimer(true)}
           >
             Supprimer la catégorie
           </Bouton>
+        ) : null}
+        {aSupprimer && categorie ? (
+          <ConfirmationFeuille
+            titre={`Supprimer la catégorie ${categorie.nom} ?`}
+            texte={`Ses rappels passent dans ${repli?.nom ?? "la catégorie suivante"}. Rien d’autre n’est effacé.`}
+            confirmer="Supprimer"
+            onConfirmer={() => void agir("planning.supprimerCategorie", { id: categorie.id })}
+            onFermer={() => setASupprimer(false)}
+          />
         ) : null}
       </div>
     </Feuille>
