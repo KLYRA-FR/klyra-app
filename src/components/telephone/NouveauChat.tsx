@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import { useDirectEspace, useProjetsEspace } from "@/lib/telephone/espace";
 import { Feuille } from "./Feuille";
 import { SurLePoste } from "./etats";
