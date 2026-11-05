@@ -242,13 +242,16 @@ export interface LigneProjection {
   objective_revision: number;
   deadline_at: string | null;
   mesures_cout: string | null;
+  last_progress_at: string | null;
+  /** Les coûts mesurés, chacun avec sa preuve dans le journal. Vide : `mesures_cout` dit pourquoi. */
+  couts: { unite: string; total: number }[];
 }
 
 export interface Projection {
   travaux: LigneProjection[];
   alertes: { work_id: string; type: string; motif: string; prochain_geste: string }[];
   blocages: { point: string; texte: string }[];
-  evenements: { event_id: string; work_id: string; type: string; resume: string }[];
+  evenements: { event_id: string; work_id: string; type: string; resume: string; quand: string }[];
   couverture: "ok" | "journal_illisible";
 }
 
@@ -256,7 +259,7 @@ export function projection(db: DatabaseSync, projectId: string | null): Projecti
   const travaux = tous<LigneProjection>(
     db,
     `SELECT work_id, native_chat_id AS fil_id, titre, owner_agent_id, status, state_ref, priority, objective_revision, deadline_at,
-            NULL AS mesures_cout
+            NULL AS mesures_cout, last_progress_at
      FROM work WHERE (? IS NULL OR project_id = ?) ORDER BY created_at`,
     projectId,
     projectId,
@@ -264,6 +267,7 @@ export function projection(db: DatabaseSync, projectId: string | null): Projecti
   for (const ligne of travaux) {
     const cout = mesurer(db, ligne.work_id).cout;
     ligne.mesures_cout = cout.motif;
+    ligne.couts = cout.par_unite.map((c) => ({ unite: c.unite, total: c.total }));
   }
   const alertes = tous<{ work_id: string; type: string; motif: string; prochain_geste: string }>(
     db,
@@ -274,9 +278,9 @@ export function projection(db: DatabaseSync, projectId: string | null): Projecti
     projectId,
     projectId,
   );
-  const evenements = tous<{ event_id: string; work_id: string; type: string; resume: string }>(
+  const evenements = tous<{ event_id: string; work_id: string; type: string; resume: string; quand: string }>(
     db,
-    `SELECT event_id, work_id, type, resume FROM event
+    `SELECT event_id, work_id, type, resume, coalesce(occurred_at, received_at) AS quand FROM event
      WHERE work_id IS NOT NULL AND type IN ('commentaire_pr', 'fin_verification')
        AND (? IS NULL OR project_id = ?)
      ORDER BY ingest_seq`,

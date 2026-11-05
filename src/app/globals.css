@@ -383,7 +383,20 @@ body[data-glisse] iframe {
   from { opacity: 0; }
 }
 
-/* Un réglage trouvé par la recherche : il s'éclaire en bleu pâle, puis s'éteint. */
+/* Un bouton inactif du téléphone (Exécuter, Lancer le workflow) : gris plein, sans dégradé ni écran de points allumé. */
+.klyra-bouton-inactif:disabled {
+  background: var(--color-fond-survol);
+  border-color: transparent;
+  color: var(--color-texte-tertiaire);
+  opacity: 1;
+}
+.klyra-bouton-inactif:disabled .klyra-bouton-principal__ecran {
+  opacity: 0.35;
+}
+
+/* Un réglage trouvé par la recherche : il s'éclaire en bleu pâle, puis s'éteint. Pareil pour une ligne ou
+   une carte du téléphone revenue d'un geste réussi. */
+.klyra-telephone-eclaire[data-eclaire],
 .klyra-reglage[data-eclaire] {
   animation: klyra-eclaire 1800ms var(--ease-sortie);
 }
@@ -425,6 +438,24 @@ body[data-glisse] iframe {
   [data-conversation][data-eclaire] {
     animation: none;
     background-color: var(--color-fond-teinte-bleue);
+  }
+}
+
+/* La fiche d'un projet après son enregistrement (téléphone, E6-36). */
+[data-carte-projet][data-eclaire] {
+  animation: klyra-eclaire-carte 1800ms var(--ease-sortie), klyra-halo 1800ms var(--ease-sortie);
+}
+
+@keyframes klyra-eclaire-carte {
+  0%, 30% { background-color: var(--color-fond-teinte-bleue); }
+  100%    { background-color: var(--color-fond-surface); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-carte-projet][data-eclaire] {
+    animation: none;
+    background-color: var(--color-fond-teinte-bleue);
+    box-shadow: 0 0 0 8px var(--color-fond-teinte-bleue);
   }
 }
 
@@ -504,6 +535,18 @@ body[data-glisse] iframe {
 
 .klyra-curseur:active::-webkit-slider-thumb {
   transform: scale(1.1);
+}
+
+/* Le volume sur le téléphone (lot 8) : cible de 44 px, pouce de 24. */
+.klyra-curseur-telephone {
+  height: 44px;
+}
+
+.klyra-curseur-telephone::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+  box-shadow: var(--shadow-ombre-sm), inset 0 0 0 1px var(--color-bordure-defaut);
 }
 
 /* Routines : les seuils portent sur l'écran disponible, rail exclu. */

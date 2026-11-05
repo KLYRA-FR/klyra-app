@@ -4,10 +4,8 @@ import { useCallback } from "react";
 import { useConvex, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { usePostes } from "@/components/telephone/poste";
-import { jetonAppareil } from "@/lib/serveur-vps";
 import { ecrireOptions, type OptionsMessage } from "./options";
-import { envoiSimple, envoyerAuVps, voieEnvoi } from "./vps-direct";
+import { envoiSimple, envoyerAuVps } from "./vps-direct";
 import { lieuDeHote, lireIdDirect } from "@/lib/lieux";
 
 export interface Envoi {
@@ -23,21 +21,20 @@ export interface Envoi {
 /**
  * La seule porte d'envoi du téléphone (spec mobile M-5, T-02) : les pièces partent dans le stockage
  * du compte, puis le message attend l'ordinateur dans la file (`messagesFile`), avec ses options.
- * Exception : une conversation directe qui tourne sur un VPS, ordinateur fermé, avec un téléphone relié
+ * Exception : une conversation directe qui tourne sur un VPS, avec un téléphone relié
  * à ce VPS. Le message part alors au VPS lui-même (`vps-direct.ts`), et la fonction rend null.
  */
 export function useEnvoyerMessage() {
   const convex = useConvex();
-  const { ouvert } = usePostes();
   const conversations = useQuery(api.conversationsCompte.liste, {});
   return useCallback(
     async ({ conversationOrigine, texte, options = {}, pieces = [], surPiece }: Envoi): Promise<Id<"messagesFile"> | null> => {
       const conversation = conversations?.find((c) => c.origine === conversationOrigine);
       /* Une conversation directe pas encore copiée dans le compte : son id dit son serveur (`dm-<agent>@<hôte>`). */
       const direct = lireIdDirect(conversationOrigine);
-      const lieu = conversation?.lieu ?? (direct?.hote ? lieuDeHote(direct.hote) : null);
+      const lieu = conversation ? (conversation.lieu ?? null) : direct?.hote ? lieuDeHote(direct.hote) : null;
       if ((conversation || lieu) && direct && envoiSimple(options, pieces.length)) {
-        if (voieEnvoi({ posteOuvert: ouvert, lieu, jeton: lieu ? jetonAppareil(lieu) : null }) === "vps" && lieu) {
+        if (lieu) {
           const agentId = direct.roleId;
           const r = await envoyerAuVps({
             adresse: lieu,
@@ -45,8 +42,8 @@ export function useEnvoyerMessage() {
             agentId,
             titre: conversation?.titre ?? agentId,
             texte,
-            modele: options.modele ?? null,
-            effort: options.effort ?? null,
+            modele: options.modele,
+            effort: options.effort,
           });
           if (!r.ok) throw new Error(r.message);
           return null;
@@ -70,6 +67,6 @@ export function useEnvoyerMessage() {
         ...(deposees.length ? { pieces: deposees } : {}),
       });
     },
-    [convex, conversations, ouvert],
+    [convex, conversations],
   );
 }

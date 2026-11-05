@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent, type Ref } from "react";
-import { EFFORTS, MODELES } from "@/components/chat/ChoixModele";
+import { EFFORTS, MODELES, nomModele } from "@/components/chat/ChoixModele";
+import { getField, parseAgentFile } from "@/lib/agent-file";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { garderBrouillon, lireBrouillons, surBrouillon } from "@/lib/brouillons";
@@ -10,15 +11,18 @@ import { messageErreur } from "@/lib/compte";
 import { COMMANDE_COMPACTER, formaterJetons, MARGE_PLUS_TARD } from "@/lib/contexte";
 import type { Activite } from "@/lib/copie-compte";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
-import { bandeauComposeur, majuscule, support, supportOuOrdinateur } from "@/lib/poste-texte";
+import { bandeauComposeur, majuscule, support } from "@/lib/poste-texte";
 import { lieuDeHote, lireIdDirect, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { surRepondre } from "@/lib/repondre";
-import { jetonAppareil } from "@/lib/serveur-vps";
+import { jetonAppareil, lireEquipeServeur } from "@/lib/serveur-vps";
 import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skills";
 import { ASSISTANT, conseilDuFil, mentionDans, mentionEnCours, type ConversationLue } from "@/lib/telephone/chats";
 import { garderCitation, lireCitation, type CitationBrouillon } from "@/lib/telephone/citation";
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
+import { envoiSimple, voieEnvoi } from "@/lib/telephone/vps-direct";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
+import { agentPourLibelle } from "@/lib/telephone/libelles-fil";
+import type { FicheLue } from "@/lib/telephone/gestes-agents";
 import { ajouterPieces, MAX_PIECES, nomCapture, taillePiece, texteParDefaut } from "@/lib/telephone/pieces";
 import { useAnnonce } from "./Annonce";
 import { useHorsLigne } from "./BandeauReseau";
@@ -37,10 +41,32 @@ type Choix = { modele: string | null; effort: string | null };
 const COMPACTER: SkillProposee = { nom: "compact", description: "Résume la conversation pour alléger les prochains appels" };
 
 function libelleModele(choix: Choix | null): string {
-  if (!choix?.modele) return "Modèle";
-  const nom = MODELES.find((m) => m.id === choix.modele)?.nom.replace("Claude ", "") ?? choix.modele;
+  if (!choix?.modele) return "Modèle de la fiche indisponible";
+  const nom = nomModele(choix.modele);
   const effort = choix.modele !== "haiku" ? EFFORTS.find((e) => e.id === choix.effort)?.nom : undefined;
   return effort ? `${nom} · ${effort}` : nom;
+}
+
+/** Lecture d’affichage : même fiche que l’écran Agent, ou équipe du VPS du fil ; aucun choix d’envoi. */
+function useModeleFiche(agent: string, lieu: string | null, actif: boolean): string | null {
+  const lecture = useLecturePoste<FicheLue>("agents.fiche", actif && !lieu ? { id: agent } : null);
+  const [vps, setVps] = useState<{ cle: string; modele: string } | null>(null);
+  const cle = `${lieu}|${agent}`;
+  useEffect(() => {
+    if (!actif || !lieu) return;
+    const controle = new AbortController();
+    void lireEquipeServeur(lieu, controle.signal).then((equipe) => {
+      if (!equipe || controle.signal.aborted) return;
+      const fiche = equipe.fiches.find((f) => f.name === agent);
+      if (agent !== ASSISTANT && !fiche) return;
+      setVps({ cle, modele: fiche ? (getField(parseAgentFile(fiche.content).frontmatter, "model") || "inherit") : "inherit" });
+    }).catch(() => undefined);
+    return () => controle.abort();
+  }, [actif, lieu, agent, cle]);
+  const fiche = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? lecture.gardee?.data : null;
+  const modele = lieu ? (vps?.cle === cle ? vps.modele : null) : fiche ? (fiche.type === "agent" ? (getField(parseAgentFile(fiche.contenu).frontmatter, "model") || "inherit") : "inherit") : null;
+  /* Comme le choix effectif du bureau : une fiche sans modèle hérite d’Opus. */
+  return modele === "inherit" ? "opus" : (MODELES.find((m) => modele?.includes(m.id))?.id ?? modele);
 }
 
 /** « Modèle et effort » en feuille (E2-34) : ils partent avec le prochain message ; fermer annule le choix provisoire. */
@@ -320,19 +346,23 @@ export function ComposeurFil({
   const modeleActuel = choix ?? lireModele(conversation?.modele);
   const postesOuverts = [...(postes ?? [])].sort((a, b) => b.dernierSignal - a.dernierSignal);
   const posteVise = postesOuverts.find((p) => p.cle === posteChoisi) ?? postesOuverts[0];
-  /* Conversation d'un VPS relié à ce téléphone : ordinateur fermé, le message part directement au VPS (`envoi.ts`). */
+  /* La destination est celle de la conversation, indépendamment des ordinateurs ouverts (`envoi.ts`). */
   const serveurs = useServeursRelies();
   /* Une conversation directe pas encore copiée dans le compte : son id dit son serveur. */
   const hote = lireIdDirect(origine)?.hote;
-  const lieu = conversation?.lieu ?? (hote ? lieuDeHote(hote) : null);
-  const directVps = !ouvert && !!lieu && origine.startsWith("dm-") && !!jetonAppareil(lieu);
-  const bandeau = ouvert
-    ? null
-    : directVps && principal
-      ? `${majuscule(supportOuOrdinateur(principal))} est fermé : ton message part directement à ${nomLieu(lieu, serveurs)}.`
-      : bandeauComposeur(principal);
+  const lieu = conversation ? (conversation.lieu ?? null) : hote ? lieuDeHote(hote) : null;
+  const directVps = !!lieu && origine.startsWith("dm-") && envoiSimple({ citation }, pieces.length);
+  const voie = voieEnvoi({ lieu, jeton: lieu ? jetonAppareil(lieu) : null });
+  const bandeau = directVps
+    ? voie === "vps"
+      ? `Ton message part directement à ${nomLieu(lieu, serveurs)}.`
+      : "Ce téléphone n’est plus relié à ce VPS : relie-le dans Plus › Serveurs."
+    : ouvert ? null : bandeauComposeur(principal);
   /* Le destinataire effectif : le choix explicite, sinon la première mention reconnue, sinon l'assistant (E2-33). */
   const effectif = destinataire ?? mentionDans(texte, cartes ?? []) ?? ASSISTANT;
+  const agentAffiche = equipe ? effectif : (agentPourLibelle(origine, conversation) ?? agentId ?? ASSISTANT);
+  const modeleFiche = useModeleFiche(agentAffiche, lieu, !modeleActuel?.modele);
+  const modeleAffiche = modeleActuel?.modele ? modeleActuel : modeleFiche ? { modele: modeleFiche, effort: modeleActuel?.effort ?? "high" } : null;
 
   /* La liste « @ » (équipe) ou « / » (E2-31, E2-32). */
   const mention = equipe ? mentionEnCours(texte, curseur) : null;
@@ -437,7 +467,7 @@ export function ComposeurFil({
       options.effort = choix.effort;
     }
     if (nouveauProjet && !conversation) options.nouveau = { projetId: nouveauProjet };
-    if (postesOuverts.length >= 2 && posteVise) options.poste = posteVise.cle;
+    if (!lieu && postesOuverts.length >= 2 && posteVise) options.poste = posteVise.cle;
     if (citation) options.citation = citation;
     setEnvoi(true);
     setDeposees(0);
@@ -475,7 +505,7 @@ export function ComposeurFil({
     else setAlerte(r.code === "delai" ? `${majuscule(sur)} ne répond pas.` : r.message || "L’agent n’a pas pu être arrêté.");
   };
 
-  const placeholder = agentId ? `Écris à ${nom(agentId)}…` : equipe ? "Écris à l’équipe, ou @mentionne un agent…" : "Écris ton message…";
+  const placeholder = agentId ? `Écris à ${nom(agentAffiche)}…` : equipe ? "Écris à l’équipe, ou @mentionne un agent…" : "Écris ton message…";
   const qui = activite ? nom(activite.roleId) : null;
   const noteOccupe = arretEnCours ? `Arrêt demandé : ${qui} s’arrête dès que ${sur} le confirme.` : occupe && texte.trim() ? `Il partira quand ${qui} aura fini.` : null;
 
@@ -568,6 +598,7 @@ export function ComposeurFil({
           <div className="flex items-center gap-0.5">
             <BoutonIcone variant="discret" className="size-11 shrink-0" libelle="Joindre" aria-haspopup="dialog" icone={<Icon name="plus-01" size={22} />} onClick={() => setFeuille("joindre")} />
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1 pr-1 [scrollbar-width:none]">
+              {!equipe ? <span className={PUCE} aria-label={`Agent : ${nom(agentAffiche)}`}><Icon name="user-profile-01" size={16} className="text-icone-secondaire" />{nom(agentAffiche)}</span> : null}
               {equipe ? (
                 <>
                   <button type="button" className={PUCE} aria-haspopup="dialog" aria-label={`Destinataire : ${nom(effectif)}`} onClick={() => setFeuille("destinataire")}>
@@ -580,11 +611,13 @@ export function ComposeurFil({
                   </button>
                 </>
               ) : null}
-              <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("modele")}>
-                {libelleModele(modeleActuel)}
+              <button type="button" className={PUCE} aria-label={`Modèle : ${libelleModele(modeleAffiche)}`} aria-haspopup="dialog" onClick={() => setFeuille("modele")}>
+                {libelleModele(modeleAffiche)}
                 <Icon name="chevron-down" size={14} className="text-icone-secondaire" />
               </button>
-              {postesOuverts.length >= 2 && posteVise ? (
+              {lieu ? (
+                <span className={PUCE}>Sur {nomLieu(lieu, serveurs)}</span>
+              ) : postesOuverts.length >= 2 && posteVise ? (
                 <button type="button" className={PUCE} aria-haspopup="dialog" onClick={() => setFeuille("poste")}>
                   Sur {support(posteVise)}
                   <Icon name="chevron-down" size={14} className="text-icone-secondaire" />

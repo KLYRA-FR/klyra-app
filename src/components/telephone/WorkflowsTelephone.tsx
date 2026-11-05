@@ -3,22 +3,21 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Input, Textarea } from "klyra-ui";
+import { Input } from "klyra-ui";
 import { MODELES } from "@/components/chat/ChoixModele";
 import { Icon } from "@/components/icons/Icon";
 import { RondApercu } from "@/components/roles/AgentRond";
 import { FICHES, LIBELLES_STATUT_ETAPE, LIBELLES_STATUT_EXECUTION, nomNoeud } from "@/components/workflows/catalogue";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
-import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { cn } from "@/lib/cn";
 import { reduit } from "@/lib/mouvement";
-import { libelleFrequence, NOMS_JOURS } from "@/lib/planning";
+import { useLieuActif } from "@/lib/lieux";
+import { libelleFrequence } from "@/lib/planning";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
-import { majuscule } from "@/lib/poste-texte";
+import { useUneFois } from "@/lib/telephone/geste";
 import { messageGeste, useLectureSuivie } from "@/lib/telephone/lecture-suivie";
-import { useTirerPourRelire } from "./TirerPourRelire";
 import {
   CHAMPS_ETAPE,
   enCoursExecution,
@@ -27,10 +26,12 @@ import {
   etatChantier,
   etatsEtapes,
   libelleAnnotations,
+  libelleDeclencheur,
+  libelleDerniere,
   libelleExecution,
   libelleUnDeclencheur,
   miseAPlat,
-  modifiable,
+  nomFichier,
   RELECTURE_CHANTIER_MS,
   texteAnnotation,
   type ChampEtape,
@@ -43,20 +44,24 @@ import {
   type VersionLue,
   type WorkflowLu,
 } from "@/lib/telephone/workflow-etapes";
-import type { Frequence, RoleTeinte } from "@/types/domain";
+import type { RoleTeinte } from "@/types/domain";
 import { estEtape } from "@/types/workflows";
-import { EnteteTelephone } from "./EnteteTelephone";
-import { ConfirmationFeuille, Feuille, MenuFeuille, useAppuiLong } from "./Feuille";
-import { NotePoste, SurLePoste, VueLecture, useBandeau } from "./etats";
-import { usePostes, useSupport } from "./poste";
-import { CHAMP_KLYRA_UI } from "./Controles";
+import { useAnnonce } from "./Annonce";
 import { AvatarConstructeur, BandeauConstructionTelephone, couleurChantier, verbeChantier } from "./ChantierTelephone";
-import { useLieuActif } from "@/lib/lieux";
+import { MenuPage } from "./CommunAgentsTelephone";
+import { BOUTON_INACTIF, CHAMP_KLYRA_UI, MessageErreur } from "./Controles";
+import { EnteteTelephone } from "./EnteteTelephone";
+import { ConfirmationFeuille, Feuille, MenuFeuille, useFermerFeuille } from "./Feuille";
+import { Carte, CLASSE_GROUPE, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
+import { useTirerPourRelire } from "./TirerPourRelire";
+import { BandeauEtat, EtatEcran, NoteGeste, VueLecture, useAccesGeste } from "./etats";
+import { useSupport } from "./poste";
 
 /**
- * Automatisations › Workflows sur le téléphone (spec mobile T-18, T-19). Le canevas devient une
- * lecture en étapes (`miseAPlat`) ; on lance, on approuve, on suit les exécutions et on modifie le
- * contenu d'une étape. La structure et le dessin restent sur l'ordinateur (P-8).
+ * Automatisations › Workflows sur le téléphone (lot 7, E7-26 à E7-38). Le canevas devient une
+ * lecture en étapes (`miseAPlat`) ; on lance, on approuve, on suit les exécutions, on gère le
+ * workflow. Le contenu d'une étape, sa structure et la restauration d'une version restent sur
+ * l'ordinateur (P-8) : ici, ils se lisent.
  */
 
 export const urlWorkflows = (workflow?: string | null, version?: string | null) =>
@@ -68,7 +73,8 @@ const fmtJour = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numer
 /** « Aujourd'hui, 09:12 », « lun. 3 nov., 09:12 » : comme l'historique du bureau. */
 function quandCourt(iso: string): string {
   const d = new Date(iso);
-  return `${d.toDateString() === new Date().toDateString() ? "Aujourd’hui" : fmtJour.format(d)}, ${fmtHeure.format(d)}`;
+  const hier = new Date(Date.now() - 86_400_000);
+  return `${d.toDateString() === new Date().toDateString() ? "Aujourd’hui" : d.toDateString() === hier.toDateString() ? "Hier" : fmtJour.format(d)}, ${fmtHeure.format(d)}`;
 }
 
 function duree(e: ResumeExecution): string {
@@ -82,127 +88,153 @@ function issue(e: ResumeExecution): string {
 }
 
 const fermeWorkflows = (sur: string) => `les workflows sont sur ${sur}. Ils s’affichent quand KLYRA y est ouverte.`;
-const RAISON_DESSIN = "le dessin d’un workflow se fait au pointeur.";
+const PHRASE_AUCUN = "Les routines et les workflows tournent sur ton ordinateur.";
+const RAISON_DESSIN = "Le dessin d’un workflow se fait au pointeur.";
 
 function MarqueExecution({ statut }: { statut: ResumeExecution["statut"] }) {
   if (statut === "fait") return <PixelCheck className="h-[9px] w-3" />;
-  if (statut === "en-cours" || statut === "approbation") return <Icon name="loader-01" size={16} className="text-icone-accent motion-safe:animate-spin" />;
+  if (statut === "en-cours" || statut === "approbation") return <Icon name="loader-01" size={18} className="text-icone-accent motion-safe:animate-spin" />;
   if (statut === "erreur") return <span aria-hidden className="size-2 rounded-full bg-texte-erreur" />;
   return <span aria-hidden className="size-2 rounded-full bg-icone-secondaire" />;
 }
 
-/* ─── Les gestes du « ⋯ » d'un workflow (T-18 et T-19) ─────────── */
+/** P-8 : un geste qui reste sur l'ordinateur, en ligne de groupe (E7-26, E7-29). */
+function LigneSurPoste({ icone, nom }: { icone: "plus-01" | "pencil-01"; nom: string }) {
+  const sur = useSupport();
+  return (
+    <GroupeListe>
+      <LigneListe debut={<TuileIcone icone={icone} />} retrait="tuile" nom={nom} etiquette={<Etiquette>Sur {sur}</Etiquette>} ligne2={RAISON_DESSIN} />
+    </GroupeListe>
+  );
+}
 
-type FeuilleActions = { genre: "menu" | "renommer" | "supprimer" | "versions"; wf: { id: string; titre: string } };
+/* ─── E7-34 : les gestes du « ⋯ » d'un workflow ────────────────── */
 
-function useActionsWorkflow({ relancer, executions, onSupprime }: { relancer: () => void; executions?: () => void; onSupprime?: () => void }) {
+interface WorkflowMenu {
+  id: string;
+  titre: string;
+  /** « Manuel · 7 étapes » */
+  sous: string;
+  enCours: boolean;
+}
+
+const sousTitre = (declencheur: string, etapes: number) => `${declencheur} · ${etapes} étape${etapes > 1 ? "s" : ""}`;
+
+function useActionsWorkflow({ relancer, executions, onSupprime }: { relancer: () => void; executions: (id: string) => void; onSupprime?: () => void }) {
   const router = useRouter();
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const { faire, occupe } = useGestePoste();
-  const [bandeau, annoncer] = useBandeau();
-  const [feuille, setFeuille] = useState<FeuilleActions | null>(null);
-  const fermer = () => setFeuille(null);
+  const annonce = useAnnonce();
+  const annoncer = (texte: string) => annonce({ texte, icone: "check-01" });
+  /* Le menu joue sa sortie pendant que la feuille suivante monte : deux états, pas un. */
+  const [menu, setMenu] = useState<WorkflowMenu | null>(null);
+  const [suite, setSuite] = useState<{ genre: "renommer" | "versions"; wf: WorkflowMenu } | null>(null);
   const geste = async <T,>(type: string, args: Record<string, unknown>, message: string, apres?: (data: T) => void) => {
     const r = await faire<T>(type, args);
-    if (!r.ok) {
-      annoncer(messageGeste(r, sur));
-      return;
+    if (!r.ok) annonce({ texte: messageGeste(r, sur), erreur: true });
+    else {
+      annoncer(message);
+      apres?.(r.data);
     }
-    annoncer(message);
-    apres?.(r.data);
     relancer();
   };
-  const note = ouvert ? undefined : <NotePoste />;
-  const wf = feuille?.wf;
+  const note = possible ? undefined : <NoteGeste className="text-ui-xs text-texte-secondaire" />;
 
   const rendu = (
     <>
-      {feuille?.genre === "menu" && wf ? (
+      {menu ? (
         <MenuFeuille
-          titre={wf.titre}
-          onFermer={fermer}
+          titre={menu.titre}
+          objet={{ visuel: <TuileIcone grande icone="lightning-01" />, sous: menu.sous }}
+          onFermer={() => setMenu(null)}
           actions={[
-            ...(executions ? [{ libelle: "Exécutions", onChoisir: executions }] : []),
-            { libelle: "Renommer", desactivee: !ouvert, note, onChoisir: () => setFeuille({ genre: "renommer", wf }) },
+            { libelle: "Exécutions", icone: "list", onChoisir: () => executions(menu.id) },
+            { libelle: "Historique des versions", icone: "clock-backward", onChoisir: () => setSuite({ genre: "versions", wf: menu }) },
+            { libelle: "Renommer", icone: "pencil-01", desactivee: !possible, note, onChoisir: () => setSuite({ genre: "renommer", wf: menu }) },
             {
               libelle: "Dupliquer",
-              desactivee: !ouvert || occupe,
+              icone: "copy-left",
+              desactivee: !possible || occupe,
               note,
-              onChoisir: () => void geste<{ id: string }>("workflows.dupliquer", { id: wf.id }, "Workflow dupliqué.", (d) => router.push(urlWorkflows(d.id))),
+              onChoisir: () => void geste<{ id: string }>("workflows.dupliquer", { id: menu.id }, "Workflow dupliqué.", (d) => router.push(urlWorkflows(d.id))),
             },
-            { libelle: "Supprimer le workflow", danger: true, desactivee: !ouvert, note, onChoisir: () => setFeuille({ genre: "supprimer", wf }) },
-            { libelle: "Historique des versions", onChoisir: () => setFeuille({ genre: "versions", wf }) },
+            { libelle: "Relire", icone: "refresh-01", onChoisir: relancer },
+            {
+              libelle: "Supprimer le workflow…",
+              icone: "trash-01",
+              danger: !menu.enCours,
+              separateurAvant: true,
+              desactivee: !possible || menu.enCours,
+              note: menu.enCours ? "Une exécution est en cours : arrête-la d’abord depuis Exécutions." : note,
+              confirmation: { titre: `Supprimer « ${menu.titre} » et ses exécutions ?`, texte: `Il disparaît aussi de ${sur}. Les conversations de ses exécutions restent.`, confirmer: "Supprimer" },
+              onChoisir: () => void geste("workflows.supprimer", { id: menu.id }, "Workflow supprimé.", onSupprime),
+            },
           ]}
         />
       ) : null}
-      {feuille?.genre === "renommer" && wf ? <FeuilleRenommer
-          wf={wf}
-          onFermer={fermer}
+      {suite?.genre === "renommer" ? (
+        <FeuilleRenommer
+          wf={suite.wf}
+          onFermer={() => setSuite(null)}
           onFait={() => {
-            annoncer("Enregistré");
+            annoncer("Workflow renommé.");
             relancer();
           }}
-        /> : null}
-      {feuille?.genre === "supprimer" && wf ? (
-        <ConfirmationFeuille
-          titre={`Supprimer « ${wf.titre} » et ses exécutions ?`}
-          confirmer="Supprimer"
-          danger
-          onFermer={fermer}
-          onConfirmer={() => void geste("workflows.supprimer", { id: wf.id }, "Workflow supprimé.", onSupprime)}
         />
       ) : null}
-      {feuille?.genre === "versions" && wf ? (
+      {suite?.genre === "versions" ? (
         <FeuilleVersions
-          id={wf.id}
-          onFermer={fermer}
+          id={suite.wf.id}
+          onFermer={() => setSuite(null)}
           onChoisir={(version) => {
-            fermer();
-            router.push(urlWorkflows(wf.id, version));
+            setSuite(null);
+            router.push(urlWorkflows(suite.wf.id, version));
           }}
         />
       ) : null}
-      {bandeau}
     </>
   );
-  return { ouvrir: (w: { id: string; titre: string }) => setFeuille({ genre: "menu", wf: w }), rendu, annoncer };
+  return { ouvrir: setMenu, rendu, annoncer };
 }
 
 function FeuilleRenommer({ wf, onFermer, onFait }: { wf: { id: string; titre: string }; onFermer: () => void; onFait: () => void }) {
-  const sur = useSupport();
-  const { ouvert } = usePostes();
-  const { faire, occupe } = useGestePoste();
   const [titre, setTitre] = useState(wf.titre);
+  return (
+    <Feuille titre="Renommer" onFermer={onFermer} pied={<PiedRenommer wf={wf} titre={titre} onFait={onFait} />}>
+      <div className="flex flex-col gap-2 pt-1">
+        <label htmlFor="renommer-workflow" className="text-ui font-medium text-texte-principal">
+          Nom du workflow
+        </label>
+        <Input id="renommer-workflow" size="lg" data-autofocus value={titre} maxLength={200} onChange={(e) => setTitre(e.target.value)} className={CHAMP_KLYRA_UI} />
+      </div>
+    </Feuille>
+  );
+}
+
+function PiedRenommer({ wf, titre, onFait }: { wf: { id: string; titre: string }; titre: string; onFait: () => void }) {
+  const sur = useSupport();
+  const { possible } = useAccesGeste();
+  const { faire, occupe } = useGestePoste();
+  const fermer = useFermerFeuille();
   const [erreur, setErreur] = useState<string | null>(null);
   const enregistrer = async () => {
-    const r = await faire("workflows.renommer", { id: wf.id, titre });
+    setErreur(null);
+    const r = await faire("workflows.renommer", { id: wf.id, titre: titre.trim() });
     if (!r.ok) setErreur(messageGeste(r, sur));
     else {
       onFait();
-      onFermer();
+      fermer();
     }
   };
   return (
-    <Feuille
-      titre="Renommer"
-      onFermer={onFermer}
-      pied={
-        <>
-          <Bouton variant="sombre" taille="md" className="w-full" disabled={!ouvert || occupe || titre.trim() === wf.titre} onClick={() => void enregistrer()}>
-            Enregistrer
-          </Bouton>
-          {!ouvert ? <NotePoste /> : null}
-        </>
-      }
-    >
-      <Input size="lg" data-autofocus aria-label="Nom du workflow" value={titre} maxLength={200} onChange={(e) => setTitre(e.target.value)} className="rounded-md border-bordure-champ" />
-      {erreur ? (
-        <p role="alert" className="mt-2 text-ui-xs text-texte-erreur">
-          {erreur}
-        </p>
-      ) : null}
-    </Feuille>
+    <div className="flex flex-col gap-2">
+      {erreur ? <MessageErreur>{erreur}</MessageErreur> : null}
+      <Bouton variant="sombre" taille="md" className="w-full" disabled={!possible || occupe || !titre.trim() || titre.trim() === wf.titre} onClick={() => void enregistrer()}>
+        {occupe ? "Enregistrement…" : "Enregistrer"}
+      </Bouton>
+      {!possible ? <NoteGeste className="px-1 text-ui-xs text-texte-secondaire" /> : null}
+    </div>
   );
 }
 
@@ -213,23 +245,27 @@ function FeuilleVersions({ id, onFermer, onChoisir }: { id: string; onFermer: ()
   return (
     <Feuille titre="Historique des versions" onFermer={onFermer}>
       <div className="-mx-4">
-        <VueLecture lecture={lecture} ferme={fermeWorkflows} lignes={3}>
+        <VueLecture lecture={lecture} ferme={fermeWorkflows} lignes={3} gestes={null} verrou={false}>
           {(versions) =>
             versions.length === 0 ? (
-              <p className="px-4 text-ui text-texte-secondaire">Une version est gardée toutes les 5 minutes d’édition et avant chaque exécution.</p>
+              <p className="px-5 pb-2 text-ui text-texte-secondaire">Aucune version gardée pour l’instant.</p>
             ) : (
-              <ul className="px-4">
-                {versions.map((v) => (
-                  <li key={v.id} className="border-b border-bordure-subtile last:border-b-0">
-                    <button type="button" onClick={() => onChoisir(v.id)} className="flex min-h-14 w-full flex-col justify-center text-left active:bg-fond-survol">
-                      <span className="text-body-s text-texte-principal">{quandCourt(v.at)}</span>
-                      <span className="text-ui-xs text-texte-secondaire">
-                        {RAISONS[v.raison]} · {v.etapes} étape{v.etapes > 1 ? "s" : ""}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="px-4 pb-1">
+                <GroupeListe>
+                  {versions.map((v) => (
+                    <LigneListe
+                      key={v.id}
+                      debut={<TuileIcone icone="clock-backward" />}
+                      retrait="tuile"
+                      nom={quandCourt(v.at)}
+                      etiquette={v.actuelle ? <Etiquette ton="bleue">Actuelle</Etiquette> : null}
+                      ligne2={`${RAISONS[v.raison]} · ${v.etapes} étape${v.etapes > 1 ? "s" : ""}`}
+                      fin="chevron"
+                      onClick={() => onChoisir(v.id)}
+                    />
+                  ))}
+                </GroupeListe>
+              </div>
             )
           }
         </VueLecture>
@@ -238,7 +274,7 @@ function FeuilleVersions({ id, onFermer, onChoisir }: { id: string; onFermer: ()
   );
 }
 
-/* ─── T-18 : la liste ──────────────────────────────────────────── */
+/* ─── E7-26 à E7-28 : la liste ─────────────────────────────────── */
 
 export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
   const router = useRouter();
@@ -253,35 +289,38 @@ export function WorkflowsListeTelephone({ onglets }: { onglets: ReactNode }) {
     },
   );
   const tirer = useTirerPourRelire(lecture.relancer, { enCours: lecture.relecture });
-  const actions = useActionsWorkflow({ relancer: lecture.relancer });
+  const actions = useActionsWorkflow({ relancer: lecture.relancer, executions: (id) => router.push(`${urlWorkflows(id)}&executions=1`) });
+  const sur = useSupport();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Automatisations" parent="/plus" />
-      <div className="shrink-0 px-4 pb-2">{onglets}</div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6" {...tirer.props}>
+      <EnteteTelephone titre="Automatisations" parent="/plus" droite={<MenuPage titre="Automatisations" actions={[{ libelle: "Relire", icone: "refresh-01", onChoisir: lecture.relancer }]} />} />
+      <div className="min-h-0 flex-1 overflow-y-auto pb-6" {...tirer.props}>
         {tirer.indicateur}
-        <div className="-mx-4">
-          <VueLecture lecture={lecture} ferme={fermeWorkflows} lignes={4}>
-            {(liste) => (
-              <div className="px-4">
-                {liste.length === 0 ? (
-                  <p className="pt-6 text-body-s font-medium text-texte-principal">Aucun workflow</p>
-                ) : (
-                  <>
-                    <h2 className="pt-3 pb-1 text-ui-xs font-medium text-texte-secondaire">Tes workflows</h2>
-                    <ul>
-                      {liste.map((wf) => (
-                        <LigneListeWorkflow key={wf.id} wf={wf} onOuvrir={() => router.push(urlWorkflows(wf.id))} onMenu={() => actions.ouvrir(wf)} />
-                      ))}
-                    </ul>
-                  </>
-                )}
-                <SurLePoste titre="Nouveau workflow" raison={RAISON_DESSIN} />
+        <div className="px-4 pt-2 pb-4">{onglets}</div>
+        <VueLecture lecture={lecture} ferme={fermeWorkflows} lignes={4} formeAucun="encadre" phraseAucun={PHRASE_AUCUN} gestes="Lancer et approuver" verrou={false}>
+          {(liste) =>
+            liste.length === 0 ? (
+              <EtatEcran forme="encadre" icone="lightning-01" titre="Aucun workflow" texte={`Un workflow se dessine sur ${sur}, au pointeur. Tu le lances, tu suis ses exécutions et tu approuves ses étapes d’ici.`} />
+            ) : (
+              <div className="flex flex-col gap-4 px-4">
+                <SectionListe titre="Tes workflows" compte={liste.length}>
+                  <GroupeListe>
+                    {liste.map((wf) => (
+                      <LigneListeWorkflow
+                        key={wf.id}
+                        wf={wf}
+                        onOuvrir={() => router.push(urlWorkflows(wf.id))}
+                        onMenu={() => actions.ouvrir({ id: wf.id, titre: wf.titre, sous: sousTitre(wf.declencheur, wf.etapes), enCours: !!wf.derniere && enCoursExecution(wf.derniere) })}
+                      />
+                    ))}
+                  </GroupeListe>
+                </SectionListe>
+                <LigneSurPoste icone="plus-01" nom="Nouveau workflow" />
               </div>
-            )}
-          </VueLecture>
-        </div>
+            )
+          }
+        </VueLecture>
       </div>
       {actions.rendu}
     </div>
@@ -292,57 +331,57 @@ function LigneListeWorkflow({ wf, onOuvrir, onMenu }: { wf: LigneWorkflow; onOuv
   const c = wf.chantier ?? null;
   /* Un workflow qu'un agent crée n'existe pas encore sur l'ordinateur : rien à y faire, on regarde. */
   const virtuel = !!c?.nouveau && enTravaux(c);
-  const appui = useAppuiLong(virtuel ? () => {} : onMenu);
   const d = wf.derniere;
   if (c && enTravaux(c))
     return (
-      <li className="klyra-wf-pose flex items-center gap-1 border-b border-bordure-subtile" {...appui} style={{ ...appui.style, ...couleurChantier(c).style }}>
-        <button type="button" onClick={onOuvrir} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2 text-left active:bg-fond-survol">
-          <AvatarConstructeur chantier={c} />
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate text-body-s font-medium text-texte-principal">{wf.titre}</span>
-            <span className="truncate text-ui-xs text-texte-secondaire">
+      <LigneListe
+        className="klyra-wf-pose"
+        style={couleurChantier(c).style}
+        onClick={onOuvrir}
+        onMenu={virtuel ? undefined : onMenu}
+        debut={<AvatarConstructeur chantier={c} />}
+        retrait="avatar"
+        nom={wf.titre}
+        ligne2={
+          <>
+            <span className="block truncate">
               <span className="font-medium text-texte-principal">{c.agent.name}</span> {verbeChantier(c)} · {c.etapes} étape{c.etapes > 1 ? "s" : ""}
             </span>
-            {c.gestes[0] ? <span className={cn("truncate text-ui-xs text-texte-tertiaire", c.phase === "ecrit" && "klyra-curseur-texte")}>{c.gestes[0]}</span> : null}
-          </span>
-        </button>
-        {virtuel ? null : (
-          <BoutonIcone variant="discret" taille="md" libelle={`Actions de ${wf.titre}`} aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={onMenu} />
-        )}
-      </li>
+            {c.gestes[0] ? <span className={cn("block truncate text-texte-tertiaire", c.phase === "ecrit" && "klyra-curseur-texte")}>{c.gestes[0]}</span> : null}
+          </>
+        }
+        fin="chevron"
+      />
     );
+  const derniere = d ? libelleDerniere(d, wf.etapes) : null;
   return (
-    <li className={cn("flex items-center gap-1 border-b border-bordure-subtile", c?.phase === "fini" && "klyra-wf-eclat")} {...appui} style={{ ...appui.style, ...(c ? couleurChantier(c).style : {}) }}>
-      <button type="button" onClick={onOuvrir} className="flex min-h-16 min-w-0 flex-1 flex-col justify-center gap-0.5 py-2 text-left active:bg-fond-survol">
-        <span className="truncate text-body-s font-medium text-texte-principal">{wf.titre}</span>
-        <span className="truncate text-ui-xs text-texte-secondaire">
-          {wf.declencheur} · {wf.etapes} étape{wf.etapes > 1 ? "s" : ""}
-        </span>
-        <span className="flex min-w-0 items-center gap-1.5 text-ui-xs text-texte-secondaire">
-          {d ? (
-            <>
-              <MarqueExecution statut={d.statut} />
-              <span className="truncate">
-                Dernière : {quandCourt(d.debut)} · {libelleExecution(d, wf.etapes)}
-              </span>
-            </>
-          ) : (
-            "Aucune exécution pour l’instant"
-          )}
-        </span>
-      </button>
-      <BoutonIcone variant="discret" taille="md" libelle={`Actions de ${wf.titre}`} aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={onMenu} />
-    </li>
+    <LigneListe
+      className={c?.phase === "fini" ? "klyra-wf-eclat" : undefined}
+      style={c ? couleurChantier(c).style : undefined}
+      onClick={onOuvrir}
+      onMenu={onMenu}
+      debut={<TuileIcone icone="lightning-01" />}
+      retrait="tuile"
+      nom={wf.titre}
+      ligne2={
+        <>
+          <span className="block truncate">{sousTitre(wf.declencheur, wf.etapes)}</span>
+          <span className={cn("block truncate", derniere?.accent && "font-semibold text-texte-accent")}>
+            {d && derniere ? (derniere.accent ? derniere.texte : `Dernière : ${quandCourt(d.debut)} · ${derniere.texte}`) : "Aucune exécution pour l’instant"}
+          </span>
+        </>
+      }
+      fin="chevron"
+    />
   );
 }
 
-/* ─── T-19 : un workflow ───────────────────────────────────────── */
+/* ─── E7-29 à E7-38 : un workflow ──────────────────────────────── */
 
-export function WorkflowTelephone({ id, versionId }: { id: string; versionId: string | null }) {
+export function WorkflowTelephone({ id, versionId, executionsOuvertes = false }: { id: string; versionId: string | null; executionsOuvertes?: boolean }) {
   const router = useRouter();
   const sur = useSupport();
-  const { ouvert } = usePostes();
+  const { possible } = useAccesGeste();
   const [vue, setVue] = useState<string | null>(null);
   const [limite, setLimite] = useState(12);
   const lecture = useLectureSuivie<WorkflowLu>(
@@ -357,13 +396,16 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
   const { relancer } = lecture;
   const tirer = useTirerPourRelire(relancer, { enCours: lecture.relecture });
   const { faire, occupe } = useGestePoste();
-  const [executions, setExecutions] = useState(false);
+  const uneFois = useUneFois();
+  const [executions, setExecutions] = useState(executionsOuvertes);
   const [etape, setEtape] = useState<{ noeud: NoeudLu; numero: number } | null>(null);
   const [notes, setNotes] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [aArreter, setAArreter] = useState<ResumeExecution | null>(null);
   const actions = useActionsWorkflow({ relancer, executions: () => setExecutions(true), onSupprime: () => router.push(urlWorkflows()) });
   const { annoncer } = actions;
-  const data = lecture.etat === "ok" ? lecture.data : null;
+  const data = lecture.etat === "ok" ? lecture.data : lecture.etat === "ferme" ? (lecture.gardee?.data ?? null) : null;
+  const gardee = lecture.etat === "ferme";
   const aPlat = useMemo(() => (data ? miseAPlat(data.noeuds, data.liens) : null), [data]);
   const etats = useMemo(() => etatsEtapes(data?.vue ?? null), [data]);
   const total = data?.noeuds.filter((n) => estEtape(n.type)).length ?? 0;
@@ -372,103 +414,118 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
   const chantier = data?.chantier ?? null;
   const travaux = enTravaux(chantier);
   const lectureSeule = !!data?.version || travaux;
-  const indisponible = !ouvert || occupe;
-  const nomAgent = (agentId: string) => data?.agents.find((a) => a.id === agentId)?.name ?? agentId;
+  const indisponible = !possible || occupe;
+  const nomAgent = (agentId: string) => data?.agents.find((a) => a.id === agentId)?.name ?? "Agent indisponible";
 
-  const geste = async (type: string, args: Record<string, unknown>, message: string, apres?: () => void) => {
-    setErreur(null);
-    const r = await faire(type, args);
-    if (!r.ok) {
-      setErreur(messageGeste(r, sur));
-      return;
-    }
-    annoncer(message);
-    apres?.();
-    relancer();
-  };
+  /* Une décision, un lancement : envoyés une fois. */
+  const geste = (type: string, args: Record<string, unknown>, message: string, apres?: () => void) =>
+    uneFois(async () => {
+      setErreur(null);
+      const r = await faire(type, args);
+      if (!r.ok) setErreur(messageGeste(r, sur));
+      else {
+        annoncer(message);
+        apres?.();
+      }
+      /* Toujours relire : sans réponse, le geste a pu aboutir ; l'écran le dira avant un nouvel essai. */
+      relancer();
+    });
   const lancer = () => void geste("workflows.lancer", { id }, "Workflow lancé", () => setVue(null));
-  const decider = (etapeId: string, approuver: boolean) =>
-    void geste("workflows.approuver", { etapeId, approuver }, approuver ? "Approuvé : l’exécution continue." : "Refusé : l’exécution s’arrête.");
+  const decider = (etapeId: string, approuver: boolean) => void geste("workflows.approuver", { etapeId, approuver }, approuver ? "Approuvé : l’exécution continue." : "Refusé : l’exécution s’arrête.");
+  const menu = data && !lectureSeule && !(chantier?.nouveau && travaux) && !gardee ? { id: data.id, titre: data.titre, sous: sousTitre(libelleDeclencheur(data.noeuds), total), enCours: !!data.enCours } : null;
+
+  /* Supprimé ailleurs : le dire et mener à la liste (§ 4), pas « Réessayer » sur rien. */
+  if (lecture.etat === "erreur" && lecture.code === "introuvable") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <EnteteTelephone titre="Workflow" parent={urlWorkflows()} />
+        <EtatEcran
+          erreur
+          icone="help-circle-contained"
+          titre={lecture.message || `Ce workflow n’existe plus sur ${sur}.`}
+          action={
+            <Bouton variant="blanc" taille="md" onClick={() => router.push(urlWorkflows())}>
+              Revenir aux workflows
+            </Bouton>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <EnteteTelephone
         titre={data?.titre ?? "Workflow"}
         parent={versionId ? urlWorkflows(id) : urlWorkflows()}
-        droite={
-          data && !lectureSeule && !(chantier?.nouveau && travaux) ? (
-            <BoutonIcone variant="discret" taille="md" libelle="Actions du workflow" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => actions.ouvrir(data)} />
-          ) : null
-        }
+        droite={menu ? <BoutonIcone variant="discret" className="size-11" libelle="Actions du workflow" aria-haspopup="dialog" icone={<Icon name="dot-horizontal" size={20} />} onClick={() => actions.ouvrir(menu)} /> : null}
       />
-      {chantier ? (
-        <BandeauConstructionTelephone chantier={chantier} />
-      ) : data?.version ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-y border-bordure-subtile bg-fond-surface-grise px-4 py-2">
-          <p className="min-w-0 flex-1 text-ui text-texte-principal">
-            <span className="font-medium">Aperçu de la version</span> · {quandCourt(data.version.at)} · lecture seule
-          </p>
-          <Bouton variant="blanc" taille="md" onClick={() => router.push(urlWorkflows(id))}>
-            Retour
-          </Bouton>
-          <Bouton
-            variant="sombre"
-            taille="md"
-            disabled={indisponible}
-            onClick={() => void geste("workflows.restaurer", { id, version: data.version!.id }, "Version rendue actuelle.", () => router.replace(urlWorkflows(id)))}
-          >
-            Rendre actuelle
-          </Bouton>
-        </div>
-      ) : enCours ? (
-        <div className="flex shrink-0 items-center gap-2 border-y border-bordure-subtile bg-fond-surface-grise px-4 py-2">
-          <Icon name="loader-01" size={16} className="shrink-0 text-icone-accent motion-safe:animate-spin" />
-          <p className="min-w-0 flex-1 text-ui text-texte-principal">
-            <span className="font-medium">{LIBELLES_STATUT_EXECUTION[enCours.statut]}</span> · exécution {enCours.numero} · {enCours.faits}/{total}
-          </p>
-          <Bouton variant="blanc" taille="md" onClick={() => setExecutions(true)}>
-            Voir l’exécution
-          </Bouton>
-        </div>
-      ) : null}
-      {vue && data?.vue && data.vue.id !== data.enCours ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-bordure-subtile px-4 py-1">
-          <p className="min-w-0 flex-1 text-ui-xs text-texte-secondaire">
-            {data.vue.seule ? "Étape seule" : `Exécution ${data.vue.numero}`} · {issue(data.vue)}
-          </p>
-          <button type="button" onClick={() => setVue(null)} className="min-h-11 text-ui-xs text-texte-principal underline underline-offset-2">
-            Afficher les derniers résultats
-          </button>
-        </div>
-      ) : null}
+      {chantier ? <BandeauConstructionTelephone chantier={chantier} /> : null}
       <div className="min-h-0 flex-1 overflow-y-auto pb-6" {...tirer.props}>
         {tirer.indicateur}
-        <VueLecture lecture={lecture} ferme={fermeWorkflows}>
+        <VueLecture lecture={lecture} ferme={fermeWorkflows} formeAucun="encadre" phraseAucun={PHRASE_AUCUN} gestes="Lancer et approuver" verrou={false}>
           {(w) => (
-            <div className="px-4 pt-2">
-              {!aPlat?.lignes.length ? <p className="pt-4 text-body-s text-texte-principal">Ce workflow n’a pas encore d’étape.</p> : null}
-              <ol aria-label="Étapes">
-                {aPlat?.lignes.map((ligne, i) => (
-                  <LigneEtapeVue
-                    key={ligne.genre === "etape" ? ligne.noeud.id : `${ligne.genre}-${i}`}
-                    ligne={ligne}
-                    wf={w}
-                    etats={etats}
-                    nomAgent={nomAgent}
-                    indisponible={indisponible}
-                    chantier={chantier}
-                    onOuvrir={(noeud, numero) => setEtape({ noeud, numero })}
-                    onDecider={decider}
-                  />
-                ))}
-              </ol>
+            <div className="flex flex-col gap-3.5 px-4 pt-2">
+              {!chantier && w.version ? (
+                <BandeauEtat icone={<Icon name="clock-backward" size={20} />}>
+                  <p>
+                    <b className="font-semibold">Aperçu de la version</b> · {quandCourt(w.version.at)} · lecture seule
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Bouton variant="blanc" taille="compact" className="relative after:absolute after:inset-x-0 after:-inset-y-1.5" onClick={() => router.push(urlWorkflows(id))}>
+                      Retour
+                    </Bouton>
+                    <p className="px-1 text-ui-xs text-texte-secondaire">Restaurer cette version : sur ton ordinateur.</p>
+                  </div>
+                </BandeauEtat>
+              ) : !chantier && enCours ? (
+                <BandeauEtat
+                  icone={<Icon name="loader-01" size={20} className="text-icone-accent motion-safe:animate-spin" />}
+                  action={
+                    <Bouton variant="blanc" taille="compact" className="relative after:absolute after:inset-x-0 after:-inset-y-1.5" onClick={() => setExecutions(true)}>
+                      Voir
+                    </Bouton>
+                  }
+                >
+                  <b className="font-semibold">{LIBELLES_STATUT_EXECUTION[enCours.statut]}</b> · exécution {enCours.numero} · {enCours.faits}/{total}
+                </BandeauEtat>
+              ) : null}
+              {vue && w.vue && w.vue.id !== w.enCours ? (
+                <div className="flex items-center gap-2 px-1">
+                  <p className="min-w-0 flex-1 text-ui-xs text-texte-secondaire">
+                    {w.vue.seule ? "Étape seule" : `Exécution ${w.vue.numero}`} · {issue(w.vue)}
+                  </p>
+                  <button type="button" onClick={() => setVue(null)} className="min-h-11 text-ui-xs text-texte-principal underline underline-offset-[3px]">
+                    Afficher les derniers résultats
+                  </button>
+                </div>
+              ) : null}
+              {!aPlat?.lignes.length ? (
+                <EtatEcran forme="encadre" icone="lightning-01" titre="Ce workflow n’a pas encore d’étape" texte={`Ses étapes se dessinent sur ${sur}, au pointeur.`} className="px-0 pb-0" />
+              ) : (
+                <ol aria-label="Étapes" className={CLASSE_GROUPE}>
+                  {aPlat.lignes.map((ligne, i) => (
+                    <LigneEtapeVue
+                      key={ligne.genre === "etape" ? ligne.noeud.id : `${ligne.genre}-${i}`}
+                      ligne={ligne}
+                      wf={w}
+                      etats={etats}
+                      nomAgent={nomAgent}
+                      indisponible={indisponible || !!w.version || gardee}
+                      chantier={chantier}
+                      onOuvrir={(noeud, numero) => setEtape({ noeud, numero })}
+                      onDecider={decider}
+                    />
+                  ))}
+                </ol>
+              )}
               {aPlat?.annotations.length ? (
-                <div className="mt-4">
-                  <button type="button" aria-expanded={notes} onClick={() => setNotes((v) => !v)} className="flex min-h-11 items-center gap-1 text-ui text-texte-principal underline underline-offset-2">
+                <div className="px-1">
+                  <button type="button" aria-expanded={notes} onClick={() => setNotes((v) => !v)} className="-my-2 flex min-h-11 items-center gap-1 text-ui font-medium text-texte-principal underline underline-offset-[3px]">
                     {libelleAnnotations(aPlat.annotations)}
                   </button>
                   {notes ? (
-                    <ul className="flex flex-col gap-2 pb-2">
+                    <ul className="flex flex-col gap-2 pt-3">
                       {aPlat.annotations.map((n) => (
                         <li key={n.id} className="rounded-md bg-fond-surface-grise px-3 py-2 text-ui break-words whitespace-pre-wrap text-texte-principal">
                           {texteAnnotation(n)}
@@ -478,50 +535,30 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
                   ) : null}
                 </div>
               ) : null}
-              <SurLePoste raison={RAISON_DESSIN} />
+              {w.version ? null : <LigneSurPoste icone="pencil-01" nom="Changer les étapes" />}
             </div>
           )}
         </VueLecture>
       </div>
       {data && travaux ? (
-        <div className="shrink-0 border-t border-bordure-subtile px-4 py-3">
-          <BoutonPrincipal className="w-full" disabled>
+        <div className="shrink-0 border-t border-bordure-defaut bg-fond-page px-4 py-3">
+          <BoutonPrincipal className={cn("w-full", BOUTON_INACTIF)} disabled>
             En construction…
           </BoutonPrincipal>
         </div>
       ) : data && !lectureSeule ? (
-        <div className="shrink-0 border-t border-bordure-subtile px-4 py-3">
-          {erreur ? (
-            <p role="alert" className="pb-2 text-ui-xs text-texte-erreur">
-              {erreur}
-            </p>
-          ) : null}
-          <BoutonPrincipal className="w-full" disabled={indisponible || !!data.enCours} onClick={lancer}>
+        <div className="shrink-0 border-t border-bordure-defaut bg-fond-page px-4 py-3">
+          {erreur ? <MessageErreur className="pb-2">{erreur}</MessageErreur> : null}
+          <BoutonPrincipal className={cn("w-full", BOUTON_INACTIF)} disabled={indisponible || !!data.enCours || total === 0 || lecture.relecture} onClick={lancer}>
             {data.enCours ? "En cours…" : "Lancer le workflow"}
           </BoutonPrincipal>
+          {!possible ? <NoteGeste className="mt-1.5 px-1 text-ui-xs text-texte-secondaire" /> : null}
         </div>
       ) : erreur ? (
-        <p role="alert" className="shrink-0 px-4 py-2 text-ui-xs text-texte-erreur">
-          {erreur}
-        </p>
+        <MessageErreur className="shrink-0 px-4 py-2">{erreur}</MessageErreur>
       ) : null}
 
-      {etape && data ? (
-        <FeuilleEtape
-          key={etape.noeud.id}
-          wf={data}
-          noeud={etape.noeud}
-          numero={etape.numero}
-          etat={etats.get(etape.noeud.id)}
-          lectureSeule={lectureSeule}
-          onFermer={() => setEtape(null)}
-          onEnregistre={() => {
-            setEtape(null);
-            annoncer("Enregistré");
-            relancer();
-          }}
-        />
-      ) : null}
+      {etape && data ? <FeuilleEtape key={etape.noeud.id} wf={data} noeud={etape.noeud} numero={etape.numero} etat={etats.get(etape.noeud.id)} onFermer={() => setEtape(null)} /> : null}
       {executions && data ? (
         <FeuilleExecutionsWorkflow
           wf={data}
@@ -532,9 +569,18 @@ export function WorkflowTelephone({ id, versionId }: { id: string; versionId: st
             setVue(execution);
             setExecutions(false);
           }}
-          onArreter={(execution) => void geste("workflows.arreter", { execution }, "Exécution arrêtée.")}
+          onArreter={setAArreter}
           onPlus={() => setLimite((n) => n + data.plus)}
           onFermer={() => setExecutions(false)}
+        />
+      ) : null}
+      {aArreter ? (
+        <ConfirmationFeuille
+          titre={aArreter.seule ? "Arrêter cette étape ?" : `Arrêter l’exécution ${aArreter.numero} ?`}
+          texte={aArreter.statut === "approbation" ? "Elle attend ton accord : elle s’arrête sans suite. Ce qui est déjà fait reste." : "L’étape en cours s’arrête, les suivantes ne partent pas. Ce qui est déjà fait reste."}
+          confirmer="Arrêter"
+          onFermer={() => setAArreter(null)}
+          onConfirmer={() => void geste("workflows.arreter", { execution: aArreter.id }, "Exécution arrêtée.")}
         />
       ) : null}
       {actions.rendu}
@@ -569,17 +615,16 @@ function LigneEtapeVue({
   useEffect(() => {
     if (etatTravaux === "ecrit") ref.current?.scrollIntoView({ block: "nearest", behavior: reduit() ? "auto" : "smooth" });
   }, [etatTravaux]);
-  const retrait = { paddingLeft: ligne.niveau * 20 };
   if (ligne.genre === "branche") {
     return (
-      <li style={retrait} className="pt-2 text-ui-xs font-medium text-texte-secondaire">
+      <li style={{ paddingLeft: 40 + Math.max(0, ligne.niveau - 1) * 20 }} className="pt-2 pr-3 text-ui-xs font-semibold text-texte-secondaire">
         ↳ si {ligne.branche} :
       </li>
     );
   }
   if (ligne.genre === "saut") {
     return (
-      <li style={retrait} className="py-2 text-ui-xs text-texte-secondaire">
+      <li style={{ paddingLeft: 40 + ligne.niveau * 20 }} className="pt-1 pr-3 pb-3 text-ui-xs text-texte-secondaire">
         ↳ {ligne.branche ? `si ${ligne.branche} : ` : ""}
         {ligne.retour ? "retour à" : "passe à"} l’étape {ligne.vers.numero} · {ligne.vers.nom}
       </li>
@@ -592,16 +637,15 @@ function LigneEtapeVue({
   const titre = n.type === "declencheur" ? `${nomNoeud(n)} · ${libelleUnDeclencheur(n)}` : agent ? `${nomNoeud(n)} · ${nomAgent(agent)}` : nomNoeud(n);
   const detail = detailEtape(n, wf);
   const attend = etat?.statut === "approbation";
-  /* Une étape de l'agent prend toute la largeur : son trait de couleur au bord de l'écran. */
-  const marquee = !!etatTravaux;
+  const retrait = 12 + ligne.niveau * 20;
+  const entree = attend ? entreeEtape(n.id, wf.liens, etats) : "";
   return (
     <li
       ref={ref}
       data-chantier={etatTravaux ?? undefined}
-      style={marquee ? { ...couleurChantier(chantier).style, paddingLeft: 16 + ligne.niveau * 20, paddingRight: 16 } : retrait}
+      style={etatTravaux ? couleurChantier(chantier).style : undefined}
       className={cn(
-        "border-b border-bordure-subtile transition-[background-color] duration-300 ease-sortie",
-        marquee && "-mx-4",
+        "relative transition-[background-color] duration-300 ease-sortie [&:not(:first-child)]:before:absolute [&:not(:first-child)]:before:top-0 [&:not(:first-child)]:before:right-0 [&:not(:first-child)]:before:left-16 [&:not(:first-child)]:before:h-px [&:not(:first-child)]:before:bg-bordure-defaut [&:not(:first-child)]:before:content-['']",
         chantier?.nouveaux.includes(n.id) && "klyra-wf-pose",
         etatTravaux === "fantome" && "klyra-wf-ligne-fantome",
         etatTravaux === "ecrit" && "klyra-wf-ligne-ecrit",
@@ -609,45 +653,48 @@ function LigneEtapeVue({
         etatTravaux === "ne" && "klyra-wf-eclat",
       )}
     >
-      <button type="button" onClick={() => onOuvrir(n, ligne.numero)} className="flex min-h-14 w-full items-start gap-3 py-3 text-left active:bg-fond-survol">
-        <span className="w-5 shrink-0 pt-1 text-ui font-medium text-texte-secondaire tabular-nums">{ligne.numero}</span>
+      <button type="button" onClick={() => onOuvrir(n, ligne.numero)} style={{ paddingLeft: retrait }} className="flex min-h-[60px] w-full items-start gap-2.5 py-3 pr-3 text-left active:bg-fond-survol">
+        <span className="w-4 shrink-0 pt-[7px] text-right text-ui font-semibold text-texte-secondaire tabular-nums">{ligne.numero}</span>
         {agent ? (
-          <RondApercu agentId={agent} nom={nomAgent(agent)} teinte={(agentLu?.teinte ?? "jaune") as RoleTeinte} taille={28} className={agentLu?.actif === false ? "opacity-60" : undefined} />
+          <RondApercu agentId={agent} nom={nomAgent(agent)} teinte={(agentLu?.teinte ?? "jaune") as RoleTeinte} taille={32} className={agentLu?.actif === false ? "opacity-60" : undefined} />
         ) : (
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-xs bg-fond-surface-grise text-icone-secondaire">
-            <Icon name={FICHES[n.type].icone} size={16} />
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-xs bg-fond-surface-grise text-icone-defaut">
+            <Icon name={FICHES[n.type].icone} size={18} />
           </span>
         )}
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-body-s font-medium text-texte-principal">{titre}</span>
+          <span className="text-body-s leading-[1.3] font-medium text-texte-principal">{titre}</span>
           {detail ? (
-            <span className={cn("line-clamp-2 text-ui-xs break-words text-texte-secondaire", etatTravaux === "ecrit" && "klyra-curseur-texte")}>{detail}</span>
+            <span className={cn("line-clamp-2 text-ui leading-[1.35] break-words text-texte-secondaire", etatTravaux === "ecrit" && "klyra-curseur-texte")}>{detail}</span>
           ) : etatTravaux === "ecrit" ? (
             <span className="klyra-curseur-texte text-ui-xs text-texte-tertiaire">{chantier?.agent.name} l’écrit</span>
           ) : null}
           {etat?.erreur ? <span className="line-clamp-2 text-ui-xs text-texte-erreur">{etat.erreur}</span> : null}
         </span>
         {etat ? (
-          <span className={cn("shrink-0 pt-1 text-ui-xs", etat.statut === "erreur" ? "text-texte-erreur" : etat.statut === "fait" ? "text-texte-secondaire" : "font-medium text-texte-principal")}>
+          <span
+            className={cn(
+              "shrink-0 pt-1.5 text-ui-xs",
+              etat.statut === "erreur" ? "font-medium text-texte-erreur" : etat.statut === "en-cours" || etat.statut === "approbation" ? "font-semibold text-texte-accent" : "text-texte-secondaire",
+            )}
+          >
             {LIBELLES_STATUT_ETAPE[etat.statut]}
             {etat.branche ? ` · ${etat.branche === "oui" ? "Oui" : "Non"}` : ""}
           </span>
         ) : null}
       </button>
       {attend && etat ? (
-        <div className="flex flex-col gap-2 pb-3 pl-8">
-          {entreeEtape(n.id, wf.liens, etats) ? (
-            <p className="line-clamp-6 rounded-md bg-fond-surface-grise px-3 py-2 text-ui break-words whitespace-pre-wrap text-texte-principal">{entreeEtape(n.id, wf.liens, etats)}</p>
-          ) : null}
+        <div className="-mt-1 flex flex-col gap-2.5 pr-3 pb-3.5" style={{ paddingLeft: retrait + 58 }}>
+          {entree ? <p className="line-clamp-6 rounded-md bg-fond-surface-grise px-3 py-2.5 text-ui leading-[1.45] break-words whitespace-pre-wrap text-texte-principal">{entree}</p> : null}
           <div className="flex gap-2">
-            <Bouton variant="blanc" taille="md" className="flex-1" disabled={indisponible} onClick={() => onDecider(etat.id, false)}>
+            <Bouton variant="blanc" taille="md" className="flex-1 px-2.5" disabled={indisponible} onClick={() => onDecider(etat.id, false)}>
               Refuser
             </Bouton>
-            <Bouton variant="sombre" taille="md" className="flex-1" disabled={indisponible} onClick={() => onDecider(etat.id, true)}>
+            <Bouton variant="sombre" taille="md" className="flex-1 px-2.5" disabled={indisponible} onClick={() => onDecider(etat.id, true)}>
               Approuver
             </Bouton>
           </div>
-          {indisponible ? <NotePoste /> : null}
+          {indisponible ? <NoteGeste className="text-ui-xs text-texte-secondaire" /> : null}
         </div>
       ) : null}
     </li>
@@ -656,7 +703,7 @@ function LigneEtapeVue({
 
 const texte = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
-/** Le contenu d'une étape en une ou deux lignes, sous son nom. */
+/** Le contenu d'une étape en une ou deux lignes, sous son nom. Un fichier par son nom, jamais son chemin. */
 function detailEtape(n: NoeudLu, wf: WorkflowLu): string {
   const c = n.champs;
   switch (n.type) {
@@ -666,10 +713,8 @@ function detailEtape(n: NoeudLu, wf: WorkflowLu): string {
     }
     case "prompt":
       return texte(c.texte) ? `« ${texte(c.texte)} »` : "";
-    case "ressource": {
-      const chemins = texte(c.chemins).split("\n").filter(Boolean);
-      return chemins.map((chemin) => chemin.split(/[\\/]/).at(-1)).join(", ");
-    }
+    case "ressource":
+      return texte(c.chemins).split("\n").filter(Boolean).map(nomFichier).join(", ");
     case "agent":
       return texte(c.tache);
     case "llm":
@@ -682,7 +727,7 @@ function detailEtape(n: NoeudLu, wf: WorkflowLu): string {
       return texte(c.question) ? `« ${texte(c.question)} »` : "";
     case "sortie": {
       const cible = texte(c.cible) || "notification";
-      const nom = cible === "fichier" ? texte(c.chemin) : texte(c.titre);
+      const nom = cible === "fichier" ? nomFichier(texte(c.chemin)) : texte(c.titre);
       return [cible === "notification" ? "Notification" : cible === "conversation" ? "Conversation" : "Fichier", nom].filter(Boolean).join(" · ");
     }
     default:
@@ -690,240 +735,82 @@ function detailEtape(n: NoeudLu, wf: WorkflowLu): string {
   }
 }
 
-/* ─── Le contenu d'une étape, en feuille ───────────────────────── */
+/* ─── E7-32 : le contenu d'une étape, en lecture seule ─────────── */
 
-const FREQUENCES = [
-  { value: "heure", label: "Chaque heure" },
-  { value: "jour", label: "Chaque jour" },
-  { value: "jours-ouvres", label: "En semaine" },
-  { value: "semaine", label: "Chaque semaine" },
-  { value: "mois", label: "Chaque mois" },
-];
+/** La valeur lisible d'un champ : le nom d'une option, d'un modèle ; un fichier par son nom. */
+function valeurChamp(c: ChampEtape, noeud: NoeudLu): string {
+  const brut = String(noeud.champs[c.cle] ?? FICHES[noeud.type].champs[c.cle] ?? "").trim();
+  if (c.genre === "choix") return c.options.find((o) => o.id === brut)?.nom ?? "";
+  if (c.genre === "modele") return MODELES.find((m) => m.id === brut)?.nom ?? "";
+  if (noeud.type === "sortie" && c.cle === "chemin") return nomFichier(brut);
+  return brut;
+}
 
-function FeuilleEtape({
-  wf,
-  noeud,
-  numero,
-  etat,
-  lectureSeule,
-  onFermer,
-  onEnregistre,
-}: {
-  wf: WorkflowLu;
-  noeud: NoeudLu;
-  numero: number;
-  etat?: EtapeLue;
-  lectureSeule: boolean;
-  onFermer: () => void;
-  onEnregistre: () => void;
-}) {
-  const sur = useSupport();
-  const { ouvert } = usePostes();
-  const { faire, occupe } = useGestePoste();
-  const champs = CHAMPS_ETAPE[noeud.type];
-  const initial = (c: ChampEtape) => String(noeud.champs[c.cle] ?? FICHES[noeud.type].champs[c.cle] ?? "");
-  const [valeurs, setValeurs] = useState<Record<string, string>>(() => Object.fromEntries(champs.map((c) => [c.cle, initial(c)])));
-  const [frequence, setFrequence] = useState<Frequence>(noeud.frequence ?? { type: "jour", heure: "09:00" });
-  const [erreur, setErreur] = useState<string | null>(null);
-  const modifies = champs.filter((c) => valeurs[c.cle] !== initial(c));
-  const planifie = noeud.type === "declencheur" && valeurs.declencheur === "planifie";
-  const frequenceModifiee = planifie && JSON.stringify(frequence) !== JSON.stringify(noeud.frequence ?? null);
-  const editable = !lectureSeule && modifiable(noeud.type);
-  const actifs = wf.agents.filter((a) => a.actif);
-
-  const enregistrer = async () => {
-    setErreur(null);
-    const r = await faire("workflows.modifierEtape", {
-      id: wf.id,
-      noeudId: noeud.id,
-      patch: { champs: Object.fromEntries(modifies.map((c) => [c.cle, valeurs[c.cle]])), ...(frequenceModifiee ? { frequence } : {}) },
-      avant: { champs: Object.fromEntries(modifies.map((c) => [c.cle, noeud.champs[c.cle] ?? null])), frequence: noeud.frequence ?? null },
-    });
-    if (r.ok) onEnregistre();
-    else setErreur(messageGeste(r, sur));
-  };
-
+function FeuilleEtape({ wf, noeud, numero, etat, onFermer }: { wf: WorkflowLu; noeud: NoeudLu; numero: number; etat?: EtapeLue; onFermer: () => void }) {
+  const cible = String(noeud.champs.cible ?? "notification");
   const visible = (c: ChampEtape) => {
-    if (noeud.type === "sortie" && c.cle === "chemin") return valeurs.cible === "fichier";
-    if (noeud.type === "sortie" && c.cle === "titre") return valeurs.cible !== "fichier";
-    if (noeud.type === "llm" && c.cle === "effort") return valeurs.modele !== "haiku";
+    if (c.genre === "agent") return false;
+    if (noeud.type === "sortie" && c.cle === "chemin") return cible === "fichier";
+    if (noeud.type === "sortie" && c.cle === "titre") return cible !== "fichier";
+    if (noeud.type === "llm" && c.cle === "effort") return noeud.champs.modele !== "haiku";
     return true;
   };
-  const placeholder = (c: ChampEtape & { genre: "texte" }) => (noeud.type === "sortie" && c.cle === "titre" && valeurs.cible === "conversation" ? "Nom de la conversation" : c.placeholder);
-  const choisir = (cle: string, valeur: string) => setValeurs((v) => ({ ...v, [cle]: valeur }));
-  const champHeure = "heure" in frequence ? frequence.heure : "09:00";
-  const champJour = "jour" in frequence ? frequence.jour : 1;
-  const sortie = etat?.sortie;
-
+  const champs = CHAMPS_ETAPE[noeud.type].filter(visible).map((c) => ({ c, valeur: valeurChamp(c, noeud) })).filter((x) => x.valeur);
+  const agent = noeud.type === "agent" ? String(noeud.champs.agent || "principal") : null;
+  const agentLu = agent ? wf.agents.find((a) => a.id === agent) : undefined;
+  const fichiers = noeud.type === "ressource" ? texte(noeud.champs.chemins).split("\n").filter(Boolean).map(nomFichier) : [];
+  const execution = wf.vue;
   return (
-    <Feuille
-      titre={`Étape ${numero} · ${nomNoeud(noeud)}`}
-      haute={noeud.type === "agent" || noeud.type === "llm" || noeud.type === "prompt"}
-      onFermer={onFermer}
-      pied={
-        editable ? (
-          <>
-            {erreur ? (
-              <p role="alert" className="pb-2 text-ui-xs text-texte-erreur">
-                {erreur}
-              </p>
-            ) : null}
-            <Bouton variant="sombre" taille="md" className="w-full" disabled={!ouvert || occupe || (!modifies.length && !frequenceModifiee)} onClick={() => void enregistrer()}>
-              Enregistrer
-            </Bouton>
-            {!ouvert ? <NotePoste /> : null}
-          </>
-        ) : undefined
-      }
-    >
-      <fieldset disabled={!editable || occupe} className="flex flex-col gap-4">
-        {champs.filter(visible).map((c) => (
-          <div key={c.cle} className="flex flex-col gap-2">
-            <span className="text-ui-s font-medium text-texte-principal">{c.libelle}</span>
-            {c.genre === "texte" ? (
-              c.lignes === 1 ? (
-                <Input size="lg" aria-label={c.libelle} value={valeurs[c.cle]} placeholder={placeholder(c)} onChange={(e) => choisir(c.cle, e.target.value)} className={CHAMP_KLYRA_UI} />
-              ) : (
-                <Textarea
-                  size="lg"
-                  autoGrow
-                  aria-label={c.libelle}
-                  value={valeurs[c.cle]}
-                  placeholder={placeholder(c)}
-                  onChange={(e) => choisir(c.cle, e.target.value)}
-                  className={cn(CHAMP_KLYRA_UI, c.lignes > 2 ? "min-h-[120px]" : "min-h-[72px]")}
-                />
-              )
-            ) : c.genre === "choix" ? (
-              <div role="radiogroup" aria-label={c.libelle} className="flex flex-wrap gap-2">
-                {c.options
-                  .filter((o) => !(noeud.type === "declencheur" && o.id === "webhook" && initial(c) !== "webhook"))
-                  .map((o) => (
-                    <button
-                      key={o.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={valeurs[c.cle] === o.id}
-                      onClick={() => choisir(c.cle, o.id)}
-                      className={cn(
-                        "min-h-11 rounded-xs border px-3 text-ui disabled:opacity-60",
-                        valeurs[c.cle] === o.id ? "klyra-surface-sombre border-transparent text-texte-inverse" : "border-bordure-subtile bg-fond-surface text-texte-principal",
-                      )}
-                    >
-                      {o.nom}
-                    </button>
-                  ))}
-              </div>
-            ) : c.genre === "agent" ? (
-              <div className="[&_button]:min-h-12 [&_button]:text-body-s">
-                <ListeDeroulante
-                  libelle={c.libelle}
-                  value={valeurs[c.cle]}
-                  disabled={!editable || occupe}
-                  options={[
-                    ...(actifs.some((a) => a.id === valeurs[c.cle])
-                      ? []
-                      : [{ value: valeurs[c.cle], label: `${wf.agents.find((a) => a.id === valeurs[c.cle])?.name ?? valeurs[c.cle]} · désactivé`, disabled: true }]),
-                    ...actifs.map((a) => ({ value: a.id, label: a.tag ? `${a.name} · ${a.tag}` : a.name, icone: <RondApercu agentId={a.id} nom={a.name} teinte={a.teinte as RoleTeinte} taille={20} /> })),
-                  ]}
-                  onChange={(v) => choisir(c.cle, v)}
-                />
-              </div>
-            ) : (
-              <div className="[&_button]:min-h-12 [&_button]:text-body-s">
-                <ListeDeroulante libelle={c.libelle} value={valeurs[c.cle]} disabled={!editable || occupe} options={MODELES.map((m) => ({ value: m.id, label: m.nom }))} onChange={(v) => choisir(c.cle, v)} />
-              </div>
-            )}
-          </div>
+    <Feuille titre={`Étape ${numero} · ${nomNoeud(noeud)}`} haute bordee onFermer={onFermer} pied={<p className="px-1 text-ui-xs text-texte-secondaire">Modifier cette étape : sur ton ordinateur.</p>}>
+      <div className="flex flex-col gap-[18px] pt-3.5">
+        {agent ? (
+          <GroupeListe>
+            <LigneListe
+              debut={<RondApercu agentId={agent} nom={agentLu?.name ?? "Agent indisponible"} teinte={(agentLu?.teinte ?? "jaune") as RoleTeinte} taille={40} className={agentLu?.actif === false ? "opacity-60" : undefined} />}
+              retrait="avatar"
+              nom={agentLu?.name ?? "Agent indisponible"}
+              ligne2={agentLu ? (agentLu.actif ? agentLu.tag : `${agentLu.tag} · désactivé`) : undefined}
+            />
+          </GroupeListe>
+        ) : null}
+        {champs.map(({ c, valeur }) => (
+          <Carte key={c.cle} titre={<span className="text-ui font-semibold">{c.libelle}</span>}>
+            <p className="mt-1 text-body-s leading-[1.45] break-words whitespace-pre-wrap">{valeur}</p>
+          </Carte>
         ))}
-        {planifie ? (
-          <div className="flex flex-col gap-2">
-            <span className="text-ui-s font-medium text-texte-principal">Fréquence</span>
-            <div className="[&_button]:min-h-12 [&_button]:text-body-s">
-              <ListeDeroulante
-                libelle="Fréquence"
-                value={frequence.type === "manuel" ? "jour" : frequence.type}
-                disabled={!editable || occupe}
-                options={FREQUENCES}
-                onChange={(t) =>
-                  setFrequence(
-                    t === "heure"
-                      ? { type: "heure" }
-                      : t === "semaine"
-                        ? { type: "semaine", jour: Math.min(champJour, 7), heure: champHeure }
-                        : t === "mois"
-                          ? { type: "mois", jour: champJour, heure: champHeure }
-                          : { type: t as "jour" | "jours-ouvres", heure: champHeure },
-                  )
-                }
-              />
-            </div>
-            {frequence.type === "semaine" ? (
-              <div className="[&_button]:min-h-12 [&_button]:text-body-s">
-                <ListeDeroulante
-                  libelle="Jour"
-                  value={String(frequence.jour)}
-                  disabled={!editable || occupe}
-                  options={NOMS_JOURS.map((nom, i) => ({ value: String(i + 1), label: majuscule(nom) }))}
-                  onChange={(j) => setFrequence({ ...frequence, jour: Number(j) })}
-                />
-              </div>
-            ) : null}
-            {frequence.type === "mois" ? (
-              <div className="[&_button]:min-h-12 [&_button]:text-body-s">
-                <ListeDeroulante
-                  libelle="Jour du mois"
-                  value={String(frequence.jour)}
-                  disabled={!editable || occupe}
-                  options={Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: i === 0 ? "le 1er" : `le ${i + 1}` }))}
-                  onChange={(j) => setFrequence({ ...frequence, jour: Number(j) })}
-                />
-              </div>
-            ) : null}
-            {frequence.type !== "heure" && frequence.type !== "manuel" ? (
-              <Input size="lg" type="time" aria-label="Heure" value={champHeure} onChange={(e) => setFrequence({ ...frequence, heure: e.target.value })} className="rounded-md border-bordure-champ" />
-            ) : null}
-            <p className="text-ui-xs text-texte-secondaire">
-              {libelleFrequence(frequence)}
+        {noeud.type === "declencheur" && noeud.champs.declencheur === "planifie" && noeud.frequence ? (
+          <Carte titre={<span className="text-ui font-semibold">Fréquence</span>}>
+            <p className="mt-1 text-body-s leading-[1.45]">
+              {libelleFrequence(noeud.frequence)}
               {wf.prochaines[noeud.id] ? ` · prochaine exécution ${quandCourt(wf.prochaines[noeud.id])}` : ""}
             </p>
-          </div>
+          </Carte>
         ) : null}
-      </fieldset>
-      {noeud.type === "declencheur" && valeurs.declencheur === "webhook" ? <SurLePoste raison="l’adresse du webhook est servie par l’ordinateur." /> : null}
-      {noeud.type === "ressource" ? (
-        <>
-          <ul className="flex flex-col gap-1">
-            {texte(noeud.champs.chemins)
-              .split("\n")
-              .filter(Boolean)
-              .map((chemin) => (
-                <li key={chemin} className="flex items-center gap-2 text-ui break-all text-texte-principal">
-                  <Icon name="file-01" size={16} className="shrink-0 text-icone-secondaire" />
-                  {chemin}
-                </li>
-              ))}
-          </ul>
-          <SurLePoste raison="les fichiers d’une ressource se choisissent sur l’ordinateur." />
-        </>
-      ) : null}
-      {etat ? (
-        <section className="mt-4 flex flex-col gap-2 border-t border-bordure-subtile pt-3">
-          <h3 className="text-ui-s font-medium text-texte-principal">
-            {etat.statut === "fait" ? "Résultat" : LIBELLES_STATUT_ETAPE[etat.statut]}
-            {etat.branche ? ` · ${etat.branche === "oui" ? "Oui" : "Non"}` : ""}
-            {etat.passe > 1 ? ` · tour ${etat.passe}` : ""}
-          </h3>
-          {etat.erreur ? <p className="text-ui-xs text-texte-erreur">{etat.erreur}</p> : null}
-          {sortie ? <p className="max-h-[40vh] overflow-y-auto rounded-md bg-fond-surface-grise px-3 py-2 text-ui break-words whitespace-pre-wrap text-texte-principal select-text">{sortie}</p> : null}
-        </section>
-      ) : null}
-      {lectureSeule ? <p className="mt-3 text-ui-xs text-texte-secondaire">Aperçu d’une version : lecture seule.</p> : null}
+        {fichiers.length ? (
+          <GroupeListe>
+            {fichiers.map((f, i) => (
+              <LigneListe key={`${f}-${i}`} debut={<TuileIcone icone="file-01" />} retrait="tuile" nom={f} />
+            ))}
+          </GroupeListe>
+        ) : null}
+        {etat ? (
+          <section className="flex flex-col gap-2 border-t border-bordure-defaut pt-3.5">
+            <h3 className="px-1 text-ui font-semibold text-texte-principal">
+              {etat.statut === "fait" ? "Résultat" : LIBELLES_STATUT_ETAPE[etat.statut]}
+              {etat.branche ? ` · ${etat.branche === "oui" ? "Oui" : "Non"}` : ""}
+              {execution && !execution.seule ? ` · exécution ${execution.numero}` : ""}
+              {etat.passe > 1 ? ` · tour ${etat.passe}` : ""}
+            </h3>
+            {etat.erreur ? <p className="px-1 text-ui text-texte-erreur">{etat.erreur}</p> : null}
+            {etat.sortie ? <p className="max-h-[40vh] overflow-y-auto rounded-md bg-fond-surface-grise px-3.5 py-3 text-ui leading-[1.5] break-words whitespace-pre-wrap text-texte-principal select-text">{etat.sortie}</p> : null}
+          </section>
+        ) : null}
+      </div>
     </Feuille>
   );
 }
 
-/* ─── Les exécutions d'un workflow, en feuille haute ───────────── */
+/* ─── E7-33 : les exécutions d'un workflow, en feuille haute ───── */
 
 function FeuilleExecutionsWorkflow({
   wf,
@@ -940,56 +827,98 @@ function FeuilleExecutionsWorkflow({
   vue: string | null;
   indisponible: boolean;
   onVue: (execution: string) => void;
-  onArreter: (execution: string) => void;
+  onArreter: (execution: ResumeExecution) => void;
   onPlus: () => void;
   onFermer: () => void;
 }) {
   return (
-    <Feuille titre="Exécutions" haute onFermer={onFermer}>
-      {wf.executions.length === 0 ? <p className="text-ui text-texte-secondaire">Aucune exécution pour l’instant.</p> : null}
-      <ul className="flex flex-col">
-        {wf.executions.map((e) => {
-          const enCours = enCoursExecution(e);
-          return (
-            <li key={e.id} className={cn("flex flex-col gap-1 border-b border-bordure-subtile py-2", vue === e.id && "bg-fond-surface-grise")}>
-              <button type="button" onClick={() => onVue(e.id)} className="flex min-h-11 flex-col gap-0.5 text-left active:bg-fond-survol">
-                <span className="flex items-center gap-2">
-                  <MarqueExecution statut={e.statut} />
-                  <span className="flex-1 text-ui font-medium text-texte-principal">{e.seule ? "Étape seule" : `Exécution ${e.numero}`}</span>
-                  <span className="text-ui-xs text-texte-secondaire">{e.source === "planifie" ? "Planifiée" : e.source === "webhook" ? "Webhook" : "Manuelle"}</span>
-                </span>
-                <span className="text-ui-xs text-texte-secondaire">
-                  {quandCourt(e.debut)} · {enCours ? libelleExecution(e, total) : issue(e)}
-                </span>
-                {e.arret && (e.statut === "approbation" || e.statut === "erreur") ? (
-                  <span className="text-ui-xs text-texte-secondaire">
-                    {e.statut === "approbation" ? "En attente à" : "Échec à"} : {e.arret}
-                  </span>
-                ) : null}
-                {e.erreur ? <span className="text-ui-xs text-texte-erreur">{e.erreur}</span> : null}
-              </button>
-              <span className="flex flex-wrap gap-x-4">
-                {enCours ? (
-                  <button type="button" disabled={indisponible} onClick={() => onArreter(e.id)} className="min-h-11 text-ui font-medium text-texte-principal underline underline-offset-2 disabled:opacity-60">
-                    Arrêter
-                  </button>
-                ) : null}
-                {e.chatId ? (
-                  <Link href={`/chat?id=${encodeURIComponent(e.chatId)}`} className="flex min-h-11 items-center text-ui text-texte-principal underline underline-offset-2">
-                    Voir la conversation
-                  </Link>
-                ) : null}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-      {wf.plus > 0 ? (
-        <Bouton variant="blanc" taille="md" className="mt-3" onClick={onPlus}>
-          Afficher les exécutions plus anciennes
-        </Bouton>
-      ) : null}
+    <Feuille titre="Exécutions" sousTitre={wf.titre} haute bordee onFermer={onFermer}>
+      <div className="pt-3">
+        {wf.executions.length === 0 ? <EtatEcran forme="encadre" icone="list" titre="Aucune exécution pour l’instant" className="px-0 pb-0" /> : null}
+        {wf.executions.length ? (
+          <GroupeListe>
+            {wf.executions.map((e) => {
+              const enCours = enCoursExecution(e);
+              const source = e.source === "planifie" ? "Planifiée" : e.source === "webhook" ? "Webhook" : e.source === "agent" ? "Par un agent" : "Manuelle";
+              return (
+                <LigneExecutionWorkflow key={e.id} execution={e} source={source} enCours={enCours} choisie={vue === e.id} total={total} indisponible={indisponible} onVue={() => onVue(e.id)} onArreter={() => onArreter(e)} />
+              );
+            })}
+          </GroupeListe>
+        ) : null}
+        {wf.plus > 0 ? (
+          <Bouton variant="blanc" taille="md" className="mt-3.5 w-full" onClick={onPlus}>
+            Afficher les exécutions plus anciennes
+          </Bouton>
+        ) : null}
+      </div>
     </Feuille>
   );
 }
 
+function LigneExecutionWorkflow({
+  execution: e,
+  source,
+  enCours,
+  choisie,
+  total,
+  indisponible,
+  onVue,
+  onArreter,
+}: {
+  execution: ResumeExecution;
+  source: string;
+  enCours: boolean;
+  choisie: boolean;
+  total: number;
+  indisponible: boolean;
+  onVue: () => void;
+  onArreter: () => void;
+}) {
+  return (
+    <>
+      <LigneListe
+        onClick={onVue}
+        retrait="tuile"
+        debut={
+          <span aria-hidden="true" className={cn("flex size-9 shrink-0 items-center justify-center rounded-md-moins", enCours ? "bg-fond-teinte-bleue" : "bg-fond-surface-grise", choisie && "ring-1 ring-bordure-forte")}>
+            <MarqueExecution statut={e.statut} />
+          </span>
+        }
+        nom={e.seule ? "Étape seule" : `Exécution ${e.numero}`}
+        meta={source}
+        ligne2={
+          <>
+            <span className="block truncate">
+              {quandCourt(e.debut)} · {enCours ? <span className="font-semibold text-texte-accent">{libelleExecution(e, total)}</span> : issue(e)}
+            </span>
+            {e.arret && (e.statut === "approbation" || e.statut === "erreur") ? (
+              <span className={cn("block truncate", e.statut === "erreur" && "text-texte-erreur")}>
+                {e.statut === "approbation" ? "En attente à" : "Échec à"} : {e.arret}
+                {e.erreur && e.statut === "erreur" ? ` · ${e.erreur}` : ""}
+              </span>
+            ) : e.erreur ? (
+              <span className="block truncate text-texte-erreur">{e.erreur}</span>
+            ) : null}
+          </>
+        }
+        fin="chevron"
+      />
+      {enCours || e.chatId ? (
+        <li className="flex flex-wrap gap-x-4 pr-4 pb-2 pl-16">
+          {enCours ? (
+            <button type="button" disabled={indisponible} onClick={onArreter} className="min-h-11 text-ui font-medium text-texte-principal underline underline-offset-[3px] disabled:text-texte-tertiaire">
+              Arrêter
+            </button>
+          ) : null}
+          {e.chatId ? (
+            <Link href={`/chat?id=${encodeURIComponent(e.chatId)}`} className="flex min-h-11 items-center text-ui font-medium text-texte-principal underline underline-offset-[3px]">
+              Voir la conversation
+            </Link>
+          ) : null}
+          {enCours && indisponible ? <NoteGeste className="w-full text-ui-xs text-texte-secondaire" /> : null}
+        </li>
+      ) : null}
+    </>
+  );
+}

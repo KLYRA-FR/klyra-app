@@ -33,10 +33,9 @@ export function cheminTelephone(poste: Pick<PosteLu, "systeme" | "nom"> | null):
   return `Passe par ton compte, puis par ${supportOuOrdinateur(poste)}.`;
 }
 
-/** Plus › Automatisations (MO-T17) : une routine d'un VPS tourne même l'ordinateur fermé. */
-export function texteRoutines(poste: Pick<PosteLu, "systeme" | "nom"> | null): string {
-  const sur = supportOuOrdinateur(poste);
-  return `Les routines se gèrent sur ${sur}. Celles d’un VPS y tournent même ${sur} fermé.`;
+/** Plus › Automatisations (lot 8, E8-01, E8-03) : sur un serveur affiché, ses routines tournent sans l'ordinateur. */
+export function texteRoutines(serveur?: { nom: string; sur: string } | null): string {
+  return serveur ? `Les routines de ${serveur.nom} tournent même ${serveur.sur} fermé` : "Les routines et les workflows de tes agents";
 }
 
 /** Le téléphone après une déconnexion depuis Réglages › Mobile (MO-T14). */

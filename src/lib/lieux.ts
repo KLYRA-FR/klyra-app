@@ -76,6 +76,15 @@ export function lieuParDefaut(): string | null {
   }
 }
 
+/** Le lieu retenu, même s'il n'est plus relié (un repli sur l'ordinateur se reconnaît ainsi). */
+export function lieuRetenu(): string | null {
+  try {
+    return localStorage.getItem(CLE_LIEU);
+  } catch {
+    return null;
+  }
+}
+
 export function retenirLieu(lieu: string | null) {
   try {
     if (lieu) localStorage.setItem(CLE_LIEU, lieu);

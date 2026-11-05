@@ -3,6 +3,9 @@ import { ErreurPoste } from "@/lib/poste/types";
 import type { Role } from "@/types/domain";
 import type { Routine } from "@/types/routines";
 import {
+  essaiPossible,
+  quandRelatif,
+  routineDejaCreee,
   agentsDesRoutines,
   brouillonValide,
   lireId,
@@ -135,7 +138,7 @@ describe("ce que le téléphone affiche et garde", () => {
       ["val", false, true],
       ["parti", false, false],
     ]);
-    expect(agents[3].name).toBe("parti");
+    expect(agents[3].name).toBe("Agent indisponible");
   });
 
   test("une routine part sans les places de l'ancien canevas", () => {
@@ -154,5 +157,33 @@ describe("ce que le téléphone affiche et garde", () => {
     expect(brouillonValide({ initiale: null, valeurs: { ...valeurs, schedule: null } })).toBeNull();
     expect(brouillonValide({ initiale: { id: 3 }, valeurs })).toBeNull();
     expect(brouillonValide("brouillon")).toBeNull();
+  });
+});
+
+describe("ce que dit une carte de routine", () => {
+  const maintenant = new Date("2026-11-05T10:00:00Z");
+  test("une date proche se dit en mots, dans le fuseau de la routine ; un autre jour, la date", () => {
+    expect(quandRelatif("2026-11-05T08:00:00Z", "Europe/Paris", maintenant)).toBe("aujourd’hui, 09:00");
+    expect(quandRelatif("2026-11-06T08:00:00Z", "Europe/Paris", maintenant)).toBe("demain, 09:00");
+    expect(quandRelatif("2026-11-04T08:00:00Z", "Europe/Paris", maintenant)).toBe("hier, 09:00");
+    expect(quandRelatif("2026-11-10T08:00:00Z", "Europe/Paris", maintenant)).toContain("10 nov.");
+    /* À Tokyo, ce même instant est déjà demain. */
+    expect(quandRelatif("2026-11-05T16:00:00Z", "Asia/Tokyo", maintenant)).toBe("demain, 01:00");
+    expect(quandRelatif(null, "Europe/Paris", maintenant)).toBe("—");
+  });
+
+  test("une création sans réponse a pu aboutir : retrouvée par son agent, son nom, sa consigne, et sa date", () => {
+    const routines = [{ agentId: "dev", name: "Point", instruction: "Fais le point", createdAt: "2026-11-05T10:00:00Z" }] as never[];
+    const input = { agentId: "dev", name: "Point", instruction: "Fais le point" };
+    expect(routineDejaCreee(routines, input, "2026-11-05T09:59:00Z")).toBeDefined();
+    expect(routineDejaCreee(routines, input, "2026-11-05T10:00:01Z")).toBeUndefined();
+    expect(routineDejaCreee(routines, { ...input, name: "Autre" }, "2026-11-05T09:59:00Z")).toBeUndefined();
+  });
+
+  test("« Réessayer » attend la relecture, et ne relance pas une routine dont l'exécution est arrivée", () => {
+    expect(essaiPossible("routines.executer", false, true)).toBe(false);
+    expect(essaiPossible("routines.executer", true, false)).toBe(false);
+    expect(essaiPossible("routines.executer", false, false)).toBe(true);
+    expect(essaiPossible("routines.pause", true, false)).toBe(true);
   });
 });

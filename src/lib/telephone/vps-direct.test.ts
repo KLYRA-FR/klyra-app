@@ -16,11 +16,10 @@ const echange: EchangeDirect = {
 };
 
 describe("voie directe vers le VPS", () => {
-  test("ordinateur ouvert : il relaie ; fermé : le VPS, seulement si ce téléphone y est relié", () => {
-    expect(voieEnvoi({ posteOuvert: true, lieu: "https://vps.exemple.test", jeton: "j" })).toBe("file");
-    expect(voieEnvoi({ posteOuvert: false, lieu: "https://vps.exemple.test", jeton: "j" })).toBe("vps");
-    expect(voieEnvoi({ posteOuvert: false, lieu: "https://vps.exemple.test", jeton: null })).toBe("file");
-    expect(voieEnvoi({ posteOuvert: false, lieu: null, jeton: "j" })).toBe("file");
+  test("la conversation choisit sa destination ; un accès VPS perdu ne revient pas au PC", () => {
+    expect(voieEnvoi({ lieu: "https://vps.exemple.test", jeton: "j" })).toBe("vps");
+    expect(voieEnvoi({ lieu: "https://vps.exemple.test", jeton: null })).toBe("non-relie");
+    expect(voieEnvoi({ lieu: null, jeton: "j" })).toBe("file");
   });
 
   test("le texte s'écrit, l'accord s'affiche puis se retire, la fin garde le texte complet", () => {

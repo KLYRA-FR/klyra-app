@@ -49,8 +49,8 @@ describe("textes du poste", () => {
     expect(cheminTelephone(mac)).toBe("Passe par ton compte, puis par ton Mac.");
     expect(cheminTelephone(autre)).toBe("Passe par ton compte, puis par ton ordinateur.");
     expect(cheminTelephone(null)).toBe("Passe par ton compte, puis par ton ordinateur.");
-    expect(texteRoutines(pc)).toBe("Les routines se gèrent sur ton PC. Celles d’un VPS y tournent même ton PC fermé.");
-    expect(texteRoutines(null)).not.toMatch(/Mac/);
+    expect(texteRoutines()).toBe("Les routines et les workflows de tes agents");
+    expect(texteRoutines({ nom: "Studio-VPS", sur: "ton PC" })).toBe("Les routines de Studio-VPS tournent même ton PC fermé");
     expect(texteDeconnecte(pc)).toBe("Ce téléphone a été déconnecté depuis ton PC. Reconnecte-toi pour retrouver tes conversations.");
     expect(texteDeconnecte(autre)).toContain("depuis ton ordinateur.");
     expect(attenteEnvoi(null)).toBe("En attente de ton ordinateur");

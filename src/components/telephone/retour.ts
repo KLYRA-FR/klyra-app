@@ -43,7 +43,9 @@ export function useNumeroterNavigation() {
     };
     historique.pushState = nosPoser;
     historique.replaceState = nosRemplacer;
-    rangActuel = rangDansLApp(historique.state);
+    /* Un rang restauré ne prouve pas qu'une page de cette ouverture précède l'entrée courante. */
+    rangActuel = 0;
+    remplacer.call(historique, avecRang(historique.state, 0), "");
     /* L'entrée d'une feuille fermée par une navigation reste dans l'historique : un retour la saute. */
     const surRetour = () => {
       const etat = historique.state as { klyraFeuille?: unknown } | null;
@@ -69,7 +71,7 @@ export function useNumeroterNavigation() {
 export function useRetour(parent: string): () => void {
   const router = useRouter();
   return useCallback(() => {
-    if (rangDansLApp(window.history.state) > 0) router.back();
+    if (rangDansLApp(window.history.state) > 0 && window.history.length > 1) router.back();
     else router.replace(parent);
   }, [router, parent]);
 }

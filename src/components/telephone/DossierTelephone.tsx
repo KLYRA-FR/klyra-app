@@ -1,35 +1,43 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
-import { BoutonIcone } from "@/components/ui/Bouton";
-import { cn } from "@/lib/cn";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { nomFichier } from "@/lib/fichiers";
+import { useLieuActif } from "@/lib/lieux";
 import { useLecturePoste, type LecturePoste } from "@/lib/poste/client";
 import {
+  estCache,
   filAriane,
+  iconeElement,
   montrerDans,
   parentDe,
   texteCoupure,
   urlDossier,
   urlFichier,
+  urlProjet,
   type ElementDossier,
   type NiveauDossier,
 } from "@/lib/telephone/dossiers";
+import { useHorsLigne } from "./BandeauReseau";
 import { EnteteTelephone } from "./EnteteTelephone";
 import { MenuFeuille, type ActionMenu } from "./Feuille";
-import { NotePoste, SurLePoste, VueLecture } from "./etats";
-import { usePostes } from "./poste";
+import { Bandeau, EtatEcran, useGestePossible, VueLecture } from "./etats";
+import { Etiquette, GroupeListe, LigneListe, TuileIcone } from "./Liste";
+import { usePostes, useSupport } from "./poste";
 import { useTirerPourRelire } from "./TirerPourRelire";
 
 /**
- * T-12 : le dossier d'un projet, un niveau par écran (spec § 6 : l'arbre du bureau devient une
- * descente). Chaque niveau est lu sur le poste à son ouverture, relu au retour dans l'app et en
- * tirant la liste vers le bas. Rien n'est gardé dans le compte (M-7).
+ * E6-13 à E6-21 : le dossier d'un projet, un niveau par écran (l'arbre du bureau devient une descente).
+ * Chaque niveau est lu sur le poste à son ouverture, relu au retour dans l'app, en tirant la liste vers
+ * le bas et par « Relire ». Ordinateur fermé : la dernière vue lue sur ce téléphone, rien dans le compte.
  */
 
-const FERME = (sur: string) => `les fichiers de ce projet sont sur ${sur}. Ils s’affichent quand KLYRA y est ouverte.`;
+const FERME = (sur: string) => `les fichiers de ce projet sont sur ${sur}. Ils s’affichent ici quand KLYRA y est ouverte.`;
+/* Un projet d'un serveur : ses fichiers ne sont pas sur l'ordinateur, c'est l'app de bureau qui les lit. */
+const FERME_SERVEUR = (sur: string) => `les fichiers de ce projet se lisent par KLYRA sur ${sur}. Ils s’affichent ici quand elle y est ouverte.`;
 
 export interface Niveau {
   lecture: LecturePoste<NiveauDossier> & { relancer: () => void };
@@ -41,10 +49,14 @@ export interface Niveau {
   actions: ActionMenu[];
 }
 
-/** Un niveau du dossier lu sur le poste. `actif` à faux : rien n'est demandé (onglet Chats affiché). */
+/** Un niveau du dossier lu sur le poste. `actif` à faux : rien n'est demandé (un autre onglet est affiché). */
 export function useNiveau(projetId: string, chemin: string, actif = true): Niveau {
-  const { ouvert, principal } = usePostes();
-  const lecture = useLecturePoste<NiveauDossier>("fichiers.arbre", actif && projetId ? { projetId, chemin } : null);
+  const { principal } = usePostes();
+  const enLigne = !useHorsLigne();
+  const sur = useSupport();
+  const lieu = useLieuActif();
+  const { possible, raison } = useGestePossible({ lecture: true });
+  const lecture = useLecturePoste<NiveauDossier>("fichiers.arbre", actif && projetId ? { projetId, chemin } : null, { horsLigne: !enLigne });
   const { relancer } = lecture;
   const cle = `${projetId}|${chemin}`;
   const lu = lecture.etat === "ok" ? lecture.data : null;
@@ -69,8 +81,20 @@ export function useNiveau(projetId: string, chemin: string, actif = true): Nivea
     relecture,
     relancer,
     actions: [
-      { libelle: "Relire", onChoisir: relancer, desactivee: !ouvert, note: ouvert ? undefined : <NotePoste /> },
-      { libelle: montrerDans(principal?.systeme ?? null), onChoisir: () => undefined, desactivee: true, note: <SurLePoste raison="s’ouvre sur l’écran de l’ordinateur." /> },
+      { libelle: "Relire", icone: "refresh-01", onChoisir: relancer, desactivee: !possible, note: raison },
+      /* Le dossier d'un serveur n'est pas sur cet ordinateur : rien à y montrer. */
+      ...(lieu
+        ? []
+        : [
+            {
+              libelle: montrerDans(principal?.systeme ?? null),
+              icone: "folder-open-01" as const,
+              onChoisir: () => undefined,
+              desactivee: true,
+              note: "S’ouvre sur l’écran de l’ordinateur.",
+              fin: <Etiquette>{`Sur ${sur}`}</Etiquette>,
+            },
+          ]),
     ],
   };
 }
@@ -85,16 +109,15 @@ export function DossierTelephone({ projetId, nomProjet, chemin }: { projetId: st
       <EnteteTelephone
         titre={nom}
         parent={urlDossier(projetId, parentDe(chemin) ?? "")}
-        droite={<BoutonIcone variant="discret" taille="md" libelle="Actions du dossier" onClick={() => setMenu(true)} icone={<Icon name="dot-horizontal" size={24} />} />}
+        droite={<BoutonIcone variant="discret" className="size-11" libelle="Actions du dossier" aria-haspopup="dialog" onClick={() => setMenu(true)} icone={<Icon name="dot-horizontal" size={24} />} />}
       />
-      <FilAriane projetId={projetId} nomProjet={nomProjet} chemin={chemin} />
-      <ListeDossier projetId={projetId} niveau={niveau} />
-      {menu ? <MenuFeuille titre={nom} actions={niveau.actions} onFermer={() => setMenu(false)} /> : null}
+      <ListeDossier projetId={projetId} niveau={niveau} tete={<FilAriane projetId={projetId} nomProjet={nomProjet} chemin={chemin} />} />
+      {menu ? <MenuFeuille titre={nom} objet={{ visuel: <TuileIcone icone="folder" grande />, sous: `Dossier de ${nomProjet}` }} actions={niveau.actions} onFermer={() => setMenu(false)} /> : null}
     </div>
   );
 }
 
-/** « DIGITAL-OS › 30_CLIENTS » : défile à l'horizontale, le dernier en gras, chaque segment ramène à son niveau. */
+/** « Menuiserie Arlod › maquettes » : des noms relatifs au projet ; défile à l'horizontale, chaque segment ramène à son niveau. */
 function FilAriane({ projetId, nomProjet, chemin }: { projetId: string; nomProjet: string; chemin: string }) {
   const liste = useRef<HTMLOListElement>(null);
   useEffect(() => {
@@ -102,93 +125,139 @@ function FilAriane({ projetId, nomProjet, chemin }: { projetId: string; nomProje
   }, [chemin]);
   const segments = filAriane(nomProjet, chemin);
   return (
-    <nav aria-label="Chemin du dossier" className="shrink-0 border-b border-bordure-subtile">
-      <ol ref={liste} className="flex items-center overflow-x-auto px-3 whitespace-nowrap [scrollbar-width:none]">
+    <nav aria-label="Chemin du dossier" className="px-4">
+      <ol ref={liste} className="-mx-1.5 flex h-11 items-center overflow-x-auto text-ui whitespace-nowrap [scrollbar-width:none]">
         {segments.map((segment, i) => (
-          <li key={segment.chemin} className="flex shrink-0 items-center">
+          <Fragment key={segment.chemin}>
             {i > 0 ? (
-              <span aria-hidden="true" className="px-0.5 text-ui text-texte-secondaire">
-                ›
-              </span>
+              <li aria-hidden="true" className="flex shrink-0 items-center text-icone-secondaire">
+                <Icon name="chevron-right" size={16} />
+              </li>
             ) : null}
-            {i === segments.length - 1 ? (
-              <span aria-current="page" className="flex min-h-11 items-center px-1 text-ui font-medium text-texte-principal">
-                {segment.nom}
-              </span>
-            ) : (
-              <Link href={urlDossier(projetId, segment.chemin)} className="flex min-h-11 min-w-11 items-center justify-center px-1 text-ui text-texte-secondaire active:bg-fond-survol">
-                {segment.nom}
-              </Link>
-            )}
-          </li>
+            <li className="flex shrink-0 items-center">
+              {i === segments.length - 1 ? (
+                <span aria-current="page" className="px-1.5 font-semibold text-texte-principal">
+                  {segment.nom}
+                </span>
+              ) : (
+                <Link href={urlDossier(projetId, segment.chemin)} className="flex min-h-11 items-center px-1.5 font-medium text-texte-secondaire no-underline active:bg-fond-survol">
+                  {segment.nom}
+                </Link>
+              )}
+            </li>
+          </Fragment>
         ))}
       </ol>
     </nav>
   );
 }
 
-/** Les éléments d'un niveau, dossiers d'abord (l'ordre vient du poste), et ses cinq états. Tirer la liste la relit. */
-export function ListeDossier({ projetId, niveau }: { projetId: string; niveau: Niveau }) {
-  const { ouvert } = usePostes();
-  const tirage = useTirerPourRelire(niveau.relancer, { actif: ouvert, enCours: niveau.relecture });
+/** « Ce dossier n'existe plus » (E6-20) : la raison probable et une sortie claire. La vue gardée n'est pas touchée. */
+function DossierDisparu({ projetId, message }: { projetId: string; message: string }) {
+  const router = useRouter();
+  return (
+    <EtatEcran
+      forme="plein"
+      className="pt-8"
+      erreur
+      icone="help-circle-contained"
+      titre={message.replace(/\.$/, "")}
+      texte="Il a pu être renommé ou déplacé depuis ta dernière visite."
+      action={
+        <Bouton variant="blanc" taille="md" onClick={() => router.push(urlProjet(projetId, "fichiers"))}>
+          Revenir au projet
+        </Bouton>
+      }
+    />
+  );
+}
+
+/** Les éléments d'un niveau, dossiers d'abord (l'ordre vient du poste), et ses états. Tirer la liste la relit. */
+export function ListeDossier({ projetId, niveau, tete }: { projetId: string; niveau: Niveau; tete?: ReactNode }) {
+  const sur = useSupport();
+  const lieu = useLieuActif();
+  const { possible } = useGestePossible({ lecture: true });
+  const tirage = useTirerPourRelire(niveau.relancer, { actif: possible, enCours: niveau.relecture });
   const affiche = niveau.affiche;
-  const vue = affiche ?? (niveau.lecture.etat === "ferme" ? (niveau.lecture.gardee?.data ?? null) : null);
-  const coupure = vue ? texteCoupure(vue) : null;
-  const elements = (n: NiveauDossier) =>
-    n.elements.length === 0 ? (
-      <p className="px-4 pt-8 text-body-s text-texte-principal">Dossier vide</p>
+  const contenu = (n: NiveauDossier) => {
+    const coupure = texteCoupure(n, lieu ? "l’app de bureau" : sur);
+    return n.elements.length === 0 ? (
+      <EtatEcran forme="encadre" icone="folder-open-01" titre="Dossier vide" texte="Ce que tes agents y écriront s’affichera ici." />
     ) : (
-      <ul className="px-4">
-        {n.elements.map((element) => (
-          <LigneElement key={element.chemin} projetId={projetId} element={element} />
-        ))}
-      </ul>
+      <div className="flex flex-col gap-3 px-4">
+        <GroupeListe>
+          {n.elements.map((element) => (
+            <LigneElement key={element.chemin} projetId={projetId} element={element} />
+          ))}
+        </GroupeListe>
+        {coupure ? (
+          <Bandeau icone="list" role="status">
+            {coupure}
+          </Bandeau>
+        ) : null}
+      </div>
     );
+  };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-4" {...tirage.props}>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pb-6" {...tirage.props}>
       {tirage.indicateur}
-      {niveau.relecture ? (
-        <p role="status" className="px-4 pt-1 text-ui-xs text-texte-secondaire">
-          Relecture…
-        </p>
-      ) : null}
-      {affiche ? (
-        elements(affiche)
-      ) : (
-        /* Ordinateur fermé : la vue gardée du niveau (ses liens mènent aux niveaux gardés eux aussi). */
-        <VueLecture lecture={niveau.lecture} ferme={FERME} lignes={6} verrou={false} gestes="Relire">
-          {elements}
-        </VueLecture>
-      )}
-      {coupure ? (
-        <p role="status" className="px-4 pt-3 text-ui-xs text-texte-secondaire">
-          {coupure}
-        </p>
-      ) : null}
+      {tete}
+      <div className={tete ? "pt-1" : "pt-3"}>
+        {affiche ? (
+          contenu(affiche)
+        ) : niveau.lecture.etat === "erreur" && niveau.lecture.code === "introuvable" ? (
+          <DossierDisparu projetId={projetId} message={niveau.lecture.message} />
+        ) : (
+          /* Ordinateur fermé : la vue gardée du niveau. Un dossier ou un fichier jamais lu ici dit pourquoi à son ouverture. */
+          <VueLecture
+            lecture={niveau.lecture}
+            ferme={lieu ? FERME_SERVEUR : FERME}
+            lignes={6}
+            verrou={false}
+            sansRecours
+            gestes="Les fichiers déjà ouverts sur ce téléphone restent lisibles. Relire"
+          >
+            {contenu}
+          </VueLecture>
+        )}
+      </div>
     </div>
   );
 }
 
-/** Une ligne de 48 px. Les marques sont des points pour l'œil, et un texte pour les lecteurs d'écran. */
+/** Une ligne : sa tuile selon le type, son nom, ses marques écrites (plus de points de couleur à deviner). */
 function LigneElement({ projetId, element }: { projetId: string; element: ElementDossier }) {
   const dossier = element.type === "dossier";
+  const cache = estCache(element.nom);
+  const marque = element.modifie ? "Modifié par un agent" : element.contientModifies ? "Contient des fichiers modifiés" : null;
+  const lignes: ReactNode[] = [
+    marque ? (
+      <span key="marque" className="font-medium text-texte-accent">
+        {marque}
+      </span>
+    ) : null,
+    cache ? <span key="cache">{dossier ? "Dossier caché" : "Fichier caché"}</span> : null,
+  ].filter(Boolean);
   return (
-    <li className="border-b border-bordure-subtile last:border-b-0">
-      <Link href={dossier ? urlDossier(projetId, element.chemin) : urlFichier(projetId, element.chemin)} className="flex min-h-12 items-center gap-3 active:bg-fond-survol">
-        <Icon name={dossier ? "folder" : "file-01"} size={20} className={cn("shrink-0", element.modifie ? "text-icone-accent" : "text-icone-secondaire")} />
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-body-s",
-            element.modifie ? "font-medium text-texte-accent" : element.nom.startsWith(".") ? "text-texte-secondaire" : "text-texte-principal",
-          )}
-        >
-          {element.nom}
-        </span>
-        {element.modifie ? <span role="img" aria-label="Modifié par un agent" className="size-2 shrink-0 bg-bleu-k1-500" /> : null}
-        {element.contientModifies ? <span role="img" aria-label="Contient des fichiers modifiés" className="size-2 shrink-0 bg-bleu-k1-200" /> : null}
-        {dossier ? <Icon name="chevron-right" size={16} className="shrink-0 text-icone-secondaire" /> : null}
-      </Link>
-    </li>
+    <LigneListe
+      href={dossier ? urlDossier(projetId, element.chemin) : urlFichier(projetId, element.chemin)}
+      debut={<TuileIcone icone={iconeElement(element)} bleue={element.modifie} />}
+      retrait="tuile"
+      nom={cache ? <span className="text-texte-secondaire">{element.nom}</span> : element.nom}
+      ligne2={
+        lignes.length ? (
+          <>
+            {lignes.map((l, i) => (
+              <Fragment key={i}>
+                {i > 0 ? " · " : null}
+                {l}
+              </Fragment>
+            ))}
+          </>
+        ) : undefined
+      }
+      fin={dossier ? "chevron" : undefined}
+    />
   );
 }

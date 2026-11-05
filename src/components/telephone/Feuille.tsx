@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
+import { LigneChoix } from "./Liste";
+import { PisteInterrupteur } from "./Controles";
 import { marquerFeuille } from "./retour";
 import { mouvementReduit, useZoneVisible, vibrer } from "./zone-visible";
 
@@ -32,6 +34,7 @@ export function Feuille({
   objet,
   onFermer,
   haute = false,
+  bordee = false,
   role = "dialog",
   sansEnTete = false,
   retour,
@@ -45,6 +48,8 @@ export function Feuille({
   objet?: { visuel: ReactNode; sous?: string };
   onFermer: () => void;
   haute?: boolean;
+  /** Un filet sous l'en-tête dès l'ouverture (une feuille haute qui se lit). */
+  bordee?: boolean;
   role?: "dialog" | "alertdialog";
   sansEnTete?: boolean;
   children: ReactNode;
@@ -173,7 +178,7 @@ export function Feuille({
                 className={cn(
                   "flex min-h-[52px] items-center gap-3 py-1 pr-1.5 pl-5 transition-shadow duration-[120ms] ease-sortie",
                   objet && "pt-2 pb-3 pl-4",
-                  defile && "shadow-[inset_0_-1px_0_var(--color-bordure-defaut)]",
+                  (defile || bordee) && "shadow-[inset_0_-1px_0_var(--color-bordure-defaut)]",
                 )}
               >
                 {retour ? <BoutonIcone variant="discret" className="-ml-3 size-11 shrink-0" libelle="Retour" onClick={retour} icone={<Icon name="chevron-left" size={22} />} /> : null}
@@ -239,6 +244,10 @@ export interface ActionMenu {
   sousPage?: boolean;
   /** Ce que donnera ce choix, à droite de la ligne (« Jeu. 5 nov., 09:00 »). */
   valeur?: string;
+  /** Ce qui se pose à droite de la ligne (l'étiquette « Sur ton Mac », P-8). */
+  fin?: ReactNode;
+  /** Un réglage dans le menu : la ligne est un interrupteur, et le menu reste ouvert. */
+  interrupteur?: boolean;
 }
 
 /** Les actions rapides en tête d'un menu (grille de 4, `ActionsRapides` du bureau). */
@@ -331,7 +340,9 @@ function ContenuMenu({ rapides, noteRapides, actions, onConfirmer }: { rapides?:
             <button
               type="button"
               disabled={action.desactivee}
-              onClick={() => (action.confirmation ? onConfirmer(action) : choisir(action))}
+              role={action.interrupteur === undefined ? undefined : "switch"}
+              aria-checked={action.interrupteur}
+              onClick={() => (action.interrupteur !== undefined ? action.onChoisir() : action.confirmation ? onConfirmer(action) : choisir(action))}
               className={cn(
                 "flex min-h-[52px] w-full items-center gap-3.5 px-5 py-1.5 text-left text-body-s transition-colors duration-[120ms] ease-sortie active:bg-fond-survol",
                 action.danger ? "text-texte-erreur" : "text-texte-principal",
@@ -345,6 +356,8 @@ function ContenuMenu({ rapides, noteRapides, actions, onConfirmer }: { rapides?:
               </span>
               {action.valeur ? <span className="shrink-0 text-ui text-texte-secondaire">{action.valeur}</span> : null}
               {action.sousPage || action.chevron ? <Icon name="chevron-right" size={20} className="shrink-0 text-icone-secondaire" /> : null}
+              {action.fin ? <span className="shrink-0">{action.fin}</span> : null}
+              {action.interrupteur !== undefined ? <PisteInterrupteur actif={action.interrupteur} /> : null}
             </button>
           </li>
         ))}
@@ -353,8 +366,73 @@ function ContenuMenu({ rapides, noteRapides, actions, onConfirmer }: { rapides?:
   );
 }
 
-function ContenuConfirmation({ texte, confirmer, onConfirmer }: { texte?: string; confirmer: string; onConfirmer: () => void }) {
+/** Une option d'une feuille de choix : son nom, jamais un identifiant. */
+export interface OptionChoix<T extends string> {
+  value: T;
+  label: string;
+  note?: string;
+  debut?: ReactNode;
+  etiquette?: ReactNode;
+  desactivee?: boolean;
+}
+
+/**
+ * La feuille de choix unique (D-6) : la `ListeDeroulante` du bureau, sur le téléphone. Choisir met la
+ * valeur à jour et ferme la feuille ; rien d'autre n'est enregistré.
+ */
+export function ChoixFeuille<T extends string>({
+  titre,
+  sousTitre,
+  valeur,
+  options,
+  onChoisir,
+  onFermer,
+}: {
+  titre: string;
+  sousTitre?: string;
+  valeur: T;
+  options: OptionChoix<T>[];
+  onChoisir: (valeur: T) => void;
+  onFermer: () => void;
+}) {
+  return (
+    <Feuille titre={titre} sousTitre={sousTitre} onFermer={onFermer} haute={options.length > 10}>
+      <ContenuChoix titre={titre} valeur={valeur} options={options} onChoisir={onChoisir} />
+    </Feuille>
+  );
+}
+
+function ContenuChoix<T extends string>({ titre, valeur, options, onChoisir }: { titre: string; valeur: T; options: OptionChoix<T>[]; onChoisir: (valeur: T) => void }) {
   const fermer = useFermerFeuille();
+  return (
+    <div role="radiogroup" aria-label={titre} className="-mx-4">
+      <ul>
+        {options.map((o) => (
+          <LigneChoix
+            key={o.value}
+            nom={o.label}
+            ligne2={o.note}
+            debut={o.debut}
+            etiquette={o.etiquette}
+            choisie={o.value === valeur}
+            desactivee={o.desactivee}
+            autoFocus={o.value === valeur}
+            onChoisir={() => {
+              onChoisir(o.value);
+              fermer();
+            }}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function ContenuConfirmation({ texte, confirmer, onConfirmer }: { texte?: string; confirmer: string; onConfirmer: () => void }) {
+  const fermer = useFermerFeuille();
+  /* Un menu changé en confirmation dans la même feuille : « Annuler » prend le focus (§ 4.3). */
+  const annuler = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => annuler.current?.focus(), []);
   return (
     <div className="px-1">
       {texte ? <p className="mt-2 text-body-s text-texte-secondaire">{texte}</p> : null}
@@ -370,7 +448,7 @@ function ContenuConfirmation({ texte, confirmer, onConfirmer }: { texte?: string
         >
           {confirmer}
         </Bouton>
-        <Bouton variant="blanc" taille="md" className="w-full" data-autofocus onClick={fermer}>
+        <Bouton ref={annuler} variant="blanc" taille="md" className="w-full" data-autofocus onClick={fermer}>
           Annuler
         </Bouton>
       </div>

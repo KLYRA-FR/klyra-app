@@ -22,6 +22,12 @@ import {
   urlProjet,
   urlRetourFichier,
   vueProjet,
+  compteChats,
+  estCache,
+  iconeElement,
+  libelleModifie,
+  tonStatut,
+  urlFermerFichier,
 } from "./dossiers";
 
 /** Le code de l'erreur levée, ou null si le chemin passe. */
@@ -207,5 +213,56 @@ describe("affichage", () => {
     expect(etatTirage(SEUIL_TIRAGE)).toEqual({ hauteur: SEUIL_TIRAGE, pret: true });
     expect(etatTirage(100).hauteur).toBe(82);
     expect(etatTirage(1000).hauteur).toBe(96);
+  });
+});
+
+describe("lot 6 : onglet Projet, coupure, icônes, dates", () => {
+  test("/projet?id=…&onglet=projet aller et retour", () => {
+    expect(urlProjet("p", "projet")).toBe("/projet?id=p&onglet=projet");
+    expect(urlProjet("p")).toBe("/projet?id=p");
+    expect(vueProjet(new URLSearchParams("id=p&onglet=projet"))).toEqual({ vue: "onglet", onglet: "projet" });
+    expect(vueProjet(new URLSearchParams("id=p&onglet=autre"))).toEqual({ vue: "onglet", onglet: "chats" });
+  });
+
+  test("✕ de la visionneuse : le dossier d'où l'on est parti, malgré les liens suivis", () => {
+    expect(urlFermerFichier("p", "maquettes/palette.json", ["README.md"])).toBe("/projet?id=p&onglet=fichiers");
+    expect(urlFermerFichier("p", "devis/tva.ts", [])).toBe(`/projet?${new URLSearchParams({ id: "p", dossier: "devis" })}`);
+  });
+
+  test("E6-15 : la coupure dit « ton Mac » ; sans total lisible, aucun compte fabriqué", () => {
+    const elements = Array.from({ length: 1000 }, (_, i) => ({ nom: String(i), chemin: String(i), type: "fichier" as const, modifie: false, contientModifies: false }));
+    expect(texteCoupure({ elements, total: 2240 }, "ton Mac")).toBe("Liste coupée : 1 240 autres éléments non affichés. Ouvre le dossier sur ton Mac pour tout voir.".replace("1 240", (1240).toLocaleString("fr-FR")));
+    expect(texteCoupure({ elements, total: 1000 }, "ton Mac")).toBeNull();
+    expect(texteCoupure({ elements }, "ton Mac")).toBe("D’autres éléments ne sont pas affichés. Ouvre le dossier sur ton Mac pour tout voir.");
+    expect(texteCoupure({ elements: elements.slice(0, 3) }, "ton Mac")).toBeNull();
+  });
+
+  test("E6-13 : l'icône suit le type, un élément caché se reconnaît", () => {
+    expect(iconeElement({ nom: "src", type: "dossier" })).toBe("folder");
+    expect(iconeElement({ nom: "a.PNG", type: "fichier" })).toBe("image-01");
+    expect(iconeElement({ nom: "package.json", type: "fichier" })).toBe("file-code");
+    expect(iconeElement({ nom: "README.md", type: "fichier" })).toBe("file-01");
+    expect(iconeElement({ nom: "sans-extension", type: "fichier" })).toBe("file-01");
+    expect(estCache(".gitignore")).toBe(true);
+    expect(estCache("README.md")).toBe(false);
+  });
+
+  test("E6-01 : modifié à, hier, le jour, la date ; rien si elle manque", () => {
+    const m = new Date(2026, 10, 5, 15, 0).getTime();
+    expect(libelleModifie(new Date(2026, 10, 5, 13, 8).toISOString(), m)).toBe("modifié à 13:08");
+    expect(libelleModifie(new Date(2026, 10, 4, 23, 0).toISOString(), m)).toBe("modifié hier");
+    expect(libelleModifie(new Date(2026, 10, 2, 9, 0).toISOString(), m)).toBe("modifié lundi");
+    expect(libelleModifie(new Date(2026, 9, 2, 9, 0).toISOString(), m)).toBe("modifié le 2 oct.");
+    expect(libelleModifie(null, m)).toBeNull();
+    expect(libelleModifie("n’importe quoi", m)).toBeNull();
+  });
+
+  test("E6-01 : les chats comptés en mots, le statut en étiquette", () => {
+    expect(compteChats(0)).toBe("Aucun chat");
+    expect(compteChats(1)).toBe("1 chat");
+    expect(compteChats(2)).toBe("2 chats");
+    expect(tonStatut("en-cours")).toBe("bleue");
+    expect(tonStatut("en-revue")).toBe("orange");
+    expect(tonStatut("livre")).toBe("neutre");
   });
 });
