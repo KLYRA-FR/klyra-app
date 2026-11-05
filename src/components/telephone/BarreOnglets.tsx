@@ -10,6 +10,8 @@ import { cn } from "@/lib/cn";
 import { useCompte } from "@/lib/compte";
 import { nombreATraiter } from "@/lib/telephone/chats";
 import { ongletDe } from "@/lib/telephone/retour";
+import { nombreAValider } from "@/lib/telephone/tickets";
+import { usePostes } from "./poste";
 
 const ONGLETS: { href: string; label: string; icon: IconName }[] = [
   { href: "/chats", label: "Chats", icon: "message-square" },
@@ -40,6 +42,9 @@ export function BarreOnglets({ vertical = false }: { vertical?: boolean }) {
   const { etat } = useCompte();
   const conversations = useQuery(api.conversationsCompte.liste, etat === "connecte" ? {} : "skip");
   const attente = nombreATraiter(conversations ?? []);
+  const { ouvert } = usePostes();
+  /* Le point de Plus : des tickets confirmés à valider (E4-01). Inconnu ou zéro : rien. */
+  const aValider = nombreAValider(conversations, ouvert) ?? 0;
 
   return (
     <nav
@@ -60,7 +65,7 @@ export function BarreOnglets({ vertical = false }: { vertical?: boolean }) {
               <Link
                 href={onglet.href}
                 aria-current={selectionne ? "page" : undefined}
-                aria-label={compte ? `${onglet.label}, ${compte} à traiter` : undefined}
+                aria-label={compte ? `${onglet.label}, ${compte} à traiter` : onglet.href === "/plus" && aValider > 0 ? `${onglet.label}, ${aValider} à valider` : undefined}
                 onClick={(e) => {
                   if (selectionne && pathname === onglet.href) {
                     e.preventDefault();
@@ -93,6 +98,9 @@ export function BarreOnglets({ vertical = false }: { vertical?: boolean }) {
                     >
                       {compte}
                     </span>
+                  ) : null}
+                  {onglet.href === "/plus" && aValider > 0 ? (
+                    <span aria-hidden="true" className={cn("absolute size-2 rounded-full", vertical ? "-top-0.5 -right-1 bg-fond-surface" : "top-0 left-[38px] bg-fond-accent shadow-[0_0_0_2px_var(--color-fond-surface)]")} />
                   ) : null}
                 </span>
                 {onglet.label}

@@ -1,11 +1,13 @@
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../../convex/_generated/api";
-import type { Fil } from "@/types/domain";
-import type { ConversationLue } from "./chats";
+import { tableauTickets, FILTRES_PAR_DEFAUT, etapeDeReprise, type ColonneTicket } from "@/lib/tickets";
+import type { Chat, Fil } from "@/types/domain";
+import { activiteDe, tachesDe, type ConversationLue } from "./chats";
 
 /**
- * Les demandes du téléphone sur les tickets, sans React (contrat des lots 3 et 4). L'état confirmé vient
- * de la copie du compte ; une demande en cours se montre à part (règle 2).
+ * Tickets sur le téléphone (lot 4), sans React. Un ticket reste un fil : les étapes, le tri et les
+ * terminés sont ceux du bureau (`tableauTickets`), lus sur la copie du compte. L'état confirmé vient de
+ * cette copie ; une demande en cours se montre à part (contrat des lots 3 et 4, règle 2).
  */
 
 export type DemandeLue = FunctionReturnType<typeof api.ticketsCompte.mesDemandes>[number];
@@ -51,6 +53,105 @@ export function lireTicket(json: string | null | undefined): TicketCopie | null 
   } catch {
     return null;
   }
+}
+
+export interface LigneTicket {
+  conversation: ConversationLue;
+  ticket: TicketCopie;
+  colonne: ColonneTicket;
+  roleId: string;
+}
+
+/** L'ordre des sections sur le téléphone : la prochaine décision d'abord. */
+export const COLONNES_TELEPHONE: ColonneTicket[] = ["a-valider", "bloque", "en-cours", "a-faire", "termine"];
+
+export const NOMS_COLONNES: Record<ColonneTicket, string> = {
+  "a-valider": "À valider",
+  bloque: "Bloqué",
+  "en-cours": "En cours",
+  "a-faire": "À faire",
+  termine: "Terminé",
+};
+
+/** Un travail se dit en cours sur un signe frais de l'ordinateur ; sinon l'étape confirmée reste telle quelle (E4-16). */
+const travaille = (c: ConversationLue, posteOuvert: boolean) => {
+  const a = activiteDe(c);
+  return posteOuvert && !!a && a.etat !== "question";
+};
+
+/** Le tableau du bureau, sur la copie du compte. */
+export function tableauTelephone(
+  conversations: ConversationLue[],
+  { posteOuvert, maintenant, tousTermines = false }: { posteOuvert: boolean; maintenant: Date; tousTermines?: boolean },
+): { colonnes: Record<ColonneTicket, LigneTicket[]>; termines: number } {
+  const parId = new Map<string, { conversation: ConversationLue; ticket: TicketCopie }>();
+  const chats: Chat[] = [];
+  for (const c of conversations) {
+    const ticket = lireTicket(c.ticket);
+    if (!ticket) continue;
+    parId.set(c.origine, { conversation: c, ticket });
+    chats.push({
+      id: c.origine,
+      updatedAt: ticket.fermeLe ?? c.misAJour,
+      fil: {
+        roleId: c.roleIds[0] ?? "principal",
+        statut: ticket.statut,
+        creeLe: ticket.creeLe,
+        /* Une copie sans étape (fil d'avant les tickets) : la même reprise qu'au bureau. */
+        etape: ticket.etape ?? etapeDeReprise(ticket.aReponse),
+        priorite: ticket.priorite,
+        echeance: ticket.echeance,
+        fermeLe: ticket.fermeLe,
+      },
+    } as unknown as Chat);
+  }
+  const estEnTravail = (id: string) => {
+    const lu = parId.get(id);
+    return !!lu && travaille(lu.conversation, posteOuvert);
+  };
+  const { colonnes, termines } = tableauTickets(chats, estEnTravail, FILTRES_PAR_DEFAUT, maintenant, tousTermines);
+  const sortie = Object.fromEntries(
+    COLONNES_TELEPHONE.map((col) => [
+      col,
+      colonnes[col].map((chat): LigneTicket => {
+        const lu = parId.get(chat.id)!;
+        return { conversation: lu.conversation, ticket: lu.ticket, colonne: col, roleId: chat.fil.roleId };
+      }),
+    ]),
+  ) as Record<ColonneTicket, LigneTicket[]>;
+  return { colonnes: sortie, termines };
+}
+
+/** Ce que l'écran peut conclure (contrat, règle 6) : un vrai vide demande un poste qui connaît le contrat. */
+export function disponibilite(conversations: ConversationLue[] | undefined): "chargement" | "compatible" | "ancien" | "rien" {
+  if (conversations === undefined) return "chargement";
+  if (conversations.length === 0) return "rien";
+  return conversations.some((c) => (c.contratTickets ?? 0) >= 1) ? "compatible" : "ancien";
+}
+
+/** Les tickets confirmés à valider : le compte de Plus et son point. Inconnu si le contrat manque : rien, pas zéro. */
+export function nombreAValider(conversations: ConversationLue[] | undefined, posteOuvert: boolean): number | null {
+  if (disponibilite(conversations) !== "compatible") return null;
+  return tableauTelephone(conversations ?? [], { posteOuvert, maintenant: new Date() }).colonnes["a-valider"].length;
+}
+
+/** La demande en cours sur ce fil, la plus récente : ni confirmée ni échouée. */
+export function demandeEnCours(demandes: DemandeLue[] | undefined, origine: string): DemandeLue | null {
+  return (demandes ?? []).find((d) => d.conversationOrigine === origine && (d.etat === "en-attente" || d.etat === "traitement")) ?? null;
+}
+
+const VERBES: Record<DemandeLue["type"], string> = {
+  fermer: "Fermeture demandée",
+  supprimer: "Suppression demandée",
+  rouvrir: "Réouverture demandée",
+  priorite: "Priorité demandée",
+  etape: "Retour à faire demandé",
+  confier: "Attribution demandée",
+};
+
+/** « Fermeture demandée · attend ton Mac » : jamais présenté comme fait (E4-16). */
+export function texteAttente(demande: DemandeLue, sur: string, posteOuvert: boolean): string {
+  return posteOuvert ? `${VERBES[demande.type]}…` : `${VERBES[demande.type]} · attend ${sur}`;
 }
 
 export interface ResultatDemande {
@@ -105,6 +206,12 @@ export function texteResultat(demande: Pick<DemandeLue, "type" | "etat" | "resul
   }
 }
 
+/** La progression d'un ticket : ses tâches faites sur le total, si elle est connue. */
+export function progression(c: ConversationLue): { faites: number; total: number } | null {
+  const taches = tachesDe(c);
+  return taches.length ? { faites: taches.filter((t) => t.statut === "fait").length, total: taches.length } : null;
+}
+
 export type ConfieA = { roleId: string; fil: string | null; etat: "attente" | "confie" | "fait" | "a-reessayer" };
 
 /** Le temps pour la copie d'un fil tout juste créé d'arriver dans le compte. Au-delà, un fil absent a été retiré. */
@@ -141,4 +248,36 @@ export function confieA(rappel: { source: "compte" | "poste"; id: string }, conv
   }
   const ferme = dessus[0];
   return ferme ? { roleId: ferme.c.roleIds[0] ?? "principal", fil: ferme.c.origine, etat: "fait" } : null;
+}
+
+/** « 13:08 », « hier, 17:20 », « 4 nov., 18:42 » : un moment passé, l'heure toujours écrite. */
+export function libelleMoment(date: string | number, maintenant: Date = new Date()): string {
+  const d = new Date(date);
+  const heure = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const jour = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const ecart = Math.round((jour(maintenant) - jour(d)) / 86_400_000);
+  if (ecart <= 0) return heure;
+  if (ecart === 1) return `hier, ${heure}`;
+  return `${d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}, ${heure}`;
+}
+
+/** Au-delà, la dernière réponse s'annonce coupée et mène au fil : un extrait ne passe pas pour le résultat entier (E4-05). */
+const EXTRAIT_MAX = 600;
+
+export function extraitBorne(texte: string): { texte: string; coupe: boolean } {
+  const propre = texte.replace(/[*`#>_]/g, "").trim();
+  return propre.length <= EXTRAIT_MAX ? { texte: propre, coupe: false } : { texte: `${propre.slice(0, EXTRAIT_MAX).trimEnd()}…`, coupe: true };
+}
+
+/** La dernière demande finie sur ce fil, si elle dit une erreur : le détail la montre et l'action reste à reprendre. */
+export function derniereErreur(demandes: DemandeLue[] | undefined, origine: string, titre: string): string | null {
+  const derniere = (demandes ?? []).find((d) => d.conversationOrigine === origine);
+  if (!derniere) return null;
+  const resultat = texteResultat(derniere, titre);
+  return resultat?.erreur ? resultat.texte : null;
+}
+
+/** Une demande Confier sur ce fil attend, ou vient d'être confirmée : sa copie arrive, ce n'est pas un ticket perdu. */
+export function ticketAttendu(demandes: DemandeLue[] | undefined, origine: string, maintenant: number = Date.now()): boolean {
+  return (demandes ?? []).some((d) => d.type === "confier" && d.conversationOrigine === origine && (d.etat === "en-attente" || d.etat === "traitement" || copieAttendue(d, maintenant)));
 }

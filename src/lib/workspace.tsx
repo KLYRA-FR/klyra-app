@@ -28,6 +28,7 @@ import { aReprendre, changerDeMoteur, fournisseur, limiterReprise, moteurDe, mot
 import { COMMANDE_RESUME_AUTO, estAvantDepart, estCommandeCompacter, formaterJetons, nouvelleMesure, peutRepartir, repartirAZero, resumeAvantEnvoi, resumePause, viderConversation } from "@/lib/contexte";
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
+import { notificationDeFin } from "@/lib/tickets-demandes";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import { creerOutilsWorkflows } from "@/lib/workflows/outils-agents";
 import { extraitMarkdown } from "@/lib/apercu/extrait";
@@ -1063,7 +1064,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     const corps = extrait || (ok ? "Sa réponse t’attend." : (message?.erreur ?? ""));
     void notifier(titre, corps, chatId, ok ? "agentFini" : "agentErreur");
     /* Le téléphone aussi, si la fenêtre n'a pas le focus (spec mobile § 8). */
-    pousserAuTelephone({ evenement: ok ? "agentFini" : "agentErreur", titre, corps, lien: lienMessage(chatId, messageId) });
+    pousserAuTelephone(notificationDeFin(stateRef.current.chats.find((c) => c.id === chatId), { ok, titre, corps, lien: lienMessage(chatId, messageId) }));
     return true;
   };
 

@@ -22,6 +22,7 @@ import { FilTelephone } from "./FilTelephone";
 import { PlanningTelephone } from "./PlanningTelephone";
 import { ServeursTelephone } from "./ServeursTelephone";
 import { SuiviDemandesTickets } from "./DemandesTickets";
+import { TicketsTelephone } from "./TicketsTelephone";
 import Image from "next/image";
 import { lienValable } from "../../../convex/model/push";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
@@ -44,17 +45,7 @@ function ecran(pathname: string): ReactNode {
   if (pathname === "/routines") return <AutomatisationsTelephone />;
   if (pathname === "/artefacts") return <ArtefactsTelephone />;
   if (pathname === "/projet" || pathname === "/fichiers") return <ProjetTelephone />;
-  /* C-3 : plus d'impasse sans retour. Tickets arrive au téléphone au lot 4 de la refonte. */
-  if (pathname === "/tickets") {
-    return (
-      <EcranPoste
-        titre="Tickets"
-        icone="list"
-        phrase={(sur) => `les tickets s’utilisent sur ${sur}`}
-        raison="Leur suivi depuis ce téléphone arrive dans une prochaine version de KLYRA."
-      />
-    );
-  }
+  if (pathname === "/tickets") return <TicketsTelephone />;
   if (pathname === "/marketplace") {
     return (
       <EcranPoste

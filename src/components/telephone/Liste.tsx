@@ -14,13 +14,13 @@ import { useAppuiLong } from "./Feuille";
  */
 
 /** En-tête de section : titre, compte, lien facultatif à droite (« Tout voir › », cible 44). */
-export function SectionListe({ titre, compte, lien, children, className }: { titre: string; compte?: number; lien?: { libelle: string; href: string }; children: ReactNode; className?: string }) {
+export function SectionListe({ titre, compte, compteAccent = false, lien, children, className }: { titre: string; compte?: number; compteAccent?: boolean; lien?: { libelle: string; href: string }; children: ReactNode; className?: string }) {
   return (
     <section aria-label={titre} className={className}>
       <div className="flex items-baseline gap-1.5 px-1 pb-2">
         <h2 className="text-ui font-semibold text-texte-principal">
           {titre}
-          {compte !== undefined ? <span className="ml-1.5 font-normal text-texte-secondaire">{compte}</span> : null}
+          {compte !== undefined ? <span className={cn("ml-1.5", compteAccent ? "font-semibold text-texte-accent" : "font-normal text-texte-secondaire")}>{compte}</span> : null}
         </h2>
         {lien ? (
           <Link href={lien.href} className="relative ml-auto inline-flex items-center gap-0.5 text-ui font-medium text-texte-secondaire after:absolute after:-inset-x-2 after:-inset-y-3.5">

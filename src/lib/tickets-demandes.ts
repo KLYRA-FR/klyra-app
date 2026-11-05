@@ -40,3 +40,13 @@ export function decisionDemande(fil: Fil, demande: DemandeLue, { travaille, aRep
       return { conflit: "demande-invalide" };
   }
 }
+
+/**
+ * La notification de fin de réponse, telle qu'elle part au téléphone. Un fil qui passe à valider se dit
+ * à ce nom, et le toucher ouvre le ticket (E4-19) ; le reste ne change pas. Une par fin de réponse, comme avant.
+ */
+export function notificationDeFin(chat: { id: string; title: string; fil?: Fil } | undefined, fin: { ok: boolean; titre: string; corps: string; lien: string }): { evenement: "agentFini" | "agentErreur"; titre: string; corps: string; lien: string } {
+  const evenement = fin.ok ? "agentFini" : "agentErreur";
+  if (!fin.ok || !chat?.fil || chat.fil.statut !== "ouvert" || chat.fil.etapePosee) return { evenement, titre: fin.titre, corps: fin.corps, lien: fin.lien };
+  return { evenement, titre: `À valider : ${chat.title}`, corps: `${fin.titre}. ${fin.corps}`, lien: `/tickets?id=${encodeURIComponent(chat.id)}` };
+}
