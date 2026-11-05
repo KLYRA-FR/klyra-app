@@ -15,7 +15,7 @@ import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { bandeauComposeur, majuscule } from "@/lib/poste-texte";
 import { fournisseur, nomEffort, PAR_DEFAUT, type IdFournisseur } from "@/lib/fournisseurs";
 import type { EtatMoteur } from "@/lib/moteurs";
-import { lieuDeHote, lireIdDirect, nomLieu, useServeursRelies } from "@/lib/lieux";
+import { lieuDeHote, lireIdDirect } from "@/lib/lieux";
 import { surRepondre } from "@/lib/repondre";
 import { jetonAppareil, lireEquipeServeur } from "@/lib/serveur-vps";
 import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skills";
@@ -329,7 +329,6 @@ export function ComposeurFil({
   const postesOuverts = [...(postes ?? [])].sort((a, b) => b.dernierSignal - a.dernierSignal);
   const posteVise = postesOuverts[0];
   /* La destination est celle de la conversation, indépendamment des ordinateurs ouverts (`envoi.ts`). */
-  const serveurs = useServeursRelies();
   /* Une conversation directe pas encore copiée dans le compte : son id dit son serveur. */
   const hote = lireIdDirect(origine)?.hote;
   const lieu = conversation ? (conversation.lieu ?? null) : hote ? lieuDeHote(hote) : null;
@@ -342,7 +341,7 @@ export function ComposeurFil({
   const voie = voieEnvoi({ lieu, jeton: lieu ? jetonAppareil(lieu) : null });
   const bandeau = directVps
     ? voie === "vps"
-      ? `Ton message part directement à ${nomLieu(lieu, serveurs)}.`
+      ? null
       : "Ce téléphone n’est plus relié à ce VPS : relie-le dans Plus › Serveurs."
     : ouvert ? null : bandeauComposeur(principal);
   /* Le destinataire effectif : le choix explicite, sinon la première mention reconnue, sinon l'assistant (E2-33). */
@@ -589,7 +588,6 @@ export function ComposeurFil({
           <div className="flex items-center gap-0.5">
             <BoutonIcone variant="discret" className="size-11 shrink-0" libelle="Joindre" aria-haspopup="dialog" icone={<Icon name="plus-01" size={22} />} onClick={() => setFeuille("joindre")} />
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1 pr-1 [scrollbar-width:none]">
-              {!choixDestinataire ? <span className={PUCE} aria-label={`Agent : ${nom(agentAffiche)}`}><Icon name="user-profile-01" size={16} className="text-icone-secondaire" />{nom(agentAffiche)}</span> : null}
               {choixDestinataire ? (
                 <>
                   <button type="button" className={PUCE} aria-haspopup="dialog" aria-label={`Destinataire : ${nom(effectif)}`} onClick={() => setFeuille("destinataire")}>
