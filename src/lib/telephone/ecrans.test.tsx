@@ -54,38 +54,73 @@ beforeEach(() => {
   simule.lecture = { etat: "attente", lent: false };
   simule.requetes = {
     "conversationsCompte:projets": [
-      { origine: "site", nom: "Site", accroche: "Refonte du site", statut: "en-revue", epingle: false },
-      { origine: "digital-os", nom: "DIGITAL-OS", accroche: "", statut: "en-cours", epingle: true },
+      { origine: "site", nom: "Site", accroche: "Refonte du site", statut: "en-revue", epingle: false, misAJour: null },
+      { origine: "digital-os", nom: "DIGITAL-OS", accroche: "", statut: "en-cours", epingle: true, misAJour: null },
     ],
     "conversationsCompte:liste": [
-      { origine: "c1", titre: "Hero", projetId: "site", misAJour: "2026-11-01", epingleLe: null, extrait: "Fait." },
-      { origine: "c2", titre: "Offres", projetId: "site", misAJour: "2026-11-02", epingleLe: null, extrait: "" },
-      { origine: "c3", titre: "Ailleurs", projetId: null, misAJour: "2026-11-02", epingleLe: null, extrait: "" },
+      { origine: "c1", titre: "Hero", projetId: "site", roleIds: ["dev"], misAJour: "2026-11-01", epingleLe: null, extrait: "Fait." },
+      { origine: "c2", titre: "Offres", projetId: "site", roleIds: ["principal"], misAJour: "2026-11-02", epingleLe: null, extrait: "" },
+      { origine: "c3", titre: "Ailleurs", projetId: null, roleIds: [], misAJour: "2026-11-02", epingleLe: null, extrait: "" },
     ],
   };
 });
 
 describe("T-10 et T-11", () => {
-  test("une colonne : épinglé d'abord, statut et chats ; les gestes du dossier restent sur l'ordinateur", () => {
+  test("E6-01 : groupes Épinglés puis Projets, statut, chats ; Nouveau projet reste sur l'ordinateur", () => {
     const html = renderToStaticMarkup(<ProjetsTelephone />);
     const lu = texte(html);
-    expect(lu.indexOf("DIGITAL-OS")).toBeLessThan(lu.indexOf("Site"));
-    expect(lu).toContain("En revue · 2 chats");
-    expect(lu).toContain("En cours · 0 chat");
-    expect(lu).toContain("Nouveau projet Sur ton Mac : le dossier d’un projet se choisit sur l’ordinateur.");
+    expect(lu).toContain("2 projets sur ton Mac");
+    expect(lu.indexOf("Épinglés 1")).toBeLessThan(lu.indexOf("DIGITAL-OS"));
+    expect(lu.indexOf("DIGITAL-OS")).toBeLessThan(lu.indexOf("Projets 1"));
+    expect(lu).toContain("Site En revue Refonte du site 2 chats");
+    expect(lu).toContain("DIGITAL-OS En cours Aucun chat");
+    expect(lu).toContain("Actions pour Site");
+    expect(lu).toContain("Nouveau projet Sur ton Mac Le dossier d’un projet se choisit sur l’ordinateur.");
     expect(html).toContain('href="/projet?id=site"');
   });
 
-  test("aucun projet : « Ajoute un projet sur ton Mac »", () => {
+  test("E6-01 : la date de modification vient de la carte ; absente, rien n'est inventé", () => {
+    const lu = new Date();
+    lu.setHours(13, 8, 0, 0);
+    simule.requetes["conversationsCompte:projets"] = [{ origine: "site", nom: "Site", accroche: "", statut: "livre", epingle: false, misAJour: lu.toISOString() }];
+    expect(texte(renderToStaticMarkup(<ProjetsTelephone />))).toContain("2 chats · modifié à 13:08");
+  });
+
+  test("E6-01 : conversations pas encore lues, pas de faux zéro", () => {
+    delete simule.requetes["conversationsCompte:liste"];
+    const lu = texte(renderToStaticMarkup(<ProjetsTelephone />));
+    expect(lu).toContain("Site En revue Refonte du site");
+    expect(lu).not.toContain("Aucun chat");
+  });
+
+  test("E6-04 : le compte est lu et vide : où en créer un, sans bouton", () => {
     simule.requetes["conversationsCompte:projets"] = [];
-    expect(texte(renderToStaticMarkup(<ProjetsTelephone />))).toContain("Ajoute un projet sur ton Mac");
+    const html = renderToStaticMarkup(<ProjetsTelephone />);
+    expect(texte(html)).toContain("Aucun projet pour l’instant Un projet se crée sur ton Mac : dans KLYRA, Projets › Nouveau projet, choisis son dossier.");
+    expect(html).not.toContain("Nouveau projet Sur ton Mac");
+  });
+
+  test("E6-03 : compte pas encore lu : ni « aucun projet », ni demande à l'ordinateur", () => {
+    delete simule.requetes["conversationsCompte:projets"];
+    const lu = texte(renderToStaticMarkup(<ProjetsTelephone />));
+    expect(lu).not.toContain("Aucun projet");
+    expect(lu).not.toContain("Demande à");
+  });
+
+  test("E6-07 : aucun chat, l'entrée reste et l'état explique, sans second bouton", () => {
+    simule.params = new URLSearchParams("id=digital-os");
+    const html = renderToStaticMarkup(<ProjetTelephone />);
+    expect(texte(html)).toContain("Chats 0");
+    expect(texte(html)).toContain("Aucun chat dans ce projet Un chat ouvert ici donne à l’agent le dossier du projet.");
+    expect(html.match(/nouveau=digital-os/g)).toHaveLength(1);
   });
 
   test("onglet Chats : les chats du projet et « Nouveau chat dans {nom}… »", () => {
     simule.params = new URLSearchParams("id=site");
     const html = renderToStaticMarkup(<ProjetTelephone />);
     const lu = texte(html);
-    expect(lu).toContain("Chats du projet");
+    expect(lu).toContain("Chats 2 Fichiers Projet");
+    expect(lu).toContain("Chats du projet 2");
     expect(lu.indexOf("Offres")).toBeLessThan(lu.indexOf("Hero"));
     expect(lu).not.toContain("Ailleurs");
     expect(lu).toContain("Nouveau chat dans Site…");
@@ -98,8 +133,9 @@ describe("T-10 et T-11", () => {
     simule.ouvert = false;
     simule.lecture = { etat: "ferme", gardee: null };
     const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
-    expect(lu).toContain("Ton Mac est fermé Les fichiers de ce projet sont sur ton Mac. Ils s’affichent quand KLYRA y est ouverte.");
-    expect(lu).toContain("Tu peux quand même écrire à un agent");
+    expect(lu).toContain("Ton Mac est fermé Les fichiers de ce projet sont sur ton Mac. Ils s’affichent ici quand KLYRA y est ouverte.");
+    /* E6-18 : les chats du projet restent à côté : pas de carte « Écrire à un agent » de plus. */
+    expect(lu).not.toContain("Tu peux quand même écrire à un agent");
   });
 
   test("onglet Fichiers, aucun ordinateur relié : P-13, jamais « fermé » (C-1a)", () => {
@@ -123,7 +159,7 @@ describe("T-10 et T-11", () => {
     const html = renderToStaticMarkup(<ProjetTelephone />);
     expect(texte(html)).toContain("Vue à 18:42 · ton Mac est fermé");
     expect(texte(html)).toContain("devis.md");
-    expect(texte(html)).toContain("Relire : possible quand ton Mac est ouvert.");
+    expect(texte(html)).toContain("Les fichiers déjà ouverts sur ce téléphone restent lisibles. Relire : possible quand ton Mac est ouvert.");
     expect(texte(html)).not.toContain("Ton Mac est fermé Les fichiers");
   });
 });
@@ -145,20 +181,21 @@ describe("T-12", () => {
     expect(html).toMatch(/aria-current="page"[^>]*>30_CLIENTS</);
     expect(html).toContain('href="/projet?id=digital-os&amp;dossier=30_CLIENTS%2FCL-0002-AIR-CLOUD"');
     expect(html).toContain('href="/projet?id=digital-os&amp;fichier=30_CLIENTS%2Findex.csv"');
-    expect(html).toContain('aria-label="Contient des fichiers modifiés"');
-    expect(html).toContain('aria-label="Modifié par un agent"');
-    expect(texte(html)).toContain("Liste coupée : 1 200 autres éléments non affichés. Ouvre le dossier sur l’ordinateur pour tout voir.");
+    /* Les marques sont écrites, plus de points de couleur à deviner. */
+    expect(texte(html)).toContain("CL-0002-AIR-CLOUD Contient des fichiers modifiés");
+    expect(texte(html)).toContain("index.csv Modifié par un agent");
+    expect(texte(html)).toContain("Liste coupée : 1 200 autres éléments non affichés. Ouvre le dossier sur ton Mac pour tout voir.");
   });
 
   test("dossier vide, sans réponse, dossier disparu", () => {
     simule.lecture = { etat: "ok", data: { total: 0, elements: [] } };
-    expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain("Dossier vide");
+    expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain("Dossier vide Ce que tes agents y écriront s’affichera ici.");
     simule.lecture = { etat: "delai" };
     expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain(
       "Ton Mac ne répond pas KLYRA y est ouverte, mais la réponse n’est pas venue. L’ordinateur est peut-être en veille. Réessayer",
     );
     simule.lecture = { etat: "erreur", code: "introuvable", message: "Ce dossier n’existe plus sur ton Mac." };
-    expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain("Ce dossier n’existe plus sur ton Mac.");
+    expect(texte(renderToStaticMarkup(<DossierTelephone projetId="p" nomProjet="P" chemin="a" />))).toContain("Ce dossier n’existe plus sur ton Mac Il a pu être renommé ou déplacé depuis ta dernière visite. Revenir au projet");
   });
 });
 
@@ -185,12 +222,43 @@ describe("T-13", () => {
     expect(texte(html)).not.toContain("Aperçu");
   });
 
+  test("E6-27 : trop lourd, la phrase du bureau et la limite", () => {
+    simule.lecture = lu({ type: "autre", taille: 2_500_000, raison: "Fichier trop lourd pour l’aperçu." });
+    const html = texte(renderToStaticMarkup(<VisionneuseTelephone projetId="d" nomProjet="D" chemin="devis/export.csv" ancre={null} retour={[]} />));
+    expect(html).toContain("Fichier trop lourd pour l’aperçu Au-delà de 1,5 Mo de texte (15 Mo pour une image), il ne passe pas par le téléphone. Ouvrir sur ton Mac");
+  });
+
+  test("E6-25 : arrivé par un lien : « Revenir à » et Aperçu / Source", () => {
+    simule.lecture = lu({ type: "texte", texte: JSON.stringify({ nom: "x".repeat(220), a: 1 }), taille: 240 });
+    const html = texte(renderToStaticMarkup(<VisionneuseTelephone projetId="d" nomProjet="D" chemin="maquettes/palette.json" ancre={null} retour={["README.md"]} />));
+    expect(html).toContain("Revenir à README.md");
+    expect(html).toContain("Aperçu Source");
+  });
+
+  test("E6-30 : poste fermé, le fichier gardé se lit, daté ; aucun geste vers l'ordinateur n'est actif", () => {
+    simule.ouvert = false;
+    const heure = new Date();
+    heure.setHours(18, 42, 0, 0);
+    simule.lecture = { etat: "ferme", gardee: { lu: heure.getTime(), data: { contenu: { type: "texte", texte: "# Notes", taille: 7 }, surPoste: true } } };
+    const html = renderToStaticMarkup(<VisionneuseTelephone projetId="d" nomProjet="D" chemin="notes.md" ancre={null} retour={[]} />);
+    expect(texte(html)).toContain("Vue à 18:42 · ton Mac est fermé");
+    expect(html).toContain("Notes</h1>");
+  });
+
+  test("E6-31 : poste fermé sans vue gardée : ce qui manque, sans carte de plus", () => {
+    simule.ouvert = false;
+    simule.lecture = { etat: "ferme", gardee: null };
+    const lu2 = texte(renderToStaticMarkup(<VisionneuseTelephone projetId="d" nomProjet="D" chemin="detail.png" ancre={null} retour={[]} />));
+    expect(lu2).toContain("Ton Mac est fermé Ce fichier est sur ton Mac. Il s’affiche ici quand KLYRA y est ouverte.");
+    expect(lu2).not.toContain("Tu peux quand même écrire");
+  });
+
   test("pas d'aperçu : la phrase du bureau et « Ouvrir sur ton Mac » ; un programme reste sur l'ordinateur", () => {
     simule.lecture = lu({ type: "autre", taille: 2_000_000, raison: "Pas d’aperçu pour ce type de fichier." });
     const pdf = texte(renderToStaticMarkup(<VisionneuseTelephone projetId="d" nomProjet="D" chemin="devis.pdf" ancre={null} retour={[]} />));
-    expect(pdf).toContain("Pas d’aperçu pour ce type de fichier. Ouvrir sur ton Mac");
+    expect(pdf).toContain("Pas d’aperçu pour ce type de fichier Un PDF se lit sur l’ordinateur. Ouvrir sur ton Mac");
     const programme = texte(renderToStaticMarkup(<VisionneuseTelephone projetId="d" nomProjet="D" chemin="outil.command" ancre={null} retour={[]} />));
-    expect(programme).toContain("Sur ton Mac : ce type de fichier ne s’ouvre que devant l’ordinateur.");
+    expect(programme).toContain("Ce type de fichier ne s’ouvre que devant l’ordinateur.");
   });
 
   test("poste fermé : P-6 ; demande en cours : P-9", () => {
@@ -200,5 +268,105 @@ describe("T-13", () => {
     simule.ouvert = true;
     simule.lecture = { etat: "attente", lent: true };
     expect(texte(renderToStaticMarkup(<VisionneuseTelephone projetId="d" nomProjet="D" chemin="a.md" ancre={null} retour={[]} />))).toContain("Demande à ton Mac…");
+  });
+});
+
+describe("E6-08 à E6-12 : la fiche du projet", () => {
+  const travail = {
+    cle: "0",
+    titre: "Arrondi de la TVA",
+    statut: "Bloqué",
+    ton: "orange",
+    agent: "Léon",
+    echeance: null,
+    derniereNouvelle: null,
+    fini: false,
+    cout: null,
+    alerte: "Sans nouvelles depuis 2 h.",
+    filId: "c-tva",
+    suivi: [],
+  };
+  const fiche = {
+    brief: "Refaire l’espace client.",
+    agents: [{ id: "dev", nom: "Léon", role: "Développeur" }],
+    travaux: { etat: "ok", liste: [travail], coupes: 0 },
+    surPoste: true,
+  };
+
+  beforeEach(() => {
+    simule.params = new URLSearchParams("id=site&onglet=projet");
+  });
+
+  test("E6-08 : carte du compte, brief, agents, travaux, puis ce qui reste sur l'ordinateur ; aucun identifiant", () => {
+    simule.lecture = { etat: "ok", data: fiche };
+    const html = renderToStaticMarkup(<ProjetTelephone />);
+    const lu = texte(html);
+    expect(lu).toContain("En revue Site · Refonte du site");
+    expect(lu).toContain("Refaire l’espace client.");
+    expect(lu).toContain("Travaux 1");
+    expect(lu).toContain("Arrondi de la TVA Bloqué Léon · à surveiller : sans nouvelles depuis 2 h.");
+    expect(lu).toContain("Consignes des agents Sur ton Mac");
+    expect(lu).not.toContain("c-tva");
+    expect(html).toContain('href="/equipe?agent=dev"');
+  });
+
+  test("E6-08 : sans brief, on le dit sans en inventer un", () => {
+    simule.lecture = { etat: "ok", data: { ...fiche, brief: "" } };
+    expect(texte(renderToStaticMarkup(<ProjetTelephone />))).toContain("Aucun brief renseigné");
+  });
+
+  test("§ 2 : un journal illisible est une section indisponible, jamais « aucun travail »", () => {
+    simule.lecture = { etat: "ok", data: { ...fiche, travaux: { etat: "indisponible", raison: "Le journal des travaux n’a pas pu être lu sur ton Mac." } } };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu).toContain("Le journal des travaux n’a pas pu être lu sur ton Mac.");
+    expect(lu).not.toContain("Aucun travail");
+    expect(lu).not.toContain("Travaux 0");
+  });
+
+  test("un journal vraiment vide le dit, seulement après une lecture réussie", () => {
+    simule.lecture = { etat: "ok", data: { ...fiche, travaux: { etat: "ok", liste: [], coupes: 0 } } };
+    expect(texte(renderToStaticMarkup(<ProjetTelephone />))).toContain("Aucun travail enregistré");
+  });
+
+  test("E6-09 : poste fermé, vue gardée d'abord, compte au-dessus du reste, lecture seule dite", () => {
+    simule.ouvert = false;
+    const heure = new Date();
+    heure.setHours(18, 42, 0, 0);
+    simule.lecture = { etat: "ferme", gardee: { lu: heure.getTime(), data: fiche } };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu.indexOf("Vue à 18:42")).toBeLessThan(lu.indexOf("Refaire l’espace client."));
+    expect(lu).toContain("Modifier le projet : possible quand ton Mac est ouvert.");
+  });
+
+  test("E6-10 : la carte du compte tout de suite, puis « Demande à ton Mac… » pour le reste", () => {
+    simule.lecture = { etat: "attente", lent: true };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu).toContain("Site · Refonte du site");
+    expect(lu).toContain("Demande à ton Mac…");
+    expect(lu).not.toContain("Aucun");
+  });
+
+  test("poste fermé sans vue gardée : la carte du compte reste, ni brief ni travaux inventés", () => {
+    simule.ouvert = false;
+    simule.lecture = { etat: "ferme", gardee: null };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu).toContain("Site · Refonte du site");
+    expect(lu).toContain("Ton Mac est fermé");
+    expect(lu).not.toContain("Aucun brief");
+    expect(lu).not.toContain("Aucun travail");
+  });
+
+  test("aucun ordinateur : l'état `aucun`, jamais « fermé »", () => {
+    simule.lecture = { etat: "aucun" };
+    const lu = texte(renderToStaticMarkup(<ProjetTelephone />));
+    expect(lu).toContain("Aucun ordinateur relié");
+    expect(lu).not.toContain("est fermé");
+  });
+
+  test("un projet retiré du compte le dit, avec un retour", () => {
+    simule.params = new URLSearchParams("id=disparu");
+    const html = renderToStaticMarkup(<ProjetTelephone />);
+    expect(texte(html)).toContain("Ce projet n’est plus dans ton compte");
+    expect(html).toContain('aria-label="Retour"');
   });
 });

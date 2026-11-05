@@ -134,3 +134,51 @@ describe("projets.modifier", () => {
     await expect(monter().gestes["projets.lire"]({ projetId: "site" })).resolves.toEqual({ nom: "Site", accroche: "Refonte", brief: "Le brief", statut: "en-cours", epingle: false });
   });
 });
+
+describe("projets.fiche et projets.epingler", () => {
+  const journal = {
+    projection: vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        travaux: [{ work_id: "w-1", fil_id: "c-1", titre: "Écrans", owner_agent_id: "dev", status: "active", state_ref: "/Users/moi/site/etat.md", deadline_at: null, mesures_cout: null }],
+        alertes: [],
+        blocages: [],
+        evenements: [],
+        couverture: "ok",
+      },
+    })),
+    preuves: vi.fn(async () => ({ ok: true as const, data: { operations: [{ status: "succeeded" }], checkpoints: [{ observed_at: "2026-11-05T10:47:00Z", preuve_ref: "/Users/moi/site/preuve" }] } })),
+  };
+  const agent = (id: string) => (id === "dev" ? { id, nom: "Léon", role: "Développeur" } : null);
+
+  test("brief, agents actifs, travaux du journal ; ni référence d'état, ni identifiant de travail, ni chemin", async () => {
+    const { gestes } = monter({ journal, agent, projets: [{ ...site, roleIds: ["dev", "parti"] }] });
+    const fiche = await gestes["projets.fiche"]({ projetId: "site" });
+    expect(fiche).toMatchObject({ brief: "Le brief", agents: [{ id: "dev", nom: "Léon" }], surPoste: true, travaux: { etat: "ok", liste: [{ titre: "Écrans", statut: "En cours", agent: "Léon", filId: "c-1" }] } });
+    const brut = JSON.stringify(fiche);
+    expect(brut).not.toContain("w-1");
+    expect(brut).not.toContain("/Users/moi");
+    expect(journal.projection).toHaveBeenCalledWith("site");
+  });
+
+  test("hors de l'app de bureau, ou journal illisible : section indisponible, pas une liste vide", async () => {
+    await expect(monter({ journal: null }).gestes["projets.fiche"]({ projetId: "site" })).resolves.toMatchObject({ travaux: { etat: "indisponible" } });
+    const illisible = { ...journal, projection: vi.fn(async () => ({ ok: true as const, data: { travaux: [], alertes: [], blocages: [], evenements: [], couverture: "journal_illisible" } })) };
+    await expect(monter({ journal: illisible }).gestes["projets.fiche"]({ projetId: "site" })).resolves.toMatchObject({ travaux: { etat: "indisponible" } });
+    const refus = { ...journal, projection: vi.fn(async () => ({ ok: false as const, message: "non" })) };
+    await expect(monter({ journal: refus }).gestes["projets.fiche"]({ projetId: "site" })).resolves.toMatchObject({ travaux: { etat: "indisponible" } });
+  });
+
+  test("un projet inconnu est refusé ; sans table des agents, ils sont dits non lus", async () => {
+    await expect(monter().gestes["projets.fiche"]({ projetId: "absent" })).rejects.toMatchObject({ code: "introuvable" });
+    await expect(monter().gestes["projets.fiche"]({ projetId: "site" })).resolves.toMatchObject({ agents: null });
+  });
+
+  test("épingler ne change que l'épingle, et rend ce que l'ordinateur a enregistré", async () => {
+    const { gestes, enregistrer, publier } = monter();
+    await expect(gestes["projets.epingler"]({ projetId: "site", epingle: true })).resolves.toMatchObject({ nom: "Site", brief: "Le brief", epingle: true });
+    expect(enregistrer).toHaveBeenCalledWith(expect.objectContaining({ id: "site", name: "Site", pinned: true, folder: "/Users/moi/site" }));
+    expect(publier).toHaveBeenCalledTimes(1);
+    await expect(gestes["projets.epingler"]({ projetId: "site", epingle: "oui" })).rejects.toMatchObject({ code: "arguments" });
+  });
+});

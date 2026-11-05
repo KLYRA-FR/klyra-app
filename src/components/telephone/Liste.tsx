@@ -53,11 +53,14 @@ export function Etiquette({ ton = "neutre", children }: { ton?: "neutre" | "bleu
   );
 }
 
-/** La tuile d'icône d'une ligne (36 px). `bleue` : l'élément mis en avant. */
-export function TuileIcone({ icone, bleue = false }: { icone: IconName; bleue?: boolean }) {
+/** La tuile d'icône d'une ligne (36 px). `bleue` : l'élément mis en avant. `grande` : 44 px, en tête d'un menu. */
+export function TuileIcone({ icone, bleue = false, grande = false }: { icone: IconName; bleue?: boolean; grande?: boolean }) {
   return (
-    <span aria-hidden="true" className={cn("flex size-9 shrink-0 items-center justify-center rounded-md-moins", bleue ? "bg-fond-teinte-bleue text-icone-accent" : "bg-fond-surface-grise text-icone-defaut")}>
-      <Icon name={icone} size={20} />
+    <span
+      aria-hidden="true"
+      className={cn("flex shrink-0 items-center justify-center rounded-md-moins", grande ? "size-11" : "size-9", bleue ? "bg-fond-teinte-bleue text-icone-accent" : "bg-fond-surface-grise text-icone-defaut")}
+    >
+      <Icon name={icone} size={grande ? 22 : 20} />
     </span>
   );
 }
@@ -89,6 +92,8 @@ export function LigneListe({
   raison,
   onMenu,
   menuVisible = false,
+  role,
+  coche,
 }: {
   href?: string;
   onClick?: () => void;
@@ -109,6 +114,9 @@ export function LigneListe({
   raison?: ReactNode;
   onMenu?: () => void;
   menuVisible?: boolean;
+  /** Toute la ligne est un interrupteur (`switch` et son état `coche`). */
+  role?: "switch";
+  coche?: boolean;
 }) {
   const appui = useAppuiLong(() => onMenu?.());
   const libelleMenu = `Actions pour ${typeof nom === "string" ? nom : "cet élément"}`;
@@ -153,7 +161,7 @@ export function LigneListe({
           {corps}
         </Link>
       ) : (
-        <button type="button" disabled={inactive || !onClick} onClick={onClick} {...(onMenu ? appui : {})} className={cn(classeCorps, "disabled:cursor-default")}>
+        <button type="button" role={role} aria-checked={role ? coche : undefined} disabled={inactive || !onClick} onClick={onClick} {...(onMenu ? appui : {})} className={cn(classeCorps, "disabled:cursor-default")}>
           {corps}
         </button>
       )}
