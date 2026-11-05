@@ -33,9 +33,9 @@ export function useEspaceServeurs(state: Etat, stateRef: RefObject<Etat>, fusion
     const pont = getBridge()?.espace;
     const memo = memos.current.get(lieu);
     if (!pont || !memo || enCours.current.has(lieu)) return;
-    const { elements, enCours: ecrits } = elementsDuServeur(stateRef.current, lieu, travaille);
+    const { elements } = elementsDuServeur(stateRef.current, lieu, travaille);
     const envoyables = elements.filter((e) => (JSON.stringify(e.valeur)?.length ?? 0) <= ELEMENT_MAX);
-    const { aEcrire, aRetirer, suivant } = changements(envoyables, memo, ecrits);
+    const { aEcrire, aRetirer, suivant } = changements(envoyables, memo);
     if (!aEcrire.length && !aRetirer.length) return;
     enCours.current.add(lieu);
     try {

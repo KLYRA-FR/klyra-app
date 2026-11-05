@@ -51,8 +51,11 @@ function empreinte(valeur: unknown): string {
 
 const cle = (type: TypeEspace, id: string) => `${type}\u0000${id}`;
 
-/** Tout ce qui appartient à ce serveur. Une conversation où un agent écrit attend d'avoir fini. */
-export function elementsDuServeur(etat: EtatEspace, lieu: string, travaille: (chatId: string) => boolean = () => false): { elements: ElementEspace[]; enCours: Set<string> } {
+/**
+ * Tout ce qui appartient à ce serveur. Une conversation où un agent écrit part sans sa réponse en cours : le
+ * message de la personne est tout de suite sur le serveur, et l'écriture de l'agent n'envoie rien à chaque mot.
+ */
+export function elementsDuServeur(etat: EtatEspace, lieu: string, travaille: (chatId: string) => boolean = () => false): { elements: ElementEspace[] } {
   const parChat = new Map<string, Message[]>();
   for (const m of etat.messages) {
     const liste = parChat.get(m.chatId);
@@ -60,14 +63,10 @@ export function elementsDuServeur(etat: EtatEspace, lieu: string, travaille: (ch
     else parChat.set(m.chatId, [m]);
   }
   const elements: ElementEspace[] = [];
-  const enCours = new Set<string>();
   for (const chat of etat.chats) {
     if (!dansEspace(chat.lieu, lieu)) continue;
-    if (travaille(chat.id)) {
-      enCours.add(cle("conversation", chat.id));
-      continue;
-    }
-    elements.push({ type: "conversation", id: chat.id, valeur: { chat, messages: parChat.get(chat.id) ?? [] } satisfies ValeurConversation });
+    const messages = parChat.get(chat.id) ?? [];
+    elements.push({ type: "conversation", id: chat.id, valeur: { chat, messages: travaille(chat.id) ? messages.filter((m) => m.statut !== "en-cours") : messages } satisfies ValeurConversation });
   }
   for (const p of etat.projects) if (dansEspace(p.lieu, lieu)) elements.push({ type: "projet", id: p.id, valeur: p });
   const workflows = new Set<string>();
@@ -78,11 +77,11 @@ export function elementsDuServeur(etat: EtatEspace, lieu: string, travaille: (ch
   }
   for (const e of etat.executions) if (workflows.has(e.workflowId)) elements.push({ type: "execution", id: e.id, valeur: e });
   for (const r of etat.rendus) if (lieuDuRendu(r.origine) === lieu) elements.push({ type: "rendu", id: r.id, valeur: r });
-  return { elements, enCours };
+  return { elements };
 }
 
 /** Ce qu'il faut envoyer depuis le dernier envoi. `memo` : l'empreinte de ce que le serveur a déjà. */
-export function changements(elements: ElementEspace[], memo: ReadonlyMap<string, string>, enCours: ReadonlySet<string> = new Set()) {
+export function changements(elements: ElementEspace[], memo: ReadonlyMap<string, string>) {
   const suivant = new Map<string, string>();
   const aEcrire: ElementEspace[] = [];
   for (const e of elements) {
@@ -92,13 +91,8 @@ export function changements(elements: ElementEspace[], memo: ReadonlyMap<string,
     if (memo.get(k) !== h) aEcrire.push(e);
   }
   const aRetirer: { type: TypeEspace; id: string }[] = [];
-  for (const [k, h] of memo) {
+  for (const k of memo.keys()) {
     if (suivant.has(k)) continue;
-    /* Une conversation où un agent écrit n'est pas retirée : elle n'est que mise de côté. */
-    if (enCours.has(k)) {
-      suivant.set(k, h);
-      continue;
-    }
     const i = k.indexOf("\u0000");
     aRetirer.push({ type: k.slice(0, i) as TypeEspace, id: k.slice(i + 1) });
   }

@@ -987,3 +987,53 @@ test("Composio : chaque serveur a son compte, gardé chiffré, et ses agents le 
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("PC fermé : le serveur range lui-même la réponse dans sa conversation, sans doubler celle d'une app qui écoute", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const journal = creerJournal();
+  const recues = [];
+  const agents = { envoyer: (requestId, options) => recues.push({ requestId, options }), fermerTout() {}, etat: () => "pret", empreinteEquipe: () => "" };
+  const ecoute = await ecouter({ nom: "VPS", dossier, port: 0, journal, agents });
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const espace = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/espace/${methode}`, { methode: "POST", jeton, corps });
+    const conversations = async () => (await espace("lire")).json.resultat.elements.filter((e) => e.type === "conversation");
+    const chat = { id: "dm-iris@vps", kind: "direct", projectId: null, title: "Iris", roleIds: ["iris"], updatedAt: "2026-11-01T00:00:00.000Z", sessions: {}, luJusqua: null, lieu: "https://vps" };
+    await espace("ecrire", { elements: [{ type: "conversation", id: chat.id, valeur: { chat, messages: [{ id: "u1", chatId: chat.id, author: { kind: "user" }, createdAt: chat.updatedAt, parts: [] }] } }] });
+
+    // Une réponse demandée à un agent, personne n'écoute à la fin.
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r1", options: { conversation: chat.id, agent: "iris", prompt: "x" } } });
+    journal.publier("r1", { type: "fin", ok: true, texte: "Maquette prête." }, "session-1");
+    const apres = (await conversations()).find((e) => e.id === chat.id).valeur;
+    const reponse = apres.messages.find((m) => m.id === "r1");
+    assert.equal(reponse.parts[0].text, "Maquette prête.");
+    assert.equal(reponse.author.roleId, "iris");
+    assert.equal(reponse.ecritParServeur, true);
+    assert.equal(apres.chat.sessions.iris, "session-1");
+    assert.ok(apres.chat.updatedAt > chat.updatedAt);
+    assert.equal(apres.chat.lieu, "https://vps");
+
+    // Un message du téléphone, PC fermé : le message et sa réponse.
+    const contexte = { chatId: "dm-lou@vps", agentId: "lou", titre: "Lou", telephone: { messageId: "tel-1", texte: "Salut", creeLe: "2026-11-05T10:00:00.000Z" } };
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r2", options: { agent: "lou", prompt: "Salut" }, contexte } });
+    journal.publier("r2", { type: "fin", ok: false, texte: "", erreur: "Plus de crédit." }, null);
+    const lou = (await conversations()).find((e) => e.id === "dm-lou@vps").valeur;
+    assert.deepEqual(lou.messages.map((m) => m.id), ["tel-1", "r2"]);
+    assert.equal(lou.messages[1].statut, "erreur");
+    assert.equal(lou.messages[1].erreur, "Plus de crédit.");
+    assert.equal(lou.chat.kind, "direct");
+
+    // Une app écoute : c'est elle qui écrit.
+    const flux = lireFlux(ecoute.port, jeton, 0, "", (lus) => lus.some((e) => e.requestId === "r3" && e.event?.type === "fin"));
+    await new Promise((r) => setTimeout(r, 150));
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "r3", options: { conversation: chat.id, agent: "iris", prompt: "y" } } });
+    journal.publier("r3", { type: "fin", ok: true, texte: "Autre." }, "session-1");
+    await flux;
+    assert.ok(!(await conversations()).find((e) => e.id === chat.id).valeur.messages.some((m) => m.id === "r3"));
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

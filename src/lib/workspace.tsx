@@ -1328,6 +1328,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         }
       }
       if (!chat || !roleId) return;
+      /* Rangée par le VPS pendant que ce PC était fermé : le journal rejoue la réponse complète, elle repart de zéro. */
+      if (stateRef.current.messages.some((m) => m.id === requestId && m.ecritParServeur)) {
+        stateRef.current = { ...stateRef.current, messages: stateRef.current.messages.filter((m) => m.id !== requestId) };
+        dispatch({ type: "espace/fusion", etat: { chats: stateRef.current.chats, messages: stateRef.current.messages, projects: stateRef.current.projects, workflows: stateRef.current.workflows, executions: stateRef.current.executions, rendus: stateRef.current.rendus } });
+      }
       if (!stateRef.current.messages.some((m) => m.id === requestId)) {
         dispatch({
           type: "message/add",

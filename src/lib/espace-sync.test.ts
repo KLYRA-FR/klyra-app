@@ -36,14 +36,15 @@ describe("ce qui part au serveur", () => {
     expect(suite.aRetirer).toEqual([{ type: "conversation", id: "b" }]);
   });
 
-  it("n'envoie pas une conversation où un agent écrit, et ne la croit pas retirée", () => {
-    const etat = vide({ chats: [chat("a", VPS)] });
-    const memo = changements(elementsDuServeur(etat, VPS).elements, new Map()).suivant;
-    const { elements, enCours } = elementsDuServeur(etat, VPS, (id) => id === "a");
-    const r = changements(elements, memo, enCours);
-    expect(r.aEcrire).toEqual([]);
-    expect(r.aRetirer).toEqual([]);
-    expect(r.suivant.size).toBe(1);
+  it("une conversation où un agent écrit part sans sa réponse en cours, et n'envoie rien à chaque mot", () => {
+    const enCours = (texte: string) => ({ ...message("r", "a"), statut: "en-cours", parts: [{ type: "text", text: texte }] }) as Message;
+    const etat = (texte: string) => vide({ chats: [chat("a", VPS)], messages: [message("u", "a"), enCours(texte)] });
+    const travaille = (id: string) => id === "a";
+    const { elements } = elementsDuServeur(etat("Bon"), VPS, travaille);
+    expect((elements[0].valeur as { messages: Message[] }).messages.map((m) => m.id)).toEqual(["u"]);
+    const { aEcrire, suivant } = changements(elements, new Map());
+    expect(aEcrire).toHaveLength(1);
+    expect(changements(elementsDuServeur(etat("Bonjour"), VPS, travaille).elements, suivant).aEcrire).toEqual([]);
   });
 
   it("découpe un gros envoi", () => {
