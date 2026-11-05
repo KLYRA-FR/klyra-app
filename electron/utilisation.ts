@@ -116,16 +116,17 @@ function dateGrok(brut: unknown): number | null {
 }
 
 /**
- * Lit la réponse de `x.ai/billing` de Grok Build (`BillingConfigResponse` : `config`, `on_demand_enabled`,
- * `subscription_tier`). L'abonnement donne des crédits par période de facturation : `config.creditUsagePercent`
+ * Lit la réponse de `_x.ai/billing` de Grok Build (`BillingConfigResponse` : `config`, `on_demand_enabled`,
+ * `subscription_tier`), directe ou enveloppée dans un `result` comme celle de `_x.ai/mcp/list`. L'abonnement donne des crédits par période de facturation : `config.creditUsagePercent`
  * (part utilisée, de 0 à 100) et `config.currentPeriod.end` (remise à zéro) font la fenêtre du mois. Sans
  * pourcentage lisible (connecté par une clé API, réponse d'une autre forme), rien n'est inventé : la
  * précédente reste. La limite n'est atteinte que si le paiement à l'usage n'est pas activé : sinon les agents
  * continuent, facturés à part.
  */
 export function lireUtilisationGrok(brut: unknown, precedente: Utilisation | null, maintenant = Date.now()): Utilisation | null {
-  const reponse = brut as { config?: unknown; on_demand_enabled?: unknown; onDemandEnabled?: unknown } | null | undefined;
-  if (!reponse || typeof reponse !== "object") return precedente;
+  const enveloppe = brut as { result?: unknown } | null | undefined;
+  if (!enveloppe || typeof enveloppe !== "object") return precedente;
+  const reponse = (enveloppe.result && typeof enveloppe.result === "object" ? enveloppe.result : enveloppe) as { config?: unknown; on_demand_enabled?: unknown; onDemandEnabled?: unknown };
   const config = (reponse.config && typeof reponse.config === "object" ? reponse.config : reponse) as {
     creditUsagePercent?: unknown;
     currentPeriod?: { end?: unknown } | null;

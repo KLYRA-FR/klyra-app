@@ -509,20 +509,21 @@ export function creerClientAcp(o) {
         return modelesConnus ?? [];
     }
     /**
-     * La facturation de l'abonnement : `x.ai/billing`, l'extension de Grok Build qui donne à son interface
-     * les crédits restants (`BillingConfigResponse`, lue par `lireUtilisationGrok`). Une lecture du compte,
+     * La facturation de l'abonnement : `_x.ai/billing`, l'extension de Grok Build qui donne à son interface
+     * les crédits restants (`BillingConfigResponse`, lue par `lireUtilisationGrok`). Le `_` est obligatoire :
+     * c'est le préfixe des extensions d'ACP, sans lui Grok répond « Method not found ». Une lecture du compte,
      * sans modèle. Sans paramètre d'abord ; si Grok la refuse, avec la dernière session ouverte.
      */
     async function facturation() {
         await pret();
         try {
-            return await requeteBornee("x.ai/billing", {}, FACTURATION_MAX_MS);
+            return await requeteBornee("_x.ai/billing", {}, FACTURATION_MAX_MS);
         }
         catch (erreur) {
             const sessionId = [...sessions.keys()].at(-1);
             if (!sessionId)
                 throw erreur;
-            return requeteBornee("x.ai/billing", { sessionId }, FACTURATION_MAX_MS);
+            return requeteBornee("_x.ai/billing", { sessionId }, FACTURATION_MAX_MS);
         }
     }
     return {

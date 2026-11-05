@@ -131,7 +131,7 @@ const abonnesUtilisation = new Set<(u: Utilisation) => void>();
 /** Connecté par son abonnement (`grok login`) : une clé API est facturée à l'usage, sans crédits du mois. */
 const parAbonnement = () => existsSync(path.join(grokHome(), "auth.json"));
 
-/** La dernière connue ; `actualiser` : relue par `x.ai/billing` (les crédits restants, ne consomme rien). */
+/** La dernière connue ; `actualiser` : relue par `_x.ai/billing` (les crédits restants, ne consomme rien). */
 async function utilisation(actualiser: boolean): Promise<Utilisation | null> {
   if (!actualiser && derniereUtilisation) return derniereUtilisation;
   if (!trouverGrok() || !parAbonnement()) return derniereUtilisation;
