@@ -41,6 +41,19 @@ test("le client et le VPS partagent les chemins", () => {
   assert.equal(CHEMIN, "/klyra/v1/serveur");
 });
 
+test("l'installation télécharge tous les fichiers du serveur", () => {
+  const lancer = readFileSync(new URL("./lancer.sh", import.meta.url), "utf8");
+  const vus = new Set();
+  const suivre = (nom) => {
+    if (vus.has(nom)) return;
+    vus.add(nom);
+    const code = readFileSync(new URL(`./${nom}`, import.meta.url), "utf8");
+    for (const m of code.matchAll(/from\s+"\.\/([^"]+\.mjs)"/g)) suivre(m[1]);
+  };
+  suivre("klyra-serveur.mjs");
+  for (const nom of vus) assert.ok(lancer.includes(`"$SOURCE/${nom}"`), `lancer.sh doit télécharger ${nom}`);
+});
+
 test("un code s’échange une fois contre un jeton, qui ouvre le serveur", async () => {
   const dossier = dossierJetable();
   const ecoute = await ecouter({ nom: "Klyra-vps", dossier, port: 0 });
