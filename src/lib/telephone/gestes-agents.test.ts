@@ -1,3 +1,4 @@
+import { agregerUtilisation } from "./gestes-agents";
 import { describe, expect, test, vi } from "vitest";
 import { getField, parseAgentFile } from "@/lib/agent-file";
 import type { AgentLocal } from "@/lib/agents";
@@ -213,7 +214,7 @@ describe("gestes « agents » : Mes agents", () => {
       souvenirs: async () => ({ coupee: false, souvenirs: [{ ref: "notes.md", titre: "Notes", extrait: "", toujours: true, modifieLe: 1 }] }),
       souvenir: vi.fn(async () => ({ titre: "Notes", contenu: "Texte", modifieLe: 1 })),
       competences: async () => [],
-      utilisation: async () => ({ entrees: [] }),
+      utilisation: async () => [],
     };
     expect((await refus(gestes["agents.souvenir"]({ id: "dev", ref: "../secret.md" }))).code).toBe("arguments");
     expect((await refus(gestes["agents.souvenir"]({ id: "dev", ref: "autre.md" }))).code).toBe("introuvable");
@@ -234,5 +235,22 @@ describe("gestes « agents » : Mes agents", () => {
     await expect(gestes["agents.creer"]({ ...creation, id: "juriste" })).resolves.toEqual({ id: "juriste" });
     const [, contenu] = agents.create.mock.calls[0] as unknown as [string, string];
     expect(getField(parseAgentFile(contenu).frontmatter, "name")).toBe("juriste");
+  });
+});
+
+describe("journal d'un agent", () => {
+  test("agrège par jour et par modèle, sans transformer un coût absent en zéro connu", () => {
+    const at = new Date(2026, 10, 5, 12).getTime();
+    const u = agregerUtilisation([
+      { at, modele: "a", entree: 1, sortie: 2, cacheLu: 3, cacheEcrit: 4, coutUsd: 0.5 },
+      { at: at + 1000, modele: "a", entree: 1, sortie: 0, cacheLu: 0, cacheEcrit: 0, coutUsd: null },
+      { at, modele: "b", entree: 5, sortie: 0, cacheLu: 0, cacheEcrit: 0, coutUsd: 1 },
+    ]);
+    expect(u.jours).toHaveLength(2);
+    const a = u.jours.find((l) => l.modele === "a")!;
+    expect(a.appels).toBe(2);
+    expect(a.entree).toBe(2);
+    expect(a.coutUsd).toBe(0.5);
+    expect(a.appelsSansCout).toBe(1);
   });
 });

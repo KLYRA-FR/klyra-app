@@ -1,3 +1,4 @@
+import { cleJour } from "@/lib/consommation";
 import { LIMITES, preparerPublication } from "../../../convex/model/definitions";
 import { getField, parseAgentFile, serializeAgentFile, setFields } from "@/lib/agent-file";
 import type { AgentLocal, useAgents } from "@/lib/agents";
@@ -153,18 +154,49 @@ export interface CompetenceLue {
   origine: "fiche" | "projet" | "poste" | "plugin";
 }
 
+/** Un appel du journal de consommation, tel que le poste le lit. Son contenu ne part jamais. */
+export interface AppelJournal {
+  at: number;
+  modele: string;
+  entree: number;
+  sortie: number;
+  cacheLu: number;
+  cacheEcrit: number;
+  /** Null : le journal n'a pas de coût. Jamais remplacé par zéro. */
+  coutUsd: number | null;
+}
+
+/** Le journal d'un agent, par jour (celui du poste) et par modèle : une année tient dans une réponse. */
 export interface UtilisationLue {
-  entrees: {
-    at: number;
+  jours: {
+    jour: string;
     modele: string;
-    fournisseur: string;
+    appels: number;
     entree: number;
     sortie: number;
     cacheLu: number;
     cacheEcrit: number;
-    /** Null : le journal n'a pas de coût. Jamais remplacé par zéro. */
-    coutUsd: number | null;
+    coutUsd: number;
+    appelsSansCout: number;
   }[];
+}
+
+export function agregerUtilisation(appels: AppelJournal[]): UtilisationLue {
+  const parCle = new Map<string, UtilisationLue["jours"][number]>();
+  for (const a of appels) {
+    const jour = cleJour(a.at);
+    const cle = `${jour}|${a.modele}`;
+    const ligne = parCle.get(cle) ?? { jour, modele: a.modele, appels: 0, entree: 0, sortie: 0, cacheLu: 0, cacheEcrit: 0, coutUsd: 0, appelsSansCout: 0 };
+    ligne.appels += 1;
+    ligne.entree += a.entree;
+    ligne.sortie += a.sortie;
+    ligne.cacheLu += a.cacheLu;
+    ligne.cacheEcrit += a.cacheEcrit;
+    if (a.coutUsd === null) ligne.appelsSansCout += 1;
+    else ligne.coutUsd += a.coutUsd;
+    parCle.set(cle, ligne);
+  }
+  return { jours: [...parCle.values()].sort((x, y) => x.jour.localeCompare(y.jour)) };
 }
 
 export interface LecturesAgents {
@@ -172,7 +204,7 @@ export interface LecturesAgents {
   souvenirs: (id: string) => Promise<SouvenirsLus | null>;
   souvenir: (id: string, ref: string) => Promise<{ titre: string; contenu: string; modifieLe: number }>;
   competences: (id: string) => Promise<CompetenceLue[]>;
-  utilisation: (id: string) => Promise<UtilisationLue>;
+  utilisation: (id: string) => Promise<AppelJournal[]>;
 }
 
 export interface ApercuPartage {
@@ -315,10 +347,12 @@ export function gestesAgents(d: DepsAgents): Gestes {
     /** Ce que T-08 ne peut pas lire dans les cartes : désactivé ou jamais ajouté, origine dans la bibliothèque. */
     "agents.etats": async (): Promise<EtatsAgentsPoste> => {
       const assistant = a.roles[0];
+      const liens = await d.liens();
       return {
         assistant: { nom: assistant.name, teinte: assistant.teinte },
         agents: a.tous.map((x) => {
           const reglage = a.meta[x.role.id] ?? {};
+          const lien = liens(x);
           return {
             id: x.role.id,
             statut: x.statut,
@@ -329,6 +363,9 @@ export function gestesAgents(d: DepsAgents): Gestes {
             muet: reglage.muet === true,
             epingle: !!reglage.epingleLe,
             enCours: d.enCours(x.role.id),
+            titre: x.role.title,
+            competences: x.role.skills,
+            miseAJour: (lien.type === "modele" && lien.miseAJour !== null) || (lien.type === "recu" && !!lien.proposition),
           };
         }),
       };
@@ -857,12 +894,13 @@ export function gestesAgents(d: DepsAgents): Gestes {
     "agents.competences": async (args) => {
       const id = identifiant(objet(args));
       const competences = await lireOuIndisponible(d, () => d.lectures!.competences(id));
-      return { competences };
+      /* Ce que sa description dit qu'il couvre (`role.skills`), à part de ce qui est réellement chargé. */
+      return { competences, couvre: a.tous.find((x) => x.role.id === id)?.role.skills ?? [] };
     },
 
     "agents.utilisation": async (args): Promise<UtilisationLue> => {
       const id = identifiant(objet(args));
-      return lireOuIndisponible(d, () => d.lectures!.utilisation(id));
+      return agregerUtilisation(await lireOuIndisponible(d, () => d.lectures!.utilisation(id)));
     },
   };
 }

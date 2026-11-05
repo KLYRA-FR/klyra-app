@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Onglets } from "@/components/ui/Onglets";
+import { Input } from "klyra-ui";
+import { Icon } from "@/components/icons/Icon";
 import { Markdown } from "@/components/ui/Markdown";
-import { cleJour, compact, UN_JOUR } from "@/lib/consommation";
-import { useLecturePoste } from "@/lib/poste/client";
+import { Onglets } from "@/components/ui/Onglets";
+import { compact } from "@/lib/consommation";
+import { useLecturePoste, useVueGardeePresente } from "@/lib/poste/client";
+import { seriesUtilisation, syntheseUtilisation, type PeriodeUtilisation } from "@/lib/telephone/agents";
 import type { CompetenceLue, SouvenirsLus, UtilisationLue } from "@/lib/telephone/gestes-agents";
-import { CHAMP_TELEPHONE } from "./CommunAgentsTelephone";
+import { CHAMP_TELEPHONE, ONGLETS_TELEPHONE, useCartesAgents } from "./CommunAgentsTelephone";
 import { EnteteTelephone } from "./EnteteTelephone";
+import { Carte, Etiquette, GroupeListe, LigneListe, SectionListe, TuileIcone } from "./Liste";
 import { useSupport } from "./poste";
 import { VueLecture } from "./etats";
 
@@ -28,32 +31,53 @@ export function LecturesAgentTelephone({ id, mode }: { id: string; mode: Mode })
   return <SouvenirsTelephone id={id} />;
 }
 
+/** « Souvenirs de Léon » ; sans carte, le titre seul : jamais l'identifiant (socle § 8). */
+function useTitre(mot: string, id: string): string {
+  const { carte } = useCartesAgents();
+  const nom = carte(id)?.nom;
+  return nom ? `${mot} de ${nom}` : mot;
+}
+
 function SouvenirsTelephone({ id }: { id: string }) {
   const sur = useSupport();
+  const titre = useTitre("Souvenirs", id);
   const lecture = useLecturePoste<SouvenirsLus>("agents.souvenirs", { id });
   const [filtre, setFiltre] = useState("");
   const q = filtre.trim().toLocaleLowerCase("fr");
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Souvenirs" parent={`/equipe?agent=${encodeURIComponent(id)}`} />
+      <EnteteTelephone titre={titre} parent={`/equipe?agent=${encodeURIComponent(id)}`} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <VueLecture lecture={lecture} lignes={5} ferme={(s) => `les souvenirs sont sur ${s}. Ils se lisent quand KLYRA y est ouverte.`}>
+        {/* Vue gardée : chercher dans la liste gardée reste permis (E5-39), rien n'y écrit. */}
+        <VueLecture lecture={lecture} lignes={5} verrou={false} ferme={(s) => `les souvenirs sont sur ${s}. Ils se lisent quand KLYRA y est ouverte.`}>
           {(lu) => {
             const garder = lu.souvenirs.filter((s) => !q || `${s.titre} ${s.extrait}`.toLocaleLowerCase("fr").includes(q));
             const toujours = garder.filter((s) => s.toujours);
             const besoin = garder.filter((s) => !s.toujours);
+            const gardee = lecture.etat === "ferme";
             return (
-              <div className="flex flex-col gap-4 pt-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-ui font-medium text-texte-principal">Rechercher dans les titres</span>
-                  <input value={filtre} onChange={(e) => setFiltre(e.target.value)} className={CHAMP_TELEPHONE} placeholder="Titre ou extrait" />
-                </label>
-                <p className="text-ui-xs text-texte-secondaire">Ajouter ou modifier un souvenir se fait sur {sur}.</p>
-                {lu.coupee ? <p className="text-ui text-texte-principal">La liste est coupée : tout n’a pas été renvoyé.</p> : null}
-                {lu.souvenirs.length === 0 ? <p className="text-ui text-texte-secondaire">Aucun souvenir.</p> : null}
-                {lu.souvenirs.length > 0 && garder.length === 0 ? <p className="text-ui text-texte-secondaire">Aucun souvenir ne correspond.</p> : null}
-                <ListeSouvenirs id={id} titre="Toujours lu" lignes={toujours} />
-                <ListeSouvenirs id={id} titre="Lus au besoin" lignes={besoin} />
+              <div className="flex flex-col gap-4 pt-1">
+                <p className="px-1 text-ui-xs text-texte-secondaire">Sa mémoire dans sa conversation directe</p>
+                <div className="relative">
+                  <Icon name="search-01" size={20} className="pointer-events-none absolute top-1/2 left-3.5 z-10 -translate-y-1/2 text-icone-secondaire" />
+                  <Input size="lg" aria-label="Chercher dans ses souvenirs" value={filtre} onChange={(e) => setFiltre(e.target.value)} className={`${CHAMP_TELEPHONE} pl-11`} placeholder="Chercher dans ses souvenirs" />
+                </div>
+                {lu.coupee ? <p className="px-1 text-ui text-texte-principal">La liste est coupée : tout n’a pas été renvoyé.</p> : null}
+                {lu.souvenirs.length === 0 ? <p className="px-1 text-ui text-texte-secondaire">Aucun souvenir.</p> : null}
+                {lu.souvenirs.length > 0 && garder.length === 0 ? <p className="px-1 text-ui text-texte-secondaire">Aucun souvenir ne correspond.</p> : null}
+                <ListeSouvenirs id={id} titre="Toujours lu" lignes={toujours} gardee={gardee} />
+                <ListeSouvenirs id={id} titre="Lus au besoin" lignes={besoin} gardee={gardee} />
+                <Carte>
+                  <span className="flex items-start gap-3">
+                    <TuileIcone icone="pencil-01" />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5 text-body-s font-medium text-texte-principal">
+                        Ajouter ou modifier <Etiquette>Sur {sur}</Etiquette>
+                      </span>
+                      <span className="mt-0.5 block text-ui text-texte-secondaire">Un souvenir s’écrit dans les fichiers de l’agent.</span>
+                    </span>
+                  </span>
+                </Carte>
               </div>
             );
           }}
@@ -63,27 +87,33 @@ function SouvenirsTelephone({ id }: { id: string }) {
   );
 }
 
-function ListeSouvenirs({ id, titre, lignes }: { id: string; titre: string; lignes: SouvenirsLus["souvenirs"] }) {
+function ListeSouvenirs({ id, titre, lignes, gardee }: { id: string; titre: string; lignes: SouvenirsLus["souvenirs"]; gardee: boolean }) {
   if (!lignes.length) return null;
   return (
-    <section>
-      <h2 className="mb-2 text-ui font-medium text-texte-secondaire">
-        {titre} · {lignes.length}
-      </h2>
-      <ul className="flex list-none flex-col gap-2 p-0">
+    <SectionListe titre={titre} compte={lignes.length}>
+      <GroupeListe>
         {lignes.map((s) => (
-          <li key={s.ref}>
-            <Link
-              href={`/equipe?agent=${encodeURIComponent(id)}&mode=souvenirs&souvenir=${encodeURIComponent(s.ref)}`}
-              className="flex min-h-11 flex-col justify-center rounded-lg border border-bordure-subtile bg-fond-surface px-3 py-2"
-            >
-              <span className="text-body-s font-medium text-texte-principal">{s.titre}</span>
-              {s.extrait ? <span className="line-clamp-2 text-ui-xs text-texte-secondaire">{s.extrait}</span> : null}
-            </Link>
-          </li>
+          <LigneSouvenir key={s.ref} id={id} souvenir={s} gardee={gardee} />
         ))}
-      </ul>
-    </section>
+      </GroupeListe>
+    </SectionListe>
+  );
+}
+
+/** Vue gardée : seul un souvenir déjà ouvert se relit, les autres lignes le disent (E5-39). */
+function LigneSouvenir({ id, souvenir: s, gardee }: { id: string; souvenir: SouvenirsLus["souvenirs"][number]; gardee: boolean }) {
+  const lisible = useVueGardeePresente("agents.souvenir", { id, ref: s.ref });
+  return (
+    <LigneListe
+      href={`/equipe?agent=${encodeURIComponent(id)}&mode=souvenirs&souvenir=${encodeURIComponent(s.ref)}`}
+      debut={s.toujours ? <TuileIcone icone="note-01" /> : undefined}
+      retrait={s.toujours ? "tuile" : "aucun"}
+      nom={s.titre}
+      ligne2={s.extrait || undefined}
+      fin="chevron"
+      inactive={gardee && !lisible}
+      raison="Pas gardé sur ce téléphone"
+    />
   );
 }
 
@@ -93,16 +123,18 @@ function SouvenirTelephone({ id, refSouvenir }: { id: string; refSouvenir: strin
   const date = (n: number) => new Date(n).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Souvenir" retour={() => router.push(`/equipe?agent=${encodeURIComponent(id)}&mode=souvenirs`)} />
+      <EnteteTelephone titre={lecture.etat === "ok" ? lecture.data.titre : "Souvenir"} retour={() => router.push(`/equipe?agent=${encodeURIComponent(id)}&mode=souvenirs`)} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <VueLecture lecture={lecture} lignes={6} ferme={() => "Ce souvenir n’est pas gardé sur ce téléphone."}>
           {(lu) => (
-            <article className="pt-3">
-              <h2 className="text-body font-semibold text-texte-principal">{lu.titre}</h2>
-              {lu.modifieLe ? <p className="mt-1 text-ui-xs text-texte-secondaire">{date(lu.modifieLe)}</p> : null}
-              <div className="mt-4 text-body-s text-texte-principal">
-                <Markdown source={lu.contenu} />
-              </div>
+            <article className="pt-1">
+              {lu.modifieLe ? <p className="px-1 text-ui-xs text-texte-secondaire">Modifié le {date(lu.modifieLe)}</p> : null}
+              <Carte className="mt-2">
+                <h2 className="text-body-s font-semibold text-texte-principal">{lu.titre}</h2>
+                <div className="mt-2 text-body-s text-texte-principal">
+                  <Markdown source={lu.contenu} />
+                </div>
+              </Carte>
             </article>
           )}
         </VueLecture>
@@ -112,44 +144,51 @@ function SouvenirTelephone({ id, refSouvenir }: { id: string; refSouvenir: strin
 }
 
 const ORIGINES: { id: CompetenceLue["origine"]; titre: string }[] = [
-  { id: "fiche", titre: "Préchargées" },
+  { id: "fiche", titre: "Préchargées par sa fiche" },
   { id: "projet", titre: "Du projet" },
-  { id: "poste", titre: "Du poste" },
+  { id: "poste", titre: "De l’app" },
   { id: "plugin", titre: "Des plugins" },
 ];
 
 function CompetencesTelephone({ id }: { id: string }) {
   const sur = useSupport();
-  const lecture = useLecturePoste<{ competences: CompetenceLue[] }>("agents.competences", { id });
+  const titre = useTitre("Compétences", id);
+  const lecture = useLecturePoste<{ competences: CompetenceLue[]; couvre: string[] }>("agents.competences", { id });
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Compétences" parent={`/equipe?agent=${encodeURIComponent(id)}`} />
+      <EnteteTelephone titre={titre} parent={`/equipe?agent=${encodeURIComponent(id)}`} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <VueLecture lecture={lecture} lignes={5} ferme={(s) => `les compétences se lisent sur ${s}.`}>
           {(lu) => (
-            <div className="flex flex-col gap-4 pt-3">
-              <p className="text-ui-xs text-texte-secondaire">Les activer ou les installer se fait sur {sur}.</p>
-              {lu.competences.length === 0 ? <p className="text-ui text-texte-secondaire">Aucune compétence.</p> : null}
+            <div className="flex flex-col gap-4 pt-1">
+              {lu.couvre.length ? (
+                <SectionListe titre="Ce qu’il couvre">
+                  <div className="flex flex-wrap gap-1.5 px-1">
+                    {lu.couvre.map((c) => (
+                      <Etiquette key={c}>{c}</Etiquette>
+                    ))}
+                  </div>
+                  <p className="mt-2 px-1 text-ui-xs text-texte-secondaire">D’après sa description.</p>
+                </SectionListe>
+              ) : null}
+              {lu.competences.length === 0 ? <p className="px-1 text-ui text-texte-secondaire">Aucune compétence.</p> : null}
               {ORIGINES.map((groupe) => {
-                const lignes = lu.competences.filter((c) => c.origine === groupe.id);
+                /* Une compétence préchargée n'est listée qu'une fois, avec sa fiche. */
+                const prechargees = new Set(lu.competences.filter((c) => c.origine === "fiche").map((c) => c.nom));
+                const lignes = lu.competences.filter((c) => c.origine === groupe.id && (groupe.id === "fiche" || !prechargees.has(c.nom)));
                 if (!lignes.length) return null;
                 return (
-                  <section key={groupe.id}>
-                    <h2 className="mb-2 text-ui font-medium text-texte-secondaire">
-                      {groupe.titre} · {lignes.length}
-                    </h2>
-                    <ul className="flex list-none flex-col gap-2 p-0">
+                  <SectionListe key={groupe.id} titre={groupe.titre} compte={lignes.length}>
+                    <GroupeListe>
                       {lignes.map((c) => (
-                        <li key={`${c.origine}-${c.nom}`} className="rounded-lg border border-bordure-subtile bg-fond-surface px-3 py-2">
-                          <p className="text-body-s font-medium text-texte-principal">{c.nom}</p>
-                          <p className="text-ui-xs text-texte-secondaire">{c.prechargee ? "Préchargée" : "Au besoin"}</p>
-                          {c.resume ? <p className="mt-1 text-ui-xs text-texte-secondaire">{c.resume}</p> : null}
-                        </li>
+                        <LigneListe key={`${c.origine}-${c.nom}`} debut={<TuileIcone icone="layers-01" bleue={c.prechargee} />} retrait="tuile" nom={c.nom} ligne2={c.resume || undefined} />
                       ))}
-                    </ul>
-                  </section>
+                    </GroupeListe>
+                    {groupe.id === "fiche" ? <p className="mt-2 px-1 text-ui-xs text-texte-secondaire">Leur texte entre dans chaque appel de l’agent.</p> : null}
+                  </SectionListe>
                 );
               })}
+              <p className="px-1 text-ui-xs text-texte-secondaire">Tes agents peuvent se servir des autres au besoin. Précharger ou retirer : sur {sur}.</p>
             </div>
           )}
         </VueLecture>
@@ -158,51 +197,42 @@ function CompetencesTelephone({ id }: { id: string }) {
   );
 }
 
-type Periode = "7" | "30" | "365";
-
 function UtilisationTelephone({ id }: { id: string }) {
+  const titre = useTitre("Utilisation", id);
   const lecture = useLecturePoste<UtilisationLue>("agents.utilisation", { id });
-  const [periode, setPeriode] = useState<Periode>("30");
-  const [ouvert] = useState(() => Date.now());
+  const [periode, setPeriode] = useState<PeriodeUtilisation>("30");
+  const [maintenant] = useState(() => Date.now());
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <EnteteTelephone titre="Utilisation" parent={`/equipe?agent=${encodeURIComponent(id)}`} />
+      <EnteteTelephone titre={titre} parent={`/equipe?agent=${encodeURIComponent(id)}`} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <VueLecture lecture={lecture} lignes={5} ferme={(s) => `l’utilisation se calcule sur ${s}, d’après son journal.`}>
-          {(lu) => <ChiffresUtilisation entrees={lu.entrees} periode={periode} onPeriode={setPeriode} maintenant={ouvert} />}
+        <VueLecture lecture={lecture} lignes={5} verrou={false} ferme={(s) => `l’utilisation se calcule sur ${s}, d’après son journal.`}>
+          {(lu) => <ChiffresUtilisation lu={lu} periode={periode} onPeriode={setPeriode} maintenant={maintenant} />}
         </VueLecture>
       </div>
     </div>
   );
 }
 
-function ChiffresUtilisation({
-  entrees,
-  periode,
-  onPeriode,
-  maintenant,
-}: {
-  entrees: UtilisationLue["entrees"];
-  periode: Periode;
-  onPeriode: (p: Periode) => void;
-  maintenant: number;
-}) {
-  const depuis = maintenant - Number(periode) * UN_JOUR;
-  const dans = useMemo(() => entrees.filter((e) => e.at >= depuis), [entrees, depuis]);
-  const jetons = dans.reduce((n, e) => n + e.entree + e.sortie + e.cacheLu + e.cacheEcrit, 0);
-  const couts = dans.filter((e) => e.coutUsd !== null);
-  const cout = couts.reduce((n, e) => n + (e.coutUsd ?? 0), 0);
-  const jours = new Map<string, number>();
-  for (const e of dans) {
-    const cle = cleJour(e.at);
-    jours.set(cle, (jours.get(cle) ?? 0) + e.entree + e.sortie + e.cacheLu + e.cacheEcrit);
-  }
-  const actifs = [...jours.entries()].filter(([, n]) => n > 0);
-  const max = Math.max(...actifs.map(([, n]) => n), 1);
+const CHIFFRES_JETONS = [
+  ["Entrée", "entree"],
+  ["Sortie", "sortie"],
+  ["Cache lu", "cacheLu"],
+  ["Cache écrit", "cacheEcrit"],
+] as const;
+
+function ChiffresUtilisation({ lu, periode, onPeriode, maintenant }: { lu: UtilisationLue; periode: PeriodeUtilisation; onPeriode: (p: PeriodeUtilisation) => void; maintenant: number }) {
+  const s = syntheseUtilisation(lu, periode, maintenant);
+  const barres = seriesUtilisation(lu, periode, maintenant);
+  const max = Math.max(...barres.map((b) => b.jetons), 1);
+  const actives = barres.filter((b) => b.jetons > 0);
+  const dollars = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "USD" });
+  const cout = s.appelsAvecCout === 0 ? "coût indisponible" : s.appelsSansCout ? `${dollars(s.coutUsd)} indiqués · ${s.appelsSansCout} appel${s.appelsSansCout > 1 ? "s" : ""} sans coût` : `${dollars(s.coutUsd)} indiqués par le journal`;
   return (
-    <div className="flex flex-col gap-4 pt-3">
-      <Onglets<Periode>
+    <div className="flex flex-col gap-3.5 pt-1">
+      <Onglets<PeriodeUtilisation>
         libelle="Période"
+        className={ONGLETS_TELEPHONE}
         valeur={periode}
         onChange={onPeriode}
         onglets={[
@@ -211,31 +241,54 @@ function ChiffresUtilisation({
           { id: "365", label: "1 an" },
         ]}
       />
-      {dans.length === 0 ? (
-        <p className="text-ui text-texte-secondaire">Aucune activité enregistrée sur cette période.</p>
+      {s.appels === 0 ? (
+        <p className="px-1 text-ui text-texte-secondaire">Aucune activité enregistrée sur cette période.</p>
       ) : (
         <>
-          <p className="text-body font-semibold text-texte-principal">{compact(jetons)} jetons · {dans.length} appel{dans.length > 1 ? "s" : ""}</p>
-          <p className="text-ui text-texte-secondaire">
-            {couts.length === 0
-              ? "Coût indisponible."
-              : couts.length === dans.length
-                ? `${cout.toLocaleString("fr-FR", { style: "currency", currency: "USD" })} indiqués par le journal.`
-                : `${cout.toLocaleString("fr-FR", { style: "currency", currency: "USD" })} indiqués. ${dans.length - couts.length} appel${dans.length - couts.length > 1 ? "s" : ""} sans coût.`}
-          </p>
-          <div className="flex h-16 items-end gap-0.5" aria-hidden="true">
-            {actifs.map(([cle, n]) => (
-              <span key={cle} className="min-h-1 flex-1 rounded-t-sm bg-fond-accent" style={{ height: `${Math.max(8, (n / max) * 100)}%` }} />
-            ))}
+          <div className="px-1">
+            <p className="text-h3 leading-[1.1] font-semibold tracking-title text-texte-principal">{compact(s.jetons)} jetons</p>
+            <p className="mt-1 text-ui-xs text-texte-secondaire">
+              {s.appels} appel{s.appels > 1 ? "s" : ""} · {cout}
+            </p>
           </div>
-          <ul className="flex list-none flex-col p-0">
-            {actifs.map(([cle, n]) => (
-              <li key={cle} className="flex min-h-11 items-center justify-between gap-3 border-b border-bordure-subtile text-ui">
-                <span>{new Date(`${cle}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</span>
-                <span className="font-medium">{compact(n)}</span>
-              </li>
-            ))}
-          </ul>
+          <Carte>
+            <div role="img" aria-label={`${actives.length} ${periode === "365" ? "mois" : `jour${actives.length > 1 ? "s" : ""}`} avec de l’activité sur ${barres.length}, au plus ${compact(max)} jetons`} className="flex h-20 items-end gap-[3px]">
+              {barres.map((b) => (
+                <span key={b.cle} className={b.jetons ? "flex-1 rounded-t-[2px] bg-bleu-k1-500" : "h-px flex-1 bg-bordure-defaut"} style={b.jetons ? { height: `${Math.max(6, (b.jetons / max) * 100)}%` } : undefined} />
+              ))}
+            </div>
+            <div className="mt-2 flex justify-between text-ui-xs text-texte-secondaire">
+              <span>{barres[0]?.libelle}</span>
+              <span>{barres.at(-1)?.libelle}</span>
+            </div>
+          </Carte>
+          <SectionListe titre="Jetons">
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-bordure-subtile bg-bordure-subtile">
+              {CHIFFRES_JETONS.map(([libelle, cle]) => (
+                <div key={cle} className="bg-fond-surface px-4 py-3">
+                  <p className="text-ui-xs text-texte-secondaire">{libelle}</p>
+                  <p className="klyra-mono mt-2 text-body-s font-medium text-texte-principal">{compact(s[cle])}</p>
+                </div>
+              ))}
+            </div>
+          </SectionListe>
+          {s.modeles.length ? (
+            <SectionListe titre="Par modèle">
+              <GroupeListe>
+                {s.modeles.map((m) => (
+                  <LigneListe key={m.modele} nom={m.modele} fin={<span className="shrink-0 text-ui text-texte-secondaire">{Math.round((m.jetons / s.jetons) * 100)} % · {compact(m.jetons)}</span>} />
+                ))}
+              </GroupeListe>
+            </SectionListe>
+          ) : null}
+          <SectionListe titre={periode === "365" ? "Par mois" : "Par jour"}>
+            <GroupeListe>
+              {[...actives].reverse().map((b) => (
+                <LigneListe key={b.cle} nom={b.libelle} fin={<span className="shrink-0 text-ui text-texte-secondaire">{compact(b.jetons)}</span>} />
+              ))}
+            </GroupeListe>
+          </SectionListe>
+          <p className="px-1 text-ui-xs text-texte-secondaire">Seulement ce qui est passé par l’app, d’après son journal.</p>
         </>
       )}
     </div>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Textarea } from "klyra-ui";
+import { Icon } from "@/components/icons/Icon";
 import { RondApercu } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
@@ -11,10 +12,11 @@ import { useDemandePoste } from "@/lib/poste/client";
 import type { EtatLou } from "@/lib/telephone/gestes-agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import { AvantApresFiche } from "./AvantApresFiche";
-import { CHAMP_TELEPHONE, ChampTelephone, ErreurGeste, PagePleine, useCartesAgents } from "./CommunAgentsTelephone";
-import { EnteteTelephone } from "./EnteteTelephone";
+import { CHAMP_TELEPHONE, ChampTelephone, ErreurGeste, PagePleine, useCartesAgents, EntetePagePleine } from "./CommunAgentsTelephone";
+import { GroupeListe, LigneListe, SectionListe } from "./Liste";
 import { NotePoste } from "./etats";
 import { useSupport } from "./poste";
+import { useRetour } from "./retour";
 
 /** Lou, l'agent qui écrit les fiches (`prompty`). */
 const LOU = "prompty";
@@ -46,7 +48,8 @@ export function LouAgentTelephone({ id }: { id: string }) {
   const { agir, occupe, ouvert, erreur, setErreur } = useGesteTelephone();
   const [demande, setDemande] = useState("");
   const [etat, setEtat] = useState<Etat>({ kind: "saisie" });
-  const nom = carte(id)?.nom ?? id;
+  const nom = carte(id)?.nom ?? "Cet agent";
+  const versFiche = useRetour(`/equipe?agent=${encodeURIComponent(id)}`);
   const lou = carte(LOU);
   const fiche = `/equipe?agent=${encodeURIComponent(id)}`;
 
@@ -104,7 +107,7 @@ export function LouAgentTelephone({ id }: { id: string }) {
   const travail = etat.kind === "travail";
   return (
     <PagePleine>
-      <EnteteTelephone titre={`Modifier ${nom} avec Lou`} parent={fiche} />
+      <EntetePagePleine titre={`Modifier ${nom} avec Lou`} onFermer={versFiche} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <div className="flex items-start gap-3">
           <RondApercu agentId={LOU} nom={lou?.nom ?? "Lou"} teinte={lou?.teinte ?? "violet"} taille={48} />
@@ -128,15 +131,13 @@ export function LouAgentTelephone({ id }: { id: string }) {
             />
           </ChampTelephone>
           {etat.kind === "saisie" ? (
-            <ul className="flex flex-col gap-2">
-              {IDEES.map((idee) => (
-                <li key={idee}>
-                  <button type="button" onClick={() => setDemande(idee)} className="min-h-11 w-full rounded-xs border border-bordure-subtile px-3 py-2 text-left text-ui text-texte-secondaire active:bg-fond-survol">
-                    {idee}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <SectionListe titre="Idées">
+              <GroupeListe>
+                {IDEES.map((idee) => (
+                  <LigneListe key={idee} nom={<span className="whitespace-normal">{idee}</span>} fin={<Icon name="plus-01" size={20} className="shrink-0 text-icone-secondaire" />} onClick={() => setDemande(idee)} />
+                ))}
+              </GroupeListe>
+            </SectionListe>
           ) : null}
           {travail ? (
             <div className="flex flex-col gap-2">

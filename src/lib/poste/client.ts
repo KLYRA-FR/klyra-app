@@ -150,6 +150,15 @@ export function useLecturePoste<T>(
   return { etat: "attente", lent: false, relancer };
 }
 
+/** Cette lecture a-t-elle une vue gardée sur ce téléphone ? Sans rien demander à l'ordinateur (E5-39). */
+export function useVueGardeePresente(type: string, args: unknown): boolean {
+  const { etat: compte, moi } = useCompte();
+  const { principal } = usePostes();
+  const membre = compte === "connecte" && moi ? (moi._id as string) : null;
+  const cle = membre && principal?.cle ? cleVue(membre, principal.cle, type, JSON.stringify(args)) : null;
+  return useMemo(() => (cle ? lireVue(cle) !== null : false), [cle]);
+}
+
 /**
  * Un geste sur l'ordinateur (lancer, enregistrer…) : `faire` renvoie le résultat, `occupe` pendant
  * l'attente. Ordinateur fermé : le bouton est désactivé par l'écran (P-7), pas mis en attente (M-6).

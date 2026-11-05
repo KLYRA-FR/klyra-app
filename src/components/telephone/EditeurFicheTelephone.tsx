@@ -7,7 +7,6 @@ import { Icon } from "@/components/icons/Icon";
 import { ChoixTeinte } from "@/components/roles/ChoixTeinte";
 import { RondApercu } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
-import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { AGENT_TEMPLATES } from "@/data/agent-templates.generated";
 import { getField, newAgentBody, parseAgentFile, parseBody } from "@/lib/agent-file";
@@ -20,8 +19,7 @@ import { ID_ASSISTANT, MEMOIRES_FICHE, MODELES_FICHE, teinteSure } from "@/lib/t
 import type { FicheLue } from "@/lib/telephone/gestes-agents";
 import { useGesteTelephone } from "@/lib/telephone/geste";
 import type { RoleTeinte } from "@/types/domain";
-import { CHAMP_TELEPHONE, ChampTelephone, ErreurGeste, PagePleine, useCartesAgents } from "./CommunAgentsTelephone";
-import { EnteteTelephone } from "./EnteteTelephone";
+import { CHAMP_TELEPHONE, ChampTelephone, ErreurGeste, PagePleine, useCartesAgents, EntetePagePleine } from "./CommunAgentsTelephone";
 import { ConfirmationFeuille } from "./Feuille";
 import { roleDeFiche } from "./FicheAgentTelephone";
 import { NotePoste, VueLecture } from "./etats";
@@ -55,9 +53,9 @@ export function EditeurFicheTelephone({ id }: { id: string | null }) {
 function Barre({ libelle, disabled, onClick, ouvert, detail }: { libelle: string; disabled: boolean; onClick: () => void; ouvert: boolean; detail?: string }) {
   return (
     <div className="shrink-0 border-t border-bordure-subtile bg-fond-surface px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
-      <BoutonPrincipal className="w-full" disabled={disabled} onClick={onClick}>
+      <Bouton variant="sombre" taille="md" className="w-full" disabled={disabled} onClick={onClick}>
         {libelle}
-      </BoutonPrincipal>
+      </Bouton>
       {!ouvert ? <NotePoste /> : detail ? <p className="mt-1 text-ui-xs text-texte-secondaire">{detail}</p> : null}
     </div>
   );
@@ -93,13 +91,14 @@ function ModificationFiche({ id }: { id: string }) {
   const [cle, setCle] = useState(0);
   const { carte } = useCartesAgents();
   const nom = carte(id)?.nom ?? "cet agent";
+  const versFiche = useRetour(`/equipe?agent=${encodeURIComponent(id)}`);
   /* La version ouverte est figée dès sa première lecture : un poste qui se ferme ou se rouvre ne la remplace pas. */
   if (!gardee && lecture.etat === "ok" && lecture.data.type === "agent") setGardee(lecture.data);
 
   if (!gardee) {
     return (
       <PagePleine>
-        <EnteteTelephone titre={`Modifier ${nom}`} parent={`/equipe?agent=${encodeURIComponent(id)}`} />
+        <EntetePagePleine titre={`Modifier ${nom}`} onFermer={versFiche} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <VueLecture lecture={lecture} ferme={(sur) => `la fiche de ${nom} est sur ${sur}. Elle s’affiche quand KLYRA y est ouverte.`}>
             {() => null}
@@ -122,6 +121,7 @@ function ModificationFiche({ id }: { id: string }) {
 }
 
 function FormulaireFiche({ fiche, onReprendre }: { fiche: Extract<FicheLue, { type: "agent" }>; onReprendre: () => void }) {
+  const [copieFaite, setCopieFaite] = useState<string | null>(null);
   const router = useRouter();
   const sur = useSupport();
   const { agir, occupe, ouvert, erreur } = useGesteTelephone();
@@ -175,16 +175,30 @@ function FormulaireFiche({ fiche, onReprendre }: { fiche: Extract<FicheLue, { ty
 
   return (
     <PagePleine>
-      <EnteteTelephone titre={`Modifier ${initial.nom}`} retour={() => (modifie ? setAbandon(true) : retourner())} />
+      <EntetePagePleine titre={`Modifier ${initial.nom}`} onFermer={() => (modifie ? setAbandon(true) : retourner())} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {erreur?.code === "conflit" ? (
           <div role="alert" className="mt-3 flex flex-col gap-2 rounded-md border border-bordure-erreur bg-fond-surface p-3">
             <p className="text-ui text-texte-principal">
               <span className="font-medium">{erreur.message}.</span> Rien n’a été écrit. Quelqu’un (ou un agent) l’a modifiée entre-temps.
             </p>
-            <Bouton variant="blanc" taille="md" disabled={!ouvert} onClick={onReprendre}>
+            <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="refresh-01" size={20} />} disabled={!ouvert} onClick={onReprendre}>
               Reprendre la version de {sur}
             </Bouton>
+            <Bouton
+              variant="discret"
+              taille="md"
+              iconeGauche={<Icon name="copy-left" size={20} />}
+              onClick={() =>
+                void navigator.clipboard?.writeText(corps).then(
+                  () => setCopieFaite("Tes changements sont copiés."),
+                  () => setCopieFaite("Tes changements n’ont pas été copiés."),
+                )
+              }
+            >
+              Copier mes changements
+            </Bouton>
+            {copieFaite ? <p role="status" className="text-ui-xs text-texte-secondaire">{copieFaite}</p> : null}
           </div>
         ) : null}
 
@@ -197,8 +211,8 @@ function FormulaireFiche({ fiche, onReprendre }: { fiche: Extract<FicheLue, { ty
 
         <div className="mt-3 flex items-center gap-3 rounded-xl border border-bordure-subtile bg-fond-surface p-3">
           <p className="min-w-0 flex-1 text-ui text-texte-secondaire">Tu préfères ne pas toucher au texte ? Dis à Lou ce qui doit changer.</p>
-          <Bouton variant="blanc" taille="md" onClick={() => router.push(`${retour}&mode=lou`)}>
-            Demander à Lou
+          <Bouton variant="blanc" iconeGauche={<Icon name="stars" size={16} />} className="relative shrink-0 after:absolute after:-inset-x-1 after:-inset-y-1.5" onClick={() => router.push(`${retour}&mode=lou`)}>
+            Avec Lou
           </Bouton>
         </div>
 
@@ -228,10 +242,10 @@ function FormulaireFiche({ fiche, onReprendre }: { fiche: Extract<FicheLue, { ty
       </div>
       <Barre
         libelle={occupe ? "Enregistrement…" : "Enregistrer"}
-        disabled={!ouvert || occupe || !modifie}
+        disabled={!ouvert || occupe || !modifie || erreur?.code === "conflit"}
         onClick={enregistrer}
         ouvert={ouvert}
-        detail={modifie ? "L’ancienne version reste dans l’historique." : "Aucune modification."}
+        detail={erreur?.code === "conflit" ? `Reprends d’abord la version de ${sur}.` : modifie ? "L’ancienne version reste dans l’historique." : "Aucune modification."}
       />
       {copie ? (
         <ConfirmationFeuille
@@ -311,7 +325,7 @@ function CreationFiche() {
 
   return (
     <PagePleine>
-      <EnteteTelephone titre="Nouvel agent" retour={() => (modifie ? setAbandon(true) : quitter())} />
+      <EntetePagePleine titre="Nouvel agent" onFermer={() => (modifie ? setAbandon(true) : quitter())} />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {proposition ? (
           <p className="rounded-md border border-bordure-subtile bg-fond-surface p-3 text-ui text-texte-secondaire">
@@ -338,9 +352,9 @@ function CreationFiche() {
           </ChampTelephone>
           <div className="flex flex-col gap-2">
             <span id="couleur-nouvel-agent" className="text-ui font-medium text-texte-principal">
-              Couleur de son illustration
+              Couleur de son visuel
             </span>
-            <ChoixTeinte valeur={teinte} onChange={setTeinte} libelleId="couleur-nouvel-agent" />
+            <ChoixTeinte grand valeur={teinte} onChange={setTeinte} libelleId="couleur-nouvel-agent" />
           </div>
           <ChampTelephone label="Quand l’appeler" erreur={essai ? erreurs.description : null} aide="Le motif : « Rôle — ce qu’il couvre. Appelle X dès que… ».">
             <Textarea size="lg" autoGrow rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className={CHAMP_LONG} />

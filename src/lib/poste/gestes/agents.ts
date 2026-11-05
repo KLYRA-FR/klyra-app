@@ -168,20 +168,9 @@ export function useGestesAgents(): Gestes {
         if (!lire) throw new Error(`L’utilisation se lit dans l’app de bureau, sur ${poste.ton}.`);
         const r = await lire();
         if (!r.ok) throw new Error(r.message);
-        return {
-          entrees: r.data.entrees
-            .filter((e) => e.agent === id && e.klyra !== false)
-            .map((e) => ({
-              at: e.at,
-              modele: e.modele,
-              fournisseur: e.fournisseur,
-              entree: e.jetons.entree,
-              sortie: e.jetons.sortie,
-              cacheLu: e.jetons.cacheLu,
-              cacheEcrit: e.jetons.cacheEcrit,
-              coutUsd: e.coutUsd,
-            })),
-        };
+        return r.data.entrees
+          .filter((e) => e.agent === id && e.klyra !== false)
+          .map((e) => ({ at: e.at, modele: e.modele, entree: e.jetons.entree, sortie: e.jetons.sortie, cacheLu: e.jetons.cacheLu, cacheEcrit: e.jetons.cacheEcrit, coutUsd: e.coutUsd }));
       },
     },
     lou: {
