@@ -47,6 +47,19 @@ describe("ce qui part au serveur", () => {
     expect(changements(elementsDuServeur(etat("Bonjour"), VPS, travaille).elements, suivant).aEcrire).toEqual([]);
   });
 
+  it("une exécution n'est envoyée que si le serveur ne la connaît pas : c'est lui qui les écrit", () => {
+    const etat = (statut: string) => vide({ workflows: [{ id: "w", lieu: VPS } as never], executions: [{ id: "e", workflowId: "w", statut } as never] });
+    const { aEcrire, suivant } = changements(elementsDuServeur(etat("en-cours"), VPS).elements, new Map());
+    expect(aEcrire.map((e) => e.type).sort()).toEqual(["execution", "workflow"]);
+    expect(changements(elementsDuServeur(etat("fait"), VPS).elements, suivant).aEcrire).toEqual([]);
+  });
+
+  it("le serveur fait foi sur une exécution qu'il a fait tourner", () => {
+    const local = vide({ executions: [{ id: "e", workflowId: "w", statut: "en-cours" } as never] });
+    const r = fusionner(local, { revision: 1, elements: [{ type: "execution", id: "e", valeur: { id: "e", workflowId: "w", statut: "fait" } }] }, VPS);
+    expect((r.executions[0] as unknown as { statut: string }).statut).toBe("fait");
+  });
+
   it("découpe un gros envoi", () => {
     const e = (id: string, n: number) => ({ type: "projet" as const, id, valeur: "x".repeat(n) });
     expect(paquets([e("a", 60), e("b", 60), e("c", 10)], 100).map((p) => p.map((x) => x.id))).toEqual([["a"], ["b", "c"]]);

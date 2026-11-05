@@ -1,7 +1,7 @@
 /**
  * Le VPS garde son espace, de bout en bout : un vrai serveur KLYRA local et l'app sur deux profils.
  * Le premier envoie ce qu'il avait pour ce serveur (rien de ce PC) ; un second appareil, tout neuf, le
- * retrouve en se reliant, tickets compris.
+ * retrouve en se reliant, tickets compris. Le workflow du VPS tourne sur lui, même sans aucune app ouverte.
  * Prérequis : `pnpm build && pnpm build:electron`. Linux : `xvfb-run -a node scripts/test-espace-serveur.mjs --no-sandbox`.
  */
 import { spawn, execFileSync } from "node:child_process";
@@ -26,6 +26,7 @@ const fil = (id, titre, lieu) => ({
   ...(lieu ? { lieu } : {}),
   fil: { roleId: "principal", statut: "ouvert", creeLe: il(2), lancePar: null, etape: "a-faire" },
 });
+const SECRET = "secret-du-webhook-1234";
 const profilA = path.join(temp, "profil-a");
 const profilB = path.join(temp, "profil-b");
 mkdirSync(profilA, { recursive: true });
@@ -45,7 +46,24 @@ writeFileSync(
     evenements: [],
     categories: [{ id: "perso", nom: "Perso", teinte: "bleu-k2", icone: "home-01" }],
     artefacts: [],
-    workflows: [{ id: "wf-vps", titre: "Workflow du VPS", lieu: adresse, graphe: { noeuds: [], liens: [] }, projectId: null, creeLe: il(2), majLe: il(2), versions: [] }, { id: "wf-pc", titre: "Workflow du PC", graphe: { noeuds: [], liens: [] }, projectId: null, creeLe: il(2), majLe: il(2), versions: [] }],
+    workflows: [{
+      id: "wf-vps",
+      titre: "Workflow du VPS",
+      lieu: adresse,
+      webhooks: { depart: SECRET },
+      graphe: {
+        noeuds: [
+          { id: "depart", type: "declencheur", at: { x: 0, y: 0 }, champs: { declencheur: "webhook" } },
+          { id: "fin", type: "sortie", at: { x: 300, y: 0 }, champs: { cible: "conversation", titre: "Sortie du workflow" } },
+        ],
+        liens: [{ id: "l1", de: "depart", vers: "fin", port: "texte" }],
+        traits: [],
+      },
+      projectId: null,
+      creeLe: il(2),
+      majLe: il(2),
+      versions: [],
+    }, { id: "wf-pc", titre: "Workflow du PC", graphe: { noeuds: [], liens: [] }, projectId: null, creeLe: il(2), majLe: il(2), versions: [] }],
     executions: [],
   }),
 );
@@ -91,6 +109,14 @@ try {
   app = null;
   await attendre(1000);
 
+  // Plus aucune app ouverte : le workflow du VPS part quand même, de lui-même.
+  const webhook = await fetch(`${adresse}/klyra/v1/webhook/${SECRET}`, { method: "POST", body: "Bonjour du webhook" });
+  verifier(webhook.status === 202, `PC fermé : le webhook du workflow répond (${webhook.status})`);
+  verifier((await fetch(`${adresse}/klyra/v1/webhook/mauvais-secret-000`, { method: "POST", body: "x" })).status === 404, "un mauvais secret n’ouvre rien");
+  const lireDossier = (type) => (existsSync(path.join(donnees, "espace", type)) ? readdirSync(path.join(donnees, "espace", type)).map((f) => JSON.parse(readFileSync(path.join(donnees, "espace", type, f), "utf8")).valeur) : []);
+  verifier(await attendreQue(() => lireDossier("execution").some((e) => e.workflowId === "wf-vps" && e.statut === "fait"), 20), "PC fermé : l’exécution va au bout sur le serveur");
+  verifier(conversationsServeur().find((c) => c.id === "wf-sortie-wf-vps")?.valeur.messages.at(-1).parts[0].text === "Bonjour du webhook", "PC fermé : sa sortie entre dans une conversation du serveur");
+
   // Un appareil tout neuf : il retrouve l'espace du serveur.
   app = await lancerApp(base(profilB, "b"));
   verifier(await relier(app), "second appareil, tout neuf : le VPS est relié");
@@ -101,6 +127,23 @@ try {
   verifier(await attendreQue(() => JSON.parse(readFileSync(path.join(profilB, "conversations.json"), "utf8")).chats?.find((c) => c.id === "klyra-fil-vps000001")), "second appareil : il en garde une copie");
 
   verifier(await app.ev(`document.querySelector('[data-ticket="klyra-fil-vps000001"]') !== null`), "second appareil : la carte du ticket");
+
+  // Le workflow lancé depuis l'app part sur le serveur, et l'app le suit en direct.
+  await app.aller("/routines?vue=workflows");
+  verifier(await app.quand(`document.body.innerText.includes("Workflow du VPS")`, 20000), "second appareil : le workflow du VPS");
+  verifier(!(await app.ev(`document.body.innerText`)).includes("Workflow du PC"), "second appareil : pas celui de l’autre PC");
+  verifier(!(await app.ev(`document.body.innerText`)).includes("pas encore à jour"), "le serveur est à jour : pas d’avertissement sur le moteur");
+  const lancees = () => lireDossier("execution").filter((e) => e.workflowId === "wf-vps").length;
+  const avant = lancees();
+  verifier(await app.cliquer("Lancer le workflow"), "second appareil : on lance le workflow");
+  verifier(await attendreQue(() => lancees() === avant + 1, 20), "l’exécution part sur le serveur, pas dans l’app");
+  verifier(await app.quand(`document.body.innerText.includes("Sortie du workflow") || [...document.querySelectorAll("*")].some((e) => /Réussie|réussie|Terminé/.test(e.textContent ?? ""))`, 10000), "l’app voit l’exécution finie");
+  let surProfil = null;
+  for (let i = 0; i < 30 && !surProfil; i++) {
+    await attendre(500);
+    surProfil = JSON.parse(readFileSync(path.join(profilB, "conversations.json"), "utf8")).executions?.find((e) => e.workflowId === "wf-vps" && e.statut === "fait");
+  }
+  verifier(!!surProfil, "second appareil : l’exécution du serveur est dans sa copie");
   verifier(app.erreurs.length === 0, `aucune erreur dans la page${app.erreurs.length ? ` : ${app.erreurs.join(" | ")}` : ""}`);
 } finally {
   await app?.fermer();

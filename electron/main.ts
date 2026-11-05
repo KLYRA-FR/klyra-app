@@ -171,7 +171,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, montrerRendu, ouvrirDos
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { appelCoffreVps, appelComposioVps, appelEquipeVps, appelEspaceVps } from "./equipe-vps";
+import { appelCoffreVps, appelComposioVps, appelEquipeVps, appelEspaceVps, appelWorkflowsVps } from "./equipe-vps";
 import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
@@ -1176,6 +1176,7 @@ function registerBridge() {
             evenement: (id, agentEvent) => sender.send("claude:event", id, agentEvent),
             spontane: (id, sessionId, contexte) => sender.send("claude:spontane", id, sessionId, contexte),
             rendu: (origine, rendu) => sender.send("rendus:vps", origine, rendu),
+            serveur: (origine, event) => sender.send("serveur:evenement", origine, event),
           };
         },
         equipe: equipePourVps,
@@ -1232,6 +1233,10 @@ function registerBridge() {
   };
   handle("espace:lire", (lieu: string, depuis: unknown) => appelEspaceVps(lieu, espaceVps(lieu), "lire", typeof depuis === "number" ? { depuis } : {}));
   handle("espace:ecrire", (lieu: string, corps: unknown) => appelEspaceVps(lieu, espaceVps(lieu), "ecrire", corps));
+  handle("espace:workflows", (lieu: string, methode: string, corps: unknown) => {
+    if (typeof methode !== "string" || !["lancer", "arreter", "decider"].includes(methode)) throw new AgentError("introuvable", "Demande inconnue.");
+    return appelWorkflowsVps(lieu, espaceVps(lieu), methode, corps);
+  });
   handle("conversations:read", () => readConversations());
   handle("conversations:write", (data: unknown) => writeConversations(data));
   ipcMain.handle("conversations:exporter", async (event, demande: unknown) => {
