@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo, type ReactNode } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";

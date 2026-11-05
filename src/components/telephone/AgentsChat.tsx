@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
 import { RondApercu, VisuelAgent } from "@/components/roles/AgentRond";
 import { AGENT_PASTELS } from "@/data/agent-palettes";
 import { ROLE_TEINTES, type RoleTeinte } from "@/types/domain";
