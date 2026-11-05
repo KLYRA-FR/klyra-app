@@ -128,7 +128,7 @@ function FormulaireProjet({ projetId, initial, onFermer, onEnregistre }: { proje
             value={valeurs.brief}
             aria-describedby={decrit}
             onChange={(e) => changer("brief", e.target.value)}
-            className={cn(CHAMP_KLYRA_UI, "min-h-[120px] w-full px-3.5 py-3 leading-[1.45]")}
+            className={cn(CHAMP_KLYRA_UI, "min-h-[120px] w-full resize-none px-3.5 py-3 leading-[1.45]")}
           />
         )}
       </Champ>

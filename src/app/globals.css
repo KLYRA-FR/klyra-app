@@ -430,7 +430,12 @@ body[data-glisse] iframe {
 
 /* La fiche d'un projet après son enregistrement (téléphone, E6-36). */
 [data-carte-projet][data-eclaire] {
-  animation: klyra-eclaire 1800ms var(--ease-sortie), klyra-halo 1800ms var(--ease-sortie);
+  animation: klyra-eclaire-carte 1800ms var(--ease-sortie), klyra-halo 1800ms var(--ease-sortie);
+}
+
+@keyframes klyra-eclaire-carte {
+  0%, 30% { background-color: var(--color-fond-teinte-bleue); }
+  100%    { background-color: var(--color-fond-surface); }
 }
 
 @media (prefers-reduced-motion: reduce) {

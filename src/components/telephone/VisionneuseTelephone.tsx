@@ -52,6 +52,9 @@ const RECOMPOSITION = [
   "[&_article_h1]:mt-1 [&_article_h1]:text-h4 [&_article_h2]:mt-[22px] [&_article_h2]:text-body [&_article_h3]:text-body-s [&_article_p.text-h2]:text-h4",
   "[&_.text-ui-2xs]:text-ui-xs [&_.text-ui-3xs]:text-ui-xs [&_.text-texte-tertiaire]:text-texte-secondaire",
   "[&_[data-vue=source]]:text-ui [&_[role=tab]]:min-h-11",
+  /* E6-22 : le corps en 16 px à 1,55, une puce ronde ; E6-24 : le tableau en 14 px, 36 px par ligne. */
+  "[&_article]:leading-[1.55] [&_article]:gap-3 [&_article_h2]:mb-[-4px] [&_article_h3]:mt-[18px] [&_article_ul_[aria-hidden=true]]:rounded-full",
+  "[&_table[data-grille]]:text-ui [&_table[data-grille]_td]:py-[9px] [&_table[data-grille]_thead_th]:py-[9px] [&_table[data-grille]_tbody_th]:py-[9px]",
 ].join(" ");
 
 function lirePreference(): boolean {
@@ -270,7 +273,7 @@ export function VisionneuseTelephone({
                 action={
                   ouvrable ? (
                     <>
-                      <Bouton variant="blanc" taille="md" disabled={!aDistance || !possible || occupe} iconeGauche={<Icon name="link-external" size={20} />} onClick={() => void ouvrirSurPoste()}>
+                      <Bouton variant="blanc" taille="md" className="disabled:border-transparent disabled:bg-fond-survol disabled:text-texte-tertiaire" disabled={!aDistance || !possible || occupe} iconeGauche={<Icon name="link-external" size={20} />} onClick={() => void ouvrirSurPoste()}>
                         Ouvrir sur {sur}
                       </Bouton>
                       {noteOuvrir ? <p className="text-ui-xs text-texte-secondaire">{noteOuvrir}</p> : null}

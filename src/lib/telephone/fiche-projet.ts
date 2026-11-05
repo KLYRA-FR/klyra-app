@@ -4,6 +4,8 @@
  * chats. Ce qui part au téléphone est une vue courte et lisible : pas d'identifiant de travail, de
  * référence d'état ni de référence de preuve (un chemin peut s'y trouver) ; l'identifiant du fil reste,
  * il sert au lien « Ouvrir le fil » et ne s'affiche jamais. Une source absente est dite, pas mise à zéro.
+ * Cette vue répond à une demande du téléphone : elle passe par `demandesPoste`, le temps de la réponse,
+ * comme un fichier lu (M-7, effacée à la lecture ou à l'expiration) ; rien du journal n'est copié au compte.
  */
 
 import type { ProjetModifiable } from "./dossiers";
@@ -30,7 +32,7 @@ interface LigneJournal {
 export interface ProjectionJournal {
   travaux: LigneJournal[];
   alertes: { work_id: string; type: string; motif: string; prochain_geste: string }[];
-  evenements?: { event_id: string; work_id: string; type: string; resume: string }[];
+  evenements?: { event_id: string; work_id: string; type: string; resume: string; quand?: string | null }[];
   couverture: string;
 }
 
@@ -126,6 +128,11 @@ export function texteLisible(brut: string): string {
     .trim();
 }
 
+/** Après « À surveiller : », la phrase continue en minuscule ; un sigle garde ses capitales. */
+function suite(texte: string): string {
+  return /^\p{Lu}\p{Ll}/u.test(texte) ? texte.charAt(0).toLowerCase() + texte.slice(1) : texte;
+}
+
 function montant(total: number, unite: string): string {
   const u = unite.trim().toLowerCase();
   const nombre = total.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -157,13 +164,13 @@ export function travailFiche(ligne: LigneJournal, rang: number, projection: Proj
   const alertes = projection.alertes.filter((a) => a.work_id === ligne.work_id);
   const suivi: SuiviTravail[] = alertes.map((a) => ({
     genre: "alerte",
-    texte: `À surveiller : ${texteLisible(a.motif)}`,
-    detail: texteLisible(a.prochain_geste) ? `Prochain geste : ${texteLisible(a.prochain_geste)}` : null,
+    texte: `À surveiller : ${suite(texteLisible(a.motif))}`,
+    detail: texteLisible(a.prochain_geste) ? `Prochain geste : ${suite(texteLisible(a.prochain_geste))}` : null,
     quand: null,
   }));
   for (const e of projection.evenements ?? []) {
     if (e.work_id !== ligne.work_id) continue;
-    suivi.push({ genre: e.type === "fin_verification" ? "verification" : "commentaire", texte: `${e.type === "fin_verification" ? "Vérification" : "Commentaire"} : ${texteLisible(e.resume)}`, detail: null, quand: null });
+    suivi.push({ genre: e.type === "fin_verification" ? "verification" : "commentaire", texte: `${e.type === "fin_verification" ? "Vérification" : "Commentaire"} : ${suite(texteLisible(e.resume))}`, detail: null, quand: e.quand ?? null });
   }
   const preuve = estPreuves(preuves) ? lignePreuves(preuves) : null;
   if (preuve) suivi.push(preuve);
@@ -257,7 +264,7 @@ export function libelleFini(iso: string | null | undefined, maintenant: number):
 /** La ligne 2 d'un travail dans la liste : le responsable, puis ce qui compte le plus (alerte, fin, échéance). */
 export function ligneTravail(travail: TravailFiche, maintenant: number): string {
   const detail = travail.alerte
-    ? `à surveiller : ${travail.alerte.charAt(0).toLowerCase()}${travail.alerte.slice(1)}`
+    ? `à surveiller : ${suite(travail.alerte.replace(/\.$/, ""))}`
     : travail.fini
       ? libelleFini(travail.derniereNouvelle, maintenant)
       : travail.echeance

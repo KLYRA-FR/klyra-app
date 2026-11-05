@@ -251,7 +251,7 @@ export interface Projection {
   travaux: LigneProjection[];
   alertes: { work_id: string; type: string; motif: string; prochain_geste: string }[];
   blocages: { point: string; texte: string }[];
-  evenements: { event_id: string; work_id: string; type: string; resume: string }[];
+  evenements: { event_id: string; work_id: string; type: string; resume: string; quand: string }[];
   couverture: "ok" | "journal_illisible";
 }
 
@@ -278,9 +278,9 @@ export function projection(db: DatabaseSync, projectId: string | null): Projecti
     projectId,
     projectId,
   );
-  const evenements = tous<{ event_id: string; work_id: string; type: string; resume: string }>(
+  const evenements = tous<{ event_id: string; work_id: string; type: string; resume: string; quand: string }>(
     db,
-    `SELECT event_id, work_id, type, resume FROM event
+    `SELECT event_id, work_id, type, resume, coalesce(occurred_at, received_at) AS quand FROM event
      WHERE work_id IS NOT NULL AND type IN ('commentaire_pr', 'fin_verification')
        AND (? IS NULL OR project_id = ?)
      ORDER BY ingest_seq`,

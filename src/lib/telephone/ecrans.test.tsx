@@ -304,7 +304,7 @@ describe("E6-08 à E6-12 : la fiche du projet", () => {
     expect(lu).toContain("En revue Site · Refonte du site");
     expect(lu).toContain("Refaire l’espace client.");
     expect(lu).toContain("Travaux 1");
-    expect(lu).toContain("Arrondi de la TVA Bloqué Léon · à surveiller : sans nouvelles depuis 2 h.");
+    expect(lu).toContain("Arrondi de la TVA Bloqué Léon · à surveiller : sans nouvelles depuis 2 h ");
     expect(lu).toContain("Consignes des agents Sur ton Mac");
     expect(lu).not.toContain("c-tva");
     expect(html).toContain('href="/equipe?agent=dev"');

@@ -21,8 +21,8 @@ describe("un travail lu dans le journal", () => {
 
   test("le suivi : alerte et prochain geste, vérification, preuves comptées ; sans moteur, chemin ni identifiant", () => {
     expect(travail.suivi.map((s) => s.genre)).toEqual(["alerte", "verification", "preuves"]);
-    expect(travail.suivi[0]).toMatchObject({ texte: "À surveiller : Travail bloqué, sans résolution plus récente.", detail: "Prochain geste : Lire l'état du fil et décider." });
-    expect(travail.suivi[1].texte).toBe("Vérification : Les tests passent dans un fichier pour ce fil.");
+    expect(travail.suivi[0]).toMatchObject({ texte: "À surveiller : travail bloqué, sans résolution plus récente.", detail: "Prochain geste : lire l'état du fil et décider." });
+    expect(travail.suivi[1].texte).toBe("Vérification : les tests passent dans un fichier pour ce fil.");
     expect(travail.suivi[2]).toMatchObject({ texte: "Preuves : 2 opérations constatées, 1 point de contrôle.", quand: a(5, 10, 47) });
     const tout = JSON.stringify(travail);
     expect(tout).not.toMatch(/w1|watchdog|\/Users|klyra-fil/);
