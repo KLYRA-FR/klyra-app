@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Chat, RoleId } from "@/types/domain";
-import { CLE_CARNET, interroger, lireCarnet, sondeDe, type Carnet, type ServeurConnu, type Sonde } from "./serveur-vps";
+import { CLE_CARNET, interroger, lireCarnet, retardDe, sondeDe, type Carnet, type ServeurConnu, type Sonde } from "./serveur-vps";
 
 /**
  * Où tourne une conversation : ce PC (null) ou un VPS relié (son origine https).
@@ -160,18 +160,35 @@ export function idDirect(roleId: RoleId, lieu: string | null = null, chats: read
   return chats.some((c) => c.id === simple) ? `${simple}@${SUR_PC}` : simple;
 }
 
-/** La dernière sonde de chaque VPS relié, relue quand la liste change (Réglages › Mobile, Ce téléphone). */
-export function useSondes(serveurs: ServeurConnu[]): Record<string, { sonde: Sonde; agents?: string }> {
-  const [sondes, setSondes] = useState<Record<string, { sonde: Sonde; agents?: string }>>({});
+export interface SondeServeur {
+  sonde: Sonde;
+  agents?: string;
+  versionCode?: number;
+  retard: boolean;
+}
+
+/** La dernière sonde de chaque VPS relié, relue chaque minute : un serveur mis à jour perd son avis tout seul. */
+export function useSondes(serveurs: ServeurConnu[]): Record<string, SondeServeur> {
+  const [sondes, setSondes] = useState<Record<string, SondeServeur>>({});
   useEffect(() => {
     const controle = new AbortController();
-    for (const serveur of serveurs) {
-      void interroger(serveur.adresse, controle.signal).then((lecture) => {
-        if (controle.signal.aborted) return;
-        setSondes((etat) => ({ ...etat, [serveur.id]: { sonde: sondeDe(lecture), agents: lecture.ok ? lecture.agents : undefined } }));
-      });
-    }
-    return () => controle.abort();
+    const sonder = () => {
+      for (const serveur of serveurs) {
+        void interroger(serveur.adresse, controle.signal).then((lecture) => {
+          if (controle.signal.aborted) return;
+          setSondes((etat) => ({
+            ...etat,
+            [serveur.id]: { sonde: sondeDe(lecture), agents: lecture.ok ? lecture.agents : undefined, versionCode: lecture.ok ? lecture.versionCode : undefined, retard: retardDe(lecture) },
+          }));
+        });
+      }
+    };
+    sonder();
+    const minuteur = setInterval(sonder, 60_000);
+    return () => {
+      controle.abort();
+      clearInterval(minuteur);
+    };
   }, [serveurs]);
   return sondes;
 }

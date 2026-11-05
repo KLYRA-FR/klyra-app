@@ -18,7 +18,9 @@ import {
   lireSaisie,
   type Lecture,
 } from "../../electron/lecture-serveur";
+import { VERSION_CODE_SERVEUR } from "../../electron/version-serveur";
 
+export { VERSION_CODE_SERVEUR };
 export {
   CHEMIN_SERVEUR,
   MESSAGE_CODE,
@@ -68,15 +70,30 @@ export function sondeDe(lecture: Lecture): Sonde {
   return "silence";
 }
 
+/**
+ * Le code de ce VPS est-il plus ancien que celui que cette app attend ? Le serveur ne se met pas à jour seul,
+ * et l'app si. Sans version : un serveur d'avant ce contrôle, donc en retard. Plus récent que l'app :
+ * c'est l'app qui n'a pas encore pris sa mise à jour, il n'y a rien à faire sur le VPS.
+ */
+export function serveurEnRetard(versionCode: number | undefined): boolean {
+  return versionCode === undefined || versionCode < VERSION_CODE_SERVEUR;
+}
+
+/** Le retard d'après une réponse. Un serveur qui ne répond pas n'a pas d'âge connu. */
+export function retardDe(lecture: Lecture): boolean {
+  return lecture.ok && serveurEnRetard(lecture.versionCode);
+}
+
 const AGENTS: Record<string, string> = {
   pret: "agents prêts",
   "non-connecte": "Claude Code à connecter (connecter-claude)",
   absent: "Claude Code absent : relance la commande",
 };
 
-export function libelleServeur(etat: EtatServeur, sonde: Sonde | undefined, agents: string | undefined): string {
+export function libelleServeur(etat: EtatServeur, sonde: Sonde | undefined, agents: string | undefined, retard = false): string {
   if (etat === "quitte") return "Quitté";
   const detail = sonde === "repond" ? "Répond" : sonde === "invitation" ? "Plus relié" : sonde === "version" ? "Autre version" : sonde === "silence" ? "Ne répond pas" : "Vérification…";
+  if (sonde === "repond" && retard) return `${detail} · à mettre à jour`;
   return sonde === "repond" && agents && AGENTS[agents] ? `${detail} · ${AGENTS[agents]}` : detail;
 }
 
