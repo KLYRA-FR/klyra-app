@@ -432,6 +432,7 @@ export async function streamDistant(origine: string, requestId: string, options:
         dossier: options.dossierVps ?? null,
         /* Le VPS retient la session de cette conversation : le téléphone, PC fermé, y reprend. */
         conversation: options.chatId ?? null,
+        ...(options.sessionNeuve ? { sessionNeuve: true } : {}),
         /* `/<skill>` en tête du message : le VPS la remet devant le contexte s'il la connaît. */
         ...(options.skill ? { skill: options.skill } : {}),
       },

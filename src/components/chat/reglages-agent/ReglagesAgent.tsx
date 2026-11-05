@@ -188,7 +188,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
         <TitreGroupe>Conversation</TitreGroupe>
         {confirmer ? (
           <div className="flex flex-col gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
-            <p className="m-0 text-ui-s leading-[1.45] text-texte-principal">Les messages et ce que {role.name} retient de cette conversation seront effacés.</p>
+            <p className="m-0 text-ui-s leading-[1.45] text-texte-principal">Les messages et ce que {role.name} retient de cette conversation seront effacés pour de bon.</p>
             <div className="flex gap-2">
               <Bouton
                 variant="sombre"
