@@ -1,7 +1,7 @@
 "use client";
 
 import { useLieuActif } from "@/lib/lieux";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { Input } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
@@ -19,8 +19,9 @@ import { compteComposioActif, nomCompteComposio, statutCompteComposio } from "@/
 import { ConnexionComposio } from "./ConnexionComposio";
 
 /** Les apps connues, dans l'ordre de la grille ; l'adresse du serveur reste côté Electron. */
-const APPS: { id: string; nom: string; description: string }[] = [
-  { id: "github", nom: "GitHub", description: "Dépôts, issues et pull requests." },
+/** Les apps en direct. `composio` : l'app passe par Composio (son serveur MCP n'ouvre pas l'inscription OAuth) ; les autres s'autorisent dans le navigateur. */
+const APPS: { id: string; nom: string; description: string; via?: "composio" }[] = [
+  { id: "github", nom: "GitHub", description: "Dépôts, issues et pull requests.", via: "composio" },
   { id: "linear", nom: "Linear", description: "Tickets, projets et cycles." },
   { id: "supabase", nom: "Supabase", description: "Bases, tables et fonctions." },
   { id: "neon", nom: "Neon", description: "Bases Postgres et leurs branches." },
@@ -29,13 +30,14 @@ const APPS: { id: string; nom: string; description: string }[] = [
 
 /** Les apps à brancher : Composio d'abord (une connexion, des centaines d'apps), puis les MCP directs. Section des Réglages. */
 export function Marketplace() {
+  const connect = useComposioConnect();
   return (
     <>
       <div id={ancreReglage("composio")} className="scroll-mt-6">
-        <CarteComposio />
+        <CarteComposio connect={connect} />
       </div>
       <div id={ancreReglage("apps-directes")} className="scroll-mt-6">
-        <AppsDirectes />
+        <AppsDirectes composio={connect} />
       </div>
     </>
   );
@@ -44,6 +46,7 @@ export function Marketplace() {
 /** La Marketplace en page seule (ancienne adresse) ; le menu mène aux Réglages. */
 export function MarketplaceScreen() {
   const lieu = useLieuActif();
+  const connect = useComposioConnect();
   return (
     <div className="h-full overflow-y-auto">
       <div className="@container mx-auto flex w-full max-w-[960px] flex-col gap-8 px-5 pt-5 pb-8">
@@ -58,8 +61,8 @@ export function MarketplaceScreen() {
             Composio a ici le compte de ce serveur. Les apps directes et le mode développeur restent ceux de cet ordinateur : les agents de ce serveur ne s’en servent pas.
           </p>
         )}
-        <CarteComposio />
-        <AppsDirectes />
+        <CarteComposio connect={connect} />
+        <AppsDirectes composio={connect} />
       </div>
     </div>
   );
@@ -113,9 +116,11 @@ function useComposioConnect() {
   };
 }
 
-function CarteComposio() {
+type EtatComposioConnect = ReturnType<typeof useComposioConnect>;
+
+/** La carte Composio ; `connect` est partagé avec la carte GitHub des apps en direct. */
+function CarteComposio({ connect }: { connect: EtatComposioConnect }) {
   const api = useComposio();
-  const connect = useComposioConnect();
   const [demander, confirmation] = useConfirmation();
   const [dev, setDev] = useState(false);
   const etat = connect.etat;
@@ -304,62 +309,123 @@ function ServiceComposio({ service, api, choisir, retirer }: {
 function useMcpDirects() {
   const pont = getBridge()?.mcp;
   const [liste, setListe] = useState<McpDirect[]>([]);
-  const [liens, setLiens] = useState<Record<string, { jeton: string }>>({});
   const relire = useCallback(async () => {
     if (!pont) return;
-    const [l, a] = await Promise.all([pont.lister(), pont.apps()]);
+    const l = await pont.lister();
     if (l.ok) setListe(l.data);
-    if (a.ok) setLiens(a.data);
   }, [pont]);
   useEffect(() => {
     const debut = window.setTimeout(() => void relire(), 0);
-    return () => window.clearTimeout(debut);
+    window.addEventListener("focus", relire);
+    return () => { window.clearTimeout(debut); window.removeEventListener("focus", relire); };
   }, [relire]);
-  return { pont, liste, setListe, liens };
+  return { pont, liste, setListe };
 }
 
-function AppsDirectes() {
-  const { pont, liste, setListe, liens } = useMcpDirects();
-  const [ouvert, setOuvert] = useState<string | null>(null);
+type EntreeConnexion = { app?: string; nom?: string; url?: string; remplace?: string };
+
+function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
+  const { pont, liste, setListe } = useMcpDirects();
+  const [autre, setAutre] = useState(false);
+  /** La carte dont l'autorisation attend le navigateur. */
+  const [attente, setAttente] = useState<string | null>(null);
+  const [erreurs, setErreurs] = useState<Record<string, string>>({});
   const [demander, confirmation] = useConfirmation();
   const persos = liste.filter((m) => !m.app);
 
+  const autoriser = async (cle: string, entree: EntreeConnexion) => {
+    if (!pont || attente) return;
+    setAttente(cle);
+    setErreurs((e) => ({ ...e, [cle]: "" }));
+    const r = await pont.connecter(entree);
+    setAttente(null);
+    if (r.ok) setListe(r.data.liste);
+    else setErreurs((e) => ({ ...e, [cle]: r.message }));
+  };
+
   const retirer = async (m: McpDirect) => {
-    if (!pont || !(await demander({ titre: `Retirer ${m.nom} ?`, texte: "Tes agents n’y auront plus accès. Le jeton est effacé de cet ordinateur.", confirmer: "Retirer" }))) return;
+    if (!pont || !(await demander({ titre: `Retirer ${m.nom} ?`, texte: "Tes agents n’y auront plus accès. Son accès est effacé de cet ordinateur.", confirmer: "Retirer" }))) return;
     const r = await pont.retirer(m.id);
     if (r.ok) setListe(r.data);
+  };
+
+  /** Le pied d'une carte : état et gestes, selon la connexion. */
+  const pied = (cle: string, branche: McpDirect | undefined, connecter: EntreeConnexion | null): ReactNode => {
+    if (attente === cle) return <>
+      <span role="status" className="text-ui-xs text-texte-secondaire">Autorise dans le navigateur…</span>
+      <Bouton taille="mini" onClick={() => void pont?.annuler()}>Annuler</Bouton>
+    </>;
+    if (!branche) return <Bouton disabled={!pont || !!attente || !connecter} onClick={() => connecter && void autoriser(cle, connecter)}>Connecter</Bouton>;
+    const occupe = !!attente;
+    if (branche.aReconnecter) return <>
+      <Pastille texte="À reconnecter" ton="attente" />
+      <span className="flex gap-1">
+        <Bouton taille="mini" disabled={occupe} onClick={() => void autoriser(cle, { remplace: branche.id })}>Reconnecter</Bouton>
+        <Bouton variant="discret" taille="mini" disabled={occupe} onClick={() => void retirer(branche)}>Retirer…</Bouton>
+      </span>
+    </>;
+    if (branche.connexion === "jeton" && connecter) return <>
+      <Pastille texte="Connecté par jeton" ton="neutre" />
+      <MenuLignes libelle={`Options de ${branche.nom}`} declencheur={(d) => <BoutonIcone ref={d.ref} {...d.attributs} libelle={`Plus d’options pour ${branche.nom}`} disabled={occupe} variant="discret" onClick={d.basculer} icone={<Icon name="dot-horizontal" size={16} />} />} lignes={[
+        { id: "autoriser", titre: "Passer à l’autorisation", icone: "lock-01", onChoisir: () => void autoriser(cle, { remplace: branche.id }) },
+        { id: "retirer", titre: "Retirer…", icone: "trash-01", separee: true, onChoisir: () => void retirer(branche) },
+      ]} />
+    </>;
+    return <>
+      <Pastille texte={branche.connexion === "jeton" ? "Connecté par jeton" : "Connecté"} ton={branche.connexion === "jeton" ? "neutre" : "ok"} />
+      <Bouton variant="discret" taille="mini" disabled={occupe} onClick={() => void retirer(branche)}>Retirer…</Bouton>
+    </>;
+  };
+
+  /** GitHub passe par Composio : un ancien jeton reste utilisable jusqu'à ce qu'on le retire. */
+  const piedComposio = (branche: McpDirect | undefined): ReactNode => {
+    if (branche) return <>
+      <Pastille texte="Connecté par jeton" ton="neutre" />
+      <Bouton variant="discret" taille="mini" disabled={!!attente} onClick={() => void retirer(branche)}>Retirer…</Bouton>
+    </>;
+    if (!composio.pont) return <span className="text-ui-xs text-texte-tertiaire">Dans l’app de bureau.</span>;
+    if (composio.etat?.connecte) return <Pastille texte="Par Composio" ton="ok" />;
+    if (composio.etat?.enCours) return <>
+      <span role="status" className="text-ui-xs text-texte-secondaire">Autorise dans le navigateur…</span>
+      <Bouton taille="mini" onClick={() => void composio.annuler()}>Annuler</Bouton>
+    </>;
+    return <Bouton disabled={!composio.etat} onClick={() => void composio.connecter()}>Connecter</Bouton>;
   };
 
   return (
     <section aria-labelledby="titre-apps" className="flex flex-col gap-3">
       <div className="flex flex-col gap-0.5 px-1">
         <h2 id="titre-apps" className="m-0 text-ui-s font-semibold text-texte-principal">Apps en direct</h2>
-        <p className="m-0 text-ui-xs text-texte-tertiaire">Un serveur MCP branché sans Composio, quand un ou deux outils suffisent.</p>
+        <p className="m-0 text-ui-xs text-texte-tertiaire">Un serveur MCP branché sans Composio, quand un ou deux outils suffisent. Tu autorises l’accès dans ton navigateur.</p>
       </div>
       <div className="grid gap-3 @md:grid-cols-2 @3xl:grid-cols-3">
         {APPS.map((a) => {
           const branche = liste.find((m) => m.app === a.id);
-          return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={a.description} branche={branche} bureau={!!pont} onConnecter={() => setOuvert(a.id)} onRetirer={() => branche && void retirer(branche)} />;
+          if (a.via === "composio") {
+            const note = branche ? `${a.description} Passe maintenant par Composio : retire le jeton pour l’utiliser.` : `${a.description} Par Composio : tes agents te donnent un lien à valider la première fois.`;
+            return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={note} erreur={branche ? "" : composio.erreur || (composio.etat?.enCours ? "" : composio.etat?.erreur ?? "")} pied={piedComposio(branche)} />;
+          }
+          return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={a.description} erreur={erreurs[a.id]} pied={pied(a.id, branche, { app: a.id })} />;
         })}
-        {persos.map((m) => <CarteApp key={m.id} nom={m.nom} description={new URL(m.url).host} branche={m} bureau={!!pont} onConnecter={() => {}} onRetirer={() => void retirer(m)} />)}
+        {persos.map((m) => <CarteApp key={m.id} nom={m.nom} description={new URL(m.url).host} erreur={erreurs[m.id]} pied={pied(m.id, m, null)} />)}
         <button
           type="button"
-          disabled={!pont}
-          onClick={() => setOuvert("perso")}
+          disabled={!pont || !!attente}
+          onClick={() => setAutre(true)}
           className="flex min-h-[132px] cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-bordure-defaut bg-transparent p-4 text-ui-s text-texte-secondaire transition-colors duration-[120ms] ease-sortie hover:border-bordure-forte hover:text-texte-principal disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Icon name="plus-01" size={20} />
           Autre serveur MCP
         </button>
       </div>
-      {ouvert && pont && <ConnexionMcp app={APPS.find((a) => a.id === ouvert) ?? null} lienJeton={liens[ouvert]?.jeton} onFermer={() => setOuvert(null)} onAjoute={(l) => { setListe(l); setOuvert(null); }} />}
+      {autre && pont && <AutreServeurMcp onFermer={() => setAutre(false)} onAjoute={(l) => { setListe(l); setAutre(false); }} />}
       {confirmation}
     </section>
   );
 }
 
-function CarteApp({ id, logo, nom, description, branche, bureau, onConnecter, onRetirer }: {
-  id?: string; logo?: string; nom: string; description: string; branche?: McpDirect; bureau: boolean; onConnecter: () => void; onRetirer: () => void;
+function CarteApp({ id, logo, nom, description, erreur, pied }: {
+  id?: string; logo?: string; nom: string; description: string; erreur?: string; pied: ReactNode;
 }) {
   return (
     <div data-app-mcp={id} className="klyra-carte-flottante flex min-h-[132px] flex-col justify-between gap-3 rounded-lg p-4">
@@ -367,60 +433,72 @@ function CarteApp({ id, logo, nom, description, branche, bureau, onConnecter, on
         <Logo nom={nom} logo={logo} />
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-ui-s font-semibold text-texte-principal">{nom}</span>
-          <span className="line-clamp-2 text-ui-xs text-texte-tertiaire">{description}</span>
+          <span className="line-clamp-3 text-ui-xs text-texte-tertiaire">{description}</span>
         </div>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        {branche ? <>
-          <Pastille texte="Connecté" ton="ok" />
-          <Bouton variant="discret" taille="mini" onClick={onRetirer}>Retirer…</Bouton>
-        </> : <Bouton disabled={!bureau} onClick={onConnecter}>Connecter</Bouton>}
-      </div>
+      {erreur && <Erreur>{erreur}</Erreur>}
+      <div className="flex items-center justify-between gap-2">{pied}</div>
     </div>
   );
 }
 
-function ConnexionMcp({ app, lienJeton, onFermer, onAjoute }: {
-  app: { id: string; nom: string } | null; lienJeton?: string; onFermer: () => void; onAjoute: (liste: McpDirect[]) => void;
-}) {
+/**
+ * Un serveur MCP saisi à la main : l'autorisation dans le navigateur d'abord.
+ * Seulement si le serveur n'a pas d'OAuth, un jeton collé en dernier recours.
+ */
+function AutreServeurMcp({ onFermer, onAjoute }: { onFermer: () => void; onAjoute: (liste: McpDirect[]) => void }) {
   const pont = getBridge()?.mcp;
   const [nom, setNom] = useState("");
   const [url, setUrl] = useState("");
+  const [sansOAuth, setSansOAuth] = useState(false);
   const [jeton, setJeton] = useState("");
   const [erreur, setErreur] = useState("");
   const [envoi, setEnvoi] = useState(false);
-  const pret = app ? !!jeton.trim() : !!nom.trim() && !!url.trim();
+  const pret = !!nom.trim() && !!url.trim();
+
+  const fermer = () => {
+    if (envoi) void pont?.annuler();
+    onFermer();
+  };
 
   const valider = async () => {
-    if (!pont || !pret) return;
+    if (!pont || !pret || envoi) return;
     setEnvoi(true);
     setErreur("");
-    const r = await pont.ajouter(app ? { app: app.id, jeton } : { app: null, nom, url, jeton });
+    if (sansOAuth) {
+      const r = await pont.ajouter({ app: null, nom, url, jeton });
+      setEnvoi(false);
+      if (r.ok) onAjoute(r.data);
+      else setErreur(r.message);
+      return;
+    }
+    const r = await pont.connecter({ nom, url });
     setEnvoi(false);
-    if (r.ok) onAjoute(r.data);
-    else setErreur(r.message);
+    if (!r.ok) setErreur(r.message);
+    else if (r.data.statut === "connecte") onAjoute(r.data.liste);
+    else if (r.data.statut === "sans-oauth") setSansOAuth(true);
   };
 
   return (
-    <Modale titre={app ? `Connecter ${app.nom}` : "Autre serveur MCP"} onFermer={onFermer} className="w-[460px]" actions={<>
-      <Bouton onClick={onFermer}>Annuler</Bouton>
-      <BoutonPrincipal disabled={!pret || envoi} onClick={() => void valider()}>{envoi ? "Connexion…" : "Connecter"}</BoutonPrincipal>
+    <Modale titre="Autre serveur MCP" onFermer={fermer} className="w-[460px]" actions={<>
+      <Bouton onClick={fermer}>Annuler</Bouton>
+      <BoutonPrincipal disabled={!pret || envoi} onClick={() => void valider()}>{envoi ? (sansOAuth ? "Connexion…" : "Autorise dans le navigateur…") : sansOAuth ? "Ajouter" : "Connecter"}</BoutonPrincipal>
     </>}>
       <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void valider(); }}>
-        {!app && <>
-          <Champ label="Nom">
-            <Input data-autofocus size="sm" value={nom} onChange={(e) => setNom(e.target.value)} className={CHAMP} />
-          </Champ>
-          <Champ label="Adresse du serveur" aide="Un serveur MCP distant (HTTP).">
-            <Input size="sm" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" spellCheck={false} className={CHAMP} />
+        <Champ label="Nom">
+          <Input data-autofocus size="sm" value={nom} disabled={envoi} onChange={(e) => setNom(e.target.value)} className={CHAMP} />
+        </Champ>
+        <Champ label="Adresse du serveur" aide="Un serveur MCP distant (HTTP). Ton navigateur s’ouvre pour autoriser l’accès.">
+          <Input size="sm" value={url} disabled={envoi} onChange={(e) => { setUrl(e.target.value); setSansOAuth(false); setJeton(""); }} placeholder="https://" spellCheck={false} className={CHAMP} />
+        </Champ>
+        {sansOAuth && <>
+          <p role="note" className="m-0 rounded-md bg-fond-surface-grise px-3 py-2 text-ui-s text-texte-secondaire">
+            Ce serveur ne propose pas d’autorisation par le navigateur. S’il demande un jeton, colle celui que son éditeur t’a donné ; sinon, laisse vide.
+          </p>
+          <Champ label="Jeton (facultatif)" aide="Chiffré sur cet ordinateur.">
+            <Input data-autofocus size="sm" type="password" value={jeton} onChange={(e) => setJeton(e.target.value)} autoComplete="off" spellCheck={false} className={cn(CHAMP, "klyra-mono")} />
           </Champ>
         </>}
-        <Champ
-          label={app ? `Jeton ${app.nom}` : "Jeton (facultatif)"}
-          aide={<>Chiffré sur cet ordinateur.{lienJeton && <> <a href={lienJeton} target="_blank" rel="noreferrer" className="text-texte-accent">Créer un jeton</a></>}</>}
-        >
-          <Input data-autofocus={app ? true : undefined} size="sm" type="password" value={jeton} onChange={(e) => setJeton(e.target.value)} autoComplete="off" spellCheck={false} className={cn(CHAMP, "klyra-mono")} />
-        </Champ>
         {erreur && <Erreur>{erreur}</Erreur>}
         <button type="submit" hidden />
       </form>

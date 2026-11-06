@@ -114,7 +114,7 @@ import {
   type ModeleLocal,
 } from "./dictee";
 import { ecrirePlanning } from "./planning";
-import { ajouterMcpDirect, APPS_MCP, chargerMcpDirects, listerMcpDirects, retirerMcpDirect } from "./mcp-direct";
+import { ajouterMcpDirect, annulerMcpDirect, chargerMcpDirects, connecterMcpDirect, listerMcpDirects, renouvelerMcpDirects, retirerMcpDirect } from "./mcp-direct";
 import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
 import { composioConnect, espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio, annulerComposioVps, connecterComposioVps, connexionVpsEnCours } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
@@ -1062,9 +1062,10 @@ function registerBridge() {
   );
   handle("ia:retirer", (id: string, lieu?: string | null) => (typeof lieu === "string" && lieu ? retirerIaVps(lieu, jetonServeur(lieu), String(id)) : retirerIa(String(id))));
   handle("ia:tester", (id: string, lieu?: string | null) => (typeof lieu === "string" && lieu ? testerIaVps(lieu, jetonServeur(lieu), String(id)) : testerIa(String(id))));
-  /* Les MCP directs de la Marketplace (electron/mcp-direct.ts) : le jeton ne revient jamais vers l'écran. */
-  handle("mcp:apps", () => APPS_MCP);
+  /* Les MCP directs de la Marketplace (electron/mcp-direct.ts) : connexion par OAuth dans le navigateur ; aucun jeton ne revient vers l'écran. */
   handle("mcp:lister", () => listerMcpDirects());
+  handle("mcp:connecter", (entree: { app?: string | null; nom?: string; url?: string; remplace?: string }) => connecterMcpDirect(entree));
+  handle("mcp:annuler", () => annulerMcpDirect());
   handle("mcp:ajouter", (entree: { app: string | null; nom?: string; url?: string; jeton?: string }) => ajouterMcpDirect(entree));
   handle("mcp:retirer", (id: string) => retirerMcpDirect(String(id)));
   handle("planning:ecrire", (markdown: string) => {
@@ -1531,7 +1532,9 @@ void app.whenReady().then(async () => {
   void demarrerRoutines();
 
   void demarrerServeurMcp();
+  /* MCP directs : accès OAuth renouvelés avant leur expiration. */
   void chargerMcpDirects();
+  setInterval(() => void renouvelerMcpDirects(), 60_000);
   /* Computer Use : le pilote reste prêt si l'interrupteur est allumé et les autorisations déjà données. */
   void prechaufferPilote();
   /* Composio Connect : jetons relus, puis renouvelés avant leur expiration. */

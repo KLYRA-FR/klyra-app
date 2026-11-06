@@ -74,6 +74,7 @@
     "test:joints-vps": "node --experimental-strip-types --test electron/joints-vps.test.mts && electron scripts/test-joints-vps.cjs",
     "test:serveur": "vitest run src/lib/serveur-vps.test.ts src/components/serveur/AvisMiseAJour.test.tsx && node scripts/serveur-genere.mjs --verifier && node --test scripts/empreinte-serveur.test.mjs serveur/klyra-serveur.test.mjs serveur/routines.test.mjs serveur/qr.test.mjs serveur/navigateur.test.mjs serveur/workflows.test.mjs serveur/fils.test.mjs serveur/workflows-moteur.test.mjs serveur/coffre.test.mjs serveur/atelier.test.mjs serveur/comptes-claude.test.mjs && node scripts/test-serveur-grok.mjs && node --experimental-strip-types --test electron/lien-rejoindre.test.mts electron/appel-serveur.test.mts electron/contexte-distant.test.mts electron/atelier.test.mts electron/joints-vps.test.mts",
     "test:binaire": "node --experimental-strip-types --test electron/claude-binaire.test.mts electron/artefacts-liste.test.mts",
+    "test:mcp-oauth": "node --experimental-strip-types --test electron/mcp-oauth.test.mts",
     "test:titre": "node --experimental-strip-types --test electron/titre.test.mts",
     "test:diagnostic-poste": "node --experimental-strip-types --test electron/diagnostic-poste.test.mts",
     "test:connaissances": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/connaissances-agent.test.mts electron/consommation-ecart.test.mts",
