@@ -35,7 +35,17 @@ export interface McpDirect {
   nom: string;
   url: string;
   avecJeton: boolean;
+  /** `oauth` : autorisé dans le navigateur ; `jeton` : un jeton collé (ancienne connexion ou serveur sans OAuth). */
+  connexion: "oauth" | "jeton" | "aucune";
+  /** Le serveur a refusé de renouveler l'accès. */
+  aReconnecter: boolean;
 }
+
+/** Le résultat d'une connexion d'un MCP direct par le navigateur. */
+export type ResultatConnexionMcp =
+  | { statut: "connecte" | "annule"; liste: McpDirect[] }
+  /** Pas d'OAuth sur ce serveur : un jeton collé reste le dernier recours. */
+  | { statut: "sans-oauth"; liste: McpDirect[] };
 import type { Routine as RoutineMoteur, RoutineInput, RoutinePatch, RoutineRun, RunReport } from "@/types/routines";
 
 export type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
@@ -539,9 +549,12 @@ export interface KlyraBridge {
   };
   /** Les MCP directs de la Marketplace (cf. electron/mcp-direct.ts). Le jeton ne revient jamais. */
   mcp?: {
-    apps: () => Promise<Reponse<Record<string, { nom: string; url: string; jeton: string }>>>;
     lister: () => Promise<Reponse<McpDirect[]>>;
-    ajouter: (entree: { app: string | null; nom?: string; url?: string; jeton?: string }) => Promise<Reponse<McpDirect[]>>;
+    /** Ouvre la page d'autorisation du serveur dans le navigateur et attend le retour. `remplace` : reconnecter une entrée. */
+    connecter: (entree: { app?: string | null; nom?: string; url?: string; remplace?: string }) => Promise<Reponse<ResultatConnexionMcp>>;
+    annuler: () => Promise<Reponse<void>>;
+    /** Dernier recours, serveur saisi à la main sans OAuth : jeton facultatif. */
+    ajouter: (entree: { app: null; nom: string; url: string; jeton?: string }) => Promise<Reponse<McpDirect[]>>;
     retirer: (id: string) => Promise<Reponse<McpDirect[]>>;
   };
   /** Le planning en clair, que les agents lisent (~/.klyra/planning/planning.md). */

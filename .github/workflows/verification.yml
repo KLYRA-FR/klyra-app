@@ -56,6 +56,8 @@ jobs:
         run: pnpm test:origine-telephone
       - name: Composio, API et sélection de comptes simulées
         run: pnpm test:composio
+      - name: Apps en direct, OAuth des serveurs MCP (faux serveurs, vrai retour local)
+        run: pnpm test:mcp-oauth
       - name: Comptes Claude indépendants, sans compte réel
         run: pnpm test:comptes-claude
       - name: Composio, IPC natif et serveur MCP réels, sans fournisseur externe
