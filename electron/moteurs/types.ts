@@ -31,7 +31,12 @@ export type AgentEvent =
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur" }
   /** Un agent lancé en arrière-plan (appel `id`) a fini ou s'est arrêté : sa passation le montre. */
-  | { type: "tache-fond"; id: string; statut: "fait" | "erreur" };
+  | { type: "tache-fond"; id: string; statut: "fait" | "erreur" }
+  /**
+   * Ce que l'agent a encore en fond (commandes, agents), toute la liste, et sa reprise quand l'un d'eux revient
+   * (cf. electron/taches-fond.ts). Peut arriver après la fin de sa réponse, par la dernière ouverte.
+   */
+  | { type: "fond"; taches: { id: string; description: string; genre: "commande" | "agent" | "autre"; debut: number }[]; reprise: boolean };
 
 export interface StreamOptions {
   /** Le moteur qui fait travailler l'agent ; absent : Claude Code. */

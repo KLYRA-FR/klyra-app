@@ -16,6 +16,7 @@ import { departsAvant, estAvantDepart } from "@/lib/contexte";
 import { fournisseur, moteurDuMessage } from "@/lib/fournisseurs";
 import { requeteRetenue } from "@/lib/recherche-session";
 import { DEPART_ROUTINE } from "@/lib/message-routine";
+import { resumeFond, useFonds, type FondAgent, type TacheFond } from "@/lib/fond-agents";
 import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse, Reactions } from "./ActionsReponse";
@@ -142,6 +143,58 @@ function EnTravail({
       </span>
       {chrono && <span>{chrono}</span>}
       {!!travail.jetons && <span>· {travail.jetons.toLocaleString("fr-FR")} tokens</span>}
+    </div>
+  );
+}
+
+/** Une tâche de fond, et depuis combien de temps elle tourne. */
+function LigneFond({ tache }: { tache: TacheFond }) {
+  const chrono = useChrono(tache.debut);
+  return (
+    <li className="flex min-w-0 items-baseline gap-1.5">
+      <span aria-hidden="true" className="size-1 shrink-0 translate-y-[-2px] rounded-full bg-icone-secondaire" />
+      <span className="truncate">{tache.description}</span>
+      {chrono && <span className="shrink-0 tabular-nums">{chrono}</span>}
+    </li>
+  );
+}
+
+/**
+ * « Iris continue en arrière-plan » : sa réponse est rendue, mais une commande ou un agent qu'elle a lancé
+ * en fond tourne encore (une capture, un build…) ; puis « Iris reprend » quand l'un d'eux revient et
+ * qu'elle s'y remet. Sans cette ligne, rien ne bouge à l'écran pendant qu'elle travaille.
+ */
+function EnFond({ fond }: { fond: FondAgent }) {
+  const role = useRole(fond.roleId);
+  const seule = fond.taches.length === 1 ? fond.taches[0] : null;
+  const chrono = useChrono(fond.reprise ? null : (seule?.debut ?? null));
+  const resume = resumeFond(fond.taches);
+  return (
+    <div data-en-fond={fond.roleId} className="mt-2 ml-[42px] flex flex-col gap-1 text-ui-xs text-texte-tertiaire">
+      <div className="flex min-h-6 min-w-0 items-center gap-1.5">
+        <Icon name="loader-01" size={14} className="shrink-0 animate-spin text-icone-accent [animation-duration:1.5s]" />
+        {/* Seul l'état est annoncé, pas le temps qui passe. */}
+        <span aria-live="polite" className="klyra-respire shrink-0 font-medium text-texte-secondaire">
+          {fond.reprise ? `${role.name} reprend…` : `${role.name} continue en arrière-plan`}
+        </span>
+        <span className="truncate">
+          {fond.reprise
+            ? resume
+              ? `· ${resume} encore en fond`
+              : "· une tâche de fond est terminée"
+            : seule
+              ? `· ${seule.description}`
+              : `· ${resume} en cours`}
+        </span>
+        {chrono && <span className="shrink-0 tabular-nums">· {chrono}</span>}
+      </div>
+      {!seule && !fond.reprise && fond.taches.length > 1 && (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0 pl-5">
+          {fond.taches.map((t) => (
+            <LigneFond key={t.id} tache={t} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -369,6 +422,8 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   const chat = useChat(chatId);
   const messages = useChatMessages(chatId);
   const travail = useTravail(chatId);
+  /* Ce que les agents font encore en fond, réponse rendue ; pendant une réponse, « travaille… » suffit. */
+  const fonds = useFonds(chatId).filter((f) => f.roleId !== travail?.roleId);
   const nomAgent = useRole(chat?.roleIds[0] ?? "principal").name;
   const { sendMessage, marquerLu } = useWorkspace();
   const menu = useMenuContextuel<CibleMessage>();
@@ -383,7 +438,7 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   useEffect(() => {
     const el = zone.current;
     if (el && enBas.current) el.scrollTop = el.scrollHeight;
-  }, [messages.length, taille, travail]);
+  }, [messages.length, taille, travail, fonds.length]);
 
   const annonce = useRef<HTMLParagraphElement>(null);
   useArriveeRecherche(chatId, { zoneRef: zone, enBasRef: enBas, ancreRef: ancre, annonceRef: annonce });
@@ -492,6 +547,9 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
           })}
           {departsAvant(chat, messages[messages.length - 1]).map((d) => (
             <SeparateurDepart key={d} nom={nomAgent} />
+          ))}
+          {fonds.map((f) => (
+            <EnFond key={f.roleId} fond={f} />
           ))}
         </div>
       </div>
