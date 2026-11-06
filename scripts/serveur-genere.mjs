@@ -24,6 +24,7 @@
  *   (outils de l'assistant, carte, épreuve, entrée d'un outil en cours d'écriture) ; `serveur/atelier-equipe.mjs` :
  *   l'atelier d'une équipe (electron/atelier-equipe.ts) ; `serveur/cartes-interactives.mjs` : les cartes que
  *   chaque agent pose dans le fil (electron/cartes-interactives.ts).
+ * - `serveur/joints-vps.mjs` : les pièces jointes envoyées par le PC pour une conversation du VPS (electron/joints-vps.ts).
  * - `serveur/version-code.mjs` : la version du code du serveur (electron/version-serveur.ts), montée ici dès que
  *   `empreinteCodeServeur` change. Le VPS ne se met pas à jour seul : c'est ce numéro qui révèle un serveur en retard.
  *   Conflit de fusion sur ce fichier : relancer ce script, il repart de la plus haute version et écrit un fichier propre.
@@ -55,6 +56,7 @@ const FICHIERS = [
   ["electron/atelier-agent.ts", "serveur/atelier-agent.mjs"],
   ["electron/atelier-equipe.ts", "serveur/atelier-equipe.mjs"],
   ["electron/cartes-interactives.ts", "serveur/cartes-interactives.mjs"],
+  ["electron/joints-vps.ts", "serveur/joints-vps.mjs"],
   ["electron/navigateur/definitions.ts", "serveur/navigateur-definitions.mjs"],
   ["electron/coffre-regles.ts", "serveur/coffre-regles.mjs"],
   ["electron/coffre-definitions.ts", "serveur/coffre-definitions.mjs"],
