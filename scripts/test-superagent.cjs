@@ -856,6 +856,34 @@ async function tGh() {
   db.close();
 }
 
+/* Fil archivé ou supprimé depuis l'écran : `archiverFil` marque son travail « cancelled » (libererPlaceFil, IPC superagent:marquer). */
+async function t10() {
+  const dir = tmp();
+  const db = ouvrir(dir);
+  const { marquerTravailFil, placesLibres } = dist("cycle.js");
+  const registre = dist("outils-fils.js").creerRegistre();
+  const ouverts = [];
+  for (let i = 1; i <= CAPACITE; i++) ouverts.push(await ouvrirFil(db, registre, `Fil ${i}`, ["dev", "designer", "qa"][i % 3]));
+  ok(placesLibres(db) === 0, `T10 toutes les places prises (${placesLibres(db)} libres)`);
+
+  const archive = marquerTravailFil(db, { fil_id: ouverts[0].fil, status: "cancelled" });
+  ok(archive.ok && placesLibres(db) === 1, `T10 fil archivé depuis l'écran : sa place remonte (${placesLibres(db)} libre)`);
+  const supprime = marquerTravailFil(db, { fil_id: ouverts[1].fil, status: "cancelled" });
+  ok(supprime.ok && placesLibres(db) === 2, `T10 fil supprimé depuis l'écran : sa place remonte (${placesLibres(db)} libres)`);
+
+  const fermeParOutil = marquerTravailFil(db, { fil_id: ouverts[2].fil, status: "done" });
+  const encore = marquerTravailFil(db, { fil_id: ouverts[2].fil, status: "cancelled" });
+  ok(fermeParOutil.ok && !encore.ok && encore.motif === "travail_clos" && placesLibres(db) === 3, `T10 fermer_fil puis archivage : une seule libération, statut done gardé (${encore.motif}, ${placesLibres(db)} libres)`);
+
+  const enVol = await poserOperation(db, ouverts[3].travail, ouverts[3].fil, "archive-en-vol", true);
+  const refus = marquerTravailFil(db, { fil_id: ouverts[3].fil, status: "cancelled" });
+  ok(enVol.depart?.ok === true && !refus.ok && refus.motif === "operations_a_verifier" && placesLibres(db) === 3, `T10 opération à vérifier : refus rendu, la place reste tenue (${refus.motif})`);
+
+  const nouveau = await ouvrirFil(db, registre, "Après archivage", "growth");
+  ok(!!nouveau.fil && placesLibres(db) === 2, `T10 un nouveau fil prend une place libérée (${nouveau.texte.slice(0, 60)})`);
+  db.close();
+}
+
 async function principal() {
   await t01();
   await t02();
@@ -866,6 +894,7 @@ async function principal() {
   await t07();
   await t08();
   await t09();
+  await t10();
   await tGh();
   console.log(echecs === 0 ? "TOUT PASSE" : `${echecs} ECHEC(S)`);
   console.log("Limite : fichier SQLite jetable, un PC. T04, T07 et T08 sont exécutés. T06 simule une machine de l'app absente : attente, aucun départ ailleurs, un seul départ après contrôle. T03 arrête ce composant de test, pas un service installé. electron/agents-distants.ts ne dit pas au journal qu'une machine est absente. L'atomicité entre machines n'est pas acquise.");

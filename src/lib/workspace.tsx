@@ -36,6 +36,7 @@ import { COMMANDE_RESUME_AUTO, estAvantDepart, estCommandeCompacter, formaterJet
 import { CONFIGURATION_PAR_DEFAUT } from "../../electron/configuration-klyra";
 import { apresReponse, auDebut, avecEtapes, briefDuRappel, ferme, ligneTicket, type ChampsTicket, type RappelAConfier, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, rouvert, trierTickets } from "@/lib/tickets";
 import { notificationDeFin } from "@/lib/tickets-demandes";
+import { libererPlaceFil } from "@/lib/liberer-place-fil";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import { creerOutilsWorkflows } from "@/lib/workflows/outils-agents";
 import { extraitMarkdown } from "@/lib/apercu/extrait";
@@ -1975,10 +1976,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   }, [bridge]);
 
   const archiverFil = useCallback(
-    (chatId: string, supprime = false) => {
+    (chatId: string, supprime = false, libererPlace = true) => {
       // Un fil archivé s'arrête : il ne travaille plus.
       const travail = stateRef.current.travail[chatId];
       if (travail && bridge) void bridge.claude.cancel(travail.messageId);
+      // Sa place dans le journal se libère (sauf si `fermer_fil` l'a déjà clos). Un refus ne bloque pas l'archivage.
+      if (libererPlace && stateRef.current.chats.some((c) => c.id === chatId && c.fil)) void libererPlaceFil(bridge?.superagent?.marquer, chatId);
       dispatch({
         type: "chat/update",
         id: chatId,
@@ -2216,7 +2219,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
                 : `Fermeture refusée : ${cloture.data.motif}.`);
             }
           }
-          archiverFil(fil.id);
+          archiverFil(fil.id, false, false);
           return `Fil fermé et archivé : ${fil.title} (${fil.id}). Il peut être rouvert.`;
         }
         case "publier_artefact": {
