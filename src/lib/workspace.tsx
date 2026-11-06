@@ -69,7 +69,7 @@ type PartAtelier = Extract<MessagePart, { type: "atelier-agent" }>;
 type PatchAtelier = Partial<Pick<PartAtelier, "teinte" | "cree" | "resultats" | "ajouts" | "essais">>;
 /** Une carte de l'atelier d'équipe, et ce que l'écran peut y noter. */
 type PartEquipe = Extract<MessagePart, { type: "atelier-equipe" }>;
-type PatchEquipe = Partial<Pick<PartEquipe, "teintes" | "ecartes" | "crees">>;
+type PatchEquipe = Partial<Pick<PartEquipe, "teintes" | "ecartes" | "crees" | "choix">>;
 
 /** Les catégories de rappels à la première ouverture. */
 const CATEGORIES_DE_DEPART: Categorie[] = [

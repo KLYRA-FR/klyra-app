@@ -524,7 +524,7 @@ export function MessagePartView({
     case "atelier-agent":
       return <CarteAtelier part={part} etat={etatAtelier?.(part.etapeId)} messageId={messageId} chatId={chatId} lieu={lieu} enDirect={enCours} />;
     case "atelier-equipe":
-      return <CarteEquipe part={part} etat={etatEquipe?.(part.etapeId)} messageId={messageId} enDirect={enCours} onEnvoyer={onAction} />;
+      return <CarteEquipe part={part} etat={etatEquipe?.(part.etapeId)} messageId={messageId} chatId={chatId ?? ""} enDirect={enCours} onEnvoyer={onAction} />;
     case "carte":
       return <CarteInteractive part={part} messageId={messageId} actif={!!choix?.actif} repondu={choix?.repondu ?? null} onEnvoyer={(t) => choix?.onRepondre(t)} />;
     case "choix":

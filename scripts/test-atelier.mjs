@@ -260,15 +260,21 @@ try {
         fournisseur.requetes.slice(avantEquipe).some((q) => q.resultats.some((r) => !r.erreur && r.texte.includes("Équipe « Studio contenu » à jour : 2 agents"))),
         "l’assistant reçoit où en est l’équipe",
       );
-      const texteTable = await app.ev(`${table}?.innerText ?? ''`);
-      verifier(texteTable.includes("Qui s’en charge") && texteTable.includes("La newsletter de mai") && texteTable.includes("Trois visuels pour le salon"), "qui serait responsable de ses vraies demandes");
+      // Un agent cliqué sur le module ouvre l'atelier en grand, sur lui ; la conversation passe à droite.
+      const atelier = "document.querySelector('[data-atelier-equipe]')";
       await app.ev(`${table}.querySelector('[data-membre="visuels"]').click(); 0`);
-      verifier(await app.quand(`${table}?.querySelector('[data-membre="visuels"]')?.getAttribute('aria-pressed') === 'true' && ${table}.innerText.includes('Prépare les visuels')`), "un agent choisi sur la table : son détail");
-      await app.cliquer("Le laisser de côté", table);
-      verifier(await app.quand(`${table}?.querySelector('[data-membre="visuels"]')?.hasAttribute('data-ecarte') && ${table}.innerText.includes('1 agent à créer')`), "Basile laissé de côté : un agent à créer");
-      await app.cliquer("Le reprendre dans l’équipe", table);
-      verifier(await app.quand(`!${table}?.querySelector('[data-membre="visuels"]')?.hasAttribute('data-ecarte') && ${table}.innerText.includes('2 agents à créer')`), "repris dans l’équipe");
-      verifier(await app.cliquer("Créer l’équipe", table), "« Créer l’équipe »");
+      verifier(
+        await app.quand(`${atelier}?.querySelector('[data-membre="visuels"]')?.getAttribute('aria-pressed') === 'true' && ${atelier}.innerText.includes('Prépare les visuels')`),
+        "un agent cliqué sur le module : l’atelier en grand, son détail",
+      );
+      const texteAtelier = await app.ev(`${atelier}?.innerText ?? ''`);
+      verifier(texteAtelier.includes("Qui s’en charge") && texteAtelier.includes("La newsletter de mai") && texteAtelier.includes("Trois visuels pour le salon"), "qui serait responsable de ses vraies demandes");
+      verifier((await app.ev(`${atelier}.querySelector('aside textarea') !== null`)) === true, "la conversation et son composeur, à droite");
+      await app.cliquer("Le laisser de côté", atelier);
+      verifier(await app.quand(`${atelier}?.querySelector('[data-membre="visuels"]')?.hasAttribute('data-ecarte') && [...${atelier}.querySelectorAll('header button')].some((b) => b.innerText.trim() === 'Créer l’agent')`), "Basile laissé de côté : un agent à créer");
+      await app.cliquer("Le reprendre dans l’équipe", atelier);
+      verifier(await app.quand(`!${atelier}?.querySelector('[data-membre="visuels"]')?.hasAttribute('data-ecarte') && [...${atelier}.querySelectorAll('header button')].some((b) => b.innerText.trim() === 'Créer l’équipe')`), "repris dans l’équipe");
+      verifier(await app.cliquer("Créer l’équipe", `${atelier}.querySelector('header')`), "« Créer l’équipe »");
       verifier((await ficheEcrite("redac")) && (await ficheEcrite("visuels")), "Romy et Basile sont créés, leurs fiches dans le dossier de l’app");
       verifier(!existsSync(path.join(poste, "redac.md")), "rien n’est écrit sur le poste");
       const romy = readFileSync(path.join(agents, "redac.md"), "utf8");
@@ -280,7 +286,9 @@ try {
         }),
         "les deux actifs dans Mes agents",
       );
-      verifier(await app.quand(`${derniere}?.innerText.includes('Ton équipe est née')`), "« Ton équipe est née »");
+      verifier(await app.quand(`${atelier}?.innerText.includes('Ton équipe est née')`), "« Ton équipe est née »");
+      await app.cliquer("Conversation", `${atelier}.querySelector('header')`);
+      verifier(await app.quand(`!${atelier} && ${derniere}?.innerText.includes('Ton équipe est née')`), "retour au fil : le module dit l’équipe née");
       verifier(await app.quand(`[...${table}.querySelectorAll('button')].some((b) => b.innerText.trim() === 'Lancer')`), "une fois née, ses vraies demandes se lancent d’un clic");
 
       // Les cartes interactives : une liste à valider, puis un formulaire ; ce qui est envoyé part comme un message.

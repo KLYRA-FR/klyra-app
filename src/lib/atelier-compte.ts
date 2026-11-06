@@ -220,7 +220,7 @@ export function vueEquipe(etapeId: string, contexte: ContexteAtelier, net: (text
         nom: net(b.nom, 60),
         arrivent: membresNouveaux(etat)
           .slice(0, 6)
-          .map((m) => ({ id: m.cle.slice(0, 80), nom: nomPropre(m.agent.nom).slice(0, 80), teinte: etat.teintes[m.cle] ?? contexte.teinteDe(m.cle) })),
+          .map((m) => ({ id: m.cle.slice(0, 80), nom: (nomPropre(m.agent.nom) || m.agent.role || "Sans prénom").slice(0, 80), teinte: etat.teintes[m.cle] ?? contexte.teinteDe(m.cle) })),
       },
     };
   }
@@ -237,12 +237,12 @@ export function vueEquipe(etapeId: string, contexte: ContexteAtelier, net: (text
       membres: vus.map((x) => ({
         cle: x.m.cle.slice(0, 80),
         id: (x.idCree ?? x.m.cle).slice(0, 80),
-        nom: x.nom.slice(0, 80),
+        nom: (x.nom || "Sans prénom").slice(0, 80),
         role: net(x.m.agent.role, 120),
         mission: net(x.m.agent.mission || x.m.agent.description, court(400, 160)),
         teinte: x.teinte,
-        remplis: [...piliersRemplis(x.m.agent)],
-        jetons: jetonsBrouillon(x.m.agent),
+        remplis: [...piliersRemplis(x.fiche)],
+        jetons: jetonsBrouillon(x.fiche),
         cree: !!x.idCree,
         ecarte: x.ecarte,
         pris: x.pris?.name.slice(0, 80) ?? null,

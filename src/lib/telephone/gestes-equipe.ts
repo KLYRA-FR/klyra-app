@@ -71,7 +71,8 @@ export function gestesEquipe(d: DepsEquipe): Gestes {
       const ids = identifiantsLibres(bilan.aCreer.map((x) => x.m.cle), d.identifiantLibre);
       const crees: string[] = [];
       for (const [i, x] of bilan.aCreer.entries()) {
-        await d.create(ids[i], ficheAgent(x.m.agent, ids[i]), { tag: x.m.agent.role, teinte: x.teinte });
+        // La fiche telle que la carte la montre : sans les lignes proposées qu'elle n'a pas gardées.
+        await d.create(ids[i], ficheAgent(x.fiche, ids[i]), { tag: x.fiche.role, teinte: x.teinte });
         // Noté à chaque naissance : une erreur plus loin garde ceux qui sont déjà là.
         d.marquer(c.messageId, c.etapeId, (p) => ({ crees: { ...(p.crees ?? {}), [x.m.cle]: ids[i] }, teintes: { ...(p.teintes ?? {}), [x.m.cle]: x.teinte } }));
         crees.push(ids[i]);

@@ -1,6 +1,17 @@
 import { comparable, nomDejaPris, nomPropre } from "@/lib/noms-agents";
 import type { Message, MessagePart, Role, RoleTeinte } from "@/types/domain";
-import { appliquerMajEquipe, EQUIPE_VIDE, jetonsEquipe, manquesEquipe, type BrouillonEquipe, type MembreBrouillon } from "../../electron/atelier-equipe";
+import type { BrouillonAgent } from "../../electron/atelier-agent";
+import {
+  agentDuMembre,
+  appliquerChoix,
+  appliquerMajEquipe,
+  EQUIPE_VIDE,
+  jetonsEquipe,
+  manquesEquipe,
+  tacheProposee,
+  type BrouillonEquipe,
+  type MembreBrouillon,
+} from "../../electron/atelier-equipe";
 
 export * from "../../electron/atelier-equipe";
 
@@ -64,7 +75,8 @@ export function plierEquipes(messages: readonly { parts: readonly { type: string
       if (!estEquipe(part)) continue;
       if (part.maj.nouveau || serie.some((e) => Object.keys(e.crees).length)) clore();
       const avant = serie.at(-1)?.apres ?? EQUIPE_VIDE;
-      courant = appliquerMajEquipe(courant, part.maj);
+      // Ce que la personne a fait sur cette carte s'applique juste après l'appel : un appel suivant passe par-dessus.
+      courant = appliquerChoix(appliquerMajEquipe(courant, part.maj), part.choix);
       const etat: EtatEquipe = {
         serie: serie[0]?.serie ?? part.etapeId,
         avant,
@@ -130,6 +142,9 @@ type AgentConnu = Pick<Role, "id" | "name" | "tag" | "teinte">;
 /** Un membre tel que la carte le montre : sa teinte, s'il est déjà né, s'il est laissé de côté. */
 export interface MembreVu {
   m: MembreBrouillon;
+  /** L'agent tel que sa fiche sera écrite (sans les lignes proposées qu'elle n'a pas gardées). */
+  fiche: BrouillonAgent;
+  /** Son prénom, sinon vide : il attend le sien. */
   nom: string;
   teinte: RoleTeinte;
   /** L'agent né de ce membre (par cette carte, ou par sa propre carte), sinon null. */
@@ -141,12 +156,13 @@ export interface MembreVu {
 
 export function membresVus(etat: Pick<EtatEquipe, "apres" | "crees" | "teintes" | "ecartes">, roles: AgentConnu[], teinteDe: (id: string) => RoleTeinte): MembreVu[] {
   return etat.apres.membres.map((m) => {
-    const dejaLa = roles.find((r) => r.id === m.cle && comparable(r.name) === comparable(m.agent.nom)) ?? null;
+    const dejaLa = m.agent.nom ? (roles.find((r) => r.id === m.cle && comparable(r.name) === comparable(m.agent.nom)) ?? null) : null;
     const idCree = etat.crees[m.cle] ?? dejaLa?.id ?? null;
     const agent = idCree ? (roles.find((r) => r.id === idCree) ?? null) : null;
     return {
       m,
-      nom: nomPropre(m.agent.nom) || "Nouvel agent",
+      fiche: agentDuMembre(etat.apres, m),
+      nom: nomPropre(agent?.name ?? m.agent.nom),
       teinte: agent?.teinte ?? etat.teintes[m.cle] ?? teinteDe(m.cle),
       idCree,
       ecarte: !idCree && etat.ecartes.includes(m.cle),
@@ -167,7 +183,11 @@ export function bilanEquipe(etat: Pick<EtatEquipe, "apres" | "crees" | "courante
     nee: nes.length > 0 && !aCreer.length,
     /** Une plus ancienne, dont rien n'est né : l'assistant en a composé une autre. */
     remplacee: !creeIci && !etat.courante,
-    manques: [...manquesEquipe(etat.apres, aCreer.map((x) => x.m)), ...aCreer.filter((x) => x.pris).map((x) => `un autre prénom que ${x.pris!.name} pour ${x.nom}`)],
+    manques: [
+      ...(etat.apres.taches ?? []).some(tacheProposee) ? ["ta réponse aux propositions de l’assistant"] : [],
+      ...manquesEquipe(etat.apres, aCreer.map((x) => x.m)),
+      ...aCreer.filter((x) => x.pris).map((x) => `un autre prénom que ${x.pris!.name} pour ${x.nom}`),
+    ],
     jetons: jetonsEquipe(etat.apres, aCreer.map((x) => x.m)),
   };
 }
@@ -182,3 +202,40 @@ export function identifiantsLibres(cles: string[], identifiantLibre: (propose: s
     return id;
   });
 }
+
+/* ─── Ce que la personne valide, écrit pour l'assistant ───────────── */
+
+const puces = (l: string[]) => l.map((t) => `- ${t}`).join("\n");
+
+/** « Valider mes tâches » : ses tâches telles qu'elle les a gardées, ce qu'elle garde pour elle. */
+export function texteTachesValidees(b: BrouillonEquipe): string {
+  const taches = (b.taches ?? []).filter((t) => !tacheProposee(t));
+  const deleguees = taches.filter((t) => !t.pourElle).map((t) => t.texte);
+  const pourElle = taches.filter((t) => t.pourElle).map((t) => t.texte);
+  return [`Mes tâches sont prêtes :\n${puces(deleguees)}`, pourElle.length ? `Je garde pour moi :\n${puces(pourElle)}` : ""].filter(Boolean).join("\n\n");
+}
+
+/** « Valider les groupes » : chaque groupe et ses tâches, après ce qu'elle a déplacé. */
+export function texteGroupesValides(b: BrouillonEquipe): string {
+  const groupes = (b.groupes ?? [])
+    .map((g) => ({ g, taches: (b.taches ?? []).filter((t) => !t.pourElle && t.groupe === g.id && !tacheProposee(t)) }))
+    .filter((x) => x.taches.length);
+  const pourElle = (b.taches ?? []).filter((t) => t.pourElle).map((t) => t.texte);
+  const lignes = groupes.map((x) => `- ${x.g.nom || x.g.id} : ${x.taches.map((t) => t.texte).join(" ; ")}`);
+  return [
+    `Mes groupes sont prêts, un agent par groupe :\n${lignes.join("\n")}`,
+    pourElle.length ? `Je garde pour moi : ${pourElle.join(" ; ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Une étape est prête à valider : rien n'attend sa réponse, et chaque tâche à confier est rangée. */
+export function pretAValider(b: BrouillonEquipe, etape: "taches" | "groupes"): string | null {
+  const taches = b.taches ?? [];
+  if (taches.some(tacheProposee)) return "Garde ou retire d’abord les propositions de l’assistant.";
+  if (!taches.some((t) => !t.pourElle)) return "Il faut au moins une tâche à confier.";
+  if (etape === "groupes" && taches.some((t) => !t.pourElle && !t.groupe)) return "Range chaque tâche dans un groupe, ou garde-la pour toi.";
+  return null;
+}
+
