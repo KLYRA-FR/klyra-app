@@ -489,6 +489,12 @@ export interface KlyraBridge {
     enregistrer: (chemin: string, dossier: string | null) => Promise<Reponse<string | null>>;
     /** Ouvre l'espace des livrables d'un agent, ou son dossier de travail hors projet. */
     dossierAgent: (agent: string, quoi: "rendus" | "atelier") => Promise<Reponse<void>>;
+    /** Copie un livrable de ce PC (copie des rendus seulement) dans Téléchargements ; rend le chemin du fichier. */
+    telecharger?: (cle: string, chemin: string) => Promise<Reponse<string>>;
+    /** Télécharge un livrable du VPS dans Téléchargements, en flux ; rend le chemin du fichier sur ce PC. */
+    telechargerVps?: (cle: string, lieu: string, id: string, nom: string, dossier: boolean) => Promise<Reponse<string>>;
+    /** Progression d'un téléchargement (octets reçus, taille annoncée). */
+    onTelechargement?: (callback: (cle: string, recu: number, total: number) => void) => () => void;
   };
   /** Une page HTML partagée, ouverte sans que l'adresse Convex arrive à l'écran. */
   documents?: {

@@ -2,15 +2,19 @@ import { net, shell } from "electron";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
+import type { ReadableStream as FluxWeb } from "node:stream/web";
 import { PAGE_ISOLEE } from "./document-isole";
 import { ouvrirChemin } from "./fenetre-document";
 import { dansLesRendus, nomLibre, RACINE_RENDUS, type CopieRendu } from "./rendus";
+import { deposerDansTelechargements, ecrireFlux, type ProgressionTelechargement } from "./telechargement";
+import { segmentsSurs, suiviProgression } from "./telechargement-regles";
 
 /**
  * Les livrables des agents d'un VPS relié (serveur/rendus.mjs). Le VPS les annonce par le journal.
  * Ils restent sur le serveur : l'écran ne les copie plus dans `~/.klyra/rendus`.
  * `htmlRenduVps` lit la page en mémoire. `ouvrirRenduVps` écrit un fichier temporaire, hors des rendus,
- * le temps de l'ouvrir. `copierRenduVps` reste pour l'ancien canal et n'est plus appelé à la publication.
+ * le temps de l'ouvrir. `telechargerRenduVps` l'écrit en flux dans Téléchargements. `copierRenduVps` reste pour l'ancien canal et n'est plus appelé à la publication.
  * Le VPS ne sert que les fichiers d'une publication retenue.
  */
 
@@ -136,4 +140,45 @@ export async function ouvrirRenduVps(origine: string, jeton: string | null, id: 
   }
   const erreur = await shell.openPath(cible);
   if (erreur) throw new Error(erreur);
+}
+
+/**
+ * « Télécharger » : le livrable servi par le VPS arrive dans Téléchargements de ce PC, en flux.
+ * Seulement une publication retenue par le serveur (son id) ; le nom d'un fichier seul est celui que le VPS
+ * annonce, celui d'un dossier de page vient de l'origine. Chaque chemin relatif est contrôlé.
+ */
+export async function telechargerRenduVps(origine: string, jeton: string | null, id: unknown, nom: unknown, dossier: boolean, progression: ProgressionTelechargement): Promise<string> {
+  const jetonOk = exigerJeton(jeton);
+  if (typeof id !== "string" || !ID.test(id)) throw new Error("Livrable invalide.");
+  const liste = await fichiersDe(origine, jetonOk, id);
+  const total = liste.reduce((n, f) => n + (typeof f.taille === "number" ? f.taille : 0), 0);
+  const suivi = suiviProgression((recu) => progression(recu, total));
+  /* Un fichier, en flux. Coupé en route ou plus court qu'annoncé : une erreur, jamais un fichier tronqué. */
+  const recevoir = async (chemin: string, vers: string, attendu: unknown) => {
+    const reponse = await lire(origine, jetonOk, chemin);
+    if (!reponse.body) throw new Error("Le VPS n’a pas envoyé le livrable.");
+    let recu = 0;
+    try {
+      await ecrireFlux(Readable.fromWeb(reponse.body as unknown as FluxWeb<Uint8Array>), vers, (n) => {
+        recu += n;
+        suivi.ajouter(n);
+      });
+    } catch (e) {
+      throw new Error(e instanceof Error && e.message.startsWith("Le transfert") ? e.message : "Le transfert depuis le VPS s’est interrompu. Réessaie.");
+    }
+    if (typeof attendu === "number" && recu !== attendu) throw new Error("Le fichier reçu n’a pas la taille annoncée par le VPS. Réessaie.");
+  };
+  const final = dossier
+    ? await deposerDansTelechargements(typeof nom === "string" ? path.posix.basename(nom.replace(/[\\/]+$/, "")) : "", async (racine) => {
+        mkdirSync(racine);
+        for (const f of liste) {
+          const cible = path.join(racine, ...segmentsSurs(f.relatif));
+          if (path.relative(racine, cible).startsWith("..")) throw new Error("Le VPS a envoyé un nom de fichier invalide.");
+          mkdirSync(path.dirname(cible), { recursive: true });
+          await recevoir(`/klyra/v1/rendus/${id}/fichier?relatif=${encodeURIComponent(String(f.relatif))}`, cible, f.taille);
+        }
+      })
+    : await deposerDansTelechargements(liste[0]?.relatif ?? nom, (vers) => recevoir(`/klyra/v1/rendus/${id}/fichier`, vers, liste[0]?.taille));
+  suivi.finir();
+  return final;
 }

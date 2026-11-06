@@ -3,21 +3,22 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { useMenuContextuel } from "@/components/ui/MenuContextuel";
 import { getBridge } from "@/lib/bridge";
-import { lieuDuRendu, renduDansEspace } from "@/lib/rendus-espace";
-import { nomDuFichier } from "@/lib/rendus";
+import { renduDansEspace } from "@/lib/rendus-espace";
 import { cn } from "@/lib/cn";
 import { nomImage } from "@/lib/collage";
 import { nomFichier, tailleLisible } from "@/lib/fichiers";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
 import { useChatMessages, useRole, useWorkspace } from "@/lib/workspace";
-import type { Chat, TacheAgent } from "@/types/domain";
+import type { Chat, Rendu, TacheAgent } from "@/types/domain";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 import { VueImage } from "./ImageJointe";
 import { PanneauNavigateur } from "./navigateur/PanneauNavigateur";
 import { PastilleExtension } from "./PastilleExtension";
 import { ReglagesAgent } from "./reglages-agent/ReglagesAgent";
+import { MenuFichierConversation, MenuLivrable, ouvrirLivrable, SuivisTelechargement, useTelechargements } from "./TelechargementsFichiers";
 
 /**
  * Panneau à droite d'une conversation, à onglets : les réglages de l'agent,
@@ -124,6 +125,7 @@ function useFichiersChat(chatId: string): FichierChat[] {
  * Les livrables (outil `publier_artefact`) : ceux de l'agent, toutes conversations confondues, dans sa
  * conversation directe ; ceux de cette conversation ailleurs. Avec, sur ce PC, ses deux dossiers :
  * ses livrables (copies gardées par l'app) et son dossier de travail hors projet.
+ * Clic droit sur un livrable : Télécharger (dans Téléchargements de ce PC), Ouvrir, Afficher, Copier le chemin.
  */
 function Livrables({ chat }: { chat: Chat }) {
   const { state } = useWorkspace();
@@ -134,6 +136,8 @@ function Livrables({ chat }: { chat: Chat }) {
   const livrables = state.rendus.filter((r) => renduDansEspace(r.origine, chat.lieu ?? null) && (direct ? r.roleId === agentId : r.chatId === chat.id));
   const total = livrables.reduce((n, r) => n + (r.taille ?? 0), 0);
   const surCePc = !!bridge && !chat.lieu;
+  const { menu, ouvrir: ouvrirMenu, fermer: fermerMenu } = useMenuContextuel<Rendu>();
+  const { suivis, telecharger, oublier, enCours } = useTelechargements();
   if (!livrables.length && !(direct && surCePc)) return null;
 
   return (
@@ -148,16 +152,9 @@ function Livrables({ chat }: { chat: Chat }) {
             <li key={r.id}>
               <button
                 type="button"
-                onClick={() => {
-                  if (!bridge) return;
-                  if (r.chemin) {
-                    void bridge.rendus.ouvrir(r.chemin);
-                    return;
-                  }
-                  const lieu = lieuDuRendu(r.origine);
-                  if (r.distantId && lieu && bridge.rendus.ouvrirVps) void bridge.rendus.ouvrirVps(lieu, r.distantId, r.roleId, nomDuFichier(r.origine), r.dossier === true);
-                }}
-                title={`${r.titre}\n${r.origine}\nClic pour l’ouvrir`}
+                onClick={() => ouvrirLivrable(r)}
+                onContextMenu={(e) => ouvrirMenu(e, r)}
+                title={`${r.titre}\n${r.origine}\nClic pour l’ouvrir, clic droit pour le télécharger`}
                 className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent p-1.5 text-left hover:bg-fond-survol"
               >
                 <PastilleExtension chemin={r.origine} />
@@ -174,6 +171,8 @@ function Livrables({ chat }: { chat: Chat }) {
       ) : (
         <span className="text-ui-xs leading-[1.45] text-texte-tertiaire">Ce que {agent.name} publie (pages, maquettes, captures, vidéos) arrive ici et dans Artefacts.</span>
       )}
+      <SuivisTelechargement suivis={suivis} oublier={oublier} />
+      {menu && <MenuLivrable menu={menu} fermer={fermerMenu} enCours={enCours(menu.cible.id)} onTelecharger={telecharger} />}
       {direct && surCePc && (
         <div className="flex flex-wrap gap-1.5">
           <Bouton variant="gris" taille="compact" onClick={() => void bridge.rendus.dossierAgent(agentId, "rendus")}>
@@ -201,6 +200,7 @@ function FichiersConversation({ chat }: { chat: Chat }) {
   const fichiers = useFichiersChat(chat.id);
   const [filtre, setFiltre] = useState<Source | "tous">("tous");
   const bridge = getBridge();
+  const { menu, ouvrir: ouvrirMenu, fermer: fermerMenu } = useMenuContextuel<string>();
   const visibles = filtre === "tous" ? fichiers : fichiers.filter((f) => f.source === filtre);
   const compte = (s: Source) => fichiers.filter((f) => f.source === s).length;
 
@@ -248,6 +248,7 @@ function FichiersConversation({ chat }: { chat: Chat }) {
               <button
                 type="button"
                 onClick={() => bridge && void bridge.fichiers.montrer(f.chemin)}
+                onContextMenu={(e) => ouvrirMenu(e, f.chemin)}
                 title={`${f.chemin}\nClic pour le montrer ${poste.dansExplorateur}`}
                 className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent p-1.5 text-left hover:bg-fond-survol"
               >
@@ -263,6 +264,7 @@ function FichiersConversation({ chat }: { chat: Chat }) {
           );
         })}
       </ul>
+      {menu && <MenuFichierConversation menu={menu} fermer={fermerMenu} surCePc={!!bridge && !chat.lieu} />}
     </div>
   );
 }
