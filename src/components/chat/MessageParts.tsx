@@ -10,6 +10,7 @@ import { AgentRond, RondApercu } from "@/components/roles/AgentRond";
 import { Bouton } from "@/components/ui/Bouton";
 import { VignetteMessage } from "@/components/chat/ImageJointe";
 import { Markdown } from "@/components/ui/Markdown";
+import { AvecLiensFils } from "./LienFil";
 import { PixelCheck } from "@/components/ui/PixelCheck";
 import { roleFromContent } from "@/lib/agents";
 import { getBridge } from "@/lib/bridge";
@@ -62,7 +63,9 @@ export function TextBubble({ text, tone }: { text: string; tone: "user" | "role"
   /* `data-cherchable` : la recherche surligne les mots trouvés dans ce texte (cf. `surlignerMessage`). */
   return (
     <div data-cherchable className="w-fit max-w-[min(680px,100%)] min-w-0 rounded-xl bg-fond-survol px-3.5 py-2.5 [overflow-wrap:anywhere]">
-      <Markdown source={text} className="gap-2 text-ui leading-[1.6] text-texte-principal" />
+      <AvecLiensFils>
+        <Markdown source={text} className="gap-2 text-ui leading-[1.6] text-texte-principal" />
+      </AvecLiensFils>
     </div>
   );
 }
