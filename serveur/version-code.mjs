@@ -7,4 +7,4 @@
  * échouent si elle n'a pas suivi. Ne pas modifier à la main.
  */
 export const VERSION_CODE_SERVEUR = 25;
-export const EMPREINTE_CODE_SERVEUR = "17c29331c6c5906122f45f214d101b56c1ccb355397372513fbf553d1a35ad05";
+export const EMPREINTE_CODE_SERVEUR = "99082187687957a7083c1514077fd4b5bfa4af140873f02c727c828128ba9de4";

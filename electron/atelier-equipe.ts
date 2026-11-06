@@ -69,7 +69,7 @@ export interface BrouillonEquipe {
 
 export const EQUIPE_VIDE: BrouillonEquipe = { nom: "", but: "", membres: [], existants: [], exemples: [] };
 
-/** Au-delà, une équipe se pilote mal : l'assistant ne confie que trois travaux à la fois. */
+/** Au-delà, une équipe se pilote mal : l'assistant ne confie que cinq travaux à la fois (`TRAVAUX_MAX`). */
 export const MAX_MEMBRES = 6;
 
 /* ─── L'outil de l'assistant ──────────────────────────────────────── */
