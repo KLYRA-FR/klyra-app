@@ -1,3 +1,4 @@
+import { TRAVAUX_MAX } from "../fils-outils";
 /**
  * Fondation super-agent : types et limites communs (contrat v2, points 07–09, 12–14, 20–22, 26–27, 41–42).
  * Les champs gardent les noms du contrat (`event_id`, `owner_epoch`…) pour qu'on retrouve chaque
@@ -23,8 +24,8 @@ export const TYPES_TECHNIQUES = ["heartbeat", "accuse_transport"] as const;
 export const RESUME_MAX_OCTETS = 8 * 1024;
 export const LOT_MAX_EVENEMENTS = 50;
 export const LOT_MAX_OCTETS = 32 * 1024;
-/** Sémaphore du programme : trois occupations au plus, routeur et surveillance compris s'ils tournent (point 21). */
-export const CAPACITE_OCCUPATIONS = 3;
+/** Sémaphore du programme : autant d'occupations que de travaux ouverts à la fois, routeur et surveillance compris s'ils tournent (point 21). */
+export const CAPACITE_OCCUPATIONS = TRAVAUX_MAX;
 export const BAIL_MS = 10 * 60_000;
 /** L'exécutant renouvelle son bail au moins à cet intervalle. */
 export const RENOUVELLEMENT_MS = 3 * 60_000;

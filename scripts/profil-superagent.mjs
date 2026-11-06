@@ -111,7 +111,7 @@ try {
   })})`);
   verifier(doublon?.ok === true && doublon.data?.disposition === "doublon" && doublon.data?.work_id === travail, `doublon, pas un second travail (${doublon?.data?.disposition})`);
 
-  for (const [id, role] of [["klyra-fil-jetable-2", "designer"], ["klyra-fil-jetable-3", "qa"]]) {
+  for (const [id, role] of [["klyra-fil-jetable-2", "designer"], ["klyra-fil-jetable-3", "qa"], ["klyra-fil-jetable-4", "ops"], ["klyra-fil-jetable-5", "redacteur"]]) {
     const autre = await appeler(`ouvrir(${JSON.stringify({
       filId: id,
       roleId: role,
@@ -123,17 +123,17 @@ try {
     })})`);
     verifier(autre?.ok === true && autre.data?.ok !== false, `${id} ouvert (${autre?.data?.motif ?? "ok"})`);
   }
-  const quatrieme = await appeler(`ouvrir(${JSON.stringify({
-    filId: "klyra-fil-jetable-4",
+  const deTrop = await appeler(`ouvrir(${JSON.stringify({
+    filId: "klyra-fil-jetable-6",
     roleId: "growth",
-    messageId: "msg-klyra-fil-jetable-4",
-    brief: "Brief du quatrième",
-    titre: "Quatrième",
+    messageId: "msg-klyra-fil-jetable-6",
+    brief: "Brief du sixième",
+    titre: "Sixième",
     projectId: PROJET,
     compte: "local",
   })})`);
   const places = await appeler("peutOuvrir()");
-  verifier(quatrieme?.ok === true && quatrieme.data?.ok === false && quatrieme.data?.motif === "capacite_atteinte", `quatrième occupation en attente (${quatrieme?.data?.motif})`);
+  verifier(deTrop?.ok === true && deTrop.data?.ok === false && deTrop.data?.motif === "capacite_atteinte", `sixième occupation en attente (${deTrop?.data?.motif})`);
   verifier(places?.data?.ok === false && places?.data?.places === 0, `plus de place (${places?.data?.places})`);
 
   const suspendu = await appeler(`marquer(${JSON.stringify(FIL)}, "suspended", null)`);
@@ -152,7 +152,7 @@ try {
   const blocages = projection?.data?.blocages ?? [];
   verifier(blocages.length === 0, `aucun blocage affiché par le journal (${blocages.length})`);
   const travaux = projection?.data?.travaux?.length;
-  verifier(travaux === 3, `trois travaux, le quatrième n'est pas créé (${travaux})`);
+  verifier(travaux === 5, `cinq travaux, le sixième n'est pas créé (${travaux})`);
 
   const fichier = JSON.parse(readFileSync(path.join(donnees, "conversations.json"), "utf8"));
   const messages = (fichier.messages ?? []).filter((m) => m.chatId === FIL);

@@ -1287,7 +1287,7 @@ function registerBridge() {
     }
   }, 15 * 60_000);
   veilleTravaux.unref();
-  handle("superagent:peut-ouvrir", () => peutOuvrir());
+  handle("superagent:peut-ouvrir", (filsOuverts: unknown) => peutOuvrir(filsOuverts));
   handle("superagent:ouvrir", (brut: unknown) => noterOuverture(brut));
   handle("superagent:message", (brut: unknown) => noterMessage(brut));
   handle("superagent:etat", (filId: unknown) => etatFil(typeof filId === "string" ? filId : ""));

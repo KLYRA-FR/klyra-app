@@ -261,6 +261,8 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
   const conversations = new Map();
   let sessions = {};
   const surFin = new Set();
+  /* Les réponses déjà finies (les dernières) : un fil qui croit encore la sienne en cours se trompe (fils.mjs). */
+  const finies = new Set();
   if (fichierSessions) {
     try {
       const lu = JSON.parse(readFileSync(fichierSessions, "utf8"));
@@ -293,11 +295,15 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
       ajouter({ requestId, sessionId: sessionId ?? null, event, ...(lie ? { contexte: lie } : {}) });
       retenirSession(requestId, sessionId);
       if (event?.type === "fin") {
+        if (finies.size >= 1000) finies.delete(finies.values().next().value);
+        finies.add(requestId);
         for (const fn of surFin) fn({ requestId, event, sessionId: sessionId ?? null, contexte: lie, cle: conversations.get(requestId) ?? null });
         contextes.delete(requestId);
         conversations.delete(requestId);
       }
     },
+    /** La réponse a publié sa fin (parmi les 1000 dernières) : elle ne tourne plus. */
+    finie: (requestId) => finies.has(requestId),
     /** Prévient quand une réponse finit : le serveur la range s'il n'y a personne pour le faire. */
     ecouterFin(fn) {
       surFin.add(fn);

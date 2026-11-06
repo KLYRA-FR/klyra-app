@@ -15,7 +15,7 @@ import { indexerTravail } from "./recherche";
 import { ecrire, enTransaction, tous, un } from "./stockage";
 import { changerStatut, creerTravail, lireTravail } from "./travaux";
 import { noterCheckpoint } from "./watchdog";
-import { RefusSuperagent, type Horloge, type StatutTravail, type TypeMetier } from "./types";
+import { CAPACITE_OCCUPATIONS, RefusSuperagent, type Horloge, type StatutTravail, type TypeMetier } from "./types";
 
 /**
  * Cycle d'un fil Klyra : un travail, une politique limitée à ce fil, une décision, une livraison.
@@ -49,7 +49,44 @@ export function travailDuFil(db: DatabaseSync, filId: string): string | null {
 
 export function placesLibres(db: DatabaseSync): number {
   const n = un<{ n: number }>(db, "SELECT count(*) AS n FROM occupation")?.n ?? 0;
-  return Math.max(0, 3 - n);
+  return Math.max(0, CAPACITE_OCCUPATIONS - n);
+}
+
+/** Ce qui tient les places : le fil et le titre de chaque travail, l'occupant sinon (routeur, surveillance). */
+export function occupants(db: DatabaseSync): { fil_id: string | null; titre: string; occupant_ref: string }[] {
+  return tous<{ fil_id: string | null; titre: string | null; occupant_ref: string }>(
+    db,
+    `SELECT w.native_chat_id AS fil_id, w.titre AS titre, o.occupant_ref AS occupant_ref
+     FROM occupation o LEFT JOIN work w ON w.work_id = o.work_id ORDER BY o.slot`,
+  ).map((o) => ({ fil_id: o.fil_id, titre: o.titre ?? "", occupant_ref: o.occupant_ref }));
+}
+
+/**
+ * Rend les places orphelines : celles d'un travail de fil Klyra dont le fil n'est plus ouvert dans l'app
+ * (supprimé, fermé ou archivé sans passer par `fermer_fil`), ou d'un travail disparu. Le statut du travail
+ * ne change pas : il garde son historique ; seul le responsable et son bail sont levés avec la place.
+ * `filsOuverts` : les fils ouverts que l'app connaît. Les occupants qui ne sont pas un travail restent, et une
+ * place prise depuis moins de `GRACE_ORPHELIN_MS` aussi : son fil vient d'être créé, l'écran peut ne pas le montrer encore.
+ */
+export const GRACE_ORPHELIN_MS = 60_000;
+export function libererOrphelins(db: DatabaseSync, filsOuverts: ReadonlySet<string>, maintenant: Horloge = Date.now): string[] {
+  return enTransaction(db, () => {
+    const lignes = tous<{ work_id: string; existe: number; target_kind: string | null; fil_id: string | null }>(
+      db,
+      `SELECT o.work_id AS work_id, w.work_id IS NOT NULL AS existe, w.target_kind AS target_kind, w.native_chat_id AS fil_id
+       FROM occupation o LEFT JOIN work w ON w.work_id = o.work_id WHERE o.work_id IS NOT NULL AND o.acquired_at <= ?`,
+      new Date(maintenant() - GRACE_ORPHELIN_MS).toISOString(),
+    );
+    const rendues: string[] = [];
+    for (const l of lignes) {
+      const orpheline = !l.existe || (l.target_kind === "klyra" && (!l.fil_id || !filsOuverts.has(l.fil_id)));
+      if (!orpheline) continue;
+      ecrire(db, "DELETE FROM occupation WHERE work_id = ?", l.work_id);
+      if (l.existe) ecrire(db, "UPDATE work SET owner_agent_id = NULL, lease_until = NULL WHERE work_id = ?", l.work_id);
+      rendues.push(l.work_id);
+    }
+    return rendues;
+  });
 }
 
 /** Ouvre le travail du fil et en donne la responsabilité à son agent. Un fil déjà ouvert rend le même travail. */

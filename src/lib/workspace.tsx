@@ -17,7 +17,7 @@ import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCo
 import { appelEquipe, equipeEnCours, lireMajEquipe, OUTIL_EQUIPE_CLAUDE } from "@/lib/atelier-equipe";
 import { lireCarte, OUTIL_CARTE_CLAUDE, reponseNette } from "../../electron/cartes-interactives";
 import { lireDemandeSecret } from "../../electron/coffre-regles";
-import { contexteFil, TEXTE_ATTENTE, texteFilOuvert, texteRetourFil } from "../../electron/fils-outils";
+import { contexteFil, texteAttente, texteFilOuvert, texteRetourFil } from "../../electron/fils-outils";
 import { finTacheDeFond, sansFondOrphelin } from "./passation-fond";
 import { noterReponse, poserFond, poserFondParReponse } from "./fond-agents";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
@@ -2080,9 +2080,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             throw new Error(`Aucun projet « ${projetId} ». Projets : ${projects.map((p) => `${p.id} (${p.name})`).join(", ") || "aucun"}.`);
           }
           const ticket: ChampsTicket = { priorite: lirePriorite(args.priorite) ?? 0, echeance: lireEcheance(args.echeance) ?? null, projetId };
+          /* Le refus nomme les fils qui tiennent les places, avec leur titre à jour dans l'app. */
+          let occupants: { titre: string; id: string }[] = [];
+          const attente = () => texteAttente(occupants.map((o) => ({ titre: tousChats.find((c) => c.id === o.id)?.title ?? o.titre, id: o.id })));
           if (bridge?.superagent) {
-            const garde = await bridge.superagent.peutOuvrir();
-            if (garde.ok && !garde.data.ok) throw new Error(TEXTE_ATTENTE);
+            // Les fils ouverts de l'app, tous lieux : les places des fils supprimés ou fermés sont rendues avant de compter.
+            const garde = await bridge.superagent.peutOuvrir(tousChats.filter((c) => c.fil?.statut === "ouvert").map((c) => c.id));
+            if (garde.ok) occupants = garde.data.occupants ?? [];
+            if (garde.ok && !garde.data.ok) throw new Error(attente());
           }
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
           const id = creerFil(agent, titre || brief, lanceur, ticket, { lieu: lieuAppelant });
@@ -2107,7 +2112,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             if (note.ok && note.data.ok === false) {
               archiverFil(id);
               throw new Error(note.data.motif === "capacite_atteinte"
-                ? TEXTE_ATTENTE
+                ? attente()
                 : `Travail non ouvert : ${note.data.motif ?? "refus"}.`);
             }
           }

@@ -13,9 +13,11 @@
  *
  * Limites : « arrêté » est gardé sur le fil (`suspendu`) ; un message qui attend un fil occupé, et le compte
  * des fils qui travaillent, sont en mémoire (perdus au redémarrage du serveur, comme une réponse en cours).
+ * Une place n'est tenue que par une réponse qui tourne, pour un fil ouvert : avant de refuser un travail, les
+ * places orphelines (fil supprimé, fermé ou arrêté, réponse déjà finie d'après le journal) sont rendues.
  */
 import { randomUUID } from "node:crypto";
-import { contexteFil, estOutilFil, OUTILS_FILS, PREFIXE_FIL, TEXTE_ATTENTE, texteFilOuvert, texteRetourFil, TRAVAUX_MAX } from "./fils-outils.mjs";
+import { contexteFil, estOutilFil, OUTILS_FILS, PREFIXE_FIL, texteAttente, texteFilOuvert, texteRetourFil, TRAVAUX_MAX } from "./fils-outils.mjs";
 import { apresReponse, auDebut, ferme, ligneTicket, lireEcheance, lireEtatOutil, lirePriorite, peutFermer, peutMettreAJour, poserEtape, trierTickets } from "./tickets.mjs";
 
 export { estOutilFil, OUTILS_FILS };
@@ -124,6 +126,32 @@ export function creerFilsServeur(options) {
     const projet = fil.projetId ? (projets().find((p) => p.id === fil.projetId)?.name ?? fil.projetId) : null;
     return ligneTicket(v.chat, { travaille: travail.has(v.chat.id), agent: nomDe(fil.roleId), projet, lancePar: fil.lancePar ? nomDe(fil.lancePar.roleId) : null });
   };
+
+  /** Rend la place d'un fil ; sa réponse, si elle tourne encore, finit sans la reprendre. */
+  function liberer(chatId) {
+    const requestId = travail.get(chatId);
+    if (requestId === undefined) return;
+    travail.delete(chatId);
+    reponses.delete(requestId);
+  }
+
+  /**
+   * Rend les places orphelines : la fin de la réponse n'est jamais arrivée ici (arrêt, plantage), ou le fil
+   * n'a plus à en tenir une (supprimé, fermé, arrêté). Une place tenue par une réponse finie d'après le
+   * journal est rendue aussi. Rend les fils qui gardent leur place.
+   */
+  function purger() {
+    if (!travail.size) return [];
+    const parId = new Map(fils().map((v) => [v.chat.id, v]));
+    for (const [chatId, requestId] of [...travail]) {
+      const fil = parId.get(chatId)?.chat.fil;
+      const ouvert = !!fil && fil.statut === "ouvert" && !fil.suspendu;
+      if (ouvert && !journal.finie?.(requestId)) continue;
+      liberer(chatId);
+      if (!ouvert) enAttente.delete(chatId);
+    }
+    return [...travail.keys()].map((id) => ({ titre: parId.get(id)?.chat.title ?? "", id }));
+  }
 
   /** Fait répondre l'agent du fil à un message (le brief, une précision) ; attend son tour s'il travaille. */
   function lancer(chatId, ligne) {
@@ -269,7 +297,8 @@ export function creerFilsServeur(options) {
         if (projetId && !projets().some((p) => p.id === projetId)) {
           throw new Error(`Aucun projet « ${projetId} ». Projets : ${projets().map((p) => `${p.id} (${p.name})`).join(", ") || "aucun"}.`);
         }
-        if (travail.size >= TRAVAUX_MAX) throw new Error(TEXTE_ATTENTE);
+        const occupants = purger();
+        if (occupants.length >= TRAVAUX_MAX) throw new Error(texteAttente(occupants));
         const lanceur = CONVERSATION.test(appelant.conversation ?? "") && conversation(appelant.conversation) ? { roleId: qui, chatId: appelant.conversation } : null;
         const date = maintenant().toISOString();
         const id = `${PREFIXE_FIL}${randomUUID().slice(0, 8)}`;
@@ -301,6 +330,7 @@ export function creerFilsServeur(options) {
       case "lister_fils": {
         const agent = typeof args.agent === "string" && args.agent ? args.agent : null;
         const etatVoulu = args.etat === undefined || args.etat === null || args.etat === "" ? null : lireEtatOutil(args.etat);
+        purger();
         const ouverts = fils().filter((v) => v.chat.fil.statut === "ouvert" && (!agent || v.chat.fil.roleId === agent));
         const tries = trierTickets(ouverts.map((v) => v.chat), (id) => travail.has(id));
         const choisis = tries.filter((c) => !etatVoulu || (travail.has(c.id) ? "en-cours" : (c.fil.etape ?? "a-faire")) === etatVoulu);
@@ -343,6 +373,7 @@ export function creerFilsServeur(options) {
         const v = filDe(args.id);
         const requestId = travail.get(v.chat.id);
         if (requestId) options.annuler(requestId);
+        liberer(v.chat.id);
         enAttente.delete(v.chat.id);
         ecrireConversation({ ...v, chat: { ...v.chat, updatedAt: maintenant().toISOString(), fil: { ...v.chat.fil, suspendu: true } } });
         return "Arrêté. Le fil reste ouvert. Aucun nouveau départ tant qu’il n’est pas repris après contrôle.";
@@ -365,6 +396,8 @@ export function creerFilsServeur(options) {
           throw new Error(`Ce fil a été ouvert par ${par} : c’est à ${par} de le valider et de le fermer. Mets-le « à valider » avec mettre_a_jour_fil.`);
         }
         ecrireConversation({ ...v, chat: { ...v.chat, updatedAt: maintenant().toISOString(), fil: ferme(v.chat.fil, false, maintenant()) } });
+        liberer(v.chat.id);
+        enAttente.delete(v.chat.id);
         return `Fil fermé et archivé : ${v.chat.title} (${v.chat.id}). Il peut être rouvert.`;
       }
       default:
@@ -382,5 +415,5 @@ export function creerFilsServeur(options) {
     }
   }
 
-  return { outilAgent, travaille: (id) => travail.has(id), enAttente: () => [...enAttente.values()].reduce((n, l) => n + l.length, 0) };
+  return { outilAgent, purger, travaille: (id) => travail.has(id), enAttente: () => [...enAttente.values()].reduce((n, l) => n + l.length, 0) };
 }

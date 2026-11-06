@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
-import { ingererMessageFil, marquerTravailFil, ouvrirTravailFil, placesLibres, preparer, projection, preuvesTravail, travailDuFil, type ContexteCycle } from "./cycle";
+import { ingererMessageFil, libererOrphelins, marquerTravailFil, occupants, ouvrirTravailFil, placesLibres, preparer, projection, preuvesTravail, travailDuFil, type ContexteCycle } from "./cycle";
+import { CAPACITE_OCCUPATIONS } from "./types";
 import { ingererFaitGithub, lierPull, type FaitGithub } from "./github";
 import { chercher } from "./recherche";
 import { ouvrirStockage } from "./stockage";
@@ -105,10 +106,18 @@ export async function noterMessage(brut: unknown) {
   return { ok: true as const, ...issue };
 }
 
-export function peutOuvrir(): { ok: boolean; places: number } {
-  if (!journal) return { ok: true, places: 3 };
+/**
+ * `filsOuverts` : les fils ouverts que l'écran connaît. Donnés, les places des fils qui n'y sont plus
+ * (supprimés, fermés) sont rendues avant de compter. `occupants` : les fils qui tiennent les places.
+ */
+export function peutOuvrir(filsOuverts?: unknown): { ok: boolean; places: number; occupants: { titre: string; id: string }[] } {
+  if (!journal) return { ok: true, places: CAPACITE_OCCUPATIONS, occupants: [] };
+  if (Array.isArray(filsOuverts)) {
+    libererOrphelins(journal, new Set(filsOuverts.filter((id): id is string => typeof id === "string").map((id) => id.slice(0, 80))));
+  }
   const places = placesLibres(journal);
-  return { ok: places > 0, places };
+  const liste = occupants(journal).flatMap((o) => (o.fil_id ? [{ titre: o.titre, id: o.fil_id }] : []));
+  return { ok: places > 0, places, occupants: liste };
 }
 
 export function etatFil(filId: string): { status: string; work_id: string } | null {
