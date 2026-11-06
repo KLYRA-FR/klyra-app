@@ -661,6 +661,9 @@ export function initialiserHomepage(racine) {
     rt = setTimeout(redimensionner, 80);
   }, { signal });
   mouvement.addEventListener("change", redimensionner, { signal });
+  $$(".q__l details").forEach((question) => question.addEventListener("toggle", () => {
+    if (racine.dataset.pret === "true") redimensionner();
+  }, { signal }));
   addEventListener("scroll", () => {
     if (mouvement.matches) { E.y = scrollY; E.prec = -1; image(); }
   }, { signal, passive: true });

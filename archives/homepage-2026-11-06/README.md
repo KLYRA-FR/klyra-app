@@ -28,9 +28,11 @@ compte, base ou dépendance réseau n'est nécessaire pour cet export.
 ## Restaurer
 
 Sur une branche depuis le main courant, ouvrir une PR qui annule seulement
-le commit d'intégration de la homepage v2. Ne pas réinitialiser main et
-ne pas annuler les PR suivantes. Si la PR a plusieurs commits, annuler
-le commit de fusion ou tous ses commits dans l'ordre inverse.
+les changements d'intégration de la homepage v2. Conserver ce dossier d'archive.
+Ne pas réinitialiser main et ne pas annuler les PR suivantes. Si les commits
+de cette PR sont conservés, annuler dans l'ordre inverse les commits qui
+suivent le commit d'archive `0371a48` (sans annuler ce dernier). En cas de
+squash, annuler le commit fusionné en conservant ce dossier dans la PR de retour.
 
 Vérifier `pnpm site:build`, `pnpm typecheck`, `pnpm lint`, le démarrage
 de l'app et les deux routes. Faire fusionner selon les protections en vigueur.
