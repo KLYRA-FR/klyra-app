@@ -169,6 +169,9 @@ curl -fsSL "$SOURCE/atelier-equipe.mjs" -o "$CODE_DIR/atelier-equipe.mjs"
 curl -fsSL "$SOURCE/cartes-interactives.mjs" -o "$CODE_DIR/cartes-interactives.mjs"
 curl -fsSL "$SOURCE/joints.mjs" -o "$CODE_DIR/joints.mjs"
 curl -fsSL "$SOURCE/joints-vps.mjs" -o "$CODE_DIR/joints-vps.mjs"
+curl -fsSL "$SOURCE/fils.mjs" -o "$CODE_DIR/fils.mjs"
+curl -fsSL "$SOURCE/fils-outils.mjs" -o "$CODE_DIR/fils-outils.mjs"
+curl -fsSL "$SOURCE/tickets.mjs" -o "$CODE_DIR/tickets.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 
 # ─── Service ─────────────────────────────────────────────────────────

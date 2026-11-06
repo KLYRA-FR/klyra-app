@@ -18,6 +18,8 @@
  *   (règles, outils et leurs textes, écriture d'un secret dans un fichier hors de Git) ;
  * - `serveur/workflows-outils.mjs` : les outils des workflows pour les agents (electron/workflows-outils.ts) ;
  * - `serveur/composio-connect.mjs` : la connexion Composio d'un serveur (electron/composio-connect.ts) ;
+ * - `serveur/fils-outils.mjs` et `serveur/tickets.mjs` : les fils pour les agents (outils, consigne, textes) et les
+ *   règles de leurs tickets (electron/fils-outils.ts, src/lib/tickets.ts) ;
  * - `serveur/workflows-moteur-coeur.mjs`, `serveur/workflows-types.mjs` et `serveur/planning-passages.mjs` : le moteur
  *   des workflows, le même que dans l'app (src/lib/workflows/moteur.ts, src/types/workflows.ts, src/lib/planning.ts) ;
  * - `serveur/epreuve.mjs`, `serveur/json-partiel.mjs` et `serveur/atelier-agent.mjs` : l'atelier d'un agent
@@ -67,6 +69,8 @@ const FICHIERS = [
   ["src/lib/workflows/moteur.ts", "serveur/workflows-moteur-coeur.mjs"],
   ["src/lib/planning.ts", "serveur/planning-passages.mjs"],
   ["src/lib/fournisseurs.ts", "serveur/fournisseurs.mjs"],
+  ["electron/fils-outils.ts", "serveur/fils-outils.mjs"],
+  ["src/lib/tickets.ts", "serveur/tickets.mjs"],
 ];
 const VERSION = ["electron/version-serveur.ts", "serveur/version-code.mjs"];
 

@@ -15,6 +15,7 @@ import { OUTIL_CHOIX, OUTIL_PROPOSER } from "./atelier-agent";
 import { OUTIL_EQUIPE } from "./atelier-equipe";
 import { appelCarte, OUTIL_CARTE } from "./cartes-interactives";
 import { estOutilWorkflow, OUTILS_WORKFLOWS, OUTILS_WORKFLOWS_LIBRES } from "./workflows-outils";
+import { estOutilFil, OUTILS_FILS } from "./fils-outils";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -177,85 +178,6 @@ const OUTIL_DEMANDER = {
     "Pose une question à une autre IA que Claude, ajoutée par la personne dans les Réglages de l'app KLYRA (ChatGPT, Gemini, Mistral…). Pour un deuxième avis, une autre plume, une comparaison. L'IA ne voit que la consigne : mets-y tout le contexte utile (texte, extrait de code). Elle répond en texte et ne touche à aucun fichier.",
 };
 
-const id = { type: "string", description: "L'identifiant du fil (klyra-fil-…)." };
-
-/**
- * Les fils : une tâche = un fil, une conversation à part d'un agent qui tourne
- * sans bloquer son chat. On en ouvre un seulement pour un travail qui ne se
- * règle pas tout de suite.
- */
-const OUTILS_FILS = [
-  {
-    name: "ouvrir_fil",
-    description:
-      "Confie une tâche à un agent de l'équipe (ou à toi-même) dans un nouveau fil : un onglet de son chat, qui travaille à part sans bloquer. Seulement pour un travail qui ne se règle pas tout de suite. Le fil ne voit pas cette conversation : le brief doit être complet (contexte, fichiers, attendu, critères de fin). Regarde d'abord avec lister_fils s'il n'en existe pas déjà un ouvert sur le même sujet. Quand l'agent a fini, sa réponse te revient automatiquement dans cette conversation. Le fil est un ticket, visible par la personne avec son état, sa priorité et son échéance.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        agent: { type: "string", description: "L'identifiant de l'agent qui fait la tâche (ex. dev, designer), ou principal." },
-        titre: { type: "string", description: "Un titre court : « Rapport hebdo »." },
-        brief: { type: "string", description: "La consigne complète." },
-        priorite: { type: "integer", minimum: 0, maximum: 3, description: "Facultatif : 0 aucune, 1 basse, 2 moyenne, 3 haute." },
-        echeance: { type: "string", description: "Facultatif : le jour attendu, « 2026-11-05 »." },
-        projet: { type: "string", description: "Facultatif : l'identifiant du projet concerné." },
-      },
-      required: ["agent", "titre", "brief"],
-    },
-  },
-  {
-    name: "lister_fils",
-    description:
-      "Liste les fils ouverts (les tickets pas encore fermés), avec leur agent, leur état (à faire, en cours, bloqué et pourquoi, à valider), leur priorité, leur échéance, leur projet et leur identifiant. Ce qui attend quelqu'un vient d'abord : bloqués, en cours, à valider, à faire.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        agent: { type: "string", description: "Facultatif : seulement les fils de cet agent." },
-        etat: { type: "string", enum: ["bloque", "en-cours", "a-valider"], description: "Facultatif : seulement les fils dans cet état." },
-      },
-    },
-  },
-  {
-    name: "lire_fil",
-    description: "Lit l'état d'un fil et sa dernière réponse (le résultat, quand il a fini).",
-    inputSchema: { type: "object", properties: { id }, required: ["id"] },
-  },
-  {
-    name: "ecrire_dans_fil",
-    description: "Ajoute une précision ou une consigne dans un fil ; s'il travaille, elle attend son tour.",
-    inputSchema: { type: "object", properties: { id, message: { type: "string" } }, required: ["id", "message"] },
-  },
-  {
-    name: "mettre_a_jour_fil",
-    description:
-      "Met à jour l'état d'un ticket (un fil) : bloque (tu attends une réponse, un accès ou une décision : dis pourquoi dans raison), a-valider (le travail est fait, à relire), en-cours (tu continues, par exemple après une tâche de fond). Réservé à l'agent du fil et à celui qui l'a lancé. Sans cet outil, une réponse finie passe le fil « à valider ».",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id,
-        etat: { type: "string", enum: ["bloque", "a-valider", "en-cours"] },
-        raison: { type: "string", description: "Pourquoi c'est bloqué, en une ligne. Obligatoire pour bloque." },
-      },
-      required: ["id", "etat"],
-    },
-  },
-  {
-    name: "arreter_fil",
-    description: "Suspend le travail d'un fil, sans le fermer. Aucun nouveau départ tant qu'il n'est pas repris après contrôle.",
-    inputSchema: { type: "object", properties: { id }, required: ["id"] },
-  },
-  {
-    name: "reprendre_fil",
-    description: "Reprend un fil suspendu, après un contrôle nommé dans controle. Un fil terminé ou annulé ne reprend pas.",
-    inputSchema: { type: "object", properties: { id, controle: { type: "string", description: "La référence du contrôle qui autorise la reprise." } }, required: ["id", "controle"] },
-  },
-  {
-    name: "fermer_fil",
-    description:
-      "Ferme un fil que tu as lancé, une fois le travail fait et vérifié : il est archivé (rien n'est effacé) et peut être rouvert. Vérifie d'abord que le travail est fini. Un fil ouvert par la personne ou par un autre agent, c'est lui qui le ferme : mets-le « à valider » avec mettre_a_jour_fil.",
-    inputSchema: { type: "object", properties: { id }, required: ["id"] },
-  },
-];
-
 /** Un agent montre ce qu'il a produit : le fichier rejoint l'écran Artefacts (cf. `src/lib/rendus.ts`). */
 const OUTIL_PUBLIER = {
   name: "publier_artefact",
@@ -393,7 +315,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
       if (nom === OUTIL_EQUIPE.name && appelant.roleId !== "principal") return texte("Seul l'assistant compose une équipe avec la personne.", true);
       if (nom === OUTIL_CHOIX.name && appelant.roleId !== "principal") return texte("Seul l'assistant propose des réponses toutes prêtes.", true);
       /* Les workflows vivent dans l'écran (page Workflows) : relayés comme les fils (cf. workflows-outils.ts). */
-      if (OUTILS_FILS.some((o) => o.name === nom) || estOutilWorkflow(nom) || nom === OUTIL_PROPOSER.name || nom === OUTIL_EQUIPE.name || nom === OUTIL_CHOIX.name || nom === OUTIL_PUBLIER.name) {
+      if (estOutilFil(nom) || estOutilWorkflow(nom) || nom === OUTIL_PROPOSER.name || nom === OUTIL_EQUIPE.name || nom === OUTIL_CHOIX.name || nom === OUTIL_PUBLIER.name) {
         if (!relaisFils) return texte("L'app n'est pas prête, réessaie dans un instant.", true);
         try {
           return texte(await relaisFils(nom, args, appelant));

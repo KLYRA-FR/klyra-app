@@ -4,7 +4,8 @@
  * quand la conversation le demande (`moteur: "codex"`). Les IA à consulter (ia.mjs) leur sont données
  * par l'outil MCP `demander_ia`, et l'atelier d'un agent ou d'une équipe à l'assistant (`proposer_agent`, `proposer_equipe`,
  * `proposer_choix`, son épreuve : atelier-agent.mjs et epreuve.mjs, les mêmes règles que sur le PC).
- * Ce qui n'existe que sur le PC n'est pas là : outils des fils, planning, consommation détaillée.
+ * Les fils sont servis comme sur le PC (fils.mjs : par l'app quand elle écoute, sinon par ce serveur).
+ * Ce qui n'existe que sur le PC n'est pas là : planning, consommation détaillée.
  * Les pièces jointes arrivent avant le message (joints.mjs) : la session lit leur dossier (`--add-dir`).
  *
  * Chaque événement part dans le journal (`journal.mjs`) avec le numéro de la réponse (requestId) :
@@ -46,6 +47,8 @@ import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coff
 import { creerCoffreServeur } from "./coffre-serveur.mjs";
 import { creerComposioServeur } from "./composio-serveur.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
+import { CONSIGNE_FILS, NOMS_FILS } from "./fils-outils.mjs";
+import { creerRelaisFils } from "./fils.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
 
@@ -364,7 +367,7 @@ export function creerAgents(options) {
 
   const listeAgents = (agents) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
   const ici = () =>
-    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier, ses rappels et les fils de l'app n'existent pas ici.${composioServeur.mcp() ? ` ${CONSIGNE_COMPOSIO}` : ""} Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
+    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier et ses rappels n'existent pas ici.${composioServeur.mcp() ? ` ${CONSIGNE_COMPOSIO}` : ""} Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
 
   function consigneAssistant() {
     const { assistant, actifs } = lireEquipe();
@@ -372,7 +375,7 @@ export function creerAgents(options) {
     const equipe = actifs.length
       ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant avec un brief qui se suffit (objectif, contexte et chemins, contraintes, critère de fin, le livrable attendu dans des fichiers et un compte rendu court) ; n'en invente pas d'autre. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
       : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_ATELIER} ${CONSIGNE_EQUIPE} ${CONSIGNE_CARTES}` : ""}`;
+    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_FILS} ${CONSIGNE_ATELIER} ${CONSIGNE_EQUIPE} ${CONSIGNE_CARTES}` : ""}`;
   }
 
   function consigneAgent(id) {
@@ -381,7 +384,7 @@ export function creerAgents(options) {
     const equipe = autres.length
       ? `Dans cette app, les agents que la personne a choisis sont : ${listeAgents(autres)}, et son assistant ${assistant ?? "l'assistant"} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais ta part et dis ce qui reste.`
       : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${assistant ?? "l'assistant"} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais ta part et dis ce qui reste.`;
-    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_CARTES}` : ""}`;
+    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail ${options.ia ? "dans un fil de l'app ou " : ""}en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_FILS} ${CONSIGNE_CARTES}` : ""}`;
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
@@ -403,6 +406,9 @@ export function creerAgents(options) {
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
   const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0), local: () => moteurWorkflows });
   options.ia?.surWorkflows?.({ appeler: workflows.appeler });
+  /* Les fils : tenus par l'app du PC quand elle écoute, sinon par ce serveur (cf. fils.mjs). */
+  const fils = creerRelaisFils({ publier, ecouteurs: options.ecouteurs ?? (() => 0), local: () => filsLocaux });
+  options.ia?.surFils?.({ appeler: fils.appeler });
   /** La configuration MCP d'une session : l'agent et la conversation en en-têtes (qui publie). */
   const mcpIa = (demande = {}) => options.ia?.configMcp({ agent: demande.agent ?? "principal", conversation: demande.conversation ?? demande.contexte?.chatId ?? "" }) ?? null;
 
@@ -627,6 +633,15 @@ export function creerAgents(options) {
     }
     const parent = msg.parent_tool_use_id ?? null;
     const courant = proc.tours[0] ?? null;
+    /* Un agent d'arrière-plan revenu sans réponse ouverte : la première réponse le dit (comme dans electron/claude.ts). */
+    if (courant && proc.finsDeFond.length) for (const fin of proc.finsDeFond.splice(0)) courant.emit(fin);
+    /* Un agent lancé en arrière-plan a fini : sa passation passe « rendu » (ou « arrêté »), pas avant. */
+    if (msg.type === "system" && msg.subtype === "task_notification" && typeof msg.tool_use_id === "string" && msg.tool_use_id) {
+      const fin = { type: "tache-fond", id: msg.tool_use_id, statut: msg.status === "completed" ? "fait" : "erreur" };
+      if (courant) courant.emit(fin);
+      else proc.finsDeFond.push(fin);
+      return;
+    }
 
     if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
       proc.sessionId = msg.session_id;
@@ -758,7 +773,7 @@ export function creerAgents(options) {
     if (dossierPrepare) env.CLAUDE_CONFIG_DIR = dossierPrepare;
     const child = spawn(bin, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
-    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map() };
+    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map(), finsDeFond: [] };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
     let tampon = "";
     let stderr = "";
@@ -914,6 +929,8 @@ export function creerAgents(options) {
           ...(mcp ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
           // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
           ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
+          // Les fils, sans demander (comme sur le PC) : ouvrir un fil, c'est confier à un agent actif.
+          ...(mcp ? NOMS_FILS.map((o) => `mcp__klyra__${o}`) : []),
         );
       if (mcp) args.push("--mcp-config", mcp);
       if (avecJointes) args.push("--add-dir", dossierJointes);
@@ -1007,9 +1024,11 @@ export function creerAgents(options) {
     return ["demander", "projet", "tout"].includes(a) ? a : "projet";
   };
   let moteurWorkflows = null;
+  /** Les fils de ce serveur, PC fermé (fils.mjs, branché par klyra-serveur.mjs). */
+  let filsLocaux = null;
 
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

@@ -17,6 +17,8 @@ import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCo
 import { appelEquipe, equipeEnCours, lireMajEquipe, OUTIL_EQUIPE_CLAUDE } from "@/lib/atelier-equipe";
 import { lireCarte, OUTIL_CARTE_CLAUDE, reponseNette } from "../../electron/cartes-interactives";
 import { lireDemandeSecret } from "../../electron/coffre-regles";
+import { contexteFil, TEXTE_ATTENTE, texteFilOuvert, texteRetourFil } from "../../electron/fils-outils";
+import { finTacheDeFond, sansFondOrphelin } from "./passation-fond";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { renduDansEspace } from "@/lib/rendus-espace";
 import type { EtatEspace } from "@/lib/espace-sync";
@@ -473,6 +475,7 @@ function ajouterEtape(
         roleId: sousAgent,
         consigne,
         statut: "en-cours",
+        ...(entree.run_in_background === true ? { fond: true } : {}),
       },
     ];
   }
@@ -536,7 +539,8 @@ function finirEtape(parts: MessagePart[], id: string, ok: boolean): MessagePart[
   // Une carte ou des réponses refusées par l'app (prénom déjà pris…) ne restent pas dans le fil.
   const gardees = ok ? parts : parts.filter((p) => !((p.type === "proposition-agent" || p.type === "atelier-agent" || p.type === "atelier-equipe" || p.type === "carte" || p.type === "choix" || p.type === "coffre-demande") && p.etapeId === id));
   return gardees.map((p) => {
-    if (p.type === "passation" && p.etapeId === id) return { ...p, statut };
+    // Lancé en arrière-plan : l'appel répond « lancé » tout de suite ; la passation attend le retour de l'agent (`tache-fond`).
+    if (p.type === "passation" && p.etapeId === id) return p.fond && ok ? p : { ...p, statut };
     if (p.type === "etapes")
       return {
         ...p,
@@ -860,16 +864,20 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         : null;
       const valide = data?.version === VERSION_STOCKAGE;
       if (data !== null && !valide) { setErreurChargement("Le format des conversations n’est pas reconnu. Les données existantes sont conservées."); return; }
+      const surUnVps = new Set((valide ? (data.chats ?? []) : []).filter((c) => c.lieu).map((c) => c.id));
       const messages = (valide ? (data.messages ?? []) : []).map((m) =>
         // Une réponse coupée par la fermeture de l'app ne reprendra pas, ni un essai de l'épreuve d'un agent.
-        sansEssaisEnCours(
-          m.statut === "en-cours"
-            ? {
-                ...m,
-                statut: "erreur" as const,
-                erreur: "Interrompu : l’app a été fermée.",
-              }
-            : m,
+        sansFondOrphelin(
+          sansEssaisEnCours(
+            m.statut === "en-cours"
+              ? {
+                  ...m,
+                  statut: "erreur" as const,
+                  erreur: "Interrompu : l’app a été fermée.",
+                }
+              : m,
+          ),
+          !surUnVps.has(m.chatId),
         ),
       );
       const artefactsCharges = valide ? (data.artefacts ?? []).filter((a) => a.id !== ANCIEN_ARTEFACT_DE_DEPART) : [];
@@ -1017,14 +1025,17 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             (autres.length ? ` Sont aussi dans la conversation : ${autres.join(", ")}.` : ""),
         );
       } else if (chat.fil) {
-        const par = chat.fil.lancePar ? nom(chat.fil.lancePar.roleId) : personne.name;
-        lignes.push(
-          `Tu travailles dans un fil, une tâche à part : « ${chat.title} » (${chat.id}), ouvert par ${par}. Ce fil ne voit pas les autres conversations : tout ce qu’il faut est dans le brief. Quand tu as fini, termine par le résultat, clairement${chat.fil.lancePar ? ` : ta réponse revient à ${par}` : ""}.` +
-            ` Ce fil est un ticket : ta réponse finie le passe « à valider ». Si tu attends quelque chose (une réponse, un accès, une décision), dis-le avec mettre_a_jour_fil (bloque et la raison).`,
-        );
         const projetFil = chat.fil.projetId ? projects.find((p) => p.id === chat.fil!.projetId) : null;
-        if (projetFil) lignes.push(`Projet du ticket : ${projetFil.name} (${projetFil.subtitle}), dossier ${projetFil.folder}.`);
-        if (chat.fil.echeance) lignes.push(`Échéance du ticket : ${chat.fil.echeance}.`);
+        lignes.push(
+          ...contexteFil({
+            titre: chat.title,
+            id: chat.id,
+            par: chat.fil.lancePar ? nom(chat.fil.lancePar.roleId) : personne.name,
+            retour: !!chat.fil.lancePar,
+            projet: projetFil ? `${projetFil.name} (${projetFil.subtitle}), dossier ${projetFil.folder}` : null,
+            echeance: chat.fil.echeance,
+          }),
+        );
       } else {
         lignes.push("Conversation en tête-à-tête, hors projet.");
       }
@@ -1089,7 +1100,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       parts: [
         {
           type: "text",
-          text: `**${ok ? "Fil terminé" : "Fil arrêté sur une erreur"} : ${fil.title}** (${fil.id}) · ${nom}\n\n${corps || reponse?.erreur || "Pas de texte dans la réponse."}`,
+          text: texteRetourFil({ titre: fil.title, id: fil.id, agent: nom, ok, texte: corps || reponse?.erreur || "" }),
         },
       ],
     };
@@ -1210,6 +1221,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           if (event.outil === "mcp__klyra__construire_workflow") outilsWorkflows().apercu({ chatId, roleId }, event.id, event.entree);
           break;
         }
+        case "tache-fond": {
+          // L'agent lancé en arrière-plan est revenu : sa passation, dans un message plus ancien de la conversation.
+          const porteur = stateRef.current.messages.findLast(
+            (m) => m.chatId === chatId && m.parts.some((p) => p.type === "passation" && p.etapeId === event.id),
+          );
+          if (porteur) dispatch({ type: "message/update", id: porteur.id, patch: (m) => ({ ...m, parts: finTacheDeFond(m.parts, event.id, event.statut) }) });
+          break;
+        }
         case "etape-fin":
           maj((m) => ({
             ...m,
@@ -1289,7 +1308,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           }
           // Le ticket du fil : à valider, ou bloqué sur l'erreur.
           dispatch({ type: "chat/update", id: chatId, patch: (c) => (c.fil ? { ...c, fil: apresReponse(c.fil, { ok: event.ok, erreur: event.erreur }) } : c) });
-          rapporterFil(chatId, messageId, event.ok);
+          // PC fermé à la fin de la réponse, le VPS l'a déjà rapportée au lanceur : pas une seconde fois.
+          if (event.retourFil === "serveur") dispatch({ type: "chat/update", id: chatId, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, retourAttendu: false } } : c) });
+          else rapporterFil(chatId, messageId, event.ok);
           if (stateRef.current.chats.some((c) => c.id === chatId && c.fil)) {
             const pont = getBridge()?.superagent;
             if (pont) {
@@ -1358,6 +1379,39 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           };
           dispatch({ type: "chat/add", chat });
           stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
+        }
+      }
+      // Un fil que le VPS tient lui-même (ouvert par un de ses agents pendant que ce PC était fermé) : il prend sa place.
+      if ((!chat || !roleId) && contexte?.fil && contexte.chatId.startsWith(FIL)) {
+        roleId = contexte.agentId;
+        chat = stateRef.current.chats.find((c) => c.id === contexte.chatId);
+        if (!chat) {
+          chat = {
+            id: contexte.chatId,
+            kind: "direct",
+            projectId: null,
+            title: contexte.titre,
+            roleIds: [roleId],
+            updatedAt: new Date().toISOString(),
+            sessions: {},
+            luJusqua: null,
+            fil: contexte.fil,
+            lieu: contexte.lieu,
+          };
+          dispatch({ type: "chat/add", chat });
+          stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
+        }
+      }
+      // La réponse d'un fil que le VPS rapporte à l'agent qui l'a lancé : le message du retour, puis sa réponse.
+      const retour = contexte?.retour;
+      if (retour) {
+        chat = stateRef.current.chats.find((c) => c.id === contexte.chatId) ?? chat;
+        roleId = contexte.agentId;
+        if (chat && !stateRef.current.messages.some((m) => m.id === retour.messageId)) {
+          dispatch({
+            type: "message/add",
+            message: { id: retour.messageId, chatId: chat.id, author: { kind: "role", roleId: retour.roleId }, createdAt: retour.creeLe, parts: [{ type: "text", text: retour.texte }] },
+          });
         }
       }
       // Écrit sur le téléphone pendant que ce PC était fermé, envoyé au VPS : le message, puis sa réponse.
@@ -1988,7 +2042,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           const ticket: ChampsTicket = { priorite: lirePriorite(args.priorite) ?? 0, echeance: lireEcheance(args.echeance) ?? null, projetId };
           if (bridge?.superagent) {
             const garde = await bridge.superagent.peutOuvrir();
-            if (garde.ok && !garde.data.ok) throw new Error("En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère.");
+            if (garde.ok && !garde.data.ok) throw new Error(TEXTE_ATTENTE);
           }
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
           const id = creerFil(agent, titre || brief, lanceur, ticket, { lieu: lieuAppelant });
@@ -2013,11 +2067,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             if (note.ok && note.data.ok === false) {
               archiverFil(id);
               throw new Error(note.data.motif === "capacite_atteinte"
-                ? "En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère."
+                ? TEXTE_ATTENTE
                 : `Travail non ouvert : ${note.data.motif ?? "refus"}.`);
             }
           }
-          return `Fil ouvert : ${titre || "sans titre"} (${id}). ${nomDe(agent)} y travaille, dans un onglet de son chat.${lanceur ? " Sa réponse te reviendra automatiquement dans cette conversation : inutile de la surveiller." : ""}`;
+          return texteFilOuvert(titre, id, nomDe(agent), !!lanceur);
         }
         case "lister_fils": {
           const agent = typeof args.agent === "string" && args.agent ? args.agent : null;
@@ -2039,6 +2093,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           const message = String(args.message ?? "").trim();
           if (!message) throw new Error("Le message est vide.");
           if (fil.fil.statut === "archive") throw new Error("Ce fil est fermé : demande à la personne de le rouvrir, ou ouvre-en un autre.");
+          if (fil.fil.suspendu) throw new Error("Ce travail est suspendu ou clos : aucun nouveau départ.");
           if (bridge?.superagent) {
             const etat = await bridge.superagent.etat(fil.id);
             if (etat.ok && etat.data && (etat.data.status === "suspended" || etat.data.status === "cancelled" || etat.data.status === "done")) {
@@ -2090,6 +2145,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           const fil = filDe(args.id);
           const controle = typeof args.controle === "string" ? args.controle.trim() : "";
           if (!controle) throw new Error("La reprise demande la référence du contrôle.");
+          // Arrêté sur le VPS pendant que ce PC était fermé : la reprise lève l'arrêt.
+          if (fil.fil.suspendu) dispatch({ type: "chat/update", id: fil.id, patch: (c) => (c.fil ? { ...c, fil: { ...c.fil, suspendu: false } } : c) });
           if (!bridge?.superagent) throw new Error("Le journal des travaux est dans l’app de bureau.");
           const marque = await bridge.superagent.marquer(fil.id, "active", controle);
           if (!marque.ok) throw new Error(marque.message);

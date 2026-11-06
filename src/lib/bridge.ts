@@ -3,7 +3,7 @@
  * Absent dans un navigateur (pnpm dev) : l'app passe alors en lecture seule.
  */
 
-import type { FileNode } from "@/types/domain";
+import type { FileNode, Fil } from "@/types/domain";
 import type { EtatComposio } from "../../electron/composio-types";
 export type { EtatComposio, VueCompteComposio, VueServiceComposio } from "../../electron/composio-types";
 import type { EtatConnect } from "../../electron/composio-connect";
@@ -117,7 +117,9 @@ export type AgentEvent =
   | { type: "compacte"; avant: number; apres: number }
   | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
   | { type: "autorisation-fin"; id: string; accepte: boolean }
-  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean };
+  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur" }
+  /** Un agent lancé en arrière-plan (appel `id`) a fini ou s'est arrêté : sa passation le montre. */
+  | { type: "tache-fond"; id: string; statut: "fait" | "erreur" };
 
 /** Utilisation d'un abonnement (Claude, ChatGPT), cf. electron/utilisation.ts. */
 export interface FenetreUtilisation {
@@ -247,6 +249,10 @@ export interface ContexteReponse {
   lieu: string;
   telephone?: { messageId: string; texte: string; creeLe: string };
   choix?: { fournisseur: string; modele: string | null; effort: string | null };
+  /** Un fil ouvert par un agent du VPS pendant que ce PC était fermé : l'app le crée s'il n'est pas encore là. */
+  fil?: Fil;
+  /** La réponse d'un fil rapportée par le VPS à l'agent qui l'a lancé : le message, avant sa réponse. */
+  retour?: { messageId: string; roleId: string; texte: string; creeLe: string };
 }
 
 export interface StreamOptions {
