@@ -36,6 +36,986 @@ export const ANNONCE = { version: "0.1.65", texte: "Les tickets arrivent dans KL
 
 export const VERSIONS: Version[] = [
   {
+    version: "0.1.182",
+    publiee: "2026-11-06T15:07:14Z",
+    groupes: {
+      nouveau: [
+        "Sur le téléphone, la feuille du modèle montre aussi les comptes Claude connectés sur la machine de la conversation, avec leur adresse et leur abonnement. Le compte choisi vaut pour cette conversation, sur ton ordinateur comme sur ton VPS.",
+      ],
+    },
+  },
+  {
+    version: "0.1.181",
+    publiee: "2026-11-06T14:37:40Z",
+    groupes: {
+      corrige: [
+        "La connexion à un compte Google passe dans le navigateur de KLYRA. Les sites voient un navigateur Chromium ordinaire, sans le nom de l’app.",
+      ],
+    },
+  },
+  {
+    version: "0.1.180",
+    publiee: "2026-11-06T14:15:23Z",
+    groupes: {
+      nouveau: [
+        "Avec plusieurs comptes Claude connectés, le choix du modèle d’une conversation a une section **Compte** : celui de tes agents par défaut, ou un autre compte, gardé pour cette conversation. Ça marche aussi pour une conversation sur ton VPS.",
+        "Changer de compte reprend la conversation là où elle en était. Les limites lues pendant l’échange vont à l’anneau de ce compte.",
+      ],
+    },
+  },
+  {
+    version: "0.1.179",
+    publiee: "2026-11-06T12:15:31Z",
+    groupes: {
+      nouveau: [
+        "**Réglages › Navigateur › Où s’ouvrent les pages** : le navigateur intégré, ou le Google Chrome de ton poste, avec un profil KLYRA à part. Les agents y travaillent de la même façon.",
+        "Pour te connecter à un site dans Chrome, l’app te l’ouvre sans pilotage : tu te connectes, l’agent attend, puis reprend avec ta session.",
+      ],
+    },
+  },
+  {
+    version: "0.1.178",
+    publiee: "2026-11-06T10:02:19Z",
+    groupes: {
+      nouveau: [
+        "Les agents d’un VPS peuvent ouvrir des fils, comme ceux de ton ordinateur. Ordinateur fermé, le serveur tient lui-même les fils : il lance l’agent, met le ticket à jour et rapporte la réponse à la conversation qui l’a lancé.",
+      ],
+      corrige: [
+        "Un agent confié en arrière-plan reste « Confié à » jusqu’à son vrai retour. Avant, il passait « Rendu par » dès son lancement.",
+      ],
+    },
+  },
+  {
+    version: "0.1.177",
+    publiee: "2026-11-06T09:48:03Z",
+    groupes: {
+      ameliore: [
+        "Sur la page de connexion Google, un agent n’agit plus dans le navigateur de KLYRA : il te passe la main pour que tu te connectes toi-même.",
+      ],
+      corrige: [
+        "Premier correctif de la connexion à Google dans le navigateur de KLYRA, qui la refusait.",
+      ],
+    },
+  },
+  {
+    version: "0.1.176",
+    publiee: "2026-11-06T09:09:02Z",
+    groupes: {
+      corrige: [
+        "Une image collée ou un fichier joint dans une conversation sur un VPS part au serveur avant le message. Avant, l’agent recevait un chemin de ton ordinateur qu’il ne pouvait pas lire. Jusqu’à 10 fichiers et 20 Mo ; un envoi raté s’arrête en disant pourquoi.",
+      ],
+    },
+  },
+  {
+    version: "0.1.175",
+    publiee: "2026-11-06T08:23:36Z",
+    intro: "Nouvelle page d’accueil pour le site de KLYRA. Rien ne change dans l’app.",
+    groupes: {},
+  },
+  {
+    version: "0.1.174",
+    publiee: "2026-11-05T21:59:28Z",
+    groupes: {
+      nouveau: [
+        "**Les cartes à remplir** : au lieu d’une liste de questions, un agent peut poser sous sa réponse une carte que tu remplis et envoies d’un clic. Un formulaire, une comparaison de pistes (pour, contre, celle qu’il recommande), une liste à valider, des créneaux ou un tableau à compléter avec ses totaux.",
+        "Ce que tu envoies part comme ton message, lisible tel quel, et la carte se fige. Elle ne fait rien d’elle-même : elle sert seulement à répondre.",
+        "Les créneaux proposés sont croisés avec ton planning, sur l’ordinateur comme sur le téléphone.",
+        "**Créer une équipe** avec l’assistant : il compose plusieurs agents d’un coup avec toi, tu gardes, ajustes ou laisses de côté chacun, puis **Créer l’équipe** les ajoute tous. Depuis l’Accueil ou le menu « Créer un agent ».",
+        "Les cartes et l’atelier d’une équipe marchent aussi sur un VPS et sur le téléphone.",
+      ],
+    },
+  },
+  {
+    version: "0.1.173",
+    publiee: "2026-11-05T21:14:44Z",
+    groupes: {
+      nouveau: [
+        "Un anneau d’utilisation de plus dans le rail pour chaque compte Claude supplémentaire, avec son adresse au survol. Ses limites se relisent au clic.",
+        "Les réglages d’un VPS listent aussi ses comptes Claude : ajouter, vérifier, déconnecter. La page de connexion s’ouvre sur ton ordinateur et tu colles dans l’app le code affiché à la fin.",
+      ],
+    },
+  },
+  {
+    version: "0.1.172",
+    publiee: "2026-11-05T18:16:55Z",
+    groupes: {
+      nouveau: [
+        "**Réglages › Claude** : connecter plusieurs comptes Claude sur ton poste, sans déconnecter les autres. Chaque compte montre son état, son abonnement et sa facturation. Tes agents gardent le compte qu’ils utilisent déjà.",
+      ],
+    },
+  },
+  {
+    version: "0.1.171",
+    publiee: "2026-11-05T17:29:54Z",
+    groupes: {
+      ameliore: [
+        "Sur le téléphone, le composeur d’un fil est plus simple : plus de puce de serveur ni de bandeau, seulement « Écris à … » et le choix du modèle.",
+        "La feuille du modèle reprend celle de l’ordinateur : les fournisseurs installés, puis leurs modèles et niveaux d’effort. Le choix vaut pour ce fil et part avec le prochain message.",
+      ],
+    },
+  },
+  {
+    version: "0.1.169",
+    publiee: "2026-11-05T16:17:44Z",
+    groupes: {
+      corrige: [
+        "La poignée élargit de nouveau le panneau d’aperçu. Avant, il restait bloqué à sa largeur minimale.",
+      ],
+    },
+  },
+  {
+    version: "0.1.168",
+    publiee: "2026-11-05T14:51:24Z",
+    groupes: {
+      nouveau: [
+        "Une image collée montre sa vignette avant l’envoi, avec son nom et son poids. Dans le fil, un clic l’ouvre en grand dans le panneau de droite.",
+        "Coller une image marche aussi depuis l’Accueil.",
+      ],
+    },
+  },
+  {
+    version: "0.1.167",
+    publiee: "2026-11-05T14:42:09Z",
+    groupes: {
+      ameliore: [
+        "Sur le téléphone, l’agent et le modèle s’affichent au bas du fil, et le bouton Retour revient toujours à la bonne page.",
+        "Sur le téléphone, un message simple à un agent du VPS part directement au VPS, même ordinateur ouvert.",
+      ],
+      corrige: [
+        "Deux appareils ouverts sur le même VPS ne se réécrivent plus l’un l’autre. **Repartir à zéro** tient aussi d’un appareil à l’autre.",
+        "Un bloc de code aux longues lignes ne fait plus déborder la bulle quand la conversation est étroite : il défile dans son cadre.",
+      ],
+    },
+  },
+  {
+    version: "0.1.163",
+    publiee: "2026-11-05T13:52:25Z",
+    groupes: {
+      ameliore: [
+        "Sur le téléphone, **Plus**, **Réglages** et **Serveurs** sont redessinés : la carte de ton ordinateur, les réglages par groupes avec leur recherche, le serveur affiché choisi en un geste.",
+        "Sur un VPS, un réglage qui demande ton ordinateur reste grisé et dit pourquoi.",
+      ],
+    },
+  },
+  {
+    version: "0.1.162",
+    publiee: "2026-11-05T13:12:55Z",
+    groupes: {
+      ameliore: [
+        "Sur le téléphone, **Automatisations** et **Artefacts** sont redessinés. L’aperçu d’un artefact occupe toute la page.",
+        "Routines, workflows et artefacts suivent le serveur choisi sur le téléphone.",
+      ],
+    },
+  },
+  {
+    version: "0.1.161",
+    publiee: "2026-11-05T12:53:43Z",
+    groupes: {
+      ameliore: [
+        "Sur le téléphone, les **Projets** sont redessinés, avec la fiche du projet et ses travaux en cours. Ils suivent le serveur choisi.",
+      ],
+    },
+  },
+  {
+    version: "0.1.160",
+    publiee: "2026-11-05T12:19:36Z",
+    groupes: {
+      ameliore: [
+        "Sur le téléphone, les **Agents** sont redessinés : cartes à la couleur de chaque agent, fiche, menu avec actions rapides (Écrire, Nouveau fil, Épingler, Sourdine), souvenirs, compétences et utilisation en lecture.",
+        "Quand ton ordinateur est fermé, une action qui en a besoin reste grisée et dit pourquoi.",
+      ],
+    },
+  },
+  {
+    version: "0.1.159",
+    publiee: "2026-11-05T12:06:38Z",
+    groupes: {
+      nouveau: [
+        "**Plus › Serveurs** sur le téléphone choisit le serveur affiché, pour ce téléphone seulement. Chats, recherche, projets, routines, workflows et agents suivent. Rappels et calendrier restent communs.",
+      ],
+    },
+  },
+  {
+    version: "0.1.158",
+    publiee: "2026-11-05T11:59:03Z",
+    groupes: {
+      nouveau: [
+        "Les workflows d’un VPS tournent sur le serveur, même ordinateur éteint, planifiés ou lancés par un webhook. L’app suit leur avancée en direct. Un serveur pas encore à jour les laisse tourner dans l’app, et la page le dit.",
+        "**Tickets** sur le téléphone : la liste, le détail et la validation. La notification de fin de réponse ouvre le ticket à valider.",
+        "Sur le téléphone, confier un rappel à un agent depuis son menu ou sa fiche.",
+      ],
+    },
+  },
+  {
+    version: "0.1.156",
+    publiee: "2026-11-05T11:50:06Z",
+    groupes: {
+      ameliore: [
+        "Ton ordinateur fermé, le VPS range lui-même la réponse d’un agent dans la conversation. N’importe quel appareil la retrouve, même plus de 24 heures après. Si l’app revient à temps, elle reprend la réponse complète.",
+        "Ton message part sur le serveur dès l’envoi.",
+      ],
+      corrige: [
+        "La conversation directe avec un agent d’un VPS est acceptée par le téléphone et reprend bien sa session.",
+      ],
+    },
+  },
+  {
+    version: "0.1.155",
+    publiee: "2026-11-05T11:35:39Z",
+    groupes: {
+      nouveau: [
+        "**Chaque serveur a son équipe** : le VPS garde ses fiches d’agents et leurs préférences, et l’écran Agents montre l’équipe du serveur affiché. Un serveur neuf reçoit une fois une copie de tes agents actifs, puis plus rien n’est écrasé. **Copier vers …** copie un agent sur un autre serveur.",
+        "**Chaque serveur garde son espace** : conversations, messages, tickets, projets, workflows et livrables restent sur le serveur où ils sont nés. Un second appareil les retrouve, et ton ordinateur en garde une copie : un serveur qui ne répond pas ne fait rien perdre.",
+        "**Chaque serveur a son Coffre** : ses agents se servent de ses secrets sans ton ordinateur et n’en voient jamais la valeur. Un secret de ton ordinateur n’y arrive que copié un par un, à ta demande.",
+        "**Chaque serveur a son compte Composio** : la connexion se fait sur ton ordinateur, sans rien y garder, puis le serveur garde ses accès chiffrés et ses agents s’en servent seuls.",
+        "Les réglages des agents (accès, configuration KLYRA, compétences par agent) suivent le serveur affiché. Computer Use et le Navigateur disent qu’ils agissent sur cet ordinateur.",
+        "L’app te prévient quand le code d’un VPS a du retard sur elle, avec la commande à relancer sur le serveur.",
+      ],
+      corrige: [
+        "Après une mise à jour du serveur, l’app lui renvoie l’équipe sans attendre d’être relancée. Avant, le Coffre pouvait manquer aux agents du VPS jusqu’au redémarrage de l’app.",
+        "Réglages › Agents d’un VPS montre les réglages qu’il applique vraiment, plus ceux par défaut.",
+        "L’installation d’un serveur télécharge tous les fichiers dont il a besoin.",
+      ],
+    },
+  },
+  {
+    version: "0.1.154",
+    publiee: "2026-11-05T11:06:11Z",
+    groupes: {
+      ameliore: [
+        "Sur le téléphone, **Chats** commence par ta journée, les agents au travail et ce qui est à traiter, puis tes conversations. Supprimer un fil laisse quelques secondes pour annuler.",
+        "Le fil et le composeur du téléphone sont refaits : répondre en citant un message, réactions, conseil quand la conversation devient lourde, compétences avec « / », accords à donner. Renommer et choisir le modèle suivent la même mise en page.",
+        "Le **Planning** du téléphone sépare ce qui vient de ton compte et de ton ordinateur tant que ce dernier n’a pas répondu : jamais « Tout est fait » sans toutes les sources. Menu d’un rappel, notifications et fiches en lignes.",
+      ],
+      corrige: [
+        "Hors ligne, le téléphone ne dit plus qu’un accord a expiré ou qu’il est en cours.",
+      ],
+    },
+  },
+  {
+    version: "0.1.153",
+    publiee: "2026-11-05T10:59:59Z",
+    groupes: {
+      ameliore: [
+        "**Chaque serveur a ses tickets** : le tableau, le nombre « à valider » du rail, les projets et les chiffres de Mes agents suivent le serveur affiché. Rappels, calendrier et « À moi » restent communs : ils sont à toi.",
+        "**Chaque serveur a ses workflows** : la page et les agents ne voient que ceux du serveur où ils ont été créés, et leur travail reste sur ce serveur.",
+      ],
+    },
+  },
+  {
+    version: "0.1.152",
+    publiee: "2026-11-05T10:51:56Z",
+    groupes: {
+      nouveau: [
+        "**Repartir à zéro** dans le chat d’un agent, aussi dans le menu « … » : les messages restent lisibles au-dessus d’un séparateur, l’agent ne les relit plus. Les fils gardent **Nouveau fil**.",
+      ],
+      corrige: [
+        "Après **Repartir à zéro** ou **Effacer et repartir**, l’agent ne reprend plus son ancienne session, sur ton ordinateur comme sur un VPS, et le conseil mis de côté avec « Plus tard » repart lui aussi.",
+      ],
+    },
+  },
+  {
+    version: "0.1.151",
+    publiee: "2026-11-05T10:42:05Z",
+    groupes: {
+      corrige: [
+        "L’anneau d’utilisation de Grok lit de nouveau les crédits du mois. Avant, il restait vide.",
+      ],
+    },
+  },
+  {
+    version: "0.1.150",
+    publiee: "2026-11-05T08:42:48Z",
+    intro: "Fin du retrait du circuit GitHub côté serveur. Rien ne change pour toi.",
+    groupes: {},
+  },
+  {
+    version: "0.1.149",
+    publiee: "2026-11-05T07:59:49Z",
+    groupes: {
+      retire: [
+        "Le circuit GitHub de l’écran d’un projet est retiré : l’app ne prend plus de tickets GitHub pour ouvrir des pull requests.",
+      ],
+    },
+  },
+  {
+    version: "0.1.147",
+    publiee: "2026-11-04T22:44:11Z",
+    groupes: {
+      nouveau: [
+        "Sur l’écran d’un projet relié à GitHub, un circuit à activer : ton poste prend les tickets marqués prêts, les confie à un agent dans un fil à part, puis ouvre la pull request. L’agent n’a aucun accès à GitHub et rien n’est fusionné sans toi. Sur ton ordinateur seulement.",
+      ],
+    },
+  },
+  {
+    version: "0.1.146",
+    publiee: "2026-11-04T22:38:09Z",
+    intro: "Préparation d’un circuit entre les tickets GitHub et les agents. Rien ne change dans l’app.",
+    groupes: {},
+  },
+  {
+    version: "0.1.145",
+    publiee: "2026-11-04T22:16:45Z",
+    intro: "Préparation des accès des agents aux dépôts GitHub. Rien ne change dans l’app.",
+    groupes: {},
+  },
+  {
+    version: "0.1.143",
+    publiee: "2026-11-04T21:16:27Z",
+    groupes: {
+      nouveau: [
+        "Sur le téléphone, regarde un agent construire un workflow en direct : un bandeau à sa couleur, ses étapes qui arrivent une à une, celle qu’il écrit mise en avant. Le workflow apparaît en tête de la liste avant même d’exister, en lecture seule tant qu’il écrit.",
+      ],
+    },
+  },
+  {
+    version: "0.1.142",
+    publiee: "2026-11-04T20:41:41Z",
+    groupes: {
+      nouveau: [
+        "Un **Coffre** dans les Réglages, sous Agents : tes clés API, jetons et mots de passe, chiffrés par le trousseau du système, avec les connexions de sites du Navigateur au même endroit. **Copier** passe par le presse-papiers, qui se vide après 30 secondes.",
+        "Un agent peut te demander un secret : une carte sécurisée s’ouvre dans la conversation, tu y colles la valeur, et l’agent ne reçoit que son nom. Il peut aussi l’écrire dans un fichier de configuration de ton projet, avec ton accord, jamais dans un fichier suivi par Git.",
+        "Les agents d’un VPS se servent aussi du Coffre de ton ordinateur, sans jamais voir une valeur.",
+      ],
+    },
+  },
+  {
+    version: "0.1.141",
+    publiee: "2026-11-04T19:50:30Z",
+    groupes: {
+      nouveau: [
+        "Les agents construisent, modifient et lancent tes workflows. La page Workflows s’ouvre sur le chantier : les étapes arrivent en pointillés à la couleur de l’agent, les liens se tracent, la vue suit. Pendant une exécution, l’étape en cours et ce qu’écrit son agent s’affichent, et l’historique dit qui l’a lancée.",
+        "Un anneau d’utilisation pour l’abonnement Grok, avec les crédits du mois.",
+        "Une règle des largeurs au-dessus de l’aperçu d’une page : paliers d’écran et largeur réelle, mise à jour quand tu élargis le panneau ou passes en vue téléphone.",
+      ],
+      corrige: [
+        "Une étape d’agent d’un workflow part de nouveau quand un agent vient de répondre juste avant.",
+      ],
+    },
+  },
+  {
+    version: "0.1.138",
+    publiee: "2026-11-04T18:24:22Z",
+    groupes: {
+      ameliore: [
+        "L’app du téléphone a une nouvelle base : grand titre qui passe dans la barre, barre d’onglets refaite, transitions entre les pages (un simple fondu si tu réduis les animations), feuilles qu’on fait glisser vers le bas, listes et cartes au style du bureau, une seule annonce à la fois, appui long et tirer pour relire.",
+        "Champs et interrupteurs plus contrastés sur le téléphone, pour mieux se lire.",
+      ],
+    },
+  },
+  {
+    version: "0.1.137",
+    publiee: "2026-11-04T17:50:02Z",
+    groupes: {
+      nouveau: [
+        "**Grok** fait travailler les agents, par ton abonnement xAI, à côté de Claude et ChatGPT. Il se connecte sur ton ordinateur ou sur un VPS (par un code), ou avec une clé de console en repli.",
+        "Le rail montre un anneau d’utilisation par fournisseur connecté, Claude et ChatGPT, pour le serveur affiché.",
+      ],
+    },
+  },
+  {
+    version: "0.1.136",
+    publiee: "2026-11-04T17:43:45Z",
+    groupes: {
+      nouveau: [
+        "Une page HTML partagée à l’équipe s’ouvre dans une fenêtre isolée, sans accès au réseau, avec sa vignette dessinée dans l’app.",
+      ],
+      ameliore: [
+        "Le Navigateur s’ouvre dans le panneau de la conversation, plus en plein écran : la conversation reste visible à côté, et tu élargis le panneau à la poignée.",
+      ],
+      corrige: [
+        "Échap tapé dans le message ne ferme plus la page du Navigateur.",
+        "L’en-tête du panneau d’un agent s’aligne sur celui des fils.",
+        "Sur le téléphone : « Aucun ordinateur relié » au lieu de « fermé » quand il n’y en a pas, la dernière vue gardée en lecture seule quand ton ordinateur est fermé, plus d’identifiant interne à l’écran, un retour qui fait comme celui du système, l’onglet de la page reste allumé et des boutons plus faciles à toucher.",
+        "Sur le téléphone, les rappels de ton compte s’affichent sans catégories vides quand ton ordinateur est fermé, et l’agenda ne montre qu’un seul bandeau « Vus à ».",
+      ],
+    },
+  },
+  {
+    version: "0.1.132",
+    publiee: "2026-11-04T14:40:52Z",
+    groupes: {
+      corrige: [
+        "Tu restes connecté à ton compte d’équipe après une mise à jour. Avant, une seule écriture ratée de ta session (fichier tenu un instant par un antivirus, disque plein…) bloquait les suivantes, et l’app pouvait se retrouver déconnectée au lancement suivant.",
+        "Une session que le trousseau du système ne sait pas relire n’efface plus les autres, et un trousseau pas encore prêt au démarrage ne fait plus croire qu’aucune session n’existe.",
+        "En fermant l’app, elle attend que ta session soit bien enregistrée.",
+      ],
+    },
+  },
+  {
+    version: "0.1.131",
+    publiee: "2026-11-04T14:23:06Z",
+    groupes: {
+      nouveau: [
+        "**Partager à l’équipe** une page HTML depuis Artefacts : elle apparaît dans l’onglet Équipe. **Ne plus partager** la retire.",
+      ],
+      ameliore: [
+        "Mes artefacts et le panneau d’une conversation ne montrent que les livrables de l’espace choisi, ce poste ou un VPS.",
+        "Un livrable d’un agent du VPS reste sur le serveur : il n’est plus recopié sur ton poste.",
+        "Partager deux fois la même page ne crée plus deux cartes : la seconde remplace la première. Un autre membre qui la partage crée sa propre carte, sans reprendre la tienne.",
+      ],
+      corrige: [
+        "La confirmation de « Ne plus partager » ne se replie plus mot à mot dans la carte : le texte est au-dessus, les deux boutons en dessous.",
+      ],
+    },
+  },
+  {
+    version: "0.1.130",
+    publiee: "2026-11-04T13:37:56Z",
+    groupes: {
+      corrige: [
+        "**Nouveau fil** depuis une conversation sur un VPS ouvre le fil sur ce même serveur. Avant, il partait sur ce poste et l’app affichait « Cette conversation est sur Ce PC, pas sur le serveur affiché ».",
+      ],
+    },
+  },
+  {
+    version: "0.1.129",
+    publiee: "2026-11-04T12:57:30Z",
+    intro: "Préparation du partage des pages HTML avec l’équipe. Rien ne change encore dans l’app.",
+    groupes: {},
+  },
+  {
+    version: "0.1.128",
+    publiee: "2026-11-04T12:01:50Z",
+    groupes: {
+      corrige: [
+        "L’adresse du téléphone (et son QR code) ne reste plus morte quand l’app web de ton poste s’arrête : elle est relancée toute seule, sans changer d’adresse.",
+      ],
+    },
+  },
+  {
+    version: "0.1.127",
+    publiee: "2026-11-04T11:55:44Z",
+    groupes: {
+      nouveau: [
+        "Les agents peuvent lire le code d’un de tes artefacts claude.ai : l’app l’ouvre avec ta connexion à claude.ai et le leur donne à lire.",
+      ],
+    },
+  },
+  {
+    version: "0.1.126",
+    publiee: "2026-11-04T11:32:32Z",
+    groupes: {
+      corrige: [
+        "Le lien **Voir le changelog** des Réglages, sur l’ordinateur comme sur le téléphone, ouvre le site publié.",
+      ],
+    },
+  },
+  {
+    version: "0.1.125",
+    publiee: "2026-11-04T11:06:17Z",
+    groupes: {
+      ameliore: [
+        "Un agent appelé par un autre ne voit que ses propres compétences, celles que tu as allumées pour lui, et plus celles de l’agent qui l’a appelé.",
+      ],
+    },
+  },
+  {
+    version: "0.1.124",
+    publiee: "2026-11-04T10:44:21Z",
+    groupes: {
+      nouveau: [
+        "Glisser un agent dans la barre des chats a maintenant du mouvement : la ligne se soulève et suit le pointeur, les autres s’écartent pour lui faire place, puis elle se pose. **Échap** annule. Alt + ↑/↓ fait de même au clavier.",
+      ],
+      ameliore: [
+        "Partager un artefact avec l’équipe passe par une fenêtre de confirmation, au lieu d’un texte serré dans la carte.",
+        "Les routines suivent l’ordre des agents que tu as choisi dans la barre des chats.",
+        "Avec ChatGPT, chaque agent ne reçoit que les compétences allumées pour lui.",
+      ],
+    },
+  },
+  {
+    version: "0.1.120",
+    publiee: "2026-11-04T10:13:19Z",
+    groupes: {
+      ameliore: [
+        "Les compétences allumées pour au moins un agent partent sur ton VPS avec l’équipe : ses agents les utilisent comme sur ton poste. Une compétence éteinte pour tout le monde ne part pas, et rien n’est supprimé.",
+      ],
+    },
+  },
+  {
+    version: "0.1.119",
+    publiee: "2026-11-04T09:47:58Z",
+    groupes: {
+      corrige: [
+        "Sur Mac, les agents répondaient « Not logged in » alors que Claude était connecté. C’est réparé.",
+        "Les agents peuvent relire les livrables publiés dans Artefacts.",
+      ],
+    },
+  },
+  {
+    version: "0.1.118",
+    publiee: "2026-11-04T09:19:05Z",
+    groupes: {
+      nouveau: [
+        "Réglages › Agents : importer un dossier de compétences, ou reprendre avec **Importer depuis le poste** celles ajoutées depuis à Claude Code. Une compétence importée reste éteinte tant que tu ne l’allumes pas, et aucune n’est écrasée.",
+      ],
+      ameliore: [
+        "Les fiches de tes agents et tes compétences sont gardées dans le dossier de KLYRA. L’éditeur n’écrit plus dans le dossier de Claude Code de ton poste, et rien n’y est supprimé.",
+        "Les plugins que tu as activés dans Claude Code se chargent aussi pour les agents de l’app.",
+      ],
+    },
+  },
+  {
+    version: "0.1.117",
+    publiee: "2026-11-04T08:23:59Z",
+    groupes: {
+      ameliore: [
+        "Claude Code, lancé par l’app, ne voit que tes agents actifs et les compétences que tu as allumées. Ta configuration de Claude Code sur le poste n’est ni modifiée ni vidée.",
+      ],
+    },
+  },
+  {
+    version: "0.1.116",
+    publiee: "2026-11-04T08:10:22Z",
+    groupes: {
+      nouveau: [
+        "Quand un agent pilote ton ordinateur, le panneau **Navigateur** montre la fenêtre qu’il utilise : une seule fenêtre, jamais l’écran entier.",
+      ],
+      ameliore: [
+        "Le pilotage de l’ordinateur ouvre ton navigateur habituel (Chrome, Edge, Firefox, Safari ou Brave) dans une nouvelle fenêtre, avec ton profil, sans y toucher.",
+      ],
+    },
+  },
+  {
+    version: "0.1.115",
+    publiee: "2026-11-04T07:52:10Z",
+    groupes: {
+      ameliore: [
+        "Un clic sur une vignette du navigateur ouvre la page en grand. **Échap** ou **Retour** ramène aux vignettes.",
+      ],
+    },
+  },
+  {
+    version: "0.1.114",
+    publiee: "2026-11-04T07:38:25Z",
+    groupes: {
+      nouveau: [
+        "Choisir les compétences de chaque agent dans Réglages › Agents : un agent ne reçoit que celles allumées pour lui.",
+        "Tes agents actuels gardent les compétences qu’ils avaient. Une nouvelle compétence, ou un nouvel agent, n’en reçoit pas tant que tu ne l’allumes pas.",
+      ],
+    },
+  },
+  {
+    version: "0.1.113",
+    publiee: "2026-11-04T06:47:32Z",
+    groupes: {
+      nouveau: [
+        "Le **Navigateur de KLYRA** : un onglet Navigateur dans le panneau de chaque conversation. Tes agents ouvrent de vraies pages web, les lisent, cliquent et tapent, et tu les vois faire en direct.",
+        "**Prendre la main** à tout moment, puis la rendre. Un agent ne tape jamais de mot de passe, de code ni de numéro de carte : il te passe la main pour te connecter.",
+        "Un coffre de mots de passe pour tes sites, chiffré sur ton poste : **Remplir** pose la connexion dans la page, et un agent autorisé peut la remplir sans jamais voir le mot de passe.",
+        "Les agents envoient aussi des fichiers dans une page, lisent les cadres intégrés, et le clic droit dans une page ouvre le menu de l’app.",
+        "Les agents de ton VPS utilisent le navigateur de ton poste, quand l’app y est ouverte.",
+        "Réglages › Navigateur : couper les outils du navigateur pour les agents, et effacer les données de navigation.",
+      ],
+    },
+  },
+  {
+    version: "0.1.112",
+    publiee: "2026-11-04T06:30:22Z",
+    groupes: {
+      nouveau: [
+        "L’atelier d’un agent sur le téléphone : la carte de l’agent s’affiche dans la conversation, et tu peux choisir sa couleur, lancer son épreuve, ajouter la correction proposée et le créer, ordinateur ouvert.",
+        "Les réponses toutes prêtes de l’assistant se touchent aussi depuis le téléphone.",
+      ],
+    },
+  },
+  {
+    version: "0.1.111",
+    publiee: "2026-11-03T23:18:04Z",
+    groupes: {
+      nouveau: [
+        "Créer un agent en parlant avec l’assistant : il te pose une question à la fois, avec des réponses toutes prêtes à cliquer, et la carte de l’agent se remplit dans la conversation pendant qu’il écrit (visuel, cinq piliers, poids de la fiche, fiche au verso, couleur).",
+        "L’épreuve : trois demandes (une normale, une floue, une hors de son métier) auxquelles l’agent répond pour de vrai, jugées une à une. Si c’est raté, la phrase qui manque est proposée : **Ajouter à sa fiche et rejouer**.",
+        "**Créer l’agent** l’ajoute à Mes agents, actif, avec une petite animation jusqu’à la barre. Ensuite, tu peux lui confier une routine, à relire avant de l’enregistrer, ou le partager avec l’équipe.",
+        "L’assistant signale les agents que tu as déjà qui font une partie du même travail. Une barre en haut du fil ramène à la carte quand elle sort de l’écran.",
+        "Tout marche aussi pour une conversation sur ton VPS.",
+      ],
+    },
+  },
+  {
+    version: "0.1.110",
+    publiee: "2026-11-03T23:04:38Z",
+    groupes: {
+      nouveau: [
+        "Réagir d’un émoji à une réponse d’agent. La réaction s’affiche sous la réponse et se retire d’un clic ; l’agent ne la reçoit pas.",
+        "**Répondre** à une réponse précise : le message cité s’affiche au-dessus du champ, puis au-dessus de ta bulle. Un clic dessus ramène au message cité.",
+        "Réordonner les agents de la barre des chats en les glissant, ou avec Alt + ↑/↓. L’assistant reste en tête et les épinglés au-dessus.",
+        "Sur le téléphone, la page Mises à jour a un lien **Nouveautés** vers ce changelog.",
+      ],
+      ameliore: [
+        "L’aperçu du dernier message, dans la barre des chats, met le texte en forme au lieu d’afficher ses marques (`**`, `#`…).",
+        "Dans la conversation d’un agent, un clic sur son avatar ou son prénom ouvre ses réglages dans le panneau de droite.",
+      ],
+    },
+  },
+  {
+    version: "0.1.107",
+    publiee: "2026-11-03T22:35:21Z",
+    groupes: {
+      nouveau: [
+        "Sur un VPS : le diagnostic de ce que le serveur ajoute à chaque appel (Réglages du serveur › Général), et **Ajouter les consignes KLYRA** sur l’écran d’un projet du serveur.",
+        "Les livrables des agents de ton VPS arrivent dans Artefacts, comme ceux de ton poste.",
+        "Les compétences des plugins activés dans Claude Code apparaissent dans le panneau Compétences et la liste « / ».",
+      ],
+      ameliore: [
+        "Avec ChatGPT, les agents connaissent aussi tes compétences : celles demandées par « / » et celles que leur fiche précharge. Sur ton poste comme sur un VPS.",
+      ],
+    },
+  },
+  {
+    version: "0.1.106",
+    publiee: "2026-11-03T22:08:18Z",
+    groupes: {
+      nouveau: [
+        "L’onglet Réglages du panneau d’un agent est réorganisé : description modifiable sur place, puis **Souvenirs**, **Compétences**, **Routines** et **Utilisation**, chacun dans sa vue.",
+        "**Souvenirs** : la mémoire de l’agent, avec recherche, lecture, modification et nouveau souvenir. Rien n’est supprimé.",
+        "**Utilisation** : ce que l’agent a consommé sur 7 jours, 30 jours ou un an.",
+        "Taper « / » au début d’un message propose les compétences, et la compétence choisie est bien chargée par l’agent.",
+        "Dans **Compétences**, choisir celles qu’un agent charge d’office.",
+        "Tout marche aussi pour une conversation sur ton VPS : souvenirs, compétences, utilisation et configuration KLYRA.",
+      ],
+      corrige: [
+        "Enregistrer une fiche dans l’app ne perd plus ses listes, comme ses compétences.",
+        "Les compétences d’une fiche sont aussi chargées quand tu parles directement à l’agent ou dans un fil.",
+      ],
+    },
+  },
+  {
+    version: "0.1.105",
+    publiee: "2026-11-03T21:29:53Z",
+    groupes: {
+      nouveau: [
+        "Réglages › Mises à jour : **Voir le changelog** ouvre les nouveautés de chaque version. La ligne se trouve aussi dans la recherche des réglages.",
+      ],
+    },
+  },
+  {
+    version: "0.1.104",
+    publiee: "2026-11-03T20:43:05Z",
+    groupes: {
+      corrige: [
+        "Le menu du choix du modèle n’est plus coupé dans le panneau Réglages d’un agent : il s’affiche en entier, aligné sur son bouton.",
+      ],
+    },
+  },
+  {
+    version: "0.1.103",
+    publiee: "2026-11-03T19:59:51Z",
+    groupes: {
+      ameliore: [
+        "Les infobulles du rail, de ton avatar et des boutons à icône prennent le style de KLYRA.",
+      ],
+    },
+  },
+  {
+    version: "0.1.102",
+    publiee: "2026-11-03T19:49:12Z",
+    groupes: {
+      ameliore: [
+        "Le bouton qui ouvre une nouvelle conversation, en haut des Chats, a une icône de bulle avec un plus. Celui de Mes agents s’appelle **Nouvel agent**.",
+      ],
+    },
+  },
+  {
+    version: "0.1.101",
+    publiee: "2026-11-03T18:53:33Z",
+    groupes: {
+      nouveau: [
+        "Un menu du clic droit sur les agents de la barre, les conversations d’équipe, les messages, les onglets des fils et les tickets. Il se pose sous le pointeur et se pilote entièrement au clavier : flèches, Début, Fin, → et ← pour les sous-menus.",
+        "Sur un agent : nouveau fil, épingler, sourdine, ouvrir sa fiche, marquer comme lu, l’arrêter, aller à ses tickets ou ses routines, copier sa mention, le masquer ou le désactiver.",
+        "**Masquer** range un agent sous « N agents masqués » dans la barre : il reste actif et appelable. En **sourdine**, ses réponses finies ne te préviennent plus, ses erreurs si.",
+        "Sur un message : copier (ta sélection d’abord), citer, en faire un fil, créer une branche, réessayer. Sur un ticket : ouvrir, changer la priorité, remettre à faire, fermer, supprimer.",
+        "Sous la fiche d’un agent, son poids estimé en jetons. Au-delà de 1 500, un conseil dit ce qu’il faut garder pour la raccourcir.",
+      ],
+      ameliore: [
+        "Un nouvel agent est créé sans mémoire par défaut : environ 4 000 jetons de moins à chaque appel. L’aide de la mémoire dit ce qu’elle coûte.",
+        "Les modèles KLYRA passent en version 3 : leur bloc « Parler en équipe » ne garde que ce que l’app ne donne pas déjà aux agents. Environ 800 jetons de moins à chaque appel d’un agent installé depuis un modèle.",
+      ],
+      corrige: [
+        "Dans les rappels, la rangée de cartes défile au lieu de couper la dernière carte.",
+      ],
+    },
+  },
+  {
+    version: "0.1.97",
+    publiee: "2026-11-03T18:04:00Z",
+    groupes: {
+      retire: [
+        "L’entrée Serveurs quitte le menu de l’avatar : le sélecteur de serveur du rail mène déjà à **Tous les serveurs** et à **Ajouter un serveur**.",
+      ],
+    },
+  },
+  {
+    version: "0.1.96",
+    publiee: "2026-11-03T17:50:39Z",
+    groupes: {
+      nouveau: [
+        "**Ajouter les consignes KLYRA** sur un projet de ton poste : l’app te montre d’abord ce qu’elle va écrire, puis crée un `AGENTS.md` court à remplir (le but du projet, les commandes de vérification, où sont les choses, les règles) et un `CLAUDE.md` qui l’importe. Claude Code et Codex le lisent une seule fois.",
+        "Rien n’est écrasé : un `CLAUDE.md` existant reçoit seulement l’import en tête.",
+      ],
+    },
+  },
+  {
+    version: "0.1.95",
+    publiee: "2026-11-03T17:37:52Z",
+    groupes: {
+      nouveau: [
+        "Un diagnostic du poste dans **Réglages › Agents** : ce que ta configuration personnelle de Claude Code ajoute à chaque appel (ton `CLAUDE.md` et ses imports, tes skills, la présentation des agents, les plugins, les serveurs MCP), estimé en jetons, avec un conseil et le fichier à ouvrir.",
+        "Le diagnostic ne fait que lire : rien n’est modifié sur ton poste.",
+      ],
+    },
+  },
+  {
+    version: "0.1.94",
+    publiee: "2026-11-03T17:11:15Z",
+    groupes: {
+      nouveau: [
+        "**Résumé automatique** des conversations lourdes, en option dans la configuration KLYRA, désactivé par défaut. L’app résume elle-même avant ton message quand les échanges dépassent 80 000 jetons, ou pendant une pause de plus de 25 minutes au-delà de 40 000. Jamais pendant qu’un agent travaille.",
+      ],
+      ameliore: [
+        "Un résumé ne t’envoie plus de notification et ne change plus l’étape du ticket d’un fil.",
+      ],
+    },
+  },
+  {
+    version: "0.1.93",
+    publiee: "2026-11-03T16:53:13Z",
+    groupes: {
+      nouveau: [
+        "**Configuration KLYRA** : une configuration pour que les agents consomment moins, proposée sur l’Accueil et dans **Réglages › Agents**. Elle s’adopte en un clic, se modifie et se retire, et ne touche qu’aux sessions lancées par l’app.",
+        "Elle ajoute les **consignes KLYRA** à chaque session, avec Claude comme avec ChatGPT. Tu peux modifier leur texte ; un texte resté tel quel suit les nouvelles versions.",
+        "Elle peut couper la mémoire des agents : environ 4 000 jetons de moins à chaque appel d’un agent qui en a une, sans toucher à sa fiche.",
+      ],
+      ameliore: [
+        "Les consignes KLYRA passent en version 2 : elles laissent l’agent chercher l’outil de vérification du projet au lieu de l’en empêcher. Mesuré sur du code : 19 % de coût en moins, résultat égal.",
+      ],
+    },
+  },
+  {
+    version: "0.1.91",
+    publiee: "2026-11-03T16:01:32Z",
+    groupes: {
+      ameliore: [
+        "Chaque session d’un agent coûte environ 2 800 jetons de moins : les skills livrées avec Claude Code et des outils sans usage dans l’app sont retirés, sur ton poste comme sur ton VPS. Tes propres skills restent.",
+        "Les informations du poste passent dans le premier message : le cache est partagé entre les sessions.",
+      ],
+    },
+  },
+  {
+    version: "0.1.90",
+    publiee: "2026-11-03T15:20:49Z",
+    groupes: {
+      nouveau: [
+        "Un espace par serveur : le sélecteur de serveur change ce que tu vois au lieu de déplacer les conversations. La barre latérale, l’Accueil, Projets, Routines et la recherche ne montrent que ce qui est sur le serveur choisi.",
+        "Une conversation directe par agent et par serveur. Changer de serveur depuis une conversation ouvre celle du même agent sur l’autre serveur. Le menu Serveurs montre les non-lus des autres serveurs.",
+        "Au-dessus du composeur, un conseil quand une conversation devient lourde : **Résumer la conversation**, ou ouvrir un nouveau fil quand tu reprends après plus d’une heure.",
+      ],
+      retire: [
+        "Le choix de la machine d’une conversation, et le champ Machine des projets et des routines : ils prennent le serveur affiché.",
+      ],
+      corrige: [
+        "`/compact` se termine enfin, sur ton poste comme sur ton VPS.",
+      ],
+    },
+  },
+  {
+    version: "0.1.88",
+    publiee: "2026-11-03T14:29:43Z",
+    groupes: {
+      ameliore: [
+        "Un clic sur ton avatar ouvre un menu **Réglages** et **Serveurs**. Serveurs montre Ce PC et tes VPS reliés, l’ajout, les réglages du serveur et le retrait.",
+        "Un globe sur l’avatar montre qu’un VPS est actif.",
+        "Au clavier : ↑ ouvre le menu, → et ← entrent dans les serveurs et en sortent, Échap referme.",
+      ],
+    },
+  },
+  {
+    version: "0.1.87",
+    publiee: "2026-11-03T13:27:44Z",
+    groupes: {
+      ameliore: [
+        "L’assistant confie un livrable entier à un seul agent, jamais en relais, et demande le travail en fichiers avec un compte rendu court. Il vérifie par les preuves, sans tout relire.",
+        "Les agents n’inventent plus de faits : ce qui manque est marqué « [à compléter] ».",
+        "Des outils de Claude Code sans usage dans l’app sont retirés de chaque session : environ 4 500 jetons de moins à chaque tour.",
+      ],
+    },
+  },
+  {
+    version: "0.1.86",
+    publiee: "2026-11-03T13:03:38Z",
+    groupes: {
+      nouveau: [
+        "Au-dessus du composeur, les agents qui travaillent en arrière-plan, avec leur étape et leur avancement.",
+        "Computer Use : les agents peuvent piloter l’ordinateur, seulement quand l’interrupteur des Réglages est allumé. **Réglages › Computer Use** montre l’état du pilote, avec **Vérifier à nouveau**.",
+        "Un choix « Pour » sur chaque rappel le donne à un membre de l’équipe.",
+      ],
+      ameliore: [
+        "Le menu s’allège : plus de recherche (elle reste sur ⌘K, `Ctrl+K` sous Windows), ni de sélecteur de machine. Les projets épinglés, ou les 3 récents, y tiennent en deux lettres.",
+        "Marketplace passe dans les Réglages.",
+      ],
+      retire: [
+        "La barre d’assignation des rappels d’équipe.",
+      ],
+    },
+  },
+  {
+    version: "0.1.84",
+    publiee: "2026-11-03T12:29:28Z",
+    groupes: {
+      corrige: [
+        "Tout fichier que tu demandes à un agent est publié dans Artefacts avant qu’il dise « livré », quel que soit son format. Avant, un simple fichier texte demandé par un fil était créé sans être publié.",
+      ],
+    },
+  },
+  {
+    version: "0.1.82",
+    publiee: "2026-11-03T12:10:42Z",
+    groupes: {
+      ameliore: [
+        "Les nouvelles conversations et les fils reçoivent un vrai titre de 2 à 6 mots, tiré de ta demande. Le début du message sert de titre le temps qu’il arrive. Un titre que tu as renommé est gardé.",
+      ],
+    },
+  },
+  {
+    version: "0.1.81",
+    publiee: "2026-11-03T11:30:07Z",
+    groupes: {
+      corrige: [
+        "Tes artefacts claude.ai se lisent maintenant dans leur galerie, avec la session claude.ai de l’app. Avant, la liste ne se chargeait pas. Sans session, session expirée ou galerie vide, l’écran dit pourquoi.",
+      ],
+    },
+  },
+  {
+    version: "0.1.80",
+    publiee: "2026-11-03T11:12:10Z",
+    groupes: {
+      corrige: [
+        "Pendant une dictée, un seul bouton stop. Avant, celui de la dictée et celui de l’agent s’affichaient côte à côte. Celui de l’agent revient dès que la dictée est finie.",
+      ],
+    },
+  },
+  {
+    version: "0.1.79",
+    publiee: "2026-11-03T11:07:15Z",
+    groupes: {
+      nouveau: [
+        "Les livrables des agents arrivent dans l’écran **Artefacts** : page web, maquette, capture, vidéo, PDF ou tout fichier demandé, avec un aperçu, l’agent, le projet et la date. Un clic l’ouvre.",
+        "L’app copie chaque livrable dans l’espace de son agent : retirer un artefact supprime la copie, jamais l’original. **Enregistrer dans…** le copie dans le dossier de ton choix.",
+        "Le panneau Fichiers d’une conversation montre ses livrables.",
+        "Hors projet, chaque agent travaille dans son propre dossier.",
+      ],
+      ameliore: [
+        "Les artefacts claude.ai deviennent une source facultative, relue à l’ouverture de l’écran.",
+      ],
+    },
+  },
+  {
+    version: "0.1.78",
+    publiee: "2026-11-03T10:51:54Z",
+    groupes: {
+      nouveau: [
+        "Le **Planning** devient le planning des agents : chaque départ de routine est un bloc de la couleur de l’agent, en pointillés à venir, puis marqué de son résultat (réussie, échec, interrompue…). Les routines fréquentes tiennent sur une ligne par jour.",
+        "Filtrer le Planning par agent.",
+        "Un clic sur un créneau propose une routine, déjà remplie pour ce jour et cette heure chaque semaine, ou un rendez-vous.",
+      ],
+      ameliore: [
+        "Les rendez-vous restent, en gris.",
+      ],
+    },
+  },
+  {
+    version: "0.1.77",
+    publiee: "2026-11-03T10:30:48Z",
+    groupes: {
+      ameliore: [
+        "L’écran Artefacts relit tes artefacts claude.ai tout seul à son ouverture, au plus toutes les 10 minutes. Le bouton reste pour relire à la main.",
+      ],
+      corrige: [
+        "Quand la liste des artefacts ne peut pas être lue, l’écran dit pourquoi (pas connecté, erreur, délai dépassé…) au lieu d’un message général.",
+      ],
+    },
+  },
+  {
+    version: "0.1.76",
+    publiee: "2026-11-03T10:24:41Z",
+    groupes: {
+      nouveau: [
+        "Tous les fournisseurs sur ton VPS, comme sur ce poste : ChatGPT y fait travailler les agents, s’installe et se met à jour depuis **Réglages du serveur › Fournisseurs**, et se connecte par la page d’OpenAI, par un code ou par une clé.",
+        "Les autres IA (Gemini, Mistral, DeepSeek…) s’ajoutent aussi sur le VPS, et ses agents peuvent les consulter.",
+        "Dans une conversation sur ton VPS, le choix rapide propose les fournisseurs installés là-bas.",
+      ],
+    },
+  },
+  {
+    version: "0.1.75",
+    publiee: "2026-11-03T09:43:48Z",
+    groupes: {
+      nouveau: [
+        "L’écran Artefacts a deux onglets : **Mes artefacts** et **Équipe**. Partage un lien claude.ai avec ton équipe ; seule la personne qui l’a partagé peut le modifier ou le retirer.",
+      ],
+      retire: [
+        "Le design system KLYRA n’est plus ajouté d’office à ta liste d’artefacts : il se partage comme les autres.",
+      ],
+    },
+  },
+  {
+    version: "0.1.73",
+    publiee: "2026-11-03T09:21:18Z",
+    groupes: {
+      ameliore: [
+        "Chaque fournisseur a son logo officiel dans la page Fournisseurs et dans le choix rapide de la conversation : Claude, ChatGPT, Gemini, Mistral, DeepSeek, Grok, OpenRouter.",
+        "Les autres IA rejoignent **Fournisseurs**, en une seule liste : Claude et ChatGPT font travailler les agents, les autres sont à consulter, ajoutées avec leur clé depuis leur ligne, puis testées ou retirées.",
+        "Agents et Computer Use reviennent dans les Réglages de l’app : ils règlent cet ordinateur, pas un serveur. Le fournisseur de chaque agent se choisit dans Agents.",
+      ],
+    },
+  },
+  {
+    version: "0.1.72",
+    publiee: "2026-11-03T08:56:32Z",
+    groupes: {
+      nouveau: [
+        "Des onglets dans l’aperçu, comme dans un navigateur : chacun garde sa page, **+** en ouvre un autre.",
+      ],
+      ameliore: [
+        "L’assistant principal porte l’icône KLYRA.",
+      ],
+    },
+  },
+  {
+    version: "0.1.71",
+    publiee: "2026-11-03T06:23:54Z",
+    intro: "Préparation du suivi des travaux confiés aux agents, tenu sur ton ordinateur. Rien ne change à l’écran.",
+    groupes: {},
+  },
+  {
+    version: "0.1.70",
+    publiee: "2026-11-03T06:19:43Z",
+    groupes: {
+      nouveau: [
+        "Un agent peut travailler avec **ChatGPT**, sur ce poste. Connecte ton compte ChatGPT dans le navigateur, ou une clé API.",
+        "Dans l’en-tête d’une conversation, le choix rapide : les fournisseurs prêts sur ce poste, leurs modèles avec une recherche, puis l’effort. Changer de fournisseur ne change que cette conversation, et le nouveau reprend ce qui s’y est dit.",
+        "**Réglages du serveur**, depuis le menu du serveur : une page Fournisseurs avec ceux qui sont connectés et les autres, et pour chacun son compte, sa clé, sa version, **Installer** ou **Mettre à jour**.",
+        "Un fournisseur par défaut pour chaque agent : ses nouvelles conversations, ses fils et sa conversation directe.",
+      ],
+      ameliore: [
+        "Dans le fil, une réponse écrite avec ChatGPT le dit à côté du nom de l’agent.",
+      ],
+    },
+  },
+  {
+    version: "0.1.69",
+    publiee: "2026-11-02T16:07:57Z",
+    intro: "L’app pour téléphone est maintenant mise en ligne à chaque version. Rien ne change dans l’app de bureau.",
+    groupes: {},
+  },
+  {
+    version: "0.1.68",
+    publiee: "2026-11-02T15:26:48Z",
+    intro: "Le site de KLYRA ouvre, avec ce journal des versions. Rien ne change dans l’app.",
+    groupes: {},
+  },
+  {
     version: "0.1.67",
     publiee: "2026-11-02T15:12:27Z",
     groupes: {
