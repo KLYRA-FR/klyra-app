@@ -6,6 +6,7 @@ import {
   appelEquipe,
   appliquerMajEquipe,
   EQUIPE_VIDE,
+  equipeAffichee,
   equipeEnCours,
   jetonsEquipe,
   lireMajEquipe,
@@ -13,6 +14,7 @@ import {
   MAX_MEMBRES,
   membresGardes,
   membresNouveaux,
+  membresTouches,
   plierEquipes,
   refusEquipe,
   retourEquipe,
@@ -187,5 +189,21 @@ describe("plier les appels du fil", () => {
     const remplacee = plierEquipes([message("m1", [appel("e1", { nom: "A" })]), message("m2", [appel("e2", { nouveau: true, nom: "B" })])]);
     expect(remplacee.get("e1")).toMatchObject({ dernier: true, courante: false });
     expect(remplacee.get("e2")).toMatchObject({ dernier: true, courante: true, serie: "e2" });
+  });
+
+  it("l'atelier plein écran montre le dernier appel de la série courante, et les membres qu'il a touchés", () => {
+    const messages = [
+      message("m1", [appel("e1", MAJ_STUDIO)]),
+      message("m2", [{ type: "text", text: "Je précise Léo." }, appel("e2", { membres: [{ id: "leo", mission: "Prépare les visuels de la semaine." }, { nom: "Inès", role: "Organisation" }] })]),
+    ];
+    const affichee = equipeAffichee(messages)!;
+    expect(affichee).toMatchObject({ messageId: "m2", etapeId: "e2" });
+    expect(affichee.etat.apres.membres.map((m) => m.cle)).toEqual(["nina", "leo", "ines"]);
+    expect(membresTouches(affichee.etat)).toEqual(["leo", "ines"]);
+    // Le premier appel a tout posé : tous ses membres sont touchés.
+    expect(membresTouches(plierEquipes(messages).get("e1")!)).toEqual(["nina", "leo"]);
+    // Une série remplacée par une autre plus bas : c'est la nouvelle qui s'affiche ; sans appel, rien.
+    expect(equipeAffichee([...messages, message("m3", [appel("e3", { nouveau: true, nom: "B" })])])).toMatchObject({ messageId: "m3", etapeId: "e3" });
+    expect(equipeAffichee([message("m0", [{ type: "text", text: "Bonjour" }])])).toBeNull();
   });
 });

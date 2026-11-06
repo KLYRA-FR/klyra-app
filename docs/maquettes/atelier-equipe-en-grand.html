@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Maquette · Atelier d’équipe en grand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --k1:#003fe4;--k1-0:#e5ecfc;--k1-50:#ccd9fa;--k1-200:#99b2f4;
+  --t1:#303030;--t2:#595959;--t3:#838383;--inv:#fff;
+  --page:#f9f9f9;--surface:#fff;--gris:#ececec;--survol:#f3f3f3;--teinte:#e5ecfc;
+  --b-sub:#f3f3f3;--b-def:#eaeaea;--b-forte:#e0e0e0;--b-acc:rgba(0,63,228,.25);
+  --o-xs:0 1px 2px 0 rgba(0,45,164,.05);--o-sm:0 1px 2px 0 rgba(0,0,0,.06),0 1px 1px 0 rgba(0,0,0,.04);
+  --o-levee:0 6px 18px 0 rgba(0,45,164,.1),0 2px 6px 0 rgba(0,45,164,.05);
+  --o-amb:0 0 14px 0 rgba(0,0,0,.04),0 0 36px 0 rgba(0,0,0,.04);
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Google Sans Flex",system-ui,sans-serif;color:var(--t1);background:#dfe3ea;font-size:14px;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.mono{font-variant-numeric:tabular-nums}
+svg.i{width:16px;height:16px;flex:none}
+
+/* Bandeau de la maquette (hors app) */
+.meta{display:flex;align-items:center;gap:16px;padding:14px 24px;background:#000d2e;color:#fff}
+.meta b{font-weight:600}
+.meta p{margin:0;color:#d6d6d6;font-size:13px;flex:1}
+.bascule{display:flex;gap:4px;background:rgba(255,255,255,.08);padding:4px;border-radius:10px}
+.bascule button{border:0;background:transparent;color:#d6d6d6;height:30px;padding:0 12px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}
+.bascule button[aria-pressed=true]{background:#fff;color:var(--t1)}
+
+/* La fenêtre de l'app */
+.fenetre{margin:20px auto;width:min(1440px,calc(100% - 40px));height:860px;background:var(--page);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,13,46,.25);display:flex}
+.rail{width:56px;flex:none;background:var(--surface);border-right:1px solid var(--b-sub);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:10px}
+.rail .logo{width:30px;height:30px;border-radius:8px;background:var(--k1);margin-bottom:8px}
+.rail .ic{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--t3)}
+.rail .ic.on{background:var(--survol);color:var(--t1)}
+.barre{width:232px;flex:none;background:var(--surface);border-right:1px solid var(--b-sub);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.barre h6{margin:14px 8px 6px;font-size:11px;font-weight:500;color:var(--t3)}
+.barre .ag{display:flex;align-items:center;gap:10px;height:36px;padding:0 8px;border-radius:8px;font-size:13px;font-weight:500}
+.barre .ag.on{background:var(--survol)}
+.rond{border-radius:999px;flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.rond::after{content:"";position:absolute;inset:22%;border-radius:999px;background:radial-gradient(circle,rgba(255,255,255,.95),rgba(255,255,255,.2) 70%)}
+.k-cicco{background:var(--k1)}
+.k-cicco::after{inset:28%;border-radius:3px;background:#fff;clip-path:polygon(0 0,40% 0,40% 35%,70% 0,100% 0,60% 50%,100% 100%,70% 100%,40% 65%,40% 100%,0 100%)}
+.ecran{flex:1;min-width:0;display:flex}
+
+/* ─── Atelier en grand ─── */
+.atelier{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--page)}
+.haut{height:64px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--b-sub)}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--b-sub);background:var(--surface);height:32px;padding:0 12px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:border-color .22s var(--ease),background-color .22s var(--ease)}
+.btn:hover{border-color:var(--b-forte)}
+.btn.discret{border-color:transparent;background:transparent}.btn.discret:hover{background:var(--survol)}
+.btn.gris{border-color:transparent;background:var(--gris)}
+.btn.sombre{border-color:transparent;background:#262626;color:#fff}
+.btn.mini{height:28px;padding:0 10px;font-size:12px}
+.sep{width:1px;height:24px;background:var(--b-def)}
+.titre-haut{display:flex;flex-direction:column;min-width:0}
+.titre-haut small{font-size:11px;color:var(--t3)}
+.titre-haut strong{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.bilan{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px;color:var(--t2)}
+.principal{position:relative;white-space:nowrap;flex:none;height:46px;padding:0 64px 0 22px;border:0;border-radius:6px;background:#050505;color:#fff;font-size:16px;font-weight:500;cursor:pointer;overflow:hidden}
+.principal::after{content:"";position:absolute;right:6px;top:7px;width:39px;height:32px;border-radius:4px;background-image:radial-gradient(circle,#3365e9 1px,transparent 1.2px);background-size:4px 4px;opacity:.9;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 30%);mask:linear-gradient(90deg,transparent,#000 30%)}
+.principal::before{content:"";position:absolute;right:20px;top:17px;width:10px;height:10px;border-top:2.5px solid #99b2f4;border-right:2.5px solid #99b2f4;transform:rotate(45deg);z-index:1}
+
+.corps{flex:1;min-height:0;display:flex}
+.plateau{flex:1;min-width:0;overflow-y:auto;scrollbar-width:thin}
+
+.scene{position:relative;height:388px;border-bottom:1px solid var(--b-sub);background-color:var(--page);
+  background-image:radial-gradient(circle,var(--b-def) 1px,transparent 1.5px);background-size:12px 12px;background-position:center}
+.scene-titre{position:absolute;left:32px;top:24px;max-width:460px}
+.scene-titre h1{margin:0;font-size:28px;line-height:1;font-weight:600;letter-spacing:-.05em}
+.scene-titre p{margin:8px 0 0;font-size:13px;line-height:1.45;color:var(--t2)}
+.nav{position:absolute;right:24px;top:24px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t3)}
+.nav .btn{width:32px;padding:0;justify-content:center}
+kbd{font:inherit;font-size:11px;border:1px solid var(--b-forte);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--t2);background:#fff}
+.cartes{position:absolute;left:0;right:0;bottom:34px;display:flex;justify-content:center;align-items:flex-end;gap:18px}
+.carte{position:relative;width:148px;aspect-ratio:3/4;border:0;padding:0;border-radius:20px;cursor:pointer;text-align:left;
+  transform:translateY(var(--y,0)) rotate(var(--r,0deg));transform-origin:50% 100%;
+  transition:transform .34s var(--ease),box-shadow .34s var(--ease),filter .22s var(--ease),opacity .22s var(--ease);box-shadow:var(--o-sm);outline-offset:4px}
+.carte:hover{--y:-8px}
+.carte[aria-pressed=true]{--y:-22px;--r:0deg !important;box-shadow:var(--o-levee);outline:2px solid var(--k1)}
+.carte .face{position:absolute;inset:0;border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
+.carte .soleil{margin:12% auto 0;width:70%;aspect-ratio:1;position:relative}
+.carte .soleil i{position:absolute;inset:0;border-radius:50%}
+.carte .nom{margin-top:auto;padding:0 14px 14px;display:flex;flex-direction:column;gap:2px}
+.carte .nom b{font-size:16px;font-weight:600;line-height:1.1}
+.carte .nom span{font-size:11px}
+.etoiles{display:flex;gap:2px;margin-top:4px}
+.etoiles svg{width:11px;height:11px}
+.pastille{position:absolute;top:10px;left:10px;height:22px;padding:0 8px;border-radius:999px;background:rgba(255,255,255,.92);font-size:10px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--k1);box-shadow:var(--o-xs)}
+.pastille::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--k1);animation:pouls 1.6s var(--ease) infinite}
+@keyframes pouls{0%{box-shadow:0 0 0 0 rgba(0,63,228,.5)}100%{box-shadow:0 0 0 8px rgba(0,63,228,0)}}
+.carte.touchee .face{animation:eclat 1.2s var(--ease)}
+@keyframes eclat{0%{box-shadow:inset 0 0 0 3px rgba(0,63,228,.6)}100%{box-shadow:inset 0 0 0 0 rgba(0,63,228,0)}}
+.carte.vide{background:transparent;border:1.5px dashed var(--b-forte);box-shadow:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--t3);font-size:12px;font-weight:500}
+.carte.vide:hover{border-color:var(--k1-200);color:var(--k1)}
+.carte.vide .plus{width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:var(--o-xs)}
+.carte.ecarte{filter:grayscale(1);opacity:.5}
+
+.detail{max-width:980px;margin:0 auto;padding:28px 32px 8px;display:grid;grid-template-columns:minmax(0,1fr) 248px;gap:32px}
+.entete-agent{display:flex;align-items:center;gap:14px}
+.entete-agent h2{margin:0;font-size:24px;letter-spacing:-.04em;font-weight:600;line-height:1}
+.entete-agent .role{font-size:13px;margin-top:4px}
+.jauge{margin-left:auto;width:132px;display:flex;flex-direction:column;gap:5px}
+.jauge span{text-align:right;font-size:11px;color:var(--t2)}
+.jauge i{display:block;height:6px;border-radius:999px;background:var(--survol);position:relative;overflow:hidden}
+.jauge i::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--w,12%);background:var(--k1);border-radius:999px;transition:width .48s var(--ease)}
+.mission{margin:16px 0 20px;font-size:16px;line-height:1.5;color:var(--t1);letter-spacing:-.01em}
+.piliers{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pilier{background:var(--surface);border:1px solid var(--b-sub);border-radius:16px;padding:14px 16px;transition:border-color .3s var(--ease),background-color .3s var(--ease)}
+.pilier.change{border-color:var(--b-acc);background:linear-gradient(var(--teinte),#fff 70%)}
+.pilier h4{margin:0 0 8px;font-size:11px;font-weight:500;color:var(--t3);display:flex;align-items:center;gap:6px}
+.pilier h4 svg{width:12px;height:12px;color:var(--k1)}
+.pilier ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.pilier li{font-size:13px;line-height:1.45;color:var(--t2);display:flex;gap:8px}
+.pilier li::before{content:"";flex:none;width:4px;height:4px;border-radius:50%;background:var(--b-forte);margin-top:8px}
+.pilier li.neuf{color:var(--t1)}
+.pilier li.neuf::before{background:var(--k1)}
+.pilier.large{grid-column:span 2}
+.cote{display:flex;flex-direction:column;gap:18px;padding-top:4px}
+.cote h5{margin:0 0 8px;font-size:11px;font-weight:500;color:var(--t3)}
+.teintes{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.teintes button{aspect-ratio:1;border-radius:8px;border:1px solid var(--b-sub);background:#fff;padding:5px;cursor:pointer}
+.teintes button i{display:block;width:100%;height:100%;border-radius:5px}
+.teintes button[aria-pressed=true]{outline:2px solid var(--k1);outline-offset:1px}
+.actions{display:flex;flex-direction:column;gap:6px}
+.actions .btn{justify-content:flex-start}
+
+.qui{max-width:980px;margin:12px auto 0;padding:20px 32px 36px}
+.qui h3{margin:0 0 10px;font-size:13px;font-weight:600}
+.qui ul{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.qui li{display:flex;align-items:center;gap:8px;border:1px solid var(--b-sub);background:#fff;border-radius:12px;padding:9px 12px;font-size:12px;transition:border-color .22s var(--ease),background-color .22s var(--ease)}
+.qui li.vise{border-color:var(--b-acc);background:var(--teinte)}
+.qui li q{flex:1;min-width:0}
+.qui li b{font-weight:500;display:flex;align-items:center;gap:6px}
+.note{font-size:11px;color:var(--t3);margin:10px 0 0}
+
+/* Conversation à droite */
+.conv{width:404px;flex:none;border-left:1px solid var(--b-sub);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.conv-haut{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--b-sub)}
+.conv-haut b{font-size:13px;font-weight:600}
+.conv-haut span{font-size:11px;color:var(--t3)}
+.fil{flex:1;min-height:0;overflow-y:auto;padding:16px 18px 8px;display:flex;flex-direction:column;gap:14px;scrollbar-width:none;background:var(--page)}
+.msg{display:grid;grid-template-columns:26px 1fr;gap:8px}
+.msg .qui-parle{font-size:12px;font-weight:600;color:#003fe4;margin-bottom:3px}
+.msg p{margin:0;font-size:13px;line-height:1.5}
+.moi{align-self:flex-end;max-width:85%;background:#262626;color:#fff;border-radius:16px 16px 4px 16px;padding:8px 12px;font-size:13px;line-height:1.45}
+.choix{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.choix span{font-size:12px;border:1px solid var(--b-def);background:#fff;border-radius:8px;padding:5px 9px;color:var(--t3)}
+.choix span.pris{border-color:var(--b-acc);background:var(--teinte);color:var(--t1)}
+.ligne-eq{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);background:#fff;border:1px solid var(--b-sub);border-radius:10px;padding:7px 10px;cursor:pointer}
+.ligne-eq:hover{border-color:var(--b-forte)}
+.ligne-eq .ronds{display:flex}
+.ligne-eq .ronds .rond{margin-left:-6px;border:2px solid #fff}
+.ligne-eq .ronds .rond:first-child{margin-left:0}
+.ecrit{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--t3)}
+.ecrit i{width:5px;height:5px;border-radius:50%;background:var(--t3);animation:respire 1.2s infinite}
+.ecrit i:nth-child(2){animation-delay:.2s}.ecrit i:nth-child(3){animation-delay:.4s}
+@keyframes respire{50%{opacity:.25}}
+.suggestions{padding:10px 16px 0;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--b-sub)}
+.suggestions small{font-size:11px;color:var(--t3);display:flex;align-items:center;gap:6px}
+.puces{display:flex;flex-wrap:wrap;gap:6px}
+.puces button{height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--b-sub);background:var(--page);font-size:12px;font-weight:500;cursor:pointer}
+.puces button:hover{border-color:var(--b-forte);background:#fff}
+.composeur{padding:10px 16px 14px}
+.boite{border:1px solid var(--b-def);border-radius:20px;background:#fff;box-shadow:var(--o-amb);padding:12px 12px 10px}
+.boite textarea{width:100%;border:0;outline:0;resize:none;font:inherit;font-size:14px;min-height:44px;color:var(--t1)}
+.boite textarea::placeholder{color:var(--t3)}
+.boite .bas{display:flex;align-items:center;gap:6px}
+.boite .bas .envoyer{margin-left:auto;width:32px;height:32px;border-radius:8px;border:0;background:#262626;color:#fff;display:flex;align-items:center;justify-content:center}
+.cible{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 4px;border-radius:999px;background:var(--teinte);font-size:12px;font-weight:500;color:var(--k1)}
+.aide{font-size:11px;color:var(--t3);margin:8px 4px 0}
+
+/* ─── Vue « dans le fil » ─── */
+.vue-fil{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.vue-fil .entete-conv{height:56px;display:flex;align-items:center;gap:10px;padding:0 24px;background:#fff;border-bottom:1px solid var(--b-sub);font-weight:600}
+.barre-collante{position:absolute;top:56px;left:0;right:0;z-index:5;background:rgba(255,255,255,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--b-sub)}
+.barre-collante div{max-width:880px;margin:0 auto;display:flex;align-items:center;gap:12px;padding:8px 28px;font-size:12px;color:var(--t2)}
+.barre-collante b{color:var(--t1);font-size:13px}
+.fil-large{flex:1;overflow-y:auto;padding:70px 0 20px}
+.fil-large .col{max-width:880px;margin:0 auto;padding:0 28px;display:flex;flex-direction:column;gap:16px}
+.module{max-width:600px;border-radius:28px;background:#fff;border:1px solid var(--b-sub);box-shadow:var(--o-levee);overflow:hidden}
+.module header{display:flex;justify-content:space-between;gap:16px;padding:20px 20px 0}
+.module h2{margin:0;font-size:28px;line-height:1;font-weight:600;letter-spacing:-.05em}
+.module header p{margin:8px 0 0;font-size:13px;color:var(--t2);line-height:1.45}
+.module .scene{height:212px;margin-top:16px;border-top:1px solid var(--b-sub)}
+.module .cartes{bottom:22px;gap:0}
+.module .carte{width:112px;margin:0 -10px}
+.module .carte .nom b{font-size:13px}
+.module .ouvrir{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .22s var(--ease);background:rgba(249,249,249,.4);z-index:9}
+.module .scene:hover .ouvrir{opacity:1}
+.module footer{display:flex;align-items:center;gap:10px;padding:14px 20px;background:rgba(236,236,236,.6);border-top:1px solid var(--b-sub);font-size:12px;color:var(--t2)}
+.module footer .esp{flex:1}
+.annot{position:absolute;max-width:200px;background:#000d2e;color:#fff;font-size:12px;line-height:1.4;padding:8px 10px;border-radius:8px;max-width:230px;box-shadow:0 8px 24px rgba(0,13,46,.3);z-index:20}
+.annot::before{content:attr(data-n);display:inline-flex;width:18px;height:18px;border-radius:50%;background:#003fe4;font-weight:700;font-size:11px;align-items:center;justify-content:center;margin-right:6px}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+<div class="meta">
+  <b>Maquette · Atelier d’une équipe en grand</b>
+  <p>Cliquer un agent ou ← / → pour passer de l’un à l’autre · les puces au-dessus du composeur préparent un message (rien n’est envoyé) · « Annotations » montre ce qui change.</p>
+  <div class="bascule" role="group" aria-label="Vue">
+    <button type="button" data-vue="grand" aria-pressed="true">En grand</button>
+    <button type="button" data-vue="fil" aria-pressed="false">Dans le fil</button>
+    <button type="button" id="annots" aria-pressed="true">Annotations</button>
+  </div>
+</div>
+
+<div class="fenetre">
+  <nav class="rail">
+    <div class="logo"></div>
+    <div class="ic on" data-i="message-square"></div><div class="ic" data-i="folder"></div><div class="ic" data-i="layers-01"></div><div class="ic" data-i="calendar-01"></div><div class="ic" data-i="search-01"></div>
+    <div style="flex:1"></div><div class="ic" data-i="settings"></div>
+  </nav>
+  <aside class="barre">
+    <div class="ag on"><span class="rond k-cicco" style="width:24px;height:24px"></span>Cicco<span style="margin-left:auto;font-size:11px;color:var(--t3)">Assistant</span></div>
+    <h6>Mes agents</h6>
+    <div class="ag"><span class="rond" style="width:24px;height:24px;background:linear-gradient(#c7ddff,#ebf3fe)"></span>Hugo</div>
+    <div class="ag"><span class="rond" style="width:24px;height:24px;background:linear-gradient(#ffd0c5,#feefea)"></span>Iris</div>
+    <h6>Récents</h6>
+    <div class="ag" style="color:var(--t2);font-weight:400">Équipe de test</div>
+    <div class="ag" style="color:var(--t2);font-weight:400">Newsletter de mai</div>
+  </aside>
+
+  <div class="ecran">
+    <!-- ═════ EN GRAND ═════ -->
+    <div class="atelier" id="vue-grand">
+      <div class="haut">
+        <button class="btn discret" type="button" data-ic="chevron-left">Conversation</button>
+        <span class="sep"></span>
+        <div class="titre-haut"><small>Atelier · nouvelle équipe</small><strong>Équipe de test</strong></div>
+        <div class="bilan">
+          <span class="ronds-haut" style="display:flex"></span>
+          <span><span class="mono" id="nb-creer">3</span> agents à créer · <span class="mono">~742 jetons</span> de fiches</span>
+          <button class="principal" type="button">Créer l’équipe</button>
+        </div>
+      </div>
+      <div class="corps">
+        <div class="plateau" style="position:relative">
+          <div class="scene">
+            <div class="scene-titre">
+              <h1>Équipe de test</h1>
+              <p>Tester la création de plusieurs agents d’un coup depuis une seule carte.</p>
+            </div>
+            <div class="nav">
+              <kbd>←</kbd><kbd>→</kbd>
+              <button class="btn" type="button" id="prec" aria-label="Agent précédent" data-ic="chevron-left"></button>
+              <span class="mono" id="rang">1 / 3</span>
+              <button class="btn" type="button" id="suiv" aria-label="Agent suivant" data-ic="chevron-right"></button>
+            </div>
+            <div class="cartes" id="cartes"></div>
+            <div class="annot" data-n="1" style="left:32px;top:92px;max-width:420px">Les agents en grand, tous visibles. Un clic ou ← / → change d’agent, sans rien faire défiler.</div>
+            <div class="annot" data-n="2" style="right:24px;top:66px;max-width:250px">Ce que Cicco vient de changer s’allume : « À jour » sur la carte, la ligne en bleu dans le détail.</div>
+          </div>
+
+          <div class="detail" id="detail"></div>
+
+          <div class="qui">
+            <h3>Qui s’en charge</h3>
+            <ul id="qui"></ul>
+            <p class="note">Une demande, un responsable : ton assistant confie chaque livrable à un seul agent. Rien n’est écrit sur ton poste avant « Créer l’équipe ».</p>
+          </div>
+        </div>
+
+        <aside class="conv" style="position:relative">
+          <div class="conv-haut"><span class="rond k-cicco" style="width:26px;height:26px"></span><div style="display:flex;flex-direction:column"><b>Cicco</b><span>Parle-lui pour retoucher l’équipe</span></div></div>
+          <div class="fil" id="fil">
+            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>Avant de composer l’équipe : qu’est-ce qui revient chaque semaine chez toi ?</p>
+              <div class="choix"><span class="pris">Écrire des mails et des posts</span><span class="pris">Organiser mon agenda</span><span>Faire de la veille</span><span>Suivre les devis</span></div></div></div>
+            <div class="moi">Écrire des mails et des posts, organiser mon agenda</div>
+            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>Et qu’est-ce que tu veux confier en premier, et garder pour toi ?</p>
+              <div class="choix"><span class="pris">Confier les brouillons, garder l’envoi</span><span>Tout confier</span><span>Seulement relire</span></div></div></div>
+            <div class="moi">Confier les brouillons, garder l’envoi</div>
+            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>Voilà une première équipe de trois. Dis-moi ce que tu veux changer, pour un agent ou pour tous.</p>
+              <div class="ligne-eq" data-va="lea"><span class="ronds" id="ronds-ligne"></span>Équipe de test : Léa, Malo, Inès arrivent</div></div></div>
+            <div class="moi">Malo pourrait aussi faire la veille concurrentielle, une fois par semaine</div>
+            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>C’est fait : Malo fait aussi une veille concurrentielle chaque lundi, livrée en une page.</p>
+              <div class="ligne-eq" data-va="malo"><span class="ronds"><span class="rond" style="width:20px;height:20px;background:linear-gradient(#b0e7ef,#e1f7fa)"></span></span>Malo mis à jour · Ce qu’il livre</div></div></div>
+          </div>
+          <div class="suggestions">
+            <small><span data-ic="stars"></span>Pour <b id="sugg-nom" style="color:var(--t1)">Léa</b></small>
+            <div class="puces" id="puces"></div>
+          </div>
+          <div class="composeur">
+            <div class="boite">
+              <textarea id="champ" placeholder="Écris à Cicco…"></textarea>
+              <div class="bas">
+                <span class="cible" id="cible"></span>
+                <button class="btn discret mini" type="button" data-ic="paperclip" aria-label="Joindre" style="width:28px;padding:0;justify-content:center"></button>
+                <button class="envoyer" type="button" aria-label="Envoyer" data-ic="arrow-up"></button>
+              </div>
+            </div>
+            <p class="aide">Cicco applique chaque demande sur la table · Entrée pour envoyer.</p>
+          </div>
+          <div class="annot" data-n="3" style="right:10px;top:6px;max-width:230px">La conversation passe à droite : on parle et on voit l’équipe en même temps. Fini de remonter.</div>
+          <div class="annot" data-n="4" style="right:10px;top:150px;max-width:230px">Cicco pose d’abord ses questions (deux au moins), avec des réponses toutes prêtes.</div>
+          <div class="annot" data-n="5" style="right:10px;bottom:230px;max-width:230px">Des débuts de message pour l’agent choisi. La puce « À propos de Léa » dit à Cicco de qui on parle.</div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ═════ DANS LE FIL ═════ -->
+    <div class="vue-fil" id="vue-fil" hidden>
+      <div class="entete-conv"><span class="rond k-cicco" style="width:28px;height:28px"></span>Cicco <span style="font-weight:400;font-size:12px;color:var(--t3)">Assistant</span></div>
+      <div class="barre-collante"><div>
+        <span class="ronds" id="ronds-barre" style="display:flex"></span>
+        <span style="flex:1"><b>Équipe de test</b> · 3 agents · Malo vient d’être mis à jour</span>
+        <button class="btn mini sombre" type="button" data-ic="expand" data-ouvrir>Ouvrir l’atelier</button>
+      </div></div>
+      <div class="fil-large"><div class="col">
+        <div class="msg" style="grid-template-columns:32px 1fr"><span class="rond k-cicco" style="width:32px;height:32px"></span><div><div class="qui-parle">Cicco</div><p style="font-size:14px">Voilà une première équipe de trois. Ouvre l’atelier pour la voir en grand et me dire ce que tu veux changer.</p>
+          <p style="font-size:12px;color:var(--t3);margin:12px 0 8px">Atelier · nouvelle équipe</p>
+          <section class="module">
+            <header><div><h2>Équipe de test</h2><p>Tester la création de plusieurs agents d’un coup depuis une seule carte.</p></div><span class="mono" style="font-size:11px;color:var(--t3);padding-top:4px">3 agents</span></header>
+            <div class="scene" style="position:relative"><div class="cartes" id="cartes-fil"></div>
+              <div class="ouvrir"><button class="btn sombre" type="button" data-ic="expand" data-ouvrir>Ouvrir l’atelier en grand</button></div></div>
+            <footer><span>3 agents à créer · <span class="mono">~742 jetons</span> de fiches</span><span class="esp"></span>
+              <button class="btn" type="button" data-ic="expand" data-ouvrir>Ouvrir l’atelier</button>
+              <button class="principal" type="button">Créer l’équipe</button></footer>
+          </section>
+          <div class="annot" data-n="6" style="position:relative;margin-top:12px;max-width:600px !important">Dans le fil, la carte devient un module compact : l’éventail, le bilan, « Ouvrir l’atelier » et « Créer l’équipe ». Le détail de chaque agent vit dans l’atelier en grand. Quand le module sort de l’écran, une barre reste en haut du fil.</div>
+        </div></div>
+        <div class="moi" style="font-size:14px">Malo pourrait aussi faire la veille concurrentielle</div>
+        <div class="msg" style="grid-template-columns:32px 1fr"><span class="rond k-cicco" style="width:32px;height:32px"></span><div><div class="qui-parle">Cicco</div><p style="font-size:14px">C’est fait : Malo fait aussi une veille concurrentielle chaque lundi.</p></div></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ICONES = {"stars": ["600 0 24 24", "<g><path d=\"M614.824 2.4231L616.654 7.3693L621.6 9.19957L616.654 11.0298L614.824 15.976L612.993 11.0298L608.047 9.19957L612.993 7.3693L614.824 2.4231Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" /><path d=\"M606.353 13.7172L607.952 16.0713L610.306 17.6702L607.952 19.269L606.353 21.6231L604.754 19.269L602.4 17.6702L604.754 16.0713L606.353 13.7172Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" /></g>"], "chevron-left": ["560 80 24 24", "<path d=\"M575 97L570 92L575 87\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "chevron-right": ["600 80 24 24", "<path d=\"M610 87L615 92L610 97\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "expand": ["720 40 24 24", "<path d=\"M729 43H725C723.895 43 723 43.8954 723 45V49M729 61H725C723.895 61 723 60.1046 723 59V55M735 43H739C740.105 43 741 43.8954 741 45V49M741 55V59C741 60.1046 740.105 61 739 61H735\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "x-01": ["640 200 24 24", "<path d=\"M660 204L644 220M660 220L644 204\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "check-01": ["400 0 24 24", "<path d=\"M416.8 8.39999L409.64 15.6L407.2 13.1457\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "arrow-up": ["400 40 24 24", "<path d=\"M419 50.6667L412 44L405 50.6667M412 44V60\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "align-left": ["80 0 24 24", "<path d=\"M82.4 3.74902L101.6 3.74902M82.4 8.94902L96.5241 8.94902M82.4 14.149L101.6 14.149M82.4 19.349L92.6621 19.349\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "palette": ["320 80 24 24", "<path d=\"M332 86.1488V86.1821M326.033 92.1491H326M336.243 87.9064L336.219 87.9299M327.781 96.3682L327.758 96.3917M327.781 87.9295L327.758 87.906M332 101.749C326.698 101.749 322.4 97.4508 322.4 92.1488C322.4 86.8469 326.698 82.5488 332 82.5488C337.302 82.5488 341.6 86.8469 341.6 92.1488C341.6 93.7629 340.109 94.8368 338.495 94.8368H337.868C337.544 94.8368 337.225 94.9122 336.936 95.0568C335.907 95.5716 335.489 96.8234 336.004 97.8528C336.149 98.1422 336.224 98.4613 336.224 98.7848V98.974C336.224 100.075 335.606 101.117 334.545 101.408C333.734 101.63 332.881 101.749 332 101.749Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "plus-01": ["120 160 24 24", "<path d=\"M132 164.8L132 179.2M139.2 172L124.8 172\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "pencil-01": ["520 80 24 24", "<path d=\"M524.8 95.7488L529 99.3488M524.2 95.7488L536.031 83.5043C537.305 82.2304 539.371 82.2304 540.645 83.5043C541.918 84.7782 541.918 86.8436 540.645 88.1175L528.4 99.9488L522.4 101.749L524.2 95.7488Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "message-square": ["80 40 24 24", "<path d=\"M86.6783 61.5999L91.687 56.5912H99.6C100.705 56.5912 101.6 55.6958 101.6 54.5912V44.3999C101.6 43.2953 100.705 42.3999 99.6 42.3999H84.4C83.2954 42.3999 82.4 43.2953 82.4 44.3999V54.5912C82.4 55.6958 83.2954 56.5912 84.4 56.5912H86.6783V61.5999Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "paperclip": ["240 160 24 24", "<path d=\"M249.857 167.929V173.929C249.857 175.112 250.817 176.071 252 176.071C253.183 176.071 254.143 175.112 254.143 173.929V167.714C254.143 165.466 252.32 163.643 250.071 163.643C247.823 163.643 246 165.466 246 167.714V174.357C246 177.671 248.686 180.357 252 180.357C255.314 180.357 258 177.671 258 174.357V167.929\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "microphone-01": ["240 40 24 24", "<path d=\"M244.398 51.1772C244.664 53.0037 245.578 54.6734 246.974 55.8809C248.37 57.0884 250.154 57.753 252 57.753M252 57.753C253.846 57.753 255.63 57.0884 257.026 55.8809C258.422 54.6734 259.336 53.0037 259.602 51.1772M252 57.753V61.6M252.001 42.4C251.128 42.4 250.291 42.7468 249.674 43.3641C249.056 43.9813 248.71 44.8185 248.71 45.6915V50.08C248.71 50.953 249.056 51.7902 249.674 52.4074C250.291 53.0247 251.128 53.3715 252.001 53.3715C252.874 53.3715 253.711 53.0247 254.328 52.4074C254.946 51.7902 255.293 50.953 255.293 50.08V45.6915C255.293 44.8185 254.946 43.9813 254.328 43.3641C253.711 42.7468 252.874 42.4 252.001 42.4Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "users-profiles-01": ["720 0 24 24", "<path d=\"M736.025 20.5708L736.026 17.3571C736.026 15.5819 734.587 14.1427 732.812 14.1427H725.614C723.84 14.1427 722.401 15.5815 722.4 17.3564L722.4 20.5708M741.6 20.571L741.6 17.3572C741.6 15.5821 740.161 14.1429 738.386 14.1429M735.406 4.06061C736.196 4.64624 736.707 5.5851 736.707 6.64343C736.707 7.70176 736.196 8.64061 735.406 9.22625M732.494 6.64325C732.494 8.41833 731.055 9.85731 729.28 9.85731C727.505 9.85731 726.066 8.41833 726.066 6.64325C726.066 4.86818 727.505 3.4292 729.28 3.4292C731.055 3.4292 732.494 4.86818 732.494 6.64325Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "minimise-01": ["480 80 24 24", "<path d=\"M482.4 95.4558H486.266C487.445 95.4558 488.4 96.3727 488.4 97.5038V101.6M488.4 82.3999V86.496C488.4 87.6271 487.445 88.544 486.267 88.544H482.4M501.6 95.4558H497.733C496.555 95.4558 495.6 96.3727 495.6 97.5038V101.6M495.6 82.3999V86.496C495.6 87.6271 496.555 88.544 497.733 88.544H501.6\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "home-01": ["440 80 24 24", "<path d=\"M443 89.4161C443 89.0467 443.188 88.7001 443.505 88.486L451.305 83.2112C451.721 82.9296 452.279 82.9296 452.695 83.2112L460.495 88.486C460.812 88.7001 461 89.0467 461 89.4161V99.2882C461 100.234 460.194 101 459.2 101H444.8C443.806 101 443 100.234 443 99.2882V89.4161Z\" stroke=\"currentColor\" stroke-width=\"2\" /><path d=\"M454.25 93.125C454.25 94.3676 453.243 95.375 452 95.375C450.757 95.375 449.75 94.3676 449.75 93.125C449.75 91.8824 450.757 90.875 452 90.875C453.243 90.875 454.25 91.8824 454.25 93.125Z\" stroke=\"currentColor\" stroke-width=\"2\" />"], "folder": ["600 40 24 24", "<path d=\"M602.401 48.4167L602.401 57.941C602.401 59.0456 603.296 59.9411 604.401 59.9411L619.6 59.9411C620.704 59.9411 621.6 59.0457 621.6 57.9412L621.6 48.0125C621.6 47.4602 621.152 47.0125 620.6 47.0125H612.084L609.319 44.0588H603.4C602.848 44.0588 602.4 44.5061 602.4 45.0585C602.401 46.0093 602.401 47.4362 602.401 48.4167Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "search-01": ["440 160 24 24", "<path d=\"M456.927 177.04L460.4 180.4M459.28 171.44C459.28 175.77 455.77 179.28 451.44 179.28C447.11 179.28 443.6 175.77 443.6 171.44C443.6 167.11 447.11 163.6 451.44 163.6C455.77 163.6 459.28 167.11 459.28 171.44Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "settings": ["520 160 24 24", "<path fill-rule=\"evenodd\" clip-rule=\"evenodd\" d=\"M533.676 164.316C533.249 162.561 530.751 162.561 530.324 164.316C530.26 164.58 530.135 164.825 529.958 165.031C529.782 165.237 529.559 165.399 529.309 165.503C529.058 165.607 528.786 165.65 528.516 165.629C528.245 165.608 527.984 165.524 527.752 165.383C526.208 164.442 524.442 166.209 525.383 167.752C525.99 168.749 525.451 170.049 524.317 170.325C522.561 170.751 522.561 173.25 524.317 173.675C524.581 173.739 524.826 173.865 525.032 174.041C525.238 174.218 525.4 174.44 525.504 174.691C525.608 174.942 525.651 175.214 525.63 175.484C525.609 175.755 525.524 176.017 525.383 176.248C524.442 177.792 526.208 179.558 527.752 178.617C527.984 178.476 528.245 178.391 528.516 178.37C528.787 178.349 529.058 178.392 529.309 178.496C529.56 178.6 529.783 178.762 529.959 178.968C530.136 179.174 530.261 179.419 530.325 179.683C530.751 181.439 533.25 181.439 533.675 179.683C533.739 179.419 533.865 179.174 534.041 178.968C534.218 178.762 534.44 178.601 534.691 178.497C534.942 178.393 535.214 178.35 535.484 178.371C535.755 178.392 536.016 178.476 536.248 178.617C537.792 179.558 539.558 177.792 538.617 176.248C538.476 176.016 538.392 175.755 538.371 175.484C538.35 175.214 538.393 174.942 538.497 174.691C538.601 174.441 538.762 174.218 538.968 174.041C539.174 173.865 539.419 173.739 539.683 173.675C541.439 173.249 541.439 170.75 539.683 170.325C539.419 170.261 539.174 170.136 538.968 169.959C538.762 169.783 538.6 169.56 538.496 169.309C538.392 169.059 538.349 168.787 538.37 168.516C538.391 168.246 538.476 167.984 538.617 167.752C539.558 166.209 537.792 164.442 536.248 165.383C536.016 165.524 535.755 165.609 535.484 165.63C535.213 165.651 534.942 165.608 534.691 165.504C534.44 165.4 534.217 165.239 534.041 165.032C533.864 164.826 533.739 164.581 533.675 164.317L533.676 164.316Z\" stroke=\"currentColor\" stroke-width=\"2\" /><path d=\"M534 172C534 173.105 533.105 174 532 174C530.895 174 530 173.105 530 172C530 170.895 530.895 170 532 170C533.105 170 534 170.895 534 172Z\" stroke=\"currentColor\" stroke-width=\"2\" />"], "layers-01": ["600 40 24 24", "<path d=\"M612 46.9255L621.6 52.0001L612 57.0746L602.4 52.0001L612 46.9255Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" />"], "calendar-01": ["400 0 24 24", "<path d=\"M404.75 8.91425H418.75M406.56 3V4.54304M416.75 3V4.54285M419.75 7.24285V18.3C419.75 19.7912 418.556 21 417.083 21H406.417C404.944 21 403.75 19.7912 403.75 18.3V7.24285C403.75 5.75168 404.944 4.54285 406.417 4.54285H417.083C418.556 4.54285 419.75 5.75168 419.75 7.24285Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "trash-01": ["280 200 24 24", "<path d=\"M284 206.176H300M289 203H295M290 216.765V210.412M294 216.765V210.412M295.5 221H288.5C287.395 221 286.5 220.052 286.5 218.882L286.043 207.279C286.02 206.678 286.474 206.176 287.043 206.176H296.957C297.526 206.176 297.98 206.678 297.957 207.279L297.5 218.882C297.5 220.052 296.605 221 295.5 221Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"]};
+const ic = (n, t=16) => { const [vb, b] = ICONES[n]; return `<svg class="i" style="width:${t}px;height:${t}px" viewBox="${vb}" fill="none" aria-hidden="true">${b}</svg>`; };
+document.querySelectorAll("[data-ic]").forEach(e => e.insertAdjacentHTML("afterbegin", ic(e.dataset.ic)));
+document.querySelectorAll("[data-i]").forEach(e => e.innerHTML = ic(e.dataset.i, 18));
+
+const TEINTES = {
+  "bleu-k1":["#c7ddff","#ebf3fe","#4468a2"],"bleu-k2":["#b7e3ff","#e6f5fe","#1c6f9d"],"bleu-k3":["#b0e7ef","#e1f7fa","#037683"],
+  "violet":["#dbd6ff","#f2f0fe","#695c9e"],"rose":["#f5cdf1","#fdecfa","#8a5086"],"rouge":["#ffcfcc","#ffeeec","#9f4c4d"],
+  "orange":["#ffd0c5","#feefea","#9e4f41"],"orange-k2":["#fbd4b8","#feefe4","#915a31"],"jaune":["#f3eec1","#f5f3e2","#756a2a"],
+  "ocre":["#f0dab4","#fbf1e1","#846328"],"vert":["#b1ebd4","#e1f9ee","#067c5e"],"vert-k2":["#cde6bb","#ecf7e4","#527537"]
+};
+const AGENTS = [
+  { cle:"lea", nom:"Léa", role:"Rédaction", teinte:"violet", r:-5, jetons:247,
+    mission:"Rédige les textes courts (mails, posts, fiches) dans le ton de Corentin.",
+    piliers:{ quand:["Il faut écrire un mail ou un post","Relire un texte avant envoi"], livre:["Un texte prêt à envoyer, dans un fichier"], methode:["Part des notes de la semaine","Garde le tutoiement et les phrases courtes","Propose deux accroches pour un post"], limites:["N’envoie rien sans accord"], verifie:["Relit l’orthographe et les chiffres cités"] } },
+  { cle:"malo", nom:"Malo", role:"Veille", teinte:"bleu-k3", r:0, jetons:281, touche:true,
+    mission:"Suit ce qui bouge dans le secteur et le résume en une page.",
+    piliers:{ quand:["Une question sur un concurrent","Le lundi matin"], livre:["Un résumé d’une page, sources citées","Une veille concurrentielle chaque lundi"], methode:["Cite chaque source","Sépare les faits des avis"], limites:["Ne contacte personne"], verifie:["Chaque lien ouvert et daté"] }, neufs:{livre:1} },
+  { cle:"ines", nom:"Inès", role:"Organisation", teinte:"vert-k2", r:5, jetons:214,
+    mission:"Range l’agenda et prépare chaque rendez-vous.",
+    piliers:{ quand:["Un rendez-vous à caler","La semaine à préparer"], livre:["Les créneaux proposés, une fiche par rendez-vous"], methode:["Croise l’agenda avec les rappels"], limites:["Ne confirme aucun rendez-vous seule"], verifie:["Aucun créneau en conflit"] } },
+];
+const EXEMPLES = [["Le mail de relance au client Acme","lea"],["Ce que font les concurrents ce mois-ci","malo"],["Caler trois rendez-vous la semaine prochaine","ines"],["Le post LinkedIn du lancement","lea"]];
+const PILIERS = [["quand","Quand l’appeler"],["livre","Ce qu’il livre"],["limites","Ses limites"],["verifie","Comment il vérifie"],["methode","Comment il travaille"]];
+let choisi = 0;
+const ecartes = new Set();
+
+const fond = t => `linear-gradient(${TEINTES[t][0]},${TEINTES[t][1]})`;
+const soleil = (t) => `<div class="soleil"><i style="background:radial-gradient(circle,rgba(255,255,255,.95) 0 30%,rgba(255,255,255,.35) 31% 46%,transparent 47%)"></i><i style="background:conic-gradient(from 0deg,${TEINTES[t][0]}00 0 4%,rgba(255,255,255,.55) 4% 8%,transparent 8% 12.5%);mask:radial-gradient(circle,transparent 46%,#000 47% 62%,transparent 63%);-webkit-mask:radial-gradient(circle,transparent 46%,#000 47% 62%,transparent 63%);animation:tourne 40s linear infinite"></i></div>`;
+document.head.insertAdjacentHTML("beforeend","<style>@keyframes tourne{to{transform:rotate(1turn)}}</style>");
+const etoiles = () => `<span class="etoiles">${Array.from({length:5},()=>`<span style="color:var(--k1);display:flex">${ic("stars",11)}</span>`).join("")}</span>`;
+const rond = (a, t=20) => `<span class="rond" style="width:${t}px;height:${t}px;background:${fond(a.teinte)}"></span>`;
+
+function cartes(conteneur, grand) {
+  conteneur.innerHTML = AGENTS.map((a, i) => `
+    <button type="button" class="carte ${a.touche && grand ? "touchee" : ""} ${ecartes.has(a.cle) ? "ecarte" : ""}" data-i="${i}" aria-pressed="${grand && i === choisi}" style="--r:${grand ? a.r * .6 : a.r}deg;${!grand ? `--y:${Math.abs(a.r) * 1.2}px` : ""}">
+      <div class="face" style="background:${fond(a.teinte)}">${soleil(a.teinte)}
+        <span class="nom"><b>${a.nom}</b><span style="color:${TEINTES[a.teinte][2]}">${a.role}</span>${etoiles()}</span>
+        ${a.touche && grand ? `<span class="pastille">À jour</span>` : ""}
+        ${ecartes.has(a.cle) ? `<span class="pastille" style="color:var(--t2)">De côté</span>` : ""}
+      </div>
+    </button>`).join("") + (grand ? `<button type="button" class="carte vide" id="ajout"><span class="plus">${ic("plus-01")}</span>Un agent de plus</button>` : "");
+}
+
+function detail() {
+  const a = AGENTS[choisi];
+  const cote = ecartes.has(a.cle);
+  document.getElementById("detail").innerHTML = `
+    <div>
+      <div class="entete-agent">
+        ${rond(a, 56)}
+        <div><h2>${a.nom}</h2><div class="role" style="color:${TEINTES[a.teinte][2]}">${a.role}</div></div>
+        <div class="jauge"><span class="mono">~${a.jetons} jetons</span><i style="--w:${a.jetons / 25}%"></i></div>
+      </div>
+      <p class="mission">${a.mission}</p>
+      <div class="piliers">${PILIERS.map(([k, t], j) => {
+        const items = a.piliers[k] || [];
+        const neuf = a.neufs?.[k];
+        return `<div class="pilier ${neuf ? "change" : ""} ${j === 4 ? "large" : ""}"><h4>${ic("stars", 12)}${t}${neuf ? `<span style="margin-left:auto;color:var(--k1);font-weight:600">Mis à jour par Cicco</span>` : ""}</h4><ul>${items.map((x, n) => `<li class="${neuf && n >= items.length - neuf ? "neuf" : ""}">${x}</li>`).join("")}</ul></div>`;
+      }).join("")}</div>
+    </div>
+    <div class="cote">
+      <div><h5>Sa couleur</h5><div class="teintes">${Object.keys(TEINTES).map(t => `<button type="button" aria-label="${t}" aria-pressed="${t === a.teinte}" data-t="${t}"><i style="background:${TEINTES[t][0]}"></i></button>`).join("")}</div></div>
+      <div><h5>Avec ${a.nom}</h5><div class="actions">
+        <button class="btn" type="button">${ic("align-left", 14)}Voir sa fiche</button>
+        <button class="btn" type="button">${ic("stars", 14)}L’affiner et l’éprouver</button>
+        <button class="btn discret" type="button" id="ecarter">${cote ? "Le reprendre dans l’équipe" : "Le laisser de côté"}</button>
+      </div></div>
+      <p class="note" style="margin:0">Le reste se change en parlant à Cicco, à droite.</p>
+    </div>`;
+  document.getElementById("rang").textContent = `${choisi + 1} / ${AGENTS.length}`;
+  document.getElementById("qui").innerHTML = EXEMPLES.map(([d, c]) => { const m = AGENTS.find(x => x.cle === c); return `<li class="${c === a.cle ? "vise" : ""}"><q>${d}</q>${ic("chevron-right", 14)}<b>${rond(m)}${m.nom}</b></li>`; }).join("");
+  document.getElementById("sugg-nom").textContent = a.nom;
+  document.getElementById("cible").innerHTML = `${rond(a, 18)}À propos de ${a.nom}`;
+  const puces = [[`Renommer ${a.nom}`, `Renomme ${a.nom} en `], [`Ce qu’${a.nom === "Inès" ? "elle" : "il"} livre`, `${a.nom} devrait aussi livrer `], ["Ses limites", `${a.nom} ne doit jamais `], ["Son ton", `${a.nom} écrit plutôt `], [`Retirer ${a.nom}`, `Retire ${a.nom} de l’équipe.`], ["Fusionner deux agents", "Fusionne "]];
+  document.getElementById("puces").innerHTML = puces.map(([l, t]) => `<button type="button" data-texte="${t}">${l}</button>`).join("");
+  document.querySelectorAll("#puces button").forEach(b => b.onclick = () => { const c = document.getElementById("champ"); c.value = b.dataset.texte; c.focus(); c.setSelectionRange(c.value.length, c.value.length); });
+  document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { a.teinte = b.dataset.t; rendre(); });
+  document.getElementById("ecarter").onclick = () => { cote ? ecartes.delete(a.cle) : ecartes.add(a.cle); document.getElementById("nb-creer").textContent = AGENTS.length - ecartes.size; rendre(); };
+}
+
+function rendre() {
+  cartes(document.getElementById("cartes"), true);
+  cartes(document.getElementById("cartes-fil"), false);
+  document.querySelectorAll("#cartes .carte[data-i]").forEach(b => b.onclick = () => { choisi = +b.dataset.i; rendre(); });
+  document.getElementById("ajout").onclick = () => { const c = document.getElementById("champ"); c.value = "Ajoute un agent pour "; c.focus(); };
+  document.querySelectorAll("#cartes-fil .carte").forEach(b => b.onclick = () => { choisi = +b.dataset.i; vue("grand"); });
+  const ronds = AGENTS.map(a => rond(a, 22)).join("");
+  document.querySelector(".ronds-haut").innerHTML = `<span class="ronds" style="display:flex;gap:0">${ronds}</span>`;
+  document.getElementById("ronds-barre").innerHTML = ronds;
+  document.getElementById("ronds-ligne").innerHTML = AGENTS.map(a => rond(a)).join("");
+  detail();
+}
+function vue(v) {
+  document.getElementById("vue-grand").hidden = v !== "grand";
+  document.getElementById("vue-fil").hidden = v !== "fil";
+  document.querySelectorAll("[data-vue]").forEach(b => b.setAttribute("aria-pressed", b.dataset.vue === v));
+}
+document.querySelectorAll("[data-vue]").forEach(b => b.onclick = () => vue(b.dataset.vue));
+document.querySelectorAll("[data-ouvrir]").forEach(b => b.onclick = () => vue("grand"));
+document.querySelector(".haut .btn").onclick = () => vue("fil");
+document.querySelectorAll(".ligne-eq").forEach(l => l.onclick = () => { choisi = AGENTS.findIndex(a => a.cle === l.dataset.va); rendre(); });
+document.getElementById("prec").onclick = () => { choisi = (choisi + AGENTS.length - 1) % AGENTS.length; rendre(); };
+document.getElementById("suiv").onclick = () => { choisi = (choisi + 1) % AGENTS.length; rendre(); };
+document.addEventListener("keydown", e => {
+  if (e.target.closest("textarea")) return;
+  if (e.key === "ArrowRight") document.getElementById("suiv").click();
+  if (e.key === "ArrowLeft") document.getElementById("prec").click();
+});
+const bAnnots = document.getElementById("annots");
+bAnnots.onclick = () => { const on = bAnnots.getAttribute("aria-pressed") !== "true"; bAnnots.setAttribute("aria-pressed", on); document.querySelectorAll(".annot").forEach(a => a.hidden = !on); };
+document.getElementById("fil").scrollTop = 1e6;
+rendre();
+</script>
+</body>
+</html>

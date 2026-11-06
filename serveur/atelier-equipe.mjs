@@ -7,7 +7,7 @@ export const MAX_MEMBRES = 6;
 const tableau = (description) => ({ type: "array", items: { type: "string" }, description });
 export const OUTIL_EQUIPE = {
     name: "proposer_equipe",
-    description: "Montre et complète, dans la conversation, la carte d'une équipe d'agents à créer avec la personne : un agent par métier, ses agents actifs qui en font partie, et qui serait responsable de quelques-unes de ses vraies demandes. Appelle-le après chaque réponse utile, avec seulement ce que tu viens d'apprendre : un membre donné complète celui qui a le même id (garde-le d'un appel à l'autre), les autres restent ; retirer: true l'enlève. C'est la personne qui choisit qui garder et crée l'équipe d'un clic sur la carte : rien n'est créé par cet outil. Phrases courtes, écrites comme les fiches les diront. N'y répète pas ce que l'app donne déjà à chaque agent.",
+    description: "Montre et complète, dans la conversation, la carte d'une équipe d'agents à créer avec la personne, après lui avoir posé tes questions (proposer_choix) : un agent par métier, ses agents actifs qui en font partie, et qui serait responsable de quelques-unes de ses vraies demandes. Appelle-le après chaque réponse utile, avec seulement ce que tu viens d'apprendre : un membre donné complète celui qui a le même id (garde-le d'un appel à l'autre), les autres restent ; retirer: true l'enlève. C'est la personne qui choisit qui garder et crée l'équipe d'un clic sur la carte : rien n'est créé par cet outil. Phrases courtes, écrites comme les fiches les diront. N'y répète pas ce que l'app donne déjà à chaque agent.",
     inputSchema: {
         type: "object",
         properties: {
@@ -48,7 +48,7 @@ export const OUTIL_EQUIPE = {
     },
 };
 /** Ce que l'assistant apprend de l'atelier d'équipe, avec celui d'un agent (CONSIGNE_ATELIER). */
-export const CONSIGNE_EQUIPE = `Pour composer une équipe (plusieurs agents d'un coup) : demande d'abord ce qui revient dans sa semaine, une question à la fois (proposer_choix), puis montre et complète l'équipe avec proposer_equipe : 2 à 5 agents d'un métier chacun, sans doublon de ses agents actifs. Elle la crée sur la carte ; un membre s'affine dans son propre atelier (proposer_agent, même id).`;
+export const CONSIGNE_EQUIPE = `Pour composer une équipe (plusieurs agents d'un coup) : avant le premier proposer_equipe, pose-lui au moins deux questions, une à la fois avec proposer_choix (ce qui revient dans sa semaine, puis ce qu'elle veut confier en premier et ce qu'elle garde pour elle), sauf si elle a déjà tout décrit ou veut aller vite. Puis montre et complète l'équipe avec proposer_equipe : 2 à 5 agents d'un métier chacun, sans doublon de ses agents actifs. Elle la retouche en te parlant, souvent depuis l'atelier en grand : à chaque demande, un appel avec seulement ce qui change, et une ligne pour dire ce que tu as changé. Elle la crée sur la carte ; un membre s'affine dans son propre atelier (proposer_agent, même id).`;
 /* ─── Lecture de l'outil ──────────────────────────────────────────── */
 const texte = (v, max) => (typeof v === "string" ? v.trim().replace(/\s+/g, " ").slice(0, max) : undefined);
 /** La clé d'un membre : son identifiant, sinon tiré de son prénom. */

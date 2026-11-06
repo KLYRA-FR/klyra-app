@@ -92,6 +92,29 @@ export function equipeEnCours(messages: Message[]): BrouillonEquipe {
   return dernier && !Object.keys(dernier.crees).length ? dernier.apres : EQUIPE_VIDE;
 }
 
+/** L'appel qui montre la carte d'équipe de la conversation (le dernier de la dernière série), avec son message. */
+export function equipeAffichee(messages: readonly { id: string; parts: readonly MessagePart[] }[]): { etat: EtatEquipe; messageId: string; etapeId: string } | null {
+  const etats = plierEquipes(messages);
+  for (let i = messages.length - 1; i >= 0; i--) {
+    for (let j = messages[i].parts.length - 1; j >= 0; j--) {
+      const part = messages[i].parts[j];
+      if (!estEquipe(part)) continue;
+      const etat = etats.get(part.etapeId);
+      return etat?.dernier && etat.courante ? { etat, messageId: messages[i].id, etapeId: part.etapeId } : null;
+    }
+  }
+  return null;
+}
+
+/** Les membres que cet appel a ajoutés ou changés (l'atelier plein écran les montre à jour). */
+export const membresTouches = (etat: Pick<EtatEquipe, "avant" | "apres">): string[] =>
+  etat.apres.membres
+    .filter((m) => {
+      const avant = etat.avant.membres.find((x) => x.cle === m.cle);
+      return !avant || JSON.stringify(avant.agent) !== JSON.stringify(m.agent);
+    })
+    .map((m) => m.cle);
+
 /** Les membres que cet appel vient d'ajouter à la carte. */
 export const membresNouveaux = (etat: Pick<EtatEquipe, "avant" | "apres">): MembreBrouillon[] =>
   etat.apres.membres.filter((m) => !etat.avant.membres.some((x) => x.cle === m.cle));
