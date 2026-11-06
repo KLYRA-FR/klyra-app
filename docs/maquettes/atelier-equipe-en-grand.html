@@ -2,13 +2,13 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Maquette · Atelier d’équipe en grand</title>
+<title>Maquette · Atelier d’une équipe, en partant de tes tâches</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&display=swap" rel="stylesheet">
 <style>
 :root{
   --k1:#003fe4;--k1-0:#e5ecfc;--k1-50:#ccd9fa;--k1-200:#99b2f4;
-  --t1:#303030;--t2:#595959;--t3:#838383;--inv:#fff;
+  --t1:#303030;--t2:#595959;--t3:#838383;
   --page:#f9f9f9;--surface:#fff;--gris:#ececec;--survol:#f3f3f3;--teinte:#e5ecfc;
   --b-sub:#f3f3f3;--b-def:#eaeaea;--b-forte:#e0e0e0;--b-acc:rgba(0,63,228,.25);
   --o-xs:0 1px 2px 0 rgba(0,45,164,.05);--o-sm:0 1px 2px 0 rgba(0,0,0,.06),0 1px 1px 0 rgba(0,0,0,.04);
@@ -22,16 +22,15 @@ body{font-family:"Google Sans Flex",system-ui,sans-serif;color:var(--t1);backgro
 button{font:inherit;color:inherit}
 .mono{font-variant-numeric:tabular-nums}
 svg.i{width:16px;height:16px;flex:none}
+[hidden]{display:none !important}
 
-/* Bandeau de la maquette (hors app) */
 .meta{display:flex;align-items:center;gap:16px;padding:14px 24px;background:#000d2e;color:#fff}
-.meta b{font-weight:600}
+.meta b{font-weight:600;white-space:nowrap}
 .meta p{margin:0;color:#d6d6d6;font-size:13px;flex:1}
 .bascule{display:flex;gap:4px;background:rgba(255,255,255,.08);padding:4px;border-radius:10px}
-.bascule button{border:0;background:transparent;color:#d6d6d6;height:30px;padding:0 12px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}
+.bascule button{border:0;background:transparent;color:#d6d6d6;height:30px;padding:0 12px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap}
 .bascule button[aria-pressed=true]{background:#fff;color:var(--t1)}
 
-/* La fenêtre de l'app */
 .fenetre{margin:20px auto;width:min(1440px,calc(100% - 40px));height:860px;background:var(--page);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,13,46,.25);display:flex}
 .rail{width:56px;flex:none;background:var(--surface);border-right:1px solid var(--b-sub);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:10px}
 .rail .logo{width:30px;height:30px;border-radius:8px;background:var(--k1);margin-bottom:8px}
@@ -41,86 +40,125 @@ svg.i{width:16px;height:16px;flex:none}
 .barre h6{margin:14px 8px 6px;font-size:11px;font-weight:500;color:var(--t3)}
 .barre .ag{display:flex;align-items:center;gap:10px;height:36px;padding:0 8px;border-radius:8px;font-size:13px;font-weight:500}
 .barre .ag.on{background:var(--survol)}
-.rond{border-radius:999px;flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.rond{border-radius:999px;flex:none;display:inline-flex;position:relative;overflow:hidden}
 .rond::after{content:"";position:absolute;inset:22%;border-radius:999px;background:radial-gradient(circle,rgba(255,255,255,.95),rgba(255,255,255,.2) 70%)}
 .k-cicco{background:var(--k1)}
 .k-cicco::after{inset:28%;border-radius:3px;background:#fff;clip-path:polygon(0 0,40% 0,40% 35%,70% 0,100% 0,60% 50%,100% 100%,70% 100%,40% 65%,40% 100%,0 100%)}
-.ecran{flex:1;min-width:0;display:flex}
+.rond.toi{background:#262626}
+.rond.toi::after{display:none}
 
-/* ─── Atelier en grand ─── */
-.atelier{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--page)}
+.atelier{flex:1;min-width:0;display:flex;flex-direction:column}
 .haut{height:64px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--b-sub)}
 .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--b-sub);background:var(--surface);height:32px;padding:0 12px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:border-color .22s var(--ease),background-color .22s var(--ease)}
 .btn:hover{border-color:var(--b-forte)}
 .btn.discret{border-color:transparent;background:transparent}.btn.discret:hover{background:var(--survol)}
-.btn.gris{border-color:transparent;background:var(--gris)}
-.btn.sombre{border-color:transparent;background:#262626;color:#fff}
-.btn.mini{height:28px;padding:0 10px;font-size:12px}
+.btn.mini{height:26px;padding:0 9px;font-size:12px;gap:5px}
 .sep{width:1px;height:24px;background:var(--b-def)}
-.titre-haut{display:flex;flex-direction:column;min-width:0}
-.titre-haut small{font-size:11px;color:var(--t3)}
-.titre-haut strong{font-size:15px;font-weight:600;letter-spacing:-.01em}
-.bilan{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px;color:var(--t2)}
-.principal{position:relative;white-space:nowrap;flex:none;height:46px;padding:0 64px 0 22px;border:0;border-radius:6px;background:#050505;color:#fff;font-size:16px;font-weight:500;cursor:pointer;overflow:hidden}
-.principal::after{content:"";position:absolute;right:6px;top:7px;width:39px;height:32px;border-radius:4px;background-image:radial-gradient(circle,#3365e9 1px,transparent 1.2px);background-size:4px 4px;opacity:.9;
-  -webkit-mask:linear-gradient(90deg,transparent,#000 30%);mask:linear-gradient(90deg,transparent,#000 30%)}
+.etapes{display:flex;align-items:center;gap:6px;margin:0 auto}
+.etape{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px 0 6px;border-radius:999px;border:0;background:transparent;font-size:13px;font-weight:500;color:var(--t3);cursor:pointer}
+.etape i{font-style:normal;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:var(--survol);color:var(--t3)}
+.etape[aria-current=step]{background:var(--teinte);color:var(--k1)}
+.etape[aria-current=step] i{background:var(--k1);color:#fff}
+.etape.faite{color:var(--t1)}
+.etape.faite i{background:#262626;color:#fff}
+.fleche{width:18px;height:1px;background:var(--b-forte)}
+.principal{position:relative;white-space:nowrap;flex:none;height:46px;padding:0 64px 0 22px;border:0;border-radius:6px;background:#050505;color:#fff;font-size:16px;font-weight:500;cursor:pointer;overflow:hidden;transition:opacity .22s}
+.principal::after{content:"";position:absolute;right:6px;top:7px;width:39px;height:32px;border-radius:4px;background-image:radial-gradient(circle,#3365e9 1px,transparent 1.2px);background-size:4px 4px;-webkit-mask:linear-gradient(90deg,transparent,#000 30%);mask:linear-gradient(90deg,transparent,#000 30%)}
 .principal::before{content:"";position:absolute;right:20px;top:17px;width:10px;height:10px;border-top:2.5px solid #99b2f4;border-right:2.5px solid #99b2f4;transform:rotate(45deg);z-index:1}
+.principal:disabled{opacity:.45;cursor:not-allowed}
 
 .corps{flex:1;min-height:0;display:flex}
-.plateau{flex:1;min-width:0;overflow-y:auto;scrollbar-width:thin}
+.plateau{flex:1;min-width:0;overflow-y:auto;scrollbar-width:thin;position:relative}
 
-.scene{position:relative;height:388px;border-bottom:1px solid var(--b-sub);background-color:var(--page);
-  background-image:radial-gradient(circle,var(--b-def) 1px,transparent 1.5px);background-size:12px 12px;background-position:center}
-.scene-titre{position:absolute;left:32px;top:24px;max-width:460px}
+.scene{position:relative;height:100%;min-height:600px;background-color:var(--page);
+  background-image:radial-gradient(circle,var(--b-def) 1px,transparent 1.5px);background-size:12px 12px;background-position:center;transition:height .5s var(--ease),min-height .5s var(--ease)}
+.etape-3 .scene{height:330px;min-height:330px;border-bottom:1px solid var(--b-sub)}
+.scene-titre{position:absolute;left:32px;top:24px;right:32px;z-index:2}
 .scene-titre h1{margin:0;font-size:28px;line-height:1;font-weight:600;letter-spacing:-.05em}
-.scene-titre p{margin:8px 0 0;font-size:13px;line-height:1.45;color:var(--t2)}
-.nav{position:absolute;right:24px;top:24px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t3)}
-.nav .btn{width:32px;padding:0;justify-content:center}
-kbd{font:inherit;font-size:11px;border:1px solid var(--b-forte);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--t2);background:#fff}
-.cartes{position:absolute;left:0;right:0;bottom:34px;display:flex;justify-content:center;align-items:flex-end;gap:18px}
-.carte{position:relative;width:148px;aspect-ratio:3/4;border:0;padding:0;border-radius:20px;cursor:pointer;text-align:left;
-  transform:translateY(var(--y,0)) rotate(var(--r,0deg));transform-origin:50% 100%;
-  transition:transform .34s var(--ease),box-shadow .34s var(--ease),filter .22s var(--ease),opacity .22s var(--ease);box-shadow:var(--o-sm);outline-offset:4px}
-.carte:hover{--y:-8px}
-.carte[aria-pressed=true]{--y:-22px;--r:0deg !important;box-shadow:var(--o-levee);outline:2px solid var(--k1)}
-.carte .face{position:absolute;inset:0;border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
-.carte .soleil{margin:12% auto 0;width:70%;aspect-ratio:1;position:relative}
-.carte .soleil i{position:absolute;inset:0;border-radius:50%}
-.carte .nom{margin-top:auto;padding:0 14px 14px;display:flex;flex-direction:column;gap:2px}
-.carte .nom b{font-size:16px;font-weight:600;line-height:1.1}
-.carte .nom span{font-size:11px}
-.etoiles{display:flex;gap:2px;margin-top:4px}
-.etoiles svg{width:11px;height:11px}
-.pastille{position:absolute;top:10px;left:10px;height:22px;padding:0 8px;border-radius:999px;background:rgba(255,255,255,.92);font-size:10px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--k1);box-shadow:var(--o-xs)}
-.pastille::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--k1);animation:pouls 1.6s var(--ease) infinite}
-@keyframes pouls{0%{box-shadow:0 0 0 0 rgba(0,63,228,.5)}100%{box-shadow:0 0 0 8px rgba(0,63,228,0)}}
-.carte.touchee .face{animation:eclat 1.2s var(--ease)}
-@keyframes eclat{0%{box-shadow:inset 0 0 0 3px rgba(0,63,228,.6)}100%{box-shadow:inset 0 0 0 0 rgba(0,63,228,0)}}
-.carte.vide{background:transparent;border:1.5px dashed var(--b-forte);box-shadow:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--t3);font-size:12px;font-weight:500}
-.carte.vide:hover{border-color:var(--k1-200);color:var(--k1)}
-.carte.vide .plus{width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:var(--o-xs)}
-.carte.ecarte{filter:grayscale(1);opacity:.5}
+.scene-titre p{margin:8px 0 0;font-size:13px;line-height:1.45;color:var(--t2);max-width:520px}
+.legende{position:absolute;right:32px;top:28px;display:flex;gap:12px;font-size:11px;color:var(--t3);z-index:2}
+.legende span{display:flex;align-items:center;gap:6px}
+.legende .plein{width:18px;height:12px;border-radius:3px;background:#fff;box-shadow:var(--o-sm)}
+.legende .pointille{width:18px;height:12px;border-radius:3px;border:1.5px dashed var(--k1-200);background:rgba(255,255,255,.6)}
 
-.detail{max-width:980px;margin:0 auto;padding:28px 32px 8px;display:grid;grid-template-columns:minmax(0,1fr) 248px;gap:32px}
+/* Les tâches, comme des notes posées sur la table */
+.note-t{position:absolute;width:196px;height:74px;border-radius:12px;background:#fff;box-shadow:var(--o-sm);padding:10px 12px;display:flex;flex-direction:column;gap:6px;
+  transform:rotate(var(--r,0deg));transition:left .6s var(--ease),top .6s var(--ease),transform .6s var(--ease),opacity .4s var(--ease),box-shadow .2s;z-index:3;user-select:none}
+.note-t q{font-size:13px;line-height:1.35;quotes:"« " " »";display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.note-t .src{margin-top:auto;display:flex;align-items:center;gap:6px;font-size:10px;color:var(--t3)}
+.note-t .src b{font-weight:600}
+.note-t.propose{height:118px}
+.note-t .pourquoi{font-size:11px;line-height:1.35;color:var(--t3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.note-t.propose{background:rgba(255,255,255,.7);box-shadow:none;outline:1.5px dashed var(--k1-200);outline-offset:-1.5px}
+.note-t.propose q{color:var(--t2)}
+.note-t.pour-toi{background:#f3f3f3;box-shadow:none}
+.note-t .gestes{margin-left:auto;display:flex;gap:4px}
+.note-t .gestes button{height:20px;padding:0 7px;border-radius:5px;border:1px solid var(--b-def);background:#fff;font-size:10px;font-weight:600;cursor:pointer}
+.note-t .gestes button:first-child{color:var(--k1)}
+.note-t.retiree{opacity:0;transform:scale(.8) rotate(var(--r));pointer-events:none}
+.etape-2 .note-t{cursor:grab;--r:0deg !important}
+.etape-2 .note-t:hover{box-shadow:var(--o-levee)}
+.note-t.tient{transition:none;cursor:grabbing;box-shadow:var(--o-levee);z-index:30;transform:rotate(2deg) scale(1.03)}
+.etape-3 .note-t{opacity:0;pointer-events:none;transform:scale(.6)}
+.note-ajout{position:absolute;width:196px;height:74px;border-radius:12px;border:1.5px dashed var(--b-forte);background:transparent;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--t3);font-size:12px;font-weight:500;cursor:pointer;transition:opacity .3s,border-color .2s,color .2s;z-index:3}
+.note-ajout:hover{border-color:var(--k1-200);color:var(--k1)}
+.etape-2 .note-ajout,.etape-3 .note-ajout{opacity:0;pointer-events:none}
+
+/* Les groupes */
+.zone{position:absolute;top:108px;bottom:28px;border-radius:20px;border:1.5px dashed var(--b-forte);background:rgba(255,255,255,.35);opacity:0;transition:opacity .4s var(--ease),border-color .2s,background-color .2s;pointer-events:none}
+.etape-2 .zone{opacity:1;pointer-events:auto}
+.zone.survol{border-color:var(--k1);background:rgba(229,236,252,.6)}
+.zone header{padding:12px 14px 0;display:flex;flex-direction:column;gap:2px}
+.zone header b{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.zone header span{font-size:11px;color:var(--t3);line-height:1.35}
+.zone header .tag{font-size:10px;font-weight:600;color:var(--k1);background:var(--teinte);border-radius:999px;padding:1px 7px}
+.zone.toi{border-style:solid;border-color:var(--b-def);background:rgba(236,236,236,.35)}
+.zone .vide{position:absolute;inset:auto 0 40% 0;text-align:center;font-size:12px;color:var(--t3)}
+
+/* Les agents (étape 3) */
+.cartes{position:absolute;left:0;right:0;bottom:30px;display:flex;justify-content:center;align-items:flex-end;gap:28px;opacity:0;pointer-events:none;transition:opacity .5s var(--ease) .2s}
+.etape-3 .cartes{opacity:1;pointer-events:auto;padding-left:230px}
+.carte{position:relative;width:150px;aspect-ratio:3/4;border:0;padding:0;border-radius:20px;cursor:pointer;text-align:left;transform:translateY(var(--y,0)) rotate(var(--r,0deg));transform-origin:50% 100%;transition:transform .34s var(--ease),box-shadow .34s var(--ease);box-shadow:var(--o-sm);outline-offset:4px}
+.carte:hover{--y:-6px}
+.carte[aria-pressed=true]{--y:-18px;--r:0deg !important;box-shadow:var(--o-levee);outline:2px solid var(--k1)}
+.carte .face{position:absolute;inset:0;border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
+.carte .soleil{margin:14% auto 0;width:62%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.95) 0 30%,rgba(255,255,255,.35) 31% 46%,transparent 47%)}
+.carte .nom{margin-top:auto;padding:0 13px 13px;display:flex;flex-direction:column;gap:2px}
+.carte .nom b{font-size:15px;font-weight:600;line-height:1.1}
+.carte .nom b.attend{font-weight:500;color:var(--t3);font-style:italic}
+.carte .nom span{font-size:11px}
+.carte .nb{position:absolute;top:10px;left:10px;height:20px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.9);font-size:10px;font-weight:600;display:flex;align-items:center;color:var(--t2)}
+.carte.toi{background:transparent;box-shadow:none;border:1.5px solid var(--b-def);cursor:default;display:flex;flex-direction:column;justify-content:flex-end;padding:13px;gap:4px;background:rgba(243,243,243,.7)}
+.carte.toi b{font-size:15px;font-weight:600}
+.carte.toi span{font-size:11px;color:var(--t3);line-height:1.35}
+
+.detail{max-width:980px;margin:0 auto;padding:26px 32px 8px;display:grid;grid-template-columns:minmax(0,1fr) 248px;gap:32px}
 .entete-agent{display:flex;align-items:center;gap:14px}
 .entete-agent h2{margin:0;font-size:24px;letter-spacing:-.04em;font-weight:600;line-height:1}
+.entete-agent h2.attend{color:var(--t3);font-weight:500}
 .entete-agent .role{font-size:13px;margin-top:4px}
-.jauge{margin-left:auto;width:132px;display:flex;flex-direction:column;gap:5px}
-.jauge span{text-align:right;font-size:11px;color:var(--t2)}
-.jauge i{display:block;height:6px;border-radius:999px;background:var(--survol);position:relative;overflow:hidden}
-.jauge i::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--w,12%);background:var(--k1);border-radius:999px;transition:width .48s var(--ease)}
-.mission{margin:16px 0 20px;font-size:16px;line-height:1.5;color:var(--t1);letter-spacing:-.01em}
+.prenoms{margin:14px 0 0;display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--t2)}
+.prenoms button{height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--b-def);background:#fff;font-size:12px;font-weight:500;cursor:pointer}
+.prenoms button:hover{border-color:var(--b-forte)}
+.prenoms button[aria-pressed=true]{border-color:var(--b-acc);background:var(--teinte);color:var(--k1)}
+.prenoms input{height:28px;width:140px;border-radius:6px;border:1px solid var(--b-def);padding:0 10px;font:inherit;font-size:12px;outline:0}
+.prenoms input:focus{border-color:var(--k1-200)}
+.mission{margin:14px 0 18px;font-size:16px;line-height:1.5}
+.mission small{display:block;font-size:11px;color:var(--t3);margin-top:4px}
 .piliers{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.pilier{background:var(--surface);border:1px solid var(--b-sub);border-radius:16px;padding:14px 16px;transition:border-color .3s var(--ease),background-color .3s var(--ease)}
-.pilier.change{border-color:var(--b-acc);background:linear-gradient(var(--teinte),#fff 70%)}
+.pilier{background:var(--surface);border:1px solid var(--b-sub);border-radius:16px;padding:14px 16px}
+.pilier.large{grid-column:span 2}
 .pilier h4{margin:0 0 8px;font-size:11px;font-weight:500;color:var(--t3);display:flex;align-items:center;gap:6px}
 .pilier h4 svg{width:12px;height:12px;color:var(--k1)}
 .pilier ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
-.pilier li{font-size:13px;line-height:1.45;color:var(--t2);display:flex;gap:8px}
-.pilier li::before{content:"";flex:none;width:4px;height:4px;border-radius:50%;background:var(--b-forte);margin-top:8px}
-.pilier li.neuf{color:var(--t1)}
-.pilier li.neuf::before{background:var(--k1)}
-.pilier.large{grid-column:span 2}
+.item{font-size:13px;line-height:1.45;color:var(--t1);display:flex;gap:8px;align-items:flex-start;border-radius:8px;padding:4px 6px;margin:0 -6px}
+.item .dit{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;color:var(--t3);background:var(--survol);border-radius:999px;padding:0 7px;line-height:17px;vertical-align:1px;cursor:help;white-space:nowrap}
+.item.propose{outline:1.5px dashed var(--k1-200);outline-offset:-1.5px;color:var(--t2);padding:6px 8px;margin:0}
+.item .gestes{flex:none;margin-left:auto;display:flex;gap:4px}
+.item .gestes button{height:22px;padding:0 7px;border-radius:5px;border:1px solid var(--b-def);background:#fff;font-size:11px;font-weight:600;cursor:pointer}
+.item .gestes button:first-child{color:var(--k1)}
+.item.garde .dit{color:var(--k1);background:var(--teinte)}
+.item.vide{color:var(--t3);font-style:italic}
 .cote{display:flex;flex-direction:column;gap:18px;padding-top:4px}
 .cote h5{margin:0 0 8px;font-size:11px;font-weight:500;color:var(--t3)}
 .teintes{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
@@ -129,38 +167,33 @@ kbd{font:inherit;font-size:11px;border:1px solid var(--b-forte);border-bottom-wi
 .teintes button[aria-pressed=true]{outline:2px solid var(--k1);outline-offset:1px}
 .actions{display:flex;flex-direction:column;gap:6px}
 .actions .btn{justify-content:flex-start}
-
-.qui{max-width:980px;margin:12px auto 0;padding:20px 32px 36px}
-.qui h3{margin:0 0 10px;font-size:13px;font-weight:600}
+.bilan-d{font-size:11px;color:var(--t3);line-height:1.5;margin:0}
+.qui{max-width:980px;margin:12px auto 0;padding:18px 32px 36px}
+.qui h3{margin:0 0 4px;font-size:13px;font-weight:600}
+.qui > p{margin:0 0 10px;font-size:12px;color:var(--t3)}
 .qui ul{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.qui li{display:flex;align-items:center;gap:8px;border:1px solid var(--b-sub);background:#fff;border-radius:12px;padding:9px 12px;font-size:12px;transition:border-color .22s var(--ease),background-color .22s var(--ease)}
+.qui li{display:flex;align-items:center;gap:8px;border:1px solid var(--b-sub);background:#fff;border-radius:12px;padding:9px 12px;font-size:12px}
 .qui li.vise{border-color:var(--b-acc);background:var(--teinte)}
-.qui li q{flex:1;min-width:0}
+.qui li q{flex:1;min-width:0;quotes:"« " " »"}
 .qui li b{font-weight:500;display:flex;align-items:center;gap:6px}
-.note{font-size:11px;color:var(--t3);margin:10px 0 0}
+.note-bas{font-size:11px;color:var(--t3);margin:10px 0 0}
 
-/* Conversation à droite */
-.conv{width:404px;flex:none;border-left:1px solid var(--b-sub);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.conv{width:404px;flex:none;border-left:1px solid var(--b-sub);background:var(--surface);display:flex;flex-direction:column;min-height:0;position:relative}
 .conv-haut{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--b-sub)}
 .conv-haut b{font-size:13px;font-weight:600}
 .conv-haut span{font-size:11px;color:var(--t3)}
 .fil{flex:1;min-height:0;overflow-y:auto;padding:16px 18px 8px;display:flex;flex-direction:column;gap:14px;scrollbar-width:none;background:var(--page)}
-.msg{display:grid;grid-template-columns:26px 1fr;gap:8px}
-.msg .qui-parle{font-size:12px;font-weight:600;color:#003fe4;margin-bottom:3px}
+.msg{display:grid;grid-template-columns:26px 1fr;gap:8px;animation:arrive .4s var(--ease) backwards}
+.msg .qui-parle{font-size:12px;font-weight:600;color:var(--k1);margin-bottom:3px}
 .msg p{margin:0;font-size:13px;line-height:1.5}
-.moi{align-self:flex-end;max-width:85%;background:#262626;color:#fff;border-radius:16px 16px 4px 16px;padding:8px 12px;font-size:13px;line-height:1.45}
+.moi{align-self:flex-end;max-width:88%;background:#262626;color:#fff;border-radius:16px 16px 4px 16px;padding:8px 12px;font-size:13px;line-height:1.45;animation:arrive .4s var(--ease) backwards}
+@keyframes arrive{from{opacity:0;transform:translateY(6px)}}
 .choix{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .choix span{font-size:12px;border:1px solid var(--b-def);background:#fff;border-radius:8px;padding:5px 9px;color:var(--t3)}
 .choix span.pris{border-color:var(--b-acc);background:var(--teinte);color:var(--t1)}
-.ligne-eq{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);background:#fff;border:1px solid var(--b-sub);border-radius:10px;padding:7px 10px;cursor:pointer}
-.ligne-eq:hover{border-color:var(--b-forte)}
-.ligne-eq .ronds{display:flex}
-.ligne-eq .ronds .rond{margin-left:-6px;border:2px solid #fff}
-.ligne-eq .ronds .rond:first-child{margin-left:0}
-.ecrit{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--t3)}
-.ecrit i{width:5px;height:5px;border-radius:50%;background:var(--t3);animation:respire 1.2s infinite}
-.ecrit i:nth-child(2){animation-delay:.2s}.ecrit i:nth-child(3){animation-delay:.4s}
-@keyframes respire{50%{opacity:.25}}
+.choix span.ouvert{color:var(--t1);cursor:pointer}
+.choix span.ouvert:hover{border-color:var(--b-forte)}
+.ligne-eq{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);background:#fff;border:1px solid var(--b-sub);border-radius:10px;padding:7px 10px}
 .suggestions{padding:10px 16px 0;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--b-sub)}
 .suggestions small{font-size:11px;color:var(--t3);display:flex;align-items:center;gap:6px}
 .puces{display:flex;flex-wrap:wrap;gap:6px}
@@ -175,38 +208,18 @@ kbd{font:inherit;font-size:11px;border:1px solid var(--b-forte);border-bottom-wi
 .cible{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 4px;border-radius:999px;background:var(--teinte);font-size:12px;font-weight:500;color:var(--k1)}
 .aide{font-size:11px;color:var(--t3);margin:8px 4px 0}
 
-/* ─── Vue « dans le fil » ─── */
-.vue-fil{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
-.vue-fil .entete-conv{height:56px;display:flex;align-items:center;gap:10px;padding:0 24px;background:#fff;border-bottom:1px solid var(--b-sub);font-weight:600}
-.barre-collante{position:absolute;top:56px;left:0;right:0;z-index:5;background:rgba(255,255,255,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--b-sub)}
-.barre-collante div{max-width:880px;margin:0 auto;display:flex;align-items:center;gap:12px;padding:8px 28px;font-size:12px;color:var(--t2)}
-.barre-collante b{color:var(--t1);font-size:13px}
-.fil-large{flex:1;overflow-y:auto;padding:70px 0 20px}
-.fil-large .col{max-width:880px;margin:0 auto;padding:0 28px;display:flex;flex-direction:column;gap:16px}
-.module{max-width:600px;border-radius:28px;background:#fff;border:1px solid var(--b-sub);box-shadow:var(--o-levee);overflow:hidden}
-.module header{display:flex;justify-content:space-between;gap:16px;padding:20px 20px 0}
-.module h2{margin:0;font-size:28px;line-height:1;font-weight:600;letter-spacing:-.05em}
-.module header p{margin:8px 0 0;font-size:13px;color:var(--t2);line-height:1.45}
-.module .scene{height:212px;margin-top:16px;border-top:1px solid var(--b-sub)}
-.module .cartes{bottom:22px;gap:0}
-.module .carte{width:112px;margin:0 -10px}
-.module .carte .nom b{font-size:13px}
-.module .ouvrir{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .22s var(--ease);background:rgba(249,249,249,.4);z-index:9}
-.module .scene:hover .ouvrir{opacity:1}
-.module footer{display:flex;align-items:center;gap:10px;padding:14px 20px;background:rgba(236,236,236,.6);border-top:1px solid var(--b-sub);font-size:12px;color:var(--t2)}
-.module footer .esp{flex:1}
-.annot{position:absolute;max-width:200px;background:#000d2e;color:#fff;font-size:12px;line-height:1.4;padding:8px 10px;border-radius:8px;max-width:230px;box-shadow:0 8px 24px rgba(0,13,46,.3);z-index:20}
+.annot{position:absolute;max-width:240px;background:#000d2e;color:#fff;font-size:12px;line-height:1.4;padding:8px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(0,13,46,.3);z-index:40;pointer-events:none}
 .annot::before{content:attr(data-n);display:inline-flex;width:18px;height:18px;border-radius:50%;background:#003fe4;font-weight:700;font-size:11px;align-items:center;justify-content:center;margin-right:6px}
-[hidden]{display:none !important}
 </style>
 </head>
 <body>
 <div class="meta">
-  <b>Maquette · Atelier d’une équipe en grand</b>
-  <p>Cliquer un agent ou ← / → pour passer de l’un à l’autre · les puces au-dessus du composeur préparent un message (rien n’est envoyé) · « Annotations » montre ce qui change.</p>
-  <div class="bascule" role="group" aria-label="Vue">
-    <button type="button" data-vue="grand" aria-pressed="true">En grand</button>
-    <button type="button" data-vue="fil" aria-pressed="false">Dans le fil</button>
+  <b>Maquette · L’équipe part de tes tâches</b>
+  <p>Trois temps : tes tâches dans tes mots, leur regroupement, puis les agents. En plein : ce que tu as dit ; en pointillés : ce que Cicco propose. Au 2, glisse une tâche d’un groupe à l’autre.</p>
+  <div class="bascule" role="group" aria-label="Étape">
+    <button type="button" data-aller="1" aria-pressed="true">1 · Tes tâches</button>
+    <button type="button" data-aller="2" aria-pressed="false">2 · Les regrouper</button>
+    <button type="button" data-aller="3" aria-pressed="false">3 · Ton équipe</button>
     <button type="button" id="annots" aria-pressed="true">Annotations</button>
   </div>
 </div>
@@ -223,111 +236,67 @@ kbd{font:inherit;font-size:11px;border:1px solid var(--b-forte);border-bottom-wi
     <div class="ag"><span class="rond" style="width:24px;height:24px;background:linear-gradient(#c7ddff,#ebf3fe)"></span>Hugo</div>
     <div class="ag"><span class="rond" style="width:24px;height:24px;background:linear-gradient(#ffd0c5,#feefea)"></span>Iris</div>
     <h6>Récents</h6>
-    <div class="ag" style="color:var(--t2);font-weight:400">Équipe de test</div>
-    <div class="ag" style="color:var(--t2);font-weight:400">Newsletter de mai</div>
+    <div class="ag" style="color:var(--t2);font-weight:400">Mon équipe</div>
   </aside>
 
-  <div class="ecran">
-    <!-- ═════ EN GRAND ═════ -->
-    <div class="atelier" id="vue-grand">
-      <div class="haut">
-        <button class="btn discret" type="button" data-ic="chevron-left">Conversation</button>
-        <span class="sep"></span>
-        <div class="titre-haut"><small>Atelier · nouvelle équipe</small><strong>Équipe de test</strong></div>
-        <div class="bilan">
-          <span class="ronds-haut" style="display:flex"></span>
-          <span><span class="mono" id="nb-creer">3</span> agents à créer · <span class="mono">~742 jetons</span> de fiches</span>
-          <button class="principal" type="button">Créer l’équipe</button>
+  <div class="atelier etape-1" id="atelier">
+    <div class="haut">
+      <button class="btn discret" type="button" data-ic="chevron-left">Conversation</button>
+      <span class="sep"></span>
+      <nav class="etapes" aria-label="Étapes">
+        <button type="button" class="etape" data-aller="1"><i>1</i>Tes tâches</button><span class="fleche"></span>
+        <button type="button" class="etape" data-aller="2"><i>2</i>Les regrouper</button><span class="fleche"></span>
+        <button type="button" class="etape" data-aller="3"><i>3</i>Ton équipe</button>
+      </nav>
+      <button class="principal" type="button" id="suivant">Valider mes tâches</button>
+    </div>
+    <div class="corps">
+      <div class="plateau">
+        <div class="scene" id="scene">
+          <div class="scene-titre"><h1 id="titre"></h1><p id="sous-titre"></p></div>
+          <div class="legende"><span><i class="plein"></i>Tu l’as dit</span><span><i class="pointille"></i>Proposé par Cicco</span></div>
+          <div id="zones"></div>
+          <div id="notes"></div>
+          <button type="button" class="note-ajout" id="ajout"><span data-ic="plus-01"></span>Une tâche de plus</button>
+          <div class="cartes" id="cartes"></div>
+          <div class="annot" data-n="1" data-etape="1" style="left:32px;bottom:28px;max-width:420px">Rien n’est créé et aucun agent n’apparaît : on pose d’abord ce que tu fais, avec tes mots. Les agents viendront de là.</div>
+          <div class="annot" data-n="2" data-etape="1" style="right:28px;bottom:28px;max-width:250px">Une proposition de Cicco reste en pointillés tant que tu ne l’as pas gardée. Il dit pourquoi il l’ajoute.</div>
+          <div class="annot" data-n="1" data-etape="2" style="left:32px;bottom:-2px;max-width:440px">Les groupes sont une proposition : glisse une tâche ailleurs, ou demande « un seul agent pour tout ». Ici, deux groupes : le nombre vient de tes tâches, pas d’un modèle.</div>
+          <div class="annot" data-n="1" data-etape="3" style="left:32px;top:110px;max-width:230px">Un agent par groupe validé. Pas de prénom imposé : il attend le tien. Ce que tu gardes reste à toi.</div>
         </div>
-      </div>
-      <div class="corps">
-        <div class="plateau" style="position:relative">
-          <div class="scene">
-            <div class="scene-titre">
-              <h1>Équipe de test</h1>
-              <p>Tester la création de plusieurs agents d’un coup depuis une seule carte.</p>
-            </div>
-            <div class="nav">
-              <kbd>←</kbd><kbd>→</kbd>
-              <button class="btn" type="button" id="prec" aria-label="Agent précédent" data-ic="chevron-left"></button>
-              <span class="mono" id="rang">1 / 3</span>
-              <button class="btn" type="button" id="suiv" aria-label="Agent suivant" data-ic="chevron-right"></button>
-            </div>
-            <div class="cartes" id="cartes"></div>
-            <div class="annot" data-n="1" style="left:32px;top:92px;max-width:420px">Les agents en grand, tous visibles. Un clic ou ← / → change d’agent, sans rien faire défiler.</div>
-            <div class="annot" data-n="2" style="right:24px;top:66px;max-width:250px">Ce que Cicco vient de changer s’allume : « À jour » sur la carte, la ligne en bleu dans le détail.</div>
-          </div>
-
+        <div id="sous-scene" hidden>
           <div class="detail" id="detail"></div>
-
           <div class="qui">
             <h3>Qui s’en charge</h3>
+            <p>Tes tâches telles que tu les as dites, et qui s’en occupe.</p>
             <ul id="qui"></ul>
-            <p class="note">Une demande, un responsable : ton assistant confie chaque livrable à un seul agent. Rien n’est écrit sur ton poste avant « Créer l’équipe ».</p>
+            <p class="note-bas">Rien n’est écrit sur ton poste avant « Créer l’équipe ».</p>
           </div>
         </div>
-
-        <aside class="conv" style="position:relative">
-          <div class="conv-haut"><span class="rond k-cicco" style="width:26px;height:26px"></span><div style="display:flex;flex-direction:column"><b>Cicco</b><span>Parle-lui pour retoucher l’équipe</span></div></div>
-          <div class="fil" id="fil">
-            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>Avant de composer l’équipe : qu’est-ce qui revient chaque semaine chez toi ?</p>
-              <div class="choix"><span class="pris">Écrire des mails et des posts</span><span class="pris">Organiser mon agenda</span><span>Faire de la veille</span><span>Suivre les devis</span></div></div></div>
-            <div class="moi">Écrire des mails et des posts, organiser mon agenda</div>
-            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>Et qu’est-ce que tu veux confier en premier, et garder pour toi ?</p>
-              <div class="choix"><span class="pris">Confier les brouillons, garder l’envoi</span><span>Tout confier</span><span>Seulement relire</span></div></div></div>
-            <div class="moi">Confier les brouillons, garder l’envoi</div>
-            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>Voilà une première équipe de trois. Dis-moi ce que tu veux changer, pour un agent ou pour tous.</p>
-              <div class="ligne-eq" data-va="lea"><span class="ronds" id="ronds-ligne"></span>Équipe de test : Léa, Malo, Inès arrivent</div></div></div>
-            <div class="moi">Malo pourrait aussi faire la veille concurrentielle, une fois par semaine</div>
-            <div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>C’est fait : Malo fait aussi une veille concurrentielle chaque lundi, livrée en une page.</p>
-              <div class="ligne-eq" data-va="malo"><span class="ronds"><span class="rond" style="width:20px;height:20px;background:linear-gradient(#b0e7ef,#e1f7fa)"></span></span>Malo mis à jour · Ce qu’il livre</div></div></div>
-          </div>
-          <div class="suggestions">
-            <small><span data-ic="stars"></span>Pour <b id="sugg-nom" style="color:var(--t1)">Léa</b></small>
-            <div class="puces" id="puces"></div>
-          </div>
-          <div class="composeur">
-            <div class="boite">
-              <textarea id="champ" placeholder="Écris à Cicco…"></textarea>
-              <div class="bas">
-                <span class="cible" id="cible"></span>
-                <button class="btn discret mini" type="button" data-ic="paperclip" aria-label="Joindre" style="width:28px;padding:0;justify-content:center"></button>
-                <button class="envoyer" type="button" aria-label="Envoyer" data-ic="arrow-up"></button>
-              </div>
-            </div>
-            <p class="aide">Cicco applique chaque demande sur la table · Entrée pour envoyer.</p>
-          </div>
-          <div class="annot" data-n="3" style="right:10px;top:6px;max-width:230px">La conversation passe à droite : on parle et on voit l’équipe en même temps. Fini de remonter.</div>
-          <div class="annot" data-n="4" style="right:10px;top:150px;max-width:230px">Cicco pose d’abord ses questions (deux au moins), avec des réponses toutes prêtes.</div>
-          <div class="annot" data-n="5" style="right:10px;bottom:230px;max-width:230px">Des débuts de message pour l’agent choisi. La puce « À propos de Léa » dit à Cicco de qui on parle.</div>
-        </aside>
       </div>
-    </div>
 
-    <!-- ═════ DANS LE FIL ═════ -->
-    <div class="vue-fil" id="vue-fil" hidden>
-      <div class="entete-conv"><span class="rond k-cicco" style="width:28px;height:28px"></span>Cicco <span style="font-weight:400;font-size:12px;color:var(--t3)">Assistant</span></div>
-      <div class="barre-collante"><div>
-        <span class="ronds" id="ronds-barre" style="display:flex"></span>
-        <span style="flex:1"><b>Équipe de test</b> · 3 agents · Malo vient d’être mis à jour</span>
-        <button class="btn mini sombre" type="button" data-ic="expand" data-ouvrir>Ouvrir l’atelier</button>
-      </div></div>
-      <div class="fil-large"><div class="col">
-        <div class="msg" style="grid-template-columns:32px 1fr"><span class="rond k-cicco" style="width:32px;height:32px"></span><div><div class="qui-parle">Cicco</div><p style="font-size:14px">Voilà une première équipe de trois. Ouvre l’atelier pour la voir en grand et me dire ce que tu veux changer.</p>
-          <p style="font-size:12px;color:var(--t3);margin:12px 0 8px">Atelier · nouvelle équipe</p>
-          <section class="module">
-            <header><div><h2>Équipe de test</h2><p>Tester la création de plusieurs agents d’un coup depuis une seule carte.</p></div><span class="mono" style="font-size:11px;color:var(--t3);padding-top:4px">3 agents</span></header>
-            <div class="scene" style="position:relative"><div class="cartes" id="cartes-fil"></div>
-              <div class="ouvrir"><button class="btn sombre" type="button" data-ic="expand" data-ouvrir>Ouvrir l’atelier en grand</button></div></div>
-            <footer><span>3 agents à créer · <span class="mono">~742 jetons</span> de fiches</span><span class="esp"></span>
-              <button class="btn" type="button" data-ic="expand" data-ouvrir>Ouvrir l’atelier</button>
-              <button class="principal" type="button">Créer l’équipe</button></footer>
-          </section>
-          <div class="annot" data-n="6" style="position:relative;margin-top:12px;max-width:600px !important">Dans le fil, la carte devient un module compact : l’éventail, le bilan, « Ouvrir l’atelier » et « Créer l’équipe ». Le détail de chaque agent vit dans l’atelier en grand. Quand le module sort de l’écran, une barre reste en haut du fil.</div>
-        </div></div>
-        <div class="moi" style="font-size:14px">Malo pourrait aussi faire la veille concurrentielle</div>
-        <div class="msg" style="grid-template-columns:32px 1fr"><span class="rond k-cicco" style="width:32px;height:32px"></span><div><div class="qui-parle">Cicco</div><p style="font-size:14px">C’est fait : Malo fait aussi une veille concurrentielle chaque lundi.</p></div></div>
-      </div></div>
+      <aside class="conv">
+        <div class="conv-haut"><span class="rond k-cicco" style="width:26px;height:26px"></span><div style="display:flex;flex-direction:column"><b>Cicco</b><span id="conv-sous">Parle-lui de ta semaine</span></div></div>
+        <div class="fil" id="fil"></div>
+        <div class="suggestions">
+          <small><span data-ic="stars"></span><span id="sugg-titre">Pour l’aider</span></small>
+          <div class="puces" id="puces"></div>
+        </div>
+        <div class="composeur">
+          <div class="boite">
+            <textarea id="champ" placeholder="Écris à Cicco…"></textarea>
+            <div class="bas">
+              <span class="cible" id="cible" hidden></span>
+              <button class="btn discret mini" type="button" data-ic="paperclip" aria-label="Joindre" style="width:28px;padding:0;justify-content:center"></button>
+              <button class="envoyer" type="button" aria-label="Envoyer" data-ic="arrow-up"></button>
+            </div>
+          </div>
+          <p class="aide">Ce que tu dis à Cicco change la table · Entrée pour envoyer.</p>
+        </div>
+        <div class="annot" data-n="3" data-etape="1" style="right:10px;top:60px;max-width:250px">Cicco commence par des questions ouvertes. Il ne propose rien avant d’avoir tes réponses.</div>
+        <div class="annot" data-n="3" data-etape="2" style="right:10px;top:60px;max-width:250px">Il ne demande qu’une chose à la fois, avec des réponses toutes prêtes, dont « je ne sais pas encore ».</div>
+        <div class="annot" data-n="2" data-etape="3" style="right:10px;top:60px;max-width:250px">Il demande ce qu’il ne sait pas (comment vérifier), au lieu de l’inventer.</div>
+      </aside>
     </div>
   </div>
 </div>
@@ -344,108 +313,266 @@ const TEINTES = {
   "orange":["#ffd0c5","#feefea","#9e4f41"],"orange-k2":["#fbd4b8","#feefe4","#915a31"],"jaune":["#f3eec1","#f5f3e2","#756a2a"],
   "ocre":["#f0dab4","#fbf1e1","#846328"],"vert":["#b1ebd4","#e1f9ee","#067c5e"],"vert-k2":["#cde6bb","#ecf7e4","#527537"]
 };
-const AGENTS = [
-  { cle:"lea", nom:"Léa", role:"Rédaction", teinte:"violet", r:-5, jetons:247,
-    mission:"Rédige les textes courts (mails, posts, fiches) dans le ton de Corentin.",
-    piliers:{ quand:["Il faut écrire un mail ou un post","Relire un texte avant envoi"], livre:["Un texte prêt à envoyer, dans un fichier"], methode:["Part des notes de la semaine","Garde le tutoiement et les phrases courtes","Propose deux accroches pour un post"], limites:["N’envoie rien sans accord"], verifie:["Relit l’orthographe et les chiffres cités"] } },
-  { cle:"malo", nom:"Malo", role:"Veille", teinte:"bleu-k3", r:0, jetons:281, touche:true,
-    mission:"Suit ce qui bouge dans le secteur et le résume en une page.",
-    piliers:{ quand:["Une question sur un concurrent","Le lundi matin"], livre:["Un résumé d’une page, sources citées","Une veille concurrentielle chaque lundi"], methode:["Cite chaque source","Sépare les faits des avis"], limites:["Ne contacte personne"], verifie:["Chaque lien ouvert et daté"] }, neufs:{livre:1} },
-  { cle:"ines", nom:"Inès", role:"Organisation", teinte:"vert-k2", r:5, jetons:214,
-    mission:"Range l’agenda et prépare chaque rendez-vous.",
-    piliers:{ quand:["Un rendez-vous à caler","La semaine à préparer"], livre:["Les créneaux proposés, une fiche par rendez-vous"], methode:["Croise l’agenda avec les rappels"], limites:["Ne confirme aucun rendez-vous seule"], verifie:["Aucun créneau en conflit"] } },
-];
-const EXEMPLES = [["Le mail de relance au client Acme","lea"],["Ce que font les concurrents ce mois-ci","malo"],["Caler trois rendez-vous la semaine prochaine","ines"],["Le post LinkedIn du lancement","lea"]];
-const PILIERS = [["quand","Quand l’appeler"],["livre","Ce qu’il livre"],["limites","Ses limites"],["verifie","Comment il vérifie"],["methode","Comment il travaille"]];
-let choisi = 0;
-const ecartes = new Set();
-
 const fond = t => `linear-gradient(${TEINTES[t][0]},${TEINTES[t][1]})`;
-const soleil = (t) => `<div class="soleil"><i style="background:radial-gradient(circle,rgba(255,255,255,.95) 0 30%,rgba(255,255,255,.35) 31% 46%,transparent 47%)"></i><i style="background:conic-gradient(from 0deg,${TEINTES[t][0]}00 0 4%,rgba(255,255,255,.55) 4% 8%,transparent 8% 12.5%);mask:radial-gradient(circle,transparent 46%,#000 47% 62%,transparent 63%);-webkit-mask:radial-gradient(circle,transparent 46%,#000 47% 62%,transparent 63%);animation:tourne 40s linear infinite"></i></div>`;
-document.head.insertAdjacentHTML("beforeend","<style>@keyframes tourne{to{transform:rotate(1turn)}}</style>");
-const etoiles = () => `<span class="etoiles">${Array.from({length:5},()=>`<span style="color:var(--k1);display:flex">${ic("stars",11)}</span>`).join("")}</span>`;
-const rond = (a, t=20) => `<span class="rond" style="width:${t}px;height:${t}px;background:${fond(a.teinte)}"></span>`;
+const rond = (t, n=20) => `<span class="rond" style="width:${n}px;height:${n}px;background:${fond(t)}"></span>`;
 
-function cartes(conteneur, grand) {
-  conteneur.innerHTML = AGENTS.map((a, i) => `
-    <button type="button" class="carte ${a.touche && grand ? "touchee" : ""} ${ecartes.has(a.cle) ? "ecarte" : ""}" data-i="${i}" aria-pressed="${grand && i === choisi}" style="--r:${grand ? a.r * .6 : a.r}deg;${!grand ? `--y:${Math.abs(a.r) * 1.2}px` : ""}">
-      <div class="face" style="background:${fond(a.teinte)}">${soleil(a.teinte)}
-        <span class="nom"><b>${a.nom}</b><span style="color:${TEINTES[a.teinte][2]}">${a.role}</span>${etoiles()}</span>
-        ${a.touche && grand ? `<span class="pastille">À jour</span>` : ""}
-        ${ecartes.has(a.cle) ? `<span class="pastille" style="color:var(--t2)">De côté</span>` : ""}
-      </div>
-    </button>`).join("") + (grand ? `<button type="button" class="carte vide" id="ajout"><span class="plus">${ic("plus-01")}</span>Un agent de plus</button>` : "");
+/* ─── Les données : ce qu'elle a dit, et ce que Cicco propose ─── */
+const TACHES = [
+  { id:"mails", t:"Répondre aux mails des clients", src:"dit", groupe:"a" },
+  { id:"post", t:"Écrire le post LinkedIn du lundi", src:"dit", groupe:"a" },
+  { id:"news", t:"Préparer la newsletter du mois", src:"dit", groupe:"a" },
+  { id:"caler", t:"Caler les rendez-vous avec les prospects", src:"dit", groupe:"b" },
+  { id:"prep", t:"Préparer mes rendez-vous", src:"dit", groupe:"b" },
+  { id:"devis", t:"Relancer les devis sans réponse", src:"propose", groupe:"b", pourquoi:"Tu parles de prospects : les relances vont souvent avec." },
+  { id:"envoi", t:"Envoyer les mails", src:"toi", groupe:"toi" },
+  { id:"valider", t:"Valider les rendez-vous", src:"toi", groupe:"toi" },
+];
+const GROUPES = [
+  { id:"a", nom:"Les textes", pourquoi:"Même ton, même relecture.", teinte:"violet" },
+  { id:"b", nom:"Rendez-vous et prospects", pourquoi:"Ton agenda et tes prospects.", teinte:"bleu-k3" },
+  { id:"toi", nom:"Pour toi", pourquoi:"Ce que tu as dit garder." },
+];
+const AGENTS = {
+  a: { prenoms:["Léa","Romy","Nina"], role:"Rédaction", mission:"Prépare tes textes (mails clients, post du lundi, newsletter) en brouillons à relire.",
+       livre:[{t:"Un brouillon prêt à relire, dans un fichier", src:"dit", cite:"« confier les brouillons »"}],
+       limites:[{t:"N’envoie jamais un mail lui-même", src:"dit", cite:"« je garde l’envoi »"}],
+       verifie:[],
+       methode:[{t:"Tutoie, comme toi dans tes mails", src:"propose"},{t:"Part de tes notes de la semaine", src:"propose"}] },
+  b: { prenoms:["Malo","Inès","Sacha"], role:"Agenda et prospects", mission:"Cale et prépare tes rendez-vous avec les prospects, et relance les devis.",
+       livre:[{t:"Des créneaux proposés, une fiche par rendez-vous", src:"propose"}],
+       limites:[{t:"Ne confirme aucun rendez-vous sans toi", src:"dit", cite:"« c’est moi qui valide les rendez-vous »"}],
+       verifie:[{t:"Aucun créneau en conflit avec ton agenda", src:"propose"}],
+       methode:[{t:"Croise ton agenda et tes rappels", src:"propose"}] },
+};
+
+/* ─── La conversation, étape par étape ─── */
+const C = (p, extra="") => `<div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>${p}</p>${extra}</div></div>`;
+const M = p => `<div class="moi">${p}</div>`;
+const choix = (l, ouverts) => `<div class="choix">${l.map(([t, pris]) => `<span class="${pris ? "pris" : ouverts ? "ouvert" : ""}">${t}</span>`).join("")}</div>`;
+const FIL = {
+  1: [
+    C("Pour composer ton équipe, partons de ce que tu fais. Qu’est-ce qui revient dans ta semaine ? Dis-le comme à un collègue."),
+    M("Je réponds aux mails des clients, j’écris le post LinkedIn du lundi, la newsletter une fois par mois, et je passe un temps fou à caler et préparer mes rendez-vous avec les prospects."),
+    C("Et dans tout ça, qu’est-ce que tu veux garder pour toi ?", choix([["L’envoi des mails",1],["Valider les rendez-vous",1],["Rien",0],["Je ne sais pas encore",0]])),
+    M("L’envoi des mails, et c’est moi qui valide les rendez-vous."),
+    C("J’ai posé tes tâches sur la table, avec tes mots. J’en ajoute une en pointillés, à garder ou retirer : les relances de devis. Il en manque ?"),
+  ],
+  2: [
+    M("C’est tout, c’est bon."),
+    C("Je les regrouperais comme ça, mais ce n’est qu’une proposition : déplace une tâche, ou dis-moi."),
+    C("Un agent pour les textes et un pour les rendez-vous, ou un seul pour tout ?", choix([["Deux agents",0],["Un seul",0],["Je ne sais pas encore",0]], true)),
+  ],
+  3: [
+    M("Deux agents."),
+    C("Voilà tes deux agents. Ce que tu as dit est en plein ; ce que j’ajoute est en pointillés, à garder ou retirer. Choisis-leur un prénom.", `<div class="ligne-eq">${rond("violet")}${rond("bleu-k3")}2 agents, 0 prénom choisi</div>`),
+    C("Comment veux-tu que celui des textes vérifie son travail ?", choix([["Relire les chiffres et les noms cités",0],["Me montrer deux versions",0],["Rien de spécial",0]], true)),
+  ],
+};
+const PUCES = {
+  1: { titre:"Pour l’aider", l:[["Une tâche de plus","J’oublie : je fais aussi "],["Ça change selon les semaines","Ça dépend des semaines : "],["Je ne sais pas trop","Je ne sais pas trop ce que je pourrais confier."]] },
+  2: { titre:"Sur les groupes", l:[["Un seul agent pour tout","Un seul agent pour tout."],["Séparer rendez-vous et devis","Sépare les rendez-vous et les relances de devis."],["Je garde aussi…","Je garde aussi "]] },
+};
+const TITRES = {
+  1: ["Tes tâches", "Ce qui revient dans ta semaine, avec tes mots. Garde, retire ou ajoute : rien n’est créé à ce stade."],
+  2: ["Les regrouper", "Cicco propose des groupes. Glisse une tâche d’un groupe à l’autre : chaque groupe deviendra un agent."],
+  3: ["Ton équipe", ""],
+};
+const LIBELLES = { 1:"Valider mes tâches", 2:"Valider les groupes", 3:"Créer l’équipe" };
+
+let etape = 1, choisi = "a";
+const prenom = { a:"", b:"" };
+const teinte = { a:"violet", b:"bleu-k3" };
+const gardes = new Set();
+
+/* ─── La table ─── */
+const scene = document.getElementById("scene");
+const L = () => scene.clientWidth;
+function positions() {
+  const pos = {};
+  if (etape === 1) {
+    const w = L(), col = Math.min(236, (w - 64) / 3);
+    const x0 = (w - (col * 2 + 196)) / 2;
+    const jit = [[-6,2,-2],[4,-3,5],[-3,6,-4]], rot = [-2,1.5,-1,2,-1.5,1,-2.5,1.5];
+    let k = 0;
+    for (const t of TACHES) {
+      if (t.retiree) continue;
+      const c = k % 3, r = Math.floor(k / 3);
+      pos[t.id] = { x: x0 + c * col + jit[r][c], y: 112 + r * 132 + jit[c][r] * 2, r: rot[k % rot.length] };
+      k++;
+    }
+    const c = k % 3, r = Math.floor(k / 3);
+    pos.ajout = { x: x0 + c * col, y: 112 + r * 132 };
+  } else {
+    const z = zones();
+    for (const g of GROUPES) {
+      let y = 108 + 78;
+      TACHES.filter(t => !t.retiree && t.groupe === g.id).forEach((t) => {
+        pos[t.id] = { x: z[g.id].x + (z[g.id].w - 196) / 2, y, r: 0 };
+        y += (t.src === "propose" && !gardes.has(t.id) ? 118 : 74) + 10;
+      });
+    }
+  }
+  return pos;
+}
+function zones() {
+  const w = L(), m = 24, g = 14, zw = (w - m * 2 - g * 2) / 3, r = {};
+  GROUPES.forEach((gr, i) => r[gr.id] = { x: m + i * (zw + g), w: zw });
+  return r;
+}
+function dessinerTable() {
+  document.getElementById("notes").innerHTML = TACHES.map(t => `
+    <div class="note-t ${t.src === "propose" && !gardes.has(t.id) ? "propose" : ""} ${t.src === "toi" ? "pour-toi" : ""} ${t.retiree ? "retiree" : ""}" data-id="${t.id}" title="${t.pourquoi ?? ""}">
+      <q>${t.t}</q>
+      ${t.src === "propose" && !gardes.has(t.id) ? `<span class="pourquoi">${t.pourquoi}</span>` : ""}
+      <span class="src">${t.src === "toi" ? `<span class="rond toi" style="width:12px;height:12px"></span><b>Tu le gardes</b>` : t.src === "dit" || gardes.has(t.id) ? `<b>${gardes.has(t.id) ? "Gardée" : "Tu l’as dit"}</b>` : `<b style="color:var(--k1)">Proposé par Cicco</b>`}
+      ${t.src === "propose" && !gardes.has(t.id) && etape === 1 ? `<span class="gestes"><button type="button" data-garder="${t.id}">Garder</button><button type="button" data-retirer="${t.id}">Retirer</button></span>` : ""}</span>
+    </div>`).join("");
+  const z = zones();
+  document.getElementById("zones").innerHTML = GROUPES.map(g => {
+    const n = TACHES.filter(t => !t.retiree && t.groupe === g.id).length;
+    return `<div class="zone ${g.id === "toi" ? "toi" : ""}" data-zone="${g.id}" style="left:${z[g.id].x}px;width:${z[g.id].w}px">
+      <header><b>${g.id === "toi" ? `<span class="rond toi" style="width:14px;height:14px"></span>` : rond(g.teinte, 14)}${g.nom}${g.id !== "toi" ? `<span class="tag">proposé</span>` : ""}</b><span>${n} tâche${n > 1 ? "s" : ""} · ${g.pourquoi}</span></header>
+      ${n ? "" : `<div class="vide">Glisse une tâche ici</div>`}</div>`;
+  }).join("");
+  placer();
+  document.querySelectorAll("[data-garder]").forEach(b => b.onclick = e => { e.stopPropagation(); gardes.add(b.dataset.garder); dessinerTable(); });
+  document.querySelectorAll("[data-retirer]").forEach(b => b.onclick = e => { e.stopPropagation(); TACHES.find(t => t.id === b.dataset.retirer).retiree = true; dessinerTable(); });
+  brancherGlisser();
+}
+function placer() {
+  const p = positions();
+  document.querySelectorAll(".note-t").forEach(n => { const q = p[n.dataset.id]; if (!q) return; n.style.left = q.x + "px"; n.style.top = q.y + "px"; n.style.setProperty("--r", q.r + "deg"); });
+  if (p.ajout) { const a = document.getElementById("ajout"); a.style.left = p.ajout.x + "px"; a.style.top = p.ajout.y + "px"; }
+}
+function brancherGlisser() {
+  document.querySelectorAll(".note-t").forEach(n => n.onpointerdown = e => {
+    if (etape !== 2 || e.target.closest("button")) return;
+    const box = scene.getBoundingClientRect(), dx = e.clientX - n.offsetLeft - box.left, dy = e.clientY - n.offsetTop - box.top;
+    n.classList.add("tient"); n.setPointerCapture(e.pointerId);
+    const sous = x => { const z = zones(); return GROUPES.find(g => x >= z[g.id].x && x <= z[g.id].x + z[g.id].w)?.id; };
+    n.onpointermove = m => {
+      n.style.left = m.clientX - box.left - dx + "px"; n.style.top = m.clientY - box.top - dy + "px";
+      const id = sous(m.clientX - box.left);
+      document.querySelectorAll(".zone").forEach(z => z.classList.toggle("survol", z.dataset.zone === id));
+    };
+    n.onpointerup = u => {
+      n.onpointermove = n.onpointerup = null; n.classList.remove("tient");
+      const id = sous(u.clientX - box.left);
+      if (id) TACHES.find(t => t.id === n.dataset.id).groupe = id;
+      dessinerTable();
+    };
+  });
 }
 
-function detail() {
-  const a = AGENTS[choisi];
-  const cote = ecartes.has(a.cle);
+/* ─── L'équipe (étape 3) ─── */
+const groupesAgents = () => GROUPES.filter(g => g.id !== "toi" && TACHES.some(t => !t.retiree && t.groupe === g.id));
+function dessinerEquipe() {
+  const gs = groupesAgents();
+  if (!gs.some(g => g.id === choisi)) choisi = gs[0]?.id;
+  const toi = TACHES.filter(t => !t.retiree && t.groupe === "toi");
+  document.getElementById("cartes").innerHTML = gs.map((g, i) => {
+    const a = AGENTS[g.id] ?? { role: g.nom }, n = TACHES.filter(t => !t.retiree && t.groupe === g.id).length;
+    return `<button type="button" class="carte" data-g="${g.id}" aria-pressed="${g.id === choisi}" style="--r:${(i - (gs.length - 1) / 2) * 4}deg">
+      <div class="face" style="background:${fond(teinte[g.id])}"><span class="nb">${n} tâche${n > 1 ? "s" : ""}</span><div class="soleil"></div>
+      <span class="nom">${prenom[g.id] ? `<b>${prenom[g.id]}</b>` : `<b class="attend">Sans prénom</b>`}<span style="color:${TEINTES[teinte[g.id]][2]}">${a.role}</span></span></div></button>`;
+  }).join("") + (toi.length ? `<div class="carte toi"><span class="rond toi" style="width:28px;height:28px"></span><b>Toi</b><span>${toi.map(t => t.t).join(" · ")}</span></div>` : "");
+  document.querySelectorAll(".carte[data-g]").forEach(c => c.onclick = () => { choisi = c.dataset.g; dessinerEquipe(); });
+  const sansPrenom = gs.filter(g => !prenom[g.id]).length;
+  document.getElementById("sous-titre").textContent = sansPrenom ? `${gs.length} agent${gs.length > 1 ? "s" : ""}, un par groupe. ${sansPrenom > 1 ? `${sansPrenom} attendent leur prénom.` : "Un attend son prénom."}` : `${gs.length} agents prêts à naître.`;
+  if (etape === 3) document.getElementById("suivant").disabled = sansPrenom > 0;
+  document.querySelector(".ligne-eq") && (document.querySelector(".ligne-eq").lastChild.textContent = `${gs.length} agents, ${gs.length - sansPrenom} prénom${gs.length - sansPrenom > 1 ? "s" : ""} choisi${gs.length - sansPrenom > 1 ? "s" : ""}`);
+  dessinerDetail();
+}
+const item = (x, k) => {
+  const id = `${choisi}-${k}`, garde = gardes.has(id);
+  if (x.src === "propose" && !garde) return `<li class="item propose" data-item="${id}"><span>${x.t}</span><span class="gestes"><button type="button" data-g-item="${id}">Garder</button><button type="button" data-r-item="${id}">Retirer</button></span></li>`;
+  return `<li class="item ${garde ? "garde" : ""}"><span>${x.t}<span class="dit" title="${x.cite ?? ""}">${garde ? "gardé" : "tu l’as dit"}</span></span></li>`;
+};
+const retires = new Set();
+function dessinerDetail() {
+  const g = GROUPES.find(x => x.id === choisi), a = AGENTS[choisi];
+  if (!g || !a) { document.getElementById("detail").innerHTML = ""; return; }
+  const quand = TACHES.filter(t => !t.retiree && t.groupe === choisi).map(t => ({ t: t.t, src: t.src === "propose" && !gardes.has(t.id) ? "propose" : "dit", cite: `« ${t.t} »` }));
+  const liste = (k, l) => { const v = l.map((x, i) => ({ x, k: `${k}${i}` })).filter(o => !retires.has(`${choisi}-${o.k}`)); return v.length ? v.map(o => item(o.x, o.k)).join("") : `<li class="item vide">Cicco te le demande</li>`; };
+  const nom = prenom[choisi];
   document.getElementById("detail").innerHTML = `
     <div>
-      <div class="entete-agent">
-        ${rond(a, 56)}
-        <div><h2>${a.nom}</h2><div class="role" style="color:${TEINTES[a.teinte][2]}">${a.role}</div></div>
-        <div class="jauge"><span class="mono">~${a.jetons} jetons</span><i style="--w:${a.jetons / 25}%"></i></div>
+      <div class="entete-agent">${rond(teinte[choisi], 56)}<div><h2 class="${nom ? "" : "attend"}">${nom || "Sans prénom"}</h2><div class="role" style="color:${TEINTES[teinte[choisi]][2]}">${a.role}</div></div></div>
+      <div class="prenoms"><span>Son prénom :</span>${a.prenoms.map(p => `<button type="button" data-prenom="${p}" aria-pressed="${p === nom}">${p}</button>`).join("")}<input id="prenom-libre" placeholder="Ou écris le tien" value="${nom && !a.prenoms.includes(nom) ? nom : ""}"></div>
+      <p class="mission">${a.mission}<small>Écrite par Cicco d’après tes tâches · à corriger en lui parlant</small></p>
+      <div class="piliers">
+        <div class="pilier"><h4>${ic("stars", 12)}Quand l’appeler</h4><ul>${quand.map((x, i) => item(x, "q" + i)).join("")}</ul></div>
+        <div class="pilier"><h4>${ic("stars", 12)}Ce qu’il livre</h4><ul>${liste("l", a.livre)}</ul></div>
+        <div class="pilier"><h4>${ic("stars", 12)}Ses limites</h4><ul>${liste("s", a.limites)}</ul></div>
+        <div class="pilier"><h4>${ic("stars", 12)}Comment il vérifie</h4><ul>${liste("v", a.verifie)}</ul></div>
+        <div class="pilier large"><h4>${ic("stars", 12)}Comment il travaille</h4><ul>${liste("m", a.methode)}</ul></div>
       </div>
-      <p class="mission">${a.mission}</p>
-      <div class="piliers">${PILIERS.map(([k, t], j) => {
-        const items = a.piliers[k] || [];
-        const neuf = a.neufs?.[k];
-        return `<div class="pilier ${neuf ? "change" : ""} ${j === 4 ? "large" : ""}"><h4>${ic("stars", 12)}${t}${neuf ? `<span style="margin-left:auto;color:var(--k1);font-weight:600">Mis à jour par Cicco</span>` : ""}</h4><ul>${items.map((x, n) => `<li class="${neuf && n >= items.length - neuf ? "neuf" : ""}">${x}</li>`).join("")}</ul></div>`;
-      }).join("")}</div>
     </div>
     <div class="cote">
-      <div><h5>Sa couleur</h5><div class="teintes">${Object.keys(TEINTES).map(t => `<button type="button" aria-label="${t}" aria-pressed="${t === a.teinte}" data-t="${t}"><i style="background:${TEINTES[t][0]}"></i></button>`).join("")}</div></div>
-      <div><h5>Avec ${a.nom}</h5><div class="actions">
+      <div><h5>Sa couleur</h5><div class="teintes">${Object.keys(TEINTES).map(t => `<button type="button" aria-label="${t}" aria-pressed="${t === teinte[choisi]}" data-t="${t}"><i style="background:${TEINTES[t][0]}"></i></button>`).join("")}</div></div>
+      <div><h5>Avec ${nom || "cet agent"}</h5><div class="actions">
         <button class="btn" type="button">${ic("align-left", 14)}Voir sa fiche</button>
         <button class="btn" type="button">${ic("stars", 14)}L’affiner et l’éprouver</button>
-        <button class="btn discret" type="button" id="ecarter">${cote ? "Le reprendre dans l’équipe" : "Le laisser de côté"}</button>
+        <button class="btn discret" type="button">Le laisser de côté</button>
       </div></div>
-      <p class="note" style="margin:0">Le reste se change en parlant à Cicco, à droite.</p>
+      <p class="bilan-d">Sa fiche : ~230 jetons, relue à chaque appel. Une ligne en pointillés n’y entre que si tu la gardes.</p>
     </div>`;
-  document.getElementById("rang").textContent = `${choisi + 1} / ${AGENTS.length}`;
-  document.getElementById("qui").innerHTML = EXEMPLES.map(([d, c]) => { const m = AGENTS.find(x => x.cle === c); return `<li class="${c === a.cle ? "vise" : ""}"><q>${d}</q>${ic("chevron-right", 14)}<b>${rond(m)}${m.nom}</b></li>`; }).join("");
-  document.getElementById("sugg-nom").textContent = a.nom;
-  document.getElementById("cible").innerHTML = `${rond(a, 18)}À propos de ${a.nom}`;
-  const puces = [[`Renommer ${a.nom}`, `Renomme ${a.nom} en `], [`Ce qu’${a.nom === "Inès" ? "elle" : "il"} livre`, `${a.nom} devrait aussi livrer `], ["Ses limites", `${a.nom} ne doit jamais `], ["Son ton", `${a.nom} écrit plutôt `], [`Retirer ${a.nom}`, `Retire ${a.nom} de l’équipe.`], ["Fusionner deux agents", "Fusionne "]];
-  document.getElementById("puces").innerHTML = puces.map(([l, t]) => `<button type="button" data-texte="${t}">${l}</button>`).join("");
-  document.querySelectorAll("#puces button").forEach(b => b.onclick = () => { const c = document.getElementById("champ"); c.value = b.dataset.texte; c.focus(); c.setSelectionRange(c.value.length, c.value.length); });
-  document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { a.teinte = b.dataset.t; rendre(); });
-  document.getElementById("ecarter").onclick = () => { cote ? ecartes.delete(a.cle) : ecartes.add(a.cle); document.getElementById("nb-creer").textContent = AGENTS.length - ecartes.size; rendre(); };
+  document.querySelectorAll("[data-prenom]").forEach(b => b.onclick = () => { prenom[choisi] = b.dataset.prenom; dessinerEquipe(); });
+  document.getElementById("prenom-libre").onchange = e => { prenom[choisi] = e.target.value.trim(); dessinerEquipe(); };
+  document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { teinte[choisi] = b.dataset.t; dessinerEquipe(); });
+  document.querySelectorAll("[data-g-item]").forEach(b => b.onclick = () => { gardes.add(b.dataset.gItem); dessinerDetail(); });
+  document.querySelectorAll("[data-r-item]").forEach(b => b.onclick = () => { retires.add(b.dataset.rItem); dessinerDetail(); });
+  document.getElementById("qui").innerHTML = TACHES.filter(t => !t.retiree).map(t => {
+    const ag = t.groupe !== "toi", n = ag ? (prenom[t.groupe] || "Sans prénom") : "Toi";
+    return `<li class="${t.groupe === choisi ? "vise" : ""}"><q>${t.t}</q>${ic("chevron-right", 14)}<b>${ag ? rond(teinte[t.groupe]) : `<span class="rond toi" style="width:20px;height:20px"></span>`}${n}</b></li>`;
+  }).join("");
+  const cible = document.getElementById("cible");
+  cible.hidden = false; cible.innerHTML = `${rond(teinte[choisi], 18)}À propos de ${nom || a.role.toLowerCase()}`;
+  const qui = nom || "cet agent";
+  puces(`Pour ${qui}`, [[`Ses limites`, `${nom || "Il"} ne doit jamais `], ["Ce qu’il livre", `${nom || "Il"} devrait livrer `], ["Son ton", `${nom || "Il"} écrit plutôt `], ["Le retirer", `Je n’ai pas besoin de ${qui}.`]]);
 }
 
-function rendre() {
-  cartes(document.getElementById("cartes"), true);
-  cartes(document.getElementById("cartes-fil"), false);
-  document.querySelectorAll("#cartes .carte[data-i]").forEach(b => b.onclick = () => { choisi = +b.dataset.i; rendre(); });
-  document.getElementById("ajout").onclick = () => { const c = document.getElementById("champ"); c.value = "Ajoute un agent pour "; c.focus(); };
-  document.querySelectorAll("#cartes-fil .carte").forEach(b => b.onclick = () => { choisi = +b.dataset.i; vue("grand"); });
-  const ronds = AGENTS.map(a => rond(a, 22)).join("");
-  document.querySelector(".ronds-haut").innerHTML = `<span class="ronds" style="display:flex;gap:0">${ronds}</span>`;
-  document.getElementById("ronds-barre").innerHTML = ronds;
-  document.getElementById("ronds-ligne").innerHTML = AGENTS.map(a => rond(a)).join("");
-  detail();
+/* ─── La conversation ─── */
+function puces(titre, l) {
+  document.getElementById("sugg-titre").textContent = titre;
+  document.getElementById("puces").innerHTML = l.map(([x, t]) => `<button type="button" data-texte="${t}">${x}</button>`).join("");
+  document.querySelectorAll("#puces button").forEach(b => b.onclick = () => { const c = document.getElementById("champ"); c.value = b.dataset.texte; c.focus(); c.setSelectionRange(c.value.length, c.value.length); });
 }
-function vue(v) {
-  document.getElementById("vue-grand").hidden = v !== "grand";
-  document.getElementById("vue-fil").hidden = v !== "fil";
-  document.querySelectorAll("[data-vue]").forEach(b => b.setAttribute("aria-pressed", b.dataset.vue === v));
+function dessinerFil() {
+  const f = document.getElementById("fil");
+  f.innerHTML = [1, 2, 3].filter(n => n <= etape).flatMap(n => FIL[n]).join("");
+  f.querySelectorAll(".choix span.ouvert").forEach(s => s.onclick = () => {
+    if (s.textContent === "Deux agents" || s.textContent === "Un seul") aller(3);
+    else { s.classList.add("pris"); s.parentElement.querySelectorAll("span").forEach(x => x.classList.remove("ouvert")); }
+  });
+  if (etape === 3) f.querySelectorAll(".choix").forEach(c => { const d = [...c.children].find(x => x.textContent === "Deux agents"); if (d) { d.classList.add("pris"); c.querySelectorAll("span").forEach(x => x.classList.remove("ouvert")); } });
+  f.scrollTop = 1e6;
+  document.getElementById("conv-sous").textContent = { 1: "Parle-lui de ta semaine", 2: "Il propose, tu décides", 3: "Retouche l’équipe en lui parlant" }[etape];
 }
-document.querySelectorAll("[data-vue]").forEach(b => b.onclick = () => vue(b.dataset.vue));
-document.querySelectorAll("[data-ouvrir]").forEach(b => b.onclick = () => vue("grand"));
-document.querySelector(".haut .btn").onclick = () => vue("fil");
-document.querySelectorAll(".ligne-eq").forEach(l => l.onclick = () => { choisi = AGENTS.findIndex(a => a.cle === l.dataset.va); rendre(); });
-document.getElementById("prec").onclick = () => { choisi = (choisi + AGENTS.length - 1) % AGENTS.length; rendre(); };
-document.getElementById("suiv").onclick = () => { choisi = (choisi + 1) % AGENTS.length; rendre(); };
-document.addEventListener("keydown", e => {
-  if (e.target.closest("textarea")) return;
-  if (e.key === "ArrowRight") document.getElementById("suiv").click();
-  if (e.key === "ArrowLeft") document.getElementById("prec").click();
-});
-const bAnnots = document.getElementById("annots");
-bAnnots.onclick = () => { const on = bAnnots.getAttribute("aria-pressed") !== "true"; bAnnots.setAttribute("aria-pressed", on); document.querySelectorAll(".annot").forEach(a => a.hidden = !on); };
-document.getElementById("fil").scrollTop = 1e6;
-rendre();
+
+function aller(n) {
+  etape = n;
+  const at = document.getElementById("atelier");
+  at.className = `atelier etape-${n}`;
+  document.querySelectorAll(".etape").forEach(b => { const k = +b.dataset.aller; b.toggleAttribute("aria-current", k === n); if (k === n) b.setAttribute("aria-current", "step"); b.classList.toggle("faite", k < n); });
+  document.querySelectorAll(".bascule [data-aller]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.aller === n));
+  document.getElementById("titre").textContent = TITRES[n][0];
+  document.getElementById("sous-titre").textContent = TITRES[n][1];
+  const s = document.getElementById("suivant"); s.textContent = LIBELLES[n]; s.disabled = false;
+  document.getElementById("sous-scene").hidden = n !== 3;
+  document.querySelectorAll(".annot").forEach(a => a.hidden = !annots || +a.dataset.etape !== n);
+  dessinerTable(); dessinerFil();
+  if (n === 3) dessinerEquipe();
+  else { document.getElementById("cible").hidden = true; puces(PUCES[n].titre, PUCES[n].l); }
+}
+document.querySelectorAll("[data-aller]").forEach(b => b.onclick = () => aller(+b.dataset.aller));
+document.getElementById("suivant").onclick = () => { if (etape < 3) aller(etape + 1); else { const s = document.getElementById("suivant"); s.textContent = "Équipe créée"; s.disabled = true; } };
+document.getElementById("ajout").onclick = () => { const c = document.getElementById("champ"); c.value = "J’oublie : je fais aussi "; c.focus(); };
+let annots = true;
+const bA = document.getElementById("annots");
+bA.onclick = () => { annots = !annots; bA.setAttribute("aria-pressed", annots); aller(etape); };
+window.addEventListener("resize", placer);
+aller(1);
 </script>
 </body>
 </html>
