@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CompteMoteur } from "./moteurs/types";
@@ -84,6 +85,41 @@ export function utilisationDeSortie(sortie: string, precedente: Utilisation | nu
 
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
+/** Un compte supplémentaire : son identifiant (« poste » désigne le compte des agents, pas un dossier). */
+export function idCompteSupplementaire(brut: unknown): string | null {
+  return typeof brut === "string" && ID.test(brut) ? brut : null;
+}
+
+/**
+ * Le dossier de connexion d'un compte supplémentaire, pour une session d'agent : sous `racine` (`claude-comptes`
+ * des données de l'app, ou du serveur), jamais un lien. Une erreur lisible s'il n'existe plus.
+ */
+export function dossierCompteClaude(racine: string, id: string): string {
+  if (!ID.test(id)) throw new Error("Compte Claude invalide.");
+  const base = path.resolve(racine);
+  const dossier = path.join(base, id);
+  let stat;
+  try { stat = lstatSync(dossier); } catch { throw new Error("Ce compte Claude n’est plus connecté ici. Choisis un autre compte dans le choix du modèle."); }
+  if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(dossier) !== path.join(realpathSync(base), id)) {
+    throw new Error("Le dossier de ce compte Claude n’est pas isolé.");
+  }
+  return dossier;
+}
+
+/**
+ * L'environnement d'une session d'agent qui travaille avec un compte supplémentaire. `CLAUDE_CONFIG_DIR` reste le
+ * dossier préparé (fiches, skills, CLAUDE.md, sessions) ; Claude Code lit la connexion dans
+ * `CLAUDE_SECURESTORAGE_CONFIG_DIR` (`<dossier>/.credentials.json`, ou l'entrée du trousseau du Mac nommée d'après ce
+ * dossier : celle que `claude auth login` a écrite avec le même environnement ; lu dans Claude Code 2.1.318).
+ * Un jeton ou une clé du poste passerait devant : ils sont retirés, l'adresse du fournisseur reste.
+ */
+export function environnementAvecCompte(env: NodeJS.ProcessEnv, dossier: string): NodeJS.ProcessEnv {
+  const propre = Object.fromEntries(Object.entries(env).filter(([nom]) =>
+    !/^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_|CLAUDE_CODE_SESSION_ACCESS_TOKEN$|CLAUDE_CODE_USE_(BEDROCK|VERTEX|FOUNDRY)$|CLAUDE_SECURESTORAGE_CONFIG_DIR$)/i.test(nom),
+  ));
+  return { ...propre, CLAUDE_SECURESTORAGE_CONFIG_DIR: dossier };
+}
+
 /** Rien du compte du terminal parent ne doit masquer celui du dossier isolé. */
 export function environnementCompte(env: NodeJS.ProcessEnv, dossier: string): NodeJS.ProcessEnv {
   const propre = Object.fromEntries(Object.entries(env).filter(([nom]) =>
@@ -133,8 +169,9 @@ function lancerProcessus(home: string): Lancer {
 interface Attente { id: string; url: string; processus: ProcessusConnexion; minuteur: ReturnType<typeof setTimeout> }
 
 /**
- * Un dossier de connexion par compte claude.ai. Aucun lien, copie de credentials ou
- * changement de process.env : les processus des agents gardent leur compte du poste.
+ * Un dossier de connexion par compte claude.ai. Aucune copie de credentials ni changement de process.env :
+ * les agents gardent le compte du poste, sauf dans une conversation où la personne choisit ce compte
+ * (choix du modèle) : sa session lit alors la connexion de ce dossier (`environnementAvecCompte`).
  * https://code.claude.com/docs/en/authentication#log-in-with-multiple-accounts
  */
 export class ComptesClaude {
@@ -355,9 +392,18 @@ export class ComptesClaude {
     await rename(temporaire, this.fichierUtilisations);
   }
 
+  /** Les limites qu'une session d'agent de ce compte vient de recevoir (`rate_limit_event`) : gardées comme une lecture. */
+  async noterLimites(id: string, info: unknown): Promise<Utilisation | null> {
+    if (!ID.test(id)) return null;
+    const precedente = (await this.lireUtilisations())[id] ?? null;
+    const u = lireUtilisation(info, precedente);
+    if (u && u !== precedente) await this.garderUtilisation(id, u).catch(() => {});
+    return u;
+  }
+
   /**
    * Les limites d'un compte : la dernière lue, ou relue (`actualiser`) par une toute petite requête faite avec
-   * ce compte seulement. Un compte supplémentaire ne sert pas aux agents : rien ne les relit d'office.
+   * ce compte seulement. Rien ne les relit d'office ; une conversation qui travaille avec ce compte les note au passage.
    */
   async utilisation(id: string, actualiser: boolean): Promise<Utilisation | null> {
     if (id === "poste") return (await this.options.poste.utilisation?.(actualiser)) ?? null;

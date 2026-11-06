@@ -447,6 +447,11 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
 /* ─── Construction des messages d'un agent ─────────────────────── */
 
 /** Ajoute un morceau de texte à la réponse : à la suite du dernier texte, ou dans un nouveau bloc. */
+/** Le compte Claude que la conversation demande, seulement quand c'est Claude Code qui répond. */
+function compteDe(chat: Chat | undefined, moteur: string): { compteClaude?: string } {
+  return moteur === PAR_DEFAUT && chat?.compteClaude ? { compteClaude: chat.compteClaude } : {};
+}
+
 function ajouterTexte(parts: MessagePart[], delta: string, nouveauBloc: boolean): MessagePart[] {
   const dernier = parts[parts.length - 1];
   if (dernier?.type === "text" && !nouveauBloc) {
@@ -635,6 +640,8 @@ interface WorkspaceApi {
   reagir: (messageId: string, emoji: string) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
+  /** Le compte Claude de la conversation (id d'un compte supplémentaire), ou null : le compte des agents. */
+  choisirCompteClaude: (chatId: string, compte: string | null) => void;
   /** « Plus tard » sur le conseil de résumer : il revient quand la conversation dépasse `jusqua` jetons. */
   masquerConseilContexte: (chatId: string, jusqua: number) => void;
   choisirFournisseur: (chatId: string, moteur: string, modele: string | null, effort: string | null) => void;
@@ -1551,6 +1558,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           ...(chat.sessionNeuve && !chat.sessions[roleId] ? { sessionNeuve: true } : {}),
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
+          // Claude : le compte choisi pour la conversation (choix du modèle) ; absent : celui des agents.
+          ...compteDe(stateRef.current.chats.find((c) => c.id === chatId), moteur),
           acces: accesDuServeur(stateRef.current, chat.lieu),
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
           chatId,
@@ -1769,6 +1778,21 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [assurerChat],
   );
+  const choisirCompteClaude = useCallback(
+    (chatId: string, compte: string | null) => {
+      if (!assurerChat(chatId)) return;
+      dispatch({
+        type: "chat/update",
+        id: chatId,
+        patch: (c) => {
+          const suite: Chat = { ...c, compteClaude: compte };
+          if (!compte) delete suite.compteClaude;
+          return suite;
+        },
+      });
+    },
+    [assurerChat],
+  );
   const masquerConseilContexte = useCallback((chatId: string, jusqua: number) => {
     dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, contexteMasqueJusqua: jusqua }) });
   }, []);
@@ -1841,6 +1865,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       modele: chat.modele,
       lieu: chat.lieu,
       effort: chat.effort,
+      ...(chat.compteClaude ? { compteClaude: chat.compteClaude } : {}),
       ...(chat.fournisseur ? { fournisseur: chat.fournisseur } : {}),
       amorce: repris
         .map((m) => `${nom(m)} : ${texteDe(m)}`)
@@ -2858,6 +2883,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       state,
       sendMessage,
       choisirModele,
+      choisirCompteClaude,
       masquerConseilContexte,
       choisirFournisseur,
       basculerMachine,
@@ -2921,6 +2947,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       poserEvenementsCompte,
       sendMessage,
       choisirModele,
+      choisirCompteClaude,
       masquerConseilContexte,
       choisirFournisseur,
       basculerMachine,

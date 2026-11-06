@@ -81,6 +81,7 @@ import {
   restaurerUtilisation,
   runAgent,
   essayerBrouillon,
+  surLimitesCompte,
   surUtilisation,
   titrerDemande,
   type Utilisation,
@@ -758,6 +759,12 @@ function registerBridge() {
     return id;
   };
   /* Le rail relit ses anneaux quand un compte arrive ou part. */
+  /* Une conversation qui travaille avec un compte supplémentaire : ses limites vont à l'anneau de ce compte. */
+  surLimitesCompte((id, info) => {
+    void comptesClaude.noterLimites(id, info).then((u) => {
+      if (u) for (const win of BrowserWindow.getAllWindows()) win.webContents.send("moteurs:utilisation", "claude", u, id);
+    });
+  });
   const comptesChanges = <T>(lieu: unknown) => (r: T): T => {
     for (const win of BrowserWindow.getAllWindows()) win.webContents.send("claude:comptes:change", vps(lieu));
     return r;

@@ -267,6 +267,8 @@ export interface StreamOptions {
   modele?: string | null;
   effort?: string | null;
   fichiers?: string[];
+  /** Claude : le compte supplémentaire choisi pour la conversation (id de `claude-comptes`) ; absent : le compte des agents. */
+  compteClaude?: string | null;
   acces?: Acces;
   /** La conversation de l'app : les outils des fils savent d'où vient l'agent. */
   chatId?: string;
@@ -380,7 +382,8 @@ export interface KlyraBridge {
     /** `compte` : un compte Claude supplémentaire (sa propre lecture, au clic seulement). */
     utilisation?: (id: string, lieu?: string | null, actualiser?: boolean, compte?: string | null) => Promise<Reponse<Utilisation | null>>;
     /** Celles de ce PC, reçues pendant le travail des agents. */
-    onUtilisation?: (callback: (id: string, u: Utilisation) => void) => () => void;
+    /** `compte` : un compte Claude supplémentaire de ce PC (limites lues dans une conversation qui l'utilise) ; null : le compte du moteur. */
+    onUtilisation?: (callback: (id: string, u: Utilisation, compte: string | null) => void) => () => void;
     onProgression: (callback: (id: string, p: ProgressionMoteur, lieu: string | null) => void) => () => void;
     onCode?: (callback: (id: string, lieu: string, code: { url: string; code: string }) => void) => () => void;
   };
