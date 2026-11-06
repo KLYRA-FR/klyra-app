@@ -125,6 +125,12 @@ function fixture() {
     },
     /* Pas de dossier d'app dans ce profil fictif : la session reste sur le poste, sans CLAUDE_CONFIG_DIR. */
     "./preparation-fournisseur": { preparerSessionClaude: () => null },
+    // Aucun compte Claude supplémentaire dans ce banc : la session garde le compte des agents.
+    "./comptes-claude": {
+      idCompteSupplementaire: () => null,
+      dossierCompteClaude: () => { throw new Error("Compte Claude invalide."); },
+      environnementAvecCompte: (env) => env,
+    },
     // Le navigateur de KLYRA coupé pour les agents : ni consigne ni changement de signature.
     "./navigateur/outils": { consigneNavigateur: () => null, signatureNavigateur: () => "" },
     // Computer Use coupé, comme sur un profil qui ne l'a jamais allumé : pas d'outils « ordinateur ».
