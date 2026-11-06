@@ -104,6 +104,10 @@ export function texteRetourFil(fil) {
 export function texteFilOuvert(titre, id, agent, retour) {
     return `Fil ouvert : ${titre || "sans titre"} (${id}). ${agent} y travaille, dans un onglet de son chat.${retour ? " Sa réponse te reviendra automatiquement dans cette conversation : inutile de la surveiller." : ""}`;
 }
-/** Trois travaux ouverts à la fois, au plus : le quatrième attend (comme le journal des travaux du PC). */
-export const TRAVAUX_MAX = 3;
-export const TEXTE_ATTENTE = "En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère.";
+/** Cinq travaux ouverts à la fois, au plus : le suivant attend (comme le journal des travaux du PC). */
+export const TRAVAUX_MAX = 5;
+/** Le refus d'un travail de plus : le plafond, et les fils qui occupent les places (titre et identifiant). */
+export function texteAttente(occupants = []) {
+    const places = occupants.length ? ` Places prises : ${occupants.map((o) => `${o.titre || "sans titre"} (${o.id})`).join(", ")}.` : "";
+    return `En attente : ${TRAVAUX_MAX} travaux sont déjà ouverts.${places} Celui-ci démarre quand une place se libère.`;
+}

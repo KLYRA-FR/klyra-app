@@ -4,7 +4,7 @@ Le journal est un fichier SQLite sur ce PC : `userData/superagent.sqlite`. Le pr
 
 ## Ce qui est tenu
 
-Un fil Klyra ouvert avec `ouvrir_fil` crée un travail, une politique limitée à cette conversation, et une occupation. Il y a trois places. La quatrième attend, le fil n'est pas gardé. Une précision (`ecrire_dans_fil`) rejoint le même travail. Plusieurs messages du même fil restent un seul travail. Un même message source ne crée pas un second travail. `arreter_fil` suspend : l'opération déjà partie reste en vol, elle est listée, elle n'est pas rejouée. `reprendre_fil` exige une référence de contrôle, y compris pour sortir d'une attente `waiting_machine`. Un travail terminé ou annulé ne reprend pas. `fermer_fil` refuse tant qu'une opération est à constater.
+Un fil Klyra ouvert avec `ouvrir_fil` crée un travail, une politique limitée à cette conversation, et une occupation. Il y a cinq places (`TRAVAUX_MAX`, `electron/fils-outils.ts`). La suivante attend, le fil n'est pas gardé, et le refus nomme les fils qui tiennent les places. Avant de compter, l'app donne ses fils ouverts : la place d'un fil supprimé ou fermé hors de `fermer_fil` est rendue (`libererOrphelins`), le travail garde son statut. Une précision (`ecrire_dans_fil`) rejoint le même travail. Plusieurs messages du même fil restent un seul travail. Un même message source ne crée pas un second travail. `arreter_fil` suspend : l'opération déjà partie reste en vol, elle est listée, elle n'est pas rejouée. `reprendre_fil` exige une référence de contrôle, y compris pour sortir d'une attente `waiting_machine`. Un travail terminé ou annulé ne reprend pas. `fermer_fil` refuse tant qu'une opération est à constater.
 
 Une nouvelle consigne (`changement_objectif`) avance `objective_revision` et annule les intentions encore `planned`. Une opération `inflight` n'est ni annulée ni relancée : son motif devient `effet_deja_parti:controler`. Une priorité (`priorité : N` dans le résumé) est écrite sur le travail. Les deux se décident en code, sans appel de modèle.
 
@@ -20,7 +20,7 @@ L'écran d'un projet (`TravauxProjet`) lit les travaux, leurs preuves et les év
 
 ## Sauvegarde et retour arrière
 
-`sauvegarder` fait un `VACUUM INTO` vers un fichier qui n'existe pas. `restaurerVersNouveauFichier` copie cette sauvegarde vers un fichier neuf, jamais par-dessus le journal ouvert, puis `PRAGMA integrity_check` et `foreign_key_check`. Un journal en version 1 est copié avant de recevoir les tables de la version 2. Un journal en version 2 est copié avant d'accepter le lien `github_pr` (version 3). Une version plus récente que le code est refusée, le fichier reste tel quel.
+`sauvegarder` fait un `VACUUM INTO` vers un fichier qui n'existe pas. `restaurerVersNouveauFichier` copie cette sauvegarde vers un fichier neuf, jamais par-dessus le journal ouvert, puis `PRAGMA integrity_check` et `foreign_key_check`. Un journal en version 1 est copié avant de recevoir les tables de la version 2. Un journal en version 2 est copié avant d'accepter le lien `github_pr` (version 3). Un journal en version 3 est copié avant de passer à cinq places (version 4), occupations gardées. Une version plus récente que le code est refusée, le fichier reste tel quel.
 
 ## Autorité et limites
 

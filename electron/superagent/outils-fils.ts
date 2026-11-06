@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { ingererMessageFil, marquerTravailFil, ouvrirTravailFil, placesLibres, travailDuFil, type ContexteCycle } from "./cycle";
+import { texteAttente } from "../fils-outils";
+import { ingererMessageFil, marquerTravailFil, occupants, ouvrirTravailFil, placesLibres, travailDuFil, type ContexteCycle } from "./cycle";
 import type { Effet } from "./operations";
 import type { MessageNatif } from "./ingestion";
 import { lireTravail } from "./travaux";
@@ -94,9 +95,18 @@ function ligne(fil: FilAgent): string {
   return `${fil.titre} (${fil.id}) · ${fil.roleId} · ${fil.etape}${fil.raison ? ` · ${fil.raison}` : ""}`;
 }
 
+/** Le refus d'un travail de plus, avec les fils qui tiennent les places (titre du registre s'il le connaît). */
+function attente(db: DatabaseSync, registre: RegistreFils): string {
+  return texteAttente(
+    occupants(db)
+      .filter((o) => o.fil_id)
+      .map((o) => ({ titre: registre.fils.find((f) => f.id === o.fil_id)?.titre ?? o.titre, id: o.fil_id! })),
+  );
+}
+
 /**
  * Exécute un outil de fil. Le journal et le registre bougent ensemble.
- * Un quatrième travail n'ouvre pas de fil. Une précision reste sur le fil déjà ouvert.
+ * Un travail au-delà de la capacité n'ouvre pas de fil. Une précision reste sur le fil déjà ouvert.
  */
 export async function executerOutilFil(
   db: DatabaseSync,
@@ -134,7 +144,7 @@ export async function executerOutilFil(
     if (!brief) throw new Error("Le brief est vide : le fil ne voit pas ta conversation, il lui faut tout.");
     const projetId = typeof args.projet === "string" && args.projet.trim() ? args.projet.trim() : ctx.project_id;
     if (args.projet && !annuaire.projets.some((p) => p.id === projetId)) throw new Error(`Aucun projet « ${projetId} ».`);
-    if (placesLibres(db) < 1) return "En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère.";
+    if (placesLibres(db) < 1) return attente(db, registre);
     const id = `${PREFIXE}${randomUUID().slice(0, 8)}`;
     const messageId = randomUUID();
     const at = new Date(maintenant()).toISOString();
@@ -170,7 +180,7 @@ export async function executerOutilFil(
       registre.fils.pop();
       registre.ecritures -= 1;
       return ouvert.motif === "capacite_atteinte"
-        ? "En attente : trois travaux sont déjà ouverts. Celui-ci démarre quand une place se libère."
+        ? attente(db, registre)
         : `Travail non ouvert : ${ouvert.motif}.`;
     }
     const issue = await ingererMessageFil(

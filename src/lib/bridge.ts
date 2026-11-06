@@ -600,7 +600,8 @@ export interface KlyraBridge {
   };
   /** Journal des travaux sur les fils. Absent tant que l'app n'a pas été relancée. */
   superagent?: {
-    peutOuvrir: () => Promise<Reponse<{ ok: boolean; places: number }>>;
+    /** `filsOuverts` : les fils ouverts de l'écran ; les places des autres sont rendues avant de compter. */
+    peutOuvrir: (filsOuverts?: string[]) => Promise<Reponse<{ ok: boolean; places: number; occupants?: { titre: string; id: string }[] }>>;
     ouvrir: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; work_id?: string }>>;
     message: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; disposition?: string }>>;
     etat: (filId: string) => Promise<Reponse<{ status: string; work_id: string } | null>>;

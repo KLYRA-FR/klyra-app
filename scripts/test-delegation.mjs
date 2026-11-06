@@ -142,7 +142,7 @@ try {
       "Un livrable, un responsable : un livrable va entier à un seul agent",
       "jamais en relais de l'un à l'autre",
       "Ne refais pas en parallèle ce que tu as confié.",
-      "Au plus trois travaux confiés en même temps",
+      "Au plus 5 travaux confiés en même temps",
       "Reprends le fil déjà ouvert sur le sujet (lister_fils)",
       "le livrable attendu dans des fichiers et un compte rendu court",
       "vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable",

@@ -295,7 +295,7 @@ contextBridge.exposeInMainWorld("klyra", {
     },
   },
   superagent: {
-    peutOuvrir: () => ipcRenderer.invoke("superagent:peut-ouvrir"),
+    peutOuvrir: (filsOuverts?: string[]) => ipcRenderer.invoke("superagent:peut-ouvrir", filsOuverts),
     ouvrir: (fait: unknown) => ipcRenderer.invoke("superagent:ouvrir", fait),
     message: (fait: unknown) => ipcRenderer.invoke("superagent:message", fait),
     etat: (filId: string) => ipcRenderer.invoke("superagent:etat", filId),

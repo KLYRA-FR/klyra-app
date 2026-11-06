@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { ecrire, enTransaction, tous, un } from "./stockage";
-import { iso, type Horloge } from "./types";
+import { CAPACITE_OCCUPATIONS, iso, type Horloge } from "./types";
 
 /**
  * Surveillance des travaux Klyra (point 35, annexe W). Lecture du journal, écriture d'alertes.
@@ -244,15 +244,15 @@ export function surveiller(db: DatabaseSync, maintenant: Horloge = Date.now): Al
     }
 
     const occupations = un<{ n: number }>(db, "SELECT count(*) AS n FROM occupation")?.n ?? 0;
-    if (occupations > 3) {
+    if (occupations > CAPACITE_OCCUPATIONS) {
       const premier = travaux[0];
       if (premier) {
         signaux.push({
           work_id: premier.work_id,
           type: "W5",
           preuve_ref: `occupations:${occupations}`,
-          motif: "Plus de trois occupations dans le journal.",
-          prochain_geste: "Ne pas lancer un quatrième travail.",
+          motif: `Plus de ${CAPACITE_OCCUPATIONS} occupations dans le journal.`,
+          prochain_geste: "Ne pas lancer de travail de plus.",
         });
       }
     }

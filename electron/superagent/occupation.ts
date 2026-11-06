@@ -5,7 +5,7 @@ import { BAIL_MS, CAPACITE_OCCUPATIONS, RefusSuperagent, iso, type Horloge } fro
 
 /**
  * Prise en charge et sémaphore (point 21). Un claim est un compare-and-set sur `owner_epoch`, dans la
- * même transaction que la réservation d'une des trois places (`occupation.slot` 1 à 3) et la mise à
+ * même transaction que la réservation d'une des places (`occupation.slot` 1 à `CAPACITE_OCCUPATIONS`) et la mise à
  * jour des abonnements. Deux claims sur le même epoch : un gagnant, un refus. Bail de 10 minutes ;
  * expiré, le travail passe en `reconciliation_required` et rien ne repart avant `reconcilierTravail`.
  * Limite : le sémaphore compte les travaux de ce journal, sur ce PC.

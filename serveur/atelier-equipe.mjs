@@ -1,7 +1,7 @@
 // Généré par scripts/serveur-genere.mjs depuis electron/atelier-equipe.ts : ne pas modifier à la main.
 import { appliquerMaj, BROUILLON_VIDE, comparable, identifiantDe, identifiantPropre, jetonsBrouillon, lireMajAtelier, manques, nomPropre, piliersRemplis, PILIERS, } from "./atelier-agent.mjs";
 export const EQUIPE_VIDE = { nom: "", but: "", membres: [], existants: [], exemples: [] };
-/** Au-delà, une équipe se pilote mal : l'assistant ne confie que trois travaux à la fois. */
+/** Au-delà, une équipe se pilote mal : l'assistant ne confie que cinq travaux à la fois (`TRAVAUX_MAX`). */
 export const MAX_MEMBRES = 6;
 /* ─── L'outil de l'assistant ──────────────────────────────────────── */
 const tableau = (description) => ({ type: "array", items: { type: "string" }, description });
