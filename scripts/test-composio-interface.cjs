@@ -97,20 +97,33 @@ ipcMain.handle("fixture:composio", async (_event, nom, contexte, ...args) => {
   return { ok: true, data: undefined };
 });
 
-/* Les MCP directs : la liste vit ici, le jeton n'est jamais renvoyé à l'écran. */
+/* Les MCP directs : la liste vit ici ; aucun jeton n'est renvoyé à l'écran. L'autorisation OAuth se termine quand le test le décide. */
 const JETON_MCP = "jeton-mcp-sentinelle-du-test";
-let mcpListe = [];
+const APPS_MCP = { github: "https://api.githubcopilot.com/mcp/", linear: "https://mcp.linear.app/mcp", neon: "https://mcp.neon.tech/mcp" };
+const NOMS_MCP = { github: "GitHub", linear: "Linear", neon: "Neon" };
+/* Un Linear branché avant cette version, par jeton collé : il doit rester connecté. */
+let mcpListe = [{ id: "mcp_ancien", app: "linear", nom: "Linear", url: APPS_MCP.linear, avecJeton: true, connexion: "jeton", aReconnecter: false }];
 const mcpJournal = [];
-const APPS_MCP = { github: { nom: "GitHub", url: "https://api.githubcopilot.com/mcp/", jeton: "https://github.com/settings/personal-access-tokens" } };
-ipcMain.handle("fixture:mcp", (_event, nom, arg) => {
+let terminerMcp = null;
+ipcMain.handle("fixture:mcp", async (_event, nom, arg) => {
   mcpJournal.push({ nom, entree: clone(arg ?? null) });
-  if (nom === "apps") return { ok: true, data: APPS_MCP };
   if (nom === "lister") return { ok: true, data: clone(mcpListe) };
-  if (nom === "ajouter") {
-    const connue = arg.app ? APPS_MCP[arg.app] : null;
-    const url = connue?.url ?? arg.url;
+  if (nom === "connecter") {
+    const ancien = arg.remplace ? mcpListe.find((m) => m.id === arg.remplace) : null;
+    const url = ancien?.url ?? APPS_MCP[arg.app] ?? arg.url;
     if (!url.startsWith("https://")) return { ok: false, code: "erreur", message: "L’adresse doit commencer par https://." };
-    mcpListe = [...mcpListe, { id: `mcp_${++sequence}`, app: arg.app, nom: connue?.nom ?? arg.nom, url, avecJeton: !!arg.jeton }];
+    if (url.includes("sans-oauth")) return { ok: true, data: { statut: "sans-oauth", liste: clone(mcpListe) } };
+    const fini = await new Promise((r) => { terminerMcp = r; });
+    terminerMcp = null;
+    if (!fini) return { ok: true, data: { statut: "annule", liste: clone(mcpListe) } };
+    const entree = { id: ancien?.id ?? `mcp_${++sequence}`, app: ancien?.app ?? arg.app ?? null, nom: ancien?.nom ?? NOMS_MCP[arg.app] ?? arg.nom, url, avecJeton: false, connexion: "oauth", aReconnecter: false };
+    mcpListe = ancien ? mcpListe.map((m) => (m.id === ancien.id ? entree : m)) : [...mcpListe, entree];
+    return { ok: true, data: { statut: "connecte", liste: clone(mcpListe) } };
+  }
+  if (nom === "annuler") { terminerMcp?.(false); return { ok: true, data: undefined }; }
+  if (nom === "ajouter") {
+    if (arg.app) return { ok: false, code: "erreur", message: "Cette app se connecte par autorisation dans le navigateur." };
+    mcpListe = [...mcpListe, { id: `mcp_${++sequence}`, app: null, nom: arg.nom, url: arg.url, avecJeton: !!arg.jeton, connexion: arg.jeton ? "jeton" : "aucune", aReconnecter: false }];
     return { ok: true, data: clone(mcpListe) };
   }
   if (nom === "retirer") { mcpListe = mcpListe.filter((m) => m.id !== arg); return { ok: true, data: clone(mcpListe) }; }
@@ -355,33 +368,66 @@ app.whenReady().then(async () => {
     await attendre(boutonPret("Coller une clé…"));
     verifier(journal.some((j) => j.nom === "retirer"), "retirer la clé de projet : clé retirée par le pont");
 
-    await cible('[data-app-mcp="github"] button');
-    await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Connecter GitHub')");
-    verifier(await ev("[...document.querySelectorAll('[role=dialog] button')].some((b) => b.innerText.trim() === 'Connecter' && b.disabled)"), "MCP GitHub : Connecter désactivé sans jeton");
-    verifier(await ev("document.querySelector('[role=dialog] a[href]')?.getAttribute('href') === 'https://github.com/settings/personal-access-tokens'"), "MCP GitHub : lien vers la création du jeton");
-    await saisir('[role="dialog"] input[type=password]', JETON_MCP);
-    await capture("05-mcp-github");
-    await cliquer("Connecter", '[role="dialog"] button');
-    await attendre("!document.querySelector('[role=dialog]') && document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Connecté')");
-    verifier(mcpJournal.some((j) => j.nom === "ajouter" && j.entree.app === "github" && j.entree.jeton === JETON_MCP), "MCP GitHub : jeton transmis une fois au pont");
-    verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(JETON_MCP)})`)), "MCP GitHub : le jeton ne reste pas dans la page");
+    const carteMcp = (id) => ev(`document.querySelector('[data-app-mcp="${id}"]')?.innerText ?? ""`);
+    const attendreMcp = async () => { for (let i = 0; i < 100 && !terminerMcp; i++) await pause(20); verifier(!!terminerMcp, "autorisation en attente du navigateur"); };
+    verifier(await ev("document.querySelectorAll('input[type=password]').length === 0"), "Apps en direct : aucun champ de jeton");
 
+    // GitHub passe par Composio : sa carte lance la connexion Composio, sans jeton.
+    await cible('[data-app-mcp="github"] button');
+    await attendre("document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Autorise dans le navigateur…')", "GitHub : connexion Composio en cours");
+    verifier(connectJournal.filter((n) => n === "connecter").length === 3 && !mcpJournal.some((j) => j.nom === "connecter") && !(await ev("document.querySelector('[role=dialog]')")), "GitHub : la connexion Composio s’ouvre, pas de fenêtre de jeton");
+    for (let i = 0; i < 100 && !terminerConnect; i++) await pause(20);
+    terminerConnect(true);
+    await attendre("document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Par Composio')", "GitHub : par Composio");
+    await capture("05-mcp-github-composio");
+
+    // Un ancien jeton reste connecté, et passe à l'autorisation sans être perdu avant la fin.
+    verifier((await carteMcp("linear")).includes("Connecté par jeton"), "Linear : l’ancien jeton reste connecté et signalé");
+    await cible('button[aria-label="Plus d’options pour Linear"]'); await cliquer("Passer à l’autorisation", '[role="menuitem"]');
+    await attendreMcp();
+    verifier(mcpJournal.some((j) => j.nom === "connecter" && j.entree.remplace === "mcp_ancien") && mcpListe.some((m) => m.id === "mcp_ancien" && m.connexion === "jeton"), "Linear : autorisation demandée, l’ancien jeton gardé jusqu’au retour");
+    terminerMcp(true);
+    await attendre("(() => { const t = document.querySelector('[data-app-mcp=\"linear\"]')?.innerText ?? ''; return t.includes('Connecté') && !t.includes('par jeton'); })()", "Linear : passé à l’autorisation");
+    verifier(mcpListe.find((m) => m.app === "linear")?.id === "mcp_ancien", "Linear : même entrée, mêmes outils pour les agents");
+
+    // Neon : annuler, puis autoriser.
+    await cible('[data-app-mcp="neon"] button');
+    await attendreMcp();
+    await attendre("document.querySelector('[data-app-mcp=\"neon\"]')?.innerText.includes('Autorise dans le navigateur…')");
+    await cliquer("Annuler", '[data-app-mcp="neon"] button');
+    await attendre("[...document.querySelectorAll('[data-app-mcp=\"neon\"] button')].some((b) => b.innerText.trim() === 'Connecter' && !b.disabled)", "Neon : annulé");
+    verifier(mcpJournal.some((j) => j.nom === "annuler") && !(await carteMcp("neon")).includes("Connecté"), "Neon : annulation, rien d’annoncé connecté");
+    await cible('[data-app-mcp="neon"] button');
+    await attendreMcp();
+    terminerMcp(true);
+    await attendre("document.querySelector('[data-app-mcp=\"neon\"]')?.innerText.includes('Connecté')", "Neon : connecté");
+    verifier(mcpJournal.some((j) => j.nom === "connecter" && j.entree.app === "neon") && !mcpJournal.some((j) => j.nom === "ajouter"), "Neon : autorisé dans le navigateur, sans jeton");
+    await capture("05-mcp-oauth");
+
+    // Autre serveur MCP : l'autorisation d'abord ; le jeton seulement si le serveur n'a pas d'OAuth.
     await cliquer("Autre serveur MCP");
     await attendre("document.querySelector('[role=dialog]')?.innerText.includes('Adresse du serveur')");
+    verifier(await ev("document.querySelectorAll('[role=dialog] input[type=password]').length === 0"), "MCP personnalisé : pas de champ de jeton d’emblée");
     await saisir('[role="dialog"] input:not([type=password]):not([placeholder])', "Serveur maison");
     await saisir('[role="dialog"] input[placeholder="https://"]', "http://mcp.exemple.test/mcp");
     await cliquer("Connecter", '[role="dialog"] button');
     await attendre("document.querySelector('[role=dialog] [role=alert]')?.innerText.includes('https://')", "adresse non https refusée");
     verifier(await ev("document.querySelector('[role=dialog]') !== null"), "MCP personnalisé : refus affiché, fenêtre gardée ouverte");
     await ev("(() => { const i = document.querySelector('[role=dialog] input[placeholder=\"https://\"]'); i.select(); })()");
-    await saisir('[role="dialog"] input[placeholder="https://"]', "https://mcp.exemple.test/mcp");
+    await saisir('[role="dialog"] input[placeholder="https://"]', "https://sans-oauth.exemple.test/mcp");
     await cliquer("Connecter", '[role="dialog"] button');
-    await attendre("!document.querySelector('[role=dialog]') && document.body.innerText.includes('mcp.exemple.test')");
-    verifier(mcpJournal.some((j) => j.nom === "ajouter" && j.entree.app === null && j.entree.nom === "Serveur maison"), "MCP personnalisé : nom et adresse transmis, jeton facultatif");
+    await attendre("document.querySelector('[role=dialog] input[type=password]') && document.querySelector('[role=dialog]').innerText.includes('ne propose pas d’autorisation')", "sans OAuth : jeton proposé en dernier recours");
+    verifier(mcpJournal.some((j) => j.nom === "connecter" && j.entree.nom === "Serveur maison"), "MCP personnalisé : l’autorisation est tentée d’abord");
+    await saisir('[role="dialog"] input[type=password]', JETON_MCP);
+    await capture("06-mcp-sans-oauth");
+    await cliquer("Ajouter", '[role="dialog"] button');
+    await attendre("!document.querySelector('[role=dialog]') && document.body.innerText.includes('sans-oauth.exemple.test')");
+    verifier(mcpJournal.some((j) => j.nom === "ajouter" && j.entree.app === null && j.entree.nom === "Serveur maison" && j.entree.jeton === JETON_MCP), "MCP personnalisé sans OAuth : jeton transmis une fois au pont");
+    verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(JETON_MCP)})`)), "MCP personnalisé : le jeton ne reste pas dans la page");
 
-    await cible('[data-app-mcp="github"] button'); await cliquer("Retirer", '[role="alertdialog"] button');
-    await attendre("!document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Connecté')");
-    verifier(mcpJournal.some((j) => j.nom === "retirer") && !mcpListe.some((m) => m.app === "github"), "MCP GitHub retiré après confirmation");
+    await cible('[data-app-mcp="neon"] button'); await cliquer("Retirer", '[role="alertdialog"] button');
+    await attendre("!document.querySelector('[data-app-mcp=\"neon\"]')?.innerText.includes('Connecté')");
+    verifier(mcpJournal.some((j) => j.nom === "retirer") && !mcpListe.some((m) => m.app === "neon"), "Neon retiré après confirmation");
 
     verifier(await ev("document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('main').scrollWidth <= document.querySelector('main').clientWidth + 1"), "fenêtre 1100 × 700 : pas de débordement horizontal global");
     verifier(!(await ev(`document.documentElement.outerHTML.includes(${JSON.stringify(CLE_MAIN_SEULEMENT)}) || JSON.stringify(window.klyra).includes(${JSON.stringify(CLE_MAIN_SEULEMENT)})`)), "aucune clé sentinelle dans DOM ou bridge renderer");

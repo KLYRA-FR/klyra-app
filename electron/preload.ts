@@ -211,8 +211,9 @@ contextBridge.exposeInMainWorld("klyra", {
     tester: (id: string, lieu?: string | null) => ipcRenderer.invoke("ia:tester", id, lieu ?? null),
   },
   mcp: {
-    apps: () => ipcRenderer.invoke("mcp:apps"),
     lister: () => ipcRenderer.invoke("mcp:lister"),
+    connecter: (entree: unknown) => ipcRenderer.invoke("mcp:connecter", entree),
+    annuler: () => ipcRenderer.invoke("mcp:annuler"),
     ajouter: (entree: unknown) => ipcRenderer.invoke("mcp:ajouter", entree),
     retirer: (id: string) => ipcRenderer.invoke("mcp:retirer", id),
   },
