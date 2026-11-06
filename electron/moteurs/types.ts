@@ -49,6 +49,8 @@ export interface StreamOptions {
   modele?: string | null;
   /** Effort de réflexion : low, medium, high, xhigh, max ; null : celui par défaut. */
   effort?: string | null;
+  /** Claude : le compte supplémentaire choisi pour la conversation (id de `claude-comptes`) ; absent : le compte des agents. */
+  compteClaude?: string | null;
   /** Fichiers joints au message : leurs dossiers sont ouverts en lecture à l'agent. */
   fichiers?: string[];
   /**

@@ -56,8 +56,9 @@ function useUtilisation(moteur: IdFournisseur, lieu: string | null, compte: stri
     if (!bridge?.utilisation) return;
     lueLe.current = Date.now();
     void bridge.utilisation(moteur, lieu, gratuit, compte).then((r) => r.ok && setUtilisation(r.data));
-    if (lieu !== null || compte !== null || !bridge.onUtilisation) return;
-    return bridge.onUtilisation((id, u) => id === moteur && setUtilisation(u));
+    if (lieu !== null || !bridge.onUtilisation) return;
+    /* Un compte supplémentaire reçoit les limites lues dans une conversation qui travaille avec lui. */
+    return bridge.onUtilisation((id, u, c) => id === moteur && (c ?? null) === compte && setUtilisation(u));
   }, [bridge, moteur, lieu, gratuit, compte]);
 
   const actualiser = async () => {

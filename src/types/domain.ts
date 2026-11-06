@@ -164,6 +164,11 @@ export interface Chat {
   modele?: string | null;
   /** Effort de réflexion choisi (« high »…) ; absent : celui par défaut. */
   effort?: string | null;
+  /**
+   * Claude : le compte supplémentaire choisi pour cette conversation (id d'un compte de Réglages du serveur ›
+   * Fournisseurs › Claude, sur la machine de la conversation) ; absent : le compte des agents.
+   */
+  compteClaude?: string | null;
   /** La liste de tâches que l'agent tient pendant son travail (outil TodoWrite de Claude Code). */
   taches?: TacheAgent[];
   /** Branche d'une autre conversation : ce qui s'y était dit, donné à l'agent avec son premier message. */

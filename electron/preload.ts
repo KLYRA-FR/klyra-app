@@ -59,8 +59,8 @@ contextBridge.exposeInMainWorld("klyra", {
     installer: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:installer", id, lieu ?? null),
     mettreAJour: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:mettre-a-jour", id, lieu ?? null),
     utilisation: (id: string, lieu?: string | null, actualiser?: boolean, compte?: string | null) => ipcRenderer.invoke("moteurs:utilisation", id, lieu ?? null, actualiser === true, compte ?? null),
-    onUtilisation: (callback: (id: string, u: unknown) => void) => {
-      const listener = (_e: unknown, id: string, u: unknown) => callback(id, u);
+    onUtilisation: (callback: (id: string, u: unknown, compte: string | null) => void) => {
+      const listener = (_e: unknown, id: string, u: unknown, compte?: string | null) => callback(id, u, compte ?? null);
       ipcRenderer.on("moteurs:utilisation", listener);
       return () => ipcRenderer.removeListener("moteurs:utilisation", listener);
     },

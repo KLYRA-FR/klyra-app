@@ -12,6 +12,7 @@ import { DOSSIER_PLANNING, FICHIER_PLANNING } from "./planning";
 import { dossierHorsProjet } from "./atelier";
 import { competencesPrechargees, filtreSkills, promptAvecSkill, skillsConnues } from "./connaissances-agent";
 import { preparerSessionClaude } from "./preparation-fournisseur";
+import { dossierCompteClaude, environnementAvecCompte, idCompteSupplementaire } from "./comptes-claude";
 import { reglagesSession } from "./skills-par-agent";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
@@ -150,12 +151,12 @@ export function runAgent(requestId: string, agent: string, prompt: string): Prom
   return new Promise((resolve) => {
     // Sans canal d'autorisation ici : l'outil Agent est retiré, l'agent répond seul, et le sait.
     const filtre = filtreSkills(lireReglages().skillsParAgent, agent, CONFIG_CLAUDE(), null);
-    const prepare = preparationClaude(agent, filtre.garder, null);
+    const prepare = preparationClaude(agent, filtre.garder, null, null);
     const args = ["-p", "--agent", agent, "--output-format", "json", SECTIONS_DU_POSTE_A_PART, "--disallowedTools", ...OUTILS_INTERDITS, ...OUTILS_HORS_APP, "Agent", "--append-system-prompt", CONSIGNE_SEUL];
     if (filtre.coupes.length) args.push("--settings", reglagesSession({}, filtre.coupes));
     const child = spawn(bin, args, {
       cwd: HOME,
-      env: envClaude(prepare?.dossier ?? null),
+      env: envClaude(prepare?.dossier ?? null, null),
       windowsHide: true,
     });
     running.set(requestId, child);
@@ -258,6 +259,8 @@ interface Processus {
   skills: string;
   modele: string | null;
   acces: Acces;
+  /** Le compte Claude supplémentaire de la conversation, ou null : le compte des agents. */
+  compte: string | null;
   /** Les réponses attendues, dans l'ordre : la première est en cours. */
   tours: Tour[];
   sessionId: string | null;
@@ -566,7 +569,9 @@ function lireLigne(proc: Processus, ligne: string) {
     return;
   }
   if (msg.type === "rate_limit_event") {
-    noterUtilisation(msg.rate_limit_info);
+    /* Les limites d'un compte supplémentaire sont les siennes : elles ne vont pas à l'anneau du compte des agents. */
+    if (proc.compte) limitesCompte?.(proc.compte, msg.rate_limit_info);
+    else noterUtilisation(msg.rate_limit_info);
     return;
   }
   /* La conversation résumée : son résultat arrive vide, mais c'est bien la réponse à « /compact ». */
@@ -724,12 +729,22 @@ function lireLigne(proc: Processus, ligne: string) {
   }
 }
 
+/** Où ranger les limites lues dans la session d'un compte supplémentaire (posé par le process principal). */
+let limitesCompte: ((id: string, info: unknown) => void) | null = null;
+export function surLimitesCompte(cb: (id: string, info: unknown) => void): void {
+  limitesCompte = cb;
+}
+
+/** Les dossiers de connexion des comptes Claude supplémentaires (cf. comptes-claude.ts). */
+const DOSSIER_COMPTES = () => (process.env.KLYRA_USER_DATA ? path.join(process.env.KLYRA_USER_DATA, "claude-comptes") : null);
+
 /** Le dossier préparé pour cet agent, ou null (la session reste alors sur le poste). */
-function preparationClaude(agent: string | null, garder: (nom: string) => boolean, projet: string | null): { dossier: string; skills: string[]; catalogue: string } | null {
+function preparationClaude(agent: string | null, garder: (nom: string) => boolean, projet: string | null, compte: { id: string; dossier: string } | null): { dossier: string; skills: string[]; catalogue: string } | null {
   /* Sur Mac, la connexion d'un compte Claude est dans le trousseau, sous un nom tiré du dossier de
      config : un autre `CLAUDE_CONFIG_DIR` ne la trouve pas (« Not logged in », vérifié le 04/11/2026,
-     Claude Code 2.1.318). Sans `.credentials.json` du poste à lier, la session reste sur le poste. */
-  if (process.platform === "darwin" && !existsSync(path.join(process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude"), ".credentials.json"))) return null;
+     Claude Code 2.1.318). Sans `.credentials.json` du poste à lier, la session reste sur le poste.
+     Un compte supplémentaire est lu par `CLAUDE_SECURESTORAGE_CONFIG_DIR`, quel que soit ce dossier. */
+  if (!compte && process.platform === "darwin" && !existsSync(path.join(process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude"), ".credentials.json"))) return null;
   try {
     return preparerSessionClaude({
       userData: process.env.KLYRA_USER_DATA ?? null,
@@ -743,6 +758,7 @@ function preparationClaude(agent: string | null, garder: (nom: string) => boolea
       choix: lireReglages().skillsParAgent,
       configClaude: CONFIG_CLAUDE(),
       dossierProjet: projet,
+      compte,
     });
   } catch (error) {
     console.error("Préparation de l’agent non faite :", error);
@@ -750,10 +766,14 @@ function preparationClaude(agent: string | null, garder: (nom: string) => boolea
   }
 }
 
-const envClaude = (dossier: string | null) => ({ ...environnementAgent(), ...(dossier ? { CLAUDE_CONFIG_DIR: dossier } : {}) });
+/** L'environnement de la session : le dossier préparé, et la connexion du compte choisi pour la conversation. */
+const envClaude = (dossier: string | null, compte: { id: string; dossier: string } | null) => {
+  const env = { ...environnementAgent(), ...(dossier ? { CLAUDE_CONFIG_DIR: dossier } : {}) };
+  return compte ? environnementAvecCompte(env, compte.dossier) : env;
+};
 
-function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, skills: string, options: StreamOptions, acces: Acces, spontane: Spontane, dossier: string | null): Processus {
-  const child = spawn(bin, args, { cwd, env: envClaude(dossier), windowsHide: true });
+function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, skills: string, options: StreamOptions, acces: Acces, spontane: Spontane, dossier: string | null, compte: { id: string; dossier: string } | null): Processus {
+  const child = spawn(bin, args, { cwd, env: envClaude(dossier, compte), windowsHide: true });
   const proc: Processus = {
     routineRun: options.routineRun,
     child,
@@ -761,6 +781,7 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
     skills,
     modele: options.modele ?? null,
     acces,
+    compte: compte?.id ?? null,
     tours: [],
     sessionId: options.sessionId,
     spontane,
@@ -816,6 +837,18 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   if (options.sessionId !== null && !/^[0-9a-f-]{36}$/.test(options.sessionId)) return echec("Session invalide.");
   if (options.modele && !/^[a-z0-9][a-z0-9.\-]{0,63}$/.test(options.modele)) return echec("Modèle invalide.");
   if (options.effort && !["low", "medium", "high", "xhigh", "max"].includes(options.effort)) return echec("Effort invalide.");
+  /* Le compte Claude choisi pour la conversation : son dossier de connexion, ou une erreur lisible s'il est parti. */
+  let compte: { id: string; dossier: string } | null = null;
+  if (options.compteClaude) {
+    const id = idCompteSupplementaire(options.compteClaude);
+    const racine = DOSSIER_COMPTES();
+    if (!id || !racine) return echec("Compte Claude invalide.");
+    try {
+      compte = { id, dossier: dossierCompteClaude(racine, id) };
+    } catch (error) {
+      return echec(error instanceof Error ? error.message : "Compte Claude invalide.");
+    }
+  }
   // Fils, routines, workflows ou conversation directe : un agent hors de Mes agents ne répond pas.
   if (options.agent !== null && !estActif(options.agent)) return echec(pasDansMesAgents(options.agent));
 
@@ -828,7 +861,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const configClaude = CONFIG_CLAUDE();
   const ficheAgent = options.agent ? lireSiPresent(path.join(agentsDir(), `${options.agent}.md`)) : null;
   const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, configClaude, cwd);
-  const prepare = preparationClaude(options.agent, filtre.garder, cwd);
+  const prepare = preparationClaude(options.agent, filtre.garder, cwd, compte);
   const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
   const connues = skillsConnues(configClaude, cwd);
   for (const nom of filtre.coupes) connues.delete(nom);
@@ -840,11 +873,12 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle, compte?.id ?? null]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
-  if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && (ouvert.signature === signature || (ouvert.tours.length && !options.routineRun && !ouvert.routineRun))) {
+  /* Changer de compte relance Claude Code (la connexion se lit au lancement), même en plein travail : jamais deux comptes dans un processus. */
+  if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && ouvert.compte === (compte?.id ?? null) && (ouvert.signature === signature || (ouvert.tours.length && !options.routineRun && !ouvert.routineRun))) {
     /* La conversation a déjà son Claude Code : on lui écrit. Le modèle et l'accès changent en route. */
     proc = ouvert;
     proc.spontane = spontane;
@@ -903,7 +937,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (existsSync(DOSSIER_ARTEFACTS_LUS)) args.push("--add-dir", DOSSIER_ARTEFACTS_LUS);
     args.push("--add-dir", DOSSIER_PLANNING, "--append-system-prompt", [...consignesApp(options, mcp), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
 
-    proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane, prepare?.dossier ?? null);
+    proc = lancerProcessus(bin, args, cwd, signature, skillsCle, options, acces, spontane, prepare?.dossier ?? null, compte);
   }
 
   ajouterTour(proc, nouveauTour(requestId, emit, acces));

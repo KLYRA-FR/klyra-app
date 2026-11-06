@@ -106,6 +106,28 @@ test("une session prépare le dossier de l'agent et laisse le poste intact", () 
   }
 });
 
+test("un compte Claude supplémentaire a son dossier préparé, lié à sa connexion", () => {
+  const { racine, home, poste, userData } = posteVide();
+  try {
+    const compte = { id: "11111111-1111-4111-8111-111111111111", dossier: path.join(userData, "claude-comptes", "11111111-1111-4111-8111-111111111111") };
+    mkdirSync(compte.dossier, { recursive: true });
+    writeFileSync(path.join(compte.dossier, ".credentials.json"), "{\"jeton\":\"second\"}\n");
+    const base = { userData, home, agent: "iris", dossierAgents: path.join(poste, "agents"), idsActifs: ["iris"], garder: () => true };
+    const agents = preparerSessionClaude(base);
+    const autre = preparerSessionClaude({ ...base, compte });
+    assert.ok(agents && autre);
+    assert.equal(autre.dossier, path.join(userData, "preparation-comptes", compte.id, "iris"));
+    /* Même équipe, même CLAUDE.md, mêmes sessions ; seule la connexion change. */
+    assert.equal(readFileSync(path.join(autre.dossier, "agents", "iris.md"), "utf8"), readFileSync(path.join(agents.dossier, "agents", "iris.md"), "utf8"));
+    assert.equal(path.resolve(autre.dossier, readlinkSync(path.join(autre.dossier, "projects"))), path.join(poste, "projects"));
+    assert.equal(path.resolve(autre.dossier, readlinkSync(path.join(autre.dossier, ".credentials.json"))), path.join(compte.dossier, ".credentials.json"));
+    assert.equal(path.resolve(agents.dossier, readlinkSync(path.join(agents.dossier, ".credentials.json"))), path.join(poste, ".credentials.json"));
+    assert.equal(readFileSync(path.join(poste, ".credentials.json"), "utf8"), "{\"jeton\":\"secret\"}\n");
+  } finally {
+    rmSync(racine, { recursive: true, force: true });
+  }
+});
+
 test("la session lit la bibliothèque de l'app, pas une skill ajoutée ensuite sur le poste", () => {
   const { racine, home, poste, userData } = posteVide();
   const avant = readFileSync(path.join(poste, "skills", "rangement", "SKILL.md"), "utf8");

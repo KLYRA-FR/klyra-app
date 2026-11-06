@@ -13,7 +13,7 @@ import { commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./ins
 /**
  * `donnees` : les comptes Claude supplémentaires (un dossier de connexion chacun, `donnees/claude-comptes`, cf.
  * electron/comptes-claude.ts). Le compte des agents reste celui de `connecter-claude`.
- * @param {{ home: string, donnees?: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string>, utilisation?: () => object | null },
+ * @param {{ home: string, donnees?: string, claude: { trouver: () => string | null, etat: () => string, methode: () => string | null, env: () => Record<string, string>, utilisation?: () => object | null, surLimitesCompte?: (cb: (id: string, info: unknown) => void) => void },
  *   codex: ReturnType<typeof import("./codex.mjs").creerCodex>, grok?: ReturnType<typeof import("./grok.mjs").creerGrok> }} options
  */
 export function creerMoteurs(options) {
@@ -36,6 +36,8 @@ export function creerMoteurs(options) {
         },
       })
     : null;
+  /* Une conversation qui travaille avec un compte supplémentaire : ses limites vont à l'anneau de ce compte. */
+  if (comptesClaude) claude.surLimitesCompte?.((id, info) => void comptesClaude.noterLimites(id, info).catch(() => {}));
 
   const CATALOGUE = [
     { id: "claude", nom: "Claude Code", fournisseur: "Claude", paquet: "@anthropic-ai/claude-code", trouver: claude.trouver, installable: false },
