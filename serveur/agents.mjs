@@ -25,12 +25,12 @@ import { lireJsonPartiel } from "./json-partiel.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
 import { creerJoints } from "./joints.mjs";
 import {
+  competencesDeLAgent,
   competencesPrechargees,
   creerSouvenir as creerSouvenirDans,
   dossierMemoire,
   ecrireSouvenir as ecrireSouvenirDans,
   filtreSkills,
-  lireCompetences,
   lireMemoire,
   lireSouvenir,
   porteeDeLaFiche,
@@ -295,9 +295,11 @@ export function creerAgents(options) {
    * Les compétences d'un agent sur ce VPS, pour le panneau de l'app (cf. electron/connaissances-agent.ts) :
    * celles que sa fiche précharge (la fiche copiée depuis le PC), celles du projet et de l'utilisateur
    * klyra. Mêmes gardes que pour un message : un agent valide, un projet sous le dossier personnel.
+   * Avec celles que le choix par agent de ce serveur lui coupe (`coupees`), le même filtre qu'à l'envoi.
    */
   function competences(agent, dossier) {
-    return lireCompetences(ficheDe(agentValide(agent)), path.join(home, ".claude"), projetValide(dossier));
+    const id = agentValide(agent);
+    return competencesDeLAgent(ficheDe(id), path.join(home, ".claude"), projetValide(dossier), lireEquipe().skillsParAgent, id);
   }
 
   /** Un agent de la demande : son identifiant, ou « principal » pour l'assistant. */

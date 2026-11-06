@@ -154,8 +154,9 @@ export function useGestesAgents(): Gestes {
         const chat = directDe(state.chats, id);
         const r = await lire(id, chat?.lieu ? { dossier: null, lieu: chat.lieu } : { dossier: null });
         if (!r.ok) throw new Error(r.message);
+        const coupees = new Set(r.data.coupees ?? []);
         const ligne = (origine: CompetenceLue["origine"], prechargee: boolean) => (s: { nom: string; description: string }) =>
-          ({ nom: s.nom, resume: sansChemin(s.description), prechargee, origine }) satisfies CompetenceLue;
+          ({ nom: s.nom, resume: sansChemin(s.description), prechargee, origine, ...(coupees.has(s.nom) ? { coupee: true } : {}) }) satisfies CompetenceLue;
         return [
           ...r.data.fiche.map(ligne("fiche", true)),
           ...r.data.projet.map(ligne("projet", false)),

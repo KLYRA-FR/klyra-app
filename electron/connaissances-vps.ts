@@ -54,13 +54,16 @@ function competenceDe(c: unknown): Competence | null {
   };
 }
 
-/** Ses compétences sur le VPS : celles que sa fiche précharge, du projet et de l'utilisateur klyra. */
+/** Ses compétences sur le VPS : celles que sa fiche précharge, du projet et de l'utilisateur klyra, et celles qu'il n'y reçoit pas. */
 export async function competencesVps(origine: string, jeton: string | null, agent: string, dossier: string | null): Promise<Competences> {
   const json = await demander(origine, jeton, requete("competences", agent, { dossier, sessionId: null }));
   const brut = json.competences as Json | undefined;
   if (!brut || typeof brut !== "object") throw new Error("Le VPS n’a pas répondu comme prévu.");
   const liste = (v: unknown) => (Array.isArray(v) ? v.map(competenceDe).filter((c): c is Competence => c !== null) : []);
-  return { fiche: liste(brut.fiche), poste: liste(brut.poste), projet: liste(brut.projet), plugins: liste(brut.plugins) };
+  const competences: Competences = { fiche: liste(brut.fiche), poste: liste(brut.poste), projet: liste(brut.projet), plugins: liste(brut.plugins) };
+  /* Celles que le choix par agent du serveur lui coupe ; absent d'un serveur d'avant ce champ (on ne sait pas). */
+  if (Array.isArray(brut.coupees)) competences.coupees = brut.coupees.filter((n): n is string => typeof n === "string" && n.length > 0 && n.length <= 200);
+  return competences;
 }
 
 /* ─── Mémoire ─────────────────────────────────────────────────── */

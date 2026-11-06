@@ -785,6 +785,10 @@ test("le VPS écrit les skills allumées dans sa bibliothèque et les sessions p
     assert.equal(readFileSync(path.join(home, ".claude", "skills", "ancienne", "SKILL.md"), "utf8").includes("POSTE"), true);
     assert.equal(process.env.KLYRA_USER_DATA, dossier);
     assert.deepEqual(nomsSkills(path.join(home, ".claude"), null).poste.sort(), ["maquette", "rangement"]);
+    // Le panneau d'une conversation du VPS lit aussi ce que le choix de ce serveur coupe à chacun.
+    const lire = async (agent) => (await appel(ecoute.port, `${CHEMIN_AGENT}/competences?agent=${agent}`, { jeton })).json.competences;
+    assert.deepEqual((await lire("iris")).coupees, ["maquette"]);
+    assert.deepEqual((await lire("hugo")).coupees, []);
 
     const filtreIris = filtreSkills(choix, "iris", path.join(home, ".claude"), null);
     const session = preparerSessionClaude({
@@ -831,6 +835,13 @@ test("le VPS écrit les skills allumées dans sa bibliothèque et les sessions p
     assert.equal(sortie.statut, 400);
     assert.equal(existsSync(path.join(dossier, "sortie")), false);
     assert.equal(existsSync(path.join(home, ".claude", "skills", "sortie")), false);
+
+    // Allumée pour Iris sur ce serveur (Réglages › Agents, ou « Lui donner » du panneau) : plus coupée pour elle.
+    await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches, assistant: "Cicco", skillsParAgent: choix, skills: [skill("rangement", "RANGE"), skill("maquette", "DESSINE")], empreinte: "e5" } });
+    assert.deepEqual((await lire("iris")).coupees, ["maquette"]);
+    const pourIris = { ...choix, activees: { ...choix.activees, iris: ["maquette"] } };
+    assert.equal((await appel(ecoute.port, "/klyra/v1/equipe/reglages-ecrire", { methode: "POST", jeton, corps: { skillsParAgent: pourIris } })).statut, 200);
+    assert.deepEqual((await lire("iris")).coupees, []);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

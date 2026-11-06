@@ -152,6 +152,8 @@ export interface CompetenceLue {
   prechargee: boolean;
   /** D'où elle vient, tel que la source le dit : fiche, projet, poste, plugin. */
   origine: "fiche" | "projet" | "poste" | "plugin";
+  /** Coupée pour lui dans Réglages › Agents : il ne la reçoit pas, même nommée dans sa fiche. */
+  coupee?: boolean;
 }
 
 /** Un appel du journal de consommation, tel que le poste le lit. Son contenu ne part jamais. */

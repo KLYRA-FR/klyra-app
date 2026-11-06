@@ -1,22 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { Interrupteur } from "@/components/reglages/ui";
-import { BoutonIcone } from "@/components/ui/Bouton";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { annoncer } from "@/lib/annonces";
 import { getBridge, type Competence, type CompetencesAgent, type ContexteConnaissances } from "@/lib/bridge";
 import { poste } from "@/lib/plateforme";
+import { useReglagesAgents } from "@/lib/reglages-agents";
+import { resumeFiche } from "@/lib/skills";
 import type { Role } from "@/types/domain";
+import { definirSkill, type OrigineSkill } from "../../../../electron/skills-par-agent";
 import type { Lecture } from "./donnees";
 import { EnteteVue, messageErreur, Note, TitreGroupe } from "./elements";
 
-/** Le nombre à montrer sur la ligne : celles de sa fiche, sinon celles qu'il peut utiliser. */
+/**
+ * Le nombre à montrer sur la ligne : celles de sa fiche (et combien lui sont coupées), sinon celles qu'il
+ * reçoit. Une skill coupée dans Réglages › Agents ne lui arrive pas, même nommée dans sa fiche.
+ */
 export function resumeCompetences(lecture: Lecture<CompetencesAgent>): string | undefined {
   if (lecture.etat !== "pret") return undefined;
-  const { fiche, poste: duPoste, projet, plugins = [] } = lecture.valeur;
-  if (fiche.length) return `${fiche.length} dans sa fiche`;
-  const n = duPoste.length + projet.length + plugins.length;
+  const { fiche, poste: duPoste, projet, plugins = [], coupees = [] } = lecture.valeur;
+  const coupee = (s: Competence) => coupees.includes(s.nom);
+  if (fiche.length) return resumeFiche(fiche.length, fiche.filter(coupee).length);
+  const n = [...duPoste, ...projet, ...plugins].filter((s) => !coupee(s)).length;
   return n ? `${n} disponible${n > 1 ? "s" : ""}` : "Aucune";
 }
 
@@ -28,6 +36,8 @@ function CarteCompetence({
   onMontrer,
   prechargee,
   onBasculer,
+  alerte,
+  onDonner,
   occupe,
   ou,
 }: {
@@ -35,6 +45,10 @@ function CarteCompetence({
   onMontrer?: () => void;
   prechargee: boolean;
   onBasculer?: (oui: boolean) => void;
+  /** Pourquoi elle ne lui arrive pas, quand ça contredit sa fiche. */
+  alerte?: string;
+  /** La lui donner (Réglages › Agents) : seulement pour une skill qui lui est coupée. */
+  onDonner?: () => void;
   occupe: boolean;
   /** Où l'agent travaille : « ce Mac », « ce PC » ou « le serveur ». */
   ou: string;
@@ -53,6 +67,12 @@ function CarteCompetence({
           competence.description && <span className="line-clamp-2 text-ui-xs leading-[1.45] text-texte-tertiaire">{competence.description}</span>
         ) : (
           <span className="text-ui-xs leading-[1.45] text-texte-erreur">Introuvable sur {ou} : l’agent ne la recevra pas.</span>
+        )}
+        {alerte && <span className="text-ui-xs leading-[1.45] text-texte-erreur">{alerte}</span>}
+        {onDonner && (
+          <Bouton variant="gris" taille="mini" className="mt-1 self-start" disabled={occupe} onClick={onDonner}>
+            Lui donner
+          </Bouton>
         )}
       </span>
       {onMontrer && competence.dossier && (
@@ -80,7 +100,8 @@ const POURQUOI: Record<"assistant" | "partage" | "sans-fiche", string> = {
 
 /**
  * Ses compétences : les skills que sa fiche précharge (à ajouter ou retirer d'ici), celles du projet et
- * du poste que tout agent peut suivre, et ce que sa description dit qu'il couvre.
+ * du poste qu'il reçoit, celles que Réglages › Agents lui coupe (à lui donner d'ici), et ce que sa
+ * description dit qu'il couvre. Les coupées viennent du serveur de la conversation, comme à l'envoi.
  */
 export function VueCompetences({
   role,
@@ -88,6 +109,7 @@ export function VueCompetences({
   lecture,
   attribuer,
   pourquoiFige,
+  actualiser,
   onRetour,
 }: {
   role: Role;
@@ -96,6 +118,8 @@ export function VueCompetences({
   /** Ajoute ou retire une compétence préchargée par sa fiche ; absent : figé (cf. `pourquoiFige`). */
   attribuer?: (nom: string, oui: boolean) => Promise<void>;
   pourquoiFige: keyof typeof POURQUOI | null;
+  /** Relit ses compétences (après lui avoir donné une skill). */
+  actualiser?: () => void;
   onRetour: () => void;
 }) {
   const bridge = getBridge()?.agents;
@@ -112,11 +136,42 @@ export function VueCompetences({
   // Une skill de la fiche se reconnaît par son nom ou par le dossier où elle est rangée.
   const dansLaFiche = (s: Competence) => !!c?.fiche.some((f) => f.nom === s.nom || f.nom === dossierDe(s.dossier));
 
+  /* Ce que Réglages › Agents lui retire, sur le serveur de la conversation (le même filtre qu'à l'envoi). */
+  const reglagesSkills = useReglagesAgents(contexte?.lieu ?? null);
+  const coupees = new Set(c?.coupees ?? []);
+  const estCoupee = (s: Competence) => coupees.has(s.nom);
+  // Comme à l'envoi : une skill de l'app (ou du serveur) l'emporte sur celle du projet du même nom.
+  const origineDe = (nom: string): OrigineSkill => (c?.poste.some((s) => s.nom === nom) ? "poste" : "projet");
+  const choix = reglagesSkills.reglages?.skillsParAgent ?? null;
+  /** Lui donne une skill coupée, pour lui seul ; vrai si c'est écrit. */
+  const donnerA = async (nom: string): Promise<boolean> => {
+    if (!choix?.fige) {
+      setErreur("Les réglages des agents ne sont pas encore lus : réessaie dans un instant.");
+      return false;
+    }
+    const ok = await reglagesSkills.changerSkills(definirSkill(choix, role.id, nom, origineDe(nom), true));
+    actualiser?.();
+    return ok;
+  };
+  const donner = (s: Competence) => async () => {
+    setEnCours(s.nom);
+    setErreur(null);
+    try {
+      if (await donnerA(s.nom)) annoncer(`${s.nom} donnée à ${role.name}.`);
+    } catch (e) {
+      setErreur(messageErreur(e));
+    } finally {
+      setEnCours(null);
+    }
+  };
+
   const basculer = attribuer
     ? (s: Competence) => async (oui: boolean) => {
         setEnCours(s.nom);
         setErreur(null);
         try {
+          // Précharger une skill qu'il ne reçoit pas : la lui donner d'abord, sinon sa fiche la demanderait pour rien.
+          if (oui && estCoupee(s) && !(await donnerA(s.nom))) return;
           await attribuer(s.nom, oui);
           annoncer(oui ? `${s.nom} préchargée pour ${role.name}.` : `${s.nom} n’est plus préchargée.`);
         } catch (e) {
@@ -127,7 +182,8 @@ export function VueCompetences({
       }
     : null;
 
-  const liste = (titre: string, aide: string, competences: Competence[], prechargees: boolean) =>
+  const ouReglages = surServeur ? "Réglages › Agents de ce serveur" : "Réglages › Agents";
+  const liste = (titre: string, aide: ReactNode, competences: Competence[], prechargees: boolean) =>
     competences.length > 0 && (
       <section className="flex flex-col gap-1.5">
         <TitreGroupe>{titre}</TitreGroupe>
@@ -139,6 +195,8 @@ export function VueCompetences({
               onMontrer={montrer ? () => montrer(s.nom) : undefined}
               prechargee={prechargees}
               onBasculer={basculer ? (oui) => void basculer(s)(oui) : undefined}
+              alerte={prechargees && estCoupee(s) ? `Coupée pour ${role.name} dans ${ouReglages} : sa fiche la demande, mais il ne la reçoit pas.` : undefined}
+              onDonner={estCoupee(s) ? () => void donner(s)() : undefined}
               occupe={enCours !== null}
               ou={ou}
             />
@@ -147,6 +205,8 @@ export function VueCompetences({
         <Note>{aide}</Note>
       </section>
     );
+  // Les coupées hors de sa fiche, une fois chacune (un même nom dans l'app et le projet n'a qu'un réglage).
+  const coupeesHorsFiche = c ? [...new Map([...c.projet, ...c.poste].filter((s) => estCoupee(s) && !dansLaFiche(s)).map((s) => [s.nom, s])).values()] : [];
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -178,13 +238,13 @@ export function VueCompetences({
             c.fiche,
             true,
           )}
-          {liste("Du projet", "Rangées dans le dossier .claude/skills du projet.", c.projet.filter((s) => !dansLaFiche(s)), false)}
+          {liste("Du projet", "Rangées dans le dossier .claude/skills du projet.", c.projet.filter((s) => !dansLaFiche(s) && !estCoupee(s)), false)}
           {liste(
             surServeur ? "Du serveur" : "De l’app",
             surServeur
-              ? "Tous tes agents sur ce serveur peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une."
-              : "Celles que KLYRA garde, copiées une fois depuis .claude/skills. Tous tes agents peuvent s’en servir : leur nom et leur description sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.",
-            c.poste.filter((s) => !dansLaFiche(s)),
+              ? `Celles de ce serveur que ${role.name} reçoit : leur nom et leur description lui sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.`
+              : `Celles que KLYRA garde, copiées une fois depuis .claude/skills, et que ${role.name} reçoit : leur nom et leur description lui sont présentés à chaque appel, leur texte n’est lu qu’au besoin. Tape « / » au début d’un message pour en demander une.`,
+            c.poste.filter((s) => !dansLaFiche(s) && !estCoupee(s)),
             false,
           )}
           {liste(
@@ -193,6 +253,19 @@ export function VueCompetences({
             (c.plugins ?? []).filter((s) => !dansLaFiche(s)),
             false,
           )}
+          {liste(
+            `Coupées pour ${role.name}`,
+            <>
+              {ouReglages} les lui retire : il ne les voit pas et ne peut pas les charger, même avec « / ». « Lui donner » en allume une pour lui seul ; la précharger la lui
+              donne aussi.{" "}
+              <Link href="/reglages?section=agents" className="text-texte-principal underline decoration-bordure-forte underline-offset-2 hover:text-texte-accent">
+                Ouvrir Réglages › Agents
+              </Link>
+            </>,
+            coupeesHorsFiche,
+            false,
+          )}
+          {reglagesSkills.erreur && <Note erreur>{reglagesSkills.erreur}</Note>}
           {!c.fiche.length && !c.projet.length && !c.poste.length && !(c.plugins ?? []).length && (
             <Note>
               {surServeur
