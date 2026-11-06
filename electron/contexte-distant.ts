@@ -4,12 +4,16 @@
  * serveur tient lui-même (`fil`), ou la conversation à qui le serveur rapporte la réponse d'un fil
  * (`retour` : le message, avant la réponse de l'agent ; cf. serveur/fils.mjs).
  */
+/** L'id d'un compte Claude supplémentaire (cf. comptes-claude.ts). */
+const ID_COMPTE = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+
 export interface ContexteReponse {
   chatId: string;
   agentId: string;
   titre: string;
   telephone?: { messageId: string; texte: string; creeLe: string };
-  choix?: { fournisseur: string; modele: string | null; effort: string | null };
+  /** `compteClaude` : le compte Claude qui a répondu (null : celui des agents) ; absent d'un serveur ancien. */
+  choix?: { fournisseur: string; modele: string | null; effort: string | null; compteClaude?: string | null };
   fil?: FilDistant;
   retour?: { messageId: string; roleId: string; texte: string; creeLe: string };
 }
@@ -83,5 +87,7 @@ export function contexteDe(origine: string, c: Partial<ContexteReponse> | undefi
   const valide = choix && ["claude", "codex", "grok"].includes(choix.fournisseur)
     && (choix.modele === null || typeof choix.modele === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(choix.modele))
     && (choix.effort === null || typeof choix.effort === "string" && /^[a-z]{1,12}$/.test(choix.effort));
-  return { chatId: c.chatId, agentId: c.agentId, titre, lieu: origine, telephone: { messageId: t.messageId, texte: t.texte.slice(0, 8000), creeLe: t.creeLe }, ...(valide ? { choix } : {}) };
+  const compte = valide && choix.compteClaude !== undefined ? (choix.compteClaude === null ? null : typeof choix.compteClaude === "string" && ID_COMPTE.test(choix.compteClaude) ? choix.compteClaude : undefined) : undefined;
+  const lu = valide ? { fournisseur: choix.fournisseur, modele: choix.modele, effort: choix.effort, ...(compte !== undefined ? { compteClaude: compte } : {}) } : null;
+  return { chatId: c.chatId, agentId: c.agentId, titre, lieu: origine, telephone: { messageId: t.messageId, texte: t.texte.slice(0, 8000), creeLe: t.creeLe }, ...(lu ? { choix: lu } : {}) };
 }

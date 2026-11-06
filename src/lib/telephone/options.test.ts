@@ -26,6 +26,16 @@ describe("options d'un message (File)", () => {
     expect(pourCePoste({}, "poste-pc-00002")).toBe(true);
   });
 
+  test("le compte Claude choisi sur le téléphone : un id de compte ou null, jamais autre chose", () => {
+    const compte = "11111111-1111-4111-8111-111111111111";
+    expect(lireOptions(ecrireOptions({ fournisseur: "claude", modele: null, effort: null, compteClaude: compte }))).toEqual({ fournisseur: "claude", modele: null, effort: null, compteClaude: compte });
+    /* Revenir au compte des agents : null, pas absent. */
+    expect(lireOptions('{"compteClaude":null}')).toEqual({ compteClaude: null });
+    for (const brut of ['"poste"', '"../claude-comptes"', "3", '"11111111-1111-1111-1111-111111111111"']) expect(lireOptions(`{"compteClaude":${brut}}`)).toEqual({});
+    expect(lireModele(JSON.stringify({ modele: "opus", effort: "high", compteClaude: compte }))).toEqual({ modele: "opus", effort: "high", compteClaude: compte });
+    expect(lireModele('{"modele":"opus","effort":"high","compteClaude":"poste"}')).toEqual({ modele: "opus", effort: "high" });
+  });
+
   test("le modèle d'une conversation copiée", () => {
     expect(lireModele('{"modele":"opus","effort":"high"}')).toEqual({ modele: "opus", effort: "high" });
     expect(lireModele(null)).toBeNull();

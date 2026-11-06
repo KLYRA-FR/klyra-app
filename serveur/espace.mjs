@@ -95,6 +95,11 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
     const valeur = lireType("conversation").find((e) => e.id === chatId)?.valeur;
     const chat = valeur?.chat ?? { id: chatId, kind: "direct", projectId: null, title: titre, roleIds: [roleId], sessions: {}, luJusqua: null };
     const suivant = { ...changerDeMoteur(chat, choix.fournisseur), modele: choix.modele, effort: choix.effort, updatedAt: new Date(maintenant()).toISOString() };
+    /* Le compte Claude choisi (null : celui des agents) ; absent du choix, celui de la conversation reste. */
+    if (choix.compteClaude !== undefined) {
+      if (choix.compteClaude) suivant.compteClaude = choix.compteClaude;
+      else delete suivant.compteClaude;
+    }
     ecrire({ elements: [{ type: "conversation", id: chatId, valeur: { chat: suivant, messages: valeur?.messages ?? [] } }] });
   }
 
@@ -147,7 +152,8 @@ export function creerEspace({ donnees, maintenant = Date.now }) {
   }
 
   function appeler(methode, corps = {}) {
-    if (methode === "lire") return { ...lire(corps.depuis), choixModeleTelephone: true };
+    /* `compteClaudeTelephone` : ce serveur fait répondre le compte Claude choisi sur le téléphone. */
+    if (methode === "lire") return { ...lire(corps.depuis), choixModeleTelephone: true, compteClaudeTelephone: true };
     if (methode === "ecrire") return ecrire(corps);
     throw new ErreurEspace("Ce serveur ne connaît pas cette demande.");
   }

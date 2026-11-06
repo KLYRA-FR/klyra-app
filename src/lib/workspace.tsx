@@ -1427,8 +1427,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         chat = stateRef.current.chats.find((c) => c.id === contexte.chatId) ?? chat;
         roleId = contexte.agentId;
         if (chat && contexte.choix) {
-          const { fournisseur: moteur, modele, effort } = contexte.choix;
+          const { fournisseur: moteur, modele, effort, compteClaude } = contexte.choix;
           chat = { ...changerDeMoteur(chat, moteur), modele, effort };
+          /* Le compte Claude qui a répondu sur le VPS (absent d'un serveur ancien : celui de la conversation reste). */
+          if (compteClaude !== undefined) {
+            if (compteClaude) chat = { ...chat, compteClaude };
+            else delete chat.compteClaude;
+          }
           const suite = chat;
           dispatch({ type: "chat/update", id: chat.id, patch: () => suite });
           stateRef.current = { ...stateRef.current, chats: stateRef.current.chats.map((c) => c.id === suite.id ? suite : c) };

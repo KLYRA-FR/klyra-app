@@ -10,7 +10,8 @@ const simule = vi.hoisted(() => ({
   mutation: vi.fn(),
   jeton: "acces-fictif",
   lieu: null as string | null,
-  serveurChat: null as { fournisseur: string; modele: string | null; effort: string | null } | null,
+  serveurChat: null as { fournisseur: string; modele: string | null; effort: string | null; compteClaude?: string } | null,
+  comptesTelephone: true,
 }));
 const adresse = "https://vps.exemple.test:8791";
 const origine = "dm-dev@vps.exemple.test:8791";
@@ -41,11 +42,12 @@ beforeEach(() => {
   simule.jeton = "acces-fictif";
   simule.lieu = null;
   simule.serveurChat = null;
+  simule.comptesTelephone = true;
   simule.conversations = [];
   simule.mutation.mockReset().mockResolvedValue("message-en-file");
   vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn() });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("/espace/lire")
-    ? Response.json({ resultat: { revision: 0, choixModeleTelephone: true, elements: simule.serveurChat ? [{ type: "conversation", id: origine, valeur: { chat: simule.serveurChat } }] : [] } })
+    ? Response.json({ resultat: { revision: 0, choixModeleTelephone: true, ...(simule.comptesTelephone ? { compteClaudeTelephone: true } : {}), elements: simule.serveurChat ? [{ type: "conversation", id: origine, valeur: { chat: simule.serveurChat } }] : [] } })
     : new Response(null, { status: 202 })));
 });
 
@@ -91,6 +93,32 @@ describe("destination réelle des messages du téléphone", () => {
     expect(corps.options).toMatchObject({ moteur: fournisseur, modele: choix.modele, effort: choix.effort });
     expect(simule.mutation).not.toHaveBeenCalled();
   });
+  test("le compte Claude choisi part au VPS, ou celui de la conversation sans nouveau choix", async () => {
+    const compte = "11111111-1111-4111-8111-111111111111";
+    const corpsEnvoye = () => JSON.parse(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/agent/envoyer")).at(-1)![1]!.body as string);
+    simule.serveurChat = { fournisseur: "claude", modele: "opus", effort: "high" };
+    await porteEnvoi()({ conversationOrigine: origine, texte: "Bonjour", options: { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: compte } });
+    expect(corpsEnvoye().choix).toEqual({ fournisseur: "claude", modele: "opus", effort: "high", compteClaude: compte });
+    expect(corpsEnvoye().options).toMatchObject({ moteur: "claude", compteClaude: compte });
+    /* Sans nouveau choix : le compte gardé sur le VPS pour cette conversation, sans choix à réécrire. */
+    simule.serveurChat = { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: compte };
+    await porteEnvoi()({ conversationOrigine: origine, texte: "Encore" });
+    expect(corpsEnvoye().choix).toBeUndefined();
+    expect(corpsEnvoye().options.compteClaude).toBe(compte);
+    /* Retour au compte des agents. */
+    await porteEnvoi()({ conversationOrigine: origine, texte: "Avec les agents", options: { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: null } });
+    expect(corpsEnvoye().choix.compteClaude).toBeNull();
+    expect(corpsEnvoye().options.compteClaude).toBeUndefined();
+    expect(simule.mutation).not.toHaveBeenCalled();
+  });
+
+  test("un VPS qui ne sait pas faire répondre le compte choisi refuse avant d'envoyer", async () => {
+    simule.comptesTelephone = false;
+    simule.serveurChat = { fournisseur: "claude", modele: "opus", effort: "high" };
+    await expect(porteEnvoi()({ conversationOrigine: origine, texte: "Bonjour", options: { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: "11111111-1111-4111-8111-111111111111" } })).rejects.toThrow("choisir le compte Claude");
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith("/agent/envoyer"))).toBe(false);
+  });
+
   test("un VPS ancien refuse le changement de fournisseur sans prendre le message", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ resultat: { elements: [] } })));
     await expect(porteEnvoi()({ conversationOrigine: origine, texte: "Bonjour", options: { fournisseur: "grok", modele: "modele-test", effort: "high" } })).rejects.toThrow("Mets à jour ce serveur");

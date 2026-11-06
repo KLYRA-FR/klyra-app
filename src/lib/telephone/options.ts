@@ -14,6 +14,8 @@ export interface OptionsMessage {
   /** Présents : le modèle et l'effort choisis dans la feuille (null : ceux de la fiche). */
   modele?: string | null;
   effort?: string | null;
+  /** Présent : le compte Claude choisi pour cette conversation (id d'un compte supplémentaire ; null : celui des agents). */
+  compteClaude?: string | null;
   /** Refaire une réponse (« Réessayer », « Plus concis », « Changer de modèle »…). */
   reessayer?: { messageId: string; facon: FaconReessai; modele?: string };
   /** « Créer une branche dans une nouvelle conversation » à partir de ce message. */
@@ -31,6 +33,14 @@ export const FACONS: readonly FaconReessai[] = ["reessayer", "details", "concis"
 const ID = /^[\w.:-]{1,200}$/;
 const ALIAS = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/;
 const CLE_POSTE = /^[\w-]{8,80}$/;
+/** L'id d'un compte Claude supplémentaire (cf. electron/comptes-claude.ts). */
+export const ID_COMPTE_CLAUDE = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+
+/** Le compte Claude relu : un id valide, null (le compte des agents), ou undefined (absent ou illisible : rien ne change). */
+export function lireCompteClaude(brut: unknown): string | null | undefined {
+  if (brut === null) return null;
+  return texte(brut, ID_COMPTE_CLAUDE);
+}
 
 const texte = (v: unknown, motif: RegExp): string | undefined => (typeof v === "string" && motif.test(v) ? v : undefined);
 const objet = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
@@ -52,6 +62,8 @@ export function lireOptions(json: string | null | undefined): OptionsMessage {
   if (a) options.a = a;
   if ("modele" in brut) options.modele = brut.modele === null ? null : (texte(brut.modele, ALIAS) ?? null);
   if ("effort" in brut) options.effort = brut.effort === null ? null : (texte(brut.effort, ALIAS) ?? null);
+  const compte = lireCompteClaude(brut.compteClaude);
+  if (compte !== undefined) options.compteClaude = compte;
   const reessai = objet(brut.reessayer);
   const facon = reessai?.facon;
   const messageReessai = texte(reessai?.messageId, ID);
@@ -86,13 +98,14 @@ export function ecrireOptions(options: OptionsMessage): string | null {
 }
 
 /** Le modèle et l'effort choisis pour une conversation, tels que l'ordinateur les copie (`conversationsCompte.modele`). */
-export function lireModele(json: string | null | undefined): { fournisseur?: IdFournisseur; modele: string | null; effort: string | null } | null {
+export function lireModele(json: string | null | undefined): { fournisseur?: IdFournisseur; modele: string | null; effort: string | null; compteClaude?: string | null } | null {
   if (!json) return null;
   try {
     const brut = objet(JSON.parse(json));
     if (!brut) return null;
     const fournisseur = FOURNISSEURS.find((f) => f.id === brut.fournisseur)?.id;
-    return { ...(fournisseur ? { fournisseur } : {}), modele: texte(brut.modele, ALIAS) ?? null, effort: texte(brut.effort, ALIAS) ?? null };
+    const compte = lireCompteClaude(brut.compteClaude);
+    return { ...(fournisseur ? { fournisseur } : {}), modele: texte(brut.modele, ALIAS) ?? null, effort: texte(brut.effort, ALIAS) ?? null, ...(compte ? { compteClaude: compte } : {}) };
   } catch {
     return null;
   }
