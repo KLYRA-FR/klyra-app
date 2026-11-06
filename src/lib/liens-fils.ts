@@ -20,3 +20,12 @@ export function decouperFils(texte: string): MorceauFil[] {
   if (debut < texte.length) morceaux.push({ texte: texte.slice(debut), fil: false });
   return morceaux;
 }
+
+/**
+ * Ce qu'un clic sur un identifiant fait, d'après les conversations connues (`undefined` : pas encore lues) :
+ * ouvrir le fil, dire qu'il est introuvable, ou attendre la liste.
+ */
+export function cibleFil(id: string, conversations: readonly { origine: string }[] | undefined): "ouvrir" | "introuvable" | "attente" {
+  if (!conversations) return "attente";
+  return conversations.some((c) => c.origine === id) ? "ouvrir" : "introuvable";
+}

@@ -32,6 +32,7 @@ import { CarteAtelierTelephone, ChoixTelephone, LigneAtelierTelephone } from "./
 import { CarteEquipeTelephone, LigneEquipeTelephone } from "./EquipeTelephone";
 import { CarteTelephone } from "./CarteTelephone";
 import { ActionsMessage, arreterLecture } from "./ActionsMessage";
+import { AvecLiensFilsTelephone } from "./LienFilTelephone";
 import type { MessageEnAttente } from "@/lib/telephone/chats";
 
 /** Deux messages du même auteur à moins de 5 min d'écart forment un groupe : un seul nom, un seul rond (comme au bureau). */
@@ -92,7 +93,9 @@ function Bulle({ texte, ton, projetId, onLocal }: { texte: string; ton: "user" |
   }
   return (
     <div data-cherchable onClickCapture={(e) => suivreLien(e, projetId, router, onLocal)} className="w-fit max-w-full min-w-0 rounded-xl bg-fond-survol px-3.5 py-2.5 [overflow-wrap:anywhere]">
-      <Markdown source={texte} className="gap-2 text-body-s leading-[1.55] text-texte-principal" />
+      <AvecLiensFilsTelephone>
+        <Markdown source={texte} className="gap-2 text-body-s leading-[1.55] text-texte-principal" />
+      </AvecLiensFilsTelephone>
     </div>
   );
 }
