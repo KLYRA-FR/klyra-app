@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   cheminSouvenir,
+  competencesDeLAgent,
   creerSouvenir,
   dossierMemoire,
   ecrireSouvenir,
@@ -127,6 +128,31 @@ test("compétences : celles de la fiche retrouvées sur le poste ou le projet, p
     assert.deepEqual(c.poste.map((s) => s.description), ["Range les fichiers"]);
     assert.deepEqual(c.projet.map((s) => s.nom), ["deploi"]);
     assert.deepEqual(lireCompetences(null, config, null).projet, []);
+  } finally {
+    fin();
+  }
+});
+
+test("compétences d'un agent : celles que le choix par agent lui coupe, même nommées dans sa fiche", () => {
+  const { config, projet, fin } = poste();
+  try {
+    for (const nom of ["rangement", "projet-soir"]) {
+      mkdirSync(path.join(config, "skills", nom), { recursive: true });
+      writeFileSync(path.join(config, "skills", nom, "SKILL.md"), `---\nname: ${nom}\ndescription: ${nom}\n---\n`);
+    }
+    mkdirSync(path.join(projet, ".claude", "skills", "deploi"), { recursive: true });
+    writeFileSync(path.join(projet, ".claude", "skills", "deploi", "SKILL.md"), "---\nname: deploi\n---\n");
+    const fiche = "---\nname: iris\nskills: projet-soir\n---\n";
+    // Pas encore figé : tout est reçu.
+    assert.deepEqual(competencesDeLAgent(fiche, config, projet, null, "iris").coupees, []);
+    // Figé avant « projet-soir » : une skill personnelle nouvelle n'arrive pas tant qu'on ne l'allume pas.
+    const choix = { fige: true, personnellesConnues: ["rangement"], agentsConnus: ["principal", "iris"], coupees: { iris: ["deploi"] }, activees: {} };
+    const c = competencesDeLAgent(fiche, config, projet, choix, "iris");
+    assert.deepEqual(c.fiche.map((s) => s.nom), ["projet-soir"]);
+    assert.deepEqual(c.coupees, ["deploi", "projet-soir"]);
+    // Allumée pour elle : plus coupée ; l'assistant garde son propre choix.
+    assert.deepEqual(competencesDeLAgent(fiche, config, projet, { ...choix, activees: { iris: ["projet-soir"] } }, "iris").coupees, ["deploi"]);
+    assert.deepEqual(competencesDeLAgent(null, config, projet, choix, "principal").coupees, ["projet-soir"]);
   } finally {
     fin();
   }

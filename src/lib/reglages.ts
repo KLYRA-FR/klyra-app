@@ -129,14 +129,16 @@ export function useReglages() {
     }
   }, []);
 
-  /** Les skills reçues par chaque agent. */
-  const changerSkills = useCallback(async (skillsParAgent: SkillsParAgent) => {
+  /** Les skills reçues par chaque agent. Faux si l'écriture a échoué (l'erreur est dans `erreur`). */
+  const changerSkills = useCallback(async (skillsParAgent: SkillsParAgent): Promise<boolean> => {
     const actuels = await reglagesActuels();
     setErreur(null);
     try {
       await enregistrer({ ...actuels, skillsParAgent });
+      return true;
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
+      return false;
     }
   }, []);
 

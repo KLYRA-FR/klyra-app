@@ -44,7 +44,9 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
   const contexte = contexteDe(chat, project, role.id);
   // Relue à la fin de chaque travail : l'agent a pu écrire un souvenir.
   const memoire = useMemoireAgent(role.id, contexte, !!travail);
-  const competences = useCompetencesAgent(role.id, contexte, role.file?.modifiedAt);
+  // Relues quand sa fiche change, ou quand le panneau lui donne une skill (Réglages › Agents).
+  const [relecture, setRelecture] = useState(0);
+  const competences = useCompetencesAgent(role.id, contexte, `${role.file?.modifiedAt ?? ""}:${relecture}`);
   const consommation = useConsommationAgent(role.id);
 
   const local = tous.find((a) => a.role.id === role.id) ?? null;
@@ -90,6 +92,7 @@ export function ReglagesAgent({ chat }: { chat: Chat }) {
         lecture={competences}
         attribuer={canEdit && !assistant && !lie && role.file ? attribuer : undefined}
         pourquoiFige={assistant ? "assistant" : lie ? "partage" : !role.file ? "sans-fiche" : null}
+        actualiser={() => setRelecture((n) => n + 1)}
         onRetour={retour}
       />
     );
