@@ -121,6 +121,25 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
   const [edition, setEdition] = useState<string | null>(null);
   const [listeArchives, setListeArchives] = useState(false);
   const boiteArchives = useRef<HTMLDivElement>(null);
+  const bande = useRef<HTMLDivElement>(null);
+  const [debord, setDebord] = useState({ gauche: false, droite: false });
+
+  /* La bande d'onglets défile : on garde l'onglet affiché visible, et on sait s'il en reste à gauche ou à droite. */
+  const mesurer = () => {
+    const b = bande.current;
+    if (!b) return;
+    setDebord({ gauche: b.scrollLeft > 1, droite: b.scrollLeft + b.clientWidth < b.scrollWidth - 1 });
+  };
+  useEffect(() => {
+    const b = bande.current;
+    if (!b) return;
+    b.querySelector('[role="tab"][aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    mesurer();
+    const obs = new ResizeObserver(mesurer);
+    obs.observe(b);
+    return () => obs.disconnect();
+  }, [chatId, ouverts.length]);
+  const defiler = (sens: -1 | 1) => bande.current?.scrollBy({ left: sens * 240, behavior: "smooth" });
 
   /* Clic ailleurs ou Échap : la liste des archivés se ferme (le menu du clic droit se ferme seul). */
   useEffect(() => {
@@ -160,7 +179,18 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
 
   return (
     <div className="flex h-11 shrink-0 items-center gap-1 border-b border-bordure-subtile px-2">
-      <div role="tablist" aria-label="Chat et fils" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+      {debord.gauche && <BoutonIcone taille="mini" icone={<Icon name="chevron-left" size={16} />} libelle="Onglets précédents" onClick={() => defiler(-1)} className="text-icone-secondaire" />}
+      <div
+        ref={bande}
+        role="tablist"
+        aria-label="Chat et fils"
+        onScroll={mesurer}
+        onWheel={(e) => {
+          // Molette verticale : la bande défile à l'horizontale.
+          if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY;
+        }}
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+      >
         <Onglet chat={chatPrincipal} libelle="Chat" actif={chatId === principal} enEdition={false} onOuvrir={() => aller(principal)} onRenommer={() => {}} />
         {ouverts.length > 0 && <span aria-hidden="true" className="mx-0.5 h-4 w-px shrink-0 bg-bordure-subtile" />}
         {ouverts.map((c) => (
@@ -180,6 +210,7 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
           />
         ))}
       </div>
+      {debord.droite && <BoutonIcone taille="mini" icone={<Icon name="chevron-right" size={16} />} libelle="Onglets suivants" onClick={() => defiler(1)} className="text-icone-secondaire" />}
 
       {archives.length > 0 && (
         <div ref={boiteArchives} data-menu-fils className="relative">
