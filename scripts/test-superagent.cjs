@@ -16,6 +16,8 @@ const racine = path.join(__dirname, "..");
 const composant = path.join(__dirname, "superagent-composant.cjs");
 const { effetFichier, effetEtat, sha } = require("./superagent-composant.cjs");
 const dist = (module) => require(path.join(racine, "dist-electron", "superagent", module));
+/** Places du sémaphore : autant que de travaux ouverts à la fois (electron/fils-outils.ts). */
+const CAPACITE = dist("types.js").CAPACITE_OCCUPATIONS;
 
 const CTX = {
   compte: "compte-test",
@@ -408,17 +410,33 @@ async function t05() {
   ok(echus.includes(second.work_id) && lireTravail(relu, second.work_id).status === "reconciliation_required" && !apresBail.ok, "T05 bail échu : réconciliation, pas de départ");
   reconcilierTravail(relu, { work_id: second.work_id, constat_ref: "constat-bail" });
   ok(lireTravail(relu, second.work_id).status === "active" && lireTravail(relu, second.work_id).owner_agent_id === null, "T05 reprise seulement après constat");
-  ok(un(relu, "SELECT count(*) AS n FROM occupation").n <= 3, "T05 jamais plus de trois occupations");
+  ok(un(relu, "SELECT count(*) AS n FROM occupation").n <= CAPACITE, "T05 jamais plus d'occupations que de places");
   relu.close();
 
   const fils = tmp();
   const dbFils = ouvrir(fils);
   const registreFils = dist("outils-fils.js").creerRegistre();
-  await ouvrirFil(dbFils, registreFils, "Un", "dev");
-  await ouvrirFil(dbFils, registreFils, "Deux", "designer");
-  await ouvrirFil(dbFils, registreFils, "Trois", "qa");
-  const quatrieme = await outil(dbFils, registreFils, "ouvrir_fil", { agent: "growth", titre: "Quatre", brief: "Brief complet du quatrième." });
-  ok(quatrieme.startsWith("En attente") && registreFils.fils.length === 3, "T05 quatrième occupation refusée, fil non gardé");
+  const ouverts = [];
+  for (let i = 1; i <= CAPACITE; i++) ouverts.push(await ouvrirFil(dbFils, registreFils, `Fil ${i}`, ["dev", "designer", "qa"][i % 3]));
+  ok(CAPACITE === 5 && ouverts.every((o) => o.fil), `T05 cinq travaux ouverts (${ouverts.filter((o) => o.fil).length})`);
+  const deTrop = await outil(dbFils, registreFils, "ouvrir_fil", { agent: "growth", titre: "De trop", brief: "Brief complet du travail de trop." });
+  ok(
+    deTrop.startsWith("En attente : 5 travaux sont déjà ouverts. Places prises : ") && ouverts.every((o, i) => deTrop.includes(`Fil ${i + 1} (${o.fil})`)) && registreFils.fils.length === CAPACITE,
+    `T05 travail de trop refusé, fils occupants nommés, fil non gardé (${deTrop})`,
+  );
+
+  /* Places orphelines : un fil supprimé ou fermé dans l'app sans passer par fermer_fil garde sa place. */
+  const { libererOrphelins, placesLibres } = dist("cycle.js");
+  const { lireTravail: lire } = dist("travaux.js");
+  const gardes = new Set(ouverts.slice(2).map((o) => o.fil));
+  ok(libererOrphelins(dbFils, gardes).length === 0, "T05 une place prise à l'instant est gardée (fil pas encore à l'écran)");
+  const plusTard = () => Date.now() + 2 * MIN;
+  const rendues = libererOrphelins(dbFils, gardes, plusTard);
+  ok(rendues.length === 2 && placesLibres(dbFils) === 2, `T05 deux places orphelines rendues (${rendues.length}, ${placesLibres(dbFils)} libres)`);
+  ok(rendues.every((w) => lire(dbFils, w).owner_agent_id === null && lire(dbFils, w).status === "active"), "T05 travail rendu : sans responsable, statut et historique gardés");
+  ok(libererOrphelins(dbFils, gardes, plusTard).length === 0 && placesLibres(dbFils) === 2, "T05 les fils ouverts gardent leur place");
+  const reouvert = await ouvrirFil(dbFils, registreFils, "Après purge", "growth");
+  ok(!!reouvert.fil && placesLibres(dbFils) === 1, `T05 un nouveau fil prend une place rendue (${reouvert.texte})`);
   dbFils.close();
 }
 
@@ -546,6 +564,33 @@ async function t09() {
   ok(un(migre, "SELECT count(*) AS n FROM sqlite_master WHERE name = 'essai_modele'").n === 1, "T09 un journal v1 reçoit les tables v2");
   ok(fs.existsSync(`${path.join(dir, "journal.sqlite")}.v1-avant-migration.sqlite`), "T09 copie avant migration");
   migre.close();
+
+  /* Un journal v3 (trois places) passe à la capacité courante sans perdre ses occupations. */
+  const dirV3 = tmp();
+  ouvrir(dirV3).close();
+  const v3 = new DatabaseSync(path.join(dirV3, "journal.sqlite"));
+  v3.exec(`
+    DROP TABLE occupation;
+    CREATE TABLE occupation (
+      slot INTEGER PRIMARY KEY CHECK (slot BETWEEN 1 AND 3),
+      occupant_ref TEXT NOT NULL UNIQUE,
+      work_id TEXT UNIQUE REFERENCES work (work_id),
+      agent_id TEXT NOT NULL,
+      owner_epoch INTEGER,
+      acquired_at TEXT NOT NULL
+    );
+    INSERT INTO occupation (slot, occupant_ref, agent_id, acquired_at) VALUES (1, 'routeur', 'principal', '2026-11-06T00:00:00.000Z');
+    PRAGMA user_version = 3;
+  `);
+  v3.close();
+  const migreV3 = ouvrir(dirV3);
+  migreV3.prepare("INSERT INTO occupation (slot, occupant_ref, agent_id, acquired_at) VALUES (?, 'surveillance', 'principal', '2026-11-06T00:00:00.000Z')").run(CAPACITE);
+  ok(
+    Number(migreV3.prepare("PRAGMA user_version").get().user_version) === 4 && un(migreV3, "SELECT count(*) AS n FROM occupation").n === 2,
+    "T09 un journal v3 passe à cinq places, occupations gardées",
+  );
+  ok(fs.existsSync(`${path.join(dirV3, "journal.sqlite")}.v3-avant-migration.sqlite`), "T09 copie avant la migration v3");
+  migreV3.close();
 }
 
 async function poserOperation(db, travail, fil, cle, partir) {
