@@ -36,6 +36,12 @@ export const ANNONCE = { version: "0.1.65", texte: "Les tickets arrivent dans KL
 
 export const VERSIONS: Version[] = [
   {
+    version: "0.1.183",
+    publiee: "2026-11-06T15:33:38Z",
+    intro: "Le journal des versions du site est complété jusqu’à cette version. Rien ne change dans l’app.",
+    groupes: {},
+  },
+  {
     version: "0.1.182",
     publiee: "2026-11-06T15:07:14Z",
     groupes: {
