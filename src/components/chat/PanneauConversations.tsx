@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons/Icon";
 import { LigneAgent, LigneConversation, SectionBarre } from "@/components/shell/LignesBarre";
 import { MenuAgent } from "@/components/shell/MenuAgent";
 import { MenuConversationBarre, ModaleRenommer } from "@/components/shell/MenuConversationBarre";
+import { useSupprimerConversation } from "@/components/shell/useSupprimerConversation";
 import { MenuCreationAgent } from "@/components/team/MenuCreationAgent";
 import { useDesactiverAgent } from "@/components/team/useDesactiverAgent";
 import { BoutonIcone } from "@/components/ui/Bouton";
@@ -39,6 +40,7 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
   const menuConversation = useMenuContextuel<Chat>();
   const [desactiver, fenetreDesactiver] = useDesactiverAgent();
   const [renommage, setRenommage] = useState<Chat | null>(null);
+  const [supprimerConversation, fenetreSuppression] = useSupprimerConversation();
   const [voirMasques, setVoirMasques] = useState(false);
 
   const estActif = (role: Role) => currentId === idDirect(role.id) || agentDuFil === role.id;
@@ -228,10 +230,12 @@ export function PanneauConversations({ onClose }: { onClose: () => void }) {
           y={menuConversation.menu.y}
           onFermer={menuConversation.fermer}
           onRenommer={setRenommage}
+          onSupprimer={(chat) => void supprimerConversation(chat)}
         />
       )}
       {renommage && <ModaleRenommer chat={renommage} onFermer={() => setRenommage(null)} />}
       {fenetreDesactiver}
+      {fenetreSuppression}
     </aside>
   );
 }

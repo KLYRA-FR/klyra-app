@@ -194,7 +194,9 @@ export function LigneConversation({ chat, active, projet, onMenu }: { chat: Chat
   const qui = travail ? roles.find((r) => r.id === travail.roleId)?.name : null;
 
   return (
-    <div className="group/conv relative">
+    /* En colonne : l'ancre de l'infobulle du bouton d'épingle (un span inline-flex autour du bouton
+       en absolute) ne pose pas de ligne de texte vide sous la conversation. */
+    <div className="group/conv relative flex flex-col">
     <Link
       href={`/chat?id=${chat.id}`}
       data-conversation={chat.id}

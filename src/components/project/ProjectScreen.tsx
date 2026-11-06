@@ -31,7 +31,8 @@ const AUTO = "auto";
 function ChatRow({ chat }: { chat: Chat }) {
   const preview = useChatPreview(chat.id);
   return (
-    <div className="group/conv relative">
+    /* En colonne : l'ancre de l'infobulle de l'épingle ne pose pas de ligne vide (cf. LigneConversation). */
+    <div className="group/conv relative flex flex-col">
     <Link
       href={`/chat?id=${chat.id}`}
       data-conversation={chat.id}
