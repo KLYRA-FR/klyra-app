@@ -5,6 +5,7 @@ import { LOCAL } from "@/components/ui/Lien";
 import { getBridge } from "@/lib/bridge";
 import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { lireCatalogueMoteurs } from "@/lib/moteurs";
+import { skillsDemandables } from "@/lib/skills";
 import { comptesPourTelephone } from "@/lib/telephone/modeles";
 import { useWorkspace } from "@/lib/workspace";
 import { chaine, ErreurPoste, objet, type Gestes } from "../types";
@@ -59,7 +60,7 @@ export function useGestesFil(): Gestes {
       repondreAutorisation(messageId, demandeId, decision as (typeof DECISIONS)[number]);
       return { ok: true };
     },
-    /* La liste « / » du composeur (E2-32) : les mêmes skills que le composeur du bureau, noms et descriptions. */
+    /* La liste « / » du composeur (E2-32) : les mêmes skills que le composeur du bureau, noms et descriptions (jamais une coupée). */
     "fil.competences": async (args) => {
       const a = objet(args);
       const chat = chatDe(args);
@@ -69,9 +70,7 @@ export function useGestesFil(): Gestes {
       if (!lire) throw new ErreurPoste("indisponible", "Les compétences ne se lisent pas ici.");
       const r = await lire(agent, contexte.lieu ? { dossier: contexte.dossier, lieu: contexte.lieu } : { dossier: contexte.dossier });
       if (!r.ok) throw new ErreurPoste("erreur", r.message);
-      const { fiche, projet, poste, plugins } = r.data;
-      const toutes = [...fiche.filter((s) => s.dossier), ...projet, ...poste, ...(plugins ?? [])];
-      return { skills: toutes.map((s) => ({ nom: s.nom, description: s.description })), avecClaude: moteurDe(chat) === PAR_DEFAUT };
+      return { skills: skillsDemandables(r.data).map((s) => ({ nom: s.nom, description: s.description })), avecClaude: moteurDe(chat) === PAR_DEFAUT };
     },
     /* L'aperçu du projet (T-03) : une adresse publique s'ouvre sur le téléphone ; une adresse locale ne quitte pas l'ordinateur (P-8). */
     "fil.apercu": async (args) => {

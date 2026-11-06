@@ -17,6 +17,7 @@ import { roleFromContent } from "@/lib/agents";
 import { messageErreur } from "@/lib/compte";
 import type { Lien } from "@/lib/lien-bibliotheque";
 import { useLecturePoste, type LecturePoste } from "@/lib/poste/client";
+import { resumeFiche } from "@/lib/skills";
 import { useDirectEspace } from "@/lib/telephone/espace";
 import { ID_ASSISTANT, libelleRetour, roleLisible, syntheseUtilisation, teinteSure, texteConversations, type EtatsAgentsPoste } from "@/lib/telephone/agents";
 import { nouvelIdFil } from "@/lib/telephone/chats";
@@ -265,12 +266,13 @@ export function FicheAgentTelephone({ id }: { id: string }) {
   const synthese = utilisation ? syntheseUtilisation(utilisation, "30", maintenant) : null;
   const nbSouvenirs = souvenirs?.souvenirs.length;
   const nbFiche = competences?.competences.filter((c) => c.origine === "fiche").length;
+  const nbFicheCoupees = competences?.competences.filter((c) => c.origine === "fiche" && c.coupee).length ?? 0;
   const valeur = (texte: string | null) => <span className="flex shrink-0 items-center gap-1 text-ui text-texte-secondaire">{texte}<Icon name="chevron-right" size={20} className="text-icone-secondaire" /></span>;
   const reglages = (
     <SectionListe titre="Réglages">
       <GroupeListe>
         <LigneListe debut={<TuileIcone icone="note-01" />} retrait="tuile" nom="Souvenirs" fin={valeur(nbSouvenirs === undefined ? null : nbSouvenirs === 0 ? "Aucun" : `${nbSouvenirs} enregistré${nbSouvenirs > 1 ? "s" : ""}`)} href={`/equipe?agent=${encodeURIComponent(id)}&mode=souvenirs`} />
-        <LigneListe debut={<TuileIcone icone="layers-01" />} retrait="tuile" nom="Compétences" fin={valeur(nbFiche === undefined ? null : nbFiche === 0 ? "Aucune" : `${nbFiche} dans sa fiche`)} href={`/equipe?agent=${encodeURIComponent(id)}&mode=competences`} />
+        <LigneListe debut={<TuileIcone icone="layers-01" />} retrait="tuile" nom="Compétences" fin={valeur(nbFiche === undefined ? null : nbFiche === 0 ? "Aucune" : resumeFiche(nbFiche, nbFicheCoupees))} href={`/equipe?agent=${encodeURIComponent(id)}&mode=competences`} />
         <LigneListe debut={<TuileIcone icone="clock-backward" />} retrait="tuile" nom="Utilisation" fin={valeur(synthese ? (synthese.appels ? `${compact(synthese.jetons)} jetons · 30 j` : "Rien sur 30 j") : null)} href={`/equipe?agent=${encodeURIComponent(id)}&mode=utilisation`} />
         <LigneListe debut={<TuileIcone icone="clock-01" />} retrait="tuile" nom="Ses routines" fin={valeur(agent ? (agent.routines ? `${agent.routines} configurée${agent.routines > 1 ? "s" : ""}` : "Aucune") : null)} href={`/routines?vue=routines&agent=${encodeURIComponent(id)}`} />
       </GroupeListe>

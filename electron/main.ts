@@ -17,6 +17,7 @@ import {
   dossierMemoire,
   ecrireSouvenir,
   ErreurConnaissances,
+  competencesDeLAgent,
   lireCompetences,
   lireMemoire,
   lireSouvenir,
@@ -631,7 +632,8 @@ function registerBridge() {
     }
     const fiche = agent === "principal" ? null : await lireFiche(String(agent));
     const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? dossierConversation(String(agent), contexte) : null;
-    return lireCompetences(fiche?.content ?? null, configClaude(), dossier);
+    // Avec celles que Réglages › Agents lui coupe : le panneau ne montre pas comme reçue une skill qui ne part pas.
+    return competencesDeLAgent(fiche?.content ?? null, configClaude(), dossier, lireReglages().skillsParAgent, String(agent));
   });
   handle("agents:competence:montrer", async (agent: string, contexte: Contexte, nom: string) => {
     if (surVps(contexte)) throw new ErreurConnaissances("introuvable", "Cette compétence est sur le serveur : elle ne s’ouvre pas sur ce poste.");

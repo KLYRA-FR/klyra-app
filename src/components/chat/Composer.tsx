@@ -16,7 +16,7 @@ import { useCompteClaude } from "@/lib/compte-claude";
 import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { findMention } from "@/lib/mentions";
 import { surRepondre } from "@/lib/repondre";
-import { commandeEnCours, skillsProposees, type SkillProposee } from "@/lib/skills";
+import { commandeEnCours, skillsDemandables, skillsProposees, type SkillProposee } from "@/lib/skills";
 import { useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Citation, Project, Role, RoleId } from "@/types/domain";
 import { PucesImages, VignettePiece } from "./ImageJointe";
@@ -301,14 +301,14 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   /* Compétences : « / » en tête du message, avec Claude comme avec ChatGPT (l'app donne à Codex les skills de
-     Claude). Celles du poste et du projet, que tout agent peut suivre, et celles que sa fiche précharge.
+     Claude). Celles du poste et du projet et celles que sa fiche précharge, sauf celles que Réglages › Agents lui coupe.
      Le résumé de la conversation est une commande de Claude Code seulement. */
   const competences = useCompetencesAgent(agent.id, contexteDe(chat, project, agent.id));
   const avecClaude = moteurDe(chat) === PAR_DEFAUT;
   const commande = fermee ? null : commandeEnCours(text, curseur);
   const skillsAProposer = useMemo(() => {
     if (commande === null) return [];
-    const dispo = competences.etat === "pret" ? [...competences.valeur.fiche.filter((s) => s.dossier), ...competences.valeur.projet, ...competences.valeur.poste, ...(competences.valeur.plugins ?? [])] : [];
+    const dispo = competences.etat === "pret" ? skillsDemandables(competences.valeur) : [];
     return skillsProposees([...dispo.map((s) => ({ nom: s.nom, description: s.description })), ...(avecClaude ? [COMPACTER] : [])], commande);
   }, [commande, competences, avecClaude]);
 

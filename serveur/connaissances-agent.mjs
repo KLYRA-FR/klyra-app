@@ -284,6 +284,13 @@ export function lireCompetences(contenuFiche, configClaude, dossierProjet) {
     const fiche = skillsDeLaFiche(contenuFiche ?? "").map((nom) => trouver(projet, nom) ?? trouver(poste, nom) ?? plugins.find((s) => s.nom === nom) ?? { nom, description: "", version: null, dossier: null });
     return { fiche, poste, projet, plugins };
 }
+/**
+ * Ses compétences, et celles que le choix par agent lui retire : ce que le panneau d'une conversation
+ * montre, sur ce PC comme sur un VPS (chacun avec son propre `skillsParAgent`).
+ */
+export function competencesDeLAgent(contenuFiche, configClaude, dossierProjet, choix, agent) {
+    return { ...lireCompetences(contenuFiche, configClaude, dossierProjet), coupees: filtreSkills(choix, agent, configClaude, dossierProjet).coupes };
+}
 /* ─── Skills dans une session ─────────────────────────────────── */
 /*
  * Ce que l'app fait pour que les skills marchent comme dans Claude Code (vérifié avec Claude Code

@@ -181,14 +181,22 @@ function CompetencesTelephone({ id }: { id: string }) {
                   <SectionListe key={groupe.id} titre={groupe.titre} compte={lignes.length}>
                     <GroupeListe>
                       {lignes.map((c) => (
-                        <LigneListe key={`${c.origine}-${c.nom}`} debut={<TuileIcone icone="layers-01" bleue={c.prechargee} />} retrait="tuile" nom={c.nom} ligne2={c.resume || undefined} />
+                        <LigneListe
+                          key={`${c.origine}-${c.nom}`}
+                          debut={<TuileIcone icone="layers-01" bleue={c.prechargee && !c.coupee} />}
+                          retrait="tuile"
+                          nom={c.nom}
+                          ligne2={c.coupee ? `Coupée pour lui : il ne la reçoit pas.${c.resume ? ` ${c.resume}` : ""}` : c.resume || undefined}
+                        />
                       ))}
                     </GroupeListe>
                     {groupe.id === "fiche" ? <p className="mt-2 px-1 text-ui-xs text-texte-secondaire">Leur texte entre dans chaque appel de l’agent.</p> : null}
                   </SectionListe>
                 );
               })}
-              <p className="px-1 text-ui-xs text-texte-secondaire">Tes agents peuvent se servir des autres au besoin. Précharger ou retirer : sur {sur}.</p>
+              <p className="px-1 text-ui-xs text-texte-secondaire">
+                Il peut se servir des autres au besoin, sauf de celles qui lui sont coupées. Précharger, retirer ou lui donner une skill : sur {sur}.
+              </p>
             </div>
           )}
         </VueLecture>
