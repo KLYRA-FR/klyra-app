@@ -24,7 +24,10 @@ function rendre(comptes: CompteClaudeLocal[], choisi: string | null) {
 }
 
 /** Les lignes du choix du compte, dans l'ordre : adresse et coche. */
-const lignesCompte = (html: string) => [...html.matchAll(/role="radio" aria-checked="(true|false)" title="([^"]+)"/g)].map((m) => [m[2], m[1] === "true"]);
+const lignesCompte = (html: string) => {
+  const groupe = html.split('aria-label="Compte Claude"')[1]?.split('role="radiogroup"')[0] ?? "";
+  return [...groupe.matchAll(/role="radio" aria-checked="(true|false)" title="([^"]+)"/g)].map((m) => [m[2], m[1] === "true"]);
+};
 
 describe("choix du compte Claude d'une conversation", () => {
   test("un seul compte connecté : pas de choix, l'adresse reste dans l'en-tête", () => {
@@ -45,7 +48,7 @@ describe("choix du compte Claude d'une conversation", () => {
 
   test("un compte choisi qui n'est plus connecté est signalé, aucun n'est coché", () => {
     const html = rendre([compte("poste", "agents@exemple.test", true), compte(SECOND, "second@exemple.test")], "22222222-2222-4222-8222-222222222222");
-    expect(lignesCompte(html).every(([, coche]) => !coche)).toBe(true);
+    expect(lignesCompte(html)).toEqual([["agents@exemple.test", false], ["second@exemple.test", false]]);
     expect(html).toContain("n’est plus connecté");
   });
 });
