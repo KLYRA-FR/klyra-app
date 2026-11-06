@@ -6,6 +6,7 @@ import { Markdown } from "@/components/ui/Markdown";
 import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { arreterVps, autoriserVps, type EchangeDirect } from "@/lib/telephone/vps-direct";
 import { RondAgent, useCartes } from "./AgentsChat";
+import { AvecLiensFilsTelephone } from "./LienFilTelephone";
 import { useSupport } from "./poste";
 
 /**
@@ -46,7 +47,9 @@ export function EchangesVps({ echanges }: { echanges: EchangeDirect[] }) {
             </div>
             <div className="flex min-w-0 flex-col items-start gap-2">
               {e.reponse ? (
-                <Markdown source={e.reponse} className="min-w-0 gap-2 text-body-s leading-[1.55] text-texte-principal" />
+                <AvecLiensFilsTelephone>
+                  <Markdown source={e.reponse} className="min-w-0 gap-2 text-body-s leading-[1.55] text-texte-principal" />
+                </AvecLiensFilsTelephone>
               ) : e.statut === "en-cours" ? (
                 <p className="text-ui text-texte-secondaire">{nom(e.agentId)} réfléchit…</p>
               ) : null}
