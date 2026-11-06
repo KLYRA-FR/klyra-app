@@ -10,7 +10,7 @@ import { garderBrouillon, lireBrouillons, surBrouillon } from "@/lib/brouillons"
 import { cn } from "@/lib/cn";
 import { messageErreur } from "@/lib/compte";
 import { COMMANDE_COMPACTER, formaterJetons, MARGE_PLUS_TARD } from "@/lib/contexte";
-import type { Activite } from "@/lib/copie-compte";
+import { activiteOccupe, type Activite } from "@/lib/copie-compte";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { bandeauComposeur, majuscule } from "@/lib/poste-texte";
 import { fournisseur, nomEffort, PAR_DEFAUT, type IdFournisseur } from "@/lib/fournisseurs";
@@ -324,7 +324,7 @@ export function ComposeurFil({
     el.style.height = `${Math.min(el.scrollHeight, plafond)}px`;
   }, [texte]);
 
-  const occupe = ouvert && !!activite && activite.etat !== "question";
+  const occupe = ouvert && activiteOccupe(activite);
   const arretEnCours = arretDemande && occupe;
 
   const peutEnvoyer = (texte.trim().length > 0 || pieces.length > 0) && !envoi && !horsLigne;

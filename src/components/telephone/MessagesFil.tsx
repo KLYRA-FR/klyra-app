@@ -415,6 +415,50 @@ function EnTravail({ roleId, depuis, vide, attente }: { roleId: string; depuis: 
   );
 }
 
+/** Une tâche de fond, et depuis combien de temps elle tourne. */
+function LigneFond({ description, depuis }: { description: string; depuis: string }) {
+  const chrono = useChrono(depuis);
+  return (
+    <li className="flex min-w-0 items-baseline gap-1.5">
+      <span aria-hidden="true" className="size-1 shrink-0 translate-y-[-2px] rounded-full bg-icone-secondaire" />
+      <span className="truncate">{description}</span>
+      {chrono ? <span className="shrink-0 tabular-nums">{chrono}</span> : null}
+    </li>
+  );
+}
+
+/**
+ * « Iris continue en arrière-plan · Capture de la vidéo · 2 min » sous le fil, comme au bureau (`EnFond`) :
+ * sa réponse est rendue, une commande ou un agent qu'elle a lancé tourne encore ; « Iris reprend… » quand
+ * l'un d'eux revient. Copié par l'ordinateur ouvert (`activiteFond`).
+ */
+function EnFondTelephone({ activite }: { activite: Extract<Activite, { etat: "fond" }> }) {
+  const { nom } = useCartes();
+  const seule = activite.taches.length === 1 ? activite.taches[0] : null;
+  const chrono = useChrono(activite.reprise || !seule ? null : seule.depuis);
+  const detail = activite.reprise ? (activite.taches.length ? `${activite.libelle} encore en fond` : "une tâche de fond est terminée") : seule ? activite.libelle : `${activite.libelle} en cours`;
+  return (
+    <div data-en-fond={activite.roleId} className="mt-2 flex flex-col gap-1 text-ui text-texte-secondaire">
+      <p className="flex min-h-6 min-w-0 items-center gap-1.5">
+        <Icon name="loader-01" size={16} className="shrink-0 animate-spin text-icone-accent [animation-duration:1.5s]" />
+        {/* Seul l'état est annoncé, pas le temps qui passe. */}
+        <span aria-live="polite" className="klyra-respire shrink-0 font-medium">
+          {activite.reprise ? `${nom(activite.roleId)} reprend…` : `${nom(activite.roleId)} continue en arrière-plan`}
+        </span>
+        {detail ? <span className="truncate">· {detail}</span> : null}
+        {chrono ? <span className="shrink-0 tabular-nums">· {chrono}</span> : null}
+      </p>
+      {!seule && !activite.reprise && activite.taches.length > 1 ? (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0 pl-6 text-ui-s">
+          {activite.taches.map((t, i) => (
+            <LigneFond key={i} description={t.description} depuis={t.depuis} />
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 /** Les réactions sous la bulle (E2-40) : toucher la sienne la retire ; elles ne font pas répondre l'agent. */
 function ReactionsSousBulle({ message, contexte }: { message: MessageLu; contexte: ContexteFil }) {
   if (!message.reactions.length) return null;
@@ -732,7 +776,7 @@ export function MessagesFil({
   useEffect(() => {
     const el = zone.current;
     if (el && enBas.current && !ancre.current) el.scrollTop = el.scrollHeight;
-  }, [messages?.length, taille, enFile.length]);
+  }, [messages?.length, taille, enFile.length, contexte.activite?.etat]);
 
   /* La personne lit plus haut : sa position ne bouge pas, ↓ compte les messages arrivés depuis. Le plafond de 400 fait glisser le début : on suit le dernier vu, pas la longueur. */
   const dernierId = messages?.at(-1)?.origine ?? null;
@@ -847,6 +891,7 @@ export function MessagesFil({
                 </Fragment>
               );
             })}
+            {contexte.activite?.etat === "fond" ? <EnFondTelephone activite={contexte.activite} /> : null}
             {enFile.map((m) => (
               <MessageEnFile key={m._id} message={m} />
             ))}

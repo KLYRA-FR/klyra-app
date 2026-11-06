@@ -20,6 +20,7 @@ import { useHorsLigne } from "./BandeauReseau";
 import { MenuFeuille, useFermerFeuille } from "./Feuille";
 import { RondAgent, useCartes } from "./AgentsChat";
 import type { ContexteFil } from "./MessagesFil";
+import { activiteOccupe } from "@/lib/copie-compte";
 
 /** La réponse lue à voix haute en ce moment (une seule à la fois, comme au bureau). */
 let enLecture: string | null = null;
@@ -103,7 +104,7 @@ export function ActionsMessage({ message, contexte, conversation, onFermer }: { 
   const creerFil = useMutation(api.operationsFile.creerFil);
   const [vue, setVue] = useState<"actions" | "reessayer" | "modeles" | "agents" | null>("actions");
   const parle = enTrainDeLire(message.origine);
-  const occupe = !!contexte.activite && contexte.activite.etat !== "question";
+  const occupe = activiteOccupe(contexte.activite);
   const agent = message.auteurKind === "role";
   const auteur = message.auteurId ?? ASSISTANT;
   const quand = `${isSameDay(message.creeLe, new Date().toISOString()) ? "Aujourd’hui" : formatDaySeparator(message.creeLe).split(" · ")[0]}, ${formatTime(message.creeLe)}`;

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   activiteDe,
+  activiteOccupe,
   changements,
   cheminPartage,
   conversationCompte,
@@ -144,6 +145,31 @@ describe("ce que fait l'agent", () => {
     expect(activiteDe([message([{ type: "text", text: "C'est fait." }], { statut: "fait" })], null, 1)).toBeNull();
     expect(lireActivite(JSON.stringify(activiteDe([question], null, 1)))?.etat).toBe("question");
     expect(lireActivite("{")).toBeNull();
+  });
+
+  test("encore en fond, réponse rendue : la tâche, son début, sans chemin ; pas « occupé »", () => {
+    const rendue = message([{ type: "text", text: "Je lance la capture." }], { statut: "fait" });
+    const fond = { roleId: "hugo", reprise: false, taches: [{ description: `Capture de ${DOSSIER}/video.mp4`, genre: "commande" as const, debut: Date.parse("2026-11-01T10:01:00.000Z") }] };
+    const a = activiteDe([rendue], null, 0, DOSSIER, fond);
+    expect(a).toEqual({
+      etat: "fond",
+      roleId: "hugo",
+      messageId: "m1",
+      depuis: "2026-11-01T10:01:00.000Z",
+      libelle: "Capture de video.mp4",
+      reprise: false,
+      taches: [{ description: "Capture de video.mp4", depuis: "2026-11-01T10:01:00.000Z" }],
+    });
+    expect(activiteOccupe(a)).toBe(false);
+    expect(activiteOccupe(activiteDe([message([], { statut: "en-cours" })], travail, 0))).toBe(true);
+    /* Une réponse qui s'écrit l'emporte : le bureau montre alors « travaille… ». */
+    expect(activiteDe([message([], { statut: "en-cours" })], travail, 0, null, fond)?.etat).toBe("reflechit");
+    /* Plusieurs tâches : le compte ; la reprise, sans tâche ; au plus 5 nommées. */
+    const plusieurs = { roleId: "hugo", reprise: false, taches: Array.from({ length: 7 }, (_, i) => ({ description: `T${i}`, genre: i ? ("commande" as const) : ("agent" as const), debut: i })) };
+    expect(activiteDe([rendue], null, 0, null, plusieurs)).toMatchObject({ libelle: "6 commandes et 1 agent", depuis: "1970-01-01T00:00:00.000Z" });
+    expect((activiteDe([rendue], null, 0, null, plusieurs) as { taches: unknown[] }).taches).toHaveLength(5);
+    expect(activiteDe([rendue], null, 0, null, { roleId: "hugo", reprise: true, taches: [] })).toMatchObject({ etat: "fond", reprise: true, libelle: "", depuis: rendue.createdAt });
+    expect(conversationCompte(chat(), [rendue], [], null, null, fond)?.activite).toContain('"etat":"fond"');
   });
 });
 

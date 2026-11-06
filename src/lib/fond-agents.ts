@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type { AgentEvent } from "@/lib/bridge";
 
+export { resumeFond } from "./fond-resume";
+
 /**
  * Ce que chaque agent fait encore en arrière-plan une fois sa réponse rendue : les commandes et agents
  * lancés en fond, et sa reprise quand l'un d'eux revient (cf. electron/taches-fond.ts, PC et VPS).
@@ -80,19 +82,17 @@ function abonner(f: () => void) {
   return () => abonnes.delete(f);
 }
 
+/** Tout ce qui tourne en fond, par conversation : la copie pour le téléphone le lit. */
+export function lireFonds(): Readonly<Record<string, readonly FondAgent[]>> {
+  return fonds;
+}
+
+/** Pour recopier le compte quand ce qui tourne en fond change. */
+export function useTousFonds(): Readonly<Record<string, readonly FondAgent[]>> {
+  return useSyncExternalStore(abonner, lireFonds, lireFonds);
+}
+
 /** Les agents de cette conversation qui ont quelque chose en fond (ou qui reprennent). */
 export function useFonds(chatId: string): readonly FondAgent[] {
   return useSyncExternalStore(abonner, () => fondsDe(chatId), () => AUCUN);
-}
-
-/** « 1 commande », « 2 commandes et 1 agent » : ce qui tourne, compté par genre. */
-export function resumeFond(taches: readonly TacheFond[]): string {
-  const n = { commande: 0, agent: 0, autre: 0 };
-  for (const t of taches) n[t.genre] += 1;
-  const morceaux = [
-    n.commande ? `${n.commande} commande${n.commande > 1 ? "s" : ""}` : "",
-    n.agent ? `${n.agent} agent${n.agent > 1 ? "s" : ""}` : "",
-    n.autre ? `${n.autre} tâche${n.autre > 1 ? "s" : ""}` : "",
-  ].filter(Boolean);
-  return morceaux.length > 1 ? `${morceaux.slice(0, -1).join(", ")} et ${morceaux.at(-1)}` : (morceaux[0] ?? "");
 }
