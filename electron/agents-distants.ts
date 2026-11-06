@@ -1,11 +1,12 @@
 import { app, net } from "electron";
-import { existsSync, readFileSync } from "node:fs";
-import { rename, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { enregistrerConsommation } from "./consommation";
 import { ligneValide } from "./consommation-ecart";
 import type { AgentEvent, StreamOptions } from "./moteurs/types";
 import { contexteDe, type ContexteReponse } from "./contexte-distant";
+import { CHEMIN_JOINT, conversationValide, envoyerJoints, ErreurJoint, remplacerJoints } from "./joints-vps";
 import { estOutilFil } from "./fils-outils";
 import { CHEMIN_SERVEUR } from "./lecture-serveur";
 import type { SkillEnvoyee } from "./preparation-fournisseur";
@@ -223,6 +224,59 @@ async function requete(origine: string, chemin: string, methode: "GET" | "POST" 
   } finally {
     clearTimeout(delai);
   }
+}
+
+/** Une pièce jointe peut peser 20 Mo : plus de temps qu'une requête ordinaire. */
+const ATTENTE_JOINT_MS = 120_000;
+
+/** Envoie au VPS une pièce jointe d'un message (octets bruts, cf. electron/joints-vps.ts). */
+async function envoyerOctets(origine: string, conversation: string, nom: string, octets: Uint8Array): Promise<{ status: number; json: unknown }> {
+  const jeton = jetonDe.get(origine)?.() ?? null;
+  if (!jeton) return { status: 401, json: null };
+  const controle = new AbortController();
+  const delai = setTimeout(() => controle.abort(), ATTENTE_JOINT_MS);
+  try {
+    const parametres = new URLSearchParams({ conversation, nom });
+    const reponse = await net.fetch(`${origine}${CHEMIN_JOINT}?${parametres}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jeton}`, "Content-Type": "application/octet-stream" },
+      body: octets as BodyInit,
+      signal: controle.signal,
+      redirect: "error",
+      cache: "no-store",
+    });
+    return { status: reponse.status, json: await reponse.json().catch(() => null) };
+  } finally {
+    clearTimeout(delai);
+  }
+}
+
+/** Taille d'un fichier joint de ce PC ; null s'il n'y est pas (ou n'est pas un fichier). */
+function tailleSurCePc(chemin: string): number | null {
+  if (!path.isAbsolute(chemin)) return null;
+  try {
+    const s = statSync(chemin);
+    return s.isFile() ? s.size : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Les pièces jointes partent au VPS avant le message, qui porte alors leurs chemins là-bas.
+ * Sans pièce jointe de ce PC, le message part tel quel.
+ */
+async function promptAvecJoints(origine: string, options: StreamOptions): Promise<string> {
+  const fichiers = options.fichiers ?? [];
+  if (!fichiers.some((f) => tailleSurCePc(f) !== null)) return options.prompt;
+  if (!conversationValide(options.chatId)) throw new ErreurJoint("Pièces jointes impossibles : la conversation n’est pas reconnue par le VPS.");
+  const conversation = options.chatId;
+  const envoyes = await envoyerJoints(fichiers, {
+    taille: tailleSurCePc,
+    lire: (chemin) => readFile(chemin),
+    envoyer: (nom, octets) => envoyerOctets(origine, conversation, nom, octets),
+  });
+  return remplacerJoints(options.prompt, envoyes);
 }
 
 /** Les réponses du VPS dont la consommation est déjà inscrite : un événement relu n'est pas compté deux fois. */
@@ -482,13 +536,14 @@ export async function streamDistant(origine: string, requestId: string, options:
   enCours.set(requestId, origine);
   try {
     await synchroniserEquipe(origine);
+    const prompt = await promptAvecJoints(origine, options);
     const recu = await requete(origine, "/klyra/v1/agent/envoyer", "POST", {
       requestId,
       options: {
         /* Claude Code ou Codex (ChatGPT) ; absent : Claude Code, comme sur un serveur plus ancien. */
         ...(options.moteur && options.moteur !== "claude" ? { moteur: options.moteur } : {}),
         agent: options.agent,
-        prompt: options.prompt,
+        prompt,
         sessionId: options.sessionId,
         modele: options.modele ?? null,
         effort: options.effort ?? null,
@@ -505,7 +560,7 @@ export async function streamDistant(origine: string, requestId: string, options:
     if (recu.status !== 202) throw new Error("Ce VPS ne sait pas encore faire tourner d’agents : relance la commande d’installation pour le mettre à jour.");
   } catch (error) {
     enCours.delete(requestId);
-    const message = error instanceof Error && error.message.length > 20 ? error.message : "Le VPS ne répond pas. S’il est éteint, ou hors de ton réseau Tailscale, l’agent ne peut pas répondre.";
+    const message = error instanceof ErreurJoint || (error instanceof Error && error.message.length > 20) ? (error as Error).message : "Le VPS ne répond pas. S’il est éteint, ou hors de ton réseau Tailscale, l’agent ne peut pas répondre.";
     echec(message);
   }
 }

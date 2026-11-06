@@ -26,6 +26,7 @@ import {
   viser,
 } from "./navigateur";
 import { consigneNavigateurTexte, estOutilNavigateur, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE } from "./definitions";
+import { CONNEXION_GOOGLE, estConnexionGoogle } from "./identite";
 import { formaterInstantane, normaliserAdresse, trancheTexte } from "./regles";
 
 export { estOutilNavigateur, OUTILS_NAVIGATEUR, OUTILS_NAVIGATEUR_LECTURE };
@@ -162,6 +163,7 @@ async function agir(args: Record<string, unknown>, appelant: { chatId: string; r
     remplir_connexion: "Remplit la connexion",
   };
   if (!libelle[action]) return texte("Action inconnue.", true);
+  if (estConnexionGoogle(o.url)) return texte(CONNEXION_GOOGLE, true);
   const wc = pageDeLAgent(o, appelant.roleId, libelle[action], true);
   let fait = libelle[action];
   let note: string | null = null;
