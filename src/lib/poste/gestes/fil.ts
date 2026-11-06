@@ -5,6 +5,7 @@ import { LOCAL } from "@/components/ui/Lien";
 import { getBridge } from "@/lib/bridge";
 import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { lireCatalogueMoteurs } from "@/lib/moteurs";
+import { comptesPourTelephone } from "@/lib/telephone/modeles";
 import { useWorkspace } from "@/lib/workspace";
 import { chaine, ErreurPoste, objet, type Gestes } from "../types";
 
@@ -28,7 +29,13 @@ export function useGestesFil(): Gestes {
       const a = objet(args);
       const id = chaine(a, "conversation", 200);
       const chat = state.chats.find((c) => c.id === id);
-      return lireCatalogueMoteurs(chat?.lieu ?? null);
+      const lieu = chat?.lieu ?? null;
+      /* Les comptes Claude connectés de la machine du fil : le téléphone choisit celui qui répond (adresse, abonnement, sans chemin). */
+      const [catalogue, comptes] = await Promise.all([
+        lireCatalogueMoteurs(lieu),
+        getBridge()?.claude?.comptes?.(lieu).then((r) => (r.ok ? comptesPourTelephone(r.data) : [])).catch(() => []) ?? Promise.resolve([]),
+      ]);
+      return { ...catalogue, comptes };
     },
     "fil.arreter": async (args) => {
       const conversation = chaine(objet(args), "conversation", 200);

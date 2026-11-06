@@ -169,6 +169,8 @@ export async function envoyerAuVps(p: {
   fournisseur?: IdFournisseur;
   modele?: string | null;
   effort?: string | null;
+  /** Présent : le compte Claude choisi (null : celui des agents) ; absent : celui de la conversation sur le VPS. */
+  compteClaude?: string | null;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const depart = generation;
   const jeton = jetonAppareil(p.adresse);
@@ -195,13 +197,20 @@ export async function envoyerAuVps(p: {
     if (!lecture.ok) return { ok: false, message: "Les réglages de cette conversation ne se lisent pas sur le VPS. Réessaie après avoir vérifié le serveur." };
     const lu = (await lecture.json()) as { resultat?: LectureEspace };
     if (!Array.isArray(lu.resultat?.elements)) return { ok: false, message: "La conversation ne se lit pas sur le VPS. Réessaie après avoir vérifié le serveur." };
-    const valeur = lu.resultat.elements.find((e) => e.type === "conversation" && e.id === p.conversation)?.valeur as { chat?: Pick<Chat, "fournisseur" | "modele" | "effort"> } | undefined;
+    const valeur = lu.resultat.elements.find((e) => e.type === "conversation" && e.id === p.conversation)?.valeur as { chat?: Pick<Chat, "fournisseur" | "modele" | "effort" | "compteClaude"> } | undefined;
     const chat = valeur?.chat;
     const moteur = p.fournisseur ?? chat?.fournisseur ?? "claude";
     if (!["claude", "codex", "grok"].includes(moteur)) return { ok: false, message: "Ce fournisseur n’est pas disponible sur ce téléphone." };
     if (p.fournisseur !== undefined && moteur !== (chat?.fournisseur ?? "claude") && !lu.resultat.choixModeleTelephone) {
       return { ok: false, message: "Mets à jour ce serveur pour changer de fournisseur depuis le téléphone. Ton message reste ici." };
     }
+    /* Le compte Claude : celui choisi ici, sinon celui de la conversation ; un serveur qui ne sait pas le faire répondre refuse avant. */
+    const compteClaude = moteur === "claude" ? (p.compteClaude === undefined ? (chat?.compteClaude ?? null) : p.compteClaude) : null;
+    const avecComptes = (lu.resultat as { compteClaudeTelephone?: unknown }).compteClaudeTelephone === true;
+    if (!avecComptes && (compteClaude || (p.compteClaude !== undefined && moteur === "claude"))) {
+      return { ok: false, message: "Mets à jour ce serveur pour choisir le compte Claude depuis le téléphone. Ton message reste ici." };
+    }
+    const choixCompte = avecComptes && moteur === "claude" && p.compteClaude !== undefined ? { compteClaude } : {};
     if (depart !== generation) return { ok: false, message: "Ce téléphone a été déconnecté : reconnecte-toi pour continuer." };
     const reponse = await fetch(`${p.adresse}${CHEMIN_AGENT}/envoyer`, {
       method: "POST",
@@ -210,10 +219,11 @@ export async function envoyerAuVps(p: {
       redirect: "error",
       body: JSON.stringify({
         requestId: echange.requestId,
-        ...((p.fournisseur !== undefined || p.modele !== undefined || p.effort !== undefined) ? { choix: {
+        ...((p.fournisseur !== undefined || p.modele !== undefined || p.effort !== undefined || "compteClaude" in choixCompte) ? { choix: {
           fournisseur: moteur,
           modele: p.modele === undefined ? (chat?.modele ?? null) : p.modele,
           effort: p.effort === undefined ? (chat?.effort ?? null) : p.effort,
+          ...choixCompte,
         } } : {}),
         options: {
           agent: p.agentId === "principal" ? null : p.agentId,
@@ -223,6 +233,7 @@ export async function envoyerAuVps(p: {
           moteur,
           modele: p.modele === undefined ? (chat?.modele ?? null) : p.modele,
           effort: p.effort === undefined ? (chat?.effort ?? null) : p.effort,
+          ...(compteClaude ? { compteClaude } : {}),
           acces: "demander",
           dossier: null,
         },

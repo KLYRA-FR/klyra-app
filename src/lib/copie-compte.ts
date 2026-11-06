@@ -413,7 +413,8 @@ export function conversationCompte(chat: Chat, duFil: Message[], projets: Projec
     parent: chat.fil ? `dm-${chat.fil.roleId}` : null,
     archiveLe: chat.fil?.statut === "archive" ? chat.updatedAt : null,
     activite: activite ? JSON.stringify(activite) : null,
-    modele: chat.fournisseur || chat.modele || chat.effort ? JSON.stringify({ ...(chat.fournisseur ? { fournisseur: chat.fournisseur } : {}), modele: chat.modele ?? null, effort: chat.effort ?? null }) : null,
+    /* Le compte Claude choisi ne compte qu'avec Claude (et garde le champ sous les 200 caractères du compte). */
+    modele: chat.fournisseur || chat.modele || chat.effort || chat.compteClaude ? JSON.stringify({ ...(chat.fournisseur ? { fournisseur: chat.fournisseur } : {}), modele: chat.modele ?? null, effort: chat.effort ?? null, ...(chat.compteClaude && !chat.fournisseur ? { compteClaude: chat.compteClaude } : {}) }) : null,
     contexte: contexteCompte(chat),
     ticket: ticketCompte(chat, duFil, projets, poste),
     contratTickets: CONTRAT_TICKETS,

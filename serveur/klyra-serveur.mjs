@@ -26,6 +26,7 @@ import { creerMoteurs } from "./moteurs.mjs";
 import { creerRoutines } from "./routines.mjs";
 import { VERSION_CODE_SERVEUR } from "./version-code.mjs";
 import { FOURNISSEURS, EFFORTS } from "./fournisseurs.mjs";
+import { idCompteSupplementaire } from "./comptes-claude.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
 export const CHEMIN_APPAIRER = "/klyra/v1/appairer";
@@ -768,11 +769,14 @@ export function creerGestionnaire(options) {
           if (!contexte?.telephone || !choix || !FOURNISSEURS.some((f) => f.id === choix.fournisseur)
             || (choix.modele !== null && (typeof choix.modele !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(choix.modele)))
             || (choix.effort !== null && !EFFORTS.some((e) => e.id === choix.effort))
-            || options?.moteur !== choix.fournisseur || options?.modele !== choix.modele || options?.effort !== choix.effort) return repondre(res, 400, { erreur: "choix" });
+            || options?.moteur !== choix.fournisseur || options?.modele !== choix.modele || options?.effort !== choix.effort
+            /* Le compte Claude choisi : un id de compte ou null, celui-là même que l'envoi utilise, et seulement avec Claude. */
+            || (choix.compteClaude !== undefined && ((choix.compteClaude !== null && !idCompteSupplementaire(choix.compteClaude))
+              || (choix.compteClaude !== null && choix.fournisseur !== "claude") || (options?.compteClaude ?? null) !== choix.compteClaude))) return repondre(res, 400, { erreur: "choix" });
           espace?.choisirModele(contexte.chatId, contexte.agentId, contexte.titre, choix);
         }
         if (contexte?.telephone && options && FOURNISSEURS.some((f) => f.id === (options.moteur ?? "claude"))) {
-          contexte.choix = { fournisseur: options.moteur ?? "claude", modele: options.modele ?? null, effort: options.effort ?? null };
+          contexte.choix = { fournisseur: options.moteur ?? "claude", modele: options.modele ?? null, effort: options.effort ?? null, compteClaude: idCompteSupplementaire(options.compteClaude) };
         }
         if (contexte) journal?.poserContexte(requestId, contexte);
         const cle = options && typeof options === "object" ? cleConversation(options.conversation ?? contexte?.chatId, options.agent, options.moteur) : null;

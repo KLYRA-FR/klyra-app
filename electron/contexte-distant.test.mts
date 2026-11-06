@@ -22,6 +22,19 @@ test("le choix du fournisseur traverse le relais du PC, sans être appliqué à 
   assert.equal(contexteDe(VPS, { chatId: "dm-cicco", agentId: "cicco", telephone, choix: { ...choix, fournisseur: "inconnu" } })?.choix, undefined);
 });
 
+test("le compte Claude qui a répondu sur le VPS revient au PC : un id de compte, null, ou rien d'un serveur ancien", () => {
+  const telephone = { messageId: "tel-3", texte: "Salut", creeLe: "2026-11-06T10:00:00.000Z" };
+  const choix = { fournisseur: "claude", modele: "opus", effort: "high" };
+  const SECOND = "11111111-1111-4111-8111-111111111111";
+  const lire = (compteClaude?: unknown) => contexteDe(VPS, { chatId: "dm-cicco", agentId: "cicco", titre: "Cicco", telephone, choix: { ...choix, ...(compteClaude !== undefined ? { compteClaude } : {}) } })?.choix;
+  assert.deepEqual(lire(SECOND), { ...choix, compteClaude: SECOND });
+  assert.deepEqual(lire(null), { ...choix, compteClaude: null });
+  assert.deepEqual(lire(), choix);
+  /* Un id qui n'est pas celui d'un compte n'arrive pas jusqu'à la conversation. */
+  assert.deepEqual(lire("../poste"), choix);
+  assert.deepEqual(lire({ id: SECOND }), choix);
+});
+
 test("sans message du téléphone, une conversation ordinaire n'est pas reprise", () => {
   assert.equal(contexteDe(VPS, { chatId: "dm-hugo", agentId: "hugo", titre: "Hugo" }), null);
   assert.equal(contexteDe(VPS, { chatId: "../x", agentId: "hugo", titre: "x", telephone: { messageId: "m", texte: "a", creeLe: "2026-11-02T10:00:00Z" } }), null);

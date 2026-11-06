@@ -248,7 +248,7 @@ export interface ContexteReponse {
   titre: string;
   lieu: string;
   telephone?: { messageId: string; texte: string; creeLe: string };
-  choix?: { fournisseur: string; modele: string | null; effort: string | null };
+  choix?: { fournisseur: string; modele: string | null; effort: string | null; compteClaude?: string | null };
   /** Un fil ouvert par un agent du VPS pendant que ce PC était fermé : l'app le crée s'il n'est pas encore là. */
   fil?: Fil;
   /** La réponse d'un fil rapportée par le VPS à l'agent qui l'a lancé : le message, avant sa réponse. */

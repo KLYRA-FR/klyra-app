@@ -33,7 +33,7 @@ export function ContenuChoixModele({
   tactile?: boolean;
   lieu?: string | null;
   /** Les comptes Claude connectés sur la machine de la conversation (le compte des agents en premier). */
-  comptes?: CompteClaudeLocal[];
+  comptes?: Pick<CompteClaudeLocal, "id" | "email" | "abonnement" | "poste">[];
   /** Le compte supplémentaire choisi pour la conversation ; null : le compte des agents. */
   compte?: string | null;
   onCompte?: (id: string | null) => void;

@@ -132,6 +132,8 @@ export function SyncCompte({ actif }: { actif: boolean }) {
           w.brancher(chatId, options.brancher.messageId);
           return;
         }
+        /* Le compte Claude choisi sur le téléphone : l'ordinateur relance la session avec lui (cf. workspace.choisirCompteClaude). */
+        if (options.compteClaude !== undefined) w.choisirCompteClaude(chatId, options.compteClaude);
         if ("modele" in options || options.fournisseur) {
           const chat = w.state.chats.find((c) => c.id === chatId);
           const moteur = options.fournisseur ?? chat?.fournisseur ?? PAR_DEFAUT;

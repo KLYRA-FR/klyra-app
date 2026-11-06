@@ -45,6 +45,7 @@ export function useEnvoyerMessage() {
             fournisseur: options.fournisseur,
             modele: options.modele,
             effort: options.effort,
+            ...(options.compteClaude !== undefined ? { compteClaude: options.compteClaude } : {}),
           });
           if (!r.ok) throw new Error(r.message);
           return null;
