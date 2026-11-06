@@ -19,6 +19,7 @@ export function MenuConversationBarre({
   y,
   onFermer,
   onRenommer,
+  onSupprimer,
 }: {
   chat: Chat;
   projet?: string;
@@ -26,6 +27,7 @@ export function MenuConversationBarre({
   y: number;
   onFermer: (rendreFocus?: boolean) => void;
   onRenommer: (chat: Chat) => void;
+  onSupprimer: (chat: Chat) => void;
 }) {
   const router = useRouter();
   const roles = useRoles();
@@ -72,6 +74,10 @@ export function MenuConversationBarre({
           </ElementContextuel>
         </>
       )}
+      <SeparateurContextuel />
+      <ElementContextuel icone="trash-01" danger onChoisir={() => onSupprimer(chat)}>
+        Supprimer…
+      </ElementContextuel>
     </MenuContextuel>
   );
 }

@@ -28,6 +28,7 @@ import { reglagesActuels, surReglages } from "@/lib/reglages";
 import { useLivraisonRoutines } from "@/lib/routines-livraison";
 import { useRoutines } from "@/lib/routines";
 import { marquerRappelNotifie, restaurerRappels, supprimerRappel, type RappelSupprime } from "@/lib/suppression-rappels";
+import { refusSuppression, sansConversation } from "@/lib/suppression-conversation";
 import { jouer, notificationSonore } from "@/lib/sons/sons";
 import { skillEnTete } from "@/lib/skills";
 import { avecEpingle, basculerEpingle, trierConversations } from "@/lib/epinglage";
@@ -208,6 +209,7 @@ type WorkspaceAction =
   | { type: "chat/add"; chat: Chat }
   | { type: "chat/update"; id: string; patch: (chat: Chat) => Chat }
   | { type: "chat/vider"; id: string; le: string }
+  | { type: "chat/supprimer"; id: string }
   | { type: "chat/repartir"; id: string; le: string }
   | { type: "message/add"; message: Message }
   | { type: "message/update"; id: string; patch: (message: Message) => Message }
@@ -400,6 +402,8 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
         messages: state.messages.filter((m) => m.chatId !== action.id),
         chats: state.chats.map((c) => (c.id === action.id ? viderConversation(c, action.le) : c)),
       };
+    case "chat/supprimer":
+      return sansConversation(state, action.id);
     case "chat/repartir":
       return { ...state, chats: state.chats.map((c) => (c.id === action.id ? repartirAZero(c, action.le) : c)) };
     case "message/update":
@@ -671,6 +675,11 @@ interface WorkspaceApi {
   majTicket: (chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => void;
   renommerChat: (chatId: string, titre: string) => void;
   epinglerChat: (chatId: string, epingler: boolean) => void;
+  /**
+   * Supprime une conversation d'équipe et ses messages (cf. `suppression-conversation.ts`). Renvoie la raison
+   * d'un refus (fil, conversation directe, agent au travail), ou null si elle est supprimée.
+   */
+  supprimerConversation: (chatId: string) => string | null;
   /** Ferme un fil : il s'arrête et part dans les archivés (« supprimé » : caché des archivés). Rien n'est effacé. */
   archiverFil: (chatId: string, supprime?: boolean) => void;
   rouvrirFil: (chatId: string) => void;
@@ -1975,6 +1984,20 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     }
   }, [bridge]);
 
+  const supprimerConversation = useCallback((chatId: string) => {
+    const etat = stateRef.current;
+    const refus = refusSuppression(etat.chats.find((c) => c.id === chatId), !!etat.travail[chatId]);
+    if (refus) return refus;
+    stateRef.current = sansConversation(etat, chatId);
+    dispatch({ type: "chat/supprimer", id: chatId });
+    // Écrite tout de suite, comme l'épingle : la fenêtre peut se fermer avant l'écriture regroupée.
+    if (bridge && stateRef.current.charge) {
+      if (ecritureRegroupee.current) clearTimeout(ecritureRegroupee.current);
+      void bridge.conversations.write(conversationsAEnregistrer(stateRef.current));
+    }
+    return null;
+  }, [bridge]);
+
   const archiverFil = useCallback(
     (chatId: string, supprime = false, libererPlace = true) => {
       // Un fil archivé s'arrête : il ne travaille plus.
@@ -2917,6 +2940,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       confierRappel,
       renommerChat,
       epinglerChat,
+      supprimerConversation,
       archiverFil,
       rouvrirFil,
       startChat,
@@ -2981,6 +3005,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       confierRappel,
       renommerChat,
       epinglerChat,
+      supprimerConversation,
       archiverFil,
       rouvrirFil,
       startChat,

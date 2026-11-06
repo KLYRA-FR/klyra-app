@@ -1,6 +1,6 @@
 /**
  * Le clic droit dans l'export Electron : agents de la barre (épingler, sourdine, masquer,
- * désactiver, aller à, clavier, bord de l'écran), conversations d'équipe (renommer), messages
+ * désactiver, aller à, clavier, bord de l'écran), conversations d'équipe (renommer, supprimer, rythme des lignes), messages
  * (citer) et tickets. Profil, HOME et `~/.claude/agents` jetables ; Claude inaccessible.
  * Prérequis : pnpm build && pnpm build:electron.
  *   xvfb-run -a node scripts/test-menu-contextuel.mjs   (en root : -- --no-sandbox)
@@ -41,6 +41,7 @@ writeFileSync(path.join(DONNEES, "conversations.json"), q({
   version: 1,
   chats: [
     { id: "equipe-A", kind: "equipe", projectId: "durand", title: "Refonte du site", roleIds: ["principal", "hugo"], updatedAt: date(10), sessions: {}, luJusqua: "m-A" },
+    { id: "equipe-B", kind: "equipe", projectId: null, title: "Lancement", roleIds: ["principal", "iris"], updatedAt: date(30), sessions: {}, luJusqua: null },
     { id: "dm-hugo", kind: "direct", projectId: null, title: "Hugo", roleIds: ["hugo"], updatedAt: date(5), sessions: {}, luJusqua: "m-hugo" },
     { id: "fil-hugo", kind: "direct", projectId: null, title: "Corriger le menu", roleIds: ["hugo"], updatedAt: date(20), sessions: {}, luJusqua: null, fil: { roleId: "hugo", statut: "ouvert", creeLe: date(20), lancePar: null, retourAttendu: false } },
   ],
@@ -261,6 +262,41 @@ try {
     await app.choisir("Message de Hugo", "Citer dans ma réponse");
     verifier(await attendreQue(() => app.ev(`[...document.querySelectorAll('textarea')].some(t => t.value.includes('> Le menu est prêt à relire.'))`)), "la citation attend dans le composeur");
     verifier(lire("conversations.json").messages.length === 2, "rien n'est envoyé");
+  });
+
+  await etape("10 · Supprimer une conversation d'équipe", async () => {
+    const pas = await app.ev(`(() => { const [a, b] = [${q(ligne("equipe-A"))}, ${q(ligne("equipe-B"))}].map(s => document.querySelector(s).getBoundingClientRect()); return Math.round(Math.abs(b.top - a.top)); })()`);
+    verifier(pas === 58, `lignes d'équipe au même rythme que les agents : 54 px + 4 px (${pas} px)`);
+    await app.clicDroit(ligne("equipe-A"));
+    verifier(await attendreQue(() => app.present(menu("Refonte v2"))), "menu de la conversation d'équipe");
+    const lignes = await app.ev(`[...document.querySelectorAll(${q(`${menu("Refonte v2")} [role^="menuitem"]`)})].map(e => e.textContent.trim())`);
+    verifier(lignes.at(-1) === "Supprimer…", `« Supprimer… » en dernier (${lignes.join(", ")})`);
+    const bouton = (texte) => `(() => [...document.querySelectorAll('[role="alertdialog"] button')].find(b => b.textContent.trim() === ${q(texte)}))()`;
+    const cliquerBouton = async (texte) => {
+      const p = await app.ev(`(() => { const b = ${bouton(texte)}; if (!b) throw new Error('Bouton absent : ' + ${q(texte)}); const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      await app.clicEn(p);
+    };
+    await app.choisir("Refonte v2", "Supprimer");
+    verifier(await attendreQue(() => app.ev(`document.querySelector('[role="alertdialog"]')?.textContent.includes('Supprimer « Refonte v2 » ?')`)), "une fenêtre demande confirmation");
+    await cliquerBouton("Annuler");
+    verifier(await attendreQue(async () => !(await app.present('[role="alertdialog"]'))), "Annuler ferme la fenêtre");
+    verifier(await app.present(ligne("equipe-A")), "et la conversation reste");
+    await app.clicDroit(ligne("equipe-A"));
+    await app.choisir("Refonte v2", "Supprimer");
+    await attendreQue(() => app.present('[role="alertdialog"]'));
+    await cliquerBouton("Supprimer");
+    verifier(await attendreQue(async () => !(await app.present(ligne("equipe-A")))), "la conversation quitte la barre");
+    verifier(await attendreQue(async () => !lire("conversations.json").chats.some((c) => c.id === "equipe-A"), 4000), "supprimée du disque");
+    verifier(!lire("conversations.json").messages.some((m) => m.chatId === "equipe-A"), "avec ses messages");
+    verifier(await app.ev(`location.search === "?id=dm-hugo"`), "fermée, elle ne change pas l'écran ouvert");
+    verifier(["equipe-B", "dm-hugo", "fil-hugo"].every((id) => lire("conversations.json").chats.some((c) => c.id === id)), "les autres conversations, directe et fil compris, restent");
+  });
+
+  await etape("11 · Pas de suppression dans le menu d'un agent", async () => {
+    await app.clicDroit(ligne("dm-hugo"));
+    verifier(await attendreQue(() => app.present(menu("Hugo"))), "menu de l'agent");
+    verifier(!(await app.ev(`!!${element("Hugo", "Supprimer")}`)), "aucune ligne « Supprimer » : un agent se désactive");
+    await app.touche("Escape");
   });
 } catch (error) { verifier(false, error.stack ?? String(error)); }
 finally { await app?.fermer(); rmSync(TMP, { recursive: true, force: true }); }
