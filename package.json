@@ -55,7 +55,7 @@
     "test:ordinateur": "electron scripts/test-ordinateur.cjs",
     "test:coffre": "node --experimental-strip-types --test electron/coffre-regles.test.mts && electron scripts/test-coffre.cjs",
     "test:coffre-ecran": "node scripts/test-coffre-ecran.mjs",
-    "test:navigateur": "node --experimental-strip-types --test electron/navigateur/regles.test.mts && electron scripts/test-navigateur.cjs",
+    "test:navigateur": "node --experimental-strip-types --test electron/navigateur/regles.test.mts electron/navigateur/identite.test.mts && electron scripts/test-navigateur.cjs",
     "test:navigateur-ecran": "node scripts/test-navigateur-ecran.mjs",
     "test:sons": "electron scripts/test-sons.cjs",
     "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
