@@ -20,6 +20,7 @@ import { useFermerTicket } from "@/components/tickets/useFermerTicket";
 import { filDuRappel, type RappelAConfier } from "@/lib/tickets";
 import { decisionDemande } from "@/lib/tickets-demandes";
 import { FIL, useWorkspace } from "@/lib/workspace";
+import { lireFonds, useTousFonds } from "@/lib/fond-agents";
 import type { Message } from "@/types/domain";
 
 /** Pendant qu'un agent écrit, la copie part plus souvent : le téléphone voit la réponse s'écrire. */
@@ -132,6 +133,8 @@ export function SyncCompte({ actif }: { actif: boolean }) {
           w.brancher(chatId, options.brancher.messageId);
           return;
         }
+        /* Le compte Claude choisi sur le téléphone : l'ordinateur relance la session avec lui (cf. workspace.choisirCompteClaude). */
+        if (options.compteClaude !== undefined) w.choisirCompteClaude(chatId, options.compteClaude);
         if ("modele" in options || options.fournisseur) {
           const chat = w.state.chats.find((c) => c.id === chatId);
           const moteur = options.fournisseur ?? chat?.fournisseur ?? PAR_DEFAUT;
@@ -298,7 +301,9 @@ export function SyncCompte({ actif }: { actif: boolean }) {
       }
       const dossiers = new Map(chats.map((c) => [c.id, projects.find((p) => p.id === c.projectId)?.folder || null]));
 
-      const conversations = chats.flatMap((chat) => conversationCompte(chat, parChat.get(chat.id) ?? [], projects, travail[chat.id] ?? null, lireClePoste()) ?? []);
+      /* Ce qu'un agent a encore en fond, réponse rendue : le téléphone le montre comme le bureau. */
+      const fonds = lireFonds();
+      const conversations = chats.flatMap((chat) => conversationCompte(chat, parChat.get(chat.id) ?? [], projects, travail[chat.id] ?? null, lireClePoste(), fonds[chat.id]?.[0] ?? null) ?? []);
       const c = changements(conversations, (x) => x.origine, memo.conversations);
       for (const lot of decoupages(c.lot, 40)) await importerConversations({ lot });
       for (const [k, v] of c.empreintes) memo.conversations.set(k, v);
@@ -391,10 +396,11 @@ export function SyncCompte({ actif }: { actif: boolean }) {
     });
   }, [actif, enAttente, operations, demandes, state.charge, agents.status, reprendreMessage, rejouerOperation, rejouerDemande, programmer]);
 
+  const fonds = useTousFonds();
   useEffect(() => {
     if (!actif || !state.charge || !fileVidee.current) return;
     programmer(Object.keys(state.travail).length ? DELAI_ECRITURE_MS : DELAI_REPOS_MS);
-  }, [actif, state, agents.tous, agents.roles, programmer]);
+  }, [actif, state, fonds, agents.tous, agents.roles, programmer]);
 
   /* Un autre compte, ou plus de compte : tout repart de zéro. */
   useEffect(() => {

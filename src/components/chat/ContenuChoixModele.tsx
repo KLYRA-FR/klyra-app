@@ -4,13 +4,15 @@ import { Icon } from "@/components/icons/Icon";
 import { LogoFournisseur } from "@/components/ui/LogoFournisseur";
 import { cn } from "@/lib/cn";
 import { fournisseur, FOURNISSEURS, nomEffort, PAR_DEFAUT } from "@/lib/fournisseurs";
-import type { ModeleMoteur } from "@/lib/bridge";
+import type { CompteClaudeLocal, ModeleMoteur } from "@/lib/bridge";
+import { nomAbonnement } from "@/lib/compte-claude";
 import type { EtatMoteur } from "@/lib/moteurs";
 
 /** Le même choix à deux colonnes dans le menu du bureau et la feuille du téléphone. */
 export function ContenuChoixModele({
   vue, moteur, modele, effort, modeleFiche, moteurs, modelesVue, modelesActuels,
   recherche, connexion, onVue, onRecherche, onModele, onEffort, onConnecter, onAjouter, tactile = false, lieu = null,
+  comptes = [], compte = null, onCompte,
 }: {
   vue: string;
   moteur: string;
@@ -30,12 +32,20 @@ export function ContenuChoixModele({
   onAjouter: () => void;
   tactile?: boolean;
   lieu?: string | null;
+  /** Les comptes Claude connectés sur la machine de la conversation (le compte des agents en premier). */
+  comptes?: Pick<CompteClaudeLocal, "id" | "email" | "abonnement" | "poste">[];
+  /** Le compte supplémentaire choisi pour la conversation ; null : le compte des agents. */
+  compte?: string | null;
+  onCompte?: (id: string | null) => void;
 }) {
   const disponibles = FOURNISSEURS.filter((f) => f.id === PAR_DEFAUT || moteurs?.some((m) => m.moteur.id === f.id && m.moteur.chemin));
   const etatVue = moteurs?.find((m) => m.moteur.id === vue);
   const connecte = vue === PAR_DEFAUT || !!etatVue?.compte?.connecte;
   const filtres = modelesVue.filter((m) => m.nom.toLowerCase().includes(recherche.trim().toLowerCase()));
   const efforts = modelesActuels.find((m) => m.id === modele)?.efforts ?? [];
+  /* Plusieurs comptes Claude connectés : on choisit celui qui répond dans cette conversation. */
+  const choixCompte = vue === PAR_DEFAUT && !!onCompte && comptes.length > 1;
+  const compteParti = choixCompte && !!compte && !comptes.some((c) => c.id === compte);
   return (
     <>
       <div role="tablist" aria-label="Fournisseurs" aria-orientation="vertical" className="flex w-14 shrink-0 flex-col items-center gap-1.5 border-r border-bordure-subtile p-2">
@@ -53,9 +63,34 @@ export function ContenuChoixModele({
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-col gap-0.5 px-3 pt-3 pb-2">
-          <span className="truncate text-ui-s font-medium text-texte-principal">{fournisseur(vue).nom}{etatVue?.compte?.email ? ` · ${etatVue.compte.email}` : ""}</span>
+          <span className="truncate text-ui-s font-medium text-texte-principal">{fournisseur(vue).nom}{!choixCompte && etatVue?.compte?.email ? ` · ${etatVue.compte.email}` : ""}</span>
           <span className="text-ui-xs text-texte-tertiaire">{vue === moteur ? "Dans cette conversation" : `Passer cette conversation sur ${fournisseur(vue).nom}`}</span>
         </div>
+        {choixCompte && (
+          <div className="flex flex-col gap-0.5 border-b border-bordure-subtile px-1.5 pb-1.5">
+            <span className="px-2 pb-0.5 text-ui-xs font-medium text-texte-tertiaire">Compte</span>
+            <div role="radiogroup" aria-label="Compte Claude" className="flex flex-col gap-0.5">
+              {comptes.map((c) => {
+                const choisi = c.poste ? !compte : c.id === compte;
+                const abonnement = nomAbonnement(c.abonnement);
+                return (
+                  <button key={c.id} type="button" role="radio" aria-checked={choisi} title={c.email ?? undefined} onClick={() => onCompte(c.poste ? null : c.id)}
+                    className={cn("flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent px-2 text-left hover:bg-fond-survol", tactile && "min-h-11")}>
+                    <span aria-hidden="true" className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border", choisi ? "border-bleu-k1-500 bg-bleu-k1-500 text-texte-inverse" : "border-bordure-forte")}>
+                      {choisi && <Icon name="check-01" size={12} />}
+                    </span>
+                    <span className="flex-1 truncate text-ui-s text-texte-principal">{c.email ?? (c.poste ? "Compte des agents" : "Compte Claude")}</span>
+                    {abonnement && <span className="shrink-0 text-ui-2xs text-texte-tertiaire">{abonnement}</span>}
+                    {c.poste && (
+                      <span className="shrink-0 rounded-2xs bg-fond-surface-grise px-1.5 py-px text-ui-3xs font-medium text-texte-secondaire">agents</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {compteParti && <p role="alert" className="m-0 px-2 py-1 text-ui-xs text-texte-erreur">Le compte choisi pour cette conversation n’est plus connecté. Choisis-en un autre.</p>}
+          </div>
+        )}
         {connecte ? (
           <>
             {modelesVue.length > 6 && (

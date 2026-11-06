@@ -135,7 +135,7 @@ export const EQUIPE_VIDE: BrouillonEquipe = { nom: "", but: "", taches: [], grou
 /** Au plus, pour que la table reste lisible. */
 export const MAX_TACHES = 20;
 
-/** Au-delà, une équipe se pilote mal : l'assistant ne confie que trois travaux à la fois. */
+/** Au-delà, une équipe se pilote mal : l'assistant ne confie que cinq travaux à la fois (`TRAVAUX_MAX`). */
 export const MAX_MEMBRES = 6;
 
 /* ─── L'outil de l'assistant ──────────────────────────────────────── */

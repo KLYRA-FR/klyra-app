@@ -99,6 +99,10 @@ describe("Chats (T-01)", () => {
     expect(etatLigne(conversation("dm-hugo", { activite: activite("ecrit", "x") }), nom, true, true)).toBeNull();
     expect(etatLigne(conversation("dm-hugo", { activite: accord("x") }), nom, true, true)).toEqual({ texte: "Attend ton accord", enCours: false });
     expect(etatLigne(conversation("dm-hugo", { activite: activite("question", "x") }), nom, true, true)).toEqual({ texte: "Attend ta réponse", enCours: false });
+    /* Réponse rendue, une commande tourne encore en fond ; puis il reprend. Ordinateur fermé : plus rien. */
+    expect(etatLigne(conversation("dm-hugo", { activite: activite("fond", "x", { libelle: "Capture", reprise: false, taches: [] }) }), nom)).toEqual({ texte: "Continue en arrière-plan…", enCours: true });
+    expect(etatLigne(conversation("c1", { kind: "equipe", activite: activite("fond", "x", { libelle: "Capture", reprise: true, taches: [] }) }), nom)?.texte).toBe("Hugo reprend…");
+    expect(etatLigne(conversation("dm-hugo", { activite: activite("fond", "x", { libelle: "Capture", reprise: false, taches: [] }) }), nom, false)).toBeNull();
   });
 
   test("À traiter : accords puis questions, les plus anciens d'abord, puis les messages en attente ; une question déjà répondue sort", () => {

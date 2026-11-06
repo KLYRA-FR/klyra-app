@@ -119,7 +119,12 @@ export type AgentEvent =
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur" }
   /** Un agent lancé en arrière-plan (appel `id`) a fini ou s'est arrêté : sa passation le montre. */
-  | { type: "tache-fond"; id: string; statut: "fait" | "erreur" };
+  | { type: "tache-fond"; id: string; statut: "fait" | "erreur" }
+  /**
+   * Ce que l'agent a encore en fond (commandes, agents), toute la liste, et sa reprise quand l'un d'eux revient
+   * (cf. electron/taches-fond.ts). Peut arriver après la fin de sa réponse, par la dernière ouverte.
+   */
+  | { type: "fond"; taches: { id: string; description: string; genre: "commande" | "agent" | "autre"; debut: number }[]; reprise: boolean };
 
 /** Utilisation d'un abonnement (Claude, ChatGPT), cf. electron/utilisation.ts. */
 export interface FenetreUtilisation {
@@ -248,7 +253,7 @@ export interface ContexteReponse {
   titre: string;
   lieu: string;
   telephone?: { messageId: string; texte: string; creeLe: string };
-  choix?: { fournisseur: string; modele: string | null; effort: string | null };
+  choix?: { fournisseur: string; modele: string | null; effort: string | null; compteClaude?: string | null };
   /** Un fil ouvert par un agent du VPS pendant que ce PC était fermé : l'app le crée s'il n'est pas encore là. */
   fil?: Fil;
   /** La réponse d'un fil rapportée par le VPS à l'agent qui l'a lancé : le message, avant sa réponse. */
@@ -267,6 +272,8 @@ export interface StreamOptions {
   modele?: string | null;
   effort?: string | null;
   fichiers?: string[];
+  /** Claude : le compte supplémentaire choisi pour la conversation (id de `claude-comptes`) ; absent : le compte des agents. */
+  compteClaude?: string | null;
   acces?: Acces;
   /** La conversation de l'app : les outils des fils savent d'où vient l'agent. */
   chatId?: string;
@@ -380,7 +387,8 @@ export interface KlyraBridge {
     /** `compte` : un compte Claude supplémentaire (sa propre lecture, au clic seulement). */
     utilisation?: (id: string, lieu?: string | null, actualiser?: boolean, compte?: string | null) => Promise<Reponse<Utilisation | null>>;
     /** Celles de ce PC, reçues pendant le travail des agents. */
-    onUtilisation?: (callback: (id: string, u: Utilisation) => void) => () => void;
+    /** `compte` : un compte Claude supplémentaire de ce PC (limites lues dans une conversation qui l'utilise) ; null : le compte du moteur. */
+    onUtilisation?: (callback: (id: string, u: Utilisation, compte: string | null) => void) => () => void;
     onProgression: (callback: (id: string, p: ProgressionMoteur, lieu: string | null) => void) => () => void;
     onCode?: (callback: (id: string, lieu: string, code: { url: string; code: string }) => void) => () => void;
   };
@@ -481,6 +489,12 @@ export interface KlyraBridge {
     enregistrer: (chemin: string, dossier: string | null) => Promise<Reponse<string | null>>;
     /** Ouvre l'espace des livrables d'un agent, ou son dossier de travail hors projet. */
     dossierAgent: (agent: string, quoi: "rendus" | "atelier") => Promise<Reponse<void>>;
+    /** Copie un livrable de ce PC (copie des rendus seulement) dans Téléchargements ; rend le chemin du fichier. */
+    telecharger?: (cle: string, chemin: string) => Promise<Reponse<string>>;
+    /** Télécharge un livrable du VPS dans Téléchargements, en flux ; rend le chemin du fichier sur ce PC. */
+    telechargerVps?: (cle: string, lieu: string, id: string, nom: string, dossier: boolean) => Promise<Reponse<string>>;
+    /** Progression d'un téléchargement (octets reçus, taille annoncée). */
+    onTelechargement?: (callback: (cle: string, recu: number, total: number) => void) => () => void;
   };
   /** Une page HTML partagée, ouverte sans que l'adresse Convex arrive à l'écran. */
   documents?: {
@@ -586,7 +600,8 @@ export interface KlyraBridge {
   };
   /** Journal des travaux sur les fils. Absent tant que l'app n'a pas été relancée. */
   superagent?: {
-    peutOuvrir: () => Promise<Reponse<{ ok: boolean; places: number }>>;
+    /** `filsOuverts` : les fils ouverts de l'écran ; les places des autres sont rendues avant de compter. */
+    peutOuvrir: (filsOuverts?: string[]) => Promise<Reponse<{ ok: boolean; places: number; occupants?: { titre: string; id: string }[] }>>;
     ouvrir: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; work_id?: string }>>;
     message: (fait: Record<string, unknown>) => Promise<Reponse<{ ok: boolean; motif?: string; disposition?: string }>>;
     etat: (filId: string) => Promise<Reponse<{ status: string; work_id: string } | null>>;

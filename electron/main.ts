@@ -17,6 +17,7 @@ import {
   dossierMemoire,
   ecrireSouvenir,
   ErreurConnaissances,
+  competencesDeLAgent,
   lireCompetences,
   lireMemoire,
   lireSouvenir,
@@ -81,6 +82,7 @@ import {
   restaurerUtilisation,
   runAgent,
   essayerBrouillon,
+  surLimitesCompte,
   surUtilisation,
   titrerDemande,
   type Utilisation,
@@ -172,7 +174,8 @@ import {
   ouvrirArtefact,
   vignetteArtefact,
 } from "./artefacts";
-import { copierRenduVps, htmlRenduVps, ouvrirRenduVps } from "./rendus-vps";
+import { copierRenduVps, htmlRenduVps, ouvrirRenduVps, telechargerRenduVps } from "./rendus-vps";
+import { telechargerRendu, type ProgressionTelechargement } from "./telechargement";
 import { copierRendu, enregistrerRenduDans, htmlDuRendu, imageJointe, montrerRendu, ouvrirDossierAgent, ouvrirRendu, supprimerCopieRendu, vignetteRendu } from "./rendus";
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
@@ -630,7 +633,8 @@ function registerBridge() {
     }
     const fiche = agent === "principal" ? null : await lireFiche(String(agent));
     const dossier = typeof contexte?.dossier === "string" && contexte.dossier ? dossierConversation(String(agent), contexte) : null;
-    return lireCompetences(fiche?.content ?? null, configClaude(), dossier);
+    // Avec celles que Réglages › Agents lui coupe : le panneau ne montre pas comme reçue une skill qui ne part pas.
+    return competencesDeLAgent(fiche?.content ?? null, configClaude(), dossier, lireReglages().skillsParAgent, String(agent));
   });
   handle("agents:competence:montrer", async (agent: string, contexte: Contexte, nom: string) => {
     if (surVps(contexte)) throw new ErreurConnaissances("introuvable", "Cette compétence est sur le serveur : elle ne s’ouvre pas sur ce poste.");
@@ -758,6 +762,12 @@ function registerBridge() {
     return id;
   };
   /* Le rail relit ses anneaux quand un compte arrive ou part. */
+  /* Une conversation qui travaille avec un compte supplémentaire : ses limites vont à l'anneau de ce compte. */
+  surLimitesCompte((id, info) => {
+    void comptesClaude.noterLimites(id, info).then((u) => {
+      if (u) for (const win of BrowserWindow.getAllWindows()) win.webContents.send("moteurs:utilisation", "claude", u, id);
+    });
+  });
   const comptesChanges = <T>(lieu: unknown) => (r: T): T => {
     for (const win of BrowserWindow.getAllWindows()) win.webContents.send("claude:comptes:change", vps(lieu));
     return r;
@@ -965,6 +975,18 @@ function registerBridge() {
   handle("rendus:supprimer", (chemin: string) => supprimerCopieRendu(chemin));
   handle("rendus:enregistrer", (chemin: string, dossier: string | null) => enregistrerRenduDans(chemin, dossier));
   handle("rendus:dossier-agent", (agent: string, quoi: string) => ouvrirDossierAgent(agent, quoi));
+  /* « Télécharger » (clic droit d'un livrable) : une copie dans Téléchargements, en flux ; la progression part vers l'écran sous `cle`. */
+  const progressionVers = (sender: Electron.WebContents, cle: unknown): ProgressionTelechargement => (recu, total) => {
+    if (!sender.isDestroyed()) sender.send("rendus:telechargement", String(cle), recu, total);
+  };
+  ipcMain.handle("rendus:telecharger", (event, cle: unknown, chemin: unknown) => repondre(() => telechargerRendu(chemin, progressionVers(event.sender, cle))));
+  ipcMain.handle("rendus:telecharger-vps", (event, cle: unknown, lieu: unknown, id: unknown, nom: unknown, dossier: unknown) =>
+    repondre(() => {
+      const origine = String(lieu);
+      if (!originesServeurs().includes(origine)) throw new Error("Ce VPS n’est plus relié.");
+      return telechargerRenduVps(origine, jetonServeur(origine), id, nom, dossier === true, progressionVers(event.sender, cle));
+    }),
+  );
   /* HTML déjà lu par l'écran (`contenu`). L'adresse de stockage n'est pas un argument. */
   handle("documents:ouvrir", (html: string, titre: string) => ouvrirHtml(html, titre));
   handle("documents:vignette", (cle: string, html: string, forcer: boolean) => vignetteHtml(cle, html, !!forcer));
@@ -1278,7 +1300,7 @@ function registerBridge() {
     }
   }, 15 * 60_000);
   veilleTravaux.unref();
-  handle("superagent:peut-ouvrir", () => peutOuvrir());
+  handle("superagent:peut-ouvrir", (filsOuverts: unknown) => peutOuvrir(filsOuverts));
   handle("superagent:ouvrir", (brut: unknown) => noterOuverture(brut));
   handle("superagent:message", (brut: unknown) => noterMessage(brut));
   handle("superagent:etat", (filId: unknown) => etatFil(typeof filId === "string" ? filId : ""));

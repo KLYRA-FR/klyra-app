@@ -8,6 +8,7 @@ import { LogoFournisseur } from "@/components/ui/LogoFournisseur";
 import { ContenuChoixModele } from "./ContenuChoixModele";
 import { cheminServeur } from "@/components/serveur/catalogue";
 import { getBridge } from "@/lib/bridge";
+import { useComptesClaudeConnectes } from "@/lib/compte-claude";
 import { cn } from "@/lib/cn";
 import { fournisseur, moteurDe, nomEffort, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { placeMenuFlottant, type PlaceMenu } from "@/lib/menu-flottant";
@@ -90,7 +91,7 @@ function Pastille({ id, taille = "sm" }: { id: string; taille?: "sm" | "md" }) {
  */
 export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variante?: "entete" | "champ" }) {
   const router = useRouter();
-  const { choisirModele, choisirFournisseur } = useWorkspace();
+  const { choisirModele, choisirFournisseur, choisirCompteClaude } = useWorkspace();
   const travail = useTravail(chat.id);
   const lieu = chat.lieu ?? null;
   const { moteurs, actualiser } = useMoteurs(lieu);
@@ -104,6 +105,8 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
   const bouton = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const modelesVue = useModelesDe(vue, lieu);
+  /* Les comptes Claude connectés sur la machine de la conversation : lus à l'ouverture du choix seulement. */
+  const comptes = useComptesClaudeConnectes(lieu, ouvert);
   const modelesActuels = useModelesDe(moteur, lieu);
   const dansLeTiroir = variante === "champ";
 
@@ -233,6 +236,8 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
             onRecherche={setRecherche} onModele={choisir}
             onEffort={(id) => choisirModele(chat.id, chat.modele ?? null, id)}
             onConnecter={() => void seConnecter()}
+            comptes={comptes} compte={chat.compteClaude ?? null}
+            onCompte={(id) => choisirCompteClaude(chat.id, id)}
             onAjouter={() => { setPlace(null); setOuvert(false); router.push(cheminServeur("fournisseurs", { serveur: lieu })); }}
           />
         </div>
@@ -247,7 +252,7 @@ export function ChoixModele({ chat, variante = "entete" }: { chat: Chat; variant
         disabled={bloque}
         aria-expanded={ouvert}
         aria-haspopup="dialog"
-        title={bloque ? "Attends la fin du travail en cours pour changer de modèle." : `${fournisseur(moteur).nom} · ${actuel?.nom ?? nomCourt}${effort ? ` · effort ${nomEffort(effort)}` : ""}`}
+        title={bloque ? "Attends la fin du travail en cours pour changer de modèle." : `${fournisseur(moteur).nom} · ${actuel?.nom ?? nomCourt}${effort ? ` · effort ${nomEffort(effort)}` : ""}${moteur === PAR_DEFAUT && chat.compteClaude ? " · autre compte Claude" : ""}`}
         className={cn(
           "flex cursor-pointer items-center gap-1.5 rounded-xs border border-bordure-subtile bg-fond-surface text-texte-principal transition-[border-color,scale] duration-[120ms] ease-sortie hover:border-bordure-forte active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60",
           variante === "entete" ? "h-8 max-w-[260px] px-2.5 text-ui-s" : "h-11 w-full px-3 text-ui",

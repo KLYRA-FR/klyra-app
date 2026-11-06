@@ -191,6 +191,59 @@ export function useDictee({
     [publier, secours],
   );
 
+  /**
+   * Le texte a été modifié (clavier, souris, collage) ou le curseur a bougé
+   * pendant l'écoute : la dictée suit. Le texte provisoire est retiré de
+   * l'ancien endroit et la suite s'écrit là où est maintenant le curseur ;
+   * si la modification touche le provisoire lui-même, il est gardé tel quel.
+   */
+  const dernierVu = useRef<{ v: string; p: number } | null>(null);
+  const suivre = useCallback(
+    (v: string, p: number) => {
+      const s = session.current;
+      if (!s || s.micro === null) return;
+      // Un même geste déclenche « modifié » puis « sélection » : on ne le traite qu'une fois.
+      if (dernierVu.current?.v === v && dernierVu.current.p === p) return;
+      dernierVu.current = { v, p };
+      const z = zones(s);
+      const ancien = z.avant + z.provisoire + z.apres;
+      const a = z.avant.length;
+      const b = a + z.provisoire.length;
+      if (v === ancien) {
+        if (p === b) return;
+        const W = ancien.slice(0, a) + ancien.slice(b);
+        const q = p <= a ? p : p >= b ? p - (b - a) : a;
+        s.avant = W.slice(0, q);
+        s.apres = W.slice(q);
+        s.dicte = "";
+        return publier(s);
+      }
+      let i = 0;
+      const max = Math.min(v.length, ancien.length);
+      while (i < max && v[i] === ancien[i]) i++;
+      let j = 0;
+      while (j < max - i && v[v.length - 1 - j] === ancien[ancien.length - 1 - j]) j++;
+      const finAncien = ancien.length - j;
+      const delta = v.length - ancien.length;
+      s.dicte = "";
+      if (finAncien <= a || i >= b) {
+        const d = finAncien <= a ? delta : 0; // le provisoire s'est décalé si la modification est avant lui
+        const debut = a + d;
+        const fin = b + d;
+        const W = v.slice(0, debut) + v.slice(fin);
+        const q = p <= debut ? p : p >= fin ? p - (fin - debut) : debut;
+        s.avant = W.slice(0, q);
+        s.apres = W.slice(q);
+      } else {
+        s.avant = v.slice(0, p);
+        s.apres = v.slice(p);
+        s.provisoire = "";
+      }
+      publier(s);
+    },
+    [publier],
+  );
+
   const arreter = useCallback(async () => {
     const s = session.current;
     if (!s || s.micro === null) return;
@@ -305,7 +358,7 @@ export function useDictee({
     void getBridge()?.dictee?.prechauffer();
   }, []);
 
-  return { phase, moteur, niveau, secondes, preparation, message, zones: affichage, basculer, arreter, annulerPreparation, prechauffer };
+  return { phase, moteur, niveau, secondes, preparation, message, zones: affichage, basculer, arreter, suivre, annulerPreparation, prechauffer };
 }
 
 export type Dictee = ReturnType<typeof useDictee>;

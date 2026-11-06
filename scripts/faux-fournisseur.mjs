@@ -11,6 +11,8 @@
  * - « coffre <variable> » : il demande un secret à la personne (outil `coffre_demander`) ;
  * - « workflow <mot> » : il construit un workflow de trois étapes (outil `construire_workflow`) ;
  * - « lance <mot> » : il lance le dernier workflow construit dans la conversation (outil `lancer_workflow`) ;
+ * - « fond <mot> » : il lance une commande en arrière-plan (Bash, `run_in_background`, 3 s) ; quand Claude Code
+ *   le prévient de sa fin, il répond « fond terminé » ;
  * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> » ;
  * - le retour d'un fil (« [Retour du fil, de … ») : « retour reçu ».
  * - l'épreuve de l'atelier : l'agent en essai répond d'après la demande (il prend un bug pour lui tant
@@ -152,8 +154,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
     const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre|fond) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre|fond) ([a-z0-9-]+)/m) : null;
     requetes.push({
       message: texteDe(dernier?.content ?? ""),
       sousAgent,
@@ -170,6 +172,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     if (texteDe(dernier?.content ?? "").includes("Tu juges l'essai")) return [{ type: "text", text: juger(texteDe(dernier.content)) }];
     // La réponse d'un fil rapportée à l'agent qui l'a lancé : il en prend acte, sans rejouer l'ordre d'avant.
     if (texteDe(dernier?.content ?? "").includes("[Retour du fil, de ")) return [{ type: "text", text: "retour reçu" }];
+    // Claude Code prévient qu'une tâche de fond est finie : l'agent reprend la parole.
+    if (texteDe(dernier?.content ?? "").includes("background-task event")) return [{ type: "text", text: "fond terminé" }];
     if (systeme.includes("C'est un essai avant ta création")) return [{ type: "text", text: essai(systeme, texteDe(dernier?.content ?? "")) }];
     // Les outils de l'app : « fil » ouvre un fil, « liste » liste ceux de l'agent ; « atelier » et « choix » pour créer un agent.
     const nomOutil = ordre ? (OUTILS_ORDRES[ordre[1]] ?? null) : null;
@@ -186,6 +190,9 @@ export async function demarrerFournisseur(agentsSurveilles) {
       return [{ type: "tool_use", id, name: outilAgent.name, input: { subagent_type: ordre[2], description: "Essai", prompt: "Dis bonjour.", run_in_background: false } }];
     }
     if (nomOutil && outilFil) return filDemande();
+    if (ordre?.[1] === "fond" && (corps.tools ?? []).some((t) => t.name === "Bash")) {
+      return [{ type: "tool_use", id, name: "Bash", input: { command: "sleep 3; echo fini", description: `Capture ${ordre[2]}`, run_in_background: true } }];
+    }
     if (nomOutil && (corps.tools ?? []).some((t) => t.name === "ToolSearch")) {
       recherches.add(id);
       return [{ type: "tool_use", id, name: "ToolSearch", input: { query: `select:${nomOutil}`, max_results: 1 } }];

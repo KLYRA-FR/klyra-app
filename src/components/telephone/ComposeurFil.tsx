@@ -10,7 +10,7 @@ import { garderBrouillon, lireBrouillons, surBrouillon } from "@/lib/brouillons"
 import { cn } from "@/lib/cn";
 import { messageErreur } from "@/lib/compte";
 import { COMMANDE_COMPACTER, formaterJetons, MARGE_PLUS_TARD } from "@/lib/contexte";
-import type { Activite } from "@/lib/copie-compte";
+import { activiteOccupe, type Activite } from "@/lib/copie-compte";
 import { useGestePoste, useLecturePoste } from "@/lib/poste/client";
 import { bandeauComposeur, majuscule } from "@/lib/poste-texte";
 import { fournisseur, nomEffort, PAR_DEFAUT, type IdFournisseur } from "@/lib/fournisseurs";
@@ -24,7 +24,7 @@ import { garderCitation, lireCitation, type CitationBrouillon } from "@/lib/tele
 import { useEnvoyerMessage } from "@/lib/telephone/envoi";
 import { envoiSimple, voieEnvoi } from "@/lib/telephone/vps-direct";
 import { lireModele, type OptionsMessage } from "@/lib/telephone/options";
-import { useModelesTelephone } from "@/lib/telephone/modeles";
+import { useModelesTelephone, type CompteTelephone } from "@/lib/telephone/modeles";
 import { agentPourLibelle } from "@/lib/telephone/libelles-fil";
 import type { FicheLue } from "@/lib/telephone/gestes-agents";
 import { ajouterPieces, MAX_PIECES, nomCapture, taillePiece, texteParDefaut } from "@/lib/telephone/pieces";
@@ -40,7 +40,8 @@ import { RondAgent, useCartes } from "./AgentsChat";
 const PUCE =
   "relative flex h-9 shrink-0 items-center gap-1 rounded-xs border border-bordure-subtile bg-fond-surface px-2.5 text-ui text-texte-principal after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']";
 
-type Choix = { fournisseur?: IdFournisseur; modele: string | null; effort: string | null };
+/** `compteClaude` : présent, le compte Claude choisi (null : celui des agents) ; absent, celui de la conversation ne change pas. */
+type Choix = { fournisseur?: IdFournisseur; modele: string | null; effort: string | null; compteClaude?: string | null };
 
 const COMPACTER: SkillProposee = { nom: "compact", description: "Résume la conversation pour alléger les prochains appels" };
 
@@ -80,7 +81,7 @@ function useModeleFiche(agent: string, lieu: string | null, actif: boolean): str
 }
 
 /** « Modèle et effort » en feuille (E2-34) : ils partent avec le prochain message ; fermer annule le choix provisoire. */
-export function FeuilleModele({ actuel, modeleFiche, moteurs, erreur, onChoisir, onFermer }: { actuel: Choix | null; modeleFiche: string | null; moteurs: EtatMoteur[] | null; erreur: string | null; onChoisir: (choix: Choix) => void; onFermer: () => void }) {
+export function FeuilleModele({ actuel, modeleFiche, moteurs, erreur, onChoisir, onFermer, comptes = [] }: { actuel: Choix | null; modeleFiche: string | null; moteurs: EtatMoteur[] | null; erreur: string | null; onChoisir: (choix: Choix) => void; onFermer: () => void; comptes?: CompteTelephone[] }) {
   const [choix, setChoix] = useState<Choix>(actuel ?? { modele: null, effort: null });
   const [vue, setVue] = useState(choix.fournisseur ?? PAR_DEFAUT);
   const [recherche, setRecherche] = useState("");
@@ -91,7 +92,7 @@ export function FeuilleModele({ actuel, modeleFiche, moteurs, erreur, onChoisir,
   const effort = choix.effort ?? modeles.find((m) => m.id === modele)?.effortParDefaut ?? null;
   return (
     <Feuille
-      titre="Modèle et effort"
+      titre={comptes.length > 1 ? "Modèle, compte et effort" : "Modèle et effort"}
       sousTitre="Pour cette conversation"
       onFermer={onFermer}
       pied={
@@ -113,10 +114,12 @@ export function FeuilleModele({ actuel, modeleFiche, moteurs, erreur, onChoisir,
           moteurs={moteurs} modelesVue={modelesDe(vue, moteurs)} modelesActuels={modeles}
           recherche={recherche} connexion={aide || erreur ? { etat: "erreur", message: aide || erreur! } : null}
           onRecherche={setRecherche} onVue={(id) => { setVue(id as IdFournisseur); setRecherche(""); setAide(null); }}
-          onModele={(m) => setChoix({ fournisseur: vue, modele: vue === PAR_DEFAUT && m.id === modeleFiche ? null : m.id, effort: effort && m.efforts.includes(effort) ? effort : m.effortParDefaut })}
+          onModele={(m) => setChoix((c) => ({ ...c, fournisseur: vue, modele: vue === PAR_DEFAUT && m.id === modeleFiche ? null : m.id, effort: effort && m.efforts.includes(effort) ? effort : m.effortParDefaut }))}
           onEffort={(id) => setChoix((c) => ({ ...c, fournisseur: moteur, effort: id }))}
           onConnecter={() => setAide("Connecte ce fournisseur dans les réglages de sa machine, puis rouvre ce choix.")}
           onAjouter={() => setAide("Ajoute un fournisseur dans les réglages de sa machine, puis rouvre ce choix.")}
+          comptes={comptes} compte={choix.compteClaude ?? null}
+          onCompte={(id) => setChoix((c) => ({ ...c, compteClaude: id }))}
         />
       </div>
       <p className="mt-4 text-ui-xs text-texte-secondaire">Le choix part avec ton prochain message.</p>
@@ -321,7 +324,7 @@ export function ComposeurFil({
     el.style.height = `${Math.min(el.scrollHeight, plafond)}px`;
   }, [texte]);
 
-  const occupe = ouvert && !!activite && activite.etat !== "question";
+  const occupe = ouvert && activiteOccupe(activite);
   const arretEnCours = arretDemande && occupe;
 
   const peutEnvoyer = (texte.trim().length > 0 || pieces.length > 0) && !envoi && !horsLigne;
@@ -455,6 +458,8 @@ export function ComposeurFil({
       options.fournisseur = choix.fournisseur;
       options.modele = choix.modele;
       options.effort = choix.effort;
+      /* Seulement s'il a été choisi : sinon, la conversation garde son compte. */
+      if (choix.compteClaude !== undefined) options.compteClaude = choix.compteClaude;
     }
     if (nouveauProjet && !conversation) options.nouveau = { projetId: nouveauProjet };
     if (!lieu && postesOuverts.length >= 2 && posteVise) options.poste = posteVise.cle;
@@ -666,7 +671,7 @@ export function ComposeurFil({
           <p className="mt-3 px-1 text-ui-xs text-texte-secondaire">Sans choix, {nom(ASSISTANT)} répartit le travail. Une @mention dans le message choisit aussi.</p>
         </Feuille>
       ) : null}
-      {feuille === "modele" ? <FeuilleModele actuel={modeleActuel} modeleFiche={modeleFiche} moteurs={catalogue.moteurs} erreur={catalogue.erreur} onChoisir={setChoix} onFermer={() => setFeuille(null)} /> : null}
+      {feuille === "modele" ? <FeuilleModele actuel={modeleActuel} modeleFiche={modeleFiche} moteurs={catalogue.moteurs} erreur={catalogue.erreur} comptes={catalogue.comptes} onChoisir={setChoix} onFermer={() => setFeuille(null)} /> : null}
     </div>
   );
 }

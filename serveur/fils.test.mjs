@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { creerEspace } from "./espace.mjs";
+import { TRAVAUX_MAX } from "./fils-outils.mjs";
 import { creerFilsServeur, creerRelaisFils, OUTILS_FILS, resultatValide } from "./fils.mjs";
 import { cleConversation, creerJournal } from "./klyra-serveur.mjs";
 
@@ -36,7 +37,7 @@ test("outil inconnu, sans conversation, délai dépassé : refusés ; la répons
 });
 
 /** Un serveur sans PC : son espace, son journal, la réponse rangée comme le fait klyra-serveur.mjs. */
-function serveur(t, { ecouteurs = 0 } = {}) {
+function serveur(t, { ecouteurs = 0, finPerdue = false } = {}) {
   const dossier = mkdtempSync(path.join(os.tmpdir(), "klyra-fils-"));
   t.after(() => rmSync(dossier, { recursive: true, force: true }));
   const espace = creerEspace({ donnees: dossier });
@@ -47,7 +48,8 @@ function serveur(t, { ecouteurs = 0 } = {}) {
   const annules = [];
   const fils = creerFilsServeur({
     espace,
-    journal,
+    /* `finPerdue` : les fils ne sont pas prévenus des fins (un écouteur perdu) ; le journal, lui, les garde. */
+    journal: finPerdue ? { ...journal, ecouterFin: () => undefined } : journal,
     envoyer: (requestId, demande) => envois.push({ requestId, demande }),
     annuler: (requestId) => annules.push(requestId),
     equipe: () => ({ assistant: "Cicco", actifs: [{ id: "camille", nom: "Camille" }, { id: "hugo", nom: "Hugo" }] }),
@@ -92,14 +94,67 @@ test("PC fermé : ouvrir un fil le crée dans l'espace du serveur et lance son a
   assert.match(s.outil("lister_fils", {}).content[0].text, new RegExp(`Brancher Qonto \\(${id}\\)`));
 });
 
-test("refus : agent hors de Mes agents, brief vide, projet inconnu, quatrième travail", (t) => {
+test("refus : agent hors de Mes agents, brief vide, projet inconnu, un travail de trop", (t) => {
   const s = serveur(t);
   assert.match(s.outil("ouvrir_fil", { agent: "zoe", titre: "x", brief: "y" }).content[0].text, /n’est pas dans Mes agents/);
   assert.match(s.outil("ouvrir_fil", { agent: "hugo", titre: "x", brief: " " }).content[0].text, /brief est vide/);
   assert.match(s.outil("ouvrir_fil", { agent: "hugo", titre: "x", brief: "y", projet: "site" }).content[0].text, /Aucun projet/);
-  for (let i = 0; i < 3; i++) assert.equal(s.outil("ouvrir_fil", { agent: "hugo", titre: `t${i}`, brief: "y" }).isError, undefined);
-  assert.match(s.outil("ouvrir_fil", { agent: "hugo", titre: "t4", brief: "y" }).content[0].text, /trois travaux/);
-  assert.equal(s.envois.length, 3);
+  assert.equal(TRAVAUX_MAX, 5);
+  const ids = [];
+  for (let i = 0; i < TRAVAUX_MAX; i++) {
+    const r = s.outil("ouvrir_fil", { agent: "hugo", titre: `t${i}`, brief: "y" });
+    assert.equal(r.isError, undefined);
+    ids.push(/\((klyra-fil-[a-z0-9-]+)\)/.exec(r.content[0].text)[1]);
+  }
+  const refus = s.outil("ouvrir_fil", { agent: "hugo", titre: "de trop", brief: "y" });
+  assert.equal(refus.isError, true);
+  assert.match(refus.content[0].text, /^En attente : 5 travaux sont déjà ouverts\. Places prises : /);
+  for (const [i, id] of ids.entries()) assert.ok(refus.content[0].text.includes(`t${i} (${id})`), refus.content[0].text);
+  assert.equal(s.envois.length, TRAVAUX_MAX);
+});
+
+/** Un fil ouvert par Camille, son agent lancé : son identifiant et sa réponse en cours. */
+const ouvrir = (s, titre) => {
+  const id = /\((klyra-fil-[a-z0-9-]+)\)/.exec(s.outil("ouvrir_fil", { agent: "hugo", titre, brief: "y" }).content[0].text)[1];
+  return { id, requestId: s.envois.at(-1).requestId };
+};
+
+test("places orphelines : fil supprimé, fermé ou arrêté, réponse finie sans retour ici, rendues avant de refuser", (t) => {
+  const s = serveur(t, { finPerdue: true });
+  const supprime = ouvrir(s, "supprimé");
+  const ferme = ouvrir(s, "fermé à la main");
+  const arrete = ouvrir(s, "arrêté");
+  const fini = ouvrir(s, "fini");
+  const vivant = ouvrir(s, "vivant");
+  /* Supprimé, ou fermé dans l'app, sans que la fin de sa réponse arrive ici. */
+  s.espace.ecrire({ supprimes: [{ type: "conversation", id: supprime.id }] });
+  const v = s.conversation(ferme.id);
+  s.espace.ecrire({ elements: [{ type: "conversation", id: ferme.id, valeur: { ...v, chat: { ...v.chat, fil: { ...v.chat.fil, statut: "archive" } } } }] });
+  /* Arrêté sur le fil (ancienne version : la place restait prise). */
+  const a = s.conversation(arrete.id);
+  s.espace.ecrire({ elements: [{ type: "conversation", id: arrete.id, valeur: { ...a, chat: { ...a.chat, fil: { ...a.chat.fil, suspendu: true } } } }] });
+  /* La fin est dans le journal, mais n'est pas passée par les fils (écouteur perdu). */
+  s.journal.publier(fini.requestId, { type: "fin", ok: true, texte: "" }, null);
+  const r = s.outil("ouvrir_fil", { agent: "hugo", titre: "nouveau", brief: "y" });
+  assert.equal(r.isError, undefined, r.content[0].text);
+  for (const o of [supprime, ferme, arrete, fini]) assert.equal(s.fils.travaille(o.id), false);
+  assert.equal(s.fils.travaille(vivant.id), true, "une réponse qui tourne garde sa place");
+  assert.deepEqual(s.fils.purger().map((o) => o.titre).sort(), ["nouveau", "vivant"]);
+});
+
+test("arrêter ou fermer un fil rend sa place aussitôt", async (t) => {
+  const s = serveur(t);
+  const arrete = ouvrir(s, "à arrêter");
+  const ferme = ouvrir(s, "à fermer");
+  assert.match(s.outil("arreter_fil", { id: arrete.id }).content[0].text, /Arrêté/);
+  assert.deepEqual(s.annules, [arrete.requestId]);
+  assert.equal(s.fils.travaille(arrete.id), false);
+  assert.match(s.outil("fermer_fil", { id: ferme.id }).content[0].text, /Fil fermé/);
+  assert.equal(s.fils.travaille(ferme.id), false);
+  /* La fin qui arrive après ne casse rien : le ticket est rangé comme avant. */
+  await s.finir(arrete.requestId, { ok: false, texte: "", erreur: "Arrêté par toi." });
+  assert.equal(s.fils.travaille(arrete.id), false);
+  assert.equal(s.conversation(arrete.id).chat.fil.suspendu, true);
 });
 
 test("PC fermé, la réponse finit : ticket à valider, retour rapporté à Camille une fois, l'app prévenue", async (t) => {

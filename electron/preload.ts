@@ -59,8 +59,8 @@ contextBridge.exposeInMainWorld("klyra", {
     installer: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:installer", id, lieu ?? null),
     mettreAJour: (id: string, lieu?: string | null) => ipcRenderer.invoke("moteurs:mettre-a-jour", id, lieu ?? null),
     utilisation: (id: string, lieu?: string | null, actualiser?: boolean, compte?: string | null) => ipcRenderer.invoke("moteurs:utilisation", id, lieu ?? null, actualiser === true, compte ?? null),
-    onUtilisation: (callback: (id: string, u: unknown) => void) => {
-      const listener = (_e: unknown, id: string, u: unknown) => callback(id, u);
+    onUtilisation: (callback: (id: string, u: unknown, compte: string | null) => void) => {
+      const listener = (_e: unknown, id: string, u: unknown, compte?: string | null) => callback(id, u, compte ?? null);
       ipcRenderer.on("moteurs:utilisation", listener);
       return () => ipcRenderer.removeListener("moteurs:utilisation", listener);
     },
@@ -157,6 +157,15 @@ contextBridge.exposeInMainWorld("klyra", {
     supprimer: (chemin: string) => ipcRenderer.invoke("rendus:supprimer", chemin),
     enregistrer: (chemin: string, dossier: string | null) => ipcRenderer.invoke("rendus:enregistrer", chemin, dossier),
     dossierAgent: (agent: string, quoi: "rendus" | "atelier") => ipcRenderer.invoke("rendus:dossier-agent", agent, quoi),
+    /** Copie un livrable de ce PC dans Téléchargements ; `cle` identifie sa progression. */
+    telecharger: (cle: string, chemin: string) => ipcRenderer.invoke("rendus:telecharger", cle, chemin),
+    /** Télécharge un livrable du VPS dans Téléchargements, en flux. */
+    telechargerVps: (cle: string, lieu: string, id: string, nom: string, dossier: boolean) => ipcRenderer.invoke("rendus:telecharger-vps", cle, lieu, id, nom, dossier),
+    onTelechargement: (callback: (cle: string, recu: number, total: number) => void) => {
+      const listener = (_e: unknown, cle: string, recu: number, total: number) => callback(cle, recu, total);
+      ipcRenderer.on("rendus:telechargement", listener);
+      return () => ipcRenderer.removeListener("rendus:telechargement", listener);
+    },
   },
   documents: {
     /** Ouvre le HTML dans la fenêtre isolée. Pas d'adresse de stockage. */
@@ -286,7 +295,7 @@ contextBridge.exposeInMainWorld("klyra", {
     },
   },
   superagent: {
-    peutOuvrir: () => ipcRenderer.invoke("superagent:peut-ouvrir"),
+    peutOuvrir: (filsOuverts?: string[]) => ipcRenderer.invoke("superagent:peut-ouvrir", filsOuverts),
     ouvrir: (fait: unknown) => ipcRenderer.invoke("superagent:ouvrir", fait),
     message: (fait: unknown) => ipcRenderer.invoke("superagent:message", fait),
     etat: (filId: string) => ipcRenderer.invoke("superagent:etat", filId),

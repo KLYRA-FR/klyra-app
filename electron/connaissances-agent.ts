@@ -236,6 +236,12 @@ export interface Competences {
   projet: Competence[];
   /** Celles des plugins de Claude Code activés (`<plugin>:<skill>`). */
   plugins: Competence[];
+  /**
+   * Les skills que cet agent ne reçoit pas (Réglages › Agents), par leur nom : ni préchargées, ni
+   * présentées, ni demandables par « / », même si sa fiche les nomme. Le même filtre que l'envoi d'un
+   * message (`filtreSkills`). Absent : lecture d'un serveur d'avant ce champ, on ne sait pas.
+   */
+  coupees?: string[];
 }
 
 /** La liste `skills` d'un en-tête de fiche : `skills: a, b`, `skills: [a, b]` ou une liste YAML sur plusieurs lignes. */
@@ -339,6 +345,20 @@ export function lireCompetences(contenuFiche: string | null, configClaude: strin
     (nom) => trouver(projet, nom) ?? trouver(poste, nom) ?? plugins.find((s) => s.nom === nom) ?? { nom, description: "", version: null, dossier: null },
   );
   return { fiche, poste, projet, plugins };
+}
+
+/**
+ * Ses compétences, et celles que le choix par agent lui retire : ce que le panneau d'une conversation
+ * montre, sur ce PC comme sur un VPS (chacun avec son propre `skillsParAgent`).
+ */
+export function competencesDeLAgent(
+  contenuFiche: string | null,
+  configClaude: string,
+  dossierProjet: string | null,
+  choix: SkillsParAgent | null | undefined,
+  agent: string | null,
+): Competences {
+  return { ...lireCompetences(contenuFiche, configClaude, dossierProjet), coupees: filtreSkills(choix, agent, configClaude, dossierProjet).coupes };
 }
 
 /* ─── Skills dans une session ─────────────────────────────────── */

@@ -17,8 +17,9 @@ import { appelAtelier, atelierEnCours, lireChoix, lireMajAtelier, sansEssaisEnCo
 import { appelEquipe, equipeEnCours, lireMajEquipe, OUTIL_EQUIPE_CLAUDE } from "@/lib/atelier-equipe";
 import { lireCarte, OUTIL_CARTE_CLAUDE, reponseNette } from "../../electron/cartes-interactives";
 import { lireDemandeSecret } from "../../electron/coffre-regles";
-import { contexteFil, TEXTE_ATTENTE, texteFilOuvert, texteRetourFil } from "../../electron/fils-outils";
+import { contexteFil, texteAttente, texteFilOuvert, texteRetourFil } from "../../electron/fils-outils";
 import { finTacheDeFond, sansFondOrphelin } from "./passation-fond";
+import { noterReponse, poserFond, poserFondParReponse } from "./fond-agents";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { renduDansEspace } from "@/lib/rendus-espace";
 import type { EtatEspace } from "@/lib/espace-sync";
@@ -447,6 +448,11 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
 /* ─── Construction des messages d'un agent ─────────────────────── */
 
 /** Ajoute un morceau de texte à la réponse : à la suite du dernier texte, ou dans un nouveau bloc. */
+/** Le compte Claude que la conversation demande, seulement quand c'est Claude Code qui répond. */
+function compteDe(chat: Chat | undefined, moteur: string): { compteClaude?: string } {
+  return moteur === PAR_DEFAUT && chat?.compteClaude ? { compteClaude: chat.compteClaude } : {};
+}
+
 function ajouterTexte(parts: MessagePart[], delta: string, nouveauBloc: boolean): MessagePart[] {
   const dernier = parts[parts.length - 1];
   if (dernier?.type === "text" && !nouveauBloc) {
@@ -635,6 +641,8 @@ interface WorkspaceApi {
   reagir: (messageId: string, emoji: string) => void;
   /** Modèle et effort de la conversation (null : ceux de la fiche de l'agent). */
   choisirModele: (chatId: string, modele: string | null, effort: string | null) => void;
+  /** Le compte Claude de la conversation (id d'un compte supplémentaire), ou null : le compte des agents. */
+  choisirCompteClaude: (chatId: string, compte: string | null) => void;
   /** « Plus tard » sur le conseil de résumer : il revient quand la conversation dépasse `jusqua` jetons. */
   masquerConseilContexte: (chatId: string, jusqua: number) => void;
   choisirFournisseur: (chatId: string, moteur: string, modele: string | null, effort: string | null) => void;
@@ -971,7 +979,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /* Un seul abonnement aux événements des agents, distribués par demande. */
   useEffect(() => {
     if (!bridge) return;
-    return bridge.claude.onEvent((requestId, event) => ecouteurs.current.get(requestId)?.(event));
+    return bridge.claude.onEvent((requestId, event) => {
+      const ecouteur = ecouteurs.current.get(requestId);
+      if (ecouteur) return ecouteur(event);
+      /* Ce qui tourne en fond se dit encore après la fin de la réponse qui l'a lancé. */
+      if (event.type === "fond") poserFondParReponse(requestId, event);
+    });
   }, [bridge]);
 
   useEffect(() => {
@@ -1142,8 +1155,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         if (etaitLeTravail) suivant(chatId);
       };
 
+    noterReponse(messageId, chatId, roleId);
     ecouteurs.current.set(messageId, (event) => {
       switch (event.type) {
+        case "fond":
+          poserFond(chatId, roleId, event);
+          break;
         case "session":
           dispatch({
             type: "chat/update",
@@ -1420,8 +1437,13 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         chat = stateRef.current.chats.find((c) => c.id === contexte.chatId) ?? chat;
         roleId = contexte.agentId;
         if (chat && contexte.choix) {
-          const { fournisseur: moteur, modele, effort } = contexte.choix;
+          const { fournisseur: moteur, modele, effort, compteClaude } = contexte.choix;
           chat = { ...changerDeMoteur(chat, moteur), modele, effort };
+          /* Le compte Claude qui a répondu sur le VPS (absent d'un serveur ancien : celui de la conversation reste). */
+          if (compteClaude !== undefined) {
+            if (compteClaude) chat = { ...chat, compteClaude };
+            else delete chat.compteClaude;
+          }
           const suite = chat;
           dispatch({ type: "chat/update", id: chat.id, patch: () => suite });
           stateRef.current = { ...stateRef.current, chats: stateRef.current.chats.map((c) => c.id === suite.id ? suite : c) };
@@ -1551,6 +1573,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           ...(chat.sessionNeuve && !chat.sessions[roleId] ? { sessionNeuve: true } : {}),
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
+          // Claude : le compte choisi pour la conversation (choix du modèle) ; absent : celui des agents.
+          ...compteDe(stateRef.current.chats.find((c) => c.id === chatId), moteur),
           acces: accesDuServeur(stateRef.current, chat.lieu),
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
           chatId,
@@ -1769,6 +1793,21 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [assurerChat],
   );
+  const choisirCompteClaude = useCallback(
+    (chatId: string, compte: string | null) => {
+      if (!assurerChat(chatId)) return;
+      dispatch({
+        type: "chat/update",
+        id: chatId,
+        patch: (c) => {
+          const suite: Chat = { ...c, compteClaude: compte };
+          if (!compte) delete suite.compteClaude;
+          return suite;
+        },
+      });
+    },
+    [assurerChat],
+  );
   const masquerConseilContexte = useCallback((chatId: string, jusqua: number) => {
     dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, contexteMasqueJusqua: jusqua }) });
   }, []);
@@ -1841,6 +1880,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       modele: chat.modele,
       lieu: chat.lieu,
       effort: chat.effort,
+      ...(chat.compteClaude ? { compteClaude: chat.compteClaude } : {}),
       ...(chat.fournisseur ? { fournisseur: chat.fournisseur } : {}),
       amorce: repris
         .map((m) => `${nom(m)} : ${texteDe(m)}`)
@@ -2040,9 +2080,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             throw new Error(`Aucun projet « ${projetId} ». Projets : ${projects.map((p) => `${p.id} (${p.name})`).join(", ") || "aucun"}.`);
           }
           const ticket: ChampsTicket = { priorite: lirePriorite(args.priorite) ?? 0, echeance: lireEcheance(args.echeance) ?? null, projetId };
+          /* Le refus nomme les fils qui tiennent les places, avec leur titre à jour dans l'app. */
+          let occupants: { titre: string; id: string }[] = [];
+          const attente = () => texteAttente(occupants.map((o) => ({ titre: tousChats.find((c) => c.id === o.id)?.title ?? o.titre, id: o.id })));
           if (bridge?.superagent) {
-            const garde = await bridge.superagent.peutOuvrir();
-            if (garde.ok && !garde.data.ok) throw new Error(TEXTE_ATTENTE);
+            // Les fils ouverts de l'app, tous lieux : les places des fils supprimés ou fermés sont rendues avant de compter.
+            const garde = await bridge.superagent.peutOuvrir(tousChats.filter((c) => c.fil?.statut === "ouvert").map((c) => c.id));
+            if (garde.ok) occupants = garde.data.occupants ?? [];
+            if (garde.ok && !garde.data.ok) throw new Error(attente());
           }
           const lanceur = chats.some((c) => c.id === appelant.chatId) ? { roleId: appelant.roleId, chatId: appelant.chatId } : null;
           const id = creerFil(agent, titre || brief, lanceur, ticket, { lieu: lieuAppelant });
@@ -2067,7 +2112,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             if (note.ok && note.data.ok === false) {
               archiverFil(id);
               throw new Error(note.data.motif === "capacite_atteinte"
-                ? TEXTE_ATTENTE
+                ? attente()
                 : `Travail non ouvert : ${note.data.motif ?? "refus"}.`);
             }
           }
@@ -2858,6 +2903,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       state,
       sendMessage,
       choisirModele,
+      choisirCompteClaude,
       masquerConseilContexte,
       choisirFournisseur,
       basculerMachine,
@@ -2921,6 +2967,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       poserEvenementsCompte,
       sendMessage,
       choisirModele,
+      choisirCompteClaude,
       masquerConseilContexte,
       choisirFournisseur,
       basculerMachine,

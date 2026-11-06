@@ -7,6 +7,7 @@ import { creerAgents } from "./agents.mjs";
 import { filtreSkills, nomsSkills } from "./connaissances-agent.mjs";
 import { preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { creerIa } from "./ia.mjs";
+import { creerMoteurs } from "./moteurs.mjs";
 import { VERSION_CODE_SERVEUR } from "./version-code.mjs";
 import { CHEMIN, CHEMIN_AGENT, CHEMIN_APPAIRER, CHEMIN_APPAREIL, CHEMIN_FICHES, CHEMIN_RENDUS, DUREE_CODE_MS, cleConversation, contexteTelephone, creerCode, creerJournal, ecouter, lireAppareils, revoquerTout } from "./klyra-serveur.mjs";
 
@@ -338,6 +339,82 @@ test("un agent répond sur le VPS, en flux, avec rattrapage et autorisation", as
     assert.equal(inconnu.statut, 202);
     const refus = await lireFlux(ecoute.port, jeton, 0, premier.instance, (recus) => recus.some((e) => e.requestId === "r3"));
     assert.match(refus.recus.find((e) => e.requestId === "r3").event.erreur, /pas dans Mes agents/);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+/* Un faux Claude Code qui note la connexion qu'il reçoit et rend des limites d'abonnement. */
+const FAUX_CLAUDE_COMPTE = `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.appendFileSync(process.env.HOME + "/compte.log", JSON.stringify({
+  stockage: process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR ?? null,
+  jeton: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+  config: process.env.CLAUDE_CONFIG_DIR ?? null,
+  lien: (() => { try { return fs.realpathSync(process.env.CLAUDE_CONFIG_DIR + "/.credentials.json"); } catch { return null; } })(),
+}) + "\\n");
+const ecrire = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+let tampon = "";
+process.stdin.on("data", (d) => {
+  tampon += d;
+  const lignes = tampon.split("\\n");
+  tampon = lignes.pop();
+  for (const l of lignes) {
+    if (!l.trim() || JSON.parse(l).type !== "user") continue;
+    ecrire({ type: "system", subtype: "init", session_id: "11111111-2222-3333-4444-555555555555" });
+    ecrire({ type: "rate_limit_event", rate_limit_info: { status: "allowed", rateLimitType: "seven_day", utilization: process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR ? 0.84 : 0.3, resetsAt: Math.floor(Date.now() / 1000) + 3600 } });
+    ecrire({ type: "result", subtype: "success", is_error: false, result: "ok", session_id: "11111111-2222-3333-4444-555555555555" });
+  }
+});
+`;
+
+test("une conversation du VPS répond avec le compte Claude choisi, sans le jeton des agents", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const claude = path.join(home, "faux-claude");
+  writeFileSync(claude, FAUX_CLAUDE_COMPTE);
+  chmodSync(claude, 0o755);
+  writeFileSync(path.join(dossier, "claude-token"), "jeton-des-agents");
+  const second = "11111111-1111-4111-8111-111111111111";
+  const dossierCompte = path.join(dossier, "claude-comptes", second);
+  mkdirSync(dossierCompte, { recursive: true });
+  writeFileSync(path.join(dossierCompte, ".credentials.json"), "{}\n");
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, claude });
+  const moteurs = creerMoteurs({ home, donnees: dossier, claude: agents.claude, codex: agents.codex, grok: agents.grok });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents, moteurs });
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.versionCode >= 21, true);
+    const options = { agent: null, prompt: "bonjour", sessionId: null, acces: "projet", conversation: "dm-principal" };
+    const envoyer = async (requestId, corps) => {
+      assert.equal((await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId, options: { ...options, ...corps } } })).statut, 202);
+      return (await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === requestId && e.event?.type === "fin"))).recus.find((e) => e.requestId === requestId && e.event?.type === "fin").event;
+    };
+    const lus = () => readFileSync(path.join(home, "compte.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+
+    assert.equal((await envoyer("r1", {})).ok, true);
+    assert.deepEqual([lus()[0].stockage, lus()[0].jeton], [null, "jeton-des-agents"]);
+    assert.equal(agents.claude.utilisation()?.semaine?.utilise, 0.3);
+
+    /* Le compte choisi : sa connexion, son dossier préparé à part, et ses limites à lui. */
+    assert.equal((await envoyer("r2", { compteClaude: second })).ok, true);
+    const avecCompte = lus()[1];
+    assert.equal(avecCompte.stockage, dossierCompte);
+    assert.equal(avecCompte.jeton, null);
+    assert.equal(avecCompte.config, path.join(dossier, "preparation-comptes", second, "principal"));
+    assert.equal(avecCompte.lien, path.join(dossierCompte, ".credentials.json"));
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal((await moteurs.utilisation("claude", false, second))?.semaine?.utilise, 0.84);
+    assert.equal(agents.claude.utilisation()?.semaine?.utilise, 0.3);
+
+    /* Un compte parti, ou un id qui n'en est pas un : refusé avec sa raison, rien n'est lancé. */
+    const parti = await envoyer("r3", { compteClaude: "22222222-2222-4222-8222-222222222222" });
+    assert.match(parti.erreur, /plus connecté ici/);
+    assert.match((await envoyer("r4", { compteClaude: "../poste" })).erreur, /Compte Claude invalide/);
+    assert.equal(lus().length, 2);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });
@@ -708,6 +785,10 @@ test("le VPS écrit les skills allumées dans sa bibliothèque et les sessions p
     assert.equal(readFileSync(path.join(home, ".claude", "skills", "ancienne", "SKILL.md"), "utf8").includes("POSTE"), true);
     assert.equal(process.env.KLYRA_USER_DATA, dossier);
     assert.deepEqual(nomsSkills(path.join(home, ".claude"), null).poste.sort(), ["maquette", "rangement"]);
+    // Le panneau d'une conversation du VPS lit aussi ce que le choix de ce serveur coupe à chacun.
+    const lire = async (agent) => (await appel(ecoute.port, `${CHEMIN_AGENT}/competences?agent=${agent}`, { jeton })).json.competences;
+    assert.deepEqual((await lire("iris")).coupees, ["maquette"]);
+    assert.deepEqual((await lire("hugo")).coupees, []);
 
     const filtreIris = filtreSkills(choix, "iris", path.join(home, ".claude"), null);
     const session = preparerSessionClaude({
@@ -754,6 +835,13 @@ test("le VPS écrit les skills allumées dans sa bibliothèque et les sessions p
     assert.equal(sortie.statut, 400);
     assert.equal(existsSync(path.join(dossier, "sortie")), false);
     assert.equal(existsSync(path.join(home, ".claude", "skills", "sortie")), false);
+
+    // Allumée pour Iris sur ce serveur (Réglages › Agents, ou « Lui donner » du panneau) : plus coupée pour elle.
+    await appel(ecoute.port, CHEMIN_FICHES, { methode: "PUT", jeton, corps: { fiches, assistant: "Cicco", skillsParAgent: choix, skills: [skill("rangement", "RANGE"), skill("maquette", "DESSINE")], empreinte: "e5" } });
+    assert.deepEqual((await lire("iris")).coupees, ["maquette"]);
+    const pourIris = { ...choix, activees: { ...choix.activees, iris: ["maquette"] } };
+    assert.equal((await appel(ecoute.port, "/klyra/v1/equipe/reglages-ecrire", { methode: "POST", jeton, corps: { skillsParAgent: pourIris } })).statut, 200);
+    assert.deepEqual((await lire("iris")).coupees, []);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });
@@ -925,12 +1013,12 @@ test("l'espace d'un serveur : ses éléments restent ici, retirés comme écrits
     const espace = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/espace/${methode}`, { methode: "POST", jeton, corps });
     assert.equal((await appel(ecoute.port, "/klyra/v1/espace/lire", { methode: "POST", corps: {} })).statut, 401);
     assert.equal((await appel(ecoute.port, CHEMIN, { jeton })).json.espacePropre, true);
-    assert.deepEqual((await espace("lire")).json.resultat, { revision: 0, elements: [], supprimes: {}, choixModeleTelephone: true });
+    assert.deepEqual((await espace("lire")).json.resultat, { revision: 0, elements: [], supprimes: {}, choixModeleTelephone: true, compteClaudeTelephone: true });
 
     const conversation = { chat: { id: "dm-iris@vps:8791", title: "Iris" }, messages: [{ id: "m1", chatId: "dm-iris@vps:8791" }] };
     const ecrit = await espace("ecrire", { elements: [{ type: "conversation", id: "dm-iris@vps:8791", valeur: conversation }, { type: "projet", id: "p1", valeur: { id: "p1" } }] });
     assert.equal(ecrit.json.resultat.revision, 1);
-    assert.deepEqual((await espace("lire", { depuis: 1 })).json.resultat, { revision: 1, inchange: true, choixModeleTelephone: true });
+    assert.deepEqual((await espace("lire", { depuis: 1 })).json.resultat, { revision: 1, inchange: true, choixModeleTelephone: true, compteClaudeTelephone: true });
     const lu = (await espace("lire", { depuis: 0 })).json.resultat;
     assert.deepEqual(lu.elements.find((e) => e.type === "conversation").valeur, conversation);
     assert.equal(lu.elements.length, 2);
@@ -1080,7 +1168,7 @@ test("le téléphone choisit son fournisseur par conversation : sessions conserv
     await new Promise((r) => setTimeout(r, 150));
     journal.publier("r-2", { type: "fin", ok: true, texte: "Réponse Grok" }, "session-grok");
     const { recus } = await flux;
-    assert.deepEqual(recus.find((e) => e.requestId === "r-2").contexte.choix, choixGrok);
+    assert.deepEqual(recus.find((e) => e.requestId === "r-2").contexte.choix, { ...choixGrok, compteClaude: null });
     assert.equal((await lire(chat.id)).chat.fournisseur, "grok");
     await envoyer("claude", 3);
     lu = await lire(chat.id);
@@ -1090,6 +1178,55 @@ test("le téléphone choisit son fournisseur par conversation : sessions conserv
     assert.deepEqual(lu.chat.sessionsParMoteur.codex, { cicco: "session-codex" });
     assert.deepEqual((await lire(autre.id)).chat, autre);
     assert.equal(recues[1].options.moteur, "grok");
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("le téléphone choisit le compte Claude d'une conversation : gardé sur le serveur, relayé au PC", async () => {
+  const dossier = dossierJetable();
+  const journal = creerJournal();
+  const recues = [];
+  const agents = { envoyer: (requestId, options) => recues.push({ requestId, options }), fermerTout() {}, etat: () => "pret", empreinteEquipe: () => "" };
+  const ecoute = await ecouter({ nom: "VPS", dossier, port: 0, journal, agents });
+  const SECOND = "11111111-1111-4111-8111-111111111111";
+  try {
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+    const espace = (methode, corps = {}) => appel(ecoute.port, `/klyra/v1/espace/${methode}`, { methode: "POST", jeton, corps });
+    const chat = { id: "dm-cicco@vps", kind: "direct", projectId: null, title: "Cicco", roleIds: ["cicco"], sessions: { cicco: "session-claude" }, updatedAt: "2026-11-01T00:00:00Z", lieu: "https://vps", modele: "opus", effort: "high" };
+    await espace("ecrire", { elements: [{ type: "conversation", id: chat.id, valeur: { chat, messages: [] } }] });
+    assert.equal((await espace("lire")).json.resultat.compteClaudeTelephone, true);
+    const lire = async () => (await espace("lire")).json.resultat.elements.find((e) => e.id === chat.id).valeur.chat;
+    const contexte = (n) => ({ chatId: chat.id, agentId: "cicco", titre: "Cicco", telephone: { messageId: `tel-${n}`, texte: "Bonjour", creeLe: "2026-11-06T10:00:00Z" } });
+    const envoyer = (n, choix, compteOptions) => appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: {
+      requestId: `r-${n}`, ...(choix ? { choix } : {}), contexte: contexte(n),
+      options: { moteur: "claude", modele: "opus", effort: "high", agent: "cicco", prompt: "Bonjour", ...(compteOptions ? { compteClaude: compteOptions } : {}) },
+    } });
+
+    assert.equal((await envoyer(1, { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: SECOND }, SECOND)).statut, 202);
+    assert.equal((await lire()).compteClaude, SECOND);
+    assert.deepEqual((await lire()).sessions, { cicco: "session-claude" });
+    assert.equal(recues.at(-1).options.compteClaude, SECOND);
+    /* Le PC qui rejoue le journal sait quel compte a répondu. */
+    const flux = lireFlux(ecoute.port, jeton, 0, "", (lus) => lus.some((e) => e.requestId === "r-1" && e.event?.type === "fin"));
+    await new Promise((r) => setTimeout(r, 150));
+    journal.publier("r-1", { type: "fin", ok: true, texte: "Réponse" }, "session-claude");
+    assert.equal((await flux).recus.find((e) => e.requestId === "r-1").contexte.choix.compteClaude, SECOND);
+
+    /* Un choix qui ne dit pas le compte de l'envoi, un id qui n'en est pas un, un compte avec un autre fournisseur : refusés. */
+    assert.equal((await envoyer(2, { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: SECOND }, null)).statut, 400);
+    assert.equal((await envoyer(3, { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: "poste" }, null)).statut, 400);
+    assert.equal((await envoyer(4, { fournisseur: "codex", modele: "opus", effort: "high", compteClaude: SECOND }, SECOND)).statut, 400);
+    assert.equal((await lire()).compteClaude, SECOND);
+
+    /* Retour au compte des agents. */
+    assert.equal((await envoyer(5, { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: null }, null)).statut, 202);
+    assert.equal((await lire()).compteClaude, undefined);
+    /* Un choix du modèle sans le compte ne touche pas celui de la conversation. */
+    assert.equal((await envoyer(6, { fournisseur: "claude", modele: "opus", effort: "high", compteClaude: SECOND }, SECOND)).statut, 202);
+    assert.equal((await envoyer(7, { fournisseur: "claude", modele: "opus", effort: "high" }, SECOND)).statut, 202);
+    assert.equal((await lire()).compteClaude, SECOND);
   } finally {
     await ecoute.fermer();
     rmSync(dossier, { recursive: true, force: true });

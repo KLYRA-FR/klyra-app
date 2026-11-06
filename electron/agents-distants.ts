@@ -382,6 +382,8 @@ function distribuer(origine: string, entree: Entree) {
     return;
   }
   if (!entree.event) return;
+  /* Ce qui tourne en fond se dit par une réponse déjà rendue : jamais une réponse à ouvrir. L'écran le range s'il la connaît. */
+  if (entree.event.type === "fond") return void fenetre.evenement(entree.requestId, entree.event);
   if (!connues.has(entree.requestId)) {
     // Une réponse de routine, ou finie pendant que l'app était fermée : elle s'ouvre comme une réponse spontanée.
     if (!entree.sessionId) return;
@@ -490,13 +492,22 @@ export function oublierServeur(origine: string) {
   equipePropre.delete(origine);
 }
 
+/** La version du code de chaque VPS, lue avec son empreinte d'équipe (avant chaque envoi). */
+const versionsCode = new Map<string, number>();
+/**
+ * Le premier code de serveur qui fait travailler une conversation avec le compte Claude choisi (`compteClaude`).
+ * Un serveur plus ancien ignorerait le champ et répondrait avec le compte des agents : l'envoi est refusé avant.
+ */
+export const VERSION_COMPTE_CLAUDE = 21;
+
 /**
  * L'empreinte de l'équipe qu'a le VPS : "" s'il n'en a pas, ou pas toute (cf. `empreinteEquipe`, serveur/agents.mjs).
  * null s'il ne la donne pas (serveur trop ancien). Un VPS qui ne répond pas : l'erreur remonte.
  */
 async function empreinteDuServeur(origine: string): Promise<string | null> {
   const recu = await requete(origine, CHEMIN_SERVEUR, "GET");
-  const corps = recu.json as { equipe?: unknown; equipePropre?: unknown; equipeInitialisee?: unknown } | null;
+  const corps = recu.json as { equipe?: unknown; equipePropre?: unknown; equipeInitialisee?: unknown; versionCode?: unknown } | null;
+  if (recu.status === 200) versionsCode.set(origine, typeof corps?.versionCode === "number" ? corps.versionCode : 0);
   if (corps?.equipePropre === true && corps.equipeInitialisee !== false) equipePropre.add(origine);
   else equipePropre.delete(origine);
   const equipe = corps?.equipe;
@@ -536,6 +547,11 @@ export async function streamDistant(origine: string, requestId: string, options:
   enCours.set(requestId, origine);
   try {
     await synchroniserEquipe(origine);
+    const avecCompte = !!options.compteClaude && (options.moteur ?? "claude") === "claude";
+    if (avecCompte && !versionsCode.has(origine)) await empreinteDuServeur(origine);
+    if (avecCompte && (versionsCode.get(origine) ?? 0) < VERSION_COMPTE_CLAUDE) {
+      throw new Error("Ce VPS est trop ancien pour répondre avec le compte Claude choisi : relance la commande d’installation pour le mettre à jour, ou reviens au compte des agents dans le choix du modèle.");
+    }
     const prompt = await promptAvecJoints(origine, options);
     const recu = await requete(origine, "/klyra/v1/agent/envoyer", "POST", {
       requestId,
@@ -547,6 +563,8 @@ export async function streamDistant(origine: string, requestId: string, options:
         sessionId: options.sessionId,
         modele: options.modele ?? null,
         effort: options.effort ?? null,
+        /* Le compte Claude supplémentaire du serveur choisi pour la conversation ; absent : celui des agents. */
+        ...(avecCompte ? { compteClaude: options.compteClaude } : {}),
         acces: options.acces ?? "projet",
         dossier: options.dossierVps ?? null,
         /* Le VPS retient la session de cette conversation : le téléphone, PC fermé, y reprend. */

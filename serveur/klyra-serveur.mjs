@@ -26,6 +26,7 @@ import { creerMoteurs } from "./moteurs.mjs";
 import { creerRoutines } from "./routines.mjs";
 import { VERSION_CODE_SERVEUR } from "./version-code.mjs";
 import { FOURNISSEURS, EFFORTS } from "./fournisseurs.mjs";
+import { idCompteSupplementaire } from "./comptes-claude.mjs";
 
 export const CHEMIN = "/klyra/v1/serveur";
 export const CHEMIN_APPAIRER = "/klyra/v1/appairer";
@@ -260,6 +261,8 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
   const conversations = new Map();
   let sessions = {};
   const surFin = new Set();
+  /* Les réponses déjà finies (les dernières) : un fil qui croit encore la sienne en cours se trompe (fils.mjs). */
+  const finies = new Set();
   if (fichierSessions) {
     try {
       const lu = JSON.parse(readFileSync(fichierSessions, "utf8"));
@@ -292,11 +295,15 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
       ajouter({ requestId, sessionId: sessionId ?? null, event, ...(lie ? { contexte: lie } : {}) });
       retenirSession(requestId, sessionId);
       if (event?.type === "fin") {
+        if (finies.size >= 1000) finies.delete(finies.values().next().value);
+        finies.add(requestId);
         for (const fn of surFin) fn({ requestId, event, sessionId: sessionId ?? null, contexte: lie, cle: conversations.get(requestId) ?? null });
         contextes.delete(requestId);
         conversations.delete(requestId);
       }
     },
+    /** La réponse a publié sa fin (parmi les 1000 dernières) : elle ne tourne plus. */
+    finie: (requestId) => finies.has(requestId),
     /** Prévient quand une réponse finit : le serveur la range s'il n'y a personne pour le faire. */
     ecouterFin(fn) {
       surFin.add(fn);
@@ -768,11 +775,14 @@ export function creerGestionnaire(options) {
           if (!contexte?.telephone || !choix || !FOURNISSEURS.some((f) => f.id === choix.fournisseur)
             || (choix.modele !== null && (typeof choix.modele !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(choix.modele)))
             || (choix.effort !== null && !EFFORTS.some((e) => e.id === choix.effort))
-            || options?.moteur !== choix.fournisseur || options?.modele !== choix.modele || options?.effort !== choix.effort) return repondre(res, 400, { erreur: "choix" });
+            || options?.moteur !== choix.fournisseur || options?.modele !== choix.modele || options?.effort !== choix.effort
+            /* Le compte Claude choisi : un id de compte ou null, celui-là même que l'envoi utilise, et seulement avec Claude. */
+            || (choix.compteClaude !== undefined && ((choix.compteClaude !== null && !idCompteSupplementaire(choix.compteClaude))
+              || (choix.compteClaude !== null && choix.fournisseur !== "claude") || (options?.compteClaude ?? null) !== choix.compteClaude))) return repondre(res, 400, { erreur: "choix" });
           espace?.choisirModele(contexte.chatId, contexte.agentId, contexte.titre, choix);
         }
         if (contexte?.telephone && options && FOURNISSEURS.some((f) => f.id === (options.moteur ?? "claude"))) {
-          contexte.choix = { fournisseur: options.moteur ?? "claude", modele: options.modele ?? null, effort: options.effort ?? null };
+          contexte.choix = { fournisseur: options.moteur ?? "claude", modele: options.modele ?? null, effort: options.effort ?? null, compteClaude: idCompteSupplementaire(options.compteClaude) };
         }
         if (contexte) journal?.poserContexte(requestId, contexte);
         const cle = options && typeof options === "object" ? cleConversation(options.conversation ?? contexte?.chatId, options.agent, options.moteur) : null;

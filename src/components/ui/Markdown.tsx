@@ -1,5 +1,6 @@
-import { Fragment, type ReactNode } from "react";
+import { createContext, Fragment, useContext, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { decouperFils } from "@/lib/liens-fils";
 import { Lien } from "./Lien";
 
 /**
@@ -82,6 +83,19 @@ function parseBlocks(source: string): Block[] {
 /** Adresses à rendre cliquables : http(s)://… et localhost:port. */
 const ADRESSE = /^(https?:\/\/[^\s<>()]+[^\s<>().,;:!?»"']|(?:localhost|127\.0\.0\.1):\d+(?:\/[^\s<>()]*[^\s<>().,;:!?»"'])?)$/;
 
+/**
+ * Rendu d'un identifiant de fil (`klyra-fil-…`) cité dans le texte. Sans fournisseur (fiches, aperçus),
+ * l'identifiant reste du texte ; les messages du chat le rendent cliquable (cf. `LienFil`).
+ */
+export const RenduFil = createContext<((id: string) => ReactNode) | null>(null);
+
+/** Du texte simple : les identifiants de fils y deviennent des liens, si le contexte le demande. */
+function TexteSimple({ texte }: { texte: string }) {
+  const rendu = useContext(RenduFil);
+  if (!rendu) return <>{texte}</>;
+  return decouperFils(texte).map((m, i) => <Fragment key={i}>{m.fil ? rendu(m.texte) : m.texte}</Fragment>);
+}
+
 /** **gras**, `code`, [texte](lien) et les adresses nues, dans une ligne. */
 export function Inline({ text }: { text: string }) {
   const parts = text
@@ -131,7 +145,7 @@ export function Inline({ text }: { text: string }) {
             </Lien>
           );
         }
-        return <Fragment key={i}>{part}</Fragment>;
+        return <TexteSimple key={i} texte={part} />;
       })}
     </>
   );

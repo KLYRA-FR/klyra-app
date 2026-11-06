@@ -1,6 +1,7 @@
 import { constants, copyFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { CAPACITE_OCCUPATIONS } from "./types";
 
 /**
  * Le journal du super-agent : une base SQLite sur l'ordinateur (module `node:sqlite` d'Electron,
@@ -14,7 +15,7 @@ import { DatabaseSync } from "node:sqlite";
  * Détail, sauvegarde et retour arrière : `docs/SUPERAGENT.md`.
  */
 
-export const VERSION_SCHEMA = 3;
+export const VERSION_SCHEMA = 4;
 const ATTENTE_VERROU_MS = 10_000;
 
 const SCHEMA_V1 = `
@@ -175,9 +176,9 @@ CREATE TABLE receipt (
   PRIMARY KEY (event_id, work_id, owner_epoch)
 );
 
--- Sémaphore : trois places numérotées, une quatrième est impossible pour le moteur (point 21).
+-- Sémaphore : CAPACITE_OCCUPATIONS places numérotées, une de plus est impossible pour le moteur (point 21).
 CREATE TABLE occupation (
-  slot INTEGER PRIMARY KEY CHECK (slot BETWEEN 1 AND 3),
+  slot INTEGER PRIMARY KEY CHECK (slot BETWEEN 1 AND ${CAPACITE_OCCUPATIONS}),
   occupant_ref TEXT NOT NULL UNIQUE,
   work_id TEXT UNIQUE REFERENCES work (work_id),
   agent_id TEXT NOT NULL,
@@ -374,6 +375,26 @@ function elargirLienGithub(db: DatabaseSync): void {
   `);
 }
 
+/** Version 4 : le sémaphore passe à `CAPACITE_OCCUPATIONS` places ; les occupations en place sont gardées. */
+function elargirOccupation(db: DatabaseSync): void {
+  const ligne = un<{ sql: string }>(db, "SELECT sql AS sql FROM sqlite_master WHERE type = 'table' AND name = 'occupation'");
+  if (!ligne || ligne.sql.includes(`BETWEEN 1 AND ${CAPACITE_OCCUPATIONS})`)) return;
+  db.exec(`
+    CREATE TABLE occupation_v4 (
+      slot INTEGER PRIMARY KEY CHECK (slot BETWEEN 1 AND ${CAPACITE_OCCUPATIONS}),
+      occupant_ref TEXT NOT NULL UNIQUE,
+      work_id TEXT UNIQUE REFERENCES work (work_id),
+      agent_id TEXT NOT NULL,
+      owner_epoch INTEGER,
+      acquired_at TEXT NOT NULL
+    );
+    INSERT INTO occupation_v4 (slot, occupant_ref, work_id, agent_id, owner_epoch, acquired_at)
+      SELECT slot, occupant_ref, work_id, agent_id, owner_epoch, acquired_at FROM occupation;
+    DROP TABLE occupation;
+    ALTER TABLE occupation_v4 RENAME TO occupation;
+  `);
+}
+
 function versionDe(db: DatabaseSync): number {
   return Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
 }
@@ -396,7 +417,11 @@ function migrer(db: DatabaseSync, chemin: string, dossierSauvegardes?: string) {
     else if (actuelle === 1) {
       db.exec(TABLES_V2);
       elargirLienGithub(db);
-    } else if (actuelle === 2) elargirLienGithub(db);
+      elargirOccupation(db);
+    } else if (actuelle === 2) {
+      elargirLienGithub(db);
+      elargirOccupation(db);
+    } else if (actuelle === 3) elargirOccupation(db);
     else throw new Error(`Journal super-agent en version ${actuelle} : migration non prévue.`);
     db.exec(`PRAGMA user_version = ${VERSION_SCHEMA}`);
   });

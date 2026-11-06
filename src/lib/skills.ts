@@ -33,3 +33,30 @@ export function skillsProposees(skills: SkillProposee[], saisie: string, max = 8
   const dedans = uniques.filter((s) => !debut.includes(s) && sansAccents(s.nom).includes(q));
   return [...debut, ...dedans].slice(0, max);
 }
+
+/** Ce que l'écran sait des compétences d'un agent (cf. `Competences` d'electron/connaissances-agent.ts). */
+interface CompetencesLues {
+  fiche: { nom: string; description: string; dossier: string | null }[];
+  projet: { nom: string; description: string }[];
+  poste: { nom: string; description: string }[];
+  plugins?: { nom: string; description: string }[];
+  coupees?: string[];
+}
+
+/**
+ * Les skills qu'on peut lui demander par « / » : celles de sa fiche qui existent, du projet, de l'app et des
+ * plugins, sans celles que Réglages › Agents lui coupe (le process principal ne les remettrait pas en tête).
+ */
+export function skillsDemandables(c: CompetencesLues): SkillProposee[] {
+  const coupees = new Set(c.coupees ?? []);
+  return [...c.fiche.filter((s) => s.dossier), ...c.projet, ...c.poste, ...(c.plugins ?? [])]
+    .filter((s) => !coupees.has(s.nom))
+    .map((s) => ({ nom: s.nom, description: s.description }));
+}
+
+/** « 2 dans sa fiche », et combien lui sont coupées (« · coupée », « · 1 coupée ») : bureau et téléphone. */
+export function resumeFiche(total: number, coupees: number): string {
+  const base = `${total} dans sa fiche`;
+  if (!coupees) return base;
+  return coupees === total ? `${base} · ${total > 1 ? "coupées" : "coupée"}` : `${base} · ${coupees} coupée${coupees > 1 ? "s" : ""}`;
+}

@@ -16,7 +16,8 @@ import { skillRecue, type SkillsParAgent } from "./skills-par-agent";
  * on ne le combine pas avec lui.
  *
  * La connexion et les sessions restent celles du poste : un lien vers `.credentials.json`,
- * `projects` et `sessions`, jamais une copie, jamais une suppression.
+ * `projects` et `sessions`, jamais une copie, jamais une suppression. Avec un compte Claude supplémentaire
+ * choisi pour la conversation, la connexion est celle de ce compte (dossier préparé à part, cf. `compte`).
  * Les skills personnelles copiées viennent de `userData/bibliotheque-skills` dès que ce dossier
  * existe (la copie du premier lancement). Sans lui, elles viennent encore du poste.
  * Les plugins et `settings.json` du poste sont des liens : Claude Code les charge comme avant.
@@ -320,6 +321,12 @@ export interface SessionClaude {
   configClaude?: string | null;
   /** Projet de la session : ses skills de projet entrent dans le catalogue. */
   dossierProjet?: string | null;
+  /**
+   * Un compte Claude supplémentaire choisi pour la conversation (`claude-comptes/<id>`) : un dossier préparé à part
+   * (`preparation-comptes/<id>/<agent>`), dont la connexion est un lien vers celle de ce compte. Son `.claude.json`
+   * (profil du compte) ne se mêle pas à celui du compte des agents. Absent : le compte des agents.
+   */
+  compte?: { id: string; dossier: string } | null;
 }
 
 /**
@@ -329,7 +336,8 @@ export interface SessionClaude {
 export function preparerSessionClaude(session: SessionClaude): { dossier: string; skills: string[]; catalogue: string } | null {
   if (!session.userData) return null;
   const id = session.agent && ID_AGENT.test(session.agent) ? session.agent : "principal";
-  const dossier = path.join(session.userData, "preparation", id);
+  const compte = session.compte && NOM_DOSSIER.test(session.compte.id) ? session.compte : null;
+  const dossier = compte ? path.join(session.userData, "preparation-comptes", compte.id, id) : path.join(session.userData, "preparation", id);
   const poste = session.poste || path.join(session.home, ".claude");
   const catalogues = new Map<string, { nom: string; source: string }[]>();
   if (session.choix && session.configClaude) {
@@ -355,7 +363,7 @@ export function preparerSessionClaude(session: SessionClaude): { dossier: string
     fiches,
     skills,
     claudeMd: existsSync(claudeMd) ? claudeMd : null,
-    identifiants: path.join(poste, ".credentials.json"),
+    identifiants: path.join(compte ? compte.dossier : poste, ".credentials.json"),
     projects: path.join(poste, "projects"),
     sessions: path.join(poste, "sessions"),
     plugins: path.join(poste, "plugins"),

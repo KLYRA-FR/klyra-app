@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, symlink, mkdir, writeFile } from "node:fs/promis
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
-import { codeConnexionValide, ComptesClaude, environnementCompte, urlConnexionValide, type ProcessusConnexion } from "./comptes-claude.ts";
+import { codeConnexionValide, ComptesClaude, dossierCompteClaude, environnementAvecCompte, environnementCompte, idCompteSupplementaire, urlConnexionValide, type ProcessusConnexion } from "./comptes-claude.ts";
 
 const original = {
   installe: true, chemin: "claude", version: "2.1.318", connecte: true, methode: "claude.ai",
@@ -240,6 +240,42 @@ test("les limites de chaque compte se lisent avec ce compte seul, sont gardées,
   await c.comptes.deconnecter(second.id);
   assert.equal(await new ComptesClaude(c.options).utilisation(second.id, false), null);
   await assert.rejects(c.comptes.utilisation("../poste", false), /invalide/);
+});
+
+test("une conversation travaille avec un compte supplémentaire : son dossier, sa connexion, ses limites", async (t) => {
+  const c = await contexte(t);
+  const second = await c.comptes.connecter();
+  const racine = c.options.dossier;
+  /* Seul un id de compte supplémentaire passe : jamais « poste », un chemin ou un id inventé. */
+  assert.equal(idCompteSupplementaire(second.id), second.id);
+  for (const brut of ["poste", "../poste", "", null, 3, `${second.id}/..`]) assert.equal(idCompteSupplementaire(brut), null);
+  assert.equal(dossierCompteClaude(racine, second.id), path.join(path.resolve(racine), second.id));
+  assert.throws(() => dossierCompteClaude(racine, "22222222-2222-4222-8222-222222222222"), /plus connecté ici/);
+  assert.throws(() => dossierCompteClaude(racine, "../x"), /invalide/);
+  /* Un lien posé à la place d'un dossier de compte n'est pas suivi. */
+  const lien = "33333333-3333-4333-8333-333333333333";
+  await mkdir(path.join(c.options.home, "ailleurs"), { recursive: true });
+  await symlink(path.join(c.options.home, "ailleurs"), path.join(racine, lien), "dir");
+  assert.throws(() => dossierCompteClaude(racine, lien), /isolé/);
+
+  /* L'environnement de l'agent : le dossier préparé reste, la connexion vient du compte, aucun jeton du poste ne passe devant. */
+  const env = environnementAvecCompte({
+    PATH: "/bin", HOME: "/maison", CLAUDE_CONFIG_DIR: "/prepare", ANTHROPIC_BASE_URL: "http://127.0.0.1:1",
+    ANTHROPIC_API_KEY: "cle", ANTHROPIC_AUTH_TOKEN: "jeton", CLAUDE_CODE_OAUTH_TOKEN: "jeton-vps", CLAUDE_CODE_USE_BEDROCK: "1",
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: "/autre", CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1",
+  }, dossierCompteClaude(racine, second.id));
+  assert.deepEqual(env, {
+    PATH: "/bin", HOME: "/maison", CLAUDE_CONFIG_DIR: "/prepare", ANTHROPIC_BASE_URL: "http://127.0.0.1:1",
+    CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1", CLAUDE_SECURESTORAGE_CONFIG_DIR: path.join(path.resolve(racine), second.id),
+  });
+
+  /* Les limites reçues dans la conversation sont celles de ce compte : gardées pour son anneau, sans requête. */
+  const avant = c.appels.length;
+  const u = await c.comptes.noterLimites(second.id, { status: "allowed", rateLimitType: "seven_day", utilization: 0.4, resetsAt: Math.floor(Date.now() / 1000) + 3600 });
+  assert.equal(u?.semaine?.utilise, 0.4);
+  assert.equal((await new ComptesClaude(c.options).utilisation(second.id, false))?.semaine?.utilise, 0.4);
+  assert.equal(c.appels.length, avant);
+  assert.equal(await c.comptes.noterLimites("poste", { rateLimitType: "seven_day", utilization: 0.9 }), null);
 });
 
 // Vérification facultative du vrai CLI : uniquement `--version` et `auth status` dans un dossier vide.

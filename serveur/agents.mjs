@@ -22,15 +22,16 @@ import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_C
 import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
 import { lireJsonPartiel } from "./json-partiel.mjs";
+import { finSuiviFond, nouveauSuiviFond, suivreFond } from "./taches-fond.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
 import { creerJoints } from "./joints.mjs";
 import {
+  competencesDeLAgent,
   competencesPrechargees,
   creerSouvenir as creerSouvenirDans,
   dossierMemoire,
   ecrireSouvenir as ecrireSouvenirDans,
   filtreSkills,
-  lireCompetences,
   lireMemoire,
   lireSouvenir,
   porteeDeLaFiche,
@@ -39,6 +40,7 @@ import {
 import { ecrireBibliotheque, normaliserSkillsRecues, preparerSessionClaude } from "./preparation-fournisseur.mjs";
 import { reglagesSession, validerSkillsParAgent } from "./skills-par-agent.mjs";
 import { ecartModelUsage } from "./consommation-ecart.mjs";
+import { dossierCompteClaude, environnementAvecCompte, idCompteSupplementaire } from "./comptes-claude.mjs";
 import { lireUtilisation } from "./utilisation.mjs";
 import { diagnostiquerPoste } from "./diagnostic-poste.mjs";
 import { creerRendus } from "./rendus.mjs";
@@ -294,9 +296,11 @@ export function creerAgents(options) {
    * Les compétences d'un agent sur ce VPS, pour le panneau de l'app (cf. electron/connaissances-agent.ts) :
    * celles que sa fiche précharge (la fiche copiée depuis le PC), celles du projet et de l'utilisateur
    * klyra. Mêmes gardes que pour un message : un agent valide, un projet sous le dossier personnel.
+   * Avec celles que le choix par agent de ce serveur lui coupe (`coupees`), le même filtre qu'à l'envoi.
    */
   function competences(agent, dossier) {
-    return lireCompetences(ficheDe(agentValide(agent)), path.join(home, ".claude"), projetValide(dossier));
+    const id = agentValide(agent);
+    return competencesDeLAgent(ficheDe(id), path.join(home, ".claude"), projetValide(dossier), lireEquipe().skillsParAgent, id);
   }
 
   /** Un agent de la demande : son identifiant, ou « principal » pour l'assistant. */
@@ -558,6 +562,8 @@ export function creerAgents(options) {
   const demandes = new Map();
   /** La dernière utilisation de l'abonnement Claude reçue d'une session (null : aucune encore). */
   let utilisationClaude = null;
+  /** Les limites d'un compte supplémentaire, rangées par moteurs.mjs (cf. `claude.surLimitesCompte`). */
+  let limitesCompte = null;
 
   const vivant = (proc) => proc.child.exitCode === null && proc.child.signalCode === null && !proc.child.stdin?.writableEnded;
   const ecrire = (proc, message) => proc.child.stdin?.write(`${JSON.stringify(message)}\n`);
@@ -598,6 +604,7 @@ export function creerAgents(options) {
     if (proc.veille) clearTimeout(proc.veille);
     proc.veille = null;
     proc.tours.push(tour);
+    proc.dernierEmit = tour.emit;
     parRequete.set(tour.requestId, { proc, tour });
   }
 
@@ -608,7 +615,7 @@ export function creerAgents(options) {
     parRequete.delete(tour.requestId);
     demandes.delete(tour.requestId);
     tour.emit(event);
-    if (!proc.tours.length && !proc.fond && vivant(proc)) proc.veille = setTimeout(() => proc.child.stdin?.end(), VEILLE_MS);
+    if (!proc.tours.length && !proc.fond && !proc.suiviFond.taches.size && vivant(proc)) proc.veille = setTimeout(() => proc.child.stdin?.end(), VEILLE_MS);
   }
 
   /** La réponse en cours ; sans elle, une tâche de fond fait reparler l'agent : une réponse spontanée s'ouvre. */
@@ -633,6 +640,9 @@ export function creerAgents(options) {
     }
     const parent = msg.parent_tool_use_id ?? null;
     const courant = proc.tours[0] ?? null;
+    /* Ce qui tourne en fond : dit même sans réponse ouverte, par la dernière (comme dans electron/claude.ts). */
+    const fond = suivreFond(proc.suiviFond, msg, Date.now(), !!courant);
+    if (fond) (courant?.emit ?? proc.dernierEmit)?.(fond);
     /* Un agent d'arrière-plan revenu sans réponse ouverte : la première réponse le dit (comme dans electron/claude.ts). */
     if (courant && proc.finsDeFond.length) for (const fin of proc.finsDeFond.splice(0)) courant.emit(fin);
     /* Un agent lancé en arrière-plan a fini : sa passation passe « rendu » (ou « arrêté »), pas avant. */
@@ -651,7 +661,9 @@ export function creerAgents(options) {
     }
     /* Les limites de l'abonnement Claude de ce VPS (anneaux du rail de l'app), comme dans electron/claude.ts. */
     if (msg.type === "rate_limit_event") {
-      utilisationClaude = lireUtilisation(msg.rate_limit_info, utilisationClaude) ?? utilisationClaude;
+      /* Celles d'un compte supplémentaire sont les siennes (anneau à part, cf. moteurs.mjs). */
+      if (proc.compte) limitesCompte?.(proc.compte, msg.rate_limit_info);
+      else utilisationClaude = lireUtilisation(msg.rate_limit_info, utilisationClaude) ?? utilisationClaude;
       return;
     }
     if (msg.type === "system" && msg.subtype === "thinking_tokens" && typeof msg.estimated_tokens_delta === "number") {
@@ -768,12 +780,14 @@ export function creerAgents(options) {
     }
   }
 
-  function lancer(bin, args, cwd, signature, skills, demande, acces, dossierPrepare) {
-    const env = environnement(configurationDe());
+  function lancer(bin, args, cwd, signature, skills, demande, acces, dossierPrepare, compte) {
+    let env = environnement(configurationDe());
     if (dossierPrepare) env.CLAUDE_CONFIG_DIR = dossierPrepare;
+    /* Le compte choisi pour la conversation : sa connexion, sans le jeton de « connecter-claude » (comme sur le PC). */
+    if (compte) env = environnementAvecCompte(env, compte.dossier);
     const child = spawn(bin, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
-    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map(), finsDeFond: [] };
+    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, compte: compte?.id ?? null, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map(), finsDeFond: [], suiviFond: nouveauSuiviFond(), dernierEmit: null };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
     let tampon = "";
     let stderr = "";
@@ -790,6 +804,9 @@ export function creerAgents(options) {
       if (proc.veille) clearTimeout(proc.veille);
       if (proc.sessionId && processus.get(proc.sessionId) === proc) processus.delete(proc.sessionId);
       for (const tour of [...proc.tours]) finirTour(proc, tour, { type: "fin", ok: false, texte: "", erreur: erreur(tour) });
+      /* Claude Code fermé : ce qu'il avait en fond s'arrête avec lui. */
+      const fin = finSuiviFond(proc.suiviFond);
+      if (fin) proc.dernierEmit?.(fin);
     };
     child.on("error", (error) => finTout(() => `Impossible de lancer Claude Code sur le VPS : ${error.message}`));
     child.on("close", (code, signal) => {
@@ -814,6 +831,7 @@ export function creerAgents(options) {
     if (demande.acces && !["demander", "projet", "tout"].includes(demande.acces)) return "Accès invalide.";
     if (demande.dossier !== null && demande.dossier !== undefined && (typeof demande.dossier !== "string" || !path.isAbsolute(demande.dossier))) return "Dossier invalide.";
     if (demande.skill !== undefined && demande.skill !== null && (typeof demande.skill !== "string" || !/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(demande.skill))) return "Compétence invalide.";
+    if (demande.compteClaude !== undefined && demande.compteClaude !== null && !idCompteSupplementaire(demande.compteClaude)) return "Compte Claude invalide.";
     return null;
   }
 
@@ -841,7 +859,15 @@ export function creerAgents(options) {
     }
     const bin = trouverClaude();
     if (!bin) return echec("Claude Code n’est pas installé sur le VPS. Relance la commande d’installation.");
-    if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
+    /* Le compte Claude supplémentaire choisi pour la conversation (Réglages du serveur › Fournisseurs › Claude). */
+    let compte = null;
+    if (demande.compteClaude) {
+      try {
+        compte = { id: demande.compteClaude, dossier: dossierCompteClaude(path.join(donnees, "claude-comptes"), demande.compteClaude) };
+      } catch (error) {
+        return echec(error instanceof Error ? error.message : "Compte Claude invalide.");
+      }
+    } else if (etat() !== "pret") return echec("Claude Code n’est pas connecté sur le VPS. Lance « connecter-claude » avec la commande d’installation.");
 
     const acces = demande.acces ?? "projet";
     /* Le serveur MCP sait qui l'appelle : l'agent, et la conversation (publication, atelier suivi). */
@@ -870,6 +896,7 @@ export function creerAgents(options) {
         choix: lireEquipe().skillsParAgent,
         configClaude,
         dossierProjet: cwd,
+        compte,
       });
     } catch (error) {
       console.error("Préparation de l’agent non faite :", error);
@@ -883,10 +910,11 @@ export function creerAgents(options) {
     /* Les pièces jointes de la conversation : ouvertes en lecture dès qu'il y en a (la session repart, reprise, à la première). */
     const dossierJointes = conversation ? joints.dossier(conversation) : null;
     const avecJointes = dossierJointes !== null && existsSync(dossierJointes);
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle, avecJointes]);
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle, avecJointes, compte?.id ?? null]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
-    if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && (ouvert.signature === signature || ouvert.tours.length)) {
+    /* Changer de compte relance Claude Code : la connexion se lit au lancement. */
+    if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && ouvert.compte === (compte?.id ?? null) && (ouvert.signature === signature || ouvert.tours.length)) {
       proc = ouvert;
       if ((demande.modele ?? null) !== proc.modele) {
         controle(proc, { subtype: "set_model", ...(demande.modele ? { model: demande.modele } : {}) });
@@ -940,7 +968,7 @@ export function creerAgents(options) {
       if (demande.effort) args.push("--effort", demande.effort);
       const consigne = demande.agent === null ? consigneAssistant() : consigneAgent(demande.agent);
       args.push("--append-system-prompt", [ici(), consigne, ...(configuration.consignes ? [configuration.consignes] : []), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
-      proc = lancer(bin, args, cwd, signature, skillsCle, demande, acces, prepare?.dossier ?? null);
+      proc = lancer(bin, args, cwd, signature, skillsCle, demande, acces, prepare?.dossier ?? null, compte);
     }
     ajouterTour(proc, nouveauTour(proc, requestId, acces));
     ecrire(proc, { type: "user", message: { role: "user", content: prompt } });
@@ -991,6 +1019,8 @@ export function creerAgents(options) {
     methode: () => (jetonClaude() ? "jeton" : "claude.ai"),
     env: environnement,
     utilisation: () => utilisationClaude,
+    /** Où ranger les limites lues dans la session d'un compte supplémentaire (posé par moteurs.mjs). */
+    surLimitesCompte: (cb) => { limitesCompte = cb; },
   };
 
   /** L'empreinte annoncée à l'app : vide si le fichier n'est pas complet, pour qu'elle renvoie l'équipe. */

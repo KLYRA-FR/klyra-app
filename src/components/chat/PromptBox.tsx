@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { forwardRef, useCallback, useEffect, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Textarea } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
@@ -44,8 +44,8 @@ interface PromptBoxProps {
  * Zone de saisie de l'IA, commune à l'accueil et au chat : une carte blanche,
  * le texte en haut, et en bas les pièces jointes, les puces de choix et
  * l'envoi (bouton Sombre). Entrée envoie, Maj + Entrée va à la ligne.
- * Pendant une dictée, le texte s'écrit au curseur et le champ ne s'édite
- * pas ; Entrée ou Échap arrêtent la dictée, sans rien envoyer.
+ * Pendant une dictée, le texte s'écrit au curseur, le champ reste modifiable
+ * (la dictée suit le curseur) ; Entrée envoie, Échap arrête la dictée.
  */
 export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(function PromptBox(
   {
@@ -80,15 +80,29 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
   );
   const dictee = useDictee({ valeur: value, onChange, champRef: champ });
   const enDictee = dictee.phase !== "repos";
-  const canSend = (value.trim().length > 0 || aDesPieces) && !enDictee;
+  /* Pendant l'écoute, le champ reste libre et on peut envoyer ; seuls la préparation et les derniers mots le figent. */
+  const fige = dictee.phase === "preparation" || dictee.phase === "finalisation";
+  const canSend = (value.trim().length > 0 || aDesPieces) && !fige;
   const peutArreter = occupe && !!onArreter;
 
   /** Envoie, avec le son de l'envoi. */
   const envoyer = () => {
     if (!canSend) return;
+    // En pleine dictée : on termine d'abord (derniers mots compris), l'envoi suit.
+    if (dictee.phase === "ecoute") {
+      envoiApres.current = true;
+      void dictee.arreter();
+      return;
+    }
     jouer("envoi");
     onSubmit();
   };
+  const envoiApres = useRef(false);
+  useEffect(() => {
+    if (dictee.phase !== "repos" || !envoiApres.current) return;
+    envoiApres.current = false;
+    envoyer();
+  });
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -96,15 +110,19 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // En pleine dictée, Entrée n'envoie pas : elle arrête la dictée, comme Échap.
-    if (enDictee) {
+    if (fige) {
       if (event.key !== "Enter" && event.key !== "Escape") return;
       event.preventDefault();
-      if (dictee.phase === "ecoute") void dictee.arreter();
-      else if (event.key === "Escape") dictee.annulerPreparation();
+      if (event.key === "Escape") dictee.annulerPreparation();
       return;
     }
     if (onToucheAvant?.(event)) return;
+    // Échap arrête la dictée ; Entrée envoie (la dictée se termine d'abord).
+    if (event.key === "Escape" && dictee.phase === "ecoute") {
+      event.preventDefault();
+      void dictee.arreter();
+      return;
+    }
     // Échap arrête l'agent qui travaille.
     if (event.key === "Escape" && peutArreter) {
       event.preventDefault();
@@ -145,14 +163,18 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
             size="sm"
             autoGrow
             value={value}
-            readOnly={enDictee}
+            readOnly={fige}
             onChange={(e) => {
               onChange(e.target.value);
+              dictee.suivre(e.target.value, e.target.selectionStart);
               onCurseur?.(e.target.selectionStart);
             }}
-            onSelect={(e) => onCurseur?.(e.currentTarget.selectionStart)}
+            onSelect={(e) => {
+              dictee.suivre(e.currentTarget.value, e.currentTarget.selectionStart);
+              onCurseur?.(e.currentTarget.selectionStart);
+            }}
             onKeyDown={onKeyDown}
-            onPaste={enDictee ? undefined : onColler}
+            onPaste={fige ? undefined : onColler}
             placeholder={dictee.phase === "ecoute" ? "Parle, le texte s’écrit ici…" : placeholder}
             aria-label="Message"
             className={cn(
