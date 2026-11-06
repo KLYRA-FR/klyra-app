@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
+import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { useConfirmation } from "@/components/ui/Modale";
 import { getBridge } from "@/lib/bridge";
 import { useReglages } from "@/lib/reglages";
@@ -50,7 +51,25 @@ export function Navigateur() {
             libelle="Laisser les agents utiliser le navigateur"
             actif={reglages?.navigateur.agents ?? true}
             disabled={!reglages}
-            onChange={(v) => void changerNavigateur(v)}
+            onChange={(v) => void changerNavigateur({ agents: v })}
+          />
+        </Ligne>
+        <Ligne
+          id="navigateur-moteur"
+          libelle="Où s’ouvrent les pages"
+          description="Le navigateur intégré montre les pages dans le panneau de la conversation. Chrome de ce poste ouvre les pages dans Google Chrome, avec un profil à part pour KLYRA : quand un site refuse le navigateur intégré (Google, par exemple), tu t’y connectes toi-même dans Chrome, puis l’agent reprend avec ta session."
+        >
+          <ListeDeroulante
+            variante="compact"
+            libelle="Où s’ouvrent les pages"
+            value={reglages?.navigateur.moteur ?? "integre"}
+            options={[
+              { value: "integre", label: "Navigateur intégré" },
+              { value: "chrome", label: "Chrome de ce poste" },
+            ]}
+            disabled={!reglages}
+            onChange={(moteur) => void changerNavigateur({ moteur })}
+            className="min-w-[170px]"
           />
         </Ligne>
         {erreur && <Erreur>{erreur}</Erreur>}
@@ -58,9 +77,9 @@ export function Navigateur() {
 
       <Groupe
         titre="Données de navigation"
-        description="Le navigateur a sa propre session, séparée de ton navigateur habituel et du reste de l’app : une connexion faite dans un onglet sert à tes agents dans toutes les conversations."
+        description="Le navigateur a sa propre session, séparée de ton navigateur habituel et du reste de l’app : une connexion faite dans un onglet sert à tes agents dans toutes les conversations. Chrome de ce poste a aussi son propre profil, jamais le tien."
       >
-        <Ligne id="navigateur-donnees" libelle="Connexions et cookies" description="Efface ce que les sites ont gardé : connexions, cookies, cache.">
+        <Ligne id="navigateur-donnees" libelle="Connexions et cookies" description="Efface ce que les sites ont gardé : connexions, cookies, cache, dans le navigateur intégré comme dans le profil Chrome de KLYRA.">
           {!pont ? (
             <SeulementBureau />
           ) : (

@@ -7,6 +7,7 @@ import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ElementContextuel, MenuContextuel, SeparateurContextuel } from "@/components/ui/MenuContextuel";
 import { getBridge, type ActionMenuNavigateur, type ApercuFenetre, type MenuNavigateur, type OngletNavigateur } from "@/lib/bridge";
 import { raccourciDuSysteme } from "@/lib/plateforme";
+import { estMac } from "@/lib/raccourcis";
 import { ModaleCoffre } from "./Coffre";
 import { cn } from "@/lib/cn";
 import { siteDe, useOngletsChat, useOngletVu, usePlacementOnglet } from "@/lib/navigateur";
@@ -99,9 +100,21 @@ function Bandeau({ onglet, chat }: { onglet: OngletNavigateur; chat: Chat }) {
   const roleId = onglet.main?.type === "demandee" ? onglet.main.roleId : (onglet.pilote?.roleId ?? chat.roleIds[0] ?? "principal");
   const agent = useRole(roleId);
 
+  const chrome = onglet.moteur === "chrome";
+  /* Dans Chrome, la personne se connecte dans un Chrome sans pilotage : le rendre le ferme proprement d'abord. */
+  const rendre = async () => {
+    if (onglet.connexion) {
+      const r = await pont()?.connexionChromeTerminee?.(onglet.id);
+      // Pas encore fermé : la carte lui demande de fermer Chrome, la main revient à sa fermeture.
+      if (!r || !r.ok || r.data === "a-fermer") return false;
+    }
+    await pont()?.main(onglet.id, false);
+    return true;
+  };
+
   if (onglet.main?.type === "demandee") {
-    const reprendre = () => {
-      void pont()?.main(onglet.id, false);
+    const reprendre = async () => {
+      if (!(await rendre())) return;
       sendMessage(chat.id, `C’est fait dans l’onglet « ${onglet.titre} » : tu peux continuer.`, chat.kind === "direct" ? null : roleId);
     };
     return (
@@ -109,14 +122,15 @@ function Bandeau({ onglet, chat }: { onglet: OngletNavigateur; chat: Chat }) {
         <span className="flex items-start gap-2 text-ui-xs leading-[1.45] text-texte-principal">
           <AgentRond roleId={roleId} taille={20} />
           <span>
-            <span className="font-semibold">{agent.name} te passe la main</span> : {onglet.main.raison}. Fais-le dans la page ci-dessous, puis dis-le-lui.
+            <span className="font-semibold">{agent.name} te passe la main</span> : {onglet.main.raison}.{" "}
+            {chrome ? "Fais-le toi-même dans Chrome (« Me connecter moi-même »), puis dis-le-lui." : "Fais-le dans la page ci-dessous, puis dis-le-lui."}
           </span>
         </span>
         <div className="flex gap-1.5">
-          <Bouton variant="sombre" taille="mini" onClick={reprendre}>
+          <Bouton variant="sombre" taille="mini" onClick={() => void reprendre()}>
             C’est fait, à toi
           </Bouton>
-          <Bouton variant="discret" taille="mini" onClick={() => void pont()?.main(onglet.id, false)}>
+          <Bouton variant="discret" taille="mini" onClick={() => void rendre()}>
             Rendre sans message
           </Bouton>
         </div>
@@ -128,7 +142,7 @@ function Bandeau({ onglet, chat }: { onglet: OngletNavigateur; chat: Chat }) {
       <div className="flex items-center gap-2 border-b border-bordure-subtile bg-fond-surface-grise px-3 py-2">
         <Icon name="cursor-01" size={14} className="shrink-0 text-icone-secondaire" />
         <span className="min-w-0 flex-1 text-ui-xs leading-[1.45] text-texte-secondaire">Tu as la main : les agents lisent cet onglet sans y agir.</span>
-        <Bouton variant="blanc" taille="mini" onClick={() => void pont()?.main(onglet.id, false)}>
+        <Bouton variant="blanc" taille="mini" onClick={() => void rendre()}>
           Rendre la main
         </Bouton>
       </div>
@@ -147,6 +161,66 @@ function Bandeau({ onglet, chat }: { onglet: OngletNavigateur; chat: Chat }) {
       {travail && (
         <BoutonIcone taille="mini" icone={<Icon name="stop-01" size={14} />} libelle={`Arrêter ${agent.name}`} onClick={() => arreter(chat.id)} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Dans Chrome de ce poste, la page n'est pas dans le panneau : sa vignette s'y relit, et cette carte
+ * mène à Chrome. Un site qui refuse un navigateur piloté (Google) : la personne s'y connecte dans un
+ * Chrome que personne ne pilote, puis le rend ; l'agent le rouvre, déjà connecté.
+ */
+function CarteChrome({ onglet }: { onglet: OngletNavigateur }) {
+  const p = pont();
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const faire = async (geste?: (id: string) => Promise<{ ok: true } | { ok: false; message: string }>) => {
+    if (!geste) return;
+    setEnCours(true);
+    const r = await geste(onglet.id);
+    setEnCours(false);
+    setErreur(r.ok ? null : r.message);
+  };
+  // Sur Mac, fermer sa fenêtre ne quitte pas Chrome.
+  const quitter = estMac() ? ` (${raccourciDuSysteme("⌘Q")})` : "";
+  return (
+    <div data-carte-chrome className="absolute inset-x-3 bottom-3 flex flex-col gap-2 rounded-md border border-bordure-subtile bg-fond-surface p-3 shadow-ombre-sm">
+      {onglet.connexion === "a-fermer" ? (
+        <>
+          <span className="text-ui-xs font-medium text-texte-principal">Ferme Chrome pour finir{quitter}</span>
+          <span className="text-ui-xs leading-[1.45] text-texte-secondaire">
+            Ta connexion est enregistrée quand Chrome se ferme. Dès qu’il est fermé, l’agent peut le rouvrir avec ta session.
+          </span>
+        </>
+      ) : onglet.connexion ? (
+        <>
+          <span className="text-ui-xs font-medium text-texte-principal">Chrome est ouvert pour toi</span>
+          <span className="text-ui-xs leading-[1.45] text-texte-secondaire">
+            Connecte-toi dans sa fenêtre : personne ne pilote ce Chrome pendant ce temps. Quand tu as fini, dis-le ici, puis ferme Chrome si on te le demande : ta connexion est enregistrée à sa fermeture.
+          </span>
+          <div className="flex gap-1.5">
+            <Bouton variant="sombre" taille="mini" disabled={enCours} onClick={() => void faire(p?.connexionChromeTerminee)}>
+              C’est fait
+            </Bouton>
+          </div>
+        </>
+      ) : (
+        <>
+          <span className="text-ui-xs font-medium text-texte-principal">Cette page est ouverte dans Chrome</span>
+          <span className="text-ui-xs leading-[1.45] text-texte-secondaire">
+            Un site refuse ta connexion quand un agent pilote Chrome (Google, par exemple) ? Connecte-toi toi-même dans un Chrome que personne ne pilote, puis rends-le à l’agent.
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <Bouton variant="blanc" taille="mini" iconeGauche={<Icon name="computer" size={14} />} disabled={enCours} onClick={() => void faire(p?.montrerDansChrome)}>
+              Montrer dans Chrome
+            </Bouton>
+            <Bouton variant="blanc" taille="mini" iconeGauche={<Icon name="lock-01" size={14} />} disabled={enCours} onClick={() => void faire(p?.connexionChrome)}>
+              Me connecter moi-même
+            </Bouton>
+          </div>
+        </>
+      )}
+      {erreur && <span className="text-ui-2xs text-texte-erreur">{erreur}</span>}
     </div>
   );
 }
@@ -299,8 +373,9 @@ function Page({ onglet, chat, nombre, retour, nouveau }: { onglet: OngletNavigat
         {/* Sous la page native : sa vignette, visible quand la page s'efface (fenêtre ou menu par-dessus) ou charge. */}
         {onglet.vignette && (
           // eslint-disable-next-line @next/next/no-img-element -- une capture en data:, pas une image du site
-          <img src={onglet.vignette} alt="" className={cn("absolute inset-x-0 top-0 w-full object-cover object-top", !recouvert && "opacity-60")} />
+          <img src={onglet.vignette} alt="" className={cn("absolute inset-x-0 top-0 w-full object-cover object-top", !recouvert && onglet.moteur !== "chrome" && "opacity-60")} />
         )}
+        {onglet.moteur === "chrome" && <CarteChrome onglet={onglet} />}
       </div>
 
       {menu && <MenuPage onglet={onglet} menu={menu.menu} x={menu.x} y={menu.y} onFermer={() => setMenu(null)} />}

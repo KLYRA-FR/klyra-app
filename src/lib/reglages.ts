@@ -14,7 +14,7 @@ import { SKILLS_PAR_DEFAUT, validerSkillsParAgent, type SkillsParAgent } from ".
 export const REGLAGES_PAR_DEFAUT: Reglages = {
   notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
   computerUse: { actif: false },
-  navigateur: { agents: true },
+  navigateur: { agents: true, moteur: "integre" },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
   skillsParAgent: SKILLS_PAR_DEFAUT,
@@ -29,7 +29,7 @@ function completer(brut: Partial<Reglages> | null | undefined): Reglages {
   return {
     notifications: { ...REGLAGES_PAR_DEFAUT.notifications, ...brut?.notifications },
     computerUse: { actif: brut?.computerUse?.actif === true },
-    navigateur: { agents: brut?.navigateur?.agents !== false },
+    navigateur: { agents: brut?.navigateur?.agents !== false, moteur: brut?.navigateur?.moteur === "chrome" ? "chrome" : "integre" },
     sons: { ...REGLAGES_PAR_DEFAUT.sons, ...brut?.sons },
     configuration: validerConfiguration(brut?.configuration),
     skillsParAgent: validerSkillsParAgent(brut?.skillsParAgent),
@@ -98,11 +98,11 @@ export function useReglages() {
     }
   }, []);
 
-  const changerNavigateur = useCallback(async (agents: boolean) => {
+  const changerNavigateur = useCallback(async (patch: Partial<Reglages["navigateur"]>) => {
     const actuels = await reglagesActuels();
     setErreur(null);
     try {
-      await enregistrer({ ...actuels, navigateur: { agents } });
+      await enregistrer({ ...actuels, navigateur: { ...actuels.navigateur, ...patch } });
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     }

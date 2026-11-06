@@ -432,6 +432,9 @@ contextBridge.exposeInMainWorld("klyra", {
     retirerDuCoffre: (id: string) => ipcRenderer.invoke("navigateur:coffre:retirer", id),
     agentsCoffre: (id: string, agents: boolean) => ipcRenderer.invoke("navigateur:coffre:agents", id, agents),
     remplir: (id: string, idConnexion: string) => ipcRenderer.invoke("navigateur:coffre:remplir", id, idConnexion),
+    connexionChrome: (id: string) => ipcRenderer.invoke("navigateur:chrome:connexion", id),
+    connexionChromeTerminee: (id: string) => ipcRenderer.invoke("navigateur:chrome:fin", id),
+    montrerDansChrome: (id: string) => ipcRenderer.invoke("navigateur:chrome:montrer", id),
     onEtat: (callback: (etat: unknown) => void) => {
       const listener = (_e: unknown, etat: unknown) => callback(etat);
       ipcRenderer.on("navigateur:etat", listener);
