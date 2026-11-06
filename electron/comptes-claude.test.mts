@@ -14,7 +14,12 @@ const fixture = path.resolve("scripts/faux-comptes-claude.cjs");
 
 async function contexte(t: TestContext) {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "klyra-comptes-"));
-  t.after(() => rm(tmp, { recursive: true, force: true }));
+  /* Les faux CLI lancés travaillent dans `tmp` : sous Windows, il reste verrouillé tant qu'un processus coupé n'est pas sorti. */
+  const enCours: Promise<unknown>[] = [];
+  t.after(async () => {
+    await Promise.all(enCours);
+    await rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
   let poste = { ...original };
   const env: NodeJS.ProcessEnv = { ...process.env, KLYRA_FAUX_EMAIL: "second@example.test" };
   const appels: { args: string[]; env: NodeJS.ProcessEnv }[] = [];
@@ -41,6 +46,7 @@ async function contexte(t: TestContext) {
     appels.push({ args, env: environnement });
     const child = spawn(process.execPath, [fixture, ...args], { env: environnement, cwd: tmp });
     const fin = new Promise<number | null>((resolve) => child.once("close", (code) => resolve(code)));
+    enCours.push(fin);
     return {
       surSortie: (cb) => { child.stdout.on("data", (d: Buffer) => cb(d.toString())); },
       ecrire: (texte) => { child.stdin.write(texte); },
