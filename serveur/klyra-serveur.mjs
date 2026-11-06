@@ -18,6 +18,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { creerAgents } from "./agents.mjs";
 import { ErreurFichier, creerFichiers } from "./fichiers.mjs";
+import { ErreurJoint } from "./joints.mjs";
+import { JOINT_TAILLE_MAX } from "./joints-vps.mjs";
 import { creerIa } from "./ia.mjs";
 import { creerMoteurs } from "./moteurs.mjs";
 import { creerRoutines } from "./routines.mjs";
@@ -161,6 +163,25 @@ function lireTexteRequete(req, max) {
       if (texte.length > max) trop = true;
     });
     req.on("end", () => resolve(trop ? null : texte));
+    req.on("error", () => resolve(null));
+  });
+}
+
+/** Les octets bruts d'une requête (une pièce jointe) ; null au-delà de `max`. */
+function lireOctetsRequete(req, max) {
+  return new Promise((resolve) => {
+    const morceaux = [];
+    let taille = 0;
+    let trop = false;
+    req.on("data", (morceau) => {
+      if (trop) return;
+      taille += morceau.length;
+      if (taille > max) {
+        trop = true;
+        morceaux.length = 0;
+      } else morceaux.push(morceau);
+    });
+    req.on("end", () => resolve(trop ? null : Buffer.concat(morceaux)));
     req.on("error", () => resolve(null));
   });
 }
@@ -698,6 +719,20 @@ export function creerGestionnaire(options) {
           return repondre(res, 200, await agents.essayer(c.brouillon, c.cas, { conversation: c.conversation, ajouts: c.ajouts }));
         } catch (erreur) {
           return repondre(res, 400, { erreur: "essai", message: erreur instanceof Error ? erreur.message : "Essai impossible sur le VPS." });
+        }
+      }
+      /*
+       * Une pièce jointe d'un message à venir (`?conversation=…&nom=…`, octets bruts) : rangée pour cette
+       * conversation, son chemin sur ce VPS en réponse (cf. electron/joints-vps.ts).
+       */
+      if (action === "joint") {
+        if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+        const octets = await lireOctetsRequete(req, JOINT_TAILLE_MAX);
+        if (!octets) return repondre(res, 413, { erreur: "taille", message: `Fichier de plus de ${JOINT_TAILLE_MAX / 1024 / 1024} Mo.` });
+        try {
+          return repondre(res, 200, { chemin: agents.joints.recevoir(url.searchParams.get("conversation"), url.searchParams.get("nom"), octets) });
+        } catch (erreur) {
+          return repondre(res, 400, { erreur: "joint", message: erreur instanceof ErreurJoint ? erreur.message : "Le fichier n’a pas pu être rangé sur le VPS." });
         }
       }
       if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });

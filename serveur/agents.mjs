@@ -4,8 +4,8 @@
  * quand la conversation le demande (`moteur: "codex"`). Les IA à consulter (ia.mjs) leur sont données
  * par l'outil MCP `demander_ia`, et l'atelier d'un agent ou d'une équipe à l'assistant (`proposer_agent`, `proposer_equipe`,
  * `proposer_choix`, son épreuve : atelier-agent.mjs et epreuve.mjs, les mêmes règles que sur le PC).
- * Ce qui n'existe que sur le PC n'est pas là : outils des fils, planning, pièces jointes,
- * consommation détaillée.
+ * Ce qui n'existe que sur le PC n'est pas là : outils des fils, planning, consommation détaillée.
+ * Les pièces jointes arrivent avant le message (joints.mjs) : la session lit leur dossier (`--add-dir`).
  *
  * Chaque événement part dans le journal (`journal.mjs`) avec le numéro de la réponse (requestId) :
  * l'app le lit en direct, et rattrape ce qu'elle a manqué en se reconnectant.
@@ -22,6 +22,7 @@ import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
 import { lireJsonPartiel } from "./json-partiel.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
+import { creerJoints } from "./joints.mjs";
 import {
   competencesPrechargees,
   creerSouvenir as creerSouvenirDans,
@@ -386,6 +387,8 @@ export function creerAgents(options) {
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
   /* Les livrables des agents (outil publier_artefact du serveur MCP local) : retenus ici, servis depuis ce VPS. */
   const rendus = creerRendus({ home, donnees, publier });
+  /* Les pièces jointes envoyées par l'app, rangées par conversation. */
+  const joints = creerJoints({ donnees });
   options.ia?.surPublication((appelant, args) => rendus.publier(appelant, args));
   /* Le navigateur de KLYRA, sur le PC de la personne : les appels lui sont relayés par le journal (cf. navigateur.mjs). */
   const navigateur = creerRelaisNavigateur({ publier, ecouteurs: options.ecouteurs ?? (() => 0) });
@@ -862,7 +865,10 @@ export function creerAgents(options) {
     const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, connues);
     const configuration = configurationDe();
     const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle]);
+    /* Les pièces jointes de la conversation : ouvertes en lecture dès qu'il y en a (la session repart, reprise, à la première). */
+    const dossierJointes = conversation ? joints.dossier(conversation) : null;
+    const avecJointes = dossierJointes !== null && existsSync(dossierJointes);
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle, avecJointes]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && (ouvert.signature === signature || ouvert.tours.length)) {
@@ -910,6 +916,7 @@ export function creerAgents(options) {
           ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
         );
       if (mcp) args.push("--mcp-config", mcp);
+      if (avecJointes) args.push("--add-dir", dossierJointes);
       if (demande.agent) args.push("--agent", demande.agent);
       if (demande.sessionId) args.push("--resume", demande.sessionId);
       if (demande.modele) args.push("--model", demande.modele);
@@ -1004,5 +1011,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }
