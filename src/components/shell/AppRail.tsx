@@ -2,14 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, type MouseEvent, type ReactNode } from "react";
 import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
 import { colonneTicket } from "@/lib/tickets";
-import { useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
+import { estConversationAgent, FIL, useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
 import { NAVIGATION } from "./navigation";
 import { PastilleMaj } from "./PastilleMaj";
@@ -39,6 +39,27 @@ const PANNEAUX = {
 } as const satisfies Record<string, { icone: IconName; nom: string; cible: string }>;
 
 const SEPARATEUR = <span aria-hidden="true" className="my-1.5 h-px w-8 shrink-0 bg-white/12" />;
+
+const CLE_DERNIER_CHAT = "klyra:dernier-chat";
+
+/** Le dernier écran de chats vu (`/chat?id=…` d'un agent ou d'un fil), gardé le temps de la session. */
+function dernierChat(): string | null {
+  try {
+    return sessionStorage.getItem(CLE_DERNIER_CHAT);
+  } catch {
+    return null;
+  }
+}
+
+/** Le rail sur « Chats », hors des chats : on rouvre le dernier agent ou fil vu (s'il existe encore), sinon l'accueil. */
+function versDernierChat(e: MouseEvent, pathname: string, chats: { id: string }[], aller: (href: string) => void) {
+  if (pathname === "/chats" || pathname === "/chat" || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  const lien = dernierChat();
+  const id = lien ? new URL(lien, "http://x").searchParams.get("id") : null;
+  if (!lien || !id || (id.startsWith(FIL) && !chats.some((c) => c.id === id))) return;
+  e.preventDefault();
+  aller(lien);
+}
 
 /** Sans projet épinglé, le rail montre les plus récents, pas plus. */
 const RECENTS_MAX = 3;
@@ -71,6 +92,15 @@ export function AppRail({
   /* Les tickets à valider : ils t'attendent, leur nombre se pose sur l'entrée Tickets. */
   const { travail } = useWorkspace().state;
   const chats = useChatsEspace();
+  const router = useRouter();
+  /* Quitter les chats puis revenir par le rail : on retrouve l'agent et le fil laissés, pas l'accueil. */
+  useEffect(() => {
+    const id = pathname === "/chat" ? currentId : null;
+    try {
+      if (id && estConversationAgent(id)) sessionStorage.setItem(CLE_DERNIER_CHAT, `/chat?id=${encodeURIComponent(id)}`);
+      else if (pathname === "/chats") sessionStorage.removeItem(CLE_DERNIER_CHAT);
+    } catch { /* stockage indisponible */ }
+  }, [pathname, currentId]);
   const aValider = chats.filter((c) => c.fil && colonneTicket(c.fil, !!travail[c.id]) === "a-valider").length;
   /* Les projets du rail : les épinglés (sinon les plus récents), et celui qu'on regarde. Tous les autres : Projets. */
   const epingles = projects.filter((p) => p.pinned);
@@ -96,7 +126,7 @@ export function AppRail({
           const active = pathname === item.href || (item.href === "/chats" && (pathname === "/equipe" || (pathname === "/chat" && panneau === "conversations")));
           return (
             <Infobulle key={item.href} texte={item.label} cote="droite">
-            <Link href={item.href} aria-current={active ? "page" : undefined} className={cn(entree(active), "relative")}>
+            <Link href={item.href} onClick={item.href === "/chats" ? (e) => versDernierChat(e, pathname, chats, router.push) : undefined} aria-current={active ? "page" : undefined} className={cn(entree(active), "relative")}>
               <Entree icone={item.icon} nom={item.label} active={active} />
               {item.href === "/tickets" && aValider > 0 && (
                 <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-pill bg-bleu-k1-500 px-1 text-ui-2xs leading-none font-semibold text-texte-inverse">
