@@ -29,7 +29,9 @@ export type AgentEvent =
   | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
   /** La demande a reçu sa réponse (de toi, ou d'office en accès complet). */
   | { type: "autorisation-fin"; id: string; accepte: boolean }
-  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean };
+  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur" }
+  /** Un agent lancé en arrière-plan (appel `id`) a fini ou s'est arrêté : sa passation le montre. */
+  | { type: "tache-fond"; id: string; statut: "fait" | "erreur" };
 
 export interface StreamOptions {
   /** Le moteur qui fait travailler l'agent ; absent : Claude Code. */

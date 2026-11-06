@@ -17,6 +17,7 @@ import { FOURNISSEURS } from "./ia-catalogue.mjs";
 import { estOutilCoffre, OUTILS_COFFRE } from "./coffre-definitions.mjs";
 import { estOutilNavigateur, OUTILS_NAVIGATEUR } from "./navigateur-definitions.mjs";
 import { estOutilWorkflow, OUTILS_WORKFLOWS } from "./workflows-outils.mjs";
+import { estOutilFil, OUTILS_FILS } from "./fils-outils.mjs";
 
 export { FOURNISSEURS };
 
@@ -55,6 +56,8 @@ export function creerIa(options) {
   let composio = null;
   /** Les workflows, sur le PC de la personne : `appeler(appelant, nom, arguments)` (cf. workflows.mjs). */
   let workflows = null;
+  /** Les fils : `appeler(appelant, nom, arguments)`, tenus par l'app du PC ou par ce serveur (cf. fils.mjs). */
+  let fils = null;
 
   function lire() {
     try {
@@ -191,7 +194,7 @@ export function creerIa(options) {
               },
             ]
           : [];
-        return resultat({ tools: [...outils, ...publier, ...(outilsApp?.lister(appelant) ?? []), ...(navigateur?.actif() ? OUTILS_NAVIGATEUR : []), ...(workflows ? OUTILS_WORKFLOWS : []), ...(coffre?.actif() ? OUTILS_COFFRE : [])] });
+        return resultat({ tools: [...outils, ...publier, ...(outilsApp?.lister(appelant) ?? []), ...(navigateur?.actif() ? OUTILS_NAVIGATEUR : []), ...(fils ? OUTILS_FILS : []), ...(workflows ? OUTILS_WORKFLOWS : []), ...(coffre?.actif() ? OUTILS_COFFRE : [])] });
       }
       case "tools/call": {
         const nom = String(msg.params?.name ?? "");
@@ -201,6 +204,8 @@ export function creerIa(options) {
         if (estOutilCoffre(nom) && coffre?.actif()) return resultat(await coffre.appeler(appelant, nom, msg.params?.arguments ?? {}));
         /* Les workflows : relayés au PC de la personne, où ils vivent (cf. workflows.mjs). */
         if (estOutilWorkflow(nom) && workflows) return resultat(await workflows.appeler(appelant, nom, msg.params?.arguments ?? {}));
+        /* Les fils : une tâche = un fil, comme sur le PC (cf. fils.mjs). */
+        if (estOutilFil(nom) && fils) return resultat(await fils.appeler(appelant, nom, msg.params?.arguments ?? {}));
         if (nom === OUTIL_PUBLIER.name && publication) {
           /* L'agent et la conversation de la session, posés dans sa configuration MCP (cf. configMcp). */
           try {
@@ -254,7 +259,7 @@ export function creerIa(options) {
   function configMcp(appelant = {}) {
     if (!serveur) return null;
     const autres = typeof appelant.agent === "string" ? (outilsApp?.lister({ agent: appelant.agent, conversation: appelant.conversation ?? "" }).length ?? 0) : 0;
-    if (!lire().length && !publication && !autres && !navigateur?.actif() && !workflows && !coffre?.actif()) return null;
+    if (!lire().length && !publication && !autres && !navigateur?.actif() && !workflows && !fils && !coffre?.actif()) return null;
     const qui = {
       ...(typeof appelant.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(appelant.agent) ? { "X-Klyra-Agent": appelant.agent } : {}),
       ...(typeof appelant.conversation === "string" && /^[A-Za-z0-9_.:@-]{1,120}$/.test(appelant.conversation) ? { "X-Klyra-Conversation": appelant.conversation } : {}),
@@ -290,6 +295,10 @@ export function creerIa(options) {
     /** Branche les outils des workflows : `appeler(appelant, nom, arguments)`, relayé au PC. */
     surWorkflows: (relais) => {
       workflows = relais;
+    },
+    /** Branche les outils des fils : `appeler(appelant, nom, arguments)`. */
+    surFils: (relais) => {
+      fils = relais;
     },
     /** Change à chaque ajout ou retrait : un agent ouvert est relancé avec la liste à jour. */
     generation: () => generation,

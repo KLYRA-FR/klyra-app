@@ -20,6 +20,7 @@ import { lireJsonPartiel } from "./json-partiel";
 import { CONSIGNE_ATELIER } from "./atelier-agent";
 import { CONSIGNE_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe";
 import { CONSIGNE_CARTES, OUTIL_CARTE_CLAUDE } from "./cartes-interactives";
+import { CONSIGNE_FILS } from "./fils-outils";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
@@ -273,16 +274,16 @@ interface Processus {
   cumul: ReturnType<typeof enregistrerTourClaude>;
   /** Les entrées d'outil en cours d'écriture que l'écran montre en direct, par bloc du message. */
   saisies: Map<number, { id: string; outil: string; json: string }>;
+  /** Agents d'arrière-plan revenus pendant qu'aucune réponse n'était ouverte : dits à la prochaine (cf. `tache-fond`). */
+  finsDeFond: AgentEvent[];
 }
 
 /** Les outils dont l’écran montre l’entrée pendant que le modèle l’écrit : la carte de l’atelier (d'un agent, d'une équipe), le workflow qui se construit. */
 const OUTILS_EN_DIRECT = new Set(["mcp__klyra__proposer_agent", OUTIL_EQUIPE_CLAUDE, OUTIL_CARTE_CLAUDE, "mcp__klyra__construire_workflow"]);
 
-/** Les fils : comment l'agent confie une tâche à un coéquipier (outils du serveur MCP de l'app). */
 /** Composio Connect : le serveur MCP « composio », rejoint avec le compte de la personne. */
 const CONSIGNE_COMPOSIO_CONNECT = "Pour les apps de la personne (Gmail, Slack, Notion, Google Agenda…), utilise le serveur MCP composio (Composio Connect) : cherche l’action avec ses outils de recherche, lis son schéma, puis exécute-la. Si l’app n’est pas encore connectée, Composio te donne un lien d’autorisation : transmets-le tel quel à la personne et attends qu’elle te dise l’avoir validé. Ne te rabats pas en silence sur un CLI ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier : demande avant d’envoyer, publier, payer ou supprimer.";
 
-const CONSIGNE_FILS = `Dans cette app, une tâche = un fil : une conversation à part d'un agent, ouverte dans un onglet de son chat, qui tourne sans bloquer. Pour confier à un coéquipier (ou à toi-même) un travail qui ne se règle pas tout de suite, utilise l'outil ouvrir_fil avec un brief complet (le fil ne voit pas ta conversation), après avoir regardé avec lister_fils qu'il n'en existe pas déjà un sur le même sujet. Une tâche = un responsable. Quand le coéquipier a fini, sa réponse te revient d'elle-même : ne la surveille pas en boucle. Tu peux lire un fil (lire_fil), y ajouter une précision (ecrire_dans_fil), l'arrêter (arreter_fil), le reprendre après un contrôle (reprendre_fil, avec la référence du contrôle ; un fil terminé ou annulé ne reprend pas), et fermer (fermer_fil) un fil que tu as lancé une fois le travail fait et vérifié. Un fil est un ticket, que la personne voit avec son état : à faire, en cours, bloqué, à valider, terminé. Ta réponse finie le passe « à valider ». Si tu attends quelque chose (une réponse, un accès, une décision), dis-le avec mettre_a_jour_fil (bloque et la raison). Un fil ouvert par la personne, c'est elle qui le valide et le ferme. Cite toujours un fil avec son titre et son identifiant : Rapport hebdo (klyra-fil-…). Les fils d'un même agent partagent ses fichiers : évite que deux fils modifient les mêmes fichiers en même temps. Pour une petite recherche rapide, pas besoin de fil.`;
 
 /** Dit à l'agent où lire le planning de la personne (electron/planning.ts). */
 const CONSIGNE_PLANNING = `La personne avec qui tu parles a, dans cette app, son calendrier (avec les rendez-vous de son équipe), ses rappels, ses routines, ses projets, ses conversations, ses artefacts et ses workflows. Tout est dans ${FICHIER_PLANNING}, tenu à jour en continu. Quand elle dit « mes rappels », « mon calendrier », « mon agenda », « mes routines », « mes projets »…, c'est de ceux-là qu'elle parle, les siens, pas des apps du Mac (Rappels, Calendrier) : lis ce fichier en premier, avant toute autre recherche, et réponds à partir de lui. Il est en lecture seule : pour y changer quelque chose, dis-lui quoi faire dans l'app.`;
@@ -529,6 +530,15 @@ function tourOuSpontane(proc: Processus): Tour | null {
   return tour;
 }
 
+/**
+ * La fin d'une tâche de fond, d'après la notification de Claude Code (`system` / `task_notification`, avec
+ * l'appel d'outil qui l'a lancée) : l'écran met à jour la passation de cet appel.
+ */
+export function finTacheDeFond(msg: Record<string, unknown>): Extract<AgentEvent, { type: "tache-fond" }> | null {
+  if (msg.type !== "system" || msg.subtype !== "task_notification" || typeof msg.tool_use_id !== "string" || !msg.tool_use_id) return null;
+  return { type: "tache-fond", id: msg.tool_use_id, statut: msg.status === "completed" ? "fait" : "erreur" };
+}
+
 function lireLigne(proc: Processus, ligne: string) {
   if (!ligne.trim()) return;
   let msg: Record<string, unknown>;
@@ -539,6 +549,15 @@ function lireLigne(proc: Processus, ligne: string) {
   }
   const parent = (msg.parent_tool_use_id as string | null | undefined) ?? null;
   const courant = proc.tours[0] ?? null;
+  /* Un agent d'arrière-plan revenu sans réponse ouverte : la première réponse le dit (Claude Code fait reparler l'agent). */
+  if (courant && proc.finsDeFond.length) for (const fin of proc.finsDeFond.splice(0)) courant.emit(fin);
+  /* Un agent lancé en arrière-plan a fini : sa passation passe « rendu » (ou « arrêté »), pas avant. */
+  const finDeFond = finTacheDeFond(msg);
+  if (finDeFond) {
+    if (courant) courant.emit(finDeFond);
+    else proc.finsDeFond.push(finDeFond);
+    return;
+  }
 
   if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
     proc.sessionId = msg.session_id;
@@ -751,6 +770,7 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
     chatId: options.chatId ?? "",
     cumul: {},
     saisies: new Map(),
+    finsDeFond: [],
   };
   if (options.sessionId) processus.set(options.sessionId, proc);
 

@@ -11,7 +11,8 @@
  * - « coffre <variable> » : il demande un secret à la personne (outil `coffre_demander`) ;
  * - « workflow <mot> » : il construit un workflow de trois étapes (outil `construire_workflow`) ;
  * - « lance <mot> » : il lance le dernier workflow construit dans la conversation (outil `lancer_workflow`) ;
- * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> ».
+ * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> » ;
+ * - le retour d'un fil (« [Retour du fil, de … ») : « retour reçu ».
  * - l'épreuve de l'atelier : l'agent en essai répond d'après la demande (il prend un bug pour lui tant
  *   que sa fiche ne dit pas de passer la main), et le juge rend un verdict JSON.
  * L'entrée de `proposer_agent` et de `construire_workflow` arrive par morceaux, comme d'un vrai modèle
@@ -167,6 +168,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     if (sousAgent) return [{ type: "text", text: `bonjour de ${sousAgent}` }];
     // L'épreuve de l'atelier : le juge, puis l'agent en essai.
     if (texteDe(dernier?.content ?? "").includes("Tu juges l'essai")) return [{ type: "text", text: juger(texteDe(dernier.content)) }];
+    // La réponse d'un fil rapportée à l'agent qui l'a lancé : il en prend acte, sans rejouer l'ordre d'avant.
+    if (texteDe(dernier?.content ?? "").includes("[Retour du fil, de ")) return [{ type: "text", text: "retour reçu" }];
     if (systeme.includes("C'est un essai avant ta création")) return [{ type: "text", text: essai(systeme, texteDe(dernier?.content ?? "")) }];
     // Les outils de l'app : « fil » ouvre un fil, « liste » liste ceux de l'agent ; « atelier » et « choix » pour créer un agent.
     const nomOutil = ordre ? (OUTILS_ORDRES[ordre[1]] ?? null) : null;

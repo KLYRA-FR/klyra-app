@@ -1013,8 +1013,8 @@ function registerBridge() {
       win.webContents.send("outils:appel", id, nom, args, appelant);
     });
   brancherRelaisFils(relaisEcran);
-  /* Un agent d'un VPS construit ou lance un workflow : seulement pour une conversation de ce serveur. */
-  const workflowPourServeur = async (origine: string, appel: { nom: string; arguments: Record<string, unknown>; agent: string; conversation: string }) => {
+  /* Un agent d'un VPS construit ou lance un workflow, ou se sert des fils : seulement pour une conversation de ce serveur. */
+  const outilEcranPourServeur = async (origine: string, appel: { nom: string; arguments: Record<string, unknown>; agent: string; conversation: string }) => {
     const texte = (t: string, isError = false) => ({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
     const donnees = (await readConversations().catch(() => null)) as { chats?: { id?: unknown; lieu?: unknown }[] } | null;
     const chat = donnees?.chats?.find((c) => c.id === appel.conversation);
@@ -1245,7 +1245,9 @@ function registerBridge() {
         navigateur: (origine, appel) => executerPourServeur(origine, appel),
         /* Un agent du VPS utilise le Coffre de ce PC : seulement pour une conversation de ce serveur. */
         coffre: (origine, appel, lireValeur) => executerCoffrePourServeur(origine, appel, lireValeur),
-        workflow: workflowPourServeur,
+        workflow: outilEcranPourServeur,
+        /* Un agent du VPS ouvre, lit ou ferme un fil : l'écran le fait, seulement pour une conversation de ce serveur. */
+        fil: outilEcranPourServeur,
       },
       originesServeurs(),
     );

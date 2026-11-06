@@ -11,6 +11,8 @@
  *  - Sur un VPS (un vrai serveur KLYRA local, ce PC sans Claude Code) : l'assistant du serveur
  *    construit un workflow ; l'appel est relayé à ce PC, où tourne le moteur, et la page le montre
  *    se construire de la même façon. Le workflow appartient à ce serveur : Ce PC ne le montre pas.
+ *    Puis l'assistant du serveur ouvre un fil : relayé à ce PC, le fil s'ouvre sur ce serveur, et sa réponse
+ *    revient à l'assistant (une seule fois).
  * Prérequis : `pnpm build && pnpm build:electron`, Claude Code (KLYRA_CLAUDE_PATH, ou sur le PATH).
  *   xvfb-run -a node scripts/test-workflows-agents.mjs   (sous Linux sans bac à sable : -- --no-sandbox)
  */
@@ -226,6 +228,20 @@ try {
     verifier(finie?.statut === "fait", `VPS : l’exécution va au bout sur le serveur (${finie?.statut ?? "pas finie"}${finie?.erreur ? ` : ${finie.erreur}` : ""})`);
     verifier(await surDisque(() => conversations().executions?.some((e) => e.id === finie?.id && e.statut === "fait"), 15000), "VPS : l’app a suivi l’exécution jusqu’au bout");
     verifier(await surDisque(() => conversations().messages?.some((m) => m.chatId === finie?.chatId && m.author?.kind === "role"), 15000), "VPS : la réponse de l’agent est dans la conversation du workflow");
+    // Les fils, app ouverte : l'assistant du serveur ouvre un fil ; l'appel est relayé à ce PC, le fil s'ouvre
+    // sur ce serveur, son agent y répond, et la réponse revient à l'assistant dans sa conversation.
+    const conversationVps = `dm-principal@${hote}`;
+    await app.aller(`/chat?id=${encodeURIComponent(conversationVps)}`);
+    await app.quand(`document.querySelector('main textarea')`);
+    await ecrire("fil principal");
+    const filVps = () => conversations().chats.find((c) => c.fil && c.lieu === adresse);
+    verifier(await surDisque(() => !!filVps(), 90000), "VPS, app ouverte : le fil s’ouvre sur ce serveur");
+    verifier(filVps()?.fil.lancePar?.chatId === conversationVps, "VPS : lancé depuis la conversation de l’assistant du serveur");
+    verifier(await surDisque(() => conversations().messages.some((m) => m.chatId === filVps()?.id && m.author?.kind === "role" && m.statut === "fait"), 90000), "VPS : l’agent du fil y répond, sur le serveur");
+    verifier(await surDisque(() => conversations().messages.some((m) => m.chatId === conversationVps && /^\*\*Fil terminé : Essai\*\*/.test(m.parts?.[0]?.text ?? "")), 30000), "VPS : « Fil terminé » revient dans la conversation de l’assistant");
+    verifier(await surDisque(() => conversations().messages.some((m) => m.chatId === conversationVps && m.parts?.some((p) => p.type === "text" && p.text === "retour reçu")), 60000), "VPS : l’assistant du serveur répond au retour");
+    verifier(fournisseur.requetes.filter((q) => q.message.includes("[Retour du fil, de ")).length === 1, "VPS : le retour est rapporté une seule fois (l’app, pas le serveur)");
+    await app.aller("/routines?vue=workflows");
     await app.ev(`(() => { localStorage.removeItem("klyra:lieu-actif"); window.dispatchEvent(new Event("klyra:lieu-actif")); })()`);
     verifier(await app.quand(`!document.body.innerText.includes("Bonjour vps")`), "Ce PC : le workflow du VPS n’y est pas");
     verifier(fournisseur.requetes.some((q) => q.resultats.some((r) => !r.erreur && r.texte.includes("Workflow créé : « Bonjour vps »"))), "VPS : la réponse revient à l’agent du serveur");

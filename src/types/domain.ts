@@ -224,6 +224,8 @@ export interface Fil {
   demandes?: string[];
   /** Fermé (archivé) le : pour la colonne Terminé. Absent sur les fils fermés avant les tickets. */
   fermeLe?: string | null;
+  /** Arrêté par un agent (arreter_fil) sur un VPS : aucun nouveau départ avant reprendre_fil (cf. serveur/fils.mjs). */
+  suspendu?: boolean;
 }
 
 /** L'étape d'un fil vu comme un ticket. « En cours » vaut aussi tant qu'une réponse tourne. */
@@ -300,7 +302,8 @@ export type MessagePart =
       statut: "attente" | "acceptee" | "refusee";
     }
   /** L'agent confie une partie du travail à un collègue. */
-  | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur" }
+  /** `fond` : lancé en arrière-plan ; l'appel répond tout de suite, la passation reste « en cours » jusqu'au retour de l'agent. */
+  | { type: "passation"; etapeId: string; roleId: RoleId; consigne: string; statut: "en-cours" | "fait" | "erreur"; fond?: boolean }
   /** L'assistant propose la fiche d'un nouvel agent : la personne l'ouvre, l'ajuste et l'enregistre (ou non). */
   | { type: "proposition-agent"; etapeId: string; proposition: PropositionAgent }
   /**

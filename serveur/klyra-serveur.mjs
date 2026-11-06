@@ -10,6 +10,7 @@
 import { ErreurEquipe } from "./equipe.mjs";
 import { creerEspace, ErreurEspace } from "./espace.mjs";
 import { creerMoteurWorkflows } from "./workflows-moteur.mjs";
+import { creerFilsServeur } from "./fils.mjs";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer as creerHttp } from "node:http";
@@ -278,6 +279,19 @@ export function creerJournal(maintenant = Date.now, fichierSessions = null) {
     /** Prévient quand une réponse finit : le serveur la range s'il n'y a personne pour le faire. */
     ecouterFin(fn) {
       surFin.add(fn);
+    },
+    /**
+     * Ajoute des champs à la fin d'une réponse déjà publiée, pour qui la relira (l'app, à sa reconnexion) :
+     * `retourFil` dit que le serveur a déjà rapporté la réponse d'un fil (cf. fils.mjs).
+     */
+    annoterFin(requestId, champs) {
+      for (let i = entrees.length - 1; i >= 0; i--) {
+        const e = entrees[i];
+        if (e.requestId !== requestId || e.event?.type !== "fin") continue;
+        entrees[i] = { ...e, event: { ...e.event, ...champs } };
+        return true;
+      }
+      return false;
     },
     /** La réponse appartient à cette conversation (`cleConversation`) : sa session y sera retenue. */
     lierConversation(requestId, cle) {
@@ -754,6 +768,8 @@ export function creerGestionnaire(options) {
       }
       /* Le PC rend la réponse d'un outil des workflows demandé par un agent d'ici (cf. workflows.mjs). */
       if (action === "workflow") return repondre(res, 200, { ok: agents.workflows?.repondre(requestId, corps.resultat) ?? false });
+      /* Le PC rend la réponse d'un outil des fils demandé par un agent d'ici (cf. fils.mjs). */
+      if (action === "fil") return repondre(res, 200, { ok: agents.fils?.repondre(requestId, corps.resultat) ?? false });
       return repondre(res, 404, { erreur: "introuvable" });
     }
 
@@ -868,6 +884,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     acces: agents.accesServeur,
   });
   agents.brancherWorkflows(workflows);
+  /* Les fils de ce serveur, PC fermé : ses agents se confient du travail sans le PC (cf. fils.mjs). */
+  agents.brancherFils(
+    creerFilsServeur({
+      espace,
+      journal,
+      envoyer: agents.envoyer,
+      annuler: agents.annuler,
+      equipe: () => ({ assistant: agents.equipeServeur.assistant(), actifs: agents.equipeServeur.actifs() }),
+      acces: agents.accesServeur,
+      cle: cleConversation,
+    }),
+  );
   const ecoute = await ecouter({
     nom: process.env.KLYRA_SERVEUR_NOM,
     dossier,
