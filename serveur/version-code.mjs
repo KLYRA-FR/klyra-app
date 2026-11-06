@@ -6,5 +6,5 @@
  * Écrit par `node scripts/serveur-genere.mjs`, qui la monte quand l'empreinte change ; `pnpm lint` et `test:serveur`
  * échouent si elle n'a pas suivi. Ne pas modifier à la main.
  */
-export const VERSION_CODE_SERVEUR = 18;
-export const EMPREINTE_CODE_SERVEUR = "0672164aa5d9283aa01021d0965623fe3f0a79bedb6c28491126831f486647e1";
+export const VERSION_CODE_SERVEUR = 19;
+export const EMPREINTE_CODE_SERVEUR = "29e550da03119b4a7f1ba772684969e7d724e4e3f35a8aeb38f80fd88dc5700b";

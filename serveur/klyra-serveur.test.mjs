@@ -1112,3 +1112,61 @@ test("le téléphone lit l'équipe du serveur depuis son navigateur : le préala
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("une pièce jointe du PC arrive sur le VPS avant le message, et l'agent lit son dossier", async () => {
+  const dossier = dossierJetable();
+  const home = dossierJetable();
+  const claude = path.join(home, "faux-claude");
+  writeFileSync(claude, FAUX_CLAUDE);
+  chmodSync(claude, 0o755);
+  writeFileSync(path.join(dossier, "claude-token"), "jeton-claude");
+  const journal = creerJournal();
+  const agents = creerAgents({ home, donnees: dossier, nomServeur: "Klyra-VPS", publier: journal.publier, spontane: journal.spontane, claude });
+  const ecoute = await ecouter({ nom: "Klyra-VPS", dossier, port: 0, journal, agents });
+  const joint = (jeton, conversation, nom, octets) =>
+    fetch(`http://127.0.0.1:${ecoute.port}${CHEMIN_AGENT}/joint?${new URLSearchParams({ conversation, nom })}`, {
+      method: "POST",
+      headers: { ...(jeton ? { Authorization: `Bearer ${jeton}` } : {}), "Content-Type": "application/octet-stream" },
+      body: octets,
+    }).then(async (r) => ({ statut: r.status, json: await r.json().catch(() => null) }));
+  try {
+    const capture = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    assert.equal((await joint(null, "dm-lou", "capture.png", capture)).statut, 401, "seulement un appareil relié");
+    const jeton = (await appel(ecoute.port, CHEMIN_APPAIRER, { methode: "POST", corps: { code: creerCode(dossier) } })).json.jeton;
+
+    // Avant toute pièce jointe : pas de dossier ouvert à l'agent.
+    const options = { agent: null, prompt: "toi", sessionId: null, acces: "projet", conversation: "dm-lou" };
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, { methode: "POST", jeton, corps: { requestId: "j1", options } });
+    await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "j1" && e.event?.type === "fin"));
+    assert.doesNotMatch(readFileSync(path.join(home, "args.log"), "utf8"), /--add-dir/);
+
+    const recu = await joint(jeton, "dm-lou", "C:\\Users\\queuc\\AppData\\collages\\capture 1 (é).png", capture);
+    assert.equal(recu.statut, 200);
+    const chemin = recu.json.chemin;
+    const attendu = path.join(dossier, "joints", "dm-lou");
+    assert.equal(path.dirname(chemin), attendu, "rangé dans les données du serveur, par conversation");
+    assert.match(path.basename(chemin), /^[0-9a-f]{16}-capture 1 _é_\.png$/, "nom sans dossier du PC");
+    assert.deepEqual(readFileSync(chemin), capture);
+    assert.equal((await joint(jeton, "dm-lou", "autre-nom.png", capture)).json.chemin.slice(0, attendu.length + 18), chemin.slice(0, attendu.length + 18), "même contenu : même empreinte");
+    assert.equal((await joint(jeton, "..", "x.png", capture)).statut, 200, "une conversation « .. » reste sous joints/");
+    assert.equal(path.dirname((await joint(jeton, "..", "x.png", capture)).json.chemin), path.join(dossier, "joints", "__"));
+    assert.equal((await joint(jeton, "../x", "x.png", capture)).statut, 400);
+    assert.equal((await joint(jeton, "dm-lou", "vide.png", Buffer.alloc(0))).statut, 400);
+    assert.equal((await joint(jeton, "dm-lou", "gros.bin", Buffer.alloc(20 * 1024 * 1024 + 1))).statut, 413);
+
+    // Au message suivant, la session repart (reprise) avec le dossier des pièces jointes en lecture.
+    await appel(ecoute.port, `${CHEMIN_AGENT}/envoyer`, {
+      methode: "POST",
+      jeton,
+      corps: { requestId: "j2", options: { ...options, prompt: `Regarde.\n\n[Fichiers joints, à lire]\n- ${chemin}`, sessionId: "11111111-2222-3333-4444-555555555555" } },
+    });
+    await lireFlux(ecoute.port, jeton, 0, "", (recus) => recus.some((e) => e.requestId === "j2" && e.event?.type === "fin"));
+    const derniers = readFileSync(path.join(home, "args.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
+    assert.equal(derniers[derniers.indexOf("--add-dir") + 1], attendu);
+    assert.equal(derniers.includes("--resume"), true);
+  } finally {
+    await ecoute.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
