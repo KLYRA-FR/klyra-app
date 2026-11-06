@@ -402,6 +402,106 @@ body {
   }
 }
 
+/* ─── L'atelier d'une équipe en grand ─────────────────────────── */
+
+/* Une tâche posée sur la table : un léger désordre (`--r`), redressée quand on la regroupe. */
+.klyra-note-tache {
+  rotate: var(--r, 0deg);
+  transition:
+    rotate 320ms var(--ease-sortie),
+    box-shadow 220ms var(--ease-sortie),
+    background-color 220ms var(--ease-sortie);
+  touch-action: none;
+}
+.klyra-zone-groupe .klyra-note-tache {
+  cursor: grab;
+}
+.klyra-zone-groupe .klyra-note-tache:hover {
+  box-shadow: var(--shadow-ombre-levee);
+}
+/* Proposée par l'assistant : en pointillés tant qu'elle ne l'a pas gardée. */
+.klyra-note-tache[data-proposee],
+.klyra-ligne-proposee {
+  outline: 1.5px dashed var(--color-bleu-k1-200);
+  outline-offset: -1.5px;
+}
+/* Tenue au pointeur : elle suit la main, au-dessus de tout. */
+.klyra-note-tache[data-tenue] {
+  z-index: 30;
+  cursor: grabbing;
+  rotate: 2deg;
+  box-shadow: var(--shadow-ombre-levee);
+  transition: none;
+  pointer-events: none;
+}
+.klyra-zone-groupe {
+  transition:
+    border-color 220ms var(--ease-sortie),
+    background-color 220ms var(--ease-sortie);
+}
+.klyra-zone-groupe[data-survol] {
+  border-color: var(--color-bleu-k1-500);
+  background-color: color-mix(in srgb, var(--color-fond-teinte-bleue) 70%, transparent);
+}
+
+/* Un agent sur la table : `--r` son inclinaison, `--y` sa descente ; choisi, il se lève et se redresse. */
+.klyra-carte-atelier {
+  transform: translateY(var(--y, 0)) rotate(var(--r, 0deg));
+  transform-origin: 50% 100%;
+  transition:
+    transform 340ms var(--ease-sortie),
+    filter 220ms var(--ease-sortie),
+    opacity 220ms var(--ease-sortie);
+}
+.klyra-carte-atelier:hover,
+.klyra-carte-atelier:focus-visible {
+  transform: translateY(calc(var(--y, 0px) - 8px)) rotate(var(--r, 0deg));
+  z-index: 30 !important;
+}
+.klyra-carte-atelier[aria-pressed="true"] {
+  transform: translateY(-18px) rotate(0deg);
+}
+.klyra-carte-atelier[data-ecarte] {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+/* Ce que l'assistant vient de changer : un éclat bleu, puis « À jour » qui bat doucement. */
+.klyra-carte-atelier[data-touche] > div {
+  animation: klyra-eclat-touche 1.2s var(--ease-sortie);
+}
+@keyframes klyra-eclat-touche {
+  from {
+    box-shadow: inset 0 0 0 3px rgba(0, 63, 228, 0.6);
+  }
+}
+.klyra-a-jour::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-bleu-k1-500);
+  animation: klyra-pouls 1.6s var(--ease-sortie) infinite;
+}
+@keyframes klyra-pouls {
+  from {
+    box-shadow: 0 0 0 0 rgba(0, 63, 228, 0.5);
+  }
+  to {
+    box-shadow: 0 0 0 8px rgba(0, 63, 228, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klyra-note-tache,
+  .klyra-carte-atelier {
+    transition: none;
+  }
+  .klyra-carte-atelier[data-touche] > div,
+  .klyra-a-jour::before {
+    animation: none;
+  }
+}
+
 /* Pendant qu'on étire un panneau, les aperçus (iframe) ne captent pas la souris. */
 body[data-glisse] iframe {
   pointer-events: none;

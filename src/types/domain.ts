@@ -1,10 +1,10 @@
 import type { AjoutFiche, MajAtelier } from "../../electron/atelier-agent";
-import type { MajEquipe } from "../../electron/atelier-equipe";
+import type { ChoixEquipe, MajEquipe } from "../../electron/atelier-equipe";
 import type { Carte, ReponseCarte } from "../../electron/cartes-interactives";
 import type { ResultatCas, TypeCas } from "../../electron/epreuve";
 
 export type { AjoutFiche, BrouillonAgent, DemandesEpreuve, MajAtelier, RoutineProposee, VoisinAgent } from "../../electron/atelier-agent";
-export type { BrouillonEquipe, MajEquipe, MembreBrouillon } from "../../electron/atelier-equipe";
+export type { BrouillonEquipe, ChoixEquipe, MajEquipe, MembreBrouillon } from "../../electron/atelier-equipe";
 export type { Carte, ReponseCarte } from "../../electron/cartes-interactives";
 
 /**
@@ -337,7 +337,8 @@ export type MessagePart =
   /**
    * L'atelier d'une équipe (outil `proposer_equipe`) : ce que cet appel a appris. La carte plie tous
    * les appels de la conversation (`src/lib/atelier-equipe.ts`). Les choix de la personne sont notés
-   * sur la carte affichée : `teintes` et `crees` par clé de membre, `ecartes` la liste entière.
+   * sur la carte affichée : `teintes` et `crees` par clé de membre, `ecartes` la liste entière,
+   * `choix` ce qu'elle a gardé, retiré, déplacé ou nommé (appliqué juste après cet appel).
    */
   | {
       type: "atelier-equipe";
@@ -348,6 +349,7 @@ export type MessagePart =
       teintes?: Record<string, RoleTeinte>;
       ecartes?: string[];
       crees?: Record<string, string>;
+      choix?: ChoixEquipe;
     }
   /**
    * Une carte interactive d'un agent (outil `proposer_carte`, cf. electron/cartes-interactives.ts) :

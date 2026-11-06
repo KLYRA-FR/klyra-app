@@ -3,9 +3,20 @@ import type { MajEquipe, Message, MessagePart } from "@/types/domain";
 import { getField, parseAgentFile } from "./agent-file";
 import { ficheAgent } from "./atelier-agent";
 import {
+  agentDuMembre,
   appelEquipe,
+  appliquerChoix,
+  A_CONFIER,
+  ELLE,
+  etapeEquipe,
+  fusionnerChoix,
+  membreNe,
+  pretAValider,
+  texteGroupesValides,
+  texteTachesValidees,
   appliquerMajEquipe,
   EQUIPE_VIDE,
+  equipeAffichee,
   equipeEnCours,
   jetonsEquipe,
   lireMajEquipe,
@@ -13,6 +24,7 @@ import {
   MAX_MEMBRES,
   membresGardes,
   membresNouveaux,
+  membresTouches,
   plierEquipes,
   refusEquipe,
   retourEquipe,
@@ -188,4 +200,153 @@ describe("plier les appels du fil", () => {
     expect(remplacee.get("e1")).toMatchObject({ dernier: true, courante: false });
     expect(remplacee.get("e2")).toMatchObject({ dernier: true, courante: true, serie: "e2" });
   });
+
+  it("l'atelier plein écran montre le dernier appel de la série courante, et les membres qu'il a touchés", () => {
+    const messages = [
+      message("m1", [appel("e1", MAJ_STUDIO)]),
+      message("m2", [{ type: "text", text: "Je précise Léo." }, appel("e2", { membres: [{ id: "leo", mission: "Prépare les visuels de la semaine." }, { nom: "Inès", role: "Organisation" }] })]),
+    ];
+    const affichee = equipeAffichee(messages)!;
+    expect(affichee).toMatchObject({ messageId: "m2", etapeId: "e2" });
+    expect(affichee.etat.apres.membres.map((m) => m.cle)).toEqual(["nina", "leo", "ines"]);
+    expect(membresTouches(affichee.etat)).toEqual(["leo", "ines"]);
+    // Le premier appel a tout posé : tous ses membres sont touchés.
+    expect(membresTouches(plierEquipes(messages).get("e1")!)).toEqual(["nina", "leo"]);
+    // Une série remplacée par une autre plus bas : c'est la nouvelle qui s'affiche ; sans appel, rien.
+    expect(equipeAffichee([...messages, message("m3", [appel("e3", { nouveau: true, nom: "B" })])])).toMatchObject({ messageId: "m3", etapeId: "e3" });
+    expect(equipeAffichee([message("m0", [{ type: "text", text: "Bonjour" }])])).toBeNull();
+  });
 });
+
+/* ─── Partir de ses tâches ─────────────────────────────────────────── */
+
+const TACHES: MajEquipe = {
+  nom: "Mon équipe",
+  taches: [
+    { texte: "Répondre aux mails des clients" },
+    { id: "post", texte: "Écrire le post LinkedIn du lundi" },
+    { id: "devis", texte: "Relancer les devis sans réponse", origine: "assistant", pourquoi: "Tu parles de prospects." },
+    { id: "envoi", texte: "Envoyer les mails", pourElle: true },
+  ],
+};
+const GROUPES: MajEquipe = {
+  groupes: [
+    { id: "textes", nom: "Les textes", pourquoi: "Même ton." },
+    { id: "prospects", nom: "Prospects" },
+  ],
+  taches: [
+    { id: "repondre-aux-mails-des-clients", groupe: "textes" },
+    { id: "post", groupe: "textes" },
+    { id: "devis", groupe: "prospects" },
+  ],
+};
+const MEMBRES: MajEquipe = {
+  membres: [
+    {
+      id: "redaction",
+      groupe: "textes",
+      prenoms: ["Léa", "Romy"],
+      role: "Rédaction",
+      mission: "Prépare tes textes en brouillons à relire.",
+      limites: ["N’envoie jamais un mail lui-même"],
+      methode: ["Tutoie, comme toi"],
+      proposes: ["Tutoie, comme toi"],
+    },
+  ],
+};
+
+describe("l'équipe part de ses tâches", () => {
+  it("trois temps : ses tâches, les groupes, puis un agent par groupe", () => {
+    const t = appliquerMajEquipe(EQUIPE_VIDE, TACHES);
+    expect(etapeEquipe(t)).toBe("taches");
+    expect(t.taches.map((x) => x.id)).toEqual(["repondre-aux-mails-des-clients", "post", "devis", "envoi"]);
+    expect(t.taches.find((x) => x.id === "devis")).toMatchObject({ origine: "assistant", pourquoi: "Tu parles de prospects.", gardee: false });
+    expect(t.taches.find((x) => x.id === "envoi")).toMatchObject({ pourElle: true, groupe: "" });
+    const g = appliquerMajEquipe(t, GROUPES);
+    expect(etapeEquipe(g)).toBe("groupes");
+    // Un appel qui range une tâche ne perd ni son texte ni son origine.
+    expect(g.taches.find((x) => x.id === "devis")).toMatchObject({ texte: "Relancer les devis sans réponse", origine: "assistant", groupe: "prospects" });
+    const e = appliquerMajEquipe(g, MEMBRES);
+    expect(etapeEquipe(e)).toBe("equipe");
+    expect(e.membres[0]).toMatchObject({ cle: "redaction", groupe: "textes", prenoms: ["Léa", "Romy"], proposes: ["Tutoie, comme toi"] });
+    // Un groupe retiré : ses tâches ne sont plus rangées.
+    expect(appliquerMajEquipe(g, { groupes: [{ id: "prospects", retirer: true }] }).taches.find((x) => x.id === "devis")?.groupe).toBe("");
+  });
+
+  it("la fiche : sans prénom imposé, sans les lignes proposées qu'elle n'a pas gardées, ses tâches pour « quand l'appeler »", () => {
+    const e = [TACHES, GROUPES, MEMBRES].reduce(appliquerMajEquipe, EQUIPE_VIDE);
+    const m = e.membres[0];
+    expect(m.agent.nom).toBe("");
+    const agent = agentDuMembre(e, m);
+    expect(agent.methode).toEqual([]);
+    expect(agent.limites).toEqual(["N’envoie jamais un mail lui-même"]);
+    expect(agent.declencheurs).toEqual(["Répondre aux mails des clients", "Écrire le post LinkedIn du lundi"]);
+    expect(manquesEquipe(e, e.membres)).toEqual(["un prénom à l’agent « Rédaction »"]);
+    // Elle choisit son prénom et garde la ligne proposée : elles entrent dans la fiche.
+    const choisi = appliquerChoix(e, { prenoms: { redaction: " Léa " }, lignes: { redaction: { "Tutoie, comme toi": true } } });
+    expect(choisi.membres[0].agent.nom).toBe("Léa");
+    expect(choisi.membres[0].proposes).toEqual([]);
+    expect(agentDuMembre(choisi, choisi.membres[0]).methode).toEqual(["Tutoie, comme toi"]);
+    expect(ficheAgent(agentDuMembre(choisi, choisi.membres[0]), "redaction")).toContain("Tutoie, comme toi");
+    // Retirée : elle disparaît de la carte.
+    const retiree = appliquerChoix(e, { lignes: { redaction: { "Tutoie, comme toi": false } } });
+    expect(retiree.membres[0].agent.methode).toEqual([]);
+  });
+
+  it("ses choix : une proposition gardée ou retirée, une tâche déplacée ou gardée pour elle", () => {
+    const g = [TACHES, GROUPES].reduce(appliquerMajEquipe, EQUIPE_VIDE);
+    expect(pretAValider(g, "groupes")).toMatch(/propositions/);
+    const garde = appliquerChoix(g, { taches: { devis: true }, places: { post: ELLE } });
+    expect(garde.taches.find((t) => t.id === "devis")?.gardee).toBe(true);
+    expect(garde.taches.find((t) => t.id === "post")).toMatchObject({ pourElle: true, groupe: "" });
+    expect(pretAValider(garde, "groupes")).toBeNull();
+    expect(appliquerChoix(appliquerChoix(g, { places: { post: ELLE } }), { places: { post: A_CONFIER } }).taches.find((t) => t.id === "post")?.pourElle).toBe(false);
+    expect(appliquerChoix(g, { taches: { devis: false } }).taches.map((t) => t.id)).not.toContain("devis");
+    // Un groupe inconnu ne déplace rien.
+    expect(appliquerChoix(g, { places: { post: "inconnu" } }).taches.find((t) => t.id === "post")?.groupe).toBe("textes");
+    expect(fusionnerChoix({ taches: { devis: true }, lignes: { a: { x: true } } }, { places: { post: ELLE }, lignes: { a: { y: false } } })).toEqual({
+      taches: { devis: true },
+      places: { post: ELLE },
+      prenoms: {},
+      lignes: { a: { x: true, y: false } },
+    });
+  });
+
+  it("ce qu'elle valide part en message lisible ; une étape attend ses réponses", () => {
+    const t = appliquerChoix(appliquerMajEquipe(EQUIPE_VIDE, TACHES), { taches: { devis: false } });
+    expect(texteTachesValidees(t)).toBe("Mes tâches sont prêtes :\n- Répondre aux mails des clients\n- Écrire le post LinkedIn du lundi\n\nJe garde pour moi :\n- Envoyer les mails");
+    expect(pretAValider(appliquerMajEquipe(EQUIPE_VIDE, TACHES), "taches")).toMatch(/propositions/);
+    const g = appliquerChoix([TACHES, GROUPES].reduce(appliquerMajEquipe, EQUIPE_VIDE), { taches: { devis: true } });
+    expect(texteGroupesValides(g)).toBe(
+      "Mes groupes sont prêts, un agent par groupe :\n- Les textes : Répondre aux mails des clients ; Écrire le post LinkedIn du lundi\n- Prospects : Relancer les devis sans réponse\n\nJe garde pour moi : Envoyer les mails",
+    );
+    expect(pretAValider(appliquerMajEquipe(g, { taches: [{ texte: "Une nouvelle tâche" }] }), "groupes")).toMatch(/Range chaque tâche/);
+  });
+
+  it("l'outil guide chaque temps et refuse un groupe inconnu", () => {
+    expect(retourEquipe(appliquerMajEquipe(EQUIPE_VIDE, TACHES))).toMatch(/devis « Relancer les devis sans réponse » \(ta proposition, en attente de sa réponse\).*Attends qu’elle valide ses tâches/);
+    const g = [TACHES, GROUPES].reduce(appliquerMajEquipe, EQUIPE_VIDE);
+    expect(retourEquipe(g)).toMatch(/Attends qu’elle valide les groupes/);
+    const e = appliquerMajEquipe(g, MEMBRES);
+    expect(retourEquipe(e)).toMatch(/sans prénom \(redaction, groupe textes, Rédaction\).*Groupes sans agent : prospects.*suggère-en dans prenoms/);
+    expect(appelEquipe({ taches: [{ id: "x", texte: "X", groupe: "nulle-part" }] }, g, EQUIPE)).toMatchObject({ erreur: true });
+    expect(appelEquipe({ membres: [{ id: "y", groupe: "nulle-part" }] }, g, EQUIPE).texte).toMatch(/n’existe pas/);
+  });
+
+  it("un membre sans prénom né sur le PC se reconnaît à son identifiant", () => {
+    const e = [TACHES, GROUPES, MEMBRES].reduce(appliquerMajEquipe, EQUIPE_VIDE);
+    expect(membreNe(e.membres[0], [{ id: "redaction", noms: ["Léa"] }])).toBe(true);
+    expect(membreNe(e.membres[0], EQUIPE)).toBe(false);
+  });
+
+  it("le fil plié applique ses choix après l'appel, et l'appel suivant passe par-dessus", () => {
+    const messages = [
+      message("m1", [appel("e1", TACHES, { choix: { taches: { devis: false } } })]),
+      message("m2", [appel("e2", { taches: [{ id: "devis", texte: "Relancer les devis", origine: "assistant" }] })]),
+    ];
+    const etats = plierEquipes(messages);
+    expect(etats.get("e1")!.apres.taches.map((t) => t.id)).not.toContain("devis");
+    expect(etats.get("e2")!.apres.taches.find((t) => t.id === "devis")?.texte).toBe("Relancer les devis");
+  });
+});
+

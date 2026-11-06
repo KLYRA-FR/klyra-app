@@ -26,6 +26,8 @@ import { OngletsFils } from "./OngletsFils";
 import { useImagesOuvertes, VueImage } from "./ImageJointe";
 import { OUVRIR_PANNEAU_AGENT, PanneauLateral, surReglages, usePanneauLateral } from "./PanneauLateral";
 import { useActiviteNavigateur } from "@/lib/navigateur";
+import { AtelierEquipe } from "./atelier-equipe/AtelierEquipe";
+import { OUVRIR_ATELIER_EQUIPE, type DemandeAtelierEquipe } from "./atelier-equipe/ouvrir";
 import type { DemandeApercu } from "@/components/ui/Lien";
 
 /** « Modifié par Dev · 09:52 » : dernier journal de travail du chat. */
@@ -199,6 +201,19 @@ export function ChatScreen() {
     setMaximise(false);
   }, []);
 
+  /* L'atelier d'une équipe en grand, ouvert depuis sa carte dans le fil (n : chaque demande compte). */
+  const [atelierEquipe, setAtelierEquipe] = useState<{ chatId: string; membre?: string; n: number } | null>(null);
+  useEffect(() => {
+    const ouvrir = (e: Event) => {
+      const d = (e as CustomEvent<DemandeAtelierEquipe>).detail;
+      if (d.chatId !== chatId) return;
+      setAtelierEquipe((a) => ({ chatId: d.chatId, membre: d.membre, n: (a?.n ?? 0) + 1 }));
+    };
+    window.addEventListener(OUVRIR_ATELIER_EQUIPE, ouvrir);
+    return () => window.removeEventListener(OUVRIR_ATELIER_EQUIPE, ouvrir);
+  }, [chatId]);
+  const fermerAtelierEquipe = useCallback(() => setAtelierEquipe(null), []);
+
   if (!chat) {
     return (
       <div className="flex h-full items-center justify-center p-12">
@@ -206,6 +221,35 @@ export function ChatScreen() {
           title="Ce chat n’existe pas"
           description="Il a peut-être été supprimé. Choisis un chat récent dans la barre latérale."
           action={<BoutonPrincipal href="/">Retour à l’accueil</BoutonPrincipal>}
+        />
+      </div>
+    );
+  }
+
+  const conseilEtComposeur = horsDeMesAgents ? (
+    <BarreHorsDeMesAgents key={`hors-${chat.id}`} agent={horsDeMesAgents} chatId={chat.id} />
+  ) : (
+    <>
+      <ConseilContexte chat={chat} />
+      <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
+    </>
+  );
+
+  /* L'atelier d'une équipe en grand : la table à la place de la conversation, qui passe à droite. */
+  if (atelierEquipe?.chatId === chat.id) {
+    return (
+      <div className="flex h-full min-h-0">
+        <AtelierEquipe
+          chat={chat}
+          demande={atelierEquipe}
+          onFermer={fermerAtelierEquipe}
+          fil={
+            <>
+              <MessageThread key={chat.id} chatId={chat.id} messageExport={null} />
+              <AgentsEnCours chatId={chat.id} />
+            </>
+          }
+          composeur={conseilEtComposeur}
         />
       </div>
     );
@@ -233,14 +277,7 @@ export function ChatScreen() {
         <MessageThread key={chat.id} chatId={chat.id} messageExport={exportConversation.message &&
           <MessageExport key={exportConversation.numero} message={exportConversation.message} onFermer={exportConversation.fermer} />} />
         <AgentsEnCours chatId={chat.id} />
-        {horsDeMesAgents ? (
-          <BarreHorsDeMesAgents key={`hors-${chat.id}`} agent={horsDeMesAgents} chatId={chat.id} />
-        ) : (
-          <>
-            <ConseilContexte chat={chat} />
-            <Composer key={`composer-${chat.id}`} chat={chat} project={project} />
-          </>
-        )}
+        {conseilEtComposeur}
       </section>
       {/* Conversation directe : pas de projet, donc pas d'aperçu. */}
       {/* L'aperçu reste monté derrière l'image : ses onglets et sa page ne se perdent pas. */}

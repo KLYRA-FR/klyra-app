@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Maquette · Atelier d’une équipe, en partant de tes tâches</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --k1:#003fe4;--k1-0:#e5ecfc;--k1-50:#ccd9fa;--k1-200:#99b2f4;
+  --t1:#303030;--t2:#595959;--t3:#838383;
+  --page:#f9f9f9;--surface:#fff;--gris:#ececec;--survol:#f3f3f3;--teinte:#e5ecfc;
+  --b-sub:#f3f3f3;--b-def:#eaeaea;--b-forte:#e0e0e0;--b-acc:rgba(0,63,228,.25);
+  --o-xs:0 1px 2px 0 rgba(0,45,164,.05);--o-sm:0 1px 2px 0 rgba(0,0,0,.06),0 1px 1px 0 rgba(0,0,0,.04);
+  --o-levee:0 6px 18px 0 rgba(0,45,164,.1),0 2px 6px 0 rgba(0,45,164,.05);
+  --o-amb:0 0 14px 0 rgba(0,0,0,.04),0 0 36px 0 rgba(0,0,0,.04);
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Google Sans Flex",system-ui,sans-serif;color:var(--t1);background:#dfe3ea;font-size:14px;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.mono{font-variant-numeric:tabular-nums}
+svg.i{width:16px;height:16px;flex:none}
+[hidden]{display:none !important}
+
+.meta{display:flex;align-items:center;gap:16px;padding:14px 24px;background:#000d2e;color:#fff}
+.meta b{font-weight:600;white-space:nowrap}
+.meta p{margin:0;color:#d6d6d6;font-size:13px;flex:1}
+.bascule{display:flex;gap:4px;background:rgba(255,255,255,.08);padding:4px;border-radius:10px}
+.bascule button{border:0;background:transparent;color:#d6d6d6;height:30px;padding:0 12px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap}
+.bascule button[aria-pressed=true]{background:#fff;color:var(--t1)}
+
+.fenetre{margin:20px auto;width:min(1440px,calc(100% - 40px));height:860px;background:var(--page);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,13,46,.25);display:flex}
+.rail{width:56px;flex:none;background:var(--surface);border-right:1px solid var(--b-sub);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:10px}
+.rail .logo{width:30px;height:30px;border-radius:8px;background:var(--k1);margin-bottom:8px}
+.rail .ic{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--t3)}
+.rail .ic.on{background:var(--survol);color:var(--t1)}
+.barre{width:232px;flex:none;background:var(--surface);border-right:1px solid var(--b-sub);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.barre h6{margin:14px 8px 6px;font-size:11px;font-weight:500;color:var(--t3)}
+.barre .ag{display:flex;align-items:center;gap:10px;height:36px;padding:0 8px;border-radius:8px;font-size:13px;font-weight:500}
+.barre .ag.on{background:var(--survol)}
+.rond{border-radius:999px;flex:none;display:inline-flex;position:relative;overflow:hidden}
+.rond::after{content:"";position:absolute;inset:22%;border-radius:999px;background:radial-gradient(circle,rgba(255,255,255,.95),rgba(255,255,255,.2) 70%)}
+.k-cicco{background:var(--k1)}
+.k-cicco::after{inset:28%;border-radius:3px;background:#fff;clip-path:polygon(0 0,40% 0,40% 35%,70% 0,100% 0,60% 50%,100% 100%,70% 100%,40% 65%,40% 100%,0 100%)}
+.rond.toi{background:#262626}
+.rond.toi::after{display:none}
+
+.atelier{flex:1;min-width:0;display:flex;flex-direction:column}
+.haut{height:64px;flex:none;display:flex;align-items:center;gap:14px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--b-sub)}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--b-sub);background:var(--surface);height:32px;padding:0 12px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:border-color .22s var(--ease),background-color .22s var(--ease)}
+.btn:hover{border-color:var(--b-forte)}
+.btn.discret{border-color:transparent;background:transparent}.btn.discret:hover{background:var(--survol)}
+.btn.mini{height:26px;padding:0 9px;font-size:12px;gap:5px}
+.sep{width:1px;height:24px;background:var(--b-def)}
+.etapes{display:flex;align-items:center;gap:6px;margin:0 auto}
+.etape{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px 0 6px;border-radius:999px;border:0;background:transparent;font-size:13px;font-weight:500;color:var(--t3);cursor:pointer}
+.etape i{font-style:normal;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:var(--survol);color:var(--t3)}
+.etape[aria-current=step]{background:var(--teinte);color:var(--k1)}
+.etape[aria-current=step] i{background:var(--k1);color:#fff}
+.etape.faite{color:var(--t1)}
+.etape.faite i{background:#262626;color:#fff}
+.fleche{width:18px;height:1px;background:var(--b-forte)}
+.principal{position:relative;white-space:nowrap;flex:none;height:46px;padding:0 64px 0 22px;border:0;border-radius:6px;background:#050505;color:#fff;font-size:16px;font-weight:500;cursor:pointer;overflow:hidden;transition:opacity .22s}
+.principal::after{content:"";position:absolute;right:6px;top:7px;width:39px;height:32px;border-radius:4px;background-image:radial-gradient(circle,#3365e9 1px,transparent 1.2px);background-size:4px 4px;-webkit-mask:linear-gradient(90deg,transparent,#000 30%);mask:linear-gradient(90deg,transparent,#000 30%)}
+.principal::before{content:"";position:absolute;right:20px;top:17px;width:10px;height:10px;border-top:2.5px solid #99b2f4;border-right:2.5px solid #99b2f4;transform:rotate(45deg);z-index:1}
+.principal:disabled{opacity:.45;cursor:not-allowed}
+
+.corps{flex:1;min-height:0;display:flex}
+.plateau{flex:1;min-width:0;overflow-y:auto;scrollbar-width:thin;position:relative}
+
+.scene{position:relative;height:100%;min-height:600px;background-color:var(--page);
+  background-image:radial-gradient(circle,var(--b-def) 1px,transparent 1.5px);background-size:12px 12px;background-position:center;transition:height .5s var(--ease),min-height .5s var(--ease)}
+.etape-3 .scene{height:330px;min-height:330px;border-bottom:1px solid var(--b-sub)}
+.scene-titre{position:absolute;left:32px;top:24px;right:32px;z-index:2}
+.scene-titre h1{margin:0;font-size:28px;line-height:1;font-weight:600;letter-spacing:-.05em}
+.scene-titre p{margin:8px 0 0;font-size:13px;line-height:1.45;color:var(--t2);max-width:520px}
+.legende{position:absolute;right:32px;top:28px;display:flex;gap:12px;font-size:11px;color:var(--t3);z-index:2}
+.legende span{display:flex;align-items:center;gap:6px}
+.legende .plein{width:18px;height:12px;border-radius:3px;background:#fff;box-shadow:var(--o-sm)}
+.legende .pointille{width:18px;height:12px;border-radius:3px;border:1.5px dashed var(--k1-200);background:rgba(255,255,255,.6)}
+
+/* Les tâches, comme des notes posées sur la table */
+.note-t{position:absolute;width:196px;height:74px;border-radius:12px;background:#fff;box-shadow:var(--o-sm);padding:10px 12px;display:flex;flex-direction:column;gap:6px;
+  transform:rotate(var(--r,0deg));transition:left .6s var(--ease),top .6s var(--ease),transform .6s var(--ease),opacity .4s var(--ease),box-shadow .2s;z-index:3;user-select:none}
+.note-t q{font-size:13px;line-height:1.35;quotes:"« " " »";display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.note-t .src{margin-top:auto;display:flex;align-items:center;gap:6px;font-size:10px;color:var(--t3)}
+.note-t .src b{font-weight:600}
+.note-t.propose{height:118px}
+.note-t .pourquoi{font-size:11px;line-height:1.35;color:var(--t3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.note-t.propose{background:rgba(255,255,255,.7);box-shadow:none;outline:1.5px dashed var(--k1-200);outline-offset:-1.5px}
+.note-t.propose q{color:var(--t2)}
+.note-t.pour-toi{background:#f3f3f3;box-shadow:none}
+.note-t .gestes{margin-left:auto;display:flex;gap:4px}
+.note-t .gestes button{height:20px;padding:0 7px;border-radius:5px;border:1px solid var(--b-def);background:#fff;font-size:10px;font-weight:600;cursor:pointer}
+.note-t .gestes button:first-child{color:var(--k1)}
+.note-t.retiree{opacity:0;transform:scale(.8) rotate(var(--r));pointer-events:none}
+.etape-2 .note-t{cursor:grab;--r:0deg !important}
+.etape-2 .note-t:hover{box-shadow:var(--o-levee)}
+.note-t.tient{transition:none;cursor:grabbing;box-shadow:var(--o-levee);z-index:30;transform:rotate(2deg) scale(1.03)}
+.etape-3 .note-t{opacity:0;pointer-events:none;transform:scale(.6)}
+.note-ajout{position:absolute;width:196px;height:74px;border-radius:12px;border:1.5px dashed var(--b-forte);background:transparent;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--t3);font-size:12px;font-weight:500;cursor:pointer;transition:opacity .3s,border-color .2s,color .2s;z-index:3}
+.note-ajout:hover{border-color:var(--k1-200);color:var(--k1)}
+.etape-2 .note-ajout,.etape-3 .note-ajout{opacity:0;pointer-events:none}
+
+/* Les groupes */
+.zone{position:absolute;top:108px;bottom:28px;border-radius:20px;border:1.5px dashed var(--b-forte);background:rgba(255,255,255,.35);opacity:0;transition:opacity .4s var(--ease),border-color .2s,background-color .2s;pointer-events:none}
+.etape-2 .zone{opacity:1;pointer-events:auto}
+.zone.survol{border-color:var(--k1);background:rgba(229,236,252,.6)}
+.zone header{padding:12px 14px 0;display:flex;flex-direction:column;gap:2px}
+.zone header b{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.zone header span{font-size:11px;color:var(--t3);line-height:1.35}
+.zone header .tag{font-size:10px;font-weight:600;color:var(--k1);background:var(--teinte);border-radius:999px;padding:1px 7px}
+.zone.toi{border-style:solid;border-color:var(--b-def);background:rgba(236,236,236,.35)}
+.zone .vide{position:absolute;inset:auto 0 40% 0;text-align:center;font-size:12px;color:var(--t3)}
+
+/* Les agents (étape 3) */
+.cartes{position:absolute;left:0;right:0;bottom:30px;display:flex;justify-content:center;align-items:flex-end;gap:28px;opacity:0;pointer-events:none;transition:opacity .5s var(--ease) .2s}
+.etape-3 .cartes{opacity:1;pointer-events:auto;padding-left:230px}
+.carte{position:relative;width:150px;aspect-ratio:3/4;border:0;padding:0;border-radius:20px;cursor:pointer;text-align:left;transform:translateY(var(--y,0)) rotate(var(--r,0deg));transform-origin:50% 100%;transition:transform .34s var(--ease),box-shadow .34s var(--ease);box-shadow:var(--o-sm);outline-offset:4px}
+.carte:hover{--y:-6px}
+.carte[aria-pressed=true]{--y:-18px;--r:0deg !important;box-shadow:var(--o-levee);outline:2px solid var(--k1)}
+.carte .face{position:absolute;inset:0;border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
+.carte .soleil{margin:14% auto 0;width:62%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.95) 0 30%,rgba(255,255,255,.35) 31% 46%,transparent 47%)}
+.carte .nom{margin-top:auto;padding:0 13px 13px;display:flex;flex-direction:column;gap:2px}
+.carte .nom b{font-size:15px;font-weight:600;line-height:1.1}
+.carte .nom b.attend{font-weight:500;color:var(--t3);font-style:italic}
+.carte .nom span{font-size:11px}
+.carte .nb{position:absolute;top:10px;left:10px;height:20px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.9);font-size:10px;font-weight:600;display:flex;align-items:center;color:var(--t2)}
+.carte.toi{background:transparent;box-shadow:none;border:1.5px solid var(--b-def);cursor:default;display:flex;flex-direction:column;justify-content:flex-end;padding:13px;gap:4px;background:rgba(243,243,243,.7)}
+.carte.toi b{font-size:15px;font-weight:600}
+.carte.toi span{font-size:11px;color:var(--t3);line-height:1.35}
+
+.detail{max-width:980px;margin:0 auto;padding:26px 32px 8px;display:grid;grid-template-columns:minmax(0,1fr) 248px;gap:32px}
+.entete-agent{display:flex;align-items:center;gap:14px}
+.entete-agent h2{margin:0;font-size:24px;letter-spacing:-.04em;font-weight:600;line-height:1}
+.entete-agent h2.attend{color:var(--t3);font-weight:500}
+.entete-agent .role{font-size:13px;margin-top:4px}
+.prenoms{margin:14px 0 0;display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--t2)}
+.prenoms button{height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--b-def);background:#fff;font-size:12px;font-weight:500;cursor:pointer}
+.prenoms button:hover{border-color:var(--b-forte)}
+.prenoms button[aria-pressed=true]{border-color:var(--b-acc);background:var(--teinte);color:var(--k1)}
+.prenoms input{height:28px;width:140px;border-radius:6px;border:1px solid var(--b-def);padding:0 10px;font:inherit;font-size:12px;outline:0}
+.prenoms input:focus{border-color:var(--k1-200)}
+.mission{margin:14px 0 18px;font-size:16px;line-height:1.5}
+.mission small{display:block;font-size:11px;color:var(--t3);margin-top:4px}
+.piliers{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pilier{background:var(--surface);border:1px solid var(--b-sub);border-radius:16px;padding:14px 16px}
+.pilier.large{grid-column:span 2}
+.pilier h4{margin:0 0 8px;font-size:11px;font-weight:500;color:var(--t3);display:flex;align-items:center;gap:6px}
+.pilier h4 svg{width:12px;height:12px;color:var(--k1)}
+.pilier ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.item{font-size:13px;line-height:1.45;color:var(--t1);display:flex;gap:8px;align-items:flex-start;border-radius:8px;padding:4px 6px;margin:0 -6px}
+.item .dit{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;color:var(--t3);background:var(--survol);border-radius:999px;padding:0 7px;line-height:17px;vertical-align:1px;cursor:help;white-space:nowrap}
+.item.propose{outline:1.5px dashed var(--k1-200);outline-offset:-1.5px;color:var(--t2);padding:6px 8px;margin:0}
+.item .gestes{flex:none;margin-left:auto;display:flex;gap:4px}
+.item .gestes button{height:22px;padding:0 7px;border-radius:5px;border:1px solid var(--b-def);background:#fff;font-size:11px;font-weight:600;cursor:pointer}
+.item .gestes button:first-child{color:var(--k1)}
+.item.garde .dit{color:var(--k1);background:var(--teinte)}
+.item.vide{color:var(--t3);font-style:italic}
+.cote{display:flex;flex-direction:column;gap:18px;padding-top:4px}
+.cote h5{margin:0 0 8px;font-size:11px;font-weight:500;color:var(--t3)}
+.teintes{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.teintes button{aspect-ratio:1;border-radius:8px;border:1px solid var(--b-sub);background:#fff;padding:5px;cursor:pointer}
+.teintes button i{display:block;width:100%;height:100%;border-radius:5px}
+.teintes button[aria-pressed=true]{outline:2px solid var(--k1);outline-offset:1px}
+.actions{display:flex;flex-direction:column;gap:6px}
+.actions .btn{justify-content:flex-start}
+.bilan-d{font-size:11px;color:var(--t3);line-height:1.5;margin:0}
+.qui{max-width:980px;margin:12px auto 0;padding:18px 32px 36px}
+.qui h3{margin:0 0 4px;font-size:13px;font-weight:600}
+.qui > p{margin:0 0 10px;font-size:12px;color:var(--t3)}
+.qui ul{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.qui li{display:flex;align-items:center;gap:8px;border:1px solid var(--b-sub);background:#fff;border-radius:12px;padding:9px 12px;font-size:12px}
+.qui li.vise{border-color:var(--b-acc);background:var(--teinte)}
+.qui li q{flex:1;min-width:0;quotes:"« " " »"}
+.qui li b{font-weight:500;display:flex;align-items:center;gap:6px}
+.note-bas{font-size:11px;color:var(--t3);margin:10px 0 0}
+
+.conv{width:404px;flex:none;border-left:1px solid var(--b-sub);background:var(--surface);display:flex;flex-direction:column;min-height:0;position:relative}
+.conv-haut{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--b-sub)}
+.conv-haut b{font-size:13px;font-weight:600}
+.conv-haut span{font-size:11px;color:var(--t3)}
+.fil{flex:1;min-height:0;overflow-y:auto;padding:16px 18px 8px;display:flex;flex-direction:column;gap:14px;scrollbar-width:none;background:var(--page)}
+.msg{display:grid;grid-template-columns:26px 1fr;gap:8px;animation:arrive .4s var(--ease) backwards}
+.msg .qui-parle{font-size:12px;font-weight:600;color:var(--k1);margin-bottom:3px}
+.msg p{margin:0;font-size:13px;line-height:1.5}
+.moi{align-self:flex-end;max-width:88%;background:#262626;color:#fff;border-radius:16px 16px 4px 16px;padding:8px 12px;font-size:13px;line-height:1.45;animation:arrive .4s var(--ease) backwards}
+@keyframes arrive{from{opacity:0;transform:translateY(6px)}}
+.choix{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.choix span{font-size:12px;border:1px solid var(--b-def);background:#fff;border-radius:8px;padding:5px 9px;color:var(--t3)}
+.choix span.pris{border-color:var(--b-acc);background:var(--teinte);color:var(--t1)}
+.choix span.ouvert{color:var(--t1);cursor:pointer}
+.choix span.ouvert:hover{border-color:var(--b-forte)}
+.ligne-eq{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);background:#fff;border:1px solid var(--b-sub);border-radius:10px;padding:7px 10px}
+.suggestions{padding:10px 16px 0;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--b-sub)}
+.suggestions small{font-size:11px;color:var(--t3);display:flex;align-items:center;gap:6px}
+.puces{display:flex;flex-wrap:wrap;gap:6px}
+.puces button{height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--b-sub);background:var(--page);font-size:12px;font-weight:500;cursor:pointer}
+.puces button:hover{border-color:var(--b-forte);background:#fff}
+.composeur{padding:10px 16px 14px}
+.boite{border:1px solid var(--b-def);border-radius:20px;background:#fff;box-shadow:var(--o-amb);padding:12px 12px 10px}
+.boite textarea{width:100%;border:0;outline:0;resize:none;font:inherit;font-size:14px;min-height:44px;color:var(--t1)}
+.boite textarea::placeholder{color:var(--t3)}
+.boite .bas{display:flex;align-items:center;gap:6px}
+.boite .bas .envoyer{margin-left:auto;width:32px;height:32px;border-radius:8px;border:0;background:#262626;color:#fff;display:flex;align-items:center;justify-content:center}
+.cible{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 4px;border-radius:999px;background:var(--teinte);font-size:12px;font-weight:500;color:var(--k1)}
+.aide{font-size:11px;color:var(--t3);margin:8px 4px 0}
+
+.annot{position:absolute;max-width:240px;background:#000d2e;color:#fff;font-size:12px;line-height:1.4;padding:8px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(0,13,46,.3);z-index:40;pointer-events:none}
+.annot::before{content:attr(data-n);display:inline-flex;width:18px;height:18px;border-radius:50%;background:#003fe4;font-weight:700;font-size:11px;align-items:center;justify-content:center;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="meta">
+  <b>Maquette · L’équipe part de tes tâches</b>
+  <p>Trois temps : tes tâches dans tes mots, leur regroupement, puis les agents. En plein : ce que tu as dit ; en pointillés : ce que Cicco propose. Au 2, glisse une tâche d’un groupe à l’autre.</p>
+  <div class="bascule" role="group" aria-label="Étape">
+    <button type="button" data-aller="1" aria-pressed="true">1 · Tes tâches</button>
+    <button type="button" data-aller="2" aria-pressed="false">2 · Les regrouper</button>
+    <button type="button" data-aller="3" aria-pressed="false">3 · Ton équipe</button>
+    <button type="button" id="annots" aria-pressed="true">Annotations</button>
+  </div>
+</div>
+
+<div class="fenetre">
+  <nav class="rail">
+    <div class="logo"></div>
+    <div class="ic on" data-i="message-square"></div><div class="ic" data-i="folder"></div><div class="ic" data-i="layers-01"></div><div class="ic" data-i="calendar-01"></div><div class="ic" data-i="search-01"></div>
+    <div style="flex:1"></div><div class="ic" data-i="settings"></div>
+  </nav>
+  <aside class="barre">
+    <div class="ag on"><span class="rond k-cicco" style="width:24px;height:24px"></span>Cicco<span style="margin-left:auto;font-size:11px;color:var(--t3)">Assistant</span></div>
+    <h6>Mes agents</h6>
+    <div class="ag"><span class="rond" style="width:24px;height:24px;background:linear-gradient(#c7ddff,#ebf3fe)"></span>Hugo</div>
+    <div class="ag"><span class="rond" style="width:24px;height:24px;background:linear-gradient(#ffd0c5,#feefea)"></span>Iris</div>
+    <h6>Récents</h6>
+    <div class="ag" style="color:var(--t2);font-weight:400">Mon équipe</div>
+  </aside>
+
+  <div class="atelier etape-1" id="atelier">
+    <div class="haut">
+      <button class="btn discret" type="button" data-ic="chevron-left">Conversation</button>
+      <span class="sep"></span>
+      <nav class="etapes" aria-label="Étapes">
+        <button type="button" class="etape" data-aller="1"><i>1</i>Tes tâches</button><span class="fleche"></span>
+        <button type="button" class="etape" data-aller="2"><i>2</i>Les regrouper</button><span class="fleche"></span>
+        <button type="button" class="etape" data-aller="3"><i>3</i>Ton équipe</button>
+      </nav>
+      <button class="principal" type="button" id="suivant">Valider mes tâches</button>
+    </div>
+    <div class="corps">
+      <div class="plateau">
+        <div class="scene" id="scene">
+          <div class="scene-titre"><h1 id="titre"></h1><p id="sous-titre"></p></div>
+          <div class="legende"><span><i class="plein"></i>Tu l’as dit</span><span><i class="pointille"></i>Proposé par Cicco</span></div>
+          <div id="zones"></div>
+          <div id="notes"></div>
+          <button type="button" class="note-ajout" id="ajout"><span data-ic="plus-01"></span>Une tâche de plus</button>
+          <div class="cartes" id="cartes"></div>
+          <div class="annot" data-n="1" data-etape="1" style="left:32px;bottom:28px;max-width:420px">Rien n’est créé et aucun agent n’apparaît : on pose d’abord ce que tu fais, avec tes mots. Les agents viendront de là.</div>
+          <div class="annot" data-n="2" data-etape="1" style="right:28px;bottom:28px;max-width:250px">Une proposition de Cicco reste en pointillés tant que tu ne l’as pas gardée. Il dit pourquoi il l’ajoute.</div>
+          <div class="annot" data-n="1" data-etape="2" style="left:32px;bottom:-2px;max-width:440px">Les groupes sont une proposition : glisse une tâche ailleurs, ou demande « un seul agent pour tout ». Ici, deux groupes : le nombre vient de tes tâches, pas d’un modèle.</div>
+          <div class="annot" data-n="1" data-etape="3" style="left:32px;top:110px;max-width:230px">Un agent par groupe validé. Pas de prénom imposé : il attend le tien. Ce que tu gardes reste à toi.</div>
+        </div>
+        <div id="sous-scene" hidden>
+          <div class="detail" id="detail"></div>
+          <div class="qui">
+            <h3>Qui s’en charge</h3>
+            <p>Tes tâches telles que tu les as dites, et qui s’en occupe.</p>
+            <ul id="qui"></ul>
+            <p class="note-bas">Rien n’est écrit sur ton poste avant « Créer l’équipe ».</p>
+          </div>
+        </div>
+      </div>
+
+      <aside class="conv">
+        <div class="conv-haut"><span class="rond k-cicco" style="width:26px;height:26px"></span><div style="display:flex;flex-direction:column"><b>Cicco</b><span id="conv-sous">Parle-lui de ta semaine</span></div></div>
+        <div class="fil" id="fil"></div>
+        <div class="suggestions">
+          <small><span data-ic="stars"></span><span id="sugg-titre">Pour l’aider</span></small>
+          <div class="puces" id="puces"></div>
+        </div>
+        <div class="composeur">
+          <div class="boite">
+            <textarea id="champ" placeholder="Écris à Cicco…"></textarea>
+            <div class="bas">
+              <span class="cible" id="cible" hidden></span>
+              <button class="btn discret mini" type="button" data-ic="paperclip" aria-label="Joindre" style="width:28px;padding:0;justify-content:center"></button>
+              <button class="envoyer" type="button" aria-label="Envoyer" data-ic="arrow-up"></button>
+            </div>
+          </div>
+          <p class="aide">Ce que tu dis à Cicco change la table · Entrée pour envoyer.</p>
+        </div>
+        <div class="annot" data-n="3" data-etape="1" style="right:10px;top:60px;max-width:250px">Cicco commence par des questions ouvertes. Il ne propose rien avant d’avoir tes réponses.</div>
+        <div class="annot" data-n="3" data-etape="2" style="right:10px;top:60px;max-width:250px">Il ne demande qu’une chose à la fois, avec des réponses toutes prêtes, dont « je ne sais pas encore ».</div>
+        <div class="annot" data-n="2" data-etape="3" style="right:10px;top:60px;max-width:250px">Il demande ce qu’il ne sait pas (comment vérifier), au lieu de l’inventer.</div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script>
+const ICONES = {"stars": ["600 0 24 24", "<g><path d=\"M614.824 2.4231L616.654 7.3693L621.6 9.19957L616.654 11.0298L614.824 15.976L612.993 11.0298L608.047 9.19957L612.993 7.3693L614.824 2.4231Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" /><path d=\"M606.353 13.7172L607.952 16.0713L610.306 17.6702L607.952 19.269L606.353 21.6231L604.754 19.269L602.4 17.6702L604.754 16.0713L606.353 13.7172Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" /></g>"], "chevron-left": ["560 80 24 24", "<path d=\"M575 97L570 92L575 87\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "chevron-right": ["600 80 24 24", "<path d=\"M610 87L615 92L610 97\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "expand": ["720 40 24 24", "<path d=\"M729 43H725C723.895 43 723 43.8954 723 45V49M729 61H725C723.895 61 723 60.1046 723 59V55M735 43H739C740.105 43 741 43.8954 741 45V49M741 55V59C741 60.1046 740.105 61 739 61H735\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "x-01": ["640 200 24 24", "<path d=\"M660 204L644 220M660 220L644 204\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "check-01": ["400 0 24 24", "<path d=\"M416.8 8.39999L409.64 15.6L407.2 13.1457\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "arrow-up": ["400 40 24 24", "<path d=\"M419 50.6667L412 44L405 50.6667M412 44V60\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "align-left": ["80 0 24 24", "<path d=\"M82.4 3.74902L101.6 3.74902M82.4 8.94902L96.5241 8.94902M82.4 14.149L101.6 14.149M82.4 19.349L92.6621 19.349\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "palette": ["320 80 24 24", "<path d=\"M332 86.1488V86.1821M326.033 92.1491H326M336.243 87.9064L336.219 87.9299M327.781 96.3682L327.758 96.3917M327.781 87.9295L327.758 87.906M332 101.749C326.698 101.749 322.4 97.4508 322.4 92.1488C322.4 86.8469 326.698 82.5488 332 82.5488C337.302 82.5488 341.6 86.8469 341.6 92.1488C341.6 93.7629 340.109 94.8368 338.495 94.8368H337.868C337.544 94.8368 337.225 94.9122 336.936 95.0568C335.907 95.5716 335.489 96.8234 336.004 97.8528C336.149 98.1422 336.224 98.4613 336.224 98.7848V98.974C336.224 100.075 335.606 101.117 334.545 101.408C333.734 101.63 332.881 101.749 332 101.749Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "plus-01": ["120 160 24 24", "<path d=\"M132 164.8L132 179.2M139.2 172L124.8 172\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "pencil-01": ["520 80 24 24", "<path d=\"M524.8 95.7488L529 99.3488M524.2 95.7488L536.031 83.5043C537.305 82.2304 539.371 82.2304 540.645 83.5043C541.918 84.7782 541.918 86.8436 540.645 88.1175L528.4 99.9488L522.4 101.749L524.2 95.7488Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "message-square": ["80 40 24 24", "<path d=\"M86.6783 61.5999L91.687 56.5912H99.6C100.705 56.5912 101.6 55.6958 101.6 54.5912V44.3999C101.6 43.2953 100.705 42.3999 99.6 42.3999H84.4C83.2954 42.3999 82.4 43.2953 82.4 44.3999V54.5912C82.4 55.6958 83.2954 56.5912 84.4 56.5912H86.6783V61.5999Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "paperclip": ["240 160 24 24", "<path d=\"M249.857 167.929V173.929C249.857 175.112 250.817 176.071 252 176.071C253.183 176.071 254.143 175.112 254.143 173.929V167.714C254.143 165.466 252.32 163.643 250.071 163.643C247.823 163.643 246 165.466 246 167.714V174.357C246 177.671 248.686 180.357 252 180.357C255.314 180.357 258 177.671 258 174.357V167.929\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "microphone-01": ["240 40 24 24", "<path d=\"M244.398 51.1772C244.664 53.0037 245.578 54.6734 246.974 55.8809C248.37 57.0884 250.154 57.753 252 57.753M252 57.753C253.846 57.753 255.63 57.0884 257.026 55.8809C258.422 54.6734 259.336 53.0037 259.602 51.1772M252 57.753V61.6M252.001 42.4C251.128 42.4 250.291 42.7468 249.674 43.3641C249.056 43.9813 248.71 44.8185 248.71 45.6915V50.08C248.71 50.953 249.056 51.7902 249.674 52.4074C250.291 53.0247 251.128 53.3715 252.001 53.3715C252.874 53.3715 253.711 53.0247 254.328 52.4074C254.946 51.7902 255.293 50.953 255.293 50.08V45.6915C255.293 44.8185 254.946 43.9813 254.328 43.3641C253.711 42.7468 252.874 42.4 252.001 42.4Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "users-profiles-01": ["720 0 24 24", "<path d=\"M736.025 20.5708L736.026 17.3571C736.026 15.5819 734.587 14.1427 732.812 14.1427H725.614C723.84 14.1427 722.401 15.5815 722.4 17.3564L722.4 20.5708M741.6 20.571L741.6 17.3572C741.6 15.5821 740.161 14.1429 738.386 14.1429M735.406 4.06061C736.196 4.64624 736.707 5.5851 736.707 6.64343C736.707 7.70176 736.196 8.64061 735.406 9.22625M732.494 6.64325C732.494 8.41833 731.055 9.85731 729.28 9.85731C727.505 9.85731 726.066 8.41833 726.066 6.64325C726.066 4.86818 727.505 3.4292 729.28 3.4292C731.055 3.4292 732.494 4.86818 732.494 6.64325Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "minimise-01": ["480 80 24 24", "<path d=\"M482.4 95.4558H486.266C487.445 95.4558 488.4 96.3727 488.4 97.5038V101.6M488.4 82.3999V86.496C488.4 87.6271 487.445 88.544 486.267 88.544H482.4M501.6 95.4558H497.733C496.555 95.4558 495.6 96.3727 495.6 97.5038V101.6M495.6 82.3999V86.496C495.6 87.6271 496.555 88.544 497.733 88.544H501.6\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "home-01": ["440 80 24 24", "<path d=\"M443 89.4161C443 89.0467 443.188 88.7001 443.505 88.486L451.305 83.2112C451.721 82.9296 452.279 82.9296 452.695 83.2112L460.495 88.486C460.812 88.7001 461 89.0467 461 89.4161V99.2882C461 100.234 460.194 101 459.2 101H444.8C443.806 101 443 100.234 443 99.2882V89.4161Z\" stroke=\"currentColor\" stroke-width=\"2\" /><path d=\"M454.25 93.125C454.25 94.3676 453.243 95.375 452 95.375C450.757 95.375 449.75 94.3676 449.75 93.125C449.75 91.8824 450.757 90.875 452 90.875C453.243 90.875 454.25 91.8824 454.25 93.125Z\" stroke=\"currentColor\" stroke-width=\"2\" />"], "folder": ["600 40 24 24", "<path d=\"M602.401 48.4167L602.401 57.941C602.401 59.0456 603.296 59.9411 604.401 59.9411L619.6 59.9411C620.704 59.9411 621.6 59.0457 621.6 57.9412L621.6 48.0125C621.6 47.4602 621.152 47.0125 620.6 47.0125H612.084L609.319 44.0588H603.4C602.848 44.0588 602.4 44.5061 602.4 45.0585C602.401 46.0093 602.401 47.4362 602.401 48.4167Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "search-01": ["440 160 24 24", "<path d=\"M456.927 177.04L460.4 180.4M459.28 171.44C459.28 175.77 455.77 179.28 451.44 179.28C447.11 179.28 443.6 175.77 443.6 171.44C443.6 167.11 447.11 163.6 451.44 163.6C455.77 163.6 459.28 167.11 459.28 171.44Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" />"], "settings": ["520 160 24 24", "<path fill-rule=\"evenodd\" clip-rule=\"evenodd\" d=\"M533.676 164.316C533.249 162.561 530.751 162.561 530.324 164.316C530.26 164.58 530.135 164.825 529.958 165.031C529.782 165.237 529.559 165.399 529.309 165.503C529.058 165.607 528.786 165.65 528.516 165.629C528.245 165.608 527.984 165.524 527.752 165.383C526.208 164.442 524.442 166.209 525.383 167.752C525.99 168.749 525.451 170.049 524.317 170.325C522.561 170.751 522.561 173.25 524.317 173.675C524.581 173.739 524.826 173.865 525.032 174.041C525.238 174.218 525.4 174.44 525.504 174.691C525.608 174.942 525.651 175.214 525.63 175.484C525.609 175.755 525.524 176.017 525.383 176.248C524.442 177.792 526.208 179.558 527.752 178.617C527.984 178.476 528.245 178.391 528.516 178.37C528.787 178.349 529.058 178.392 529.309 178.496C529.56 178.6 529.783 178.762 529.959 178.968C530.136 179.174 530.261 179.419 530.325 179.683C530.751 181.439 533.25 181.439 533.675 179.683C533.739 179.419 533.865 179.174 534.041 178.968C534.218 178.762 534.44 178.601 534.691 178.497C534.942 178.393 535.214 178.35 535.484 178.371C535.755 178.392 536.016 178.476 536.248 178.617C537.792 179.558 539.558 177.792 538.617 176.248C538.476 176.016 538.392 175.755 538.371 175.484C538.35 175.214 538.393 174.942 538.497 174.691C538.601 174.441 538.762 174.218 538.968 174.041C539.174 173.865 539.419 173.739 539.683 173.675C541.439 173.249 541.439 170.75 539.683 170.325C539.419 170.261 539.174 170.136 538.968 169.959C538.762 169.783 538.6 169.56 538.496 169.309C538.392 169.059 538.349 168.787 538.37 168.516C538.391 168.246 538.476 167.984 538.617 167.752C539.558 166.209 537.792 164.442 536.248 165.383C536.016 165.524 535.755 165.609 535.484 165.63C535.213 165.651 534.942 165.608 534.691 165.504C534.44 165.4 534.217 165.239 534.041 165.032C533.864 164.826 533.739 164.581 533.675 164.317L533.676 164.316Z\" stroke=\"currentColor\" stroke-width=\"2\" /><path d=\"M534 172C534 173.105 533.105 174 532 174C530.895 174 530 173.105 530 172C530 170.895 530.895 170 532 170C533.105 170 534 170.895 534 172Z\" stroke=\"currentColor\" stroke-width=\"2\" />"], "layers-01": ["600 40 24 24", "<path d=\"M612 46.9255L621.6 52.0001L612 57.0746L602.4 52.0001L612 46.9255Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" />"], "calendar-01": ["400 0 24 24", "<path d=\"M404.75 8.91425H418.75M406.56 3V4.54304M416.75 3V4.54285M419.75 7.24285V18.3C419.75 19.7912 418.556 21 417.083 21H406.417C404.944 21 403.75 19.7912 403.75 18.3V7.24285C403.75 5.75168 404.944 4.54285 406.417 4.54285H417.083C418.556 4.54285 419.75 5.75168 419.75 7.24285Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"], "trash-01": ["280 200 24 24", "<path d=\"M284 206.176H300M289 203H295M290 216.765V210.412M294 216.765V210.412M295.5 221H288.5C287.395 221 286.5 220.052 286.5 218.882L286.043 207.279C286.02 206.678 286.474 206.176 287.043 206.176H296.957C297.526 206.176 297.98 206.678 297.957 207.279L297.5 218.882C297.5 220.052 296.605 221 295.5 221Z\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />"]};
+const ic = (n, t=16) => { const [vb, b] = ICONES[n]; return `<svg class="i" style="width:${t}px;height:${t}px" viewBox="${vb}" fill="none" aria-hidden="true">${b}</svg>`; };
+document.querySelectorAll("[data-ic]").forEach(e => e.insertAdjacentHTML("afterbegin", ic(e.dataset.ic)));
+document.querySelectorAll("[data-i]").forEach(e => e.innerHTML = ic(e.dataset.i, 18));
+
+const TEINTES = {
+  "bleu-k1":["#c7ddff","#ebf3fe","#4468a2"],"bleu-k2":["#b7e3ff","#e6f5fe","#1c6f9d"],"bleu-k3":["#b0e7ef","#e1f7fa","#037683"],
+  "violet":["#dbd6ff","#f2f0fe","#695c9e"],"rose":["#f5cdf1","#fdecfa","#8a5086"],"rouge":["#ffcfcc","#ffeeec","#9f4c4d"],
+  "orange":["#ffd0c5","#feefea","#9e4f41"],"orange-k2":["#fbd4b8","#feefe4","#915a31"],"jaune":["#f3eec1","#f5f3e2","#756a2a"],
+  "ocre":["#f0dab4","#fbf1e1","#846328"],"vert":["#b1ebd4","#e1f9ee","#067c5e"],"vert-k2":["#cde6bb","#ecf7e4","#527537"]
+};
+const fond = t => `linear-gradient(${TEINTES[t][0]},${TEINTES[t][1]})`;
+const rond = (t, n=20) => `<span class="rond" style="width:${n}px;height:${n}px;background:${fond(t)}"></span>`;
+
+/* ─── Les données : ce qu'elle a dit, et ce que Cicco propose ─── */
+const TACHES = [
+  { id:"mails", t:"Répondre aux mails des clients", src:"dit", groupe:"a" },
+  { id:"post", t:"Écrire le post LinkedIn du lundi", src:"dit", groupe:"a" },
+  { id:"news", t:"Préparer la newsletter du mois", src:"dit", groupe:"a" },
+  { id:"caler", t:"Caler les rendez-vous avec les prospects", src:"dit", groupe:"b" },
+  { id:"prep", t:"Préparer mes rendez-vous", src:"dit", groupe:"b" },
+  { id:"devis", t:"Relancer les devis sans réponse", src:"propose", groupe:"b", pourquoi:"Tu parles de prospects : les relances vont souvent avec." },
+  { id:"envoi", t:"Envoyer les mails", src:"toi", groupe:"toi" },
+  { id:"valider", t:"Valider les rendez-vous", src:"toi", groupe:"toi" },
+];
+const GROUPES = [
+  { id:"a", nom:"Les textes", pourquoi:"Même ton, même relecture.", teinte:"violet" },
+  { id:"b", nom:"Rendez-vous et prospects", pourquoi:"Ton agenda et tes prospects.", teinte:"bleu-k3" },
+  { id:"toi", nom:"Pour toi", pourquoi:"Ce que tu as dit garder." },
+];
+const AGENTS = {
+  a: { prenoms:["Léa","Romy","Nina"], role:"Rédaction", mission:"Prépare tes textes (mails clients, post du lundi, newsletter) en brouillons à relire.",
+       livre:[{t:"Un brouillon prêt à relire, dans un fichier", src:"dit", cite:"« confier les brouillons »"}],
+       limites:[{t:"N’envoie jamais un mail lui-même", src:"dit", cite:"« je garde l’envoi »"}],
+       verifie:[],
+       methode:[{t:"Tutoie, comme toi dans tes mails", src:"propose"},{t:"Part de tes notes de la semaine", src:"propose"}] },
+  b: { prenoms:["Malo","Inès","Sacha"], role:"Agenda et prospects", mission:"Cale et prépare tes rendez-vous avec les prospects, et relance les devis.",
+       livre:[{t:"Des créneaux proposés, une fiche par rendez-vous", src:"propose"}],
+       limites:[{t:"Ne confirme aucun rendez-vous sans toi", src:"dit", cite:"« c’est moi qui valide les rendez-vous »"}],
+       verifie:[{t:"Aucun créneau en conflit avec ton agenda", src:"propose"}],
+       methode:[{t:"Croise ton agenda et tes rappels", src:"propose"}] },
+};
+
+/* ─── La conversation, étape par étape ─── */
+const C = (p, extra="") => `<div class="msg"><span class="rond k-cicco" style="width:26px;height:26px"></span><div><div class="qui-parle">Cicco</div><p>${p}</p>${extra}</div></div>`;
+const M = p => `<div class="moi">${p}</div>`;
+const choix = (l, ouverts) => `<div class="choix">${l.map(([t, pris]) => `<span class="${pris ? "pris" : ouverts ? "ouvert" : ""}">${t}</span>`).join("")}</div>`;
+const FIL = {
+  1: [
+    C("Pour composer ton équipe, partons de ce que tu fais. Qu’est-ce qui revient dans ta semaine ? Dis-le comme à un collègue."),
+    M("Je réponds aux mails des clients, j’écris le post LinkedIn du lundi, la newsletter une fois par mois, et je passe un temps fou à caler et préparer mes rendez-vous avec les prospects."),
+    C("Et dans tout ça, qu’est-ce que tu veux garder pour toi ?", choix([["L’envoi des mails",1],["Valider les rendez-vous",1],["Rien",0],["Je ne sais pas encore",0]])),
+    M("L’envoi des mails, et c’est moi qui valide les rendez-vous."),
+    C("J’ai posé tes tâches sur la table, avec tes mots. J’en ajoute une en pointillés, à garder ou retirer : les relances de devis. Il en manque ?"),
+  ],
+  2: [
+    M("C’est tout, c’est bon."),
+    C("Je les regrouperais comme ça, mais ce n’est qu’une proposition : déplace une tâche, ou dis-moi."),
+    C("Un agent pour les textes et un pour les rendez-vous, ou un seul pour tout ?", choix([["Deux agents",0],["Un seul",0],["Je ne sais pas encore",0]], true)),
+  ],
+  3: [
+    M("Deux agents."),
+    C("Voilà tes deux agents. Ce que tu as dit est en plein ; ce que j’ajoute est en pointillés, à garder ou retirer. Choisis-leur un prénom.", `<div class="ligne-eq">${rond("violet")}${rond("bleu-k3")}2 agents, 0 prénom choisi</div>`),
+    C("Comment veux-tu que celui des textes vérifie son travail ?", choix([["Relire les chiffres et les noms cités",0],["Me montrer deux versions",0],["Rien de spécial",0]], true)),
+  ],
+};
+const PUCES = {
+  1: { titre:"Pour l’aider", l:[["Une tâche de plus","J’oublie : je fais aussi "],["Ça change selon les semaines","Ça dépend des semaines : "],["Je ne sais pas trop","Je ne sais pas trop ce que je pourrais confier."]] },
+  2: { titre:"Sur les groupes", l:[["Un seul agent pour tout","Un seul agent pour tout."],["Séparer rendez-vous et devis","Sépare les rendez-vous et les relances de devis."],["Je garde aussi…","Je garde aussi "]] },
+};
+const TITRES = {
+  1: ["Tes tâches", "Ce qui revient dans ta semaine, avec tes mots. Garde, retire ou ajoute : rien n’est créé à ce stade."],
+  2: ["Les regrouper", "Cicco propose des groupes. Glisse une tâche d’un groupe à l’autre : chaque groupe deviendra un agent."],
+  3: ["Ton équipe", ""],
+};
+const LIBELLES = { 1:"Valider mes tâches", 2:"Valider les groupes", 3:"Créer l’équipe" };
+
+let etape = 1, choisi = "a";
+const prenom = { a:"", b:"" };
+const teinte = { a:"violet", b:"bleu-k3" };
+const gardes = new Set();
+
+/* ─── La table ─── */
+const scene = document.getElementById("scene");
+const L = () => scene.clientWidth;
+function positions() {
+  const pos = {};
+  if (etape === 1) {
+    const w = L(), col = Math.min(236, (w - 64) / 3);
+    const x0 = (w - (col * 2 + 196)) / 2;
+    const jit = [[-6,2,-2],[4,-3,5],[-3,6,-4]], rot = [-2,1.5,-1,2,-1.5,1,-2.5,1.5];
+    let k = 0;
+    for (const t of TACHES) {
+      if (t.retiree) continue;
+      const c = k % 3, r = Math.floor(k / 3);
+      pos[t.id] = { x: x0 + c * col + jit[r][c], y: 112 + r * 132 + jit[c][r] * 2, r: rot[k % rot.length] };
+      k++;
+    }
+    const c = k % 3, r = Math.floor(k / 3);
+    pos.ajout = { x: x0 + c * col, y: 112 + r * 132 };
+  } else {
+    const z = zones();
+    for (const g of GROUPES) {
+      let y = 108 + 78;
+      TACHES.filter(t => !t.retiree && t.groupe === g.id).forEach((t) => {
+        pos[t.id] = { x: z[g.id].x + (z[g.id].w - 196) / 2, y, r: 0 };
+        y += (t.src === "propose" && !gardes.has(t.id) ? 118 : 74) + 10;
+      });
+    }
+  }
+  return pos;
+}
+function zones() {
+  const w = L(), m = 24, g = 14, zw = (w - m * 2 - g * 2) / 3, r = {};
+  GROUPES.forEach((gr, i) => r[gr.id] = { x: m + i * (zw + g), w: zw });
+  return r;
+}
+function dessinerTable() {
+  document.getElementById("notes").innerHTML = TACHES.map(t => `
+    <div class="note-t ${t.src === "propose" && !gardes.has(t.id) ? "propose" : ""} ${t.src === "toi" ? "pour-toi" : ""} ${t.retiree ? "retiree" : ""}" data-id="${t.id}" title="${t.pourquoi ?? ""}">
+      <q>${t.t}</q>
+      ${t.src === "propose" && !gardes.has(t.id) ? `<span class="pourquoi">${t.pourquoi}</span>` : ""}
+      <span class="src">${t.src === "toi" ? `<span class="rond toi" style="width:12px;height:12px"></span><b>Tu le gardes</b>` : t.src === "dit" || gardes.has(t.id) ? `<b>${gardes.has(t.id) ? "Gardée" : "Tu l’as dit"}</b>` : `<b style="color:var(--k1)">Proposé par Cicco</b>`}
+      ${t.src === "propose" && !gardes.has(t.id) && etape === 1 ? `<span class="gestes"><button type="button" data-garder="${t.id}">Garder</button><button type="button" data-retirer="${t.id}">Retirer</button></span>` : ""}</span>
+    </div>`).join("");
+  const z = zones();
+  document.getElementById("zones").innerHTML = GROUPES.map(g => {
+    const n = TACHES.filter(t => !t.retiree && t.groupe === g.id).length;
+    return `<div class="zone ${g.id === "toi" ? "toi" : ""}" data-zone="${g.id}" style="left:${z[g.id].x}px;width:${z[g.id].w}px">
+      <header><b>${g.id === "toi" ? `<span class="rond toi" style="width:14px;height:14px"></span>` : rond(g.teinte, 14)}${g.nom}${g.id !== "toi" ? `<span class="tag">proposé</span>` : ""}</b><span>${n} tâche${n > 1 ? "s" : ""} · ${g.pourquoi}</span></header>
+      ${n ? "" : `<div class="vide">Glisse une tâche ici</div>`}</div>`;
+  }).join("");
+  placer();
+  document.querySelectorAll("[data-garder]").forEach(b => b.onclick = e => { e.stopPropagation(); gardes.add(b.dataset.garder); dessinerTable(); });
+  document.querySelectorAll("[data-retirer]").forEach(b => b.onclick = e => { e.stopPropagation(); TACHES.find(t => t.id === b.dataset.retirer).retiree = true; dessinerTable(); });
+  brancherGlisser();
+}
+function placer() {
+  const p = positions();
+  document.querySelectorAll(".note-t").forEach(n => { const q = p[n.dataset.id]; if (!q) return; n.style.left = q.x + "px"; n.style.top = q.y + "px"; n.style.setProperty("--r", q.r + "deg"); });
+  if (p.ajout) { const a = document.getElementById("ajout"); a.style.left = p.ajout.x + "px"; a.style.top = p.ajout.y + "px"; }
+}
+function brancherGlisser() {
+  document.querySelectorAll(".note-t").forEach(n => n.onpointerdown = e => {
+    if (etape !== 2 || e.target.closest("button")) return;
+    const box = scene.getBoundingClientRect(), dx = e.clientX - n.offsetLeft - box.left, dy = e.clientY - n.offsetTop - box.top;
+    n.classList.add("tient"); n.setPointerCapture(e.pointerId);
+    const sous = x => { const z = zones(); return GROUPES.find(g => x >= z[g.id].x && x <= z[g.id].x + z[g.id].w)?.id; };
+    n.onpointermove = m => {
+      n.style.left = m.clientX - box.left - dx + "px"; n.style.top = m.clientY - box.top - dy + "px";
+      const id = sous(m.clientX - box.left);
+      document.querySelectorAll(".zone").forEach(z => z.classList.toggle("survol", z.dataset.zone === id));
+    };
+    n.onpointerup = u => {
+      n.onpointermove = n.onpointerup = null; n.classList.remove("tient");
+      const id = sous(u.clientX - box.left);
+      if (id) TACHES.find(t => t.id === n.dataset.id).groupe = id;
+      dessinerTable();
+    };
+  });
+}
+
+/* ─── L'équipe (étape 3) ─── */
+const groupesAgents = () => GROUPES.filter(g => g.id !== "toi" && TACHES.some(t => !t.retiree && t.groupe === g.id));
+function dessinerEquipe() {
+  const gs = groupesAgents();
+  if (!gs.some(g => g.id === choisi)) choisi = gs[0]?.id;
+  const toi = TACHES.filter(t => !t.retiree && t.groupe === "toi");
+  document.getElementById("cartes").innerHTML = gs.map((g, i) => {
+    const a = AGENTS[g.id] ?? { role: g.nom }, n = TACHES.filter(t => !t.retiree && t.groupe === g.id).length;
+    return `<button type="button" class="carte" data-g="${g.id}" aria-pressed="${g.id === choisi}" style="--r:${(i - (gs.length - 1) / 2) * 4}deg">
+      <div class="face" style="background:${fond(teinte[g.id])}"><span class="nb">${n} tâche${n > 1 ? "s" : ""}</span><div class="soleil"></div>
+      <span class="nom">${prenom[g.id] ? `<b>${prenom[g.id]}</b>` : `<b class="attend">Sans prénom</b>`}<span style="color:${TEINTES[teinte[g.id]][2]}">${a.role}</span></span></div></button>`;
+  }).join("") + (toi.length ? `<div class="carte toi"><span class="rond toi" style="width:28px;height:28px"></span><b>Toi</b><span>${toi.map(t => t.t).join(" · ")}</span></div>` : "");
+  document.querySelectorAll(".carte[data-g]").forEach(c => c.onclick = () => { choisi = c.dataset.g; dessinerEquipe(); });
+  const sansPrenom = gs.filter(g => !prenom[g.id]).length;
+  document.getElementById("sous-titre").textContent = sansPrenom ? `${gs.length} agent${gs.length > 1 ? "s" : ""}, un par groupe. ${sansPrenom > 1 ? `${sansPrenom} attendent leur prénom.` : "Un attend son prénom."}` : `${gs.length} agents prêts à naître.`;
+  if (etape === 3) document.getElementById("suivant").disabled = sansPrenom > 0;
+  document.querySelector(".ligne-eq") && (document.querySelector(".ligne-eq").lastChild.textContent = `${gs.length} agents, ${gs.length - sansPrenom} prénom${gs.length - sansPrenom > 1 ? "s" : ""} choisi${gs.length - sansPrenom > 1 ? "s" : ""}`);
+  dessinerDetail();
+}
+const item = (x, k) => {
+  const id = `${choisi}-${k}`, garde = gardes.has(id);
+  if (x.src === "propose" && !garde) return `<li class="item propose" data-item="${id}"><span>${x.t}</span><span class="gestes"><button type="button" data-g-item="${id}">Garder</button><button type="button" data-r-item="${id}">Retirer</button></span></li>`;
+  return `<li class="item ${garde ? "garde" : ""}"><span>${x.t}<span class="dit" title="${x.cite ?? ""}">${garde ? "gardé" : "tu l’as dit"}</span></span></li>`;
+};
+const retires = new Set();
+function dessinerDetail() {
+  const g = GROUPES.find(x => x.id === choisi), a = AGENTS[choisi];
+  if (!g || !a) { document.getElementById("detail").innerHTML = ""; return; }
+  const quand = TACHES.filter(t => !t.retiree && t.groupe === choisi).map(t => ({ t: t.t, src: t.src === "propose" && !gardes.has(t.id) ? "propose" : "dit", cite: `« ${t.t} »` }));
+  const liste = (k, l) => { const v = l.map((x, i) => ({ x, k: `${k}${i}` })).filter(o => !retires.has(`${choisi}-${o.k}`)); return v.length ? v.map(o => item(o.x, o.k)).join("") : `<li class="item vide">Cicco te le demande</li>`; };
+  const nom = prenom[choisi];
+  document.getElementById("detail").innerHTML = `
+    <div>
+      <div class="entete-agent">${rond(teinte[choisi], 56)}<div><h2 class="${nom ? "" : "attend"}">${nom || "Sans prénom"}</h2><div class="role" style="color:${TEINTES[teinte[choisi]][2]}">${a.role}</div></div></div>
+      <div class="prenoms"><span>Son prénom :</span>${a.prenoms.map(p => `<button type="button" data-prenom="${p}" aria-pressed="${p === nom}">${p}</button>`).join("")}<input id="prenom-libre" placeholder="Ou écris le tien" value="${nom && !a.prenoms.includes(nom) ? nom : ""}"></div>
+      <p class="mission">${a.mission}<small>Écrite par Cicco d’après tes tâches · à corriger en lui parlant</small></p>
+      <div class="piliers">
+        <div class="pilier"><h4>${ic("stars", 12)}Quand l’appeler</h4><ul>${quand.map((x, i) => item(x, "q" + i)).join("")}</ul></div>
+        <div class="pilier"><h4>${ic("stars", 12)}Ce qu’il livre</h4><ul>${liste("l", a.livre)}</ul></div>
+        <div class="pilier"><h4>${ic("stars", 12)}Ses limites</h4><ul>${liste("s", a.limites)}</ul></div>
+        <div class="pilier"><h4>${ic("stars", 12)}Comment il vérifie</h4><ul>${liste("v", a.verifie)}</ul></div>
+        <div class="pilier large"><h4>${ic("stars", 12)}Comment il travaille</h4><ul>${liste("m", a.methode)}</ul></div>
+      </div>
+    </div>
+    <div class="cote">
+      <div><h5>Sa couleur</h5><div class="teintes">${Object.keys(TEINTES).map(t => `<button type="button" aria-label="${t}" aria-pressed="${t === teinte[choisi]}" data-t="${t}"><i style="background:${TEINTES[t][0]}"></i></button>`).join("")}</div></div>
+      <div><h5>Avec ${nom || "cet agent"}</h5><div class="actions">
+        <button class="btn" type="button">${ic("align-left", 14)}Voir sa fiche</button>
+        <button class="btn" type="button">${ic("stars", 14)}L’affiner et l’éprouver</button>
+        <button class="btn discret" type="button">Le laisser de côté</button>
+      </div></div>
+      <p class="bilan-d">Sa fiche : ~230 jetons, relue à chaque appel. Une ligne en pointillés n’y entre que si tu la gardes.</p>
+    </div>`;
+  document.querySelectorAll("[data-prenom]").forEach(b => b.onclick = () => { prenom[choisi] = b.dataset.prenom; dessinerEquipe(); });
+  document.getElementById("prenom-libre").onchange = e => { prenom[choisi] = e.target.value.trim(); dessinerEquipe(); };
+  document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { teinte[choisi] = b.dataset.t; dessinerEquipe(); });
+  document.querySelectorAll("[data-g-item]").forEach(b => b.onclick = () => { gardes.add(b.dataset.gItem); dessinerDetail(); });
+  document.querySelectorAll("[data-r-item]").forEach(b => b.onclick = () => { retires.add(b.dataset.rItem); dessinerDetail(); });
+  document.getElementById("qui").innerHTML = TACHES.filter(t => !t.retiree).map(t => {
+    const ag = t.groupe !== "toi", n = ag ? (prenom[t.groupe] || "Sans prénom") : "Toi";
+    return `<li class="${t.groupe === choisi ? "vise" : ""}"><q>${t.t}</q>${ic("chevron-right", 14)}<b>${ag ? rond(teinte[t.groupe]) : `<span class="rond toi" style="width:20px;height:20px"></span>`}${n}</b></li>`;
+  }).join("");
+  const cible = document.getElementById("cible");
+  cible.hidden = false; cible.innerHTML = `${rond(teinte[choisi], 18)}À propos de ${nom || a.role.toLowerCase()}`;
+  const qui = nom || "cet agent";
+  puces(`Pour ${qui}`, [[`Ses limites`, `${nom || "Il"} ne doit jamais `], ["Ce qu’il livre", `${nom || "Il"} devrait livrer `], ["Son ton", `${nom || "Il"} écrit plutôt `], ["Le retirer", `Je n’ai pas besoin de ${qui}.`]]);
+}
+
+/* ─── La conversation ─── */
+function puces(titre, l) {
+  document.getElementById("sugg-titre").textContent = titre;
+  document.getElementById("puces").innerHTML = l.map(([x, t]) => `<button type="button" data-texte="${t}">${x}</button>`).join("");
+  document.querySelectorAll("#puces button").forEach(b => b.onclick = () => { const c = document.getElementById("champ"); c.value = b.dataset.texte; c.focus(); c.setSelectionRange(c.value.length, c.value.length); });
+}
+function dessinerFil() {
+  const f = document.getElementById("fil");
+  f.innerHTML = [1, 2, 3].filter(n => n <= etape).flatMap(n => FIL[n]).join("");
+  f.querySelectorAll(".choix span.ouvert").forEach(s => s.onclick = () => {
+    if (s.textContent === "Deux agents" || s.textContent === "Un seul") aller(3);
+    else { s.classList.add("pris"); s.parentElement.querySelectorAll("span").forEach(x => x.classList.remove("ouvert")); }
+  });
+  if (etape === 3) f.querySelectorAll(".choix").forEach(c => { const d = [...c.children].find(x => x.textContent === "Deux agents"); if (d) { d.classList.add("pris"); c.querySelectorAll("span").forEach(x => x.classList.remove("ouvert")); } });
+  f.scrollTop = 1e6;
+  document.getElementById("conv-sous").textContent = { 1: "Parle-lui de ta semaine", 2: "Il propose, tu décides", 3: "Retouche l’équipe en lui parlant" }[etape];
+}
+
+function aller(n) {
+  etape = n;
+  const at = document.getElementById("atelier");
+  at.className = `atelier etape-${n}`;
+  document.querySelectorAll(".etape").forEach(b => { const k = +b.dataset.aller; b.toggleAttribute("aria-current", k === n); if (k === n) b.setAttribute("aria-current", "step"); b.classList.toggle("faite", k < n); });
+  document.querySelectorAll(".bascule [data-aller]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.aller === n));
+  document.getElementById("titre").textContent = TITRES[n][0];
+  document.getElementById("sous-titre").textContent = TITRES[n][1];
+  const s = document.getElementById("suivant"); s.textContent = LIBELLES[n]; s.disabled = false;
+  document.getElementById("sous-scene").hidden = n !== 3;
+  document.querySelectorAll(".annot").forEach(a => a.hidden = !annots || +a.dataset.etape !== n);
+  dessinerTable(); dessinerFil();
+  if (n === 3) dessinerEquipe();
+  else { document.getElementById("cible").hidden = true; puces(PUCES[n].titre, PUCES[n].l); }
+}
+document.querySelectorAll("[data-aller]").forEach(b => b.onclick = () => aller(+b.dataset.aller));
+document.getElementById("suivant").onclick = () => { if (etape < 3) aller(etape + 1); else { const s = document.getElementById("suivant"); s.textContent = "Équipe créée"; s.disabled = true; } };
+document.getElementById("ajout").onclick = () => { const c = document.getElementById("champ"); c.value = "J’oublie : je fais aussi "; c.focus(); };
+let annots = true;
+const bA = document.getElementById("annots");
+bA.onclick = () => { annots = !annots; bA.setAttribute("aria-pressed", annots); aller(etape); };
+window.addEventListener("resize", placer);
+aller(1);
+</script>
+</body>
+</html>

@@ -21,7 +21,9 @@ import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWo
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse, Reactions } from "./ActionsReponse";
 import { MenuMessage, type CibleMessage } from "./MenuMessage";
+import { useDansAtelierEquipe } from "./atelier-equipe/ouvrir";
 import { BarreAtelier } from "./CarteAtelier";
+import { BarreEquipe } from "./CarteEquipe";
 import { MessagePartView } from "./MessageParts";
 import { RailMessages } from "./RailMessages";
 
@@ -465,6 +467,8 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   const ateliers = useMemo(() => plierAteliers(messages), [messages]);
   /* L'atelier d'une équipe, de même (cf. atelier-equipe.ts). */
   const equipes = useMemo(() => plierEquipes(messages), [messages]);
+  /* Dans l'atelier d'une équipe en grand, le fil est la colonne de droite : la table est déjà à l'écran. */
+  const dansAtelierEquipe = useDansAtelierEquipe();
 
   /* Pour les réponses toutes prêtes : le premier message de la personne après chaque réponse. */
   const reponses = useMemo(() => {
@@ -485,6 +489,7 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
     <div className="relative flex min-h-0 flex-1 flex-col">
       {messageExport}
       <BarreAtelier zone={zone} ateliers={ateliers} />
+      {!dansAtelierEquipe && <BarreEquipe zone={zone} equipes={equipes} chatId={chatId} />}
       <div
         ref={zone}
         onScroll={(e) => {
