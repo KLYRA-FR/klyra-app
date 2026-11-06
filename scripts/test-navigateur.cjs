@@ -11,7 +11,7 @@
  * - réglage coupé : plus d'outils, ni dans tools/list du serveur MCP de l'app.
  */
 /* eslint-disable @typescript-eslint/no-require-imports -- lancé par Electron en CommonJS */
-const { app, BrowserWindow, safeStorage } = require("electron");
+const { app, BrowserWindow, safeStorage, session } = require("electron");
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -64,7 +64,28 @@ const ENVOI = (port) => `<!doctype html><meta charset="utf-8"><title>Envoi</titl
 <script>window.addEventListener("message", (e) => { if (e.data === "clic-cadre") window.clicCadre = true; });</script>
 </body>`;
 
+let entetesAccueil = null;
+const entetesHttps = [];
+/** Un serveur https local, au certificat créé pour le test (null sans openssl). */
+async function serveurHttps() {
+  const { execFileSync } = require("node:child_process");
+  const cle = path.join(TMP, "cle.pem");
+  const cert = path.join(TMP, "cert.pem");
+  try {
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", cle, "-out", cert, "-days", "1", "-subj", "/CN=127.0.0.1"], { stdio: "ignore" });
+  } catch {
+    return null;
+  }
+  const s = require("node:https").createServer({ key: fs.readFileSync(cle), cert: fs.readFileSync(cert) }, (req, res) => {
+    entetesHttps.push(req.headers);
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Accept-CH": "Sec-CH-UA-Full-Version-List, Sec-CH-UA-Platform-Version" });
+    res.end(`<!doctype html><meta charset="utf-8"><title>Sécurisé</title><p>ok</p>`);
+  });
+  await new Promise((r) => s.listen(0, "127.0.0.1", r));
+  return s;
+}
 const serveur = http.createServer((req, res) => {
+  if (req.url === "/") entetesAccueil = req.headers;
   if (req.url.startsWith("/fichier.txt")) {
     res.writeHead(200, { "Content-Type": "text/plain", "Content-Disposition": 'attachment; filename="devis.txt"' });
     return res.end("devis KLYRA");
@@ -125,6 +146,45 @@ app.whenReady().then(async () => {
     verifier(!!id, "l'onglet a un identifiant", t);
     const page = nav.contenuDe(id);
     const valeur = (js) => page.executeJavaScript(js);
+
+    /* L'identité d'un Google Chrome, la même dans les en-têtes et dans la page. */
+    const majeure = process.versions.chrome.split(".")[0];
+    const ua = await valeur("navigator.userAgent");
+    verifier(
+      !/Electron|klyra/i.test(ua) && ua.includes(`Chrome/${majeure}.0.0.0 `) && entetesAccueil?.["user-agent"] === ua,
+      "identité de Chrome réduite, sans Electron ni KLYRA",
+      `${ua}\n${entetesAccueil?.["user-agent"]}`,
+    );
+    const marques = await valeur("JSON.stringify(navigator.userAgentData.brands)");
+    verifier(
+      marques.includes(`"brand":"Google Chrome","version":"${majeure}"`),
+      "Client Hints de Google Chrome dans la page",
+      marques,
+    );
+    const hautes = await valeur(`navigator.userAgentData.getHighEntropyValues(["fullVersionList", "platformVersion"]).then((v) => JSON.stringify(v))`);
+    verifier(hautes.includes(`"brand":"Google Chrome","version":"${process.versions.chrome}"`), "…et dans les valeurs détaillées", hautes);
+    // Les en-têtes Client Hints ne partent que vers une page en https : un serveur local au certificat jetable.
+    const securise = await serveurHttps();
+    if (securise) {
+      session.fromPartition("persist:klyra-navigateur").setCertificateVerifyProc((req, rappel) => rappel(req.hostname === "127.0.0.1" ? 0 : -3));
+      r = await outil("navigateur_aller", { url: `https://127.0.0.1:${securise.address().port}/`, nouvel_onglet: true });
+      const indices = (h) => JSON.stringify(Object.fromEntries(Object.entries(h ?? {}).filter(([k]) => /^sec-ch|^user-agent/.test(k))));
+      const recus = entetesHttps[0] ?? {};
+      verifier(
+        !r.isError && String(recus["sec-ch-ua"]).includes(`"Google Chrome";v="${majeure}"`) && recus["sec-ch-ua-mobile"] === "?0" && !!recus["sec-ch-ua-platform"] && recus["user-agent"] === ua && !recus["sec-ch-ua-full-version-list"],
+        "Client Hints de Google Chrome dans les en-têtes, dès la première requête (ceux de base seulement)",
+        `${texteDe(r)}\n${indices(recus)}`,
+      );
+      await outil("navigateur_aller", { historique: "recharger" });
+      const suite = entetesHttps.at(-1) ?? {};
+      verifier(
+        String(suite["sec-ch-ua-full-version-list"]).includes(`"Google Chrome";v="${process.versions.chrome}"`) && !!suite["sec-ch-ua-platform-version"] && !suite["sec-ch-ua-arch"],
+        "…puis les détaillés que le site a demandés, pas les autres",
+        indices(suite),
+      );
+      for (const o of nav.ongletsDe("chat-a")) if (o.id !== id) nav.fermerOnglet(o.id);
+      securise.close();
+    } else console.log("—      openssl absent : en-têtes Client Hints non vérifiés");
 
     /* Taper, choisir, cliquer. */
     r = await outil("navigateur_agir", { action: "taper", ref: refDe(t, /champ « Nom »/), texte: "Corentin" });
