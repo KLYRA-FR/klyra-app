@@ -78,7 +78,7 @@ async function serveurHttps() {
   }
   const s = require("node:https").createServer({ key: fs.readFileSync(cle), cert: fs.readFileSync(cert) }, (req, res) => {
     entetesHttps.push(req.headers);
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Accept-CH": "Sec-CH-UA-Full-Version-List, Sec-CH-UA-Platform-Version" });
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(`<!doctype html><meta charset="utf-8"><title>Sécurisé</title><p>ok</p>`);
   });
   await new Promise((r) => s.listen(0, "127.0.0.1", r));
@@ -147,22 +147,16 @@ app.whenReady().then(async () => {
     const page = nav.contenuDe(id);
     const valeur = (js) => page.executeJavaScript(js);
 
-    /* L'identité d'un Google Chrome, la même dans les en-têtes et dans la page. */
-    const majeure = process.versions.chrome.split(".")[0];
+    /* L'identité de Chromium (modèle d'OpenBot) : sans Electron pour les pages, la même dans les en-têtes et dans la page. */
     const ua = await valeur("navigator.userAgent");
     verifier(
-      !/Electron|klyra/i.test(ua) && ua.includes(`Chrome/${majeure}.0.0.0 `) && entetesAccueil?.["user-agent"] === ua,
-      "identité de Chrome réduite, sans Electron ni KLYRA",
+      !/Electron|klyra/i.test(ua) && ua.includes(`Chrome/${process.versions.chrome} `) && entetesAccueil?.["user-agent"] === ua,
+      "identité de Chromium, sans Electron ni KLYRA",
       `${ua}\n${entetesAccueil?.["user-agent"]}`,
     );
-    const marques = await valeur("JSON.stringify(navigator.userAgentData.brands)");
-    verifier(
-      marques.includes(`"brand":"Google Chrome","version":"${majeure}"`),
-      "Client Hints de Google Chrome dans la page",
-      marques,
-    );
-    const hautes = await valeur(`navigator.userAgentData.getHighEntropyValues(["fullVersionList", "platformVersion"]).then((v) => JSON.stringify(v))`);
-    verifier(hautes.includes(`"brand":"Google Chrome","version":"${process.versions.chrome}"`), "…et dans les valeurs détaillées", hautes);
+    const marques = JSON.parse(await valeur("JSON.stringify(navigator.userAgentData.brands)"));
+    const attendu = marques.map((m) => `"${m.brand}";v="${m.version}"`).join(", ");
+    verifier(!attendu.includes("Google Chrome") && attendu.includes("Chromium"), "la page se dit Chromium, jamais Google Chrome", attendu);
     // Les en-têtes Client Hints ne partent que vers une page en https : un serveur local au certificat jetable.
     const securise = await serveurHttps();
     if (securise) {
@@ -171,16 +165,9 @@ app.whenReady().then(async () => {
       const indices = (h) => JSON.stringify(Object.fromEntries(Object.entries(h ?? {}).filter(([k]) => /^sec-ch|^user-agent/.test(k))));
       const recus = entetesHttps[0] ?? {};
       verifier(
-        !r.isError && String(recus["sec-ch-ua"]).includes(`"Google Chrome";v="${majeure}"`) && recus["sec-ch-ua-mobile"] === "?0" && !!recus["sec-ch-ua-platform"] && recus["user-agent"] === ua && !recus["sec-ch-ua-full-version-list"],
-        "Client Hints de Google Chrome dans les en-têtes, dès la première requête (ceux de base seulement)",
-        `${texteDe(r)}\n${indices(recus)}`,
-      );
-      await outil("navigateur_aller", { historique: "recharger" });
-      const suite = entetesHttps.at(-1) ?? {};
-      verifier(
-        String(suite["sec-ch-ua-full-version-list"]).includes(`"Google Chrome";v="${process.versions.chrome}"`) && !!suite["sec-ch-ua-platform-version"] && !suite["sec-ch-ua-arch"],
-        "…puis les détaillés que le site a demandés, pas les autres",
-        indices(suite),
+        !r.isError && recus["sec-ch-ua"] === attendu && recus["sec-ch-ua-mobile"] === "?0" && !!recus["sec-ch-ua-platform"] && recus["user-agent"] === ua,
+        "les en-têtes Client Hints disent exactement ce que la page lit",
+        `${attendu}\n${texteDe(r)}\n${indices(recus)}`,
       );
       for (const o of nav.ongletsDe("chat-a")) if (o.id !== id) nav.fermerOnglet(o.id);
       securise.close();

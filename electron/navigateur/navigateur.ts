@@ -8,7 +8,7 @@ import { annulerTelechargement, brancherChrome, cheminChrome, effacerProfilChrom
 import { CHROME_A_LA_PERSONNE, CHROME_ABSENT } from "./chrome-regles";
 import { connexionsPour, secretPour, type ConnexionCoffre } from "./coffre";
 import type { CadrePage, GestePage, MoteurNavigateur, Page } from "./page";
-import { entetesAvecIndices, identiteChrome, indicesDemandes, type IdentiteNavigateur, type MetadonneesAgent } from "./identite";
+import { agentUtilisateur, entetesNavigateur } from "./identite";
 import {
   adresseAutorisee,
   decouperRef,
@@ -149,16 +149,6 @@ let montrerMenu: (id: string, menu: ParametresMenu) => void = () => undefined;
 let affiche: { id: string; cadre: Electron.Rectangle } | null = null;
 let fenetreSuivie: BrowserWindow | null = null;
 let sessionNav: Session | null = null;
-let identite: IdentiteNavigateur | null = null;
-/** Les Client Hints détaillés que chaque site a demandés (`Accept-CH`), le temps que l'app est ouverte. */
-const indicesParOrigine = new Map<string, Set<string>>();
-const origineDe = (url: string): string => {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return "";
-  }
-};
 let fichierEtat = "";
 
 /* ─── État, persistance ───────────────────────────────────────── */
@@ -263,35 +253,6 @@ function restaurer(): void {
 
 /* ─── Session : identité, autorisations, téléchargements ──────── */
 
-/**
- * L'identité de Google Chrome sur ce poste (cf. `identite.ts`) : une seule pour toute la session,
- * précisée par ce que Chromium sait du système (`navigator.userAgentData`, lu dans l'app) quand c'est possible.
- */
-function identiteNavigateur(): IdentiteNavigateur {
-  identite ??= identiteChrome({ versionChrome: process.versions.chrome, systeme: process.platform, arch: process.arch, versionSysteme: process.getSystemVersion() });
-  return identite;
-}
-
-/**
- * Une seule lecture, dans la fenêtre de l'app une fois chargée (son protocole est sécurisé :
- * `navigator.userAgentData` y donne tout). Faite dès l'ouverture de la fenêtre, pour que la première
- * page ait déjà la bonne version du système ; sans réponse, l'identité déduite reste.
- */
-let lectureNative: Promise<void> | null = null;
-function lireValeursNatives(): void {
-  const wc = fenetre()?.webContents;
-  if (lectureNative || !wc || wc.isDestroyed() || wc.isLoading()) return;
-  lectureNative = avecDelai(
-    wc.executeJavaScript(`navigator.userAgentData?.getHighEntropyValues(["platformVersion", "architecture", "bitness", "wow64", "model"]) ?? null`) as Promise<Partial<MetadonneesAgent> | null>,
-    2_000,
-    "lecture",
-  )
-    .then((natif) => {
-      if (natif?.platformVersion) identite = identiteChrome({ versionChrome: process.versions.chrome, systeme: process.platform, arch: process.arch, versionSysteme: process.getSystemVersion(), natif });
-    })
-    .catch(() => undefined);
-}
-
 function cheminLibre(dossier: string, nom: string): string {
   const ext = path.extname(nom);
   const base = path.basename(nom, ext) || "telechargement";
@@ -303,17 +264,12 @@ function cheminLibre(dossier: string, nom: string): string {
 function sessionNavigateur(): Session {
   if (sessionNav) return sessionNav;
   const s = sessions.fromPartition(PARTITION, { cache: true });
-  s.setUserAgent(identiteNavigateur().userAgent, app.getPreferredSystemLanguages().join(",") || app.getLocale());
-  // Les Client Hints, qu'Electron n'envoie pas (Chrome, si) : ceux de base partout, les détaillés aux sites qui les demandent.
-  s.webRequest.onBeforeSendHeaders((details, rappel) =>
-    rappel({ requestHeaders: entetesAvecIndices(details.requestHeaders, details.url, identiteNavigateur(), indicesParOrigine.get(origineDe(details.url))) }),
-  );
-  s.webRequest.onHeadersReceived((details, rappel) => {
-    // Comme Chrome : seule la réponse d'une page (pas d'une ressource) dit ce que son site veut recevoir.
-    const accept = details.resourceType === "mainFrame" ? Object.entries(details.responseHeaders ?? {}).find(([cle]) => cle.toLowerCase() === "accept-ch")?.[1] : undefined;
-    if (accept) indicesParOrigine.set(origineDe(details.url), new Set(indicesDemandes(accept)));
-    rappel({});
-  });
+  // L'identité de Chromium (cf. `identite.ts`, sur le modèle d'OpenBot), pages, cadres et service workers.
+  app.userAgentFallback = agentUtilisateur(app.userAgentFallback, app.getName());
+  s.setUserAgent(agentUtilisateur(s.getUserAgent(), app.getName()), app.getPreferredSystemLanguages().join(",") || app.getLocale());
+  // Les indices de base qu'Electron n'envoie pas, et « Electron » rendu à la seule connexion Google.
+  const poste = { versionChrome: process.versions.chrome, versionElectron: process.versions.electron, systeme: process.platform };
+  s.webRequest.onBeforeSendHeaders((details, rappel) => rappel({ requestHeaders: entetesNavigateur(details.requestHeaders, details.url, poste) }));
   // Une seule autorisation, comme OpenBot : écrire du texte dans le presse-papiers après un clic. Ni micro, ni caméra, ni position, ni notifications.
   s.setPermissionRequestHandler((_wc, permission, rappel) => rappel(permission === "clipboard-sanitized-write"));
   s.setPermissionCheckHandler((_wc, permission) => permission === "clipboard-sanitized-write");
@@ -382,7 +338,7 @@ class PageElectron implements Page {
   }
   async cdp(methode: string, params: Record<string, unknown> = {}): Promise<unknown> {
     const wc = this.wc;
-    if (!wc.debugger.isAttached()) await brancherDebogage(wc);
+    if (!wc.debugger.isAttached()) wc.debugger.attach("1.3");
     if (!pilotables.has(wc)) {
       pilotables.add(wc);
       await wc.debugger.sendCommand("Page.enable").catch(() => undefined);
@@ -639,9 +595,6 @@ function creerVue(o: Onglet): WebContents {
   });
   vue.setBackgroundColor("#FFFFFF");
   const wc = vue.webContents;
-  // Avant le premier chargement : la commande part tout de suite, la navigation la suit.
-  void brancherDebogage(wc).catch(() => undefined);
-  lireValeursNatives();
   wc.debugger.on("detach", () => pilotables.delete(wc));
   wc.setAudioMuted(true);
   o.vue = vue;
@@ -739,18 +692,6 @@ function creerVue(o: Onglet): WebContents {
 
 /** Les pages où un agent a déjà agi : le protocole y écoute aussi les fenêtres de la page et garde le focus. */
 const pilotables = new WeakSet<WebContents>();
-
-/**
- * Le protocole de débogage, branché dès la création de la page : il porte l'identité de Chrome
- * jusque dans la page (`navigator.userAgentData`), ce que `session.setUserAgent` ne fait pas.
- * Rien d'autre tant qu'aucun agent n'agit (cf. `cdp`).
- */
-async function brancherDebogage(wc: WebContents): Promise<void> {
-  if (wc.isDestroyed()) return;
-  if (!wc.debugger.isAttached()) wc.debugger.attach("1.3");
-  const id = identiteNavigateur();
-  await wc.debugger.sendCommand("Emulation.setUserAgentOverride", { userAgent: id.userAgent, userAgentMetadata: id.metadonnees }).catch(() => undefined);
-}
 
 function endormir(o: Onglet): void {
   const vue = o.vue;
@@ -970,7 +911,6 @@ export async function effacerDonnees(): Promise<void> {
   await s.clearStorageData();
   await s.clearCache();
   await s.clearAuthCache();
-  indicesParOrigine.clear();
   for (const o of onglets.values()) if (vivante(o)) o.vue!.webContents.reload();
   await effacerProfilChrome();
 }
@@ -1459,8 +1399,6 @@ export function brancherNavigateur(options: { fenetre: () => BrowserWindow | nul
   if (options.menu) montrerMenu = options.menu;
   fichierEtat = path.join(app.getPath("userData"), "navigateur.json");
   restaurer();
-  lireValeursNatives();
-  app.on("browser-window-created", (_e, win) => win.webContents.once("did-finish-load", lireValeursNatives));
 }
 
 /** Pour les tests : l'onglet interne (sa page). */
