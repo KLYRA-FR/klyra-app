@@ -91,29 +91,27 @@ export async function executerOutilNavigateur(nom: string, args: Record<string, 
         const existant = ongletsDe(appelant.chatId).length > 0;
         const nouveau = !!url && (args.nouvel_onglet === true || !existant) && !chaine(args.onglet);
         const o = nouveau ? ouvrirOnglet(appelant.chatId, url) : ongletPourAgent(appelant.chatId, args.onglet);
-        const wc = pageDeLAgent(o, appelant.roleId, url ? `Ouvre ${url}` : geste, true);
-        if (url && !nouveau) void wc.loadURL(normaliserAdresse(url)).catch(() => undefined);
-        else if (geste === "retour") wc.navigationHistory.goBack();
-        else if (geste === "suivant") wc.navigationHistory.goForward();
-        else if (geste === "recharger") wc.reload();
-        await attendreCalme(wc);
+        const pg = await pageDeLAgent(o, appelant.roleId, url ? `Ouvre ${url}` : geste, true);
+        if (url && !nouveau) pg.aller(normaliserAdresse(url));
+        else if (geste === "retour" || geste === "suivant" || geste === "recharger") pg.geste(geste);
+        await attendreCalme(pg);
         apresAction(o);
         if (o.erreur) return texte(avecNotes([`Onglet ${o.id} : ${o.erreur} — ${o.url}`], prendreNotes(o)), true);
-        const page = formaterInstantane(await lireInstantane(o, wc));
+        const page = formaterInstantane(await lireInstantane(o, pg));
         return texte(avecNotes([`Onglet ${o.id}.`, page], prendreNotes(o)));
       }
       case "navigateur_lire": {
         const o = ongletPourAgent(appelant.chatId, args.onglet);
-        const wc = pageDeLAgent(o, appelant.roleId, "Lit la page", false);
-        await attendreCalme(wc, 8_000);
+        const pg = await pageDeLAgent(o, appelant.roleId, "Lit la page", false);
+        await attendreCalme(pg, 8_000);
         const attendu = chaine(args.attendre_texte).trim();
-        const trouve = attendu ? await attendreTexte(wc, attendu, 15_000) : true;
+        const trouve = attendu ? await attendreTexte(pg, attendu, 15_000) : true;
         const debut = attendu && !trouve ? [`« ${attendu} » n'est pas apparu en 15 s.`] : [];
         if (args.mode === "texte") {
-          const t = await lireTexte(wc);
+          const t = await lireTexte(pg);
           return texte(avecNotes([...debut, `Onglet ${o.id} : ${o.titre} — ${o.url}`, "", trancheTexte(t, nombre(args.depuis) ?? 0)], prendreNotes(o)));
         }
-        const page = formaterInstantane(await lireInstantane(o, wc), { requete: chaine(args.requete) });
+        const page = formaterInstantane(await lireInstantane(o, pg), { requete: chaine(args.requete) });
         const coffre = connexionsDeLOnglet(o, true);
         const indice = coffre.length
           ? [`Coffre : ${coffre.length > 1 ? "connexions enregistrées" : "une connexion enregistrée"} pour ${[...new Set(coffre.map((c) => c.hote))].join(", ")} (${coffre.map((c) => c.identifiant || "sans identifiant").join(", ")}) : navigateur_agir, action remplir_connexion.`]
@@ -122,8 +120,8 @@ export async function executerOutilNavigateur(nom: string, args: Record<string, 
       }
       case "navigateur_capture": {
         const o = ongletPourAgent(appelant.chatId, args.onglet);
-        const wc = pageDeLAgent(o, appelant.roleId, "Regarde la page", false);
-        const c = await capturer(o, wc);
+        const pg = await pageDeLAgent(o, appelant.roleId, "Regarde la page", false);
+        const c = await capturer(o, pg);
         return {
           content: [
             { type: "image", data: c.base64, mimeType: "image/jpeg" },
@@ -164,7 +162,7 @@ async function agir(args: Record<string, unknown>, appelant: { chatId: string; r
   };
   if (!libelle[action]) return texte("Action inconnue.", true);
   if (estConnexionGoogle(o.url)) return texte(CONNEXION_GOOGLE, true);
-  const wc = pageDeLAgent(o, appelant.roleId, libelle[action], true);
+  const pg = await pageDeLAgent(o, appelant.roleId, libelle[action], true);
   let fait = libelle[action];
   let note: string | null = null;
 
@@ -173,27 +171,27 @@ async function agir(args: Record<string, unknown>, appelant: { chatId: string; r
     case "double_clic":
     case "clic_droit":
     case "survoler": {
-      const c = await viser(o, wc, { ref, x: nombre(args.x), y: nombre(args.y) });
+      const c = await viser(o, pg, { ref, x: nombre(args.x), y: nombre(args.y) });
       note = c.note;
-      if (action === "survoler") await survoler(wc, c.x, c.y);
-      else await cliquer(wc, c.x, c.y, { double: action === "double_clic", bouton: action === "clic_droit" ? "right" : "left" });
+      if (action === "survoler") await survoler(pg, c.x, c.y);
+      else await cliquer(pg, c.x, c.y, { double: action === "double_clic", bouton: action === "clic_droit" ? "right" : "left" });
       fait = `${libelle[action]} ${ref ? `sur ${ref}` : `en ${c.x},${c.y}`}`;
       break;
     }
     case "taper": {
       const t = typeof args.texte === "string" ? args.texte : "";
       if (!ref && (nombre(args.x) !== undefined || nombre(args.y) !== undefined)) {
-        const c = await viser(o, wc, { x: nombre(args.x), y: nombre(args.y) });
-        await cliquer(wc, c.x, c.y);
+        const c = await viser(o, pg, { x: nombre(args.x), y: nombre(args.y) });
+        await cliquer(pg, c.x, c.y);
       }
-      note = await taper(o, wc, ref ?? null, t, args.effacer === true);
-      if (args.entree === true) await appuyer(wc, "Enter");
+      note = await taper(o, pg, ref ?? null, t, args.effacer === true);
+      if (args.entree === true) await appuyer(pg, "Enter");
       fait = `Tapé ${t.length} caractère${t.length > 1 ? "s" : ""}${ref ? ` dans ${ref}` : ""}${args.entree === true ? ", puis Entrée" : ""}`;
       break;
     }
     case "touche":
       if (!chaine(args.touche)) return texte("Donne la touche (ex. Enter, Tab, Escape, Control+A).", true);
-      await appuyer(wc, chaine(args.touche));
+      await appuyer(pg, chaine(args.touche));
       fait = `Appuyé sur ${chaine(args.touche)}`;
       break;
     case "defiler": {
@@ -201,16 +199,16 @@ async function agir(args: Record<string, unknown>, appelant: { chatId: string; r
       const q = nombre(args.quantite) ?? 600;
       const dx = dir === "droite" ? q : dir === "gauche" ? -q : 0;
       const dy = dir === "bas" ? q : dir === "haut" ? -q : 0;
-      const r = await defiler(o, wc, ref ?? null, dx, dy);
+      const r = await defiler(o, pg, ref ?? null, dx, dy);
       fait = r.bouge ? `Défilé vers le ${dir} (à ${Math.round(r.y)} sur ${Math.round(r.max)} px)` : `Rien n'a défilé (déjà au bout : ${Math.round(r.y)} sur ${Math.round(r.max)} px)`;
       break;
     }
     case "envoyer_fichiers":
       if (!ref) return texte("Donne la référence (ref) du champ ou du bouton qui joint les fichiers.", true);
-      fait = await envoyerFichiers(o, wc, ref, args.chemins);
+      fait = await envoyerFichiers(o, pg, ref, args.chemins);
       break;
     case "remplir_connexion":
-      fait = await remplirConnexion(o, wc, {
+      fait = await remplirConnexion(o, pg, {
         identifiant: chaine(args.identifiant) || null,
         refMotDePasse: ref ?? null,
         refIdentifiant: chaine(args.ref_identifiant) || null,
@@ -220,15 +218,15 @@ async function agir(args: Record<string, unknown>, appelant: { chatId: string; r
       break;
     case "choisir":
       if (!ref) return texte("Donne la référence (ref) de la liste.", true);
-      fait = `Choisi « ${await choisir(o, wc, ref, chaine(args.valeur))} » dans ${ref}`;
+      fait = `Choisi « ${await choisir(o, pg, ref, chaine(args.valeur))} » dans ${ref}`;
       break;
   }
 
-  await attendreCalme(wc, 10_000);
+  await attendreCalme(pg, 10_000);
   apresAction(o);
-  const lignes = [`${fait}. Page : ${wc.getTitle() || o.titre} — ${wc.getURL() || o.url}${o.erreur ? ` · erreur : ${o.erreur}` : ""}`];
+  const lignes = [`${fait}. Page : ${o.titre} — ${pg.url() || o.url}${o.erreur ? ` · erreur : ${o.erreur}` : ""}`];
   if (note) lignes.push(note);
-  if (args.relire === true) lignes.push("", formaterInstantane(await lireInstantane(o, wc)));
+  if (args.relire === true) lignes.push("", formaterInstantane(await lireInstantane(o, pg)));
   return texte(avecNotes(lignes, prendreNotes(o)));
 }
 

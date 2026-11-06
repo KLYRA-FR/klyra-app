@@ -1,9 +1,13 @@
 import { app, clipboard, shell, session as sessions, webFrameMain, WebContentsView, type BrowserWindow, type Session, type WebContents, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { lireReglages } from "../reglages";
+import { annulerTelechargement, brancherChrome, cheminChrome, effacerProfilChrome, modeChrome, ouvrirPage, ouvrirPourLaPersonne, PageChrome, terminerPourLaPersonne } from "./chrome-poste";
+import { CHROME_A_LA_PERSONNE, CHROME_ABSENT } from "./chrome-regles";
 import { connexionsPour, secretPour, type ConnexionCoffre } from "./coffre";
+import type { CadrePage, GestePage, MoteurNavigateur, Page } from "./page";
 import { entetesAvecIndices, identiteChrome, indicesDemandes, type IdentiteNavigateur, type MetadonneesAgent } from "./identite";
 import {
   adresseAutorisee,
@@ -80,10 +84,22 @@ export interface OngletPublic {
   telechargements: Telechargement[];
   creeLe: number;
   vuLe: number;
+  /** Où vit sa page : la vue intégrée de KLYRA, ou un onglet du Chrome de ce poste. */
+  moteur: MoteurNavigateur;
+  /**
+   * Chrome est ouvert, sans pilotage, pour que la personne s'y connecte depuis cet onglet ;
+   * `a-fermer` : elle a fini, et c'est en fermant Chrome qu'elle enregistre sa connexion.
+   */
+  connexion: null | "ouverte" | "a-fermer";
 }
 
 interface Onglet extends Omit<OngletPublic, "endormi" | "affiche"> {
   vue: WebContentsView | null;
+  /** Son onglet dans le Chrome de ce poste (moteur « chrome »), et son ouverture en cours. */
+  chrome: PageChrome | null;
+  preparation: Promise<Page> | null;
+  /** La main a été prise pour se connecter dans Chrome : elle revient seule quand Chrome se ferme. */
+  mainParConnexion: boolean;
   /** 1 px de la dernière capture = `echelle` px de la page. */
   echelle: number;
   /** Ce que la page a demandé (alert, confirm) pendant que l'agent pilotait, à lui dire. */
@@ -91,8 +107,8 @@ interface Onglet extends Omit<OngletPublic, "endormi" | "affiche"> {
   minuteurPilote: NodeJS.Timeout | null;
   minuteurVignette: NodeJS.Timeout | null;
   derniereVignette: number;
-  /** Les cadres de la dernière lecture (c1, c2…) : leur page, et l'élément iframe qui les situe. */
-  cadres: Map<string, { token: string; processus: number; refIframe: string }>;
+  /** Les cadres de la dernière lecture (c1, c2…) : leur clé dans la page, et l'élément iframe qui les situe. */
+  cadres: Map<string, { cle: string; refIframe: string }>;
   /** Le dernier menu du clic droit ouvert par la personne : ses actions ne lisent que lui. */
   menu: ParametresMenu | null;
 }
@@ -120,6 +136,7 @@ const TAILLE_TRAVAIL = { width: 1280, height: 800 };
 const LARGEUR_VIGNETTE = 480;
 const LARGEUR_CAPTURE_MAX = 1_280;
 const DELAI_SCRIPT_MS = 8_000;
+const DELAI_CAPTURE_CHROME_MS = 20_000;
 const DELAI_CHARGEMENT_MS = 20_000;
 const DUREE_PILOTE_MS = 12_000;
 const TELECHARGEMENT_MAX = 1024 ** 3;
@@ -157,13 +174,15 @@ function publicDe(o: Onglet): OngletPublic {
     peutAvancer: o.peutAvancer,
     erreur: o.erreur,
     vignette: o.vignette,
-    endormi: !o.vue,
-    affiche: !!o.vue && affiche?.id === o.id,
+    endormi: !pageDe(o),
+    affiche: affiche?.id === o.id && (!!o.vue || o.moteur === "chrome"),
     pilote: o.pilote,
     main: o.main,
     telechargements: o.telechargements,
     creeLe: o.creeLe,
     vuLe: o.vuLe,
+    moteur: o.moteur,
+    connexion: o.connexion,
   };
 }
 
@@ -206,7 +225,12 @@ function nouvelOnglet(chatId: string, url: string, id: string = `nav-${randomUUI
     telechargements: [],
     creeLe: maintenant,
     vuLe: maintenant,
+    moteur: moteurVoulu(),
+    connexion: null,
+    mainParConnexion: false,
     vue: null,
+    chrome: null,
+    preparation: null,
     echelle: 1,
     notes: [],
     minuteurPilote: null,
@@ -334,6 +358,237 @@ function vivante(o: Onglet): WebContents | null {
   }
   return wc;
 }
+
+/** Le moteur choisi dans Réglages › Navigateur, pour les pages qui s'ouvrent ou se réveillent. */
+function moteurVoulu(): MoteurNavigateur {
+  return lireReglages().navigateur.moteur === "chrome" ? "chrome" : "integre";
+}
+
+/** La vue intégrée (Electron), vue par les gestes des agents. */
+class PageElectron implements Page {
+  readonly moteur = "integre" as const;
+  constructor(private wc: WebContents) {}
+  detruite(): boolean {
+    return this.wc.isDestroyed();
+  }
+  url(): string {
+    return this.wc.getURL();
+  }
+  chargement(): boolean {
+    return this.wc.isLoading();
+  }
+  script<T>(code: string): Promise<T> {
+    return this.wc.executeJavaScriptInIsolatedWorld(MONDE_ISOLE, [{ code }]) as Promise<T>;
+  }
+  async cdp(methode: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    const wc = this.wc;
+    if (!wc.debugger.isAttached()) await brancherDebogage(wc);
+    if (!pilotables.has(wc)) {
+      pilotables.add(wc);
+      await wc.debugger.sendCommand("Page.enable").catch(() => undefined);
+      // La page se croit au premier plan : la frappe arrive même quand l'onglet n'est pas regardé.
+      await wc.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => undefined);
+    }
+    return wc.debugger.sendCommand(methode, params);
+  }
+  ecouter(f: (methode: string, params: Record<string, unknown>) => void): () => void {
+    const ecoute = (_e: unknown, methode: string, params: Record<string, unknown>) => f(methode, params);
+    this.wc.debugger.on("message", ecoute);
+    return () => this.wc.debugger.removeListener("message", ecoute);
+  }
+  /**
+   * Une image de la page, même cachée : une vue qu'on ne regarde pas n'a pas toujours de surface à
+   * capturer ; la taille de la page est alors fixée le temps de la capture (comme OpenBot).
+   */
+  async image(cachee: boolean): Promise<Electron.NativeImage> {
+    const wc = this.wc;
+    if (cachee) {
+      const vue = await this.script<{ largeur: number; hauteur: number; echelle: number }>("({ largeur: innerWidth, hauteur: innerHeight, echelle: devicePixelRatio })").catch(() => null);
+      if (vue?.largeur && vue.hauteur) await this.cdp("Emulation.setDeviceMetricsOverride", { width: vue.largeur, height: vue.hauteur, deviceScaleFactor: vue.echelle || 1, mobile: false }).catch(() => undefined);
+    }
+    try {
+      return await wc.capturePage(undefined, { stayHidden: true, stayAwake: true });
+    } finally {
+      if (cachee) await this.cdp("Emulation.clearDeviceMetricsOverride").catch(() => undefined);
+    }
+  }
+  async cadres(): Promise<CadrePage[]> {
+    return this.wc.mainFrame.frames.filter((f) => !f.detached).map((f) => this.cadreDe(f));
+  }
+  cadre(cle: string): CadrePage | null {
+    const [processus, jeton] = cle.split(":");
+    const f = webFrameMain.fromFrameToken(Number(processus), jeton);
+    return f && !f.detached ? this.cadreDe(f) : null;
+  }
+  /** Un cadre se lit dans son monde principal : Electron n'offre pas de monde isolé à un cadre. */
+  private cadreDe(f: WebFrameMain): CadrePage {
+    return { cle: `${f.processId}:${f.frameToken}`, nom: f.name, url: f.url, script: <T,>(code: string) => f.executeJavaScript(code) as Promise<T> };
+  }
+  aller(url: string): void {
+    void this.wc.loadURL(url).catch(() => undefined);
+  }
+  geste(g: GestePage): void {
+    const wc = this.wc;
+    if (g === "retour" && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+    else if (g === "suivant" && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
+    else if (g === "recharger") wc.reload();
+    else if (g === "arreter") wc.stop();
+  }
+}
+
+const pagesElectron = new WeakMap<WebContents, PageElectron>();
+function pageElectron(wc: WebContents): PageElectron {
+  let p = pagesElectron.get(wc);
+  if (!p) pagesElectron.set(wc, (p = new PageElectron(wc)));
+  return p;
+}
+
+/** La page vivante de l'onglet, quel que soit son moteur (null : endormi). */
+function pageDe(o: Onglet): Page | null {
+  if (o.moteur === "chrome") return o.chrome && !o.chrome.detruite() ? o.chrome : null;
+  const wc = vivante(o);
+  return wc ? pageElectron(wc) : null;
+}
+
+/** Le moteur d'un onglet endormi suit le réglage : il se réveille dans le moteur choisi. */
+function suivreMoteur(o: Onglet): void {
+  if (pageDe(o) || o.preparation) return;
+  o.moteur = moteurVoulu();
+}
+
+/** Chrome peut-il ouvrir un onglet d'agent maintenant ? Sinon, pourquoi. */
+function verifierChrome(): void {
+  if (!cheminChrome()) throw new Error(CHROME_ABSENT);
+  if (modeChrome() === "personne") throw new Error(CHROME_A_LA_PERSONNE);
+}
+
+/** Les onglets de Chrome, retrouvés par leur cible. */
+const ongletsChrome = new Map<string, string>();
+
+function lierChrome(o: Onglet, p: PageChrome): void {
+  o.chrome = p;
+  ongletsChrome.set(p.cible, o.id);
+  /* Les fenêtres de la page (alert, confirm) pendant que l'agent pilote : KLYRA répond et le lui dit. */
+  p.ecouter((methode, params) => {
+    if (methode !== "Page.javascriptDialogOpening" || !o.pilote) return;
+    const accepter = params.type === "alert" || params.type === "beforeunload";
+    void p.cdp("Page.handleJavaScriptDialog", { accept: accepter }).catch(() => undefined);
+    o.notes.push(`La page a affiché ${params.type === "alert" ? "un message" : "une question"} : « ${String(params.message ?? "").slice(0, 300)} ». KLYRA a répondu ${accepter ? "OK" : "Annuler"}.`);
+  });
+}
+
+/** La page de l'onglet, ouverte ou réveillée au besoin (dans Chrome : un nouvel onglet à sa dernière adresse). */
+async function reveillerPage(o: Onglet): Promise<Page> {
+  suivreMoteur(o);
+  if (o.moteur === "integre") return pageElectron(reveiller(o));
+  const deja = pageDe(o);
+  if (deja) return deja;
+  if (!o.preparation) {
+    verifierChrome();
+    o.chargement = true;
+    changer();
+    o.preparation = ouvrirPage(o.url)
+      .then((p) => {
+        lierChrome(o, p);
+        if (!onglets.has(o.id)) p.fermer();
+        return p as Page;
+      })
+      .catch((e) => {
+        o.erreur = e instanceof Error ? e.message : String(e);
+        o.chargement = false;
+        throw e;
+      })
+      .finally(() => {
+        o.preparation = null;
+        changer(true);
+      });
+  }
+  return o.preparation;
+}
+
+function ongletDeChrome(p: PageChrome): Onglet | undefined {
+  const id = ongletsChrome.get(p.cible);
+  return id ? onglets.get(id) : undefined;
+}
+
+brancherChrome({
+  changement: (p) => {
+    const o = ongletDeChrome(p);
+    if (!o || o.chrome !== p) return;
+    if (p.url()) o.url = p.url();
+    o.titre = p.titre || hoteDe(o.url);
+    o.chargement = p.chargement();
+    o.peutReculer = p.peutReculer;
+    o.peutAvancer = p.peutAvancer;
+    if (!o.chargement) planifierVignette(o, 500);
+    changer(true);
+  },
+  /* La personne a fermé l'onglet dans Chrome : l'onglet de KLYRA reste, endormi. */
+  fermeture: (p) => {
+    const o = ongletDeChrome(p);
+    ongletsChrome.delete(p.cible);
+    if (o?.chrome === p) {
+      o.chrome = null;
+      o.chargement = false;
+      changer();
+    }
+  },
+  /* Une fenêtre ouverte par la page devient un onglet de la même conversation (son lien avec la page reste). */
+  popup: (ouvrante, nouvelle) => {
+    const parent = ongletDeChrome(ouvrante);
+    if (!parent || ongletsDe(parent.chatId).length >= ONGLETS_PAR_CONVERSATION) return;
+    const o = nouvelOnglet(parent.chatId, nouvelle.url() || "about:blank");
+    o.moteur = "chrome";
+    onglets.set(o.id, o);
+    lierChrome(o, nouvelle);
+    parent.notes.push(`La page a ouvert un nouvel onglet (${o.id}).`);
+    changer(true);
+  },
+  fin: (mode) => {
+    for (const o of onglets.values()) {
+      if (o.moteur !== "chrome") continue;
+      o.chrome = null;
+      o.chargement = false;
+      if (mode !== "personne" || !o.connexion) continue;
+      o.connexion = null;
+      if (o.mainParConnexion && o.main?.type === "personne") o.main = null;
+      o.mainParConnexion = false;
+    }
+    ongletsChrome.clear();
+    changer();
+  },
+  telechargement: (t, etat, recus, total) => {
+    const o = t.page ? ongletDeChrome(t.page) : undefined;
+    let suivi = o?.telechargements.find((x) => x.chemin === t.provisoire || x.nom === t.nom && x.etat === "en-cours");
+    if (etat === "debut") {
+      suivi = { nom: t.nom, chemin: t.provisoire, etat: "en-cours", recus: 0, total: 0 };
+      if (o) o.telechargements = [suivi, ...o.telechargements].slice(0, 8);
+    }
+    if (!suivi) return;
+    suivi.recus = recus;
+    suivi.total = total;
+    if (etat === "progression" && (recus > TELECHARGEMENT_MAX || total > TELECHARGEMENT_MAX)) annulerTelechargement(t.guid);
+    if (etat === "annule") suivi.etat = "annule";
+    if (etat === "fini") {
+      const final = cheminLibre(app.getPath("downloads"), path.basename(t.nom).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_") || "telechargement");
+      try {
+        try {
+          renameSync(t.provisoire, final);
+        } catch {
+          copyFileSync(t.provisoire, final);
+          rmSync(t.provisoire, { force: true });
+        }
+        suivi.chemin = final;
+        suivi.nom = path.basename(final);
+        suivi.etat = "fini";
+      } catch {
+        suivi.etat = "echec";
+      }
+      o?.notes.push(suivi.etat === "fini" ? `Téléchargé : ${suivi.chemin}` : `Téléchargement de ${suivi.nom} échoué.`);
+    }
+    changer();
+  },
+});
 
 function suivreFenetre(win: BrowserWindow): void {
   if (fenetreSuivie === win) return;
@@ -566,28 +821,40 @@ export function afficherOnglet(id: string | null, cadre: Electron.Rectangle | nu
     return;
   }
   const o = exiger(id);
-  reveiller(o);
+  suivreMoteur(o);
+  // Dans Chrome, l'onglet que la personne regarde dans KLYRA passe devant dans sa fenêtre.
+  if (o.moteur === "integre") reveiller(o);
+  else if (modeChrome() !== "personne")
+    void reveillerPage(o)
+      .then((p) => (p as PageChrome).devant())
+      .catch(() => undefined);
   o.vuLe = Date.now();
   affiche = { id, cadre: { x: cadre.x, y: cadre.y, width: cadre.width, height: cadre.height } };
   appliquerAffichage();
+  if (o.moteur === "chrome") planifierVignette(o, 0);
   changer(true);
 }
 
 /* ─── Vignettes ───────────────────────────────────────────────── */
 
+/** Dans Chrome, la page n'est pas dans le panneau : sa vignette s'y relit tant qu'on la regarde. */
+const RELECTURE_CHROME_MS = 2_500;
+
 function planifierVignette(o: Onglet, delai: number): void {
   if (o.minuteurVignette) return;
   o.minuteurVignette = setTimeout(() => {
     o.minuteurVignette = null;
-    void vignette(o);
+    void vignette(o).finally(() => {
+      if (o.moteur === "chrome" && affiche?.id === o.id && onglets.has(o.id) && pageDe(o)) planifierVignette(o, RELECTURE_CHROME_MS);
+    });
   }, Math.max(delai, 1_200 - (Date.now() - o.derniereVignette)));
 }
 
 async function vignette(o: Onglet): Promise<void> {
-  const wc = vivante(o);
-  if (!wc || wc.isLoading()) return;
+  const page = pageDe(o);
+  if (!page || page.chargement()) return;
   try {
-    const image = await imagePage(o, wc);
+    const image = await imagePage(o, page);
     if (image.isEmpty()) return;
     const { width } = image.getSize();
     o.vignette = `data:image/jpeg;base64,${(width > LARGEUR_VIGNETTE ? image.resize({ width: LARGEUR_VIGNETTE, quality: "good" }) : image).toJPEG(62).toString("base64")}`;
@@ -615,11 +882,15 @@ export function ouvrirOnglet(chatId: string, saisie = "about:blank"): Onglet {
   if (ongletsDe(chatId).length >= ONGLETS_PAR_CONVERSATION) throw new Error(`Déjà ${ONGLETS_PAR_CONVERSATION} onglets dans cette conversation : ferme ceux qui ne servent plus.`);
   const url = normaliserAdresse(saisie);
   const o = nouvelOnglet(chatId, url);
+  if (o.moteur === "chrome") verifierChrome();
   onglets.set(o.id, o);
   try {
-    const wc = creerVue(o);
-    void wc.loadURL(url).catch(() => undefined);
-    maj(o, wc);
+    if (o.moteur === "chrome") void reveillerPage(o).catch(() => undefined);
+    else {
+      const wc = creerVue(o);
+      void wc.loadURL(url).catch(() => undefined);
+      maj(o, wc);
+    }
   } catch (e) {
     onglets.delete(o.id);
     throw e;
@@ -631,10 +902,18 @@ export function ouvrirOnglet(chatId: string, saisie = "about:blank"): Onglet {
 export function allerA(id: string, saisie: string): void {
   const o = exiger(id);
   const url = normaliserAdresse(saisie);
-  const wc = reveiller(o);
   o.erreur = null;
-  void wc.loadURL(url).catch(() => undefined);
   o.vuLe = Date.now();
+  suivreMoteur(o);
+  if (o.moteur === "integre") pageElectron(reveiller(o)).aller(url);
+  else {
+    const deja = pageDe(o);
+    if (deja) deja.aller(url);
+    else {
+      o.url = url; // la page se réveille à cette adresse
+      void reveillerPage(o).catch(() => undefined);
+    }
+  }
   changer(true);
 }
 
@@ -642,11 +921,9 @@ export type GesteHistorique = "retour" | "suivant" | "recharger" | "arreter";
 
 export function historique(id: string, geste: GesteHistorique): void {
   const o = exiger(id);
-  const wc = reveiller(o);
-  if (geste === "retour" && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
-  else if (geste === "suivant" && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
-  else if (geste === "recharger") wc.reload();
-  else if (geste === "arreter") wc.stop();
+  void reveillerPage(o)
+    .then((p) => p.geste(geste))
+    .catch(() => undefined);
 }
 
 export function fermerOnglet(id: string): void {
@@ -654,6 +931,11 @@ export function fermerOnglet(id: string): void {
   if (!o) return;
   if (affiche?.id === id) affiche = null;
   endormir(o);
+  if (o.chrome) {
+    ongletsChrome.delete(o.chrome.cible);
+    o.chrome.fermer();
+    o.chrome = null;
+  }
   if (o.minuteurPilote) clearTimeout(o.minuteurPilote);
   if (o.minuteurVignette) clearTimeout(o.minuteurVignette);
   onglets.delete(o.id);
@@ -690,6 +972,61 @@ export async function effacerDonnees(): Promise<void> {
   await s.clearAuthCache();
   indicesParOrigine.clear();
   for (const o of onglets.values()) if (vivante(o)) o.vue!.webContents.reload();
+  await effacerProfilChrome();
+}
+
+/* ─── Chrome de ce poste : la personne s'y connecte elle-même ─── */
+
+/**
+ * La personne se connecte dans Chrome, depuis cet onglet : Chrome se rouvre sans pilotage sur sa
+ * page (Google refuse une connexion dans un navigateur piloté). Les agents attendent qu'elle ait fini.
+ */
+export async function connexionDansChrome(id: string): Promise<void> {
+  const o = exiger(id);
+  if (o.moteur !== "chrome") throw new Error("Cet onglet est dans le navigateur intégré : choisis « Chrome de ce poste » dans Réglages › Navigateur.");
+  if (!cheminChrome()) throw new Error(CHROME_ABSENT);
+  const url = pageDe(o)?.url() || o.url;
+  for (const x of onglets.values()) x.connexion = null;
+  o.connexion = "ouverte";
+  o.mainParConnexion = o.main === null;
+  if (o.main === null) o.main = { type: "personne" };
+  o.pilote = null;
+  changer();
+  try {
+    await ouvrirPourLaPersonne(url);
+  } catch (e) {
+    o.connexion = null;
+    if (o.mainParConnexion) o.main = null;
+    o.mainParConnexion = false;
+    changer();
+    throw e;
+  }
+}
+
+/**
+ * La personne a fini de se connecter. Sous Windows, Chrome se ferme comme d'un clic sur la croix ;
+ * ailleurs, elle le ferme elle-même (`a-fermer`), et sa fermeture rend la main (cf. `fin`).
+ */
+export async function connexionTerminee(id: string): Promise<"ferme" | "a-fermer"> {
+  const o = onglets.get(String(id));
+  const etat = await terminerPourLaPersonne();
+  if (o && etat === "a-fermer" && o.connexion) o.connexion = "a-fermer";
+  if (o && etat === "ferme") {
+    o.connexion = null;
+    if (o.mainParConnexion && o.main?.type === "personne") o.main = null;
+    o.mainParConnexion = false;
+    o.erreur = null;
+  }
+  changer();
+  return etat;
+}
+
+/** Montre l'onglet dans la fenêtre de Chrome (la personne veut voir ou faire elle-même). */
+export async function montrerDansChrome(id: string): Promise<void> {
+  const o = exiger(id);
+  if (o.moteur !== "chrome") throw new Error("Cet onglet est dans le navigateur intégré.");
+  const p = (await reveillerPage(o)) as PageChrome;
+  await p.activer();
 }
 
 /* ─── Pour les agents ─────────────────────────────────────────── */
@@ -706,41 +1043,23 @@ async function avecDelai<T>(promesse: Promise<T>, ms: number, message: string): 
 }
 
 /** Un script dans le monde isolé de la page. */
-async function script<T>(wc: WebContents, code: string): Promise<T> {
+async function script<T>(page: Page, code: string): Promise<T> {
   return avecDelai(
-    wc.executeJavaScriptInIsolatedWorld(MONDE_ISOLE, [{ code }]) as Promise<T>,
+    page.script<T>(code),
     DELAI_SCRIPT_MS,
     "La page ne répond pas (elle charge encore, ou attend une réponse dans une fenêtre). Réessaie dans un instant ou regarde-la avec navigateur_capture.",
   );
 }
 
-/** Le protocole de débogage, pour agir : à la première action, Page (les fenêtres de la page) et le focus. */
-async function cdp(wc: WebContents, methode: string, params: Record<string, unknown> = {}): Promise<unknown> {
-  if (!wc.debugger.isAttached()) await brancherDebogage(wc);
-  if (!pilotables.has(wc)) {
-    pilotables.add(wc);
-    await wc.debugger.sendCommand("Page.enable").catch(() => undefined);
-    // La page se croit au premier plan : la frappe arrive même quand l'onglet n'est pas regardé.
-    await wc.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => undefined);
-  }
-  return wc.debugger.sendCommand(methode, params);
+/** Une commande du protocole de la page (le premier geste prépare la page à être pilotée). */
+function cdp(page: Page, methode: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  return page.cdp(methode, params);
 }
 
-/**
- * Une image de la page, même cachée : une vue qu'on ne regarde pas n'a pas toujours de surface à
- * capturer ; la taille de la page est alors fixée le temps de la capture (comme OpenBot).
- */
-async function imagePage(o: Onglet, wc: WebContents): Promise<Electron.NativeImage> {
-  const cachee = !o.vue?.getVisible();
-  if (cachee) {
-    const vue = await script<{ largeur: number; hauteur: number; echelle: number }>(wc, "({ largeur: innerWidth, hauteur: innerHeight, echelle: devicePixelRatio })").catch(() => null);
-    if (vue?.largeur && vue.hauteur) await cdp(wc, "Emulation.setDeviceMetricsOverride", { width: vue.largeur, height: vue.hauteur, deviceScaleFactor: vue.echelle || 1, mobile: false }).catch(() => undefined);
-  }
-  try {
-    return await avecDelai(wc.capturePage(undefined, { stayHidden: true, stayAwake: true }), DELAI_SCRIPT_MS, "La capture n’a pas abouti.");
-  } finally {
-    if (cachee) await cdp(wc, "Emulation.clearDeviceMetricsOverride").catch(() => undefined);
-  }
+/** Une image de la page, même quand on ne la regarde pas. */
+async function imagePage(o: Onglet, page: Page): Promise<Electron.NativeImage> {
+  // Chrome capture un onglet de fond en quelques secondes (il le rend visible le temps de l'image).
+  return avecDelai(page.image(o.moteur === "integre" && !o.vue?.getVisible()), page.moteur === "chrome" ? DELAI_CAPTURE_CHROME_MS : DELAI_SCRIPT_MS, "La capture n’a pas abouti.");
 }
 
 /** L'onglet sur lequel un agent travaille : celui qu'il nomme (de sa conversation), sinon le dernier qu'on a utilisé. */
@@ -756,10 +1075,10 @@ export function ongletPourAgent(chatId: string, id?: unknown): Onglet {
 }
 
 /** Réveille la page et vérifie que l'agent peut agir (la personne n'a pas la main). */
-export function pageDeLAgent(o: Onglet, roleId: string, action: string, agir: boolean): WebContents {
+export async function pageDeLAgent(o: Onglet, roleId: string, action: string, agir: boolean): Promise<Page> {
   if (agir && o.main?.type === "personne") throw new Error("La personne a repris la main sur cet onglet : n’y agis plus. Demande-lui dans la conversation quand tu peux continuer.");
   if (agir && o.main?.type === "demandee") throw new Error(`Tu as passé la main à la personne (${o.main.raison}) : attends qu’elle te dise que c’est fait.`);
-  const wc = reveiller(o);
+  const page = await reveillerPage(o);
   o.vuLe = Date.now();
   o.pilote = { roleId, action, at: Date.now() };
   if (o.minuteurPilote) clearTimeout(o.minuteurPilote);
@@ -769,7 +1088,7 @@ export function pageDeLAgent(o: Onglet, roleId: string, action: string, agir: bo
     changer();
   }, DUREE_PILOTE_MS);
   changer(true);
-  return wc;
+  return page;
 }
 
 /** L'agent passe la main à la personne (connexion, code, CAPTCHA, paiement). */
@@ -787,30 +1106,30 @@ export function prendreNotes(o: Onglet): string[] {
 }
 
 /** Attend la fin d'un chargement lancé par une action (au plus `ms`), puis un court calme. */
-export async function attendreCalme(wc: WebContents, ms = DELAI_CHARGEMENT_MS): Promise<void> {
+export async function attendreCalme(page: Page, ms = DELAI_CHARGEMENT_MS): Promise<void> {
   await pause(150);
   const limite = Date.now() + ms;
-  while (!wc.isDestroyed() && wc.isLoading() && Date.now() < limite) await pause(100);
+  while (!page.detruite() && page.chargement() && Date.now() < limite) await pause(100);
   await pause(250);
 }
 
-/** Un script dans un cadre de la page (son monde principal : Electron n'offre pas de monde isolé à un cadre). */
-async function scriptCadre<T>(cadre: WebFrameMain, code: string): Promise<T> {
-  return avecDelai(cadre.executeJavaScript(code) as Promise<T>, DELAI_SCRIPT_MS, "Le cadre ne répond pas : regarde la page avec navigateur_capture.");
+/** Un script dans un cadre de la page. */
+async function scriptCadre<T>(cadre: CadrePage, code: string): Promise<T> {
+  return avecDelai(cadre.script<T>(code), DELAI_SCRIPT_MS, "Le cadre ne répond pas : regarde la page avec navigateur_capture.");
 }
 
-function cadreDe(o: Onglet, prefixe: string): { cadre: WebFrameMain; refIframe: string } {
+function cadreDe(o: Onglet, page: Page, prefixe: string): { cadre: CadrePage; refIframe: string } {
   const c = o.cadres.get(prefixe);
-  const cadre = c ? webFrameMain.fromFrameToken(c.processus, c.token) : null;
-  if (!c || !cadre || cadre.detached) throw new Error(`Le cadre ${prefixe} a changé : relis la page avec navigateur_lire.`);
+  const cadre = c ? page.cadre(c.cle) : null;
+  if (!c || !cadre) throw new Error(`Le cadre ${prefixe} a changé : relis la page avec navigateur_lire.`);
   return { cadre, refIframe: c.refIframe };
 }
 
 /** Un script dans la page, ou dans le cadre d'où vient la référence (c1e4). */
-async function scriptPour<T>(o: Onglet, wc: WebContents, ref: string | null, fabrique: (ref: string | null) => string): Promise<T> {
+async function scriptPour<T>(o: Onglet, page: Page, ref: string | null, fabrique: (ref: string | null) => string): Promise<T> {
   const d = ref ? decouperRef(ref) : { cadre: null, ref: null };
-  if (!d.cadre) return script<T>(wc, fabrique(d.ref));
-  return scriptCadre<T>(cadreDe(o, d.cadre).cadre, fabrique(d.ref));
+  if (!d.cadre) return script<T>(page, fabrique(d.ref));
+  return scriptCadre<T>(cadreDe(o, page, d.cadre).cadre, fabrique(d.ref));
 }
 
 const CADRES_LUS_MAX = 6;
@@ -820,24 +1139,24 @@ const CADRES_LUS_MAX = 6;
  * références préfixées (c1e4). Un cadre est rapproché de son élément iframe par son nom, son
  * adresse, ou son rang quand les deux listes ont la même longueur.
  */
-export async function lireInstantane(o: Onglet, wc: WebContents): Promise<InstantanePage> {
-  const page = await script<InstantanePage>(wc, SCRIPT_INSTANTANE);
+export async function lireInstantane(o: Onglet, pg: Page): Promise<InstantanePage> {
+  const page = await script<InstantanePage>(pg, SCRIPT_INSTANTANE);
   o.cadres.clear();
   const iframes = page.iframes ?? [];
-  const enfants = wc.mainFrame.frames.filter((f) => !f.detached);
+  const enfants = await pg.cadres();
   const lus: CadreLu[] = [];
   for (const [rang, cadre] of enfants.entries()) {
     if (lus.length >= CADRES_LUS_MAX) break;
     if (!/^https?:/i.test(cadre.url)) continue;
     const el =
-      (cadre.name && iframes.find((x) => x.nom === cadre.name)) ||
+      (cadre.nom && iframes.find((x) => x.nom === cadre.nom)) ||
       iframes.find((x) => x.src && x.src === cadre.url) ||
       (enfants.length === iframes.length ? iframes[rang] : undefined);
     if (!el || !el.visible) continue;
     const prefixe = `c${lus.length + 1}`;
     try {
       const lu = await scriptCadre<InstantanePage>(cadre, scriptInstantane(prefixe));
-      o.cadres.set(prefixe, { token: cadre.frameToken, processus: cadre.processId, refIframe: el.ref });
+      o.cadres.set(prefixe, { cle: cadre.cle, refIframe: el.ref });
       lus.push({ prefixe, origine: hoteDe(cadre.url), elements: lu.elements ?? [], texte: String(lu.texte ?? "").slice(0, 600) });
     } catch {
       /* cadre qui ne répond pas : compté comme non lu */
@@ -846,26 +1165,26 @@ export async function lireInstantane(o: Onglet, wc: WebContents): Promise<Instan
   return { ...page, cadresLus: lus };
 }
 
-export async function lireTexte(wc: WebContents): Promise<string> {
-  return script<string>(wc, SCRIPT_TEXTE);
+export async function lireTexte(page: Page): Promise<string> {
+  return script<string>(page, SCRIPT_TEXTE);
 }
 
 /** Attend qu'un texte apparaisse dans la page (au plus `ms`). */
-export async function attendreTexte(wc: WebContents, texte: string, ms: number): Promise<boolean> {
+export async function attendreTexte(page: Page, texte: string, ms: number): Promise<boolean> {
   const limite = Date.now() + ms;
   while (Date.now() < limite) {
-    if (await script<boolean>(wc, scriptContient(texte)).catch(() => false)) return true;
+    if (await script<boolean>(page, scriptContient(texte)).catch(() => false)) return true;
     await pause(300);
   }
   return false;
 }
 
-async function curseur(wc: WebContents, x: number, y: number): Promise<void> {
-  await script(wc, scriptCurseur(x, y)).catch(() => undefined);
+async function curseur(page: Page, x: number, y: number): Promise<void> {
+  await script(page, scriptCurseur(x, y)).catch(() => undefined);
 }
 
 /** Les coordonnées d'un élément (`eN`) ou d'un point de la dernière capture, en pixels de la page. */
-export async function viser(o: Onglet, wc: WebContents, cible: { ref?: string; x?: number; y?: number }): Promise<{ x: number; y: number; note: string | null; protege: boolean }> {
+export async function viser(o: Onglet, wc: Page, cible: { ref?: string; x?: number; y?: number }): Promise<{ x: number; y: number; note: string | null; protege: boolean }> {
   if (cible.ref) {
     type Cible = { ok: boolean; raison?: string; x: number; y: number; protege: boolean; desactive: boolean; recouvert: string | null; nom: string };
     const d = decouperRef(cible.ref);
@@ -873,7 +1192,7 @@ export async function viser(o: Onglet, wc: WebContents, cible: { ref?: string; x
     let decalage = { x: 0, y: 0 };
     if (d.cadre) {
       /* Dans un cadre : l'élément centré dans le cadre, le cadre amené à l'écran, puis le point dans la page. */
-      const { cadre, refIframe } = cadreDe(o, d.cadre);
+      const { cadre, refIframe } = cadreDe(o, wc, d.cadre);
       type Place = { x: number; y: number; hauteurVue: number } | null;
       let place = await script<Place>(wc, scriptPlaceCadre(refIframe));
       if (!place) throw new Error(`Le cadre ${d.cadre} a disparu de la page : relis-la.`);
@@ -893,7 +1212,7 @@ export async function viser(o: Onglet, wc: WebContents, cible: { ref?: string; x
   throw new Error("Vise un élément par sa référence (ref, ex. e12, lue avec navigateur_lire) ou un point (x et y de la dernière capture).");
 }
 
-export async function cliquer(wc: WebContents, x: number, y: number, options: { double?: boolean; bouton?: "left" | "right" | "middle" } = {}): Promise<void> {
+export async function cliquer(wc: Page, x: number, y: number, options: { double?: boolean; bouton?: "left" | "right" | "middle" } = {}): Promise<void> {
   const bouton = options.bouton ?? "left";
   await cdp(wc, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
   void curseur(wc, x, y);
@@ -903,11 +1222,11 @@ export async function cliquer(wc: WebContents, x: number, y: number, options: { 
   }
 }
 
-export async function survoler(wc: WebContents, x: number, y: number): Promise<void> {
+export async function survoler(wc: Page, x: number, y: number): Promise<void> {
   await cdp(wc, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
 }
 
-export async function appuyer(wc: WebContents, combinaison: string): Promise<void> {
+export async function appuyer(wc: Page, combinaison: string): Promise<void> {
   for (const e of evenementsTouche(combinaison)) await cdp(wc, "Input.dispatchKeyEvent", { ...e });
 }
 
@@ -915,7 +1234,7 @@ export async function appuyer(wc: WebContents, combinaison: string): Promise<voi
  * Tape un texte dans l'élément visé (ou celui qui a le focus). Jamais dans un
  * mot de passe, un code à usage unique ou un champ de carte.
  */
-export async function taper(o: Onglet, wc: WebContents, ref: string | null, texte: string, effacer: boolean): Promise<string | null> {
+export async function taper(o: Onglet, wc: Page, ref: string | null, texte: string, effacer: boolean): Promise<string | null> {
   /* Dans un cadre, le focus y entre par un vrai clic ; la frappe va ensuite au cadre qui a le focus. */
   if (ref && decouperRef(ref).cadre) {
     const c = await viser(o, wc, { ref });
@@ -931,20 +1250,20 @@ export async function taper(o: Onglet, wc: WebContents, ref: string | null, text
   return null;
 }
 
-export async function choisir(o: Onglet, wc: WebContents, ref: string, valeur: string): Promise<string> {
+export async function choisir(o: Onglet, wc: Page, ref: string, valeur: string): Promise<string> {
   const r = await scriptPour<{ ok: boolean; raison?: string; choisi?: string }>(o, wc, ref, (x) => scriptChoisir(x ?? "", valeur));
   if (!r.ok) throw new Error(r.raison);
   return r.choisi ?? valeur;
 }
 
-export async function defiler(o: Onglet, wc: WebContents, ref: string | null, dx: number, dy: number): Promise<{ y: number; bouge: boolean; max: number }> {
+export async function defiler(o: Onglet, wc: Page, ref: string | null, dx: number, dy: number): Promise<{ y: number; bouge: boolean; max: number }> {
   const r = await scriptPour<{ ok: boolean; raison?: string; y: number; bouge: boolean; max: number }>(o, wc, ref, (x) => scriptDefiler(x, dx, dy));
   if (!r.ok) throw new Error(r.raison);
   return r;
 }
 
 /** La partie visible de la page, en JPEG, réduite à 1 280 px de large au plus. */
-export async function capturer(o: Onglet, wc: WebContents): Promise<{ base64: string; largeur: number; hauteur: number; echelle: number }> {
+export async function capturer(o: Onglet, wc: Page): Promise<{ base64: string; largeur: number; hauteur: number; echelle: number }> {
   await attendreCalme(wc, 5_000);
   const image = await imagePage(o, wc);
   if (image.isEmpty()) throw new Error("La page n’a encore rien affiché.");
@@ -989,7 +1308,7 @@ export function verifierFichiers(brut: unknown): string[] {
  * Donne des fichiers à un champ « fichier » de la page, ou au choix de fichiers qu'ouvre un bouton
  * (le choix est intercepté : aucune fenêtre du système ne s'ouvre).
  */
-export async function envoyerFichiers(o: Onglet, wc: WebContents, ref: string, brut: unknown): Promise<string> {
+export async function envoyerFichiers(o: Onglet, wc: Page, ref: string, brut: unknown): Promise<string> {
   const chemins = verifierFichiers(brut);
   if (decouperRef(ref).cadre) throw new Error("Envoyer des fichiers dans un cadre n’est pas possible : passe la main à la personne pour cette étape.");
   const marque = randomUUID();
@@ -1011,17 +1330,16 @@ export async function envoyerFichiers(o: Onglet, wc: WebContents, ref: string, b
   await cdp(wc, "Page.setInterceptFileChooserDialog", { enabled: true });
   try {
     const ouvert = new Promise<{ backendNodeId: number; mode: string } | null>((resoudre) => {
-      const ecoute = (_e: unknown, methode: string, params: { backendNodeId: number; mode: string }) => {
+      const arreter = wc.ecouter((methode, params) => {
         if (methode !== "Page.fileChooserOpened") return;
         clearTimeout(minuteur);
-        wc.debugger.removeListener("message", ecoute);
-        resoudre(params);
-      };
+        arreter();
+        resoudre(params as { backendNodeId: number; mode: string });
+      });
       const minuteur = setTimeout(() => {
-        wc.debugger.removeListener("message", ecoute);
+        arreter();
         resoudre(null);
       }, 5_000);
-      wc.debugger.on("message", ecoute);
     });
     const c = await viser(o, wc, { ref });
     await cliquer(wc, c.x, c.y);
@@ -1039,7 +1357,7 @@ export async function envoyerFichiers(o: Onglet, wc: WebContents, ref: string, b
 
 /** Les connexions du coffre qui valent pour la page de cet onglet. */
 export function connexionsDeLOnglet(o: Onglet, parAgent: boolean): ConnexionCoffre[] {
-  return connexionsPour(vivante(o)?.getURL() || o.url, parAgent);
+  return connexionsPour(pageDe(o)?.url() || o.url, parAgent);
 }
 
 /**
@@ -1048,10 +1366,10 @@ export function connexionsDeLOnglet(o: Onglet, parAgent: boolean): ConnexionCoff
  */
 export async function remplirConnexion(
   o: Onglet,
-  wc: WebContents,
+  wc: Page,
   choix: { id?: string | null; identifiant?: string | null; refIdentifiant?: string | null; refMotDePasse?: string | null; valider?: boolean; parAgent: boolean },
 ): Promise<string> {
-  const url = wc.getURL();
+  const url = wc.url();
   const dispo = connexionsPour(url, choix.parAgent);
   const voulu = choix.identifiant?.trim().toLowerCase();
   const candidates = choix.id ? dispo.filter((c) => c.id === choix.id) : voulu ? dispo.filter((c) => c.identifiant.toLowerCase() === voulu) : dispo;
@@ -1079,7 +1397,7 @@ export async function remplirConnexion(
 /** La personne remplit la connexion de l'onglet affiché, d'un clic, avec une entrée du coffre. */
 export async function remplirParLaPersonne(id: string, idConnexion: string): Promise<string> {
   const o = exiger(id);
-  return remplirConnexion(o, reveiller(o), { id: idConnexion, parAgent: false });
+  return remplirConnexion(o, await reveillerPage(o), { id: idConnexion, parAgent: false });
 }
 
 /* ─── Menu du clic droit ──────────────────────────────────────── */

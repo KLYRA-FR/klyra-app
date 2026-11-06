@@ -346,11 +346,11 @@ app.whenReady().then(async () => {
     r = await appel("tools/call", { name: "navigateur_onglets", arguments: {} });
     verifier(/Contact KLYRA|Autre page/.test(r.content[0].text), "un outil appelé par le serveur MCP voit les onglets de sa conversation", r.content[0].text);
     verifier(ia.OUTILS_APP().includes("mcp__klyra__navigateur_lire") && !ia.OUTILS_APP().includes("mcp__klyra__navigateur_agir"), "accès « projet » : lire sans demander, agir sur accord");
-    await reglages.ecrireReglages({ ...reglages.lireReglages(), navigateur: { agents: false } });
+    await reglages.ecrireReglages({ ...reglages.lireReglages(), navigateur: { ...reglages.lireReglages().navigateur, agents: false } });
     liste = await appel("tools/list");
     r = await outil("navigateur_lire", { onglet: id });
     verifier(!liste.tools.some((o) => o.name.startsWith("navigateur_")) && r.isError, "réglage coupé : plus d'outils", texteDe(r));
-    await reglages.ecrireReglages({ ...reglages.lireReglages(), navigateur: { agents: true } });
+    await reglages.ecrireReglages({ ...reglages.lireReglages(), navigateur: { ...reglages.lireReglages().navigateur, agents: true } });
 
     /* Un agent d'un VPS : l'appel passe par le vrai serveur KLYRA (journal, route, relais) jusqu'au navigateur de ce PC. */
     const { pathToFileURL } = require("node:url");
