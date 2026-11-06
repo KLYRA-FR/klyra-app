@@ -271,11 +271,11 @@ function ChampsDeclencheur({ p }: { p: ProprietesNoeud }) {
             <span className="truncate">{p.adresseWebhook}</span>
           </button>
         ) : (
-          <Bouton variant="blanc" taille="mini" disabled={lecture} onClick={p.onWebhook} className="self-start">
+          <Bouton variant="blanc" taille="mini" disabled={lecture} onPointerDown={(e) => e.stopPropagation()} onClick={p.onWebhook} className="self-start">
             Créer l’adresse du webhook
           </Bouton>
         ))}
-      <Bouton variant="sombre" taille="mini" iconeGauche={<Icon name="play-01" size={14} />} disabled={lecture} onClick={p.onLancer} className="self-start">
+      <Bouton variant="sombre" taille="mini" iconeGauche={<Icon name="play-01" size={14} />} disabled={lecture} onPointerDown={(e) => e.stopPropagation()} onClick={p.onLancer} className="self-start">
         Lancer le workflow
       </Bouton>
     </div>
