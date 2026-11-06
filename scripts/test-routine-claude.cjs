@@ -98,6 +98,7 @@ function fixture() {
     "./titre": require(path.join(path.dirname(filename), "titre.js")),
     "./epreuve": require(path.join(path.dirname(filename), "epreuve.js")),
     "./json-partiel": require(path.join(path.dirname(filename), "json-partiel.js")),
+    "./taches-fond": require(path.join(path.dirname(filename), "taches-fond.js")),
     "./atelier-agent": require(path.join(path.dirname(filename), "atelier-agent.js")),
     "./atelier-equipe": require(path.join(path.dirname(filename), "atelier-equipe.js")),
     "./cartes-interactives": require(path.join(path.dirname(filename), "cartes-interactives.js")),

@@ -22,6 +22,7 @@ import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_C
 import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
 import { lireJsonPartiel } from "./json-partiel.mjs";
+import { finSuiviFond, nouveauSuiviFond, suivreFond } from "./taches-fond.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
 import { creerJoints } from "./joints.mjs";
 import {
@@ -603,6 +604,7 @@ export function creerAgents(options) {
     if (proc.veille) clearTimeout(proc.veille);
     proc.veille = null;
     proc.tours.push(tour);
+    proc.dernierEmit = tour.emit;
     parRequete.set(tour.requestId, { proc, tour });
   }
 
@@ -613,7 +615,7 @@ export function creerAgents(options) {
     parRequete.delete(tour.requestId);
     demandes.delete(tour.requestId);
     tour.emit(event);
-    if (!proc.tours.length && !proc.fond && vivant(proc)) proc.veille = setTimeout(() => proc.child.stdin?.end(), VEILLE_MS);
+    if (!proc.tours.length && !proc.fond && !proc.suiviFond.taches.size && vivant(proc)) proc.veille = setTimeout(() => proc.child.stdin?.end(), VEILLE_MS);
   }
 
   /** La réponse en cours ; sans elle, une tâche de fond fait reparler l'agent : une réponse spontanée s'ouvre. */
@@ -638,6 +640,9 @@ export function creerAgents(options) {
     }
     const parent = msg.parent_tool_use_id ?? null;
     const courant = proc.tours[0] ?? null;
+    /* Ce qui tourne en fond : dit même sans réponse ouverte, par la dernière (comme dans electron/claude.ts). */
+    const fond = suivreFond(proc.suiviFond, msg, Date.now(), !!courant);
+    if (fond) (courant?.emit ?? proc.dernierEmit)?.(fond);
     /* Un agent d'arrière-plan revenu sans réponse ouverte : la première réponse le dit (comme dans electron/claude.ts). */
     if (courant && proc.finsDeFond.length) for (const fin of proc.finsDeFond.splice(0)) courant.emit(fin);
     /* Un agent lancé en arrière-plan a fini : sa passation passe « rendu » (ou « arrêté »), pas avant. */
@@ -782,7 +787,7 @@ export function creerAgents(options) {
     if (compte) env = environnementAvecCompte(env, compte.dossier);
     const child = spawn(bin, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
-    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, compte: compte?.id ?? null, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map(), finsDeFond: [] };
+    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, compte: compte?.id ?? null, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map(), finsDeFond: [], suiviFond: nouveauSuiviFond(), dernierEmit: null };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
     let tampon = "";
     let stderr = "";
@@ -799,6 +804,9 @@ export function creerAgents(options) {
       if (proc.veille) clearTimeout(proc.veille);
       if (proc.sessionId && processus.get(proc.sessionId) === proc) processus.delete(proc.sessionId);
       for (const tour of [...proc.tours]) finirTour(proc, tour, { type: "fin", ok: false, texte: "", erreur: erreur(tour) });
+      /* Claude Code fermé : ce qu'il avait en fond s'arrête avec lui. */
+      const fin = finSuiviFond(proc.suiviFond);
+      if (fin) proc.dernierEmit?.(fin);
     };
     child.on("error", (error) => finTout(() => `Impossible de lancer Claude Code sur le VPS : ${error.message}`));
     child.on("close", (code, signal) => {

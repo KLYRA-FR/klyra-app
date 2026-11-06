@@ -18,6 +18,7 @@ import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, resultatEssai, TRAVAIL_SEUL, type CasEpreuve, type ResultatCas } from "./epreuve";
 import { lireJsonPartiel } from "./json-partiel";
+import { finSuiviFond, nouveauSuiviFond, suivreFond, type SuiviFond } from "./taches-fond";
 import { CONSIGNE_ATELIER } from "./atelier-agent";
 import { CONSIGNE_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe";
 import { CONSIGNE_CARTES, OUTIL_CARTE_CLAUDE } from "./cartes-interactives";
@@ -279,6 +280,10 @@ interface Processus {
   saisies: Map<number, { id: string; outil: string; json: string }>;
   /** Agents d'arrière-plan revenus pendant qu'aucune réponse n'était ouverte : dits à la prochaine (cf. `tache-fond`). */
   finsDeFond: AgentEvent[];
+  /** Ce qui tourne en fond, réponse rendue (cf. taches-fond.ts). */
+  suiviFond: SuiviFond;
+  /** La dernière réponse ouverte : ce qui tourne en fond se dit par elle quand aucune n'est ouverte. */
+  dernierEmit: ((event: AgentEvent) => void) | null;
 }
 
 /** Les outils dont l’écran montre l’entrée pendant que le modèle l’écrit : la carte de l’atelier (d'un agent, d'une équipe), le workflow qui se construit. */
@@ -501,6 +506,7 @@ function ajouterTour(proc: Processus, tour: Tour) {
   if (proc.veille) clearTimeout(proc.veille);
   proc.veille = null;
   proc.tours.push(tour);
+  proc.dernierEmit = tour.emit;
   parRequete.set(tour.requestId, { proc, tour });
   running.set(tour.requestId, proc.child);
 }
@@ -515,7 +521,7 @@ function finirTour(proc: Processus, tour: Tour, event: Extract<AgentEvent, { typ
   demandes.delete(tour.requestId);
   tour.emit(event);
   if (!proc.tours.length) voirFin(proc.chatId);
-  if (!proc.tours.length && !proc.fond && vivant(proc)) {
+  if (!proc.tours.length && !proc.fond && !proc.suiviFond.taches.size && vivant(proc)) {
     proc.veille = setTimeout(() => proc.child.stdin?.end(), VEILLE_MS);
   }
 }
@@ -552,6 +558,9 @@ function lireLigne(proc: Processus, ligne: string) {
   }
   const parent = (msg.parent_tool_use_id as string | null | undefined) ?? null;
   const courant = proc.tours[0] ?? null;
+  /* Ce qui tourne en fond : dit à l'écran même sans réponse ouverte, par la dernière (« Iris continue en arrière-plan »). */
+  const fond = suivreFond(proc.suiviFond, msg, Date.now(), !!courant);
+  if (fond) (courant?.emit ?? proc.dernierEmit)?.(fond);
   /* Un agent d'arrière-plan revenu sans réponse ouverte : la première réponse le dit (Claude Code fait reparler l'agent). */
   if (courant && proc.finsDeFond.length) for (const fin of proc.finsDeFond.splice(0)) courant.emit(fin);
   /* Un agent lancé en arrière-plan a fini : sa passation passe « rendu » (ou « arrêté »), pas avant. */
@@ -792,6 +801,8 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
     cumul: {},
     saisies: new Map(),
     finsDeFond: [],
+    suiviFond: nouveauSuiviFond(),
+    dernierEmit: null,
   };
   if (options.sessionId) processus.set(options.sessionId, proc);
 
@@ -809,6 +820,9 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
     if (proc.veille) clearTimeout(proc.veille);
     if (proc.sessionId && processus.get(proc.sessionId) === proc) processus.delete(proc.sessionId);
     for (const tour of [...proc.tours]) finirTour(proc, tour, { type: "fin", ok: false, texte: "", erreur: erreur(tour) });
+    /* Claude Code fermé : ce qu'il avait en fond s'arrête avec lui. */
+    const fin = finSuiviFond(proc.suiviFond);
+    if (fin) proc.dernierEmit?.(fin);
   };
   child.on("error", (error) => finTout(() => `Impossible de lancer Claude Code : ${error.message}`));
   child.on("close", (code, signal) => {

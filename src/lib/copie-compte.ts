@@ -2,6 +2,7 @@ import type { Carte, ReponseCarte } from "../../electron/cartes-interactives";
 import type { Chat, Etape, Message, MessagePart, Project, Role } from "@/types/domain";
 import { vueAtelier, vueEquipe, type ContexteAtelier, type PartieAtelierCompte, type PartieEquipeCompte } from "./atelier-compte";
 import { echanges, mesureActuelle, type MesureContexte } from "./contexte";
+import { resumeFond, type GenreFond } from "./fond-resume";
 
 export type { CarteAtelierCompte, CarteEquipeCompte, ContexteAtelier, LigneAtelierCompte, MembreEquipeCompte, ResultatCompte } from "./atelier-compte";
 
@@ -279,7 +280,42 @@ export type Activite =
       accord: { id: string; libelle: string; detail: string; description: string };
     }
   | { etat: "ecrit" | "collegue" | "reflechit" | "question"; roleId: string; messageId: string; depuis: string }
-  | { etat: "etape"; roleId: string; messageId: string; depuis: string; libelle: string };
+  | { etat: "etape"; roleId: string; messageId: string; depuis: string; libelle: string }
+  /**
+   * Sa réponse est rendue mais il a encore une commande ou un agent en fond (`libelle` : sa description, ou
+   * « 2 commandes et 1 agent » avec `taches`) ; `reprise` : l'un d'eux est revenu, il s'y remet (cf. fond-agents.ts).
+   */
+  | { etat: "fond"; roleId: string; messageId: string; depuis: string; libelle: string; reprise: boolean; taches: { description: string; depuis: string }[] };
+
+/** L'agent écrit ou attend quelque chose : un message de la personne attendra sa fin. Pas une question, ni une tâche de fond. */
+export const activiteOccupe = (a: Activite | null | undefined): boolean => !!a && a.etat !== "question" && a.etat !== "fond";
+
+/** Ce qu'un agent a en fond, tel que le bureau le tient (`FondAgent`). */
+export interface FondCopie {
+  roleId: string;
+  taches: readonly { description: string; genre: GenreFond; debut: number }[];
+  reprise: boolean;
+}
+
+/** Au plus 5 tâches nommées sur le téléphone : la ligne en dit le compte. */
+const TACHES_FOND_MAX = 5;
+
+function activiteFond(duFil: Message[], fond: FondCopie, dossier: string | null): Activite {
+  const dernier = duFil.findLast((m) => m.author.kind === "role" && m.author.roleId === fond.roleId) ?? duFil.at(-1);
+  const net = (t: string) => sansCheminNiSecret(t, dossier).replace(/\s+/g, " ").trim().slice(0, 120);
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const premier = fond.taches.reduce<number | null>((min, t) => (min === null || t.debut < min ? t.debut : min), null);
+  return {
+    etat: "fond",
+    roleId: fond.roleId,
+    messageId: dernier?.id ?? "",
+    /* Stable d'une copie à l'autre : le début de la plus ancienne tâche, sinon la dernière réponse. */
+    depuis: premier !== null ? iso(premier) : (dernier?.createdAt ?? iso(0)),
+    libelle: fond.taches.length === 1 ? net(fond.taches[0].description) : resumeFond(fond.taches),
+    reprise: fond.reprise,
+    taches: fond.taches.slice(0, TACHES_FOND_MAX).map((t) => ({ description: net(t.description), depuis: iso(t.debut) })),
+  };
+}
 
 /** Le travail en cours d'une conversation, tel que `useWorkspace().state.travail` le tient. */
 export interface TravailCopie {
@@ -298,7 +334,7 @@ function poseUneQuestion(message: Message): boolean {
   return /\?\s*[)»"*_]*$/.test(texte);
 }
 
-export function activiteDe(duFil: Message[], travail: TravailCopie | null, nonLus: number, dossier: string | null = null): Activite | null {
+export function activiteDe(duFil: Message[], travail: TravailCopie | null, nonLus: number, dossier: string | null = null, fond: FondCopie | null = null): Activite | null {
   if (travail) {
     const message = duFil.find((m) => m.id === travail.messageId);
     const base = { roleId: travail.roleId, messageId: travail.messageId, depuis: new Date(travail.debut).toISOString() };
@@ -325,6 +361,7 @@ export function activiteDe(duFil: Message[], travail: TravailCopie | null, nonLu
     }
     return { ...base, etat: "reflechit" };
   }
+  if (fond) return activiteFond(duFil, fond, dossier);
   const dernier = duFil.at(-1);
   if (!dernier || nonLus === 0 || dernier.author.kind !== "role" || dernier.statut === "en-cours" || dernier.statut === "erreur") return null;
   return poseUneQuestion(dernier) ? { etat: "question", roleId: dernier.author.roleId, messageId: dernier.id, depuis: dernier.createdAt } : null;
@@ -388,13 +425,13 @@ export function ticketCompte(chat: Chat, duFil: Message[], projets: Project[], p
   });
 }
 
-export function conversationCompte(chat: Chat, duFil: Message[], projets: Project[], travail: TravailCopie | null = null, poste: string | null = null) {
+export function conversationCompte(chat: Chat, duFil: Message[], projets: Project[], travail: TravailCopie | null = null, poste: string | null = null, fond: FondCopie | null = null) {
   if (chat.fil?.supprime) return null;
   const dernier = duFil.at(-1);
   const projet = projets.find((p) => p.id === chat.projectId);
   const dossier = projet?.folder || null;
   const nonLus = nonLusDe(chat, duFil);
-  const activite = activiteDe(duFil, travail, nonLus, dossier);
+  const activite = activiteDe(duFil, travail, nonLus, dossier, fond);
   const extrait = dernier ? dernier.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ") : "";
   return {
     origine: chat.id,

@@ -18,6 +18,7 @@ import { GrappeChat, RondAgent, useCartes } from "./AgentsChat";
 import { CHAMP_TELEPHONE, MessageErreur } from "./Controles";
 import { TuileIcone } from "./Liste";
 import { usePostes, useSupport } from "./poste";
+import { activiteOccupe } from "@/lib/copie-compte";
 
 /**
  * L'appui long d'une ligne ou d'une puce qui est aussi un lien : il ouvre le menu (M-9), et le
@@ -158,7 +159,7 @@ export function useMenuChat({ onDetails, onBandeau }: { onDetails?: () => void; 
 
   const actions = (origine: string, conversation: ConversationLue | undefined, dansLeFil: boolean): ActionMenu[] => {
     const activite = activiteDe(conversation);
-    const actif = !!activite && activite.etat !== "question";
+    const actif = activiteOccupe(activite);
     const agent = agentDe(origine, conversation);
     return actionsConversation(conversation, { dansLeFil, actif }).map((action): ActionMenu => {
       const libelle = LIBELLES_CONVERSATION[action];

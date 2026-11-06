@@ -104,6 +104,10 @@ export function etatLigne(c: ConversationLue | undefined, nom: (id: string) => s
       return { texte: equipe ? `${qui} attend un collègue…` : "Attend un collègue…", enCours: true };
     case "etape":
       return { texte: equipe ? `${qui} travaille…` : `${activite.libelle}…`, enCours: true };
+    case "fond":
+      return activite.reprise
+        ? { texte: equipe ? `${qui} reprend…` : "Reprend…", enCours: true }
+        : { texte: equipe ? `${qui} continue en arrière-plan…` : "Continue en arrière-plan…", enCours: true };
     default:
       return { texte: equipe ? `${qui} réfléchit…` : "Réfléchit…", enCours: true };
   }

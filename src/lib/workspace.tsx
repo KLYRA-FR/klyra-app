@@ -19,6 +19,7 @@ import { lireCarte, OUTIL_CARTE_CLAUDE, reponseNette } from "../../electron/cart
 import { lireDemandeSecret } from "../../electron/coffre-regles";
 import { contexteFil, TEXTE_ATTENTE, texteFilOuvert, texteRetourFil } from "../../electron/fils-outils";
 import { finTacheDeFond, sansFondOrphelin } from "./passation-fond";
+import { noterReponse, poserFond, poserFondParReponse } from "./fond-agents";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { renduDansEspace } from "@/lib/rendus-espace";
 import type { EtatEspace } from "@/lib/espace-sync";
@@ -978,7 +979,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
   /* Un seul abonnement aux événements des agents, distribués par demande. */
   useEffect(() => {
     if (!bridge) return;
-    return bridge.claude.onEvent((requestId, event) => ecouteurs.current.get(requestId)?.(event));
+    return bridge.claude.onEvent((requestId, event) => {
+      const ecouteur = ecouteurs.current.get(requestId);
+      if (ecouteur) return ecouteur(event);
+      /* Ce qui tourne en fond se dit encore après la fin de la réponse qui l'a lancé. */
+      if (event.type === "fond") poserFondParReponse(requestId, event);
+    });
   }, [bridge]);
 
   useEffect(() => {
@@ -1149,8 +1155,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         if (etaitLeTravail) suivant(chatId);
       };
 
+    noterReponse(messageId, chatId, roleId);
     ecouteurs.current.set(messageId, (event) => {
       switch (event.type) {
+        case "fond":
+          poserFond(chatId, roleId, event);
+          break;
         case "session":
           dispatch({
             type: "chat/update",

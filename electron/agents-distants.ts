@@ -382,6 +382,8 @@ function distribuer(origine: string, entree: Entree) {
     return;
   }
   if (!entree.event) return;
+  /* Ce qui tourne en fond se dit par une réponse déjà rendue : jamais une réponse à ouvrir. L'écran le range s'il la connaît. */
+  if (entree.event.type === "fond") return void fenetre.evenement(entree.requestId, entree.event);
   if (!connues.has(entree.requestId)) {
     // Une réponse de routine, ou finie pendant que l'app était fermée : elle s'ouvre comme une réponse spontanée.
     if (!entree.sessionId) return;
