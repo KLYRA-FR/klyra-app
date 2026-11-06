@@ -120,6 +120,7 @@ export const ETATS_LIGNES: Record<string, EtatLigne> = {
   "autorisation-ecran": { type: "lecture", elevation: RAISONS.computerUse },
   /* Navigateur : le couper, oui ; l'allumer élargit ce que font les agents, devant l'ordinateur. Ses données sont sur l'ordinateur. */
   "navigateur-agents": { type: "poste", elevation: RAISONS.computerUse },
+  "navigateur-moteur": sur(RAISONS.ordinateur),
   "navigateur-donnees": sur(RAISONS.ordinateur),
   "navigateur-telechargements": L,
   "navigateur-coffre": sur(RAISONS.cles),

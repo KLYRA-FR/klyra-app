@@ -138,17 +138,21 @@ import { arreterPilote, etatPilote, prechaufferPilote, surEtatPilote } from "./o
 import { ajouterAuCoffre, changerAgentsCoffre, listerCoffre, retirerDuCoffre } from "./navigateur/coffre";
 import { ajouterSecret, copierSecret, copierValeur, secretACopier, etatCoffre, modifierSecret, remplacerValeurSecret, retirerSecret, signalerCoffre, surChangementCoffre } from "./coffre";
 import { executerPourServeur, navigateurActif } from "./navigateur/outils";
+import { quitterChrome } from "./navigateur/chrome-poste";
 import { executerCoffrePourServeur } from "./coffre-outils";
 import {
   actionMenu,
   afficherOnglet,
   allerA,
   brancherNavigateur,
+  connexionDansChrome,
+  connexionTerminee,
   effacerDonnees,
   etatNavigateur,
   fermerOnglet,
   historique,
   injecterEchap,
+  montrerDansChrome,
   montrerTelechargement,
   ouvrirAilleurs,
   ouvrirOnglet,
@@ -1207,6 +1211,9 @@ function registerBridge() {
     return r;
   });
   navigateur("navigateur:coffre:remplir", (id, idConnexion) => remplirParLaPersonne(texteNav(id, 200), texteNav(idConnexion, 100)));
+  navigateur("navigateur:chrome:connexion", (id) => connexionDansChrome(texteNav(id, 200)));
+  navigateur("navigateur:chrome:fin", (id) => connexionTerminee(texteNav(id, 200)));
+  navigateur("navigateur:chrome:montrer", (id) => montrerDansChrome(texteNav(id, 200)));
   const origineVps = (adresse: unknown) => (typeof adresse === "string" ? adresse : "");
   ipcMain.handle("serveur:interroger", (event, adresse: unknown) => repondre(() => {
     depuisFenetre(event);
@@ -1538,6 +1545,7 @@ app.on("will-quit", () => {
   arreterRoutines();
   moteurs.fermer();
   arreterPilote();
+  quitterChrome();
 });
 process.on("exit", () => arreterDictee());
 

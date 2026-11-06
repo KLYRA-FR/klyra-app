@@ -177,6 +177,7 @@ export const SECTIONS: SectionReglages[] = [
     description: "Le navigateur de KLYRA : les pages que tes agents utilisent pour toi, sous tes yeux, dans le panneau de chaque conversation.",
     entrees: [
       { id: "navigateur-agents", titre: "Laisser les agents utiliser le navigateur", mots: "web site page onglets computer use pilotage formulaire clic internet chrome" },
+      { id: "navigateur-moteur", titre: "Où s’ouvrent les pages", mots: "chrome google connexion integre moteur profil refuse site securise" },
       { id: "navigateur-donnees", titre: "Connexions et cookies", mots: "effacer donnees navigation session cache vider deconnecter" },
       { id: "navigateur-telechargements", titre: "Téléchargements", mots: "fichiers telecharges dossier downloads" },
       { id: "navigateur-coffre", titre: "Mots de passe du navigateur", mots: "coffre identifiants connexion login mot de passe remplir trousseau" },

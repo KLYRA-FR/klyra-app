@@ -95,6 +95,11 @@ jobs:
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-sons.cjs
       - name: Navigateur de KLYRA, ce que les agents y font (page locale, profil temporaire)
         run: timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur
+      - name: Navigateur de KLYRA dans le Chrome du poste (Chrome du runner, profil temporaire)
+        # Sans bac à sable : Ubuntu 24.04 refuse les espaces de noms dont il a besoin (le Chrome des postes garde le sien).
+        run: |
+          printf '#!/bin/sh\nexec "%s" --no-sandbox "$@"\n' "$(command -v google-chrome)" > "$RUNNER_TEMP/chrome" && chmod +x "$RUNNER_TEMP/chrome"
+          KLYRA_CHROME_PATH="$RUNNER_TEMP/chrome" timeout 240 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur-chrome
       - name: Navigateur de KLYRA, l'onglet du panneau dans l'app
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur-ecran
       - name: Coffre, secrets chiffrés et outils des agents (profil temporaire)

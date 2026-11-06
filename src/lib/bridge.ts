@@ -747,6 +747,12 @@ export interface KlyraBridge {
     agentsCoffre?: (id: string, agents: boolean) => Promise<Reponse<ConnexionCoffre[]>>;
     /** Remplit la connexion de la page de cet onglet (la personne, d'un clic). */
     remplir?: (id: string, idConnexion: string) => Promise<Reponse<string>>;
+    /** Chrome de ce poste : la personne s'y connecte elle-même (Chrome sans pilotage), puis le rend aux agents. */
+    connexionChrome?: (id: string) => Promise<Reponse<void>>;
+    /** `a-fermer` : la personne ferme Chrome elle-même (sa connexion s'enregistre à la fermeture). */
+    connexionChromeTerminee?: (id: string) => Promise<Reponse<"ferme" | "a-fermer">>;
+    /** Amène l'onglet devant, dans la fenêtre de Chrome. */
+    montrerDansChrome?: (id: string) => Promise<Reponse<void>>;
   };
   /** La consommation de l'année (cf. electron/consommation.ts). */
   consommation?: {
@@ -815,8 +821,8 @@ export interface PreferencesSons {
 export interface Reglages {
   notifications: PreferencesNotifications;
   computerUse: { actif: boolean };
-  /** Le navigateur de KLYRA : outils donnés aux agents (cf. electron/navigateur/). */
-  navigateur: { agents: boolean };
+  /** Le navigateur de KLYRA : outils donnés aux agents, et où vivent ses pages (cf. electron/navigateur/). */
+  navigateur: { agents: boolean; moteur: "integre" | "chrome" };
   sons: PreferencesSons;
   configuration: ConfigurationKlyra;
   /** Skills reçues par chaque agent. Absent avant la relance : tout est reçu. */
@@ -913,6 +919,10 @@ export interface OngletNavigateur {
   telechargements: { nom: string; chemin: string; etat: "en-cours" | "fini" | "annule" | "echec"; recus: number; total: number }[];
   creeLe: number;
   vuLe: number;
+  /** Où vit sa page : le navigateur intégré, ou le Chrome de ce poste (absent avant la relance de l'app). */
+  moteur?: "integre" | "chrome";
+  /** Chrome est ouvert, sans pilotage, pour que la personne s'y connecte ; `a-fermer` : elle a fini, à elle de fermer Chrome. */
+  connexion?: null | "ouverte" | "a-fermer";
 }
 
 export type EtatAutorisation = "accordee" | "refusee" | "a-demander" | "sans-objet" | "inconnue";
