@@ -11,9 +11,10 @@ import { usePriseEnMain } from "@/lib/prise-en-main";
 import { useWorkspace } from "@/lib/workspace";
 import { useLieuActif } from "@/lib/lieux";
 import { ParcoursPriseEnMain } from "./ParcoursPriseEnMain";
+import { TestPriseEnMain } from "./TestPriseEnMain";
 
 export function PortePriseEnMain({ children }: { children: ReactNode }) {
-  const { etat, charge, erreur, relire, changer } = usePriseEnMain();
+  const { etat, charge, erreur, relire, changer, test, fermerTest } = usePriseEnMain();
   const { status, mes } = useAgents();
   const { state } = useWorkspace();
   const pathname = usePathname();
@@ -21,6 +22,7 @@ export function PortePriseEnMain({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [echec, setEchec] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
+  if (test) return <TestPriseEnMain quitter={fermerTest} />;
   // Ce guide prépare le PC. Un serveur déjà rejoint possède son équipe et ses fournisseurs.
   if (lieu || pathname === "/serveurs" || pathname.startsWith("/serveur/")) return children;
   if (!charge || status === "chargement" || !state.charge) return <main className="prise-chargement" aria-busy="true"><Image unoptimized src="/brand/logo-signe.svg" alt="KLYRA" width={48} height={48} /><p role="status">On retrouve ton espace…</p></main>;
