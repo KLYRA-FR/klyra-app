@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "node scripts/test-agents.mjs",
     "test:onboarding": "node --experimental-strip-types --test electron/prise-en-main.test.mts && node scripts/test-prise-en-main.mjs && node scripts/test-mode-onboarding.mjs",
+    "test:visite": "node scripts/test-visite-guidee.mjs",
     "test:superagent": "vitest run src/lib/liberer-place-fil.test.ts && pnpm build:electron && node scripts/test-superagent.cjs",
     "test:composio": "node scripts/test-composio-api.cjs && node scripts/test-composio-espace.cjs && node scripts/test-composio-connect.cjs",
     "test:composio:natif": "electron scripts/test-composio-natif.cjs",
