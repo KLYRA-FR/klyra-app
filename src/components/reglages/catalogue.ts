@@ -30,6 +30,7 @@ export const SECTIONS: SectionReglages[] = [
     icone: "settings",
     description: "L’app sur cet ordinateur : son lancement, ses raccourcis, ses dossiers.",
     entrees: [
+      { id: "visite-guidee", titre: "Visite guidée de KLYRA", mots: "aide tutoriel decouverte pages fonctionnement reprendre revoir guide" },
       { id: "test-prise-en-main", titre: "Tester l’onboarding", mots: "premier lancement prise en main guide rejouer recommencer simulation mode test" },
       { id: "lancement", titre: "Ouvrir KLYRA au démarrage", mots: "login session ouverture automatique demarrer" },
       { id: "suggestions-reponse", titre: "Suggérer une réponse", mots: "saisie suggestion texte fantome tab completion autocompletion reponse probable" },
