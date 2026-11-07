@@ -16,6 +16,16 @@ Les petites cartes de la scène illustrent les usages ; elles ne prétendent pas
 
 ## État et reprise
 
+### Rejouer le parcours soi-même
+
+Dans l’app de bureau : **Réglages → Général → Tester l’onboarding → Lancer le mode test**. La recherche des réglages trouve aussi « onboarding », « premier lancement » et « simulation ».
+
+Le mode test reprend les écrans du vrai guide. Donner un nom, installer puis connecter une IA, choisir les accès et rédiger une demande se fait uniquement en mémoire. La dernière étape montre la demande et une réponse explicitement simulée : aucun message n’est envoyé, aucun programme installé, aucun compte connecté. Pour Grok, saisir seulement une clé fictive.
+
+Le bandeau indique le mode test sur chaque écran. **Échap**, **Quitter le mode test** ou **Revenir à mon espace** rendent les réglages avec le focus sur le bouton de lancement. **Recommencer le test** repart du début ; fermer l’app abandonne la simulation. Les conversations, le nom réel, les accès et la progression du véritable premier lancement restent intacts.
+
+Le test de non-régression `scripts/test-mode-onboarding.mjs` parcourt l’interface exportée avec de vrais IPC sur un profil temporaire. Il vérifie la conservation des fichiers, l’absence d’appel aux comptes et aux mutations du guide, la navigation et la sortie au clavier. Il est inclus dans `test:onboarding` ; la connexion réelle et l’adaptateur restent exercés séparément par le scénario du premier lancement.
+
 `prise-en-main.json` vit dans le `userData` de ce poste. Il est indépendant du nom de l’assistant et des conversations. Les écritures sont sérialisées puis remplacées atomiquement.
 
 - Fichier absent et assistant jamais nommé sur un profil neuf : nouveau parcours.
