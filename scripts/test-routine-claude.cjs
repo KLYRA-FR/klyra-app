@@ -96,6 +96,7 @@ function fixture() {
     // Fonctions pures (tri des binaires, message de lancement) : le vrai module compilé.
     "./claude-binaire": require(path.join(path.dirname(filename), "claude-binaire.js")),
     "./titre": require(path.join(path.dirname(filename), "titre.js")),
+    "./suggestion": require(path.join(path.dirname(filename), "suggestion.js")),
     "./epreuve": require(path.join(path.dirname(filename), "epreuve.js")),
     "./json-partiel": require(path.join(path.dirname(filename), "json-partiel.js")),
     "./taches-fond": require(path.join(path.dirname(filename), "taches-fond.js")),
