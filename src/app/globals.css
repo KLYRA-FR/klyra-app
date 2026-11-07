@@ -2,6 +2,7 @@
 /* Tokens, surface sombre et bouton Principal : partagés avec le site. */
 @import "../styles/design-system.css";
 @import "../styles/onboarding.css";
+@import "../styles/visite-guidee.css";
 
 /* Tailwind doit scanner klyra-ui, sinon les classes de ses composants sont purgées. */
 @source "../../node_modules/klyra-ui/src";
