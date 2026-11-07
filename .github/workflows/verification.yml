@@ -89,6 +89,8 @@ jobs:
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:maj-modeles
       - name: Agents actifs, bibliothèque locale et assistant renommé (profils fictifs)
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:agents
+      - name: Premier lancement guidé, fournisseur local simulé et reprise après fermeture
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:onboarding
       - name: Journal de consommation et rattrapage de l'historique
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
       - name: Jetons de session du compte d'équipe (écriture ratée, entrée illisible)

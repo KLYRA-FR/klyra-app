@@ -13,6 +13,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { CarteConfiguration } from "./CarteConfiguration";
 import { MaJournee } from "./MaJournee";
 import { NommerAssistant } from "./NommerAssistant";
+import { ReprendrePriseEnMain } from "@/components/onboarding/PortePriseEnMain";
 import { Stickers } from "./Stickers";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { useAgents } from "@/lib/agents";
@@ -182,6 +183,7 @@ export function HomeScreen() {
           </section>
 
           {/* 3. Une fois : la configuration KLYRA recommandée, à adopter en un clic. */}
+          <ReprendrePriseEnMain />
           <CarteConfiguration />
         </div>
       </div>
@@ -255,3 +257,4 @@ export function HomeScreen() {
     </div>
   );
 }
+})}"
