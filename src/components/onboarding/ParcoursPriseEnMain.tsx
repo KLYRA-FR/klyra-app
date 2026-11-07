@@ -124,7 +124,7 @@ export function ParcoursPriseEnMain({ etat, simulation }: { etat: PriseEnMain; s
   };
   return (
     <main className="prise-page" data-prise-etape={etape}>
-      <header className="prise-entete"><Image unoptimized src="/brand/logotype-generic.svg" alt="KLYRA" width={125} height={32} /><span className="prise-entete-note">Un bon départ, à ton rythme.</span><Bouton variant="discret" taille="md" disabled={occupe} onClick={() => explorer()}>{simulation ? "Revenir aux réglages" : "Explorer l’app"}</Bouton></header>
+      <header className="prise-entete"><Image unoptimized src="/brand/logotype-generic.svg" alt="KLYRA" width={125} height={32} /><Bouton variant="discret" taille="md" disabled={occupe} onClick={() => explorer()}>{simulation ? "Revenir aux réglages" : "Explorer l’app"}</Bouton></header>
       <div className="prise-cadre">
         <SceneAssistant nom={nom || nomAssistant} etape={etape} fournisseur={etat.fournisseur} />
         <section className="prise-formulaire" aria-labelledby="prise-titre">

@@ -25,7 +25,6 @@ export function SceneAssistant({ nom, etape, fournisseur }: { nom: string; etape
   const recentrer = () => { scene.current?.style.setProperty("--prise-x", "0px"); scene.current?.style.setProperty("--prise-y", "0px"); };
   return (
     <aside className="prise-scene" ref={scene} onPointerMove={suivre} onPointerLeave={recentrer} aria-label="Ton assistant prend forme">
-      <div className="prise-scene-label"><span className="prise-pixel" /> TON ESPACE, TON RYTHME</div>
       <div className="prise-constellation" aria-hidden="true">
         <div className="prise-orbite prise-orbite-exterieure" />
         <div className="prise-orbite prise-orbite-interieure" />
@@ -38,7 +37,7 @@ export function SceneAssistant({ nom, etape, fournisseur }: { nom: string; etape
         </div>
       </div>
       <div className="prise-scene-texte"><h2>{legende[0]}</h2><p>{legende[1]}</p></div>
-      <div className="prise-scene-bas"><span>Des demandes aux résultats.</span><span>KLYRA</span></div>
+      <div className="prise-scene-bas"><span>KLYRA</span></div>
     </aside>
   );
 }
