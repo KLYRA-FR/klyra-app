@@ -5,6 +5,9 @@ import type { ChoixPriseEnMain, PriseEnMain } from "../../electron/prise-en-main
 import { getBridge, unwrap } from "@/lib/bridge";
 
 interface Parcours {
+  test: boolean;
+  ouvrirTest: () => void;
+  fermerTest: () => void;
   etat: PriseEnMain | null;
   charge: boolean;
   erreur: string | null;
@@ -14,6 +17,12 @@ interface Parcours {
 const Context = createContext<Parcours | null>(null);
 
 export function PriseEnMainProvider({ children }: { children: ReactNode }) {
+  const [test, setTest] = useState(false);
+  const ouvrirTest = useCallback(() => setTest(true), []);
+  const fermerTest = useCallback(() => {
+    setTest(false);
+    requestAnimationFrame(() => document.getElementById("tester-prise-en-main")?.focus());
+  }, []);
   const pont = getBridge()?.priseEnMain;
   const [etat, setEtat] = useState<PriseEnMain | null>(null);
   const [charge, setCharge] = useState(!pont);
@@ -41,11 +50,16 @@ export function PriseEnMainProvider({ children }: { children: ReactNode }) {
     if (ecriture === version.current) { setEtat(suivant); setErreur(null); }
     return suivant;
   }, [pont]);
-  return <Context.Provider value={{ etat, charge, erreur, relire, changer }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ etat, charge, erreur, relire, changer, test, ouvrirTest, fermerTest }}>{children}</Context.Provider>;
 }
 
 export function usePriseEnMain(): Parcours {
   const contexte = useContext(Context);
   if (!contexte) throw new Error("PriseEnMainProvider absent.");
   return contexte;
+}
+
+/** Les réglages web peuvent exister sans le parcours de l’app de bureau. */
+export function useOuvrirTestPriseEnMain() {
+  return useContext(Context)?.ouvrirTest;
 }
