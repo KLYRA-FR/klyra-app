@@ -74,7 +74,9 @@ export async function lancerApp({ env, port, priseEnMain = false, entree = "." }
       ws.send(JSON.stringify({ id, method, params }));
     });
   await send("Runtime.enable");
-  const ev = async (x) => (await send("Runtime.evaluate", { expression: x, returnByValue: true, awaitPromise: true })).result?.value;
+  // Pendant Page.reload, CDP peut répondre sans résultat (contexte détruit).
+  // Les attentes réessaient alors, au lieu de faire échouer le scénario.
+  const ev = async (x) => (await send("Runtime.evaluate", { expression: x, returnByValue: true, awaitPromise: true }))?.result?.value;
   for (let i = 0; i < 40 && !(await ev("document.body?.innerText.length > 0 && !!window.klyra")); i++) await attendre(500);
   const app = {
     erreurs,
