@@ -1,3 +1,5 @@
+import type { ChoixPriseEnMain, PriseEnMain } from "../../electron/prise-en-main-modele";
+
 /**
  * Pont vers le système, exposé par `electron/preload.ts` sous `window.klyra`.
  * Absent dans un navigateur (pnpm dev) : l'app passe alors en lecture seule.
@@ -336,6 +338,11 @@ export type EvenementDictee =
   | { type: "fin" };
 
 export interface KlyraBridge {
+  /** Le premier lancement de cet ordinateur ; absent avec un preload plus ancien. */
+  priseEnMain?: {
+    lire: () => Promise<Reponse<PriseEnMain>>;
+    ecrire: (choix: ChoixPriseEnMain) => Promise<Reponse<PriseEnMain>>;
+  };
   agents: {
     /** L'équipe d'un VPS relié, par `pontAgents` (src/lib/agents-pont.ts). Absent avant la relance de l'app. */
     vps?: (lieu: string, methode: string, corps: unknown) => Promise<Reponse<unknown>>;

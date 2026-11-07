@@ -257,4 +257,4 @@ export function HomeScreen() {
     </div>
   );
 }
-})}"
+"

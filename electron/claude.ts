@@ -26,6 +26,7 @@ import { CONSIGNE_FILS, TRAVAUX_MAX } from "./fils-outils";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
+import { binaireGere } from "./moteurs/installation";
 import { lireUtilisation, type Utilisation } from "./utilisation";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -100,6 +101,7 @@ export function findClaude(): string | null {
   const fromPath = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean).map((d) => path.join(d, EXE_CLAUDE));
   const candidates = [
     process.env.KLYRA_CLAUDE_PATH,
+    binaireGere("claude", EXE_CLAUDE),
     ...fromPath,
     "/opt/homebrew/bin/claude",
     "/usr/local/bin/claude",
