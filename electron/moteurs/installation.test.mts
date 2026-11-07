@@ -43,6 +43,13 @@ function paquetGrok(contenu: string): Buffer {
   return readFileSync(sortie);
 }
 const archiveGrok = paquetGrok("#!/bin/sh\necho grok-essai\n");
+const EXE_CLAUDE = process.platform === "win32" ? "claude.exe" : "claude";
+const dossierClaude = mkdtempSync(path.join(TMP, "paquet-claude-"));
+mkdirSync(path.join(dossierClaude, "package"));
+writeFileSync(path.join(dossierClaude, "package", EXE_CLAUDE), "programme-claude-factice");
+const fichierClaude = path.join(dossierClaude, "claude.tgz");
+assert.equal(spawnSync("tar", ["-czf", fichierClaude, "-C", dossierClaude, "package"]).status, 0);
+const archiveClaude = readFileSync(fichierClaude);
 
 let archive = paquet("#!/bin/sh\necho codex-essai\n");
 let integrite = empreinte(archive);
@@ -52,6 +59,10 @@ before(async () => {
   serveur = http.createServer((req, res) => {
     const base = `http://127.0.0.1:${(serveur.address() as AddressInfo).port}`;
     const json = (v: unknown) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(v));
+    if (req.url === "/@anthropic-ai%2Fclaude-code/latest") return json({ version: "2.0.0" });
+    if (req.url === "/@anthropic-ai%2Fclaude-code/2.0.0") return json({ version: "2.0.0", optionalDependencies: { [`@anthropic-ai/claude-code-${PLATEFORME}`]: "2.0.0" } });
+    if (req.url === `/@anthropic-ai%2Fclaude-code-${PLATEFORME}/2.0.0`) return json({ dist: { tarball: `${base}/claude.tgz`, integrity: empreinte(archiveClaude) } });
+    if (req.url === "/claude.tgz") return res.writeHead(200, { "content-length": archiveClaude.length }).end(archiveClaude);
     const [, version] = /^\/@openai%2Fcodex\/(.+)$/.exec(req.url ?? "") ?? [];
     if (version === "latest") return json({ version: "9.9.9" });
     if (version === "9.9.9" || version === "9.9.8") return json({ version, optionalDependencies: { [`@openai/codex-${PLATEFORME}`]: `npm:@openai/codex@${version}-${PLATEFORME}` } });
@@ -99,6 +110,13 @@ test("Grok Build : paquet de plateforme sans alias, programme compressé en brot
   assert.equal(readFileSync(chemin, "utf8"), "#!/bin/sh\necho grok-essai\n");
   if (process.platform !== "win32") assert.ok(statSync(chemin).mode & 0o100, "pas exécutable");
   assert.equal(binaireGere("grok", EXE_GROK), chemin);
+});
+
+test("Claude Code : binaire natif à la racine du paquet, sans écrire dans l’installation du poste", async () => {
+  const chemin = await installerDepuisNpm({ moteur: "claude", paquet: "@anthropic-ai/claude-code", executable: EXE_CLAUDE });
+  assert.equal(readFileSync(chemin, "utf8"), "programme-claude-factice");
+  assert.equal(chemin, binaireGere("claude", EXE_CLAUDE));
+  assert.ok(estGere(chemin));
 });
 
 test("une nouvelle version remplace l'ancienne de l'app", async () => {

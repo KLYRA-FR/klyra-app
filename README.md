@@ -33,6 +33,8 @@ Une branche par sujet, une pull request, la vérification verte, puis la fusion 
 
 ## Où sont les choses
 
+Le premier lancement guidé, sa direction visuelle et ses vérifications sont décrits dans [docs/PRISE-EN-MAIN.md](docs/PRISE-EN-MAIN.md).
+
 | Dossier | Contenu |
 |---|---|
 | `electron/` | Process principal : la fenêtre, le chargement de l’app |

@@ -1,5 +1,5 @@
 import { actualiserUtilisation, autoriser, cancelAgent, compteClaude, connecterClaude, deconnecterClaude, derniereUtilisation, findClaude, streamAgent, surUtilisation } from "../claude";
-import { commande, derniereVersionNpm } from "./installation";
+import { commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation";
 import type { Moteur } from "./types";
 
 /** Claude Code, lancé par electron/claude.ts. */
@@ -16,10 +16,18 @@ export const claude: Moteur = {
   autoriser,
   utilisation: (actualiser) => (actualiser ? actualiserUtilisation() : Promise.resolve(derniereUtilisation())),
   surUtilisation,
+  async installer(progression) {
+    await installerDepuisNpm({ moteur: "claude", paquet: "@anthropic-ai/claude-code", executable: process.platform === "win32" ? "claude.exe" : "claude", progression });
+    return compteClaude();
+  },
   versionDisponible: () => derniereVersionNpm("@anthropic-ai/claude-code"),
   /** Claude Code se met à jour lui-même (`claude update`), quel que soit l'endroit où il est installé. */
   async mettreAJour(progression) {
     const bin = findClaude();
+    if (estGere(bin)) {
+      await installerDepuisNpm({ moteur: "claude", paquet: "@anthropic-ai/claude-code", executable: process.platform === "win32" ? "claude.exe" : "claude", progression });
+      return compteClaude();
+    }
     if (!bin) throw new Error("Claude Code n’est pas installé sur ce poste.");
     progression({ etape: "mise-a-jour", recu: 0, total: null });
     const r = await commande(bin, ["update"], 5 * 60_000);

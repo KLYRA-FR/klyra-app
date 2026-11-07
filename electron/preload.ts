@@ -9,6 +9,10 @@ const adresseConvex = process.argv.find((a) => a.startsWith("--klyra-convex="))?
  * `src/lib/bridge.ts`.
  */
 contextBridge.exposeInMainWorld("klyra", {
+  priseEnMain: {
+    lire: () => ipcRenderer.invoke("prise-en-main:lire"),
+    ecrire: (choix: unknown) => ipcRenderer.invoke("prise-en-main:ecrire", choix),
+  },
   agents: {
     list: () => ipcRenderer.invoke("agents:list"),
     /* L'équipe d'un VPS relié (serveur/equipe.mjs) : mêmes gestes que pour celle de ce PC. */

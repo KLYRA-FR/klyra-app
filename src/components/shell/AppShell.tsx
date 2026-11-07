@@ -25,6 +25,8 @@ import { RelaisPush } from "@/components/compte/RelaisPush";
 import { composition } from "@/lib/coque";
 import { AppRail } from "./AppRail";
 import { SonsApp } from "./SonsApp";
+import { PriseEnMainProvider } from "@/lib/prise-en-main";
+import { PortePriseEnMain } from "@/components/onboarding/PortePriseEnMain";
 
 /** Vrai dans la fenêtre Electron sur Mac : la barre de titre est intégrée à l'app
  *  (sous Windows, elle reste celle du système). */
@@ -197,7 +199,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Suspense>
                 {bureau ? (
                   <>
-                    <ShellLayout>{children}</ShellLayout>
+                    <PriseEnMainProvider>
+                      <PortePriseEnMain><ShellLayout>{children}</ShellLayout></PortePriseEnMain>
+                    </PriseEnMainProvider>
                     {/* Montée une fois, hors des mises en page : elle garde sa requête d'un écran à l'autre. */}
                     <FenetreRecherche />
                     <MessageSuppression />

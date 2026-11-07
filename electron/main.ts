@@ -90,6 +90,7 @@ import {
 import { moteurs } from "./moteurs";
 import { ComptesClaude, urlConnexionValide } from "./comptes-claude";
 import { estGere } from "./moteurs/installation";
+import { StockagePriseEnMain } from "./prise-en-main";
 import type { AgentEvent, Decision, Progression, StreamOptions } from "./moteurs/types";
 import { ecrituresTerminees, readConversations, writeConversations } from "./conversations";
 import { echecExport, exporterConversation, verifierFenetreExport } from "./export-conversation";
@@ -416,6 +417,12 @@ function handle<A extends unknown[], T>(channel: string, fn: (...args: A) => Pro
 }
 
 function registerBridge() {
+  const priseEnMain = new StockagePriseEnMain(path.join(app.getPath("userData"), "prise-en-main.json"), () => {
+    const mes = mesAgents();
+    return mes.depart === "nouveau" && mes.assistant.nom === null;
+  });
+  handle("prise-en-main:lire", () => priseEnMain.lire());
+  handle("prise-en-main:ecrire", (choix: unknown) => priseEnMain.ecrire(choix));
   // Pont limité : ni URL arbitraire, ni clé, ni user_id fournis par le renderer.
   const composio = (channel: string, fn: (...args: unknown[]) => unknown) => ipcMain.handle(channel, (event, ...args: unknown[]) => repondre(async () => {
     verifierFenetreComposio(event, fenetrePrincipale, DEV_URL);

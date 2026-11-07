@@ -281,8 +281,8 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   );
 
   const roles = useMemo(
-    () => [roleAssistant(mes?.assistant ?? null), ...tous.filter((a) => a.statut === "actif").map((a) => a.role)],
-    [mes, tous],
+    () => [{ ...roleAssistant(mes?.assistant ?? null), ...(meta.principal?.fournisseur ? { fournisseur: meta.principal.fournisseur } : {}) }, ...tous.filter((a) => a.statut === "actif").map((a) => a.role)],
+    [mes, tous, meta],
   );
 
   const requirePont = useCallback(() => {

@@ -130,6 +130,8 @@ function dossierDuProgramme(extrait: string, executable: string): string {
   mkdirSync(path.join(sortie, "bin"), { recursive: true });
   if (existsSync(path.join(bin, `${executable}.br`))) writeFileSync(path.join(sortie, "bin", executable), brotliDecompressSync(readFileSync(path.join(bin, `${executable}.br`))));
   else if (existsSync(path.join(bin, executable))) renameSync(path.join(bin, executable), path.join(sortie, "bin", executable));
+  // Claude Code peut livrer son binaire directement à la racine du paquet de plateforme.
+  else if (existsSync(path.join(extrait, "package", executable))) renameSync(path.join(extrait, "package", executable), path.join(sortie, "bin", executable));
   else throw new Error(`Le paquet ne contient pas ${executable}.`);
   return sortie;
 }

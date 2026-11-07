@@ -4,6 +4,7 @@
  * Prérequis : `pnpm build && pnpm build:electron`.
  */
 import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -26,7 +27,16 @@ export function verificateur() {
  * Lance l'app avec ces variables (HOME, KLYRA_USER_DATA…). Les variables d'une session Claude Code
  * en cours sont retirées : l'app ne doit jamais hériter d'un vrai compte pendant un test.
  */
-export async function lancerApp({ env, port }) {
+export async function lancerApp({ env, port, priseEnMain = false, entree = "." }) {
+  // Les scénarios historiques restent centrés sur leur fonctionnalité ; le scénario dédié
+  // exerce le vrai premier lancement avec `priseEnMain: true`, sans préparer ce marqueur.
+  if (!priseEnMain && env.KLYRA_USER_DATA) {
+    const fichier = path.join(env.KLYRA_USER_DATA, "prise-en-main.json");
+    if (!existsSync(fichier)) {
+      mkdirSync(env.KLYRA_USER_DATA, { recursive: true });
+      writeFileSync(fichier, JSON.stringify({ version: 1, etape: "termine", mode: "guide", fournisseur: null, brouillon: "", conversation: null }));
+    }
+  }
   const propre = Object.fromEntries(Object.entries({ ...process.env, ...env }).filter(([k]) => !/^(CLAUDE|ANTHROPIC)/.test(k) || k in env));
   delete propre.ELECTRON_RUN_AS_NODE;
   delete propre.KLYRA_DEV_URL;
@@ -34,7 +44,7 @@ export async function lancerApp({ env, port }) {
   let cible;
   /* Juste après une fermeture, l'instance précédente peut encore tenir le verrou : on relance une fois. */
   for (let essai = 0; essai < 2 && !cible; essai++) {
-    processus = spawn(ELECTRON, [".", `--remote-debugging-port=${port}`, ...process.argv.slice(2)], { cwd: APP, env: propre, stdio: "ignore" });
+    processus = spawn(ELECTRON, [entree, `--remote-debugging-port=${port}`, ...process.argv.slice(2)], { cwd: APP, env: propre, stdio: "ignore" });
     for (let i = 0; i < 40 && !cible && processus.exitCode === null; i++) {
       await attendre(500);
       cible = await fetch(`http://127.0.0.1:${port}/json`)
