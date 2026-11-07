@@ -126,6 +126,8 @@ function fixture() {
     },
     /* Pas de dossier d'app dans ce profil fictif : la session reste sur le poste, sans CLAUDE_CONFIG_DIR. */
     "./preparation-fournisseur": { preparerSessionClaude: () => null },
+    // Aucun binaire géré dans ce profil fictif : on garde le lanceur simulé du test.
+    "./moteurs/installation": { binaireGere: () => null },
     // Aucun compte Claude supplémentaire dans ce banc : la session garde le compte des agents.
     "./comptes-claude": {
       idCompteSupplementaire: () => null,
