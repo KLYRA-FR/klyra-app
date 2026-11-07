@@ -1,0 +1,27 @@
+/* La charte existante : Google Sans Flex, bleu K1, surfaces claires. */
+.visite-dialogue { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; padding: 0; margin: 0; border: 0; background: transparent; color: var(--color-texte-principal); overflow: hidden; }
+.visite-dialogue::backdrop { background: transparent; }
+.visite-voile { position: absolute; inset: 0; }
+.visite-voile[data-sans-cible="true"] { background: rgb(0 13 46 / 32%); }
+.visite-halo { position: absolute; border-radius: 16px; outline: 2px solid var(--color-texte-accent); box-shadow: 0 0 0 100vmax rgb(0 13 46 / 32%); pointer-events: none; }
+.visite-carte { position: absolute; width: min(416px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; overscroll-behavior: contain; padding: 24px; border-radius: 16px; background: var(--color-fond-surface); box-shadow: var(--shadow-ombre-flottante); outline: none; }
+.visite-carte[data-invitation="true"] { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.visite-entete { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--color-texte-secondaire); font-size: 13px; font-variant-numeric: tabular-nums; }
+.visite-carte h2 { margin: 0 0 16px; font-size: 24px; line-height: 1.2; font-weight: 600; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.visite-carte p { margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: var(--color-texte-secondaire); overflow-wrap: anywhere; }
+.visite-carte .visite-repere { padding: 16px; border-radius: 8px; background: var(--color-fond-page); color: var(--color-texte-principal); font-size: 13px; }
+.visite-carte progress { display: block; width: 100%; height: 4px; border: none; appearance: none; margin: 24px 0; border-radius: 8px; overflow: hidden; }
+.visite-carte progress::-webkit-progress-bar { background: var(--color-fond-surface-grise); }
+.visite-carte progress::-webkit-progress-value { background: var(--color-texte-accent); }
+.visite-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.visite-actions button, .visite-fermer { min-height: 44px; border: 0; border-radius: 8px; padding: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.visite-fermer { width: 44px; flex-shrink: 0; font-size: 24px; background: transparent; color: var(--color-texte-secondaire); }
+.visite-actions .visite-principal { padding-inline: 16px; background: var(--color-fond-accent); color: var(--color-texte-inverse); }
+.visite-secondaire { background: transparent; color: var(--color-texte-secondaire); }
+.visite-secondaire:hover, .visite-fermer:hover { background: var(--color-fond-survol); }
+.visite-actions .visite-principal:hover { background: var(--color-bleu-k1-600); }
+.visite-carte button:active { transform: scale(.97); }
+.visite-carte button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.visite-carte button:focus-visible { outline: 2px solid var(--color-texte-accent); outline-offset: 2px; }
+@media (max-width: 639px) { .visite-carte { padding: 16px; } }
+@media (prefers-reduced-motion: reduce) { .visite-carte button:active { transform: none; } }
