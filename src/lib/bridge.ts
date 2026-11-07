@@ -414,6 +414,9 @@ export interface KlyraBridge {
     run: (requestId: string, agent: string, prompt: string) => Promise<Reponse<ClaudeResult>>;
     /** Un titre de quelques mots pour une demande (null : Claude Code absent ou en échec). */
     titre?: (texte: string) => Promise<Reponse<string | null>>;
+    /** La réponse probable de la personne, à suggérer dans son champ (null : rien d'évident, réglage coupé ou échec). */
+    suggestion?: (id: string, echanges: { auteur: "moi" | "agent"; texte: string }[]) => Promise<Reponse<string | null>>;
+    annulerSuggestion?: (id: string) => Promise<Reponse<void>>;
     /** L'épreuve d'un agent pas encore créé (atelier) : un essai sans outil, puis un avis (cf. electron/epreuve.ts). */
     essayer?: (
       requestId: string,
@@ -862,6 +865,8 @@ export interface Reglages {
   configuration: ConfigurationKlyra;
   /** Skills reçues par chaque agent. Absent avant la relance : tout est reçu. */
   skillsParAgent: SkillsParAgent;
+  /** La réponse suggérée dans le champ d'une conversation (Tab l'insère). Coupée : aucun appel. */
+  suggestions: { actives: boolean };
 }
 
 /** Le menu du clic droit dans une page (cf. electron/navigateur/navigateur.ts, `ParametresMenu`). */

@@ -1,12 +1,13 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Textarea } from "klyra-ui";
+import { forwardRef, useCallback, useEffect, useId, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Kbd, Textarea } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { useDictee } from "@/lib/dictee/useDictee";
 import { jouer } from "@/lib/sons/sons";
+import { actionTouche } from "@/lib/suggestion";
 import { BoutonDictee } from "./BoutonDictee";
 import { MiroirDictee } from "./MiroirDictee";
 import { PreparationDictee } from "./PreparationDictee";
@@ -37,7 +38,16 @@ interface PromptBoxProps {
   onColler?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   /** Il y a des pièces jointes : on peut envoyer sans texte. */
   aDesPieces?: boolean;
+  /** La réponse suggérée (texte fantôme du champ vide) : Tab la prend, Échap l'efface. */
+  suggestion?: SuggestionChamp | null;
   className?: string;
+}
+
+export interface SuggestionChamp {
+  texte: string;
+  /** La phrase à insérer ; la suggestion disparaît. */
+  prendre: () => string | null;
+  ignorer: () => void;
 }
 
 /**
@@ -64,6 +74,7 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
     onJoindre,
     onColler,
     aDesPieces = false,
+    suggestion = null,
     className,
   },
   ref,
@@ -84,6 +95,9 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
   const fige = dictee.phase === "preparation" || dictee.phase === "finalisation";
   const canSend = (value.trim().length > 0 || aDesPieces) && !fige;
   const peutArreter = occupe && !!onArreter;
+  /* La suggestion se montre dans le champ vide, hors dictée, comme un placeholder. */
+  const fantome = !enDictee && !value ? (suggestion?.texte ?? null) : null;
+  const idFantome = useId();
 
   /** Envoie, avec le son de l'envoi. */
   const envoyer = () => {
@@ -114,6 +128,25 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
       if (event.key !== "Enter" && event.key !== "Escape") return;
       event.preventDefault();
       if (event.key === "Escape") dictee.annulerPreparation();
+      return;
+    }
+    const action = actionTouche(
+      { key: event.key, shiftKey: event.shiftKey, altKey: event.altKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey, isComposing: event.nativeEvent.isComposing },
+      { vide: !value, suggestion: fantome },
+    );
+    if (action === "ignorer") {
+      event.preventDefault();
+      suggestion?.ignorer();
+      return;
+    }
+    if (action === "inserer") {
+      event.preventDefault();
+      const texte = suggestion?.prendre();
+      if (!texte) return;
+      onChange(texte);
+      dictee.suivre(texte, texte.length);
+      onCurseur?.(texte.length);
+      requestAnimationFrame(() => champ.current?.setSelectionRange(texte.length, texte.length));
       return;
     }
     if (onToucheAvant?.(event)) return;
@@ -175,16 +208,28 @@ export const PromptBox = forwardRef<HTMLTextAreaElement, PromptBoxProps>(functio
             }}
             onKeyDown={onKeyDown}
             onPaste={fige ? undefined : onColler}
-            placeholder={dictee.phase === "ecoute" ? "Parle, le texte s’écrit ici…" : placeholder}
+            placeholder={dictee.phase === "ecoute" ? "Parle, le texte s’écrit ici…" : (fantome ?? placeholder)}
             aria-label="Message"
+            aria-describedby={fantome ? idFantome : undefined}
             className={cn(
               // Pas de contour propre au champ : c'est la carte arrondie autour qui s'éclaire.
               "max-h-[240px] border-0 px-1 outline-none focus:border-0 focus:shadow-none focus:[box-shadow:none] focus-visible:outline-none",
               taille === "grand" ? "min-h-[72px] text-body-s" : "min-h-[44px] text-ui",
               apresTexte && "w-auto! max-w-full [field-sizing:content]",
               dictee.zones && "klyra-dictee-champ",
+              fantome && "pr-14",
             )}
           />
+          {fantome && (
+            <>
+              <span id={idFantome} className="sr-only">
+                Réponse suggérée : {fantome}. Tab pour l’insérer.
+              </span>
+              <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1 text-ui-3xs text-texte-tertiaire">
+                <Kbd>Tab</Kbd>
+              </span>
+            </>
+          )}
           {dictee.zones && <MiroirDictee zones={dictee.zones} champ={champ} />}
         </div>
         {apresTexte}

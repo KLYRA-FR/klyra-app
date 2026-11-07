@@ -47,7 +47,9 @@ const sur = (raison: string): EtatLigne => ({ type: "ordinateur", raison });
 /** Une entrée par ligne du catalogue (`catalogue.ts`), d'après le tableau T-22. */
 export const ETATS_LIGNES: Record<string, EtatLigne> = {
   /* Général : la version de l'app web se lit ici ; le reste règle l'ordinateur. */
+  "test-prise-en-main": sur(RAISONS.ordinateur),
   lancement: sur(RAISONS.ordinateur),
+  "suggestions-reponse": sur(RAISONS.ordinateur),
   raccourcis: sur(RAISONS.ordinateur),
   "dossier-donnees": sur(RAISONS.ordinateur),
   "dossier-klyra": sur(RAISONS.ordinateur),

@@ -85,6 +85,8 @@ import {
   surLimitesCompte,
   surUtilisation,
   titrerDemande,
+  suggererReponse,
+  annulerSuggestion,
   type Utilisation,
 } from "./claude";
 import { moteurs } from "./moteurs";
@@ -656,6 +658,9 @@ function registerBridge() {
   handle("claude:status", () => ({ path: findClaude() }));
   handle("claude:run", (requestId: string, agent: string, prompt: string) => runAgent(requestId, agent, prompt));
   handle("claude:titre", (texte: string) => titrerDemande(String(texte ?? "")));
+  /* La réponse suggérée dans le champ (Tab l'insère) : rien si le réglage est coupé. */
+  handle("claude:suggestion", (id: string, echanges: unknown) => suggererReponse(String(id ?? ""), echanges));
+  handle("claude:suggestion:annuler", (id: string) => annulerSuggestion(String(id ?? "")));
   /* L'épreuve d'un agent pas encore créé (atelier) : un essai sans outil, puis un avis. */
   /* Dans une conversation sur un VPS, l'essai tourne sur le serveur (son Claude Code) ; sinon sur ce PC. */
   handle("claude:essayer", (requestId: string, brouillon: unknown, cas: unknown, contexte: unknown) => {

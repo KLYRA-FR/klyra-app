@@ -32,6 +32,7 @@ export const SECTIONS: SectionReglages[] = [
     entrees: [
       { id: "test-prise-en-main", titre: "Tester l’onboarding", mots: "premier lancement prise en main guide rejouer recommencer simulation mode test" },
       { id: "lancement", titre: "Ouvrir KLYRA au démarrage", mots: "login session ouverture automatique demarrer" },
+      { id: "suggestions-reponse", titre: "Suggérer une réponse", mots: "saisie suggestion texte fantome tab completion autocompletion reponse probable" },
       { id: "raccourcis", titre: "Raccourcis clavier", mots: "touches clavier commande cmd ctrl" },
       { id: "dossier-donnees", titre: "Dossier des données de l’app", mots: "conversations stockage sauvegarde finder" },
       { id: "dossier-klyra", titre: "Dossier ~/.klyra", mots: "atelier planning whisper modele stockage" },
