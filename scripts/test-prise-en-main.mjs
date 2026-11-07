@@ -151,6 +151,9 @@ try {
   await app.cliquer("Continuer l’échange");
   verifier(await app.quand(`!document.querySelector('.prise-guide')`), "l’échange reste ouvert après la prise en main");
   verifier(lire(fichier).etape==='termine', "la fin est enregistrée séparément du nom");
+  verifier(await app.quand(`document.querySelector('[data-visite-etape="invitation"][open]')`), "la visite des pages est proposée juste après l’onboarding");
+  await app.cliquer("Plus tard");
+  verifier(await app.quand(`!document.querySelector('.visite-dialogue')`), "la visite peut être passée pour continuer la conversation");
   verifier(app.erreurs.length===0, "aucune exception JavaScript dans le parcours");
   await app.fermer(); app = null;
   const q=profil("exploration"); app=await ouvrir(q);
