@@ -7,6 +7,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { getBridge, unwrap, type DossierApp, type InfosApp, type Lancement } from "@/lib/bridge";
 import { estMac } from "@/lib/raccourcis";
 import { useOuvrirTestPriseEnMain } from "@/lib/prise-en-main";
+import { useReglages } from "@/lib/reglages";
 import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau, Valeur } from "../ui";
 
 const NOMS_PLATEFORME: Record<string, string> = { darwin: "macOS", win32: "Windows", linux: "Linux" };
@@ -35,6 +36,7 @@ function useRaccourcis() {
         { keys: ["Entrée"], action: "Envoyer le message" },
         { keys: ["Maj", "Entrée"], action: "Aller à la ligne" },
         { keys: ["@"], action: "Mentionner un agent" },
+        { keys: ["Tab"], action: "Reprendre la réponse suggérée" },
       ],
     },
     {
@@ -76,6 +78,23 @@ function Raccourcis() {
         </div>
       ))}
     </div>
+  );
+}
+
+/** La réponse suggérée dans le champ d'une conversation : allumée par défaut, coupée sans aucun appel. */
+function SuggestionsReponse() {
+  const { reglages, erreur, changerSuggestions } = useReglages();
+  return (
+    <Groupe titre="Saisie">
+      <Ligne
+        id="suggestions-reponse"
+        libelle="Suggérer une réponse"
+        description="À la fin d’une réponse d’agent, une réponse probable s’affiche en gris dans le champ vide ; Tab l’insère sans l’envoyer. Chaque suggestion est un petit appel au modèle le plus léger."
+      >
+        <Interrupteur libelle="Suggérer une réponse" actif={!!reglages?.suggestions.actives} disabled={!reglages} onChange={(a) => void changerSuggestions(a)} />
+      </Ligne>
+      {erreur && <Erreur>{erreur}</Erreur>}
+    </Groupe>
   );
 }
 
@@ -144,6 +163,8 @@ export function General() {
         </Ligne>
         {erreur && <Erreur>{erreur}</Erreur>}
       </Groupe>
+
+      <SuggestionsReponse />
 
       <Groupe>
         <Ligne id="raccourcis" libelle="Raccourcis clavier" description="Les raccourcis de l’app. Ils ne se modifient pas encore." pile>

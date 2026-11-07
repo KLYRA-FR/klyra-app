@@ -14,6 +14,7 @@ function poste(acces: Acces = "projet", computerUse = true) {
     sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
     configuration: CONFIGURATION_PAR_DEFAUT,
     skillsParAgent: SKILLS_PAR_DEFAUT,
+    suggestions: { actives: true },
   };
   const deps = {
     ton: "ton Mac",

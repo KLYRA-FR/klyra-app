@@ -52,6 +52,8 @@ export interface Reglages {
   configuration: ConfigurationKlyra;
   /** Skills reçues par chaque agent (skills-par-agent.ts). Absent du fichier : tout est reçu, puis le premier lancement fige. */
   skillsParAgent: SkillsParAgent;
+  /** La réponse suggérée dans le champ d'une conversation (suggestion.ts) : allumée par défaut ; coupée, aucun appel. */
+  suggestions: { actives: boolean };
 }
 
 export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "majPrete";
@@ -63,6 +65,7 @@ const PAR_DEFAUT: Reglages = {
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },
   configuration: CONFIGURATION_PAR_DEFAUT,
   skillsParAgent: SKILLS_PAR_DEFAUT,
+  suggestions: { actives: true },
 };
 
 const fichier = () => path.join(app.getPath("userData"), "reglages.json");
@@ -71,7 +74,7 @@ let courants: Reglages | null = null;
 
 /** Garde seulement les clés connues, de bon type ; le reste reprend la valeur par défaut. */
 function valider(brut: unknown): Reglages {
-  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; navigateur?: { agents?: unknown; moteur?: unknown }; sons?: Record<string, unknown>; configuration?: unknown; skillsParAgent?: unknown } | null;
+  const b = brut as { notifications?: Record<string, unknown>; computerUse?: { actif?: unknown }; navigateur?: { agents?: unknown; moteur?: unknown }; sons?: Record<string, unknown>; configuration?: unknown; skillsParAgent?: unknown; suggestions?: { actives?: unknown } } | null;
   const n = b?.notifications ?? {};
   const notifications = { ...PAR_DEFAUT.notifications };
   for (const cle of Object.keys(notifications) as (keyof PreferencesNotifications)[]) {
@@ -90,6 +93,7 @@ function valider(brut: unknown): Reglages {
     sons,
     configuration: validerConfiguration(b?.configuration),
     skillsParAgent: validerSkillsParAgent(b?.skillsParAgent),
+    suggestions: { actives: b?.suggestions?.actives !== false },
   };
 }
 

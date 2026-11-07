@@ -24,6 +24,7 @@ import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
 import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
 import { useAjoutFichiers } from "./useAjoutFichiers";
+import { useSuggestion } from "./useSuggestion";
 
 /** Les pièces jointes avant l'envoi : une vignette par image, une carte par autre fichier, avec la croix pour l'enlever. */
 export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer: (chemin: string) => void }) {
@@ -253,6 +254,8 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const zone = useRef<HTMLDivElement>(null);
 
   const { ajouter, coller } = useAjoutFichiers(fichiers, setFichiers, setAlerte);
+  /* La réponse suggérée en fin de réponse d'agent (texte fantôme, Tab l'insère). Pas avec des pièces jointes. */
+  const suggestion = useSuggestion(chat.id, text);
 
   /* Glisser des fichiers sur toute la conversation (la section qui contient le composeur). */
   useEffect(() => {
@@ -434,6 +437,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           onJoindre={() => void joindre()}
           onColler={coller}
           aDesPieces={fichiers.length > 0}
+          suggestion={suggestion.suggestion && !fichiers.length && !citation ? { texte: suggestion.suggestion, prendre: suggestion.prendre, ignorer: suggestion.ignorer } : null}
           pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
           apresTexte={fichiers.some(estImage) && <PucesImages fichiers={fichiers} />}
           placeholder={

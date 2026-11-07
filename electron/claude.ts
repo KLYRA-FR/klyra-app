@@ -16,6 +16,7 @@ import { dossierCompteClaude, environnementAvecCompte, idCompteSupplementaire } 
 import { reglagesSession } from "./skills-par-agent";
 import { expliquerLancement, trierExtensions } from "./claude-binaire";
 import { consigneTitre, nettoyerTitre } from "./titre";
+import { consigneSuggestion, echangesValides, nettoyerSuggestion } from "./suggestion";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, resultatEssai, TRAVAIL_SEUL, type CasEpreuve, type ResultatCas } from "./epreuve";
 import { lireJsonPartiel } from "./json-partiel";
 import { finSuiviFond, nouveauSuiviFond, suivreFond, type SuiviFond } from "./taches-fond";
@@ -1063,6 +1064,54 @@ export function titrerDemande(texte: string): Promise<string | null> {
       }
     });
     child.stdin.end(consigneTitre(texte));
+  });
+}
+
+/* Une suggestion à la fois : la nouvelle arrête la précédente, et l'écran peut l'arrêter (frappe, envoi, autre fil). */
+const suggestions = new Map<string, ChildProcess>();
+
+export function annulerSuggestion(id: string): void {
+  suggestions.get(id)?.kill("SIGTERM");
+  suggestions.delete(id);
+}
+
+/**
+ * La réponse probable de la personne, suggérée dans son champ : un tour du
+ * modèle le plus léger, sans outil, sans MCP, sans garder de session. null si
+ * le réglage est coupé, si Claude Code manque ou échoue, ou sans suite évidente.
+ */
+export function suggererReponse(id: string, brut: unknown): Promise<string | null> {
+  const echanges = echangesValides(brut);
+  const bin = findClaude();
+  if (!lireReglages().suggestions.actives || !bin || !id || !echanges.length) return Promise.resolve(null);
+  for (const autre of [...suggestions.keys()]) annulerSuggestion(autre);
+  mkdirSync(ATELIER, { recursive: true });
+  return new Promise((resolve) => {
+    const child = spawn(
+      bin,
+      ["-p", "--model", "haiku", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--tools", ""],
+      { cwd: ATELIER, env: environnementAgent(), windowsHide: true },
+    );
+    suggestions.set(id, child);
+    let stdout = "";
+    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+    const timeout = setTimeout(() => child.kill("SIGTERM"), 30_000);
+    const finir = (r: string | null) => {
+      clearTimeout(timeout);
+      if (suggestions.get(id) === child) suggestions.delete(id);
+      resolve(r);
+    };
+    child.on("error", () => finir(null));
+    child.on("close", (code, signal) => {
+      try {
+        const json = JSON.parse(stdout) as { result?: string; is_error?: boolean; modelUsage?: unknown };
+        enregistrerTourClaude(json.modelUsage, {}, null);
+        finir(json.is_error || code !== 0 || signal ? null : nettoyerSuggestion(json.result ?? ""));
+      } catch {
+        finir(null);
+      }
+    });
+    child.stdin.end(consigneSuggestion(echanges));
   });
 }
 
