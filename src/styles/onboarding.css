@@ -1,4 +1,17 @@
 /* Premier lancement : identité KLYRA, densité calme, une décision par scène. */
+.prise-test { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.prise-test > .prise-page { flex: 1; min-height: 0; height: auto; }
+.prise-test-bandeau { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px 24px; background: var(--color-fond-teinte-bleue); color: var(--color-texte-principal); }
+.prise-test-bandeau > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.prise-test-bandeau strong { font-size: 13px; }
+.prise-test-bandeau span { font-size: 13px; line-height: 1.5; }
+.prise-test-bandeau button { flex-shrink: 0; }
+.prise-test-messages { display: flex; flex-direction: column; gap: 16px; margin: 24px 0; }
+.prise-test-messages > div { border-radius: 16px; background: var(--color-fond-page); padding: 16px; }
+.prise-test-messages strong { font-size: 13px; }
+.prise-test-messages p { margin: 8px 0 0; font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-shell="desktop"] .prise-test-bandeau { padding-top: 48px; }
+[data-shell="desktop"] .prise-test .prise-entete { padding-top: 16px; min-height: 80px; }
 .prise-page {
   --prise-x: 0px;
   --prise-y: 0px;
