@@ -126,7 +126,7 @@ export function AppRail({
           const active = pathname === item.href || (item.href === "/chats" && (pathname === "/equipe" || (pathname === "/chat" && panneau === "conversations")));
           return (
             <Infobulle key={item.href} texte={item.label} cote="droite">
-            <Link href={item.href} onClick={item.href === "/chats" ? (e) => versDernierChat(e, pathname, chats, router.push) : undefined} aria-current={active ? "page" : undefined} className={cn(entree(active), "relative")}>
+            <Link href={item.href} data-visite={item.href} onClick={item.href === "/chats" ? (e) => versDernierChat(e, pathname, chats, router.push) : undefined} aria-current={active ? "page" : undefined} className={cn(entree(active), "relative")}>
               <Entree icone={item.icon} nom={item.label} active={active} />
               {item.href === "/tickets" && aValider > 0 && (
                 <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-pill bg-bleu-k1-500 px-1 text-ui-2xs leading-none font-semibold text-texte-inverse">
@@ -142,7 +142,7 @@ export function AppRail({
         {SEPARATEUR}
         {/* Les projets : une tuile par projet du rail, ses deux lettres ; la liste complète est dans Projets. */}
         <Infobulle texte="Projets" cote="droite">
-          <Link href="/projets" className={entree(pathname === "/projets")}>
+          <Link href="/projets" data-visite="/projets" className={entree(pathname === "/projets")}>
             <Entree icone="projets-dossier" nom="Projets" active={pathname === "/projets"} />
           </Link>
         </Infobulle>
