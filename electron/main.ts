@@ -420,7 +420,7 @@ function registerBridge() {
   const priseEnMain = new StockagePriseEnMain(path.join(app.getPath("userData"), "prise-en-main.json"), () => {
     const mes = mesAgents();
     return mes.depart === "nouveau" && mes.assistant.nom === null;
-    });
+  });
   handle("prise-en-main:lire", () => priseEnMain.lire());
   handle("prise-en-main:ecrire", (choix: unknown) => priseEnMain.ecrire(choix));
   // Pont limité : ni URL arbitraire, ni clé, ni user_id fournis par le renderer.

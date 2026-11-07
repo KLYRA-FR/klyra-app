@@ -446,4 +446,3 @@ export const MODELES = AGENT_TEMPLATES.map((t) => ({
   ...t,
   role: roleFromContent(t.name, t.content, {}, null),
 }));
-"

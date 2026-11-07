@@ -168,7 +168,7 @@
         "name": "KLYRA",
         "schemes": [
           "klyra"
-    ]
+        ]
       }
     ],
     "files": [
@@ -193,13 +193,13 @@
           "target": "dmg",
           "arch": [
             "arm64"
-      ]
+          ]
         },
         {
           "target": "zip",
           "arch": [
             "arm64"
-      ]
+          ]
         }
       ],
       "icon": "resources/icon.icns",
@@ -218,7 +218,7 @@
           "to": "whisper",
           "filter": [
             "whisper-server"
-      ]
+          ]
         },
         {
           "from": "vendor/cua-driver/darwin",
@@ -226,7 +226,7 @@
           "filter": [
             "cua-driver",
             "LICENSE.md"
-      ]
+          ]
         }
       ]
     },
@@ -239,7 +239,7 @@
           "target": "nsis",
           "arch": [
             "x64"
-      ]
+          ]
         }
       ],
       "icon": "resources/icon.png",
@@ -250,7 +250,7 @@
           "filter": [
             "*.exe",
             "*.dll"
-      ]
+          ]
         },
         {
           "from": "vendor/cua-driver/win32",
@@ -258,7 +258,7 @@
           "filter": [
             "cua-driver.exe",
             "LICENSE.md"
-      ]
+          ]
         }
       ]
     },
@@ -269,5 +269,4 @@
       "shortcutName": "KLYRA"
     }
   }
-}
 }

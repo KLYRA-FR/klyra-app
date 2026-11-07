@@ -257,4 +257,3 @@ export function HomeScreen() {
     </div>
   );
 }
-"
