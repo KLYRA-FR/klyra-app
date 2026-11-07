@@ -8,6 +8,7 @@ import { getBridge, unwrap, type DossierApp, type InfosApp, type Lancement } fro
 import { estMac } from "@/lib/raccourcis";
 import { useOuvrirTestPriseEnMain } from "@/lib/prise-en-main";
 import { useReglages } from "@/lib/reglages";
+import { useVisiteGuidee } from "@/components/onboarding/VisiteGuidee";
 import { Erreur, Groupe, Interrupteur, Ligne, SeulementBureau, Valeur } from "../ui";
 
 const NOMS_PLATEFORME: Record<string, string> = { darwin: "macOS", win32: "Windows", linux: "Linux" };
@@ -118,6 +119,7 @@ function BoutonOuvrir({ dossier }: { dossier: DossierApp }) {
 }
 
 export function General() {
+  const visite = useVisiteGuidee();
   const ouvrirTest = useOuvrirTestPriseEnMain();
   const pont = getBridge()?.reglages;
   const [lancement, setLancement] = useState<Lancement | null>(null);
@@ -142,6 +144,11 @@ export function General() {
 
   return (
     <>
+      <Groupe titre="Aide et découverte">
+        <Ligne id="visite-guidee" libelle="Visite guidée de KLYRA" description="Découvre les pages de l’app, leur rôle et où retrouver ton travail. Tu peux interrompre la visite à tout moment.">
+          {visite ? <Bouton id="revoir-visite-guidee" variant="blanc" taille="md" onClick={visite.ouvrir}>{visite.reprendre ? "Reprendre la visite" : "Revoir le tutoriel"}</Bouton> : <SeulementBureau />}
+        </Ligne>
+      </Groupe>
       <Groupe titre="Prise en main">
         <Ligne id="test-prise-en-main" libelle="Tester l’onboarding" description="Rejoue les cinq étapes avec une IA simulée. Tes conversations, tes comptes et tes réglages restent intacts.">
           {ouvrirTest ? <Bouton id="tester-prise-en-main" variant="blanc" taille="md" onClick={ouvrirTest}>Lancer le mode test</Bouton> : <SeulementBureau />}
