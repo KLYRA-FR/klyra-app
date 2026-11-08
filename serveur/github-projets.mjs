@@ -63,6 +63,32 @@ const urlGithub = (v) => {
         return null;
     }
 };
+/**
+ * Une réécriture d'adresse (`url.<base>.insteadOf` / `pushInsteadOf`, lignes de `git config --get-regexp`) qui
+ * enverrait `https://github.com/<nom>.git` vers un autre dépôt de github.com, où partirait le jeton. git prend la
+ * plus longue correspondance ; une réécriture vers un autre hôte (ssh, miroir) n'emporte pas le jeton et reste permise.
+ */
+export function reecritVersAutreDepot(lignes, nom) {
+    const adresse = `https://github.com/${nom}.git`;
+    for (const genre of ["insteadof", "pushinsteadof"]) {
+        let meilleure = null;
+        for (const ligne of lignes) {
+            const m = ligne.match(/^url\.(.+)\.(insteadof|pushinsteadof) (.*)$/i);
+            if (!m || m[2].toLowerCase() !== genre)
+                continue;
+            const [, base, , motif] = m;
+            if (motif && adresse.toLowerCase().startsWith(motif.toLowerCase()) && (!meilleure || motif.length > meilleure.motif.length))
+                meilleure = { base, motif };
+        }
+        if (!meilleure)
+            continue;
+        const reecrite = meilleure.base + adresse.slice(meilleure.motif.length);
+        const vers = reecrite.match(/^https?:\/\/(?:[^/@]*@)?github\.com\.?(?::\d+)?\/+([^?#]+?)(?:\.git)?\/*$/i);
+        if (vers && vers[1].toLowerCase() !== nom.toLowerCase())
+            return true;
+    }
+    return false;
+}
 /** Les vérifications d'un commit (check runs) en un état : échec dès qu'une échoue, en cours tant qu'une tourne. */
 export function resumerTests(reponse) {
     const runs = liste(objet(reponse).check_runs);
@@ -309,9 +335,15 @@ export class GithubProjets {
             throw new Error("La configuration git de ce dossier n’a pas pu être vérifiée : rien n’est envoyé à GitHub.");
         const risques = r.sortie.split("\n").filter(Boolean).filter((ligne) => {
             const [portee, cle = ""] = ligne.split("\t");
-            return portee === "local" || portee === "worktree" || /^http\.https?:\/\/([^/]*@)?github\.com([:/]|$)/i.test(cle);
+            // « github.com. » (point final) vaut github.com pour git.
+            return portee === "local" || portee === "worktree" || /^http\.https?:\/\/([^/]*@)?github\.com\.?([:/]|$)/i.test(cle);
         });
-        if (risques.length)
+        // Une réécriture d'adresse venue d'ailleurs (un fichier inclus depuis la configuration de la personne compris)
+        // ne doit pas emmener le jeton vers un autre dépôt de github.com.
+        const urls = await this.configGit(cible, ["config", "--includes", "--get-regexp", "^url\\..*\\.(insteadof|pushinsteadof)$"]);
+        if (urls.code !== 0 && urls.code !== 1)
+            throw new Error("La configuration git de ce dossier n’a pas pu être vérifiée : rien n’est envoyé à GitHub.");
+        if (risques.length || reecritVersAutreDepot(urls.sortie.split("\n").filter(Boolean), nom))
             throw new Error("La configuration git de ce dossier change les adresses, le réseau ou les identifiants : rien n’est envoyé à GitHub depuis ce dossier.");
         return nom;
     }

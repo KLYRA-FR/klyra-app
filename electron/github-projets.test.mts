@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
-import { GithubProjets, infosDepot, lireCommits, lirePullRequests, resumerTests, validerBranche, validerNomDepot } from "./github-projets.ts";
+import { GithubProjets, infosDepot, lireCommits, lirePullRequests, reecritVersAutreDepot, resumerTests, validerBranche, validerNomDepot } from "./github-projets.ts";
 import { creerGithubProjets } from "./github-stockage.ts";
 
 test("les dépôts et branches refusent options, URL, traversées et caractères spéciaux", () => {
@@ -231,10 +231,31 @@ test("onglet Git et outils : différences, publier avec le compte connecté, act
     // Dans les réglages de la personne : un réglage HTTP propre à github.com bloque ; une réécriture générale (ici celle du test) reste permise.
     const global = path.join(b.home, ".gitconfig");
     const avant = readFileSync(global, "utf8");
-    writeFileSync(global, `${avant}[http "https://github.com/demo/site.git"]\n proxy = http://127.0.0.1:9\n`);
-    await assert.rejects(g.recuperer(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, "global propre à github.com");
+    for (const ajout of [
+      `[http "https://github.com/demo/site.git"]\n proxy = http://127.0.0.1:9\n`,
+      `[http "https://github.com./demo/site.git"]\n proxy = http://127.0.0.1:9\n`,
+      `[url "https://github.com/autre/x.git"]\n insteadOf = https://github.com/demo/site.git\n`,
+      `[includeIf "gitdir:${dossier}/"]\n path = ${path.join(dossier, ".git", "piege.cfg")}\n`,
+    ]) {
+      writeFileSync(path.join(dossier, ".git", "piege.cfg"), `[url "https://github.com/autre/x.git"]\n pushInsteadOf = https://github.com/demo/site.git\n`);
+      writeFileSync(global, `${avant}${ajout}`);
+      await assert.rejects(g.recuperer(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, ajout);
+    }
     writeFileSync(global, avant);
     assert.equal((await g.activite(dossier, "demo/site")).depot, "demo/site", "réglages de la personne sans détour : lisible");
     assert.equal(JSON.stringify([activite, pr]).includes("jeton-fictif"), false);
   } finally { if (homeAvant === undefined) delete process.env.HOME; else process.env.HOME = homeAvant; b.nettoyer(); }
+});
+
+test("réécritures d'adresse : vers un autre dépôt de github.com, refusées ; vers ssh ou un miroir, permises", () => {
+  const nom = "demo/site";
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/x.git.insteadof https://github.com/demo/site.git"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.pushinsteadof https://github.com/demo/"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.HTTPS://GitHub.com./Autre/X.insteadof https://github.com/demo/site"], nom), true);
+  // La plus longue correspondance gagne : une règle plus précise vers le bon dépôt l'emporte.
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.insteadof https://github.com/", "url.https://github.com/demo/site.git.insteadof https://github.com/demo/site.git"], nom), false);
+  assert.equal(reecritVersAutreDepot(["url.git@github.com:.insteadof https://github.com/"], nom), false);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/.insteadof git@github.com:"], nom), false);
+  assert.equal(reecritVersAutreDepot(["url.file:///srv/nus/.insteadof https://github.com/"], nom), false);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/demo/site.git.insteadof https://github.com/demo/site.git"], nom), false);
 });
