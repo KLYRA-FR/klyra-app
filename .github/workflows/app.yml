@@ -29,7 +29,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
+      - name: Dépendances (nouvel essai si GitHub ne répond pas)
+        shell: bash
+        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: npm pkg set version="$VERSION"
       # next build vérifie aussi les types (ceux des routes sont générés pendant le build).
       - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
@@ -76,7 +79,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
+      - name: Dépendances (nouvel essai si GitHub ne répond pas)
+        shell: bash
+        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: npm pkg set version="$env:VERSION"
       - run: pnpm build
       - run: pnpm build:electron
@@ -122,7 +128,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
+      - name: Dépendances (nouvel essai si GitHub ne répond pas)
+        shell: bash
+        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: pnpm test:convex
       - name: Déployer les fonctions Convex
         env:

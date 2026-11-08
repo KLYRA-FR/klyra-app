@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { lireFiche, messageDepot, passager, plusRecente, relanceApres } from "./maj-depot";
 import { lireReglages, notificationPermise } from "./reglages";
 
 /**
@@ -16,6 +17,10 @@ import { lireReglages, notificationPermise } from "./reglages";
  * Sans compte Apple Developer, le système de mise à jour d'Electron (Squirrel)
  * refuserait l'app sur Mac : on la remplace nous-mêmes, après avoir vérifié sa
  * signature et son identifiant. Sous Windows, c'est l'installateur qui s'en charge.
+ *
+ * L'API de GitHub répond parfois 5xx ou limite un réseau : l'app lit alors la fiche de
+ * la dernière version (`latest.yml`) sur github.com, et après un échec passager
+ * réessaie au bout de quelques minutes plutôt que d'attendre l'heure (`maj-depot.ts`).
  */
 
 const DEPOT = "KLYRA-FR/klyra-app-versions";
@@ -26,6 +31,8 @@ const DEPOT = "KLYRA-FR/klyra-app-versions";
  */
 const URL_TEST = app.isPackaged ? undefined : process.env.KLYRA_MAJ_URL;
 const DERNIERE = URL_TEST ?? `https://api.github.com/repos/${DEPOT}/releases/latest`;
+/* Le secours : la fiche et les fichiers de la dernière version, servis par github.com (hors de l'API). */
+const SECOURS = (app.isPackaged ? undefined : process.env.KLYRA_MAJ_SECOURS) ?? (URL_TEST ? null : `https://github.com/${DEPOT}/releases`);
 const ACTIVES = app.isPackaged || !!URL_TEST;
 const IDENTIFIANT = "design.klyra.app";
 const INTERVALLE_MS = 60 * 60 * 1000;
@@ -39,6 +46,9 @@ const FICHE = MAC ? "latest-mac.yml" : "latest.yml";
 /** La nouvelle version, téléchargée et vérifiée : l'app (Mac) ou l'installateur (Windows). */
 let prete: { version: string; chemin: string } | null = null;
 let enCours = false;
+/* Les échecs passagers d'affilée, et la relance rapide qui suit le dernier. */
+let echecsPassagers = 0;
+let relance: ReturnType<typeof setTimeout> | null = null;
 
 /** Ce que les Réglages et le rail affichent : où en est la mise à jour. */
 export interface EtatMaj {
@@ -88,24 +98,6 @@ export function surEtatMaj(f: (etat: EtatMaj) => void): () => void {
   return () => abonnes.delete(f);
 }
 
-/** Un message qu'on comprend, quand le dépôt des versions ne répond pas comme prévu. */
-function messageDepot(statut: number): string {
-  if (statut === 404) return `Le dépôt des versions (${DEPOT}) est introuvable ou n’a aucune version publiée.`;
-  if (statut === 403 || statut === 429) return "GitHub limite les vérifications pour le moment (trop de demandes depuis ce réseau). L’app réessaiera dans une heure.";
-  if (statut >= 500) return `GitHub ne répond pas (erreur ${statut}). L’app réessaiera dans une heure.`;
-  return `Le dépôt des versions a répondu ${statut} : la vérification n’a pas abouti.`;
-}
-
-/** « 0.1.42 » > « 0.1.9 » : comparaison nombre par nombre. */
-function plusRecente(a: string, b: string): boolean {
-  const x = a.split(".").map(Number);
-  const y = b.split(".").map(Number);
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
-  }
-  return false;
-}
-
 function lancer(bin: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(bin, args, { timeout: 120_000 }, (erreur, sortie, stderr) => (erreur ? reject(new Error(stderr || erreur.message)) : resolve(sortie)));
@@ -143,6 +135,56 @@ function appInstallee(): string {
   return path.resolve(process.execPath, "..", "..", "..");
 }
 
+/** La dernière version publiée : son numéro, l'app pour ce système, sa fiche (ou l'empreinte lue dans la fiche). */
+type Trouvee = {
+  numero: string;
+  fichier: { name: string; browser_download_url: string } | undefined;
+  fiche: { name: string; browser_download_url: string } | undefined;
+  empreinte?: string;
+};
+
+/**
+ * Par l'API de GitHub d'abord ; si elle échoue (hors ligne, 5xx, limite), par la fiche de la
+ * dernière version sur github.com. `statut` : l'échec à montrer (null : injoignable).
+ */
+async function derniereVersion(): Promise<Trouvee | { statut: number | null } | { message: string }> {
+  let statut: number | null = null;
+  let reponse: Response | null = null;
+  try {
+    reponse = await net.fetch(DERNIERE, { headers: { Accept: "application/vnd.github+json" } });
+    statut = reponse.status;
+  } catch {
+    /* hors ligne, ou GitHub injoignable : on tente la fiche */
+  }
+  if (reponse?.ok) {
+    const version = (await reponse.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string }[] };
+    const numero = version.tag_name?.replace(/^v/, "");
+    if (!numero) return { message: "La dernière version publiée n’a pas de numéro : elle est ignorée." };
+    return { numero, fichier: version.assets?.find((a) => a.name.endsWith(FICHIER)), fiche: version.assets?.find((a) => a.name === FICHE) };
+  }
+  /* Un dépôt introuvable l'est aussi pour la fiche ; un autre échec de l'API, on tente la fiche. */
+  if (!SECOURS || statut === 404 || (statut !== null && !passager(statut))) return { statut };
+  try {
+    const reponse = await net.fetch(`${SECOURS}/latest/download/${FICHE}`);
+    if (!reponse.ok) return { statut: statut ?? reponse.status };
+    const lue = lireFiche(await reponse.text(), FICHIER);
+    if (!lue) return { statut: statut ?? reponse.status };
+    const url = `${SECOURS}/download/v${lue.version}/${encodeURIComponent(lue.fichier)}`;
+    return { numero: lue.version, fichier: { name: lue.fichier, browser_download_url: url }, fiche: undefined, empreinte: lue.empreinte };
+  } catch {
+    return { statut };
+  }
+}
+
+/** Une vérification de plus dans quelques minutes, après un échec passager. */
+function relancerDans(minutes: number) {
+  if (relance) clearTimeout(relance);
+  relance = setTimeout(() => {
+    relance = null;
+    void verifier();
+  }, minutes * 60_000);
+}
+
 async function verifier() {
   if (enCours || prete) return;
   enCours = true;
@@ -151,24 +193,25 @@ async function verifier() {
   derniere = { statut: "a-jour", verifieeLe: Date.now(), erreur: null, disponible: derniere.disponible };
   const echec = (erreur: string) => (derniere = { ...derniere, statut: "erreur", verifieeLe: Date.now(), erreur });
   try {
-    let reponse: Response;
-    try {
-      reponse = await net.fetch(DERNIERE, { headers: { Accept: "application/vnd.github+json" } });
-    } catch {
-      return echec(`Impossible de joindre le dépôt des versions (${DEPOT}) : vérifie ta connexion à internet. L’app réessaiera dans une heure.`);
+    const trouvee = await derniereVersion();
+    if ("message" in trouvee) return echec(trouvee.message);
+    if ("statut" in trouvee) {
+      const estPassager = passager(trouvee.statut);
+      const minutes = estPassager ? relanceApres(echecsPassagers) : null;
+      if (estPassager) {
+        echecsPassagers++;
+        if (minutes !== null) relancerDans(minutes);
+      }
+      return echec(messageDepot(DEPOT, trouvee.statut, minutes));
     }
-    if (!reponse.ok) return echec(messageDepot(reponse.status));
-    const version = (await reponse.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string }[] };
-    const numero = version.tag_name?.replace(/^v/, "");
-    if (!numero) return echec("La dernière version publiée n’a pas de numéro : elle est ignorée.");
+    echecsPassagers = 0;
+    const { numero, fichier, fiche, empreinte: empreinteFiche } = trouvee;
     derniere.disponible = numero;
     if (!plusRecente(numero, app.getVersion())) return;
-    const fichier = version.assets?.find((a) => a.name.endsWith(FICHIER));
-    const fiche = version.assets?.find((a) => a.name === FICHE);
-    if (!fichier || !fiche) return echec(`La version ${numero} ne contient pas encore l’app pour ce système.`);
+    if (!fichier || (!fiche && !empreinteFiche)) return echec(`La version ${numero} ne contient pas encore l’app pour ce système.`);
 
     // L'empreinte publiée avec la version : un fichier abîmé ou remplacé est refusé.
-    const empreinte = (await telecharger(fiche.browser_download_url))?.toString("utf8").match(/^sha512: (\S+)$/m)?.[1];
+    const empreinte = empreinteFiche ?? (fiche ? (await telecharger(fiche.browser_download_url))?.toString("utf8").match(/^sha512: (\S+)$/m)?.[1] : undefined);
     const contenu = await telechargerAvecProgression(fichier.browser_download_url).finally(() => (progression = null));
     if (!empreinte || !contenu || createHash("sha512").update(contenu).digest("base64") !== empreinte) {
       return echec(`La version ${numero} n’a pas passé le contrôle d’intégrité : elle n’est pas installée.`);
