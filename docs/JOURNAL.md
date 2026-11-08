@@ -1,5 +1,15 @@
 # Journal du projet — app KLYRA
 
+## 8 novembre 2026 — Espace projet, lots 1 et 2 : ouvrir un dépôt en un clic
+
+Corentin trouvait l'ajout d'un dépôt peu intuitif (« il est censé avoir toutes les infos de lui-même ») et l'espace projet trop éloigné d'un chat. Analyse et refonte proposées en 5 lots ; Corentin a validé les lots 1 et 2.
+
+- **Lot 1, correctifs** : la carte des consignes ne dit plus « Pas encore de consignes » quand le dépôt a un CLAUDE.md ou un AGENTS.md (`situationConsignes`, `src/lib/consignes-projet.ts` : vierge, CLAUDE.md seul, AGENTS.md seul, les deux sans lien, en place ; « Relier AGENTS.md » n'ajoute que l'import). Les boutons « Nouveau fichier » et « Nouveau dossier » du panneau, sans action, sont retirés. Un projet de serveur dit « Sur <serveur> » au lieu de `/var/lib/klyra/projets/…` (`emplacementProjet`, chemin complet au survol) ; sur le poste, « ~ » aussi pour Linux et Windows.
+- **Lot 2, un dépôt en un clic** : « Nouveau projet » s'ouvre sur les dépôts GitHub (le dossier reste un onglet). La liste montre la description, privé, le langage et le dernier envoi (`infosDepot`, PC et VPS ; site gardé seulement en http(s), sans identifiant), la recherche lit aussi la description. « Ouvrir » sur une ligne clone la branche par défaut et ouvre le projet, sans formulaire : nom du dépôt, description en ligne, site en aperçu (`projetDepuisDepot`). Un dépôt déjà ouvert sur cette machine porte « Déjà ouvert » et « Rouvrir » ; une autre branche se choisit par le bouton de branche de la ligne (projet « site (dev) »). Le dossier : son choix et son nom seulement. Statut, épingle, modifier et retirer passent au clic droit d'un projet (`useMenuProjet` : rail, panneau, cartes ; retirer demande confirmation et laisse le dossier). « Modifier » garde tous les champs. Code du serveur : 50 (les champs sont facultatifs : un serveur plus ancien liste ses dépôts sans détails).
+- **Reste, dans l'ordre** : lot 3, un projet ouvert comme un chat (dernière conversation, même en-tête et même panneau qu'un agent, un agent par conversation) ; lot 4, l'onglet Git ; lot 5, PR, tests et commits GitHub, et des outils GitHub pour les agents sans leur donner la clé. **Demande de Corentin à intégrer au lot 3** : choisir un dépôt depuis le composeur d'un chat classique, comme Claude Desktop ; la conversation devient alors une conversation du projet de ce dépôt et apparaît dans le projet.
+
+Validation dans cette session : `klyra-ui` (dépôt privé) n'était pas accessible ; types, lint, tests unitaires, build et parcours Electron ont tourné avec un remplaçant local de `klyra-ui` (jamais committé). La CI de la pull request les rejoue avec le vrai paquet.
+
 ## 8 novembre 2026 — Reconnexion Composio dans les fils déjà ouverts
 
 Corentin s'est reconnecté à Composio, mais son fil continuait à recevoir « Authentication required ». Les moteurs conservaient l'en-tête OAuth installé au démarrage ; sur le VPS, la génération ne distinguait que connecté/non connecté.

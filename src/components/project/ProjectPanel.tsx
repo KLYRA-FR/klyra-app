@@ -6,9 +6,12 @@ import { Icon } from "@/components/icons/Icon";
 import { BoutonIcone } from "@/components/ui/Bouton";
 import { cn } from "@/lib/cn";
 import { useArbreProjet } from "@/lib/arbre-projet";
+import { emplacementProjet } from "@/lib/depot-projet";
+import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { useModifiedFiles, useProjects, useWorkspace } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
 import { FileTree } from "./FileTree";
+import { useMenuProjet } from "./MenuProjet";
 import { ouvrirFichier } from "./Visionneuse";
 
 /**
@@ -21,6 +24,8 @@ export function ProjectPanel({ project, onClose }: { project: Project; onClose: 
   const { chats } = useWorkspace().state;
   const modified = useModifiedFiles(project.id);
   const arbre = useArbreProjet(project);
+  const serveurs = useServeursRelies();
+  const { ouvrirMenu, menuProjet } = useMenuProjet();
 
   return (
     <aside
@@ -47,6 +52,7 @@ export function ProjectPanel({ project, onClose }: { project: Project; onClose: 
               key={p.id}
               href={`/projet?id=${p.id}`}
               aria-current={active ? "page" : undefined}
+              onContextMenu={(e) => ouvrirMenu(e, p)}
               className={cn(
                 "flex h-8 items-center gap-2.5 rounded-sm px-2 text-ui-s no-underline transition-colors duration-[120ms] ease-sortie",
                 active ? "bg-fond-surface-grise font-medium text-texte-principal" : "text-texte-secondaire hover:bg-fond-survol",
@@ -63,11 +69,11 @@ export function ProjectPanel({ project, onClose }: { project: Project; onClose: 
         })}
       </div>
 
+      {menuProjet}
+
       {/* Fichiers du projet */}
       <div className="flex items-center gap-1 pt-3 pr-2 pb-1 pl-4">
         <span className="flex-1 text-ui font-semibold text-texte-principal">Fichiers</span>
-        <BoutonIcone taille="mini" icone={<Icon name="file-plus-01" size={16} />} libelle="Nouveau fichier" className="text-icone-secondaire" />
-        <BoutonIcone taille="mini" icone={<Icon name="folder-plus-01" size={16} />} libelle="Nouveau dossier" className="text-icone-secondaire" />
         <BoutonIcone
           taille="mini"
           icone={<Icon name="chevron-left" size={16} />}
@@ -77,8 +83,8 @@ export function ProjectPanel({ project, onClose }: { project: Project; onClose: 
           className="text-icone-secondaire"
         />
       </div>
-      <p className="m-0 px-4 pb-2 text-ui-2xs leading-[1.4] text-texte-tertiaire">
-        <span className="klyra-mono [overflow-wrap:anywhere]">{project.folder.replace(/^\/Users\/[^/]+/, "~")}</span>
+      <p title={project.folder} className="m-0 px-4 pb-2 text-ui-2xs leading-[1.4] text-texte-tertiaire">
+        <span className={cn(!project.lieu && "klyra-mono", "[overflow-wrap:anywhere]")}>{emplacementProjet(project.folder, project.lieu, nomLieu(project.lieu, serveurs))}</span>
         <br />
         Clic sur un fichier pour le voir
       </p>

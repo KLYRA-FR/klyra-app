@@ -32,3 +32,13 @@ export function resumeDepot(etat: Pick<EtatGit, "branche" | "suivie" | "enAvance
   if (etat.suivie && retard === 0 && etat.enAvance === 0 && etat.fichiers.length === 0) parties.push("à jour depuis la dernière récupération");
   return parties.join(" · ");
 }
+
+/**
+ * Où vit un projet, en mots : « Sur VPS Hetzner » pour un serveur (le chemin brut, sous
+ * /var/lib/klyra/projets, ne dit rien à la personne), le dossier avec « ~ » sur ce poste
+ * (/Users/x, /home/x ou C:\Users\x).
+ */
+export function emplacementProjet(folder: string, lieu: string | null | undefined, nomServeur: string): string {
+  if (lieu) return `Sur ${nomServeur}`;
+  return folder.replace(/^(?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)(?=$|[\\/])/, "~");
+}

@@ -30,6 +30,33 @@ export function validerBranche(v: unknown): string {
   return v;
 }
 
+/** Un texte venu de GitHub, sur une ligne, sans caractère de contrôle, coupé à `max`. */
+function texteCourt(v: unknown, max: number): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
+}
+
+/**
+ * Ce que GitHub dit d'un dépôt dans sa liste : la description, le site, le langage et le dernier envoi.
+ * Le site n'est gardé qu'en http(s) (jamais `javascript:` ni un identifiant dans l'adresse).
+ */
+export function infosDepot(r: Record<string, unknown>): Required<Pick<DepotGithubProjet, "description" | "site" | "langage" | "pousseLe">> {
+  let site: string | null = null;
+  const brut = texteCourt(r.homepage, 500);
+  if (brut) {
+    try {
+      const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(brut) ? brut : `https://${brut}`);
+      if ((u.protocol === "https:" || u.protocol === "http:") && !u.username && !u.password && u.hostname.includes(".")) site = u.href;
+    } catch {
+      /* adresse illisible : pas de site */
+    }
+  }
+  const pousse = typeof r.pushed_at === "string" && !Number.isNaN(Date.parse(r.pushed_at)) ? new Date(r.pushed_at).toISOString() : null;
+  return { description: texteCourt(r.description, 300), site, langage: texteCourt(r.language, 40), pousseLe: pousse };
+}
+
 export class GithubProjets {
   private login: ChildProcess | null = null;
   private vue: EtatGithubProjet = { compte: null, connexion: null, enCours: false, erreur: null };
@@ -148,7 +175,13 @@ export class GithubProjets {
     return pages.flat().filter((x): x is Record<string, unknown> => !!x && typeof x === "object");
   }
   async depots(): Promise<DepotGithubProjet[]> {
-    return (await this.pages("/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member")).map((r) => ({ nom: validerNomDepot(r.full_name), prive: r.private === true, branche: typeof r.default_branch === "string" ? r.default_branch : "", archive: r.archived === true }));
+    return (await this.pages("/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member")).map((r) => ({
+      nom: validerNomDepot(r.full_name),
+      prive: r.private === true,
+      branche: typeof r.default_branch === "string" ? r.default_branch : "",
+      archive: r.archived === true,
+      ...infosDepot(r),
+    }));
   }
   async branches(depot: string): Promise<string[]> {
     const nom = validerNomDepot(depot);

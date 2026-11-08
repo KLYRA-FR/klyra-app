@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
-import { GithubProjets, validerBranche, validerNomDepot } from "./github-projets.ts";
+import { GithubProjets, infosDepot, validerBranche, validerNomDepot } from "./github-projets.ts";
 import { creerGithubProjets } from "./github-stockage.ts";
 
 test("les dépôts et branches refusent options, URL, traversées et caractères spéciaux", () => {
@@ -31,7 +31,7 @@ else if (a[0] === 'auth' && a[1] === 'login') {
  setTimeout(() => process.exit(0), 500);
 } else if (a[0] === 'auth' && a[1] === 'token') console.log('jeton-de-test');
 else if (a.includes('/user')) console.log(JSON.stringify({login:'demo'}));
-else if (a.some(x=>x.startsWith('/user/repos'))) console.log(JSON.stringify([[{full_name:'demo/site',private:true,default_branch:'main'}],[{full_name:'org/autre',private:false,default_branch:'dev'}]]));
+else if (a.some(x=>x.startsWith('/user/repos'))) console.log(JSON.stringify([[{full_name:'demo/site',private:true,default_branch:'main',description:'  Le site\\n de démo  ',homepage:'demo.example.com',language:'TypeScript',pushed_at:'2026-11-08T10:00:00Z'}],[{full_name:'org/autre',private:false,default_branch:'dev',homepage:'javascript:alert(1)',description:''}]]));
 else if (a.some(x=>x.includes('/branches'))) console.log(JSON.stringify([[{name:'main'}],[{name:'feat/test'}]]));
 else process.exit(1);
 `);
@@ -47,7 +47,10 @@ test("pagination complète des dépôts privés et organisations, branches et é
   try {
     const g = new GithubProjets({ racine: path.join(b.tmp, "projets"), gh: b.gh, lire: async () => ({ jeton: "secret-fictif", compte: "demo" }), ecrire: async () => {} });
     assert.equal((await g.depots()).length, 2);
-    assert.equal((await g.depots())[0].prive, true);
+    const [site, orga] = await g.depots();
+    assert.equal(site.prive, true);
+    assert.deepEqual([site.description, site.site, site.langage, site.pousseLe], ["Le site de démo", "https://demo.example.com/", "TypeScript", "2026-11-08T10:00:00.000Z"]);
+    assert.deepEqual([orga.description, orga.site, orga.langage, orga.pousseLe], [null, null, null, null], "pas de site en javascript:, rien d'inventé");
     assert.deepEqual(await g.branches("demo/site"), ["main", "feat/test"]);
     assert.equal(JSON.stringify(await g.etat()).includes("secret-fictif"), false);
     await assert.rejects(g.ouvrir("demo/site", "absente"), /n’existe plus/);
@@ -143,4 +146,12 @@ test("la connexion est chiffrée, relue après redémarrage et supprimée à la 
     await relu.deconnecter();
     assert.equal((await relu.etat()).compte, null);
   } finally { b.nettoyer(); }
+});
+
+test("infos d'un dépôt : description sur une ligne, site seulement en http(s) sans identifiant", () => {
+  assert.deepEqual(infosDepot({ description: "Ligne\u0000un\n  deux", homepage: "https://x:y@exemple.fr", language: 3, pushed_at: "pas une date" }), { description: "Ligne un deux", site: null, langage: null, pousseLe: null });
+  assert.equal(infosDepot({ homepage: "http://exemple.fr/page" }).site, "http://exemple.fr/page");
+  assert.equal(infosDepot({ homepage: "file:///etc/passwd" }).site, null);
+  assert.equal(infosDepot({ homepage: "localhost" }).site, null);
+  assert.equal(infosDepot({ description: "a".repeat(400) }).description?.length, 300);
 });

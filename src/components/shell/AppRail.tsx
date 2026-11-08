@@ -8,6 +8,7 @@ import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
+import { useMenuProjet } from "@/components/project/MenuProjet";
 import { colonneTicket } from "@/lib/tickets";
 import { estConversationAgent, FIL, useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
@@ -87,6 +88,7 @@ export function AppRail({
 }) {
   const bouton = panneau ? PANNEAUX[panneau] : null;
   const projects = useProjects();
+  const { ouvrirMenu: ouvrirMenuProjet, menuProjet } = useMenuProjet();
   const currentId = useSearchParams().get("id");
   const pathname = usePathname();
   /* Les tickets à valider : ils t'attendent, leur nombre se pose sur l'entrée Tickets. */
@@ -146,6 +148,7 @@ export function AppRail({
             <Entree icone="projets-dossier" nom="Projets" active={pathname === "/projets"} />
           </Link>
         </Infobulle>
+        {menuProjet}
         <div className="flex flex-col items-center gap-1.5 py-1">
           {projetsRail.map((p) => {
             const actif = pathname === "/projet" && currentId === p.id;
@@ -155,6 +158,7 @@ export function AppRail({
                 href={`/projet?id=${p.id}`}
                 aria-label={p.name}
                 aria-current={actif ? "page" : undefined}
+                onContextMenu={(e) => ouvrirMenuProjet(e, p)}
                 className={cn(
                   "flex size-10 items-center justify-center rounded-md text-ui-s font-semibold no-underline transition-[background-color,box-shadow] duration-[120ms] ease-sortie",
                   "bg-white/10 text-texte-inverse hover:bg-white/16",

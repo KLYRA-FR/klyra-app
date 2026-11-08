@@ -6,6 +6,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { getBridge, unwrap } from "@/lib/bridge";
 import type { Project } from "@/types/domain";
 import type { EtatConsignesProjet } from "../../../electron/consignes-projet";
+import { situationConsignes } from "@/lib/consignes-projet";
 import { ouvrirFichier as ouvrirDansVisionneuse } from "./Visionneuse";
 
 /**
@@ -39,49 +40,42 @@ export function ConsignesProjet({ project }: { project: Project }) {
   const ecrire = async () => {
     setErreur(null);
     try {
+      const agentsCree = !!etat?.propositions.some((p) => p.nom === "AGENTS.md" && p.action === "creer");
       setEtat(unwrap(await pont!.ecrireConsignes!(project.folder, project.name, lieu)));
       setApercu(false);
-      setCree(true);
+      setCree(agentsCree);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     }
   };
+  const situation = etat ? situationConsignes(etat) : null;
   // Sur un VPS, le fichier est sur le serveur : il s'ouvre dans la visionneuse du projet.
-  const ouvrir = () =>
+  const ouvrir = (fichier: string) =>
     lieu
-      ? ouvrirDansVisionneuse({ projectId: project.id, chemin: "AGENTS.md" })
-      : void pont!.ouvrirFichier(project.folder, "AGENTS.md").then(unwrap).catch((e: unknown) => setErreur(e instanceof Error ? e.message : String(e)));
-  const enPlace = !!etat && etat.propositions.length === 0;
+      ? ouvrirDansVisionneuse({ projectId: project.id, chemin: fichier })
+      : void pont!.ouvrirFichier(project.folder, fichier).then(unwrap).catch((e: unknown) => setErreur(e instanceof Error ? e.message : String(e)));
 
   return (
     <section
       aria-label="Consignes du projet"
-      data-consignes-projet={enPlace ? "en-place" : "a-ajouter"}
+      data-consignes-projet={situation?.cas === "vierge" ? "a-ajouter" : "en-place"}
+      data-cas={situation?.cas}
       className="flex flex-col gap-2.5 rounded-md border border-bordure-subtile bg-fond-page p-3"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Icon name="file-01" size={16} className="text-icone-secondaire" />
         <span className="min-w-0 flex-1 text-ui-s text-texte-principal">
-          {enPlace ? (
-            cree ? (
-              <>AGENTS.md créé : remplis-le, tes agents le liront à chaque session.</>
-            ) : (
-              <>Consignes du projet : AGENTS.md, lu par tes agents à chaque session.</>
-            )
-          ) : (
-            <>Pas encore de consignes pour les agents de ce projet. Un AGENTS.md court leur évite de redécouvrir le projet à chaque fois.</>
-          )}
+          {cree ? <>AGENTS.md créé : remplis-le, tes agents le liront à chaque session.</> : situation?.texte}
         </span>
-        {enPlace ? (
-          <Bouton variant="blanc" taille="compact" onClick={ouvrir}>
-            Ouvrir AGENTS.md
+        {situation?.fichier && (
+          <Bouton variant="blanc" taille="compact" onClick={() => ouvrir(situation.fichier!)}>
+            Ouvrir {situation.fichier}
           </Bouton>
-        ) : (
-          !apercu && (
-            <Bouton variant="blanc" taille="compact" onClick={() => setApercu(true)}>
-              Ajouter les consignes KLYRA
-            </Bouton>
-          )
+        )}
+        {situation?.completer && !apercu && (
+          <Bouton variant={situation.cas === "vierge" ? "blanc" : "discret"} taille="compact" onClick={() => setApercu(true)}>
+            {situation.completer}
+          </Bouton>
         )}
       </div>
 
@@ -102,7 +96,7 @@ export function ConsignesProjet({ project }: { project: Project }) {
           </p>
           <div className="flex gap-2">
             <Bouton variant="sombre" taille="compact" onClick={() => void ecrire()}>
-              Créer
+              {situation?.cas === "sans-lien" ? "Relier" : "Créer"}
             </Bouton>
             <Bouton variant="blanc" taille="compact" onClick={() => setApercu(false)}>
               Annuler

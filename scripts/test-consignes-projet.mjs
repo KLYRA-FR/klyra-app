@@ -3,8 +3,9 @@
  * bureau, sur trois projets aux dossiers temporaires :
  * - vierge (package.json et verrou pnpm) : aperçu d'AGENTS.md (commandes devinées) et du CLAUDE.md qui
  *   l'importe, « Créer », les deux fichiers écrits ;
- * - avec son propre CLAUDE.md : « Annuler » ne touche à rien ; « Créer » ajoute l'import en tête et garde
- *   le reste ;
+ * - avec son propre CLAUDE.md : ce sont ses consignes (jamais « pas encore ») ; « Annuler » ne touche à
+ *   rien ; « Ajouter AGENTS.md » puis « Créer » ajoute l'import en tête et garde le reste ;
+ * - avec AGENTS.md et CLAUDE.md sans lien : « Relier AGENTS.md » ajoute seulement l'import ;
  * - déjà en place : pas d'aperçu, « Ouvrir AGENTS.md ».
  * Aucun agent n'est lancé. Prérequis : `pnpm build && pnpm build:electron`.
  *   pnpm test:consignes-projet          (sous Linux sans bac à sable : -- --no-sandbox)
@@ -27,12 +28,13 @@ const dossier = (nom, fichiers = {}) => {
 const VIERGE = dossier("vierge", { "package.json": JSON.stringify({ scripts: { lint: "eslint", test: "vitest", dev: "next dev" } }), "pnpm-lock.yaml": "" });
 const AVEC_CLAUDE = dossier("avec-claude", { "CLAUDE.md": "Mes règles à moi.\n" });
 const EN_PLACE = dossier("en-place", { "AGENTS.md": "# Déjà là\n", "CLAUDE.md": "@AGENTS.md\n" });
+const SANS_LIEN = dossier("sans-lien", { "AGENTS.md": "# Règles Next\n", "CLAUDE.md": "# Mon projet\n" });
 const lire = (d, f) => (existsSync(path.join(d, f)) ? readFileSync(path.join(d, f), "utf8") : null);
 
 const projet = (id, nom, folder) => ({ id, name: nom, subtitle: "", status: "en-cours", pinned: false, roleIds: ["principal"], brief: "", previewUrl: "", folder, files: [], updatedAt: new Date().toISOString() });
 writeFileSync(
   path.join(DONNEES, "conversations.json"),
-  JSON.stringify({ version: 1, chats: [], messages: [], projects: [projet("vierge", "Site du Bouchon", VIERGE), projet("avec-claude", "Outil interne", AVEC_CLAUDE), projet("en-place", "Projet rangé", EN_PLACE)] }),
+  JSON.stringify({ version: 1, chats: [], messages: [], projects: [projet("vierge", "Site du Bouchon", VIERGE), projet("avec-claude", "Outil interne", AVEC_CLAUDE), projet("en-place", "Projet rangé", EN_PLACE), projet("sans-lien", "Dépôt documenté", SANS_LIEN)] }),
 );
 
 const app = await lancerApp({ port: 9383, env: { HOME: path.join(TMP, "home"), KLYRA_USER_DATA: DONNEES } });
@@ -61,14 +63,25 @@ try {
   verifier(/^# Site du Bouchon\n/.test(lire(VIERGE, "AGENTS.md") ?? "") && lire(VIERGE, "CLAUDE.md") === "@AGENTS.md\n", "les deux fichiers sont écrits");
 
   await ouvrir("avec-claude");
-  await cliquer("Ajouter les consignes KLYRA");
+  c = await carte();
+  verifier(c?.etat === "en-place" && !/Pas encore/.test(c.texte) && /CLAUDE\.md, lu par Claude/.test(c.texte) && /Ouvrir CLAUDE\.md/.test(c.texte), "avec son CLAUDE.md : ce sont ses consignes, jamais « pas encore »");
+  await cliquer("Ajouter AGENTS.md");
   c = await carte();
   verifier(/Ajouter en tête de ton CLAUDE\.md/.test(c?.texte ?? ""), "avec son CLAUDE.md : l’aperçu dit qu’on ajoute seulement l’import en tête");
   await cliquer("Annuler");
   verifier(lire(AVEC_CLAUDE, "CLAUDE.md") === "Mes règles à moi.\n" && lire(AVEC_CLAUDE, "AGENTS.md") === null, "« Annuler » ne touche à rien");
-  await cliquer("Ajouter les consignes KLYRA");
+  await cliquer("Ajouter AGENTS.md");
   await cliquer("Créer");
   verifier(lire(AVEC_CLAUDE, "CLAUDE.md") === "@AGENTS.md\n\nMes règles à moi.\n" && !!lire(AVEC_CLAUDE, "AGENTS.md"), "« Créer » : l’import en tête, le reste gardé, AGENTS.md créé");
+
+  await ouvrir("sans-lien");
+  c = await carte();
+  verifier(c?.etat === "en-place" && !/Pas encore/.test(c.texte) && /ne renvoie pas vers AGENTS\.md/.test(c.texte), "AGENTS.md et CLAUDE.md sans lien : des consignes existent, le lien manque");
+  await cliquer("Relier AGENTS.md");
+  c = await carte();
+  verifier(/Ajouter en tête de ton CLAUDE\.md/.test(c?.texte ?? "") && !/Créer AGENTS\.md/.test(c?.texte ?? ""), "relier : seulement l’import en tête du CLAUDE.md");
+  await cliquer("Relier");
+  verifier(lire(SANS_LIEN, "CLAUDE.md") === "@AGENTS.md\n\n# Mon projet\n" && lire(SANS_LIEN, "AGENTS.md") === "# Règles Next\n", "« Relier » : l’import en tête, AGENTS.md intact");
 
   await ouvrir("en-place");
   c = await carte();

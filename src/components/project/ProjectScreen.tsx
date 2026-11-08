@@ -16,6 +16,8 @@ import { DepotProjet } from "./DepotProjet";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
+import { emplacementProjet } from "@/lib/depot-projet";
+import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { findMention } from "@/lib/mentions";
 import { poste } from "@/lib/plateforme";
 import { useChatPreview, useProject, useRecentChats, useRole, useRoles, useWorkspace } from "@/lib/workspace";
@@ -59,6 +61,7 @@ export function ProjectScreen() {
   const router = useRouter();
   const project = useProject(useSearchParams().get("id"));
   const roles = useRoles();
+  const serveurs = useServeursRelies();
   const assistant = useRole("principal");
   const { startChat, retirerProjet } = useWorkspace();
   const [retirer, setRetirer] = useState(false);
@@ -133,8 +136,8 @@ export function ProjectScreen() {
             {project.subtitle && <span className="font-normal">· {project.subtitle}</span>}
           </h1>
           {project.brief && <p className="m-0 text-body-s leading-[1.45] text-texte-secondaire">{project.brief}</p>}
-          <span className="klyra-mono text-ui-xs text-texte-tertiaire [overflow-wrap:anywhere]">
-            {project.folder.replace(/^\/Users\/[^/]+/, "~")}
+          <span title={project.folder} className={cn(!project.lieu && "klyra-mono", "text-ui-xs text-texte-tertiaire [overflow-wrap:anywhere]")}>
+            {emplacementProjet(project.folder, project.lieu, nomLieu(project.lieu, serveurs))}
           </span>
           <DepotProjet key={`depot-${project.id}`} project={project} />
           <ConsignesProjet key={project.id} project={project} />
