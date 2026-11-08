@@ -167,7 +167,7 @@ import {
   type GesteHistorique,
 } from "./navigateur/navigateur";
 import { absolu, arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
-import { etatGit, publier } from "./git";
+import { clonerDepot, dossierClones, etatGit, publier, recupererDepot } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
 import {
   connecterClaudeAi,
@@ -1006,6 +1006,16 @@ function registerBridge() {
   handle("claude-ai:connexion", () => connecterClaudeAi(BrowserWindow.getFocusedWindow() ?? undefined));
   handle("claude-ai:deconnexion", () => deconnecterClaudeAi());
   handle("git:publier", (dossier: string, message: string) => publier(dossier, message));
+  /* Un dépôt GitHub comme projet de ce poste : cloné par le git du poste (ses identifiants), jamais de jeton dans l'app. */
+  handle("git:dossier-clones", () => dossierClones());
+  handle("git:cloner", (depot: string, parent: string | null) => {
+    if (typeof depot !== "string" || (parent !== null && typeof parent !== "string")) throw new Error("Dépôt invalide.");
+    return clonerDepot(depot, parent);
+  });
+  handle("git:recuperer", (dossier: string) => {
+    if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
+    return recupererDepot(dossier);
+  });
   handle("fichiers:choisir", async () => {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     const choix = win

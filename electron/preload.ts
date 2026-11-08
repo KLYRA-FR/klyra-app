@@ -185,6 +185,9 @@ contextBridge.exposeInMainWorld("klyra", {
   git: {
     etat: (dossier: string) => ipcRenderer.invoke("git:etat", dossier),
     publier: (dossier: string, message: string) => ipcRenderer.invoke("git:publier", dossier, message),
+    dossierClones: () => ipcRenderer.invoke("git:dossier-clones"),
+    cloner: (depot: string, parent: string | null) => ipcRenderer.invoke("git:cloner", depot, parent),
+    recuperer: (dossier: string) => ipcRenderer.invoke("git:recuperer", dossier),
   },
   systeme: {
     utilisateur: () => ipcRenderer.invoke("systeme:utilisateur"),

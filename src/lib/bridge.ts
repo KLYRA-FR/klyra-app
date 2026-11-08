@@ -211,8 +211,25 @@ export interface EtatGit {
   branche: string | null;
   suivie: boolean;
   enAvance: number;
+  /** Commits du distant pas encore récupérés, d'après la dernière récupération (absent avant la relance de l'app). */
+  enRetard?: number;
   fichiers: { statut: string; chemin: string }[];
   distant: string | null;
+}
+
+/** Un dépôt GitHub cloné sur ce poste pour en faire un projet (electron/git.ts). */
+export interface ResultatClone {
+  dossier: string;
+  /** « owner/repo ». */
+  depot: string;
+  /** Le dossier était déjà ce dépôt : rien n'a été cloné. */
+  deja: boolean;
+}
+
+export interface ResultatRecuperation {
+  ok: boolean;
+  message: string;
+  etat: EtatGit;
 }
 
 export interface ResultatPublication {
@@ -531,6 +548,12 @@ export interface KlyraBridge {
     etat: (dossier: string) => Promise<Reponse<EtatGit>>;
     /** Commit de tout ce qui a changé, puis push de la branche en cours. */
     publier: (dossier: string, message: string) => Promise<Reponse<ResultatPublication>>;
+    /** Là où un dépôt cloné est rangé par défaut (~/KLYRA). Absent avant la relance de l'app. */
+    dossierClones?: () => Promise<Reponse<string>>;
+    /** Clone un dépôt GitHub (« owner/repo » ou son adresse) dans `parent` (null : le dossier par défaut), par le git du poste. */
+    cloner?: (depot: string, parent: string | null) => Promise<Reponse<ResultatClone>>;
+    /** Récupère les nouveautés de la branche suivie (`git pull --ff-only`). */
+    recuperer?: (dossier: string) => Promise<Reponse<ResultatRecuperation>>;
   };
   systeme: {
     /** Le nom de la session Mac, pour le profil par défaut. */

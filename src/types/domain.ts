@@ -127,6 +127,8 @@ export interface Project {
   folder: string;
   /** Le VPS où vit le projet (origine https) ; absent : ce PC. Ses conversations y tournent. */
   lieu?: string | null;
+  /** Le dépôt GitHub dont le dossier est un clone (« owner/repo »), quand le projet a été ajouté depuis GitHub. */
+  depot?: string;
   files: FileNode[];
   updatedAt: string;
 }

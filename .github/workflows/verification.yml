@@ -67,6 +67,8 @@ jobs:
           timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:interface --no-sandbox
       - name: Noms et extensions des fichiers Windows et Unix
         run: pnpm test:fichiers
+      - name: Projet depuis GitHub, clonage et récupération (dépôt local, sans réseau)
+        run: pnpm test:git
       # Les fonctions Convex (comptes, équipe) sur un backend en mémoire : aucun déploiement touché.
       - name: Convex, connexion et droits
         run: pnpm test:convex
