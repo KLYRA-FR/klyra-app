@@ -69,6 +69,8 @@ jobs:
         run: pnpm test:fichiers
       - name: Projet depuis GitHub, clonage et récupération (dépôt local, sans réseau)
         run: pnpm test:git
+      - name: Mises à jour de l'app, fiche de secours et relances (sans réseau)
+        run: pnpm test:maj
       # Les fonctions Convex (comptes, équipe) sur un backend en mémoire : aucun déploiement touché.
       - name: Convex, connexion et droits
         run: pnpm test:convex

@@ -28,6 +28,7 @@
     "test:composio:interface": "electron scripts/test-composio-interface.cjs",
     "test:delegation": "node scripts/test-delegation.mjs",
     "test:maj-modeles": "node scripts/test-maj-modeles.mjs",
+    "test:maj": "node --experimental-strip-types --test electron/maj-depot.test.mts",
     "test:bibliotheque": "node scripts/test-bibliotheque.mjs",
     "test:partage-artefact": "node scripts/test-partage-artefact.mjs",
     "test:conversation": "node scripts/test-conversation.mjs",
