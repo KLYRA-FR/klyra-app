@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { avecTentatives, telecharger } from "./telecharger.mjs";
 
 const VERSION = "v1.9.2";
 const racine = path.resolve(import.meta.dirname, "..");
@@ -23,9 +24,7 @@ const lancer = (bin, args, cwd = travail) => execFileSync(bin, args, { cwd, stdi
 try {
   if (process.platform === "win32") {
     const zip = path.join(travail, "whisper.zip");
-    const reponse = await fetch(`https://github.com/ggml-org/whisper.cpp/releases/download/${VERSION}/whisper-bin-x64.zip`);
-    if (!reponse.ok) throw new Error(`Téléchargement de Whisper impossible (${reponse.status})`);
-    writeFileSync(zip, Buffer.from(await reponse.arrayBuffer()));
+    writeFileSync(zip, await telecharger(`https://github.com/ggml-org/whisper.cpp/releases/download/${VERSION}/whisper-bin-x64.zip`, "Whisper"));
     // Le tar de Windows (il lit les .zip), pas celui de Git Bash qui pourrait passer devant dans le PATH.
     lancer(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"), ["-xf", zip]);
     const release = path.join(travail, "Release");
@@ -39,7 +38,10 @@ try {
       console.warn("cmake absent : Whisper n'est pas embarqué (l'app utilisera celui de Homebrew).");
       process.exit(0);
     }
-    lancer("git", ["clone", "--depth", "1", "--branch", VERSION, "https://github.com/ggml-org/whisper.cpp.git", "src"]);
+    await avecTentatives("Whisper", () => {
+      rmSync(path.join(travail, "src"), { recursive: true, force: true });
+      lancer("git", ["clone", "--depth", "1", "--branch", VERSION, "https://github.com/ggml-org/whisper.cpp.git", "src"]);
+    });
     const src = path.join(travail, "src");
     lancer("cmake", ["-B", "build", "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=OFF", "-DGGML_METAL_EMBED_LIBRARY=ON", "-DWHISPER_BUILD_TESTS=OFF", "-DWHISPER_SDL2=OFF"], src);
     lancer("cmake", ["--build", "build", "--config", "Release", "--target", "whisper-server", "-j"], src);

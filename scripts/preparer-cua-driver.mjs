@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { telecharger as telechargerAvecTentatives } from "./telecharger.mjs";
 
 const racine = path.resolve(import.meta.dirname, "..");
 const verrou = JSON.parse(readFileSync(path.join(racine, "cua-driver.lock.json"), "utf8"));
@@ -28,11 +29,7 @@ const conforme = () =>
   existsSync(path.join(sortie, verrou.licence.fichier)) &&
   empreinte(readFileSync(path.join(sortie, verrou.licence.fichier))) === verrou.licence.sha256;
 
-async function telecharger(url) {
-  const r = await fetch(url, { redirect: "follow" });
-  if (!r.ok) throw new Error(`cua-driver : ${url} répond ${r.status}.`);
-  return Buffer.from(await r.arrayBuffer());
-}
+const telecharger = (url) => telechargerAvecTentatives(url, "cua-driver");
 
 if (conforme()) {
   console.log(`cua-driver ${verrou.version} (${cible}) : déjà prêt.`);
