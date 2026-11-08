@@ -17,16 +17,24 @@ import { preparerSessionCodex } from "./preparation-fournisseur.mjs";
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ARRET_MAX_MS = 5000;
+/** Une demande à Codex (démarrage, fil, tour) qui n'a pas de réponse après ce délai est abandonnée : la réponse se termine en erreur. */
+const DELAI_REQUETE_MS = 90_000;
+/** Un tour sans aucune nouvelle de Codex (hors attente d'un accord de la personne) depuis ce délai est interrompu. */
+const INACTIVITE_MAX_MS = 10 * 60_000;
+const VEILLE_PAS_MS = 15_000;
 const CONNEXION_MAX_MS = 15 * 60 * 1000;
 
 /**
  * @param {{ home: string, version: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
  *   consigne: (agent: string | null) => string, consignesKlyra?: () => string | null, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
  *   skillsParAgent?: () => object | null,
- *   codex?: string | null }} options
+ *   codex?: string | null, delais?: { requete?: number, inactivite?: number, pas?: number } }} options
  */
 export function creerCodex(options) {
   const { home, publier } = options;
+  const DELAI_REQUETE = options.delais?.requete ?? DELAI_REQUETE_MS;
+  const INACTIVITE_MAX = options.delais?.inactivite ?? INACTIVITE_MAX_MS;
+  const VEILLE_PAS = options.delais?.pas ?? VEILLE_PAS_MS;
 
   function trouver() {
     if (options.codex !== undefined) return options.codex;
@@ -55,11 +63,24 @@ export function creerCodex(options) {
 
   const ecrire = (message) => child?.stdin?.write(`${JSON.stringify(message)}\n`);
 
-  function requete(method, params) {
+  function requete(method, params, ms = DELAI_REQUETE) {
     if (!child) return Promise.reject(new Error("Codex n’est pas lancé."));
     const id = ++suivant;
     return new Promise((resolve, reject) => {
-      attentes.set(id, { resolve, reject });
+      const delai = setTimeout(() => {
+        attentes.delete(id);
+        reject(new Error(`ChatGPT (Codex) n’a pas répondu à « ${method} » en ${Math.round(ms / 1000)} s. Relance ton message.`));
+      }, ms);
+      attentes.set(id, {
+        resolve: (v) => {
+          clearTimeout(delai);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(delai);
+          reject(e);
+        },
+      });
       ecrire({ id, method, params });
     });
   }
@@ -71,6 +92,7 @@ export function creerCodex(options) {
     fils.clear();
     for (const attente of attentes.values()) attente.reject(new Error(erreur));
     attentes.clear();
+    for (const r of enCours.values()) clearInterval(r.veille);
     for (const r of enCours.values()) r.emit({ type: "fin", ok: false, texte: "", erreur: r.tour.arrete ? "Arrêté par toi." : erreur });
     enCours.clear();
     parRequete.clear();
@@ -86,6 +108,7 @@ export function creerCodex(options) {
 
   function finir(r) {
     if (enCours.get(r.threadId) !== r) return;
+    clearInterval(r.veille);
     enCours.delete(r.threadId);
     parRequete.delete(r.requestId);
     jetons.set(r.threadId, r.tour.jetonsDuFil);
@@ -94,6 +117,7 @@ export function creerCodex(options) {
   function notification(method, params) {
     const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
     const r = threadId ? enCours.get(threadId) : undefined;
+    if (r) r.derniere = Date.now();
     if (r && !(typeof params.turnId === "string" && r.tour.turnId && params.turnId !== r.tour.turnId)) {
       if (method === "serverRequest/resolved") {
         const id = String(params.requestId);
@@ -108,6 +132,7 @@ export function creerCodex(options) {
   function demande(rpcId, method, params) {
     const r = typeof params.threadId === "string" ? enCours.get(params.threadId) : undefined;
     const carte = autorisationDe(method, params);
+    if (r) r.derniere = Date.now();
     if (carte && r) {
       const id = String(rpcId);
       r.demandes.set(id, { rpcId, method, params });
@@ -303,8 +328,21 @@ export function creerCodex(options) {
 
     const emit = (event) => publier(requestId, event, threadId);
     if (emitSession) emit({ type: "session", sessionId: emitSession });
-    const reponse = { requestId, threadId, acces, tour: new TourCodex(threadId, emit, proc.jetons.get(threadId) ?? 0), emit, demandes: new Map() };
+    const reponse = { requestId, threadId, acces, tour: new TourCodex(threadId, emit, proc.jetons.get(threadId) ?? 0), emit, demandes: new Map(), derniere: Date.now(), veille: null };
     proc.enCours.set(threadId, reponse);
+    /* Garde-fou : un tour qui ne donne plus signe de vie ne reste pas sur « réfléchit… » : on l'interrompt et on le dit. */
+    reponse.veille = setInterval(() => {
+      if (proc.enCours.get(threadId) !== reponse) return clearInterval(reponse.veille);
+      if (reponse.demandes.size > 0) {
+        reponse.derniere = Date.now();
+        return;
+      }
+      if (Date.now() - reponse.derniere < INACTIVITE_MAX) return;
+      if (reponse.tour.turnId) void proc.requete("turn/interrupt", { threadId, turnId: reponse.tour.turnId }, 10_000).catch(() => undefined);
+      proc.finir(reponse);
+      reponse.emit({ type: "fin", ok: false, texte: "", erreur: `ChatGPT ne répond plus depuis ${Math.max(1, Math.round(INACTIVITE_MAX / 60_000))} min : la réponse est arrêtée. Relance ton message.`, sessionId: threadId });
+    }, VEILLE_PAS);
+    reponse.veille.unref?.();
     proc.parRequete.set(requestId, threadId);
     try {
       const r = await proc.requete("turn/start", {
@@ -317,9 +355,14 @@ export function creerCodex(options) {
         ...(demande.effort ? { effort: demande.effort } : {}),
       });
       reponse.tour.turnId ??= r.turn.id;
-      if (reponse.tour.arrete) annuler(requestId);
+      if (proc.enCours.get(threadId) !== reponse) {
+        /* Déjà terminée (arrêtée ou sans nouvelles) pendant l'attente : on coupe le tour qui vient de partir. */
+        void proc.requete("turn/interrupt", { threadId, turnId: r.turn.id }, 10_000).catch(() => undefined);
+      } else if (reponse.tour.arrete) annuler(requestId);
     } catch (error) {
+      const termine = proc.enCours.get(threadId) !== reponse;
       proc.finir(reponse);
+      if (termine) return;
       throw error;
     }
   }
@@ -330,8 +373,8 @@ export function creerCodex(options) {
     const r = threadId ? proc.enCours.get(threadId) : undefined;
     if (!proc || !r) return false;
     r.tour.arrete = true;
-    if (!r.tour.turnId) return true;
-    void proc.requete("turn/interrupt", { threadId: r.threadId, turnId: r.tour.turnId }).catch(() => undefined);
+    /* Sans identifiant de tour (Codex n'a pas encore répondu à `turn/start`), l'arrêt se termine quand même au bout de ARRET_MAX_MS. */
+    if (r.tour.turnId) void proc.requete("turn/interrupt", { threadId: r.threadId, turnId: r.tour.turnId }, 10_000).catch(() => undefined);
     setTimeout(() => {
       if (proc.enCours.get(r.threadId) !== r) return;
       proc.finir(r);
