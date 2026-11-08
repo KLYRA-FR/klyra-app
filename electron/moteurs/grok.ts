@@ -5,7 +5,7 @@ import path from "node:path";
 import { app, safeStorage } from "electron";
 import { avecReperesCerveau } from "../cerveau-outils";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
-import { espaceComposio } from "../composio";
+import { composioConnect, espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
 import { configMcp } from "../ia";
 import { estActif, generation } from "../mes-agents";
@@ -110,7 +110,7 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
       acces: options.acces ?? "projet",
       modele: options.modele,
       effort: options.effort,
-      signature: JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur(), cwd]),
+      signature: JSON.stringify([options.agent, generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur(), cwd]),
     },
     (event) => {
       if (event.type === "etape" && event.outil.startsWith("mcp__ordinateur__")) voirOutil(chatId, event.outil, event.entree);

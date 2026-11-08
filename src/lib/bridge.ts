@@ -1,3 +1,4 @@
+import type { EtatGithubProjet, DepotGithubProjet } from "../../electron/github-types";
 import type { ChoixPriseEnMain, PriseEnMain } from "../../electron/prise-en-main-modele";
 
 /**
@@ -355,6 +356,17 @@ export type EvenementDictee =
   | { type: "fin" };
 
 export interface KlyraBridge {
+  github?: {
+    etat: (lieu: string | null) => Promise<Reponse<EtatGithubProjet>>;
+    connecter: (lieu: string | null) => Promise<Reponse<EtatGithubProjet>>;
+    deconnecter: (lieu: string | null) => Promise<Reponse<EtatGithubProjet>>;
+    depots: (lieu: string | null) => Promise<Reponse<DepotGithubProjet[]>>;
+    branches: (lieu: string | null, depot: string) => Promise<Reponse<string[]>>;
+    ouvrir: (lieu: string | null, depot: string, branche: string) => Promise<Reponse<ResultatClone>>;
+    etatDepot: (lieu: string | null, dossier: string) => Promise<Reponse<EtatGit>>;
+    recuperer: (lieu: string | null, dossier: string) => Promise<Reponse<EtatGit>>;
+    navigateur: () => Promise<Reponse<void>>;
+  };
   /** Le premier lancement de cet ordinateur ; absent avec un preload plus ancien. */
   priseEnMain?: {
     lire: () => Promise<Reponse<PriseEnMain>>;

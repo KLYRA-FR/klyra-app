@@ -57,6 +57,7 @@ jobs:
       - run: pnpm build
       - run: pnpm build:electron
       # Après le build : les types des routes sont générés par next build.
+      - run: pnpm test:github-projets
       - run: pnpm typecheck
       - name: Origine du téléphone, le 502 du tunnel se relance
         run: pnpm test:origine-telephone
@@ -75,6 +76,8 @@ jobs:
         run: pnpm test:fichiers
       - name: Projet depuis GitHub, clonage et récupération (dépôt local, sans réseau)
         run: pnpm test:git
+      - name: Choix GitHub, clone sur PC et VPS (GitHub simulé, vrais dépôts Git)
+        run: xvfb-run -a pnpm test:projet-github -- --no-sandbox
       - name: Mises à jour de l'app, fiche de secours et relances (sans réseau)
         run: pnpm test:maj
       # Les fonctions Convex (comptes, équipe) sur un backend en mémoire : aucun déploiement touché.

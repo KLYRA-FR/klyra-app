@@ -158,7 +158,7 @@ function fixture() {
         signature: () => compteComposio,
         creerCapacite: () => `capacite-${compteComposio}`,
       },
-      composioConnect: { serveur: () => connectActif ? { type: "http", url: "https://connect.composio.dev/mcp", headers: {} } : null },
+      composioConnect: { signature: () => connectActif ? 1 : 0, serveur: () => connectActif ? { type: "http", url: "https://connect.composio.dev/mcp", headers: {} } : null },
     },
     "./mes-agents": {
       agentsARefuser: () => [],

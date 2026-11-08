@@ -14,25 +14,34 @@ import type { Project } from "@/types/domain";
  */
 export function DepotProjet({ project }: { project: Project }) {
   const git = getBridge()?.git;
+  const github = getBridge()?.github;
+  const natif = !!project.githubConnecte && !!github;
   const [etat, setEtat] = useState<EtatGit | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [retour, setRetour] = useState<{ ok: boolean; message: string } | null>(null);
-  const disponible = !project.lieu && !!git?.recuperer;
+  const disponible = natif || (!project.lieu && !!git?.recuperer);
 
   useEffect(() => {
-    if (!disponible || !git) return;
+    if (!disponible || (!git && !natif)) return;
     let actif = true;
-    void git.etat(project.folder).then((r) => actif && r.ok && setEtat(r.data));
+    void (natif ? github!.etatDepot(project.lieu ?? null, project.folder) : git!.etat(project.folder)).then((r) => actif && r.ok && setEtat(r.data));
     return () => {
       actif = false;
     };
-  }, [disponible, git, project.folder]);
+  }, [disponible, git, github, natif, project.folder, project.lieu]);
 
   if (!disponible || !etat?.depot || !etat.distant) return null;
 
   const recuperer = async () => {
     setEnCours(true);
     setRetour(null);
+    if (natif) {
+      const r = await github!.recuperer(project.lieu ?? null, project.folder);
+      setEnCours(false);
+      if (!r.ok) return setRetour({ ok: false, message: r.message });
+      setEtat(r.data); setRetour({ ok: true, message: "Nouveautés récupérées." });
+      return;
+    }
     const r = await git!.recuperer!(project.folder);
     setEnCours(false);
     if (!r.ok) return setRetour({ ok: false, message: r.message });

@@ -22,7 +22,9 @@ export const appelComposioVps = (origine: string, jeton: string | null, methode:
 /** Les workflows qui tournent sur un VPS : les lancer, les arrêter, décider d'une approbation. */
 export const appelWorkflowsVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("workflows", origine, jeton, methode, corps);
 
-async function appelVps(route: "equipe" | "coffre" | "espace" | "composio" | "workflows", origine: string, jeton: string | null, methode: string, corps: unknown, attente = ATTENTE_MS): Promise<unknown> {
+export const appelGithubVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("github", origine, jeton, methode, corps, methode === "ouvrir" || methode === "recuperer" ? 360_000 : 90_000);
+
+async function appelVps(route: "github" | "equipe" | "coffre" | "espace" | "composio" | "workflows", origine: string, jeton: string | null, methode: string, corps: unknown, attente = ATTENTE_MS): Promise<unknown> {
   if (!jeton) throw new AgentError("introuvable", "Ce PC n’est plus relié à ce VPS.");
   if (!/^[a-z-]{1,32}$/.test(methode)) throw new AgentError("introuvable", "Demande inconnue.");
   const controle = new AbortController();

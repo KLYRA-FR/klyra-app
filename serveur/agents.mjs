@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ouvrirCerveau } from "./cerveau.mjs";
 import { indexerSouvenirs } from "./cerveau-service.mjs";
 import { connecterDigitalOs } from "./cerveau-dossiers.mjs";
@@ -51,6 +52,7 @@ import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coffre.mjs";
 import { creerCoffreServeur } from "./coffre-serveur.mjs";
+import { creerGithubProjets } from "./github-stockage.mjs";
 import { creerComposioServeur } from "./composio-serveur.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { CONSIGNE_FILS, NOMS_FILS } from "./fils-outils.mjs";
@@ -377,7 +379,7 @@ export function creerAgents(options) {
 
   const listeAgents = (agents) => agents.map((a) => (a.nom === a.id ? a.id : `${a.nom} (${a.id})`)).join(", ");
   const ici = () =>
-    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier et ses rappels n'existent pas ici.${composioServeur.mcp() ? ` ${CONSIGNE_COMPOSIO}` : ""} Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
+    `Tu tournes sur le VPS « ${nomServeur} » de la personne, pas sur son ordinateur : ses fichiers locaux, son calendrier et ses rappels n'existent pas ici.${composioServeur.actif() ? ` ${CONSIGNE_COMPOSIO}` : ""} Tu peux travailler dans ce serveur, avec les droits de l'utilisateur klyra.${configurationDe().navigateur ? `\n\n${consigneNavigateurTexte(true)}` : ""}\n\n${CONSIGNE_COFFRE} Le coffre est celui de ce serveur, et un fichier où tu écris un secret est sur ce VPS, sous ton dossier.`;
 
   function consigneAssistant() {
     const { assistant, actifs } = lireEquipe();
@@ -411,8 +413,9 @@ export function creerAgents(options) {
   const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees, local: coffreServeur });
   options.ia?.surCoffre?.({ actif: () => true, appeler: coffre.appeler });
   /* Les apps de la personne par Composio : la connexion de ce serveur, à lui seul (cf. composio-serveur.mjs). */
+  const githubProjets = creerGithubProjets({ donnees, base: home, racine: path.join(home, "projets", "GitHub"), gh: existsSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "gh")) ? path.join(path.dirname(fileURLToPath(import.meta.url)), "gh") : "gh", chiffrer: coffreServeur.chiffrerTexte, dechiffrer: coffreServeur.dechiffrerTexte });
   const composioServeur = creerComposioServeur({ donnees, coffre: coffreServeur, ...(options.fetch ? { fetch: options.fetch } : {}) });
-  options.ia?.surComposio?.(composioServeur.mcp);
+  options.ia?.surComposio?.(composioServeur.mcp, composioServeur.preparerMcp, composioServeur.actif);
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
   const workflows = creerRelaisWorkflows({ publier, ecouteurs: options.ecouteurs ?? (() => 0), local: () => moteurWorkflows });
   options.ia?.surWorkflows?.({ appeler: workflows.appeler });
@@ -541,7 +544,7 @@ export function creerAgents(options) {
     consignesKlyra: () => lireEquipe().configuration.consignes,
     estActif,
     mcp: mcpIa,
-    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.mcp() ? 1 : 0}`,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.signature()}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.codex !== undefined ? { codex: options.codex } : {}),
   });
@@ -555,7 +558,7 @@ export function creerAgents(options) {
     consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
     consignesKlyra: () => lireEquipe().configuration.consignes,
     mcp: mcpIa,
-    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.mcp() ? 1 : 0}`,
+    generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.signature()}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.grok !== undefined ? { grok: options.grok } : {}),
   });
@@ -917,7 +920,7 @@ export function creerAgents(options) {
     /* Les pièces jointes de la conversation : ouvertes en lecture dès qu'il y en a (la session repart, reprise, à la première). */
     const dossierJointes = conversation ? joints.dossier(conversation) : null;
     const avecJointes = dossierJointes !== null && existsSync(dossierJointes);
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle, avecJointes, compte?.id ?? null, "cerveau"]);
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, composioServeur.signature(), precharge.noms, configuration, conversation, skillsCle, avecJointes, compte?.id ?? null, "cerveau"]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     /* Changer de compte relance Claude Code : la connexion se lit au lancement. */
@@ -1010,6 +1013,7 @@ export function creerAgents(options) {
   }
 
   function fermerTout() {
+    githubProjets.fermer();
     for (const proc of new Set(processus.values())) proc.child.kill("SIGTERM");
     codex.fermer();
     grok.fermer();
@@ -1067,5 +1071,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

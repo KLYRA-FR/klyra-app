@@ -1,3 +1,4 @@
+import { relayerComposio, serveurRelaisComposio } from "./composio-relais";
 import { app, net, safeStorage } from "electron";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -214,6 +215,7 @@ function repondre(res: ServerResponse, statut: number, corps?: unknown) {
 
 async function traiter(req: IncomingMessage, res: ServerResponse) {
   if (req.headers.authorization !== `Bearer ${serveur?.jeton}`) return repondre(res, 401);
+  if (req.url === "/composio") return relayerComposio(req, res, () => composioConnect.preparerMcp(), (input, init) => net.fetch(input instanceof URL ? input.toString() : input as string, init));
   if (req.method !== "POST" || req.url !== "/mcp") return repondre(res, 405);
   const appelant: Appelant = {
     chatId: String(req.headers["x-klyra-chat"] ?? ""),
@@ -361,7 +363,7 @@ export async function demarrerServeurMcp(): Promise<void> {
  *  S'y ajoutent les MCP directs branchés dans la Marketplace. */
 export function configMcp(appelant: Appelant, composio: string | null = null): string | null {
   if (!serveur) return null;
-  const connect = composioConnect.serveur();
+  const connect = composioConnect.etat().connecte ? serveurRelaisComposio(serveur.url, serveur.jeton) : null;
   // Computer Use : seulement quand le pilote tourne avec ses autorisations (cf. ordinateur/pilote.ts).
   const ordinateur = serveurOrdinateur();
   return JSON.stringify({

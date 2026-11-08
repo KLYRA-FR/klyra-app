@@ -40,7 +40,7 @@ jobs:
       - name: Dépendances (nouvel essai si GitHub ne répond pas)
         shell: bash
         run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
-      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
+      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && pnpm github:preparer
       # Sur une PR, electron-builder ne signe rien : on force la signature ad hoc (aucun certificat ni secret ici),
       # pour que scripts/signer-mac.cjs tourne comme à la publication, avec son « codesign --deep ».
       - name: L'app signée garde la signature de cua-driver

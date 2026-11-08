@@ -8,7 +8,7 @@ import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } 
 import { voirFin, voirOutil } from "../ordinateur/apercu";
 import { signatureOrdinateur } from "../ordinateur/pilote";
 import { signatureNavigateur } from "../navigateur/outils";
-import { espaceComposio } from "../composio";
+import { composioConnect, espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
 import { preparerSessionCodex } from "../preparation-fournisseur";
 import { lireReglages } from "../reglages";
@@ -353,7 +353,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   const serveur = serveurAgent(id, prepare);
   await serveur.demarrer(bin);
   // Mes agents, Composio, les skills ou le navigateur ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur()]);
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur()]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {

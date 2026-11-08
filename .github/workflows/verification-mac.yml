@@ -52,7 +52,7 @@ jobs:
       - name: Dépendances (nouvel essai si GitHub ne répond pas)
         shell: bash
         run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
-      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
+      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && pnpm github:preparer
       - name: Routines sous macOS (fichier, verrou, fuseaux)
         run: pnpm test:routines
       - name: Sons de l'app et réglage des sons du système (Mac)
@@ -79,6 +79,8 @@ jobs:
           pnpm exec electron-builder --mac dir --x64 --publish never --config.directories.output=v2
           codesign --display --requirements - v2/mac/KLYRA.app 2>&1 | grep designated | tee "$RUNNER_TEMP/v2.txt"
 
+      - name: GitHub CLI embarqué répond
+        run: v2/mac/KLYRA.app/Contents/Resources/github/gh --version | grep -q '2.103.3'
       - name: Même exigence désignée, liée au certificat
         run: |
           diff "$RUNNER_TEMP/v1.txt" "$RUNNER_TEMP/v2.txt"

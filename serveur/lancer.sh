@@ -139,7 +139,11 @@ curl -fsSL "$SOURCE/codex-protocole.mjs" -o "$CODE_DIR/codex-protocole.mjs"
 curl -fsSL "$SOURCE/installation.mjs" -o "$CODE_DIR/installation.mjs"
 curl -fsSL "$SOURCE/moteurs.mjs" -o "$CODE_DIR/moteurs.mjs"
 curl -fsSL "$SOURCE/ia.mjs" -o "$CODE_DIR/ia.mjs"
+curl -fsSL "$SOURCE/github-projets.mjs" -o "$CODE_DIR/github-projets.mjs"
+curl -fsSL "$SOURCE/github-stockage.mjs" -o "$CODE_DIR/github-stockage.mjs"
+curl -fsSL "$SOURCE/git.mjs" -o "$CODE_DIR/git.mjs"
 curl -fsSL "$SOURCE/composio-serveur.mjs" -o "$CODE_DIR/composio-serveur.mjs"
+curl -fsSL "$SOURCE/composio-relais.mjs" -o "$CODE_DIR/composio-relais.mjs"
 curl -fsSL "$SOURCE/composio-connect.mjs" -o "$CODE_DIR/composio-connect.mjs"
 curl -fsSL "$SOURCE/ia-catalogue.mjs" -o "$CODE_DIR/ia-catalogue.mjs"
 curl -fsSL "$SOURCE/atelier.mjs" -o "$CODE_DIR/atelier.mjs"
@@ -190,6 +194,20 @@ curl -fsSL "$SOURCE/fils.mjs" -o "$CODE_DIR/fils.mjs"
 curl -fsSL "$SOURCE/fils-outils.mjs" -o "$CODE_DIR/fils-outils.mjs"
 curl -fsSL "$SOURCE/tickets.mjs" -o "$CODE_DIR/tickets.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
+
+# GitHub CLI pour le sélecteur de dépôts : version et empreintes épinglées (github-cli.lock.json).
+case "$(uname -m)" in
+  x86_64) GH_ARCH=amd64; GH_SHA=4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d ;;
+  aarch64|arm64) GH_ARCH=arm64; GH_SHA=ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63 ;;
+  *) echouer "architecture non prise en charge par GitHub CLI" ;;
+esac
+GH_TMP=$(mktemp -d)
+curl -fsSL "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_$GH_ARCH.tar.gz" -o "$GH_TMP/gh.tgz"
+printf '%s  %s\n' "$GH_SHA" "$GH_TMP/gh.tgz" | sha256sum -c - >/dev/null || { rm -rf "$GH_TMP"; echouer "empreinte GitHub CLI incorrecte"; }
+tar -xzf "$GH_TMP/gh.tgz" -C "$GH_TMP"
+install -m 755 "$GH_TMP/gh_2.103.3_linux_$GH_ARCH/bin/gh" "$CODE_DIR/gh"
+install -m 644 "$GH_TMP/gh_2.103.3_linux_$GH_ARCH/LICENSE" "$CODE_DIR/gh-LICENSE"
+rm -rf "$GH_TMP"
 
 # ─── Service ─────────────────────────────────────────────────────────
 # Séparé d'OpenBot et du reste de la machine : seul son dossier est en écriture.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input, Textarea } from "klyra-ui";
@@ -11,12 +11,14 @@ import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { Onglets } from "@/components/ui/Onglets";
 import { getBridge } from "@/lib/bridge";
-import { lieuParDefaut, nomLieu, useServeursRelies } from "@/lib/lieux";
+import { lieuParDefaut, nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
 import { useProjects, useWorkspace } from "@/lib/workspace";
 import type { Project, ProjectStatus } from "@/types/domain";
+
+import { SelecteurDepotGithub } from "./SelecteurDepotGithub";
 
 const STATUTS: { value: ProjectStatus; label: string }[] = [
   { value: "en-cours", label: "En cours" },
@@ -52,6 +54,8 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   const projects = useProjects();
   const { enregistrerProjet } = useWorkspace();
   const bridge = getBridge();
+  const monte = useRef(true);
+  useEffect(() => { monte.current = true; return () => { monte.current = false; }; }, []);
   // Un nouveau projet va dans l'espace affiché, celui du serveur choisi.
   const [lieu] = useState<string | null>(() => (initial ? (initial.lieu ?? null) : lieuParDefaut()));
   const [folder, setFolder] = useState(() => initial?.folder ?? (lieu ? `${RACINE_VPS}/projet` : ""));
@@ -66,29 +70,16 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   const serveurs = useServeursRelies();
   const [erreurVps, setErreurVps] = useState<string | null>(null);
   const surVps = !!lieu;
-  // GitHub : seulement pour un nouveau projet de ce poste (le clone passe par le git du poste).
+  // GitHub : le clone se fait sur la machine choisie, avec sa propre connexion.
   const [source, setSource] = useState<Source>("dossier");
-  const depuisGithub = source === "github" && !initial && !surVps;
+  const depuisGithub = source === "github" && !initial;
   const [depot, setDepot] = useState("");
-  const [parent, setParent] = useState<string | null>(null);
-  const [parDefaut, setParDefaut] = useState<string | null>(null);
+  const [branche, setBranche] = useState("");
   const [clonage, setClonage] = useState(false);
   const [erreurClone, setErreurClone] = useState<string | null>(null);
-  const clonable = !!bridge?.git.cloner;
-
-  const choisirSource = (s: Source) => {
-    setSource(s);
-    setEssai(false);
-    if (s === "github" && parDefaut === null && bridge?.git.dossierClones) {
-      void bridge.git.dossierClones().then((r) => r.ok && setParDefaut(r.data));
-    }
-  };
-
-  const choisirParent = async () => {
-    if (!bridge) return;
-    const r = await bridge.projets.choisirDossier();
-    if (r.ok && r.data) setParent(r.data);
-  };
+  const clonable = !!bridge?.github;
+  const choisirSource = (s: Source) => { setSource(s); setEssai(false); setErreurClone(null); };
+  const choisirDepot = useCallback((nom: string, branche: string) => { setDepot(nom); setBranche(branche); setErreurClone(null); }, []);
 
   const choisir = async () => {
     if (!bridge) return;
@@ -100,7 +91,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   };
 
   const erreurs = {
-    depot: depot.trim() ? undefined : "Écris le dépôt (propriétaire/dépôt) ou colle son adresse.",
+    depot: depot && branche ? undefined : "Choisis un dépôt GitHub et une branche.",
     folder: surVps
       ? folder.startsWith(`${RACINE_VPS}/`)
         ? undefined
@@ -119,17 +110,18 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
     let nom = name.trim();
     let depotClone = initial?.depot;
     if (depuisGithub) {
-      if (erreurs.depot || !bridge?.git.cloner) return;
+      if (erreurs.depot || !bridge?.github) return;
       setErreurClone(null);
       setClonage(true);
-      const r = await bridge.git.cloner(depot, parent);
+      const r = await bridge.github.ouvrir(lieu, depot, branche);
       setClonage(false);
+      if (!monte.current || lieuParDefaut() !== lieu) return;
       if (!r.ok) return setErreurClone(r.message);
       dossier = r.data.dossier;
       depotClone = r.data.depot;
       nom ||= r.data.depot.split("/").pop() ?? r.data.depot;
     } else if (erreurs.folder || erreurs.name) return;
-    if (lieu && !initial && bridge?.projets.creerDossierVps) {
+    if (lieu && !initial && !depuisGithub && bridge?.projets.creerDossierVps) {
       setErreurVps(null);
       const r = await bridge.projets.creerDossierVps(lieu, folder);
       if (!r.ok) return setErreurVps(r.message);
@@ -145,6 +137,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
       folder: dossier,
       ...(lieu ? { lieu } : {}),
       ...(depotClone ? { depot: depotClone } : {}),
+      ...((depuisGithub || initial?.githubConnecte) ? { githubConnecte: true as const } : {}),
       roleIds: initial?.roleIds ?? ["principal"],
       files: [],
       updatedAt: new Date().toISOString(),
@@ -160,42 +153,22 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
           <p className="m-0 text-ui text-texte-principal">{nomLieu(lieu, serveurs)}</p>
         </Champ>
       )}
-      {!initial && !surVps && clonable && (
+      {!initial && clonable && (
         <Onglets<Source>
           libelle="D’où vient le projet"
           onglets={[
-            { id: "dossier", label: `Dossier de ${poste.ce}`, icone: <Icon name="folder-open-01" size={16} /> },
+            { id: "dossier", label: surVps ? "Dossier du VPS" : `Dossier de ${poste.ce}`, icone: <Icon name="folder-open-01" size={16} /> },
             { id: "github", label: "Dépôt GitHub", icone: <Icon name="git-branch-01" size={16} /> },
           ]}
           valeur={source}
-          onChange={choisirSource}
+          onChange={(s) => { if (!clonage) choisirSource(s); }}
           className="self-start"
         />
       )}
       {depuisGithub ? (
         <div data-source-github className="flex flex-col gap-4">
-          <Champ
-            label="Dépôt GitHub"
-            erreur={essai ? (erreurs.depot ?? erreurClone ?? undefined) : undefined}
-            aide={`Public, ou privé si git est déjà connecté à ton compte GitHub sur ${poste.ce}. L’app ne demande ni ne garde aucun jeton.`}
-          >
-            <Input
-              size="sm"
-              value={depot}
-              placeholder="propriétaire/dépôt ou https://github.com/…"
-              onChange={(e) => setDepot(e.target.value)}
-              className={cn(CHAMP, "klyra-mono")}
-              autoFocus
-            />
-          </Champ>
-          <Champ label="Où le copier" aide="L’app y clone le dépôt, dans un dossier à son nom. Tes agents travaillent dans cette copie ; tu récupères les nouveautés depuis la page du projet.">
-            <div className="flex flex-wrap items-center gap-2">
-              <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="folder-open-01" size={20} />} onClick={() => void choisirParent()}>
-                Changer de dossier
-              </Bouton>
-              {(parent ?? parDefaut) && <span className="klyra-mono min-w-0 text-ui-xs text-texte-secondaire [overflow-wrap:anywhere]">{court(parent ?? parDefaut ?? "")}</span>}
-            </div>
-          </Champ>
+          <SelecteurDepotGithub lieu={lieu} depot={depot} branche={branche} onChoix={choisirDepot} disabled={clonage} />
+          {(erreurClone || (essai && erreurs.depot)) && <p role="alert" className="m-0 text-ui-s text-texte-erreur">{erreurClone ?? erreurs.depot}</p>}
         </div>
       ) : surVps ? (
         <Champ label="Dossier sur le VPS" erreur={essai ? (erreurs.folder ?? erreurVps ?? undefined) : undefined} aide="Créé s’il n’existe pas. Les agents du VPS y travaillent.">
@@ -214,7 +187,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
 
       <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
         <Champ label="Nom" erreur={essai ? erreurs.name : undefined}>
-          <Input size="sm" value={name} placeholder="Bizwhoo" onChange={(e) => setName(e.target.value)} className={CHAMP} />
+          <Input size="sm" value={name} placeholder="Nom du projet" onChange={(e) => setName(e.target.value)} className={CHAMP} />
         </Champ>
         <Champ label="En une ligne">
           <Input size="sm" value={subtitle} placeholder="Refonte du site" onChange={(e) => setSubtitle(e.target.value)} className={CHAMP} />
@@ -244,9 +217,9 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
 
       <div className="flex flex-wrap gap-2">
         <BoutonPrincipal type="submit" disabled={clonage}>
-          {initial ? "Enregistrer" : depuisGithub ? (clonage ? "Clonage en cours…" : "Cloner et ajouter") : "Ajouter le projet"}
+          {initial ? "Enregistrer" : depuisGithub ? (clonage ? "Clonage en cours…" : "Ouvrir le dépôt") : "Ajouter le projet"}
         </BoutonPrincipal>
-        <Bouton variant="blanc" taille="md" onClick={() => onFini(null)}>
+        <Bouton variant="blanc" taille="md" disabled={clonage} onClick={() => onFini(null)}>
           Annuler
         </Bouton>
       </div>
@@ -260,6 +233,8 @@ export function ProjetsScreen() {
   const params = useSearchParams();
   const projects = useProjects();
   const { state } = useWorkspace();
+  const lieu = useLieuActif();
+  const serveurs = useServeursRelies();
   const aModifier = projects.find((p) => p.id === params.get("modifier")) ?? null;
   const formulaire = params.has("nouveau") || !!aModifier;
 
@@ -272,7 +247,7 @@ export function ProjetsScreen() {
           <div className="flex flex-col gap-1.5">
             <h1 className="m-0 text-h3 leading-[1] tracking-[-0.04em] text-texte-principal">
               <span className="font-semibold">{aModifier ? aModifier.name : "Projets"}</span>{" "}
-              <span className="font-normal">{aModifier ? "· modifier" : `sur ${poste.ce}`}</span>
+              <span className="font-normal">{aModifier ? "· modifier" : `sur ${lieu ? nomLieu(lieu, serveurs) : poste.ce}`}</span>
             </h1>
             <p className="m-0 text-ui-s text-texte-secondaire">
               Ouvre un dossier de {poste.ton} ou un dépôt GitHub pour parcourir ton code et laisser les agents y travailler.

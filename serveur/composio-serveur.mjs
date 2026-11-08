@@ -53,5 +53,5 @@ export function creerComposioServeur({ donnees, coffre, fetch: appelReseau = glo
 
   /** Le serveur MCP à ajouter à une session d'agent, si ce serveur est connecté. */
   const mcp = () => connect.serveur();
-  return { appeler, mcp };
+  return { appeler, mcp, actif: () => connect.etat().connecte, signature: () => connect.signature(), preparerMcp: async () => { await pret; return connect.preparerMcp(); } };
 }

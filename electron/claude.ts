@@ -892,7 +892,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle, compte?.id ?? null, "cerveau"]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle, compte?.id ?? null, "cerveau"]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;

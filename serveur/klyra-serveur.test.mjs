@@ -1064,8 +1064,9 @@ test("Composio : chaque serveur a son compte, gardé chiffré, et ses agents le 
     assert.ok(!readFileSync(path.join(dossier, "composio-connect.json"), "utf8").includes("acces-secret"), "rien en clair sur le disque");
 
     const mcp = JSON.parse(ia.configMcp({ agent: "hugo", conversation: "c" })).mcpServers;
-    assert.equal(mcp.composio.url, "https://connect.composio.dev/mcp");
-    assert.equal(mcp.composio.headers.Authorization, "Bearer acces-secret");
+    assert.match(mcp.composio.url, /^http:\/\/127\.0\.0\.1:\d+\/composio$/);
+    assert.equal(mcp.composio.headers.Authorization, mcp.klyra.headers.Authorization);
+    assert.equal(JSON.stringify(mcp).includes("acces-secret"), false);
     assert.ok(mcp.klyra);
 
     // Relu au redémarrage : le compte reste à ce serveur.

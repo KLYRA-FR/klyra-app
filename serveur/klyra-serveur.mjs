@@ -626,6 +626,32 @@ export function creerGestionnaire(options) {
       }
     }
 
+    if (url.pathname.startsWith("/klyra/v1/github/")) {
+      if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });
+      if (!agents?.githubProjets) return repondre(res, 404, { erreur: "introuvable" });
+      if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+      try {
+        const corps = await lireCorpsRequete(req) ?? {};
+        const g = agents.githubProjets;
+        const methode = url.pathname.slice("/klyra/v1/github/".length);
+        let resultat;
+        switch (methode) {
+          case "etat": resultat = await g.etat(); break;
+          case "connecter": resultat = await g.connecter(); break;
+          case "deconnecter": resultat = await g.deconnecter(); break;
+          case "depots": resultat = await g.depots(); break;
+          case "branches": resultat = await g.branches(corps.depot); break;
+          case "ouvrir": resultat = await g.ouvrir(corps.depot, corps.branche); break;
+          case "etat-depot": resultat = await g.etatDepot(corps.dossier); break;
+          case "recuperer": resultat = await g.recuperer(corps.dossier); break;
+          default: return repondre(res, 404, { erreur: "introuvable" });
+        }
+        return repondre(res, 200, { resultat });
+      } catch (e) {
+        return repondre(res, 400, { erreur: "github", message: e instanceof Error ? e.message : "GitHub ne répond pas." });
+      }
+    }
+
     if (url.pathname.startsWith(`${CHEMIN_COMPOSIO}/`)) {
       if (!agents?.composioServeur) return repondre(res, 404, { erreur: "introuvable" });
       if (!appareilDe(req)) return repondre(res, 401, { erreur: "appareil" });

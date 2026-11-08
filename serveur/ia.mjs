@@ -1,3 +1,4 @@
+import { relayerComposio, serveurRelaisComposio } from "./composio-relais.mjs";
 /**
  * Les IA à consulter sur le VPS (ChatGPT, Gemini, Mistral, DeepSeek, Grok…), comme dans l'app (electron/ia.ts) :
  * la personne les ajoute avec leur clé API depuis Réglages du serveur › Fournisseurs, et les agents du VPS
@@ -55,6 +56,8 @@ export function creerIa(options) {
   /** Le Coffre de KLYRA, sur le PC (cf. coffre.mjs) : `actif()`, `appeler(appelant, nom, arguments)`. */
   let coffre = null;
   let composio = null;
+  let preparerComposio = null;
+  let composioActif = () => false;
   /** Les workflows, sur le PC de la personne : `appeler(appelant, nom, arguments)` (cf. workflows.mjs). */
   let workflows = null;
   /** Les fils : `appeler(appelant, nom, arguments)`, tenus par l'app du PC ou par ce serveur (cf. fils.mjs). */
@@ -152,6 +155,7 @@ export function creerIa(options) {
       res.end(corps === undefined ? undefined : JSON.stringify(corps));
     };
     if (req.headers.authorization !== `Bearer ${serveur?.jeton}`) return finir(401);
+    if (req.url === "/composio") return relayerComposio(req, res, preparerComposio ?? (async () => null), appeler);
     if (req.method !== "POST" || req.url !== "/mcp") return finir(405);
     let brut = "";
     for await (const morceau of req) {
@@ -261,12 +265,12 @@ export function creerIa(options) {
   function configMcp(appelant = {}) {
     if (!serveur) return null;
     const autres = typeof appelant.agent === "string" ? (outilsApp?.lister({ agent: appelant.agent, conversation: appelant.conversation ?? "" }).length ?? 0) : 0;
-    if (!OUTILS_CERVEAU.length && !lire().length && !publication && !autres && !navigateur?.actif() && !workflows && !fils && !coffre?.actif()) return null;
+    if (!OUTILS_CERVEAU.length && !lire().length && !publication && !autres && !navigateur?.actif() && !workflows && !fils && !coffre?.actif() && !composioActif()) return null;
     const qui = {
       ...(typeof appelant.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(appelant.agent) ? { "X-Klyra-Agent": appelant.agent } : {}),
       ...(typeof appelant.conversation === "string" && /^[A-Za-z0-9_.:@-]{1,120}$/.test(appelant.conversation) ? { "X-Klyra-Conversation": appelant.conversation } : {}),
     };
-    return JSON.stringify({ mcpServers: { ...(composio?.() ? { composio: composio() } : {}), klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}`, ...qui } } } });
+    return JSON.stringify({ mcpServers: { ...(composioActif() ? { composio: serveurRelaisComposio(serveur.url, serveur.jeton) } : {}), klyra: { type: "http", url: serveur.url, headers: { Authorization: `Bearer ${serveur.jeton}`, ...qui } } } });
   }
 
   return {
@@ -291,8 +295,10 @@ export function creerIa(options) {
       coffre = relais;
     },
     /** Branche le serveur MCP de Composio de ce serveur, s'il est connecté. */
-    surComposio: (fn) => {
+    surComposio: (fn, preparer, actif) => {
       composio = fn;
+      preparerComposio = preparer ?? (async () => composio?.() ?? null);
+      composioActif = actif ?? (() => !!composio?.());
     },
     /** Branche les outils des workflows : `appeler(appelant, nom, arguments)`, relayé au PC. */
     surWorkflows: (relais) => {
