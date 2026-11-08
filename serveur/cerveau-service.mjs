@@ -5,6 +5,8 @@ import path from "node:path";
 import { ouvrirCerveau, sauvegarderCerveau } from "./cerveau.mjs";
 import { cheminSouvenir, lireMemoire } from "./connaissances-agent.mjs";
 import { actionDossier } from "./cerveau-dossiers.mjs";
+import { lireSouvenirsGraphe } from "./graphe-souvenirs.mjs";
+import os from "node:os";
 export const PROPRIETAIRE = { agentId: null, projetId: null, proprietaire: true };
 /** Textes expressément choisis dans la boîte de fichiers du poste. Aucune ouverture d'un chemin reçu par HTTP. */
 export function importerDocuments(cerveau, documents, projetId) {
@@ -65,6 +67,8 @@ export async function indexerSouvenirs(cerveau, agent, memoire, projetId) {
     return { indexes, inchanges, coupee: inventaire.coupee, avertissements };
 }
 export function actionCerveau(donnees, action, args) {
+    if (action === "graphe-souvenirs")
+        return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
     const c = ouvrirCerveau(donnees);
     if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action))
         return actionDossier(c, action, args);
@@ -86,4 +90,10 @@ export function actionCerveau(donnees, action, args) {
         }
         default: throw new Error("Action de mémoire inconnue.");
     }
+}
+/** Où lire les souvenirs de chaque agent : la configuration de Claude Code, les dossiers préparés, les ateliers et les projets. */
+function racinesGraphe(donnees, projets) {
+    const home = os.homedir();
+    const liste = Array.isArray(projets) ? projets.filter((p) => !!p && typeof p.id === "string" && typeof p.dossier === "string").slice(0, 500) : [];
+    return { donnees, home, configClaude: process.env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"), projets: liste };
 }
