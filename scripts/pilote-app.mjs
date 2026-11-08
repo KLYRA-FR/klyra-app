@@ -44,7 +44,7 @@ export async function lancerApp({ env, port, priseEnMain = false, entree = "." }
   let cible;
   /* Juste après une fermeture, l'instance précédente peut encore tenir le verrou : on relance une fois. */
   for (let essai = 0; essai < 2 && !cible; essai++) {
-    processus = spawn(ELECTRON, [entree, `--remote-debugging-port=${port}`, ...process.argv.slice(2)], { cwd: APP, env: propre, stdio: "ignore" });
+    processus = spawn(ELECTRON, [entree, `--remote-debugging-port=${port}`, ...process.argv.slice(2).filter((arg) => arg !== "--")], { cwd: APP, env: propre, stdio: "ignore" });
     for (let i = 0; i < 40 && !cible && processus.exitCode === null; i++) {
       await attendre(500);
       cible = await fetch(`http://127.0.0.1:${port}/json`)

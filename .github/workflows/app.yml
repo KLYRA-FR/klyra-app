@@ -54,6 +54,8 @@ jobs:
         run: |
           KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
             perl -e 'alarm 120; exec @ARGV' dist-app/mac-arm64/KLYRA.app/Contents/MacOS/KLYRA
+      - name: GitHub CLI embarqué répond
+        run: dist-app/mac-arm64/KLYRA.app/Contents/Resources/github/gh --version | grep -q '2.103.3'
       - name: Whisper embarqué se lance
         run: dist-app/mac-arm64/KLYRA.app/Contents/Resources/whisper/whisper-server --help 2>&1 | grep -qi usage
       - name: cua-driver embarqué, avec la signature de son éditeur (Computer Use)
@@ -104,6 +106,11 @@ jobs:
         run: |
           $sortie = & "dist-app\win-unpacked\resources\whisper\whisper-server.exe" --help 2>&1 | Out-String
           if ($sortie -notmatch "usage") { throw "whisper-server ne démarre pas : $sortie" }
+      - name: GitHub CLI embarqué répond
+        shell: pwsh
+        run: |
+          $sortie = & "dist-app\win-unpacked\resources\github\gh.exe" --version 2>&1 | Out-String
+          if ($sortie -notmatch "2.103.3") { throw "GitHub CLI ne répond pas : $sortie" }
       - name: cua-driver embarqué répond (Computer Use)
         shell: pwsh
         run: |
