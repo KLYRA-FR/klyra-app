@@ -5,7 +5,7 @@ import { Cerveau, ouvrirCerveau, sauvegarderCerveau } from "./cerveau";
 import { cheminSouvenir, lireMemoire, type PorteeMemoire } from "./connaissances-agent";
 import type { NoteCerveau, PorteeCerveau } from "./cerveau-types";
 import { actionDossier } from "./cerveau-dossiers";
-import { lireSouvenirsGraphe } from "./graphe-souvenirs";
+import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs";
 import os from "node:os";
 
 export const PROPRIETAIRE: PorteeCerveau = { agentId: null, projetId: null, proprietaire: true };
@@ -52,6 +52,7 @@ export async function indexerSouvenirs(cerveau: Cerveau, agent: string, memoire:
 }
 export function actionCerveau(donnees: string, action: string, args: Record<string, unknown>) {
   if (action === "graphe-souvenirs") return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
+  if (action === "graphe-chercher") return chercherContenu(racinesGraphe(donnees, args.projets), args.requete, fichiersPublies(donnees, args.fichiers));
   const c = ouvrirCerveau(donnees);
   if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action)) return actionDossier(c, action, args);
   const projetId = typeof args.projetId === "string" ? args.projetId : null;
@@ -77,4 +78,14 @@ function racinesGraphe(donnees: string, projets: unknown) {
   const home = os.homedir();
   const liste = Array.isArray(projets) ? projets.filter((p): p is { id: string; dossier: string } => !!p && typeof p.id === "string" && typeof p.dossier === "string").slice(0, 500) : [];
   return { donnees, home, configClaude: process.env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"), projets: liste };
+}
+
+/** Fichiers publiés connus : ceux que l'écran donne (copies de ce PC) et le registre du serveur (`rendus.json`). */
+function fichiersPublies(donnees: string, fichiers: unknown): string[] {
+  const liste = Array.isArray(fichiers) ? fichiers.filter((f): f is string => typeof f === "string") : [];
+  try {
+    const registre = JSON.parse(readFileSync(path.join(donnees, "rendus.json"), "utf8"));
+    if (Array.isArray(registre)) for (const r of registre) if (r && typeof r.chemin === "string" && !r.dossier) liste.push(r.chemin);
+  } catch { /* pas de registre sur ce poste */ }
+  return liste;
 }

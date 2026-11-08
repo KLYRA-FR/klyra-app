@@ -103,3 +103,24 @@ describe("graphe commun", () => {
     expect(voisinDansDirection(pos, ids[0], "droite", ids)).not.toBeNull();
   });
 });
+
+import { chercherNoeuds, motsDe, segmentsSurlignes } from "./graphe-memoire";
+
+describe("recherche dans le graphe", () => {
+  it("classe nom, puis résumé, puis contenu, sans accent ni casse", () => {
+    const g = construireGraphe(sources());
+    const r = chercherNoeuds(g, "OUTILLAGE", [{ chemin: "/m/s1.md", extrait: "… voir l’outillage …", occurrences: 2 }]);
+    expect(r.map((x) => [x.noeud.id, x.ou])).toEqual([["s3", "nom"], ["s5", "nom"], ["s1", "contenu"]]);
+    expect(chercherNoeuds(g, "memoire refonte").map((x) => x.noeud.id)).toEqual(["fil:klyra-fil-1"]);
+    expect(chercherNoeuds(g, "typecheck serveur").map((x) => x.ou)).toEqual(["resume", "resume"]);
+    expect(chercherNoeuds(g, " ")).toEqual([]);
+  });
+  it("ne renvoie jamais un nœud privé hors du périmètre", () => {
+    const g = visiblePour(construireGraphe(sources()), "dev");
+    expect(chercherNoeuds(g, "brouillon", [{ chemin: "/m/s4.md", extrait: "brouillon", occurrences: 1 }])).toEqual([]);
+  });
+  it("surligne les mots trouvés", () => {
+    expect(segmentsSurlignes("Lancer le Typecheck", motsDe("typecheck"))).toEqual([{ texte: "Lancer le ", trouve: false }, { texte: "Typecheck", trouve: true }]);
+    expect(segmentsSurlignes("Mémoire", motsDe("memoire"))).toEqual([{ texte: "Mémoire", trouve: true }]);
+  });
+});

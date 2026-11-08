@@ -19,17 +19,19 @@ const ecrire = (fichier, texte) => { mkdirSync(path.dirname(fichier), { recursiv
 
 const cicco = path.join(maison, ".claude", "projects", path.join(maison, ".klyra", "atelier", "principal").replace(/[^a-zA-Z0-9]/g, "-"), "memory");
 ecrire(path.join(cicco, "MEMORY.md"), "- [GitHub](github.md)\n");
-ecrire(path.join(cicco, "fonctionnement.md"), souvenir("fonctionnement-modifications", "Chaque modification passe par une PR fusionnée quand tout est vert"));
+ecrire(path.join(cicco, "fonctionnement.md"), souvenir("fonctionnement-modifications", "Chaque modification passe par une PR fusionnée quand tout est vert", "Une fusion sur main vaut mise en ligne immédiate."));
 ecrire(path.join(cicco, "github.md"), souvenir("github-klyra-app", "Dépôt de l’app via Composio", "Voir [[fonctionnement-modifications]]."));
 const iris = path.join(maison, ".klyra", "atelier", "designer", ".claude", "agent-memory", "designer");
 ecrire(path.join(iris, "brouillon.md"), souvenir("brouillon-iris", "Piste visuelle personnelle", "", "  prive: oui\n"));
 const hugo = path.join(maison, ".klyra", "atelier", "dev", ".claude", "agent-memory", "dev");
 for (let i = 0; i < NOMBRE; i++) {
-  ecrire(path.join(hugo, `essai-${i}.md`), souvenir(`essai-${i}`, `Essai ${i} sujet${i % 40} groupe${i % 40}`, i ? `Suite de [[essai-${i - 1}]].` : ""));
+  ecrire(path.join(hugo, `essai-${i}.md`), souvenir(`essai-${i}`, `Essai ${i} sujet${i % 40} groupe${i % 40}`, `${i ? `Suite de [[essai-${i - 1}]].` : ""}${i === 250 ? " Les panneaux photovoltaïques du client sont posés." : ""}`));
 }
 const empreintes = () => [cicco, iris, hugo].flatMap((d) => readdirSync(d).map((f) => readFileSync(path.join(d, f), "utf8"))).join("\u0000");
 const avant = empreintes();
 
+const maquette = path.join(maison, ".klyra", "rendus", "designer", "maquette.md");
+ecrire(maquette, "# Maquette du graphe\nUne palette nocturne pour le fond du graphe.");
 const fiche = (id, nom) => `---\nname: ${id}\ndisplayName: ${nom}\ndescription: ${nom}\n---\nFiche de test.\n`;
 ecrire(path.join(donnees, "equipe", "dev.md"), fiche("dev", "Hugo"));
 ecrire(path.join(donnees, "equipe", "designer.md"), fiche("designer", "Iris"));
@@ -40,7 +42,7 @@ writeFileSync(path.join(donnees, "conversations.json"), JSON.stringify({
   version: 1,
   chats: [{ id: "klyra-fil-test", kind: "direct", projectId: null, title: "Refonte page Mémoire", roleIds: ["dev"], updatedAt: maintenant, sessions: {}, luJusqua: null, fil: { roleId: "dev", statut: "ouvert", creeLe: maintenant } }],
   messages: [], projects: [], routines: [], artefacts: [], workflows: [],
-  rendus: [{ id: "rendu-test", chemin: path.join(maison, ".klyra", "rendus", "designer", "maquette.png"), origine: path.join(maison, "maquette.png"), taille: 10, titre: "Maquette du graphe", description: "Vue graphe", type: "image", roleId: "designer", chatId: "klyra-fil-test", projectId: null, ajouteLe: maintenant, misAJour: maintenant }],
+  rendus: [{ id: "rendu-test", chemin: maquette, origine: path.join(maison, "maquette.md"), taille: 10, titre: "Maquette du graphe", description: "Vue graphe", type: "document", roleId: "designer", chatId: "klyra-fil-test", projectId: null, ajouteLe: maintenant, misAJour: maintenant }],
 }));
 
 const serveur = createServer(); await new Promise((r) => serveur.listen(0, "127.0.0.1", r)); const port = serveur.address().port; await new Promise((r) => serveur.close(r));
@@ -104,6 +106,37 @@ try {
   verifier(await app.quand("/Rien ne correspond à ces filtres/.test(document.body.innerText)"), "état vide quand aucun élément ne correspond");
   await choisirOption("Type", "Tous les types");
   await choisirOption("Agent", "Tous les agents");
+
+  // Recherche : cinq éléments choisis, chacun trouvé en moins de 2 s, puis centré.
+  const champ = 'input[aria-label="Rechercher dans la mémoire"]';
+  for (const [requete, titre, ou] of [
+    ["essai-421", "essai-421", "nom"],
+    ["groupe17 essai 97", "essai-97", "résumé"],
+    ["photovoltaique", "essai-250", "contenu"],
+    ["palette nocturne", "Maquette du graphe", "contenu"],
+    ["mise en ligne immediate", "fonctionnement-modifications", "contenu"],
+  ]) {
+    await app.saisir(champ, "");
+    const debut = Date.now();
+    await app.saisir(champ, requete);
+    const trouve = await app.quand(`[...document.querySelectorAll('[role=listbox] [role=option]')].some(o=>o.innerText.includes(${JSON.stringify(titre)})&&o.innerText.includes(${JSON.stringify(ou)}))`, 5000);
+    const duree = Date.now() - debut;
+    verifier(trouve && duree < 2000, `« ${requete} » trouve ${titre} (${ou}) en ${duree} ms`);
+  }
+  verifier(await app.ev("document.querySelectorAll('[role=listbox] mark').length>0"), "les mots trouvés sont surlignés dans les résultats");
+  verifier(await app.ev("document.querySelectorAll('[data-trouve]').length>=1"), "le résultat est surligné dans le graphe");
+  await app.ev(`document.querySelector('${champ}').focus()`);
+  await app.touche("Enter", "Enter", 13);
+  verifier(await app.quand("document.querySelector('aside[aria-label=\"Détail de l’élément\"] h2')?.textContent==='fonctionnement-modifications'"), "Entrée ouvre l’élément trouvé et centre le graphe dessus");
+  await app.saisir(champ, "piste visuelle personnelle");
+  verifier(await app.quand("[...document.querySelectorAll('[role=option]')].some(o=>o.innerText.includes('brouillon-iris'))"), "vu par toi, le souvenir privé d’Iris se trouve");
+  await choisirOption("Vu par", "Vu par Hugo");
+  await app.saisir(champ, "");
+  await app.saisir(champ, "piste visuelle personnelle");
+  await attendre(1200);
+  verifier(await app.ev("![...document.querySelectorAll('[role=option]')].some(o=>o.innerText.includes('brouillon-iris')) && /Aucun élément trouvé/.test(document.body.innerText)"), "vu par Hugo, la recherche ne trouve pas le souvenir privé d’Iris");
+  await choisirOption("Vu par", "Vu par toi (tout)");
+  await app.saisir(champ, "");
 
   // Vue liste.
   await app.aller("/memoire?vue=liste");

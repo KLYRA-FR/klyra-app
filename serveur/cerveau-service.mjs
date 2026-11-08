@@ -5,7 +5,7 @@ import path from "node:path";
 import { ouvrirCerveau, sauvegarderCerveau } from "./cerveau.mjs";
 import { cheminSouvenir, lireMemoire } from "./connaissances-agent.mjs";
 import { actionDossier } from "./cerveau-dossiers.mjs";
-import { lireSouvenirsGraphe } from "./graphe-souvenirs.mjs";
+import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs.mjs";
 import os from "node:os";
 export const PROPRIETAIRE = { agentId: null, projetId: null, proprietaire: true };
 /** Textes expressément choisis dans la boîte de fichiers du poste. Aucune ouverture d'un chemin reçu par HTTP. */
@@ -69,6 +69,8 @@ export async function indexerSouvenirs(cerveau, agent, memoire, projetId) {
 export function actionCerveau(donnees, action, args) {
     if (action === "graphe-souvenirs")
         return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
+    if (action === "graphe-chercher")
+        return chercherContenu(racinesGraphe(donnees, args.projets), args.requete, fichiersPublies(donnees, args.fichiers));
     const c = ouvrirCerveau(donnees);
     if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action))
         return actionDossier(c, action, args);
@@ -96,4 +98,17 @@ function racinesGraphe(donnees, projets) {
     const home = os.homedir();
     const liste = Array.isArray(projets) ? projets.filter((p) => !!p && typeof p.id === "string" && typeof p.dossier === "string").slice(0, 500) : [];
     return { donnees, home, configClaude: process.env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"), projets: liste };
+}
+/** Fichiers publiés connus : ceux que l'écran donne (copies de ce PC) et le registre du serveur (`rendus.json`). */
+function fichiersPublies(donnees, fichiers) {
+    const liste = Array.isArray(fichiers) ? fichiers.filter((f) => typeof f === "string") : [];
+    try {
+        const registre = JSON.parse(readFileSync(path.join(donnees, "rendus.json"), "utf8"));
+        if (Array.isArray(registre))
+            for (const r of registre)
+                if (r && typeof r.chemin === "string" && !r.dossier)
+                    liste.push(r.chemin);
+    }
+    catch { /* pas de registre sur ce poste */ }
+    return liste;
 }

@@ -211,3 +211,69 @@ export function lireSouvenirsGraphe(r: RacinesSouvenirs): LectureSouvenirs {
   }
   return { souvenirs, dossiers, tronque };
 }
+
+/* ─── Recherche dans le contenu (phase 2) ──────────────────────────────── */
+
+export interface TrouveContenu { chemin: string; extrait: string; occurrences: number }
+const TEXTES = /\.(md|markdown|txt|csv|json|html?|log)$/i;
+const cacheTextes = new Map<string, { mtime: number; texte: string; plat: string }>();
+const CACHE_MAX = 4000;
+
+export function aplatir(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+/** Les mots d'une recherche, sans accent ni casse ; tous doivent être présents. */
+export function motsRecherche(requete: unknown): string[] {
+  if (typeof requete !== "string") return [];
+  return [...new Set(aplatir(requete.slice(0, 300)).split(/[^a-z0-9_-]+/).filter((m) => m.length >= 2))].slice(0, 12);
+}
+function lireTexte(chemin: string): { texte: string; plat: string } | null {
+  let st;
+  try { st = statSync(chemin); } catch { cacheTextes.delete(chemin); return null; }
+  if (!st.isFile() || st.size > TAILLE_MAX) return null;
+  const avant = cacheTextes.get(chemin);
+  if (avant && avant.mtime === st.mtimeMs) return avant;
+  try {
+    const texte = readFileSync(chemin, "utf8");
+    if (texte.includes("\0")) return null;
+    const entree = { mtime: st.mtimeMs, texte, plat: aplatir(texte) };
+    if (cacheTextes.size >= CACHE_MAX) cacheTextes.delete(cacheTextes.keys().next().value as string);
+    cacheTextes.set(chemin, entree);
+    return entree;
+  } catch { return null; }
+}
+/** Un extrait d'une ligne autour du premier mot trouvé (sans le frontmatter). */
+function extraitAutour(texte: string, plat: string, mot: string): string {
+  const debutCorps = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(texte)?.[0].length ?? 0;
+  let i = plat.indexOf(mot, debutCorps);
+  if (i < 0) i = plat.indexOf(mot);
+  const debut = Math.max(0, i - 60), fin = Math.min(texte.length, i + mot.length + 100);
+  return `${debut > 0 ? "…" : ""}${texte.slice(debut, fin).replace(/\s+/g, " ").trim()}${fin < texte.length ? "…" : ""}`;
+}
+
+/**
+ * Cherche les mots dans le contenu des souvenirs et des fichiers texte publiés. Les fichiers sont relus seulement
+ * s'ils ont changé (cache en mémoire du processus, jamais sur le disque). `fichiers` : chemins publiés connus,
+ * gardés seulement sous `home`.
+ */
+export function chercherContenu(r: RacinesSouvenirs, requete: unknown, fichiers: unknown = [], limite = 200): { trouves: TrouveContenu[]; mots: string[] } {
+  const mots = motsRecherche(requete);
+  if (!mots.length) return { trouves: [], mots };
+  const home = reel(r.home);
+  const chemins = new Set(lireSouvenirsGraphe(r).souvenirs.map((s) => s.chemin));
+  for (const f of Array.isArray(fichiers) ? fichiers.slice(0, 2000) : []) {
+    if (typeof f !== "string" || !TEXTES.test(f)) continue;
+    const vrai = reel(f);
+    if (vrai && home && sous(home, vrai)) chemins.add(vrai);
+  }
+  const trouves: TrouveContenu[] = [];
+  for (const chemin of chemins) {
+    const t = lireTexte(chemin);
+    if (!t || !mots.every((m) => t.plat.includes(m))) continue;
+    let occurrences = 0;
+    for (const m of mots) for (let i = t.plat.indexOf(m); i >= 0 && occurrences < 999; i = t.plat.indexOf(m, i + m.length)) occurrences++;
+    trouves.push({ chemin, extrait: extraitAutour(t.texte, t.plat, mots[0]), occurrences });
+  }
+  trouves.sort((a, b) => b.occurrences - a.occurrences);
+  return { trouves: trouves.slice(0, limite), mots };
+}

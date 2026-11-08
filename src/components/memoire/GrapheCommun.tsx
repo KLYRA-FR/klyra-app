@@ -1,8 +1,8 @@
 "use client";
 
-import { EmptyState } from "klyra-ui";
+import { EmptyState, Input } from "klyra-ui";
 import { useRouter } from "next/navigation";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject, type WheelEvent } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { couleurAgent } from "@/components/team/AgentVisuel";
@@ -12,9 +12,9 @@ import { useAgents } from "@/lib/agents";
 import { appelerCerveau } from "@/lib/cerveau-pont";
 import { cn } from "@/lib/cn";
 import {
-  cadreDe, construireGraphe, fichiersDepuisRendus, filsDepuisChats, filtrerGraphe, FILTRES_VIDES, libelleRelation, liensDeduits,
-  orphelins, placerGraphe, visiblePour, voisinDansDirection, voisins,
-  type AreteGraphe, type FiltresGraphe, type Graphe, type NoeudGraphe, type Periode, type Position, type SouvenirSource, type TypeNoeud,
+  cadreDe, chercherNoeuds, construireGraphe, fichiersDepuisRendus, filsDepuisChats, filtrerGraphe, FILTRES_VIDES, idFichier, libelleRelation,
+  liensDeduits, motsDe, orphelins, placerGraphe, segmentsSurlignes, visiblePour, voisinDansDirection, voisins,
+  type AreteGraphe, type ResultatRecherche, type TrouveContenu, type FiltresGraphe, type Graphe, type NoeudGraphe, type Periode, type Position, type SouvenirSource, type TypeNoeud,
 } from "@/lib/graphe-memoire";
 import { renduDansEspace } from "@/lib/rendus-espace";
 import { useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
@@ -65,6 +65,29 @@ function useSouvenirs(lieu: string | null, projets: { id: string; dossier: strin
   return { ...etat, relire: lire };
 }
 
+/** Contenu des fichiers sources, cherché par le PC ou le VPS ; la dernière frappe seule compte. */
+function useRechercheContenu(lieu: string | null, requete: string, projets: { id: string; dossier: string }[], fichiers: string[]) {
+  const [etat, setEtat] = useState<{ pour: string; trouves: TrouveContenu[]; duree: number }>({ pour: "", trouves: [], duree: 0 });
+  const cle = JSON.stringify([projets, fichiers]);
+  useEffect(() => {
+    const texte = requete.trim();
+    if (!motsDe(texte).length) return;
+    let annule = false;
+    const minuteur = setTimeout(async () => {
+      const debut = performance.now();
+      try {
+        const [p, f] = JSON.parse(cle);
+        const r = await appelerCerveau<{ trouves: TrouveContenu[] }>(lieu, "graphe-chercher", { requete: texte, projets: p, fichiers: f });
+        if (!annule) setEtat({ pour: texte, trouves: r.trouves, duree: performance.now() - debut });
+      } catch {
+        if (!annule) setEtat({ pour: texte, trouves: [], duree: performance.now() - debut });
+      }
+    }, 150);
+    return () => { annule = true; clearTimeout(minuteur); };
+  }, [lieu, requete, cle]);
+  return etat.pour === requete.trim() ? etat : null;
+}
+
 export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGrapheCommun }) {
   const router = useRouter();
   const projetsApp = useProjects(), chats = useChatsEspace();
@@ -76,6 +99,9 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
   const [observateur, setObservateur] = useState<string>("");
   const [suggestions, setSuggestions] = useState(true);
   const [selection, setSelection] = useState<string | null>(null);
+  const [requete, setRequete] = useState("");
+  const poignee = useRef<PoigneeGraphe | null>(null);
+  const rendusEspace = useMemo(() => state.rendus.filter((r) => renduDansEspace(r.origine, lieu)), [state.rendus, lieu]);
 
   const agents = useMemo(() => {
     const vus = new Map<string, { id: string; nom: string; titre: string; teinte: RoleTeinte }>();
@@ -85,10 +111,10 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
   const complet = useMemo(() => construireGraphe({
     souvenirs,
     fils: filsDepuisChats(chats),
-    fichiers: fichiersDepuisRendus(state.rendus.filter((r) => renduDansEspace(r.origine, lieu))),
+    fichiers: fichiersDepuisRendus(rendusEspace),
     projets: projetsApp.map((p) => ({ id: p.id, nom: p.name, date: p.updatedAt })),
     agents: roles.map((r) => ({ id: r.id, nom: r.name, titre: r.title })),
-  }), [souvenirs, chats, state.rendus, lieu, projetsApp, roles]);
+  }), [souvenirs, chats, rendusEspace, projetsApp, roles]);
   // Le périmètre d'abord : un nœud privé ne nourrit ni les filtres ni les suggestions d'un autre agent.
   const perimetre = useMemo(() => visiblePour(complet, observateur || null), [complet, observateur]);
   const graphe = useMemo<Graphe>(() => {
@@ -96,6 +122,20 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
     return suggestions ? { noeuds: g.noeuds, aretes: [...g.aretes, ...liensDeduits(g)] } : g;
   }, [perimetre, filtres, suggestions]);
   const seuls = useMemo(() => orphelins(perimetre), [perimetre]);
+
+  // Recherche : nom et résumé ici, contenu par le lieu des fichiers ; jamais hors du périmètre affiché.
+  const copies = useMemo(() => new Map(rendusEspace.map((r) => [idFichier(r.id), [r.chemin].filter(Boolean)])), [rendusEspace]);
+  const fichiersTexte = useMemo(() => rendusEspace.flatMap((r) => (r.chemin ? [r.chemin] : [])), [rendusEspace]);
+  const contenu = useRechercheContenu(lieu, requete, dossiers, fichiersTexte);
+  const resultats = useMemo<ResultatRecherche[]>(() => (motsDe(requete).length
+    ? chercherNoeuds(perimetre, requete, contenu?.trouves ?? [], (n) => [...(n.chemin ? [n.chemin] : []), ...(copies.get(n.id) ?? [])])
+    : []), [perimetre, requete, contenu, copies]);
+  const surlignes = useMemo(() => (motsDe(requete).length ? new Set(resultats.map((r) => r.noeud.id)) : null), [requete, resultats]);
+  const allerA = (id: string) => {
+    if (!graphe.noeuds.some((n) => n.id === id)) setFiltres(FILTRES_VIDES);
+    setSelection(id);
+    requestAnimationFrame(() => poignee.current?.centrer(id));
+  };
   const courant = graphe.noeuds.find((n) => n.id === selection) ?? null;
 
   const nomAgent = useCallback((id: string | null) => (id ? agents.get(id)?.nom ?? id : ""), [agents]);
@@ -111,6 +151,8 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <BarreRecherche requete={requete} changer={setRequete} resultats={resultats} enCours={!!motsDe(requete).length && !contenu}
+        duree={contenu?.duree ?? null} nomAgent={(id) => (id ? agents.get(id)?.nom ?? id : "")} choisir={allerA} />
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtres du graphe">
         <ListeDeroulante variante="compact" libelle="Agent" value={filtres.agents[0] ?? ""} options={optionsAgents}
           onChange={(v) => setFiltres((f) => ({ ...f, agents: v ? [v] : [] }))} />
@@ -146,9 +188,9 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
                 description={complet.noeuds.length ? "Retire un filtre pour revoir le graphe." : "Les souvenirs des agents, leurs fichiers publiés et leurs fils apparaîtront ici dès qu’ils existent."} />
             </div>
           ) : vue === "graphe" ? (
-            <VueGraphe graphe={graphe} selection={selection} choisir={setSelection} orphelins={seuls} couleur={couleur} />
+            <VueGraphe graphe={graphe} selection={selection} choisir={setSelection} orphelins={seuls} couleur={couleur} surlignes={surlignes} poignee={poignee} />
           ) : (
-            <VueListe graphe={graphe} selection={selection} choisir={setSelection} orphelins={seuls} nomAgent={nomAgent} />
+            <VueListe graphe={surlignes ? { noeuds: graphe.noeuds.filter((n) => surlignes.has(n.id)), aretes: [] } : graphe} selection={selection} choisir={setSelection} orphelins={seuls} nomAgent={nomAgent} />
           )}
           <Legende />
         </div>
@@ -178,10 +220,12 @@ function Legende() {
 /* ─── Graphe ───────────────────────────────────────────────────────────── */
 
 type Vue = { k: number; x: number; y: number };
+export interface PoigneeGraphe { centrer: (id: string) => void }
 const rayonDe = (n: NoeudGraphe) => (n.type === "agent" ? 18 : n.type === "projet" ? 11 : 7);
 
-function VueGraphe({ graphe, selection, choisir, orphelins, couleur }: {
+function VueGraphe({ graphe, selection, choisir, orphelins, couleur, surlignes, poignee }: {
   graphe: Graphe; selection: string | null; choisir: (id: string | null) => void; orphelins: Set<string>; couleur: (agent: string | null) => string;
+  surlignes: Set<string> | null; poignee: RefObject<PoigneeGraphe | null>;
 }) {
   const pos = useMemo(() => placerGraphe({ noeuds: graphe.noeuds, aretes: graphe.aretes.filter((a) => a.type !== "deduit") }), [graphe]);
   const cadre = useMemo(() => cadreDe(pos), [pos]);
@@ -205,6 +249,7 @@ function VueGraphe({ graphe, selection, choisir, orphelins, couleur }: {
     const p = pos[id];
     if (p) setVue((v) => ({ ...v, x: centre.x - p.x * v.k, y: centre.y - p.y * v.k }));
   };
+  useImperativeHandle(poignee, () => ({ centrer: centrerSur }));
   const surRoue = (e: WheelEvent<SVGSVGElement>) => zoomer(e.deltaY < 0 ? 1.15 : 1 / 1.15, versSvg(e.clientX, e.clientY));
   const surAppui = (e: PointerEvent<SVGSVGElement>) => {
     glisse.current = { x: e.clientX, y: e.clientY, vue, bouge: false };
@@ -256,7 +301,7 @@ function VueGraphe({ graphe, selection, choisir, orphelins, couleur }: {
         onKeyDown={surTouche}
       >
         <g transform={`translate(${vue.x} ${vue.y}) scale(${vue.k})`}>
-          <Couche graphe={graphe} pos={pos} selection={selection} orphelins={orphelins} couleur={couleur} libelles={vue.k >= 1.6} />
+          <Couche graphe={graphe} pos={pos} selection={selection} orphelins={orphelins} couleur={couleur} libelles={vue.k >= 1.6} surlignes={surlignes} />
         </g>
       </svg>
       <p className="sr-only" aria-live="polite">{actif ? `${TYPE[actif.type].label} : ${actif.titre}` : ""}</p>
@@ -270,8 +315,9 @@ function VueGraphe({ graphe, selection, choisir, orphelins, couleur }: {
 }
 
 /** Le dessin, mémorisé : déplacer ou zoomer ne le recalcule pas (seul le `transform` du groupe change). */
-const Couche = memo(function Couche({ graphe, pos, selection, orphelins, couleur, libelles }: {
+const Couche = memo(function Couche({ graphe, pos, selection, orphelins, couleur, libelles, surlignes }: {
   graphe: Graphe; pos: Record<string, Position>; selection: string | null; orphelins: Set<string>; couleur: (agent: string | null) => string; libelles: boolean;
+  surlignes: Set<string> | null;
 }) {
   const proches = useMemo(() => {
     const s = new Set<string>();
@@ -296,12 +342,14 @@ const Couche = memo(function Couche({ graphe, pos, selection, orphelins, couleur
       {graphe.noeuds.map((n) => {
         const p = pos[n.id];
         if (!p) return null;
-        const r = rayonDe(n), choisi = n.id === selection, estompe = !!selection && !choisi && !proches.has(n.id);
-        const montrerTexte = n.type === "agent" || n.type === "projet" || libelles || choisi || proches.has(n.id);
+        const r = rayonDe(n), choisi = n.id === selection, trouve = !!surlignes?.has(n.id);
+        const estompe = surlignes ? !trouve && !choisi : !!selection && !choisi && !proches.has(n.id);
+        const montrerTexte = n.type === "agent" || n.type === "projet" || libelles || choisi || proches.has(n.id) || (trouve && surlignes!.size <= 40);
         return (
-          <g key={n.id} data-noeud={n.id} transform={`translate(${p.x} ${p.y})`} opacity={estompe ? 0.35 : 1} className="cursor-pointer">
+          <g key={n.id} data-noeud={n.id} data-trouve={trouve || undefined} transform={`translate(${p.x} ${p.y})`} opacity={estompe ? 0.35 : 1} className="cursor-pointer">
             <title>{`${TYPE[n.type].label} · ${n.titre}`}</title>
             {orphelins.has(n.id) && <circle r={r + 5} fill="none" stroke="var(--color-rouge-500)" strokeDasharray="3 3" strokeWidth={1.2} />}
+            {trouve && <circle r={r + 6} fill="var(--color-bleu-k1-500)" opacity={0.45} />}
             {choisi && <circle r={r + 8} fill="none" stroke="white" strokeWidth={2} />}
             {n.type === "agent" && n.agent ? (
               <foreignObject x={-r} y={-r} width={r * 2} height={r * 2}>
@@ -410,5 +458,81 @@ function PanneauNoeud({ noeud, graphe, orphelin, nomAgent, nomProjet, choisir, f
         </ul>
       </section>
     </aside>
+  );
+}
+
+/* ─── Recherche ────────────────────────────────────────────────────────── */
+
+function Surligne({ texte, mots }: { texte: string; mots: string[] }) {
+  return <>{segmentsSurlignes(texte, mots).map((s, i) => (s.trouve ? <mark key={i} className="rounded-[2px] bg-fond-teinte-bleue text-texte-principal">{s.texte}</mark> : <span key={i}>{s.texte}</span>))}</>;
+}
+
+const OU: Record<ResultatRecherche["ou"], string> = { nom: "nom", resume: "résumé", contenu: "contenu" };
+
+function BarreRecherche({ requete, changer, resultats, enCours, duree, nomAgent, choisir }: {
+  requete: string; changer: (v: string) => void; resultats: ResultatRecherche[]; enCours: boolean; duree: number | null;
+  nomAgent: (id: string | null) => string; choisir: (id: string) => void;
+}) {
+  const [ouverte, setOuverte] = useState(false);
+  const [actif, setActif] = useState(0);
+  const id = useId();
+  const mots = motsDe(requete), visibles = resultats.slice(0, 30);
+  const montrer = ouverte && mots.length > 0;
+  const prendre = (i: number) => {
+    const r = visibles[i];
+    if (!r) return;
+    choisir(r.noeud.id);
+    setOuverte(false);
+  };
+  const surTouche = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setOuverte(true); setActif((a) => Math.min(a + 1, visibles.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActif((a) => Math.max(a - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); prendre(actif); }
+    else if (e.key === "Escape") { if (ouverte) { e.preventDefault(); setOuverte(false); } else if (requete) { e.preventDefault(); changer(""); } }
+  };
+  return (
+    <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOuverte(false); }}>
+      <Input
+        type="search"
+        role="combobox"
+        aria-label="Rechercher dans la mémoire"
+        aria-expanded={montrer}
+        aria-controls={`${id}-liste`}
+        aria-autocomplete="list"
+        aria-activedescendant={montrer && visibles[actif] ? `${id}-${actif}` : undefined}
+        placeholder="Chercher un nom, un résumé ou un passage…"
+        leftIcon={<Icon name="search-01" size={16} />}
+        clearable
+        onClear={() => changer("")}
+        value={requete}
+        onChange={(e) => { changer(e.target.value); setActif(0); setOuverte(true); }}
+        onFocus={() => setOuverte(true)}
+        onKeyDown={surTouche}
+      />
+      {mots.length > 0 && (
+        <p role="status" className="mt-1 text-ui-xs text-texte-tertiaire">
+          {resultats.length ? `${resultats.length} élément${resultats.length > 1 ? "s" : ""} trouvé${resultats.length > 1 ? "s" : ""}, surlignés dans le graphe` : enCours ? "Recherche dans les fichiers…" : "Aucun élément trouvé"}
+          {enCours && resultats.length ? " · recherche dans les fichiers…" : ""}
+          {duree !== null && !enCours ? ` · contenu lu en ${Math.max(1, Math.round(duree))} ms` : ""}
+        </p>
+      )}
+      {montrer && visibles.length > 0 && (
+        <ul id={`${id}-liste`} role="listbox" aria-label="Résultats" data-flottant
+          className="absolute top-[44px] right-0 left-0 z-30 max-h-[360px] overflow-auto rounded-lg border border-bordure-subtile bg-fond-surface p-1 shadow-ombre-levee">
+          {visibles.map((r, i) => (
+            <li key={r.noeud.id} id={`${id}-${i}`} role="option" aria-selected={i === actif}
+              onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setActif(i)} onClick={() => prendre(i)}
+              className={cn("flex cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-2", i === actif && "bg-fond-survol")}>
+              <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: TYPE[r.noeud.type].couleur }} aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-ui-s font-medium text-texte-principal"><Surligne texte={r.noeud.titre} mots={mots} /></span>
+                {r.extrait && r.extrait !== r.noeud.titre && <span className="line-clamp-2 text-ui-xs text-texte-secondaire"><Surligne texte={r.extrait} mots={mots} /></span>}
+              </span>
+              <span className="shrink-0 text-ui-2xs text-texte-tertiaire">{TYPE[r.noeud.type].label}{r.noeud.agent && r.noeud.type !== "agent" ? ` · ${nomAgent(r.noeud.agent)}` : ""} · {OU[r.ou]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

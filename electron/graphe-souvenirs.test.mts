@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { agentDuProjetClaude, lireEnTete, lireSouvenirsGraphe } from "./graphe-souvenirs.ts";
+import { agentDuProjetClaude, chercherContenu, lireEnTete, lireSouvenirsGraphe } from "./graphe-souvenirs.ts";
 
 function ecrire(fichier: string, texte: string) {
   mkdirSync(path.dirname(fichier), { recursive: true });
@@ -66,4 +66,26 @@ test("en-tête et auteur d'une mémoire automatique", () => {
   assert.equal(champs["metadata.type"], "user");
   assert.deepEqual(champs["metadata.remplace"], ["a", "b"]);
   assert.equal(corps, "corps");
+});
+
+test("cherche dans le contenu des souvenirs et des fichiers publiés sous home, sans accent", () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "graphe-recherche-"));
+  const dehors = mkdtempSync(path.join(os.tmpdir(), "graphe-dehors-"));
+  try {
+    const config = path.join(home, ".claude");
+    ecrire(path.join(config, "agent-memory", "dev", "a.md"), souvenir("a", "project", "Le déploiement passe par la CI.\nDéploiement encore."));
+    ecrire(path.join(config, "agent-memory", "dev", "b.md"), souvenir("b", "project", "Rien à voir."));
+    ecrire(path.join(home, "livrables", "rapport.md"), "# Rapport\nLe deploiement du site est prêt.");
+    ecrire(path.join(dehors, "secret.md"), "deploiement hors du dossier");
+    const r = { donnees: path.join(home, "donnees"), configClaude: config, home };
+    const res = chercherContenu(r, "Déploiement", [path.join(home, "livrables", "rapport.md"), path.join(dehors, "secret.md")]);
+    assert.deepEqual(res.mots, ["deploiement"]);
+    assert.deepEqual(res.trouves.map((t) => path.basename(t.chemin)), ["a.md", "rapport.md"]);
+    assert.match(res.trouves[0].extrait, /déploiement passe par la CI/);
+    assert.equal(chercherContenu(r, "deploiement absent").trouves.length, 0);
+    assert.equal(chercherContenu(r, "").trouves.length, 0);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(dehors, { recursive: true, force: true });
+  }
 });

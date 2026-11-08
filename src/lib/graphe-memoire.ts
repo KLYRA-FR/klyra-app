@@ -402,3 +402,55 @@ export function fichiersDepuisRendus(rendus: RenduLike[]): FichierSource[] {
     chatId: r.chatId, projetId: r.projectId, date: r.misAJour,
   }));
 }
+
+/* ─── Recherche (phase 2) ──────────────────────────────────────────────── */
+
+export interface TrouveContenu { chemin: string; extrait: string; occurrences: number }
+export interface ResultatRecherche { noeud: NoeudGraphe; ou: "nom" | "resume" | "contenu"; extrait: string; score: number }
+
+const plat = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+/** Mêmes mots que le serveur (`motsRecherche` d'electron/graphe-souvenirs.ts). */
+export function motsDe(requete: string): string[] {
+  return [...new Set(plat(requete.slice(0, 300)).split(/[^a-z0-9_-]+/).filter((m) => m.length >= 2))].slice(0, 12);
+}
+
+/**
+ * Cherche dans le nom et le résumé de chaque nœud, puis ajoute ceux dont le fichier source contient tous les mots
+ * (`contenu`, par chemin, lu par le PC ou le VPS). Un nœud absent du graphe donné (privé d'un autre agent) n'est
+ * jamais renvoyé.
+ */
+export function chercherNoeuds(g: Graphe, requete: string, contenu: TrouveContenu[] = [], cheminsDe?: (n: NoeudGraphe) => string[]): ResultatRecherche[] {
+  const mots = motsDe(requete);
+  if (!mots.length) return [];
+  const parChemin = new Map(contenu.map((c) => [c.chemin, c]));
+  const out: ResultatRecherche[] = [];
+  for (const n of g.noeuds) {
+    const titre = plat(n.titre), resume = plat(n.resume);
+    if (mots.every((m) => titre.includes(m))) {
+      out.push({ noeud: n, ou: "nom", extrait: n.resume, score: 300 + (titre === mots.join(" ") ? 50 : 0) - Math.min(titre.length, 99) / 100 });
+      continue;
+    }
+    if (mots.every((m) => titre.includes(m) || resume.includes(m))) { out.push({ noeud: n, ou: "resume", extrait: n.resume, score: 200 }); continue; }
+    const chemins = cheminsDe ? cheminsDe(n) : n.chemin ? [n.chemin] : [];
+    const trouve = chemins.map((c) => parChemin.get(c)).find(Boolean);
+    if (trouve) out.push({ noeud: n, ou: "contenu", extrait: trouve.extrait, score: 100 + Math.min(trouve.occurrences, 50) });
+  }
+  return out.sort((a, b) => b.score - a.score || a.noeud.titre.localeCompare(b.noeud.titre, "fr"));
+}
+
+/** Découpe un texte pour surligner les mots trouvés (sans HTML). */
+export function segmentsSurlignes(texte: string, mots: string[]): { texte: string; trouve: boolean }[] {
+  if (!mots.length || !texte) return [{ texte, trouve: false }];
+  const p = plat(texte);
+  const marques = new Array<boolean>(texte.length).fill(false);
+  // NFD puis retrait des accents garde la longueur pour le français courant ; sinon, pas de surlignage.
+  if (p.length !== texte.length) return [{ texte, trouve: false }];
+  for (const m of mots) for (let i = p.indexOf(m); i >= 0; i = p.indexOf(m, i + m.length)) marques.fill(true, i, i + m.length);
+  const out: { texte: string; trouve: boolean }[] = [];
+  for (let i = 0; i < texte.length; i++) {
+    const dernier = out[out.length - 1];
+    if (dernier && dernier.trouve === marques[i]) dernier.texte += texte[i];
+    else out.push({ texte: texte[i], trouve: marques[i] });
+  }
+  return out;
+}
