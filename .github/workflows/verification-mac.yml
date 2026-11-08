@@ -48,10 +48,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      # github.com répond parfois 504 au téléchargement d'Electron (postinstall) : jusqu'à 4 essais.
+      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
       - name: Dépendances (nouvel essai si GitHub ne répond pas)
         shell: bash
-        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
+        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
       - name: Routines sous macOS (fichier, verrou, fuseaux)
         run: pnpm test:routines
