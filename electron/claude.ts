@@ -24,7 +24,6 @@ import { CONSIGNE_ATELIER } from "./atelier-agent";
 import { CONSIGNE_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe";
 import { CONSIGNE_CARTES, OUTIL_CARTE_CLAUDE } from "./cartes-interactives";
 import { CONSIGNE_FILS, TRAVAUX_MAX } from "./fils-outils";
-import { app } from "electron";
 import { CONSIGNE_CERVEAU, avecReperesCerveau } from "./cerveau-outils";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
@@ -884,7 +883,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
   const connues = skillsConnues(configClaude, cwd);
   for (const nom of filtre.coupes) connues.delete(nom);
-  const prompt = avecReperesCerveau(promptAvecSkill(options.prompt, options.skill, connues), app.isReady() ? app.getPath("userData") : null, options.agent ?? "principal", options.chatId ?? "");
+  // KLYRA_USER_DATA est posé au démarrage (main.ts). Ce module n’importe pas Electron : le banc des routines le charge sans.
+  const prompt = avecReperesCerveau(promptAvecSkill(options.prompt, options.skill, connues), process.env.KLYRA_USER_DATA || null, options.agent ?? "principal", options.chatId ?? "");
   const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
   // Les dossiers des pièces jointes, pour que l'agent puisse les lire.
   const dossiersJoints = [...new Set((options.fichiers ?? []).filter((f) => path.isAbsolute(f) && existsSync(f)).map((f) => path.dirname(f)))].filter(
