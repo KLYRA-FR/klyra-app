@@ -418,6 +418,10 @@ export function creerClientAcp(o) {
             return echec("Effort invalide.");
         demarrerTour(requestId, d, emit).catch((error) => echec(error instanceof Error ? error.message : String(error)));
     }
+    /** Pose une option de session : la valeur en `{ value }` (Grok Build 1.0.70), sinon en chaîne (ACP courant) pour les versions plus récentes. */
+    function poserOption(sessionId, configId, valeur) {
+        return requete("session/set_config_option", { sessionId, configId, value: { value: valeur } }).catch(() => requete("session/set_config_option", { sessionId, configId, value: valeur }));
+    }
     async function demarrerTour(requestId, d, emit) {
         await pret();
         const nouvelle = async () => {
@@ -453,11 +457,12 @@ export function creerClientAcp(o) {
             session.mode = mode;
         }
         if (d.modele && d.modele !== session.modele) {
-            noterOptions(sessionId, (await requete("session/set_config_option", { sessionId, configId: "model", value: { value: d.modele } }))?.configOptions);
+            const r = await poserOption(sessionId, "model", d.modele).catch(() => null);
+            noterOptions(sessionId, r?.configOptions);
             session.modele = d.modele;
         }
         if (d.effort && d.effort !== session.effort) {
-            const r = await requete("session/set_config_option", { sessionId, configId: "reasoning_effort", value: { value: d.effort } }).catch(() => null);
+            const r = await poserOption(sessionId, "reasoning_effort", d.effort).catch(() => null);
             noterOptions(sessionId, r?.configOptions);
             session.effort = d.effort;
         }
