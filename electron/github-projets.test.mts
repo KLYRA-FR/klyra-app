@@ -258,4 +258,7 @@ test("réécritures d'adresse : vers un autre dépôt de github.com, refusées ;
   assert.equal(reecritVersAutreDepot(["url.https://github.com/.insteadof git@github.com:"], nom), false);
   assert.equal(reecritVersAutreDepot(["url.file:///srv/nus/.insteadof https://github.com/"], nom), false);
   assert.equal(reecritVersAutreDepot(["url.https://github.com/demo/site.git.insteadof https://github.com/demo/site.git"], nom), false);
+  // Comme git, la casse compte : une règle que git n'appliquerait pas (« b.GIT ») ne cache pas celle qu'il applique.
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.insteadof https://github.com/demo/", "url.ssh://git@github.com/demo/site.git.insteadof https://github.com/demo/site.GIT"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/x.git.insteadof HTTPS://GITHUB.COM/demo/site.git"], nom), false, "git ne l'applique pas");
 });

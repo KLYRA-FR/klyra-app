@@ -77,7 +77,8 @@ export function reecritVersAutreDepot(lignes, nom) {
             if (!m || m[2].toLowerCase() !== genre)
                 continue;
             const [, base, , motif] = m;
-            if (motif && adresse.toLowerCase().startsWith(motif.toLowerCase()) && (!meilleure || motif.length > meilleure.motif.length))
+            // Comme git : le motif se compare en respectant la casse (une règle que git n'applique pas ne doit pas en cacher une autre).
+            if (motif && adresse.startsWith(motif) && (!meilleure || motif.length > meilleure.motif.length))
                 meilleure = { base, motif };
         }
         if (!meilleure)
@@ -343,7 +344,11 @@ export class GithubProjets {
         const urls = await this.configGit(cible, ["config", "--includes", "--get-regexp", "^url\\..*\\.(insteadof|pushinsteadof)$"]);
         if (urls.code !== 0 && urls.code !== 1)
             throw new Error("La configuration git de ce dossier n’a pas pu être vérifiée : rien n’est envoyé à GitHub.");
-        if (risques.length || reecritVersAutreDepot(urls.sortie.split("\n").filter(Boolean), nom))
+        // Et l'avis de git lui-même sur l'adresse de récupération (sans réseau) : ses règles, pas une réimplémentation.
+        const effective = await this.configGit(cible, ["ls-remote", "--get-url", `https://github.com/${nom}.git`]);
+        const versGit = effective.sortie.trim().match(/^https?:\/\/(?:[^/@]*@)?github\.com\.?(?::\d+)?\/+([^?#]+?)(?:\.git)?\/*$/i);
+        const ailleurs = effective.code !== 0 || (versGit && versGit[1].toLowerCase() !== nom.toLowerCase());
+        if (risques.length || ailleurs || reecritVersAutreDepot(urls.sortie.split("\n").filter(Boolean), nom))
             throw new Error("La configuration git de ce dossier change les adresses, le réseau ou les identifiants : rien n’est envoyé à GitHub depuis ce dossier.");
         return nom;
     }
