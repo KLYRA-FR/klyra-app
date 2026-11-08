@@ -4,14 +4,16 @@
 # Les apps installées y trouvent la nouvelle version (electron/maj.ts).
 # Les pull requests passent par verification.yml, qui ne publie rien.
 name: App
+# La branche deploy/memoire-digital-os fabrique les artefacts uniquement.
+# Elle ne déploie pas Convex et ne publie pas de mise à jour générale.
 
 on:
   push:
-    branches: [main]
+    branches: [main, deploy/memoire-digital-os]
   workflow_dispatch:
 
 concurrency:
-  group: app
+  group: ${{ github.ref == 'refs/heads/main' && 'app' || format('app-preview-{0}', github.ref) }}
   cancel-in-progress: true
 
 env:
@@ -113,6 +115,7 @@ jobs:
   # Les fonctions Convex de production (cf. docs/CONVEX-PLAN.md) : déployées avant la publication
   # de l'app, et compatibles avec la version précédente, qui les appelle encore pendant une heure.
   convex:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -135,6 +138,7 @@ jobs:
           pnpm exec convex deploy --typecheck enable --message "App $VERSION"
 
   publier:
+    if: github.ref == 'refs/heads/main'
     needs: [mac, windows, convex]
     runs-on: ubuntu-latest
     steps:

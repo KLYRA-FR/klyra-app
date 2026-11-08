@@ -1,9 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, safeStorage, shell, systemPreferences } from "electron";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os, { hostname } from "node:os";
 import path from "node:path";
+import { ouvrirCerveau } from "./cerveau";
+import { actionCerveau, indexerSouvenirs } from "./cerveau-service";
+import { connecterDigitalOs } from "./cerveau-dossiers";
+import { appel as appelCerveauVps } from "./fournisseurs-vps";
 import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
 import { consigneKlyra } from "./configuration-klyra";
@@ -593,6 +597,40 @@ function registerBridge() {
     if (!m) throw new ErreurConnaissances("introuvable", "Cet agent n’a pas de mémoire.");
     return m;
   };
+  handle("cerveau:appeler", async (lieu: string | null, action: string, args: Record<string, unknown>) => {
+    if (action === "digital-os-connecter" && !lieu) {
+      const choix = await dialog.showOpenDialog({ title: "Connecter le dossier DIGITAL-OS à la mémoire", properties: ["openDirectory"] });
+      if (choix.canceled || !choix.filePaths[0]) return null;
+      return connecterDigitalOs(ouvrirCerveau(app.getPath("userData")), choix.filePaths[0]);
+    }
+    if (action === "choisir-documents") {
+      const choix = await dialog.showOpenDialog({ title: "Importer des documents dans la mémoire", properties: ["openFile", "multiSelections"], filters: [{ name: "Documents texte", extensions: ["md", "markdown", "txt", "csv", "json", "log"] }] });
+      if (choix.canceled) return { indexes: 0, inchanges: 0, avertissements: [], annule: true };
+      if (choix.filePaths.length > 20) throw new Error("Choisissez au plus vingt fichiers par import.");
+      let indexes = 0, inchanges = 0;
+      const avertissements: string[] = [];
+      for (const fichier of choix.filePaths) {
+        try {
+          if (statSync(fichier).size > 2_000_000) throw new Error("Limite de 2 Mo par fichier texte.");
+          const reference = createHash("sha256").update(realpathSync(fichier)).digest("hex");
+          const corps = { action: "importer-documents", args: { documents: [{ titre: path.basename(fichier), contenu: readFileSync(fichier, "utf8"), reference }], projetId: args.projetId ?? null } };
+          const r = lieu ? (await appelCerveauVps(lieu, jetonServeur(lieu), "/klyra/v1/agent/cerveau", "POST", corps, 120_000)).resultat as { indexes: number; inchanges: number } : actionCerveau(app.getPath("userData"), corps.action, corps.args) as { indexes: number; inchanges: number };
+          indexes += r.indexes; inchanges += r.inchanges;
+        } catch (e) { avertissements.push(`${path.basename(fichier)} : ${e instanceof Error ? e.message : "import impossible"}`); }
+        await new Promise<void>((r) => setImmediate(r));
+      }
+      return { indexes, inchanges, avertissements };
+    }
+    if (lieu) {
+      const r = await appelCerveauVps(lieu, jetonServeur(lieu), "/klyra/v1/agent/cerveau", "POST", { action, args }, 120_000);
+      return r.resultat;
+    }
+    if (action === "indexer-souvenirs") {
+      const agent = String(args.agent ?? "principal"), contexte = args.contexte as Contexte;
+      return indexerSouvenirs(ouvrirCerveau(app.getPath("userData")), agent, await memoireDe(agent, contexte), typeof args.projetId === "string" ? args.projetId : null);
+    }
+    return actionCerveau(app.getPath("userData"), action, args);
+  });
   handle("agents:memoire", async (agent: string, contexte: Contexte) => {
     const vps = surVps(contexte);
     if (vps) {

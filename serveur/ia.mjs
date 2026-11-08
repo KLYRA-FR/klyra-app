@@ -18,6 +18,7 @@ import { estOutilCoffre, OUTILS_COFFRE } from "./coffre-definitions.mjs";
 import { estOutilNavigateur, OUTILS_NAVIGATEUR } from "./navigateur-definitions.mjs";
 import { estOutilWorkflow, OUTILS_WORKFLOWS } from "./workflows-outils.mjs";
 import { estOutilFil, OUTILS_FILS } from "./fils-outils.mjs";
+import { OUTILS_CERVEAU, executerCerveau } from "./cerveau-outils.mjs";
 
 export { FOURNISSEURS };
 
@@ -194,10 +195,11 @@ export function creerIa(options) {
               },
             ]
           : [];
-        return resultat({ tools: [...outils, ...publier, ...(outilsApp?.lister(appelant) ?? []), ...(navigateur?.actif() ? OUTILS_NAVIGATEUR : []), ...(fils ? OUTILS_FILS : []), ...(workflows ? OUTILS_WORKFLOWS : []), ...(coffre?.actif() ? OUTILS_COFFRE : [])] });
+        return resultat({ tools: [...OUTILS_CERVEAU, ...outils, ...publier, ...(outilsApp?.lister(appelant) ?? []), ...(navigateur?.actif() ? OUTILS_NAVIGATEUR : []), ...(fils ? OUTILS_FILS : []), ...(workflows ? OUTILS_WORKFLOWS : []), ...(coffre?.actif() ? OUTILS_COFFRE : [])] });
       }
       case "tools/call": {
         const nom = String(msg.params?.name ?? "");
+        if (OUTILS_CERVEAU.some((o) => o.name === nom)) return resultat(executerCerveau(options.donnees, nom, msg.params?.arguments ?? {}, appelant.agent, appelant.conversation, true));
         /* Le navigateur de KLYRA : relayé au PC de la personne (cf. navigateur.mjs). */
         if (estOutilNavigateur(nom) && navigateur?.actif()) return resultat(await navigateur.appeler(appelant, nom, msg.params?.arguments ?? {}));
         /* Le Coffre de KLYRA : relayé au PC de la personne, jamais une valeur dans la réponse (cf. coffre.mjs). */
@@ -259,7 +261,7 @@ export function creerIa(options) {
   function configMcp(appelant = {}) {
     if (!serveur) return null;
     const autres = typeof appelant.agent === "string" ? (outilsApp?.lister({ agent: appelant.agent, conversation: appelant.conversation ?? "" }).length ?? 0) : 0;
-    if (!lire().length && !publication && !autres && !navigateur?.actif() && !workflows && !fils && !coffre?.actif()) return null;
+    if (!OUTILS_CERVEAU.length && !lire().length && !publication && !autres && !navigateur?.actif() && !workflows && !fils && !coffre?.actif()) return null;
     const qui = {
       ...(typeof appelant.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(appelant.agent) ? { "X-Klyra-Agent": appelant.agent } : {}),
       ...(typeof appelant.conversation === "string" && /^[A-Za-z0-9_.:@-]{1,120}$/.test(appelant.conversation) ? { "X-Klyra-Conversation": appelant.conversation } : {}),

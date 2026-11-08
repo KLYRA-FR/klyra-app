@@ -17,6 +17,9 @@ import { randomUUID } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ouvrirCerveau } from "./cerveau.mjs";
+import { indexerSouvenirs } from "./cerveau-service.mjs";
+import { connecterDigitalOs } from "./cerveau-dossiers.mjs";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
 import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe.mjs";
 import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
@@ -348,6 +351,8 @@ export function creerAgents(options) {
     return m;
   };
   const memoire = {
+    connecterDigitalOs: () => connecterDigitalOs(ouvrirCerveau(donnees), path.join(home, "DIGITAL-OS")),
+    indexer: (agent, contexte, projetId) => indexerSouvenirs(ouvrirCerveau(donnees), agent, memoireDe(agent, contexte), projetId ?? null),
     lire: (agent, contexte) => {
       const m = memoireDe(agent, contexte);
       return m ? lireMemoire(m.portee, m.dossier) : null;
@@ -950,7 +955,7 @@ export function creerAgents(options) {
         args.push(
           "--allowedTools",
           ...COMMANDES_AUTORISEES,
-          ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
+          ...(mcp ? ["mcp__klyra__cerveau_chercher", "mcp__klyra__cerveau_lire", OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
           // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
