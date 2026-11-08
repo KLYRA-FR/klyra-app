@@ -9,6 +9,7 @@ import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
+import { Onglets } from "@/components/ui/Onglets";
 import { getBridge } from "@/lib/bridge";
 import { lieuParDefaut, nomLieu, useServeursRelies } from "@/lib/lieux";
 import { cn } from "@/lib/cn";
@@ -43,7 +44,10 @@ function identifiant(nom: string, existants: Project[]): string {
 /** Les projets d'un VPS vivent sous le dossier de l'utilisateur klyra (serveur/lancer.sh, serveur/fichiers.mjs). */
 const RACINE_VPS = "/var/lib/klyra/projets";
 
-/** Ajouter ou modifier un projet : son dossier sur ce Mac (ou sur un VPS relié), son nom, à quoi il sert. */
+/** D'où vient un nouveau projet de ce poste : un dossier déjà là, ou un dépôt GitHub que l'app clone. */
+type Source = "dossier" | "github";
+
+/** Ajouter ou modifier un projet : son dossier sur ce Mac (ou sur un VPS relié), ou un dépôt GitHub cloné ici ; son nom, à quoi il sert. */
 function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini: (id: string | null) => void }) {
   const projects = useProjects();
   const { enregistrerProjet } = useWorkspace();
@@ -62,6 +66,29 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   const serveurs = useServeursRelies();
   const [erreurVps, setErreurVps] = useState<string | null>(null);
   const surVps = !!lieu;
+  // GitHub : seulement pour un nouveau projet de ce poste (le clone passe par le git du poste).
+  const [source, setSource] = useState<Source>("dossier");
+  const depuisGithub = source === "github" && !initial && !surVps;
+  const [depot, setDepot] = useState("");
+  const [parent, setParent] = useState<string | null>(null);
+  const [parDefaut, setParDefaut] = useState<string | null>(null);
+  const [clonage, setClonage] = useState(false);
+  const [erreurClone, setErreurClone] = useState<string | null>(null);
+  const clonable = !!bridge?.git.cloner;
+
+  const choisirSource = (s: Source) => {
+    setSource(s);
+    setEssai(false);
+    if (s === "github" && parDefaut === null && bridge?.git.dossierClones) {
+      void bridge.git.dossierClones().then((r) => r.ok && setParDefaut(r.data));
+    }
+  };
+
+  const choisirParent = async () => {
+    if (!bridge) return;
+    const r = await bridge.projets.choisirDossier();
+    if (r.ok && r.data) setParent(r.data);
+  };
 
   const choisir = async () => {
     if (!bridge) return;
@@ -73,6 +100,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   };
 
   const erreurs = {
+    depot: depot.trim() ? undefined : "Écris le dépôt (propriétaire/dépôt) ou colle son adresse.",
     folder: surVps
       ? folder.startsWith(`${RACINE_VPS}/`)
         ? undefined
@@ -80,28 +108,43 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
       : folder
         ? undefined
         : `Choisis le dossier du projet sur ${poste.ton}.`,
-    name: name.trim() ? undefined : "Donne-lui un nom.",
+    // Depuis GitHub, le nom du dépôt sert de nom s'il n'y en a pas.
+    name: name.trim() || depuisGithub ? undefined : "Donne-lui un nom.",
   };
 
   const enregistrer = async (e: FormEvent) => {
     e.preventDefault();
     setEssai(true);
-    if (erreurs.folder || erreurs.name) return;
+    let dossier = folder;
+    let nom = name.trim();
+    let depotClone = initial?.depot;
+    if (depuisGithub) {
+      if (erreurs.depot || !bridge?.git.cloner) return;
+      setErreurClone(null);
+      setClonage(true);
+      const r = await bridge.git.cloner(depot, parent);
+      setClonage(false);
+      if (!r.ok) return setErreurClone(r.message);
+      dossier = r.data.dossier;
+      depotClone = r.data.depot;
+      nom ||= r.data.depot.split("/").pop() ?? r.data.depot;
+    } else if (erreurs.folder || erreurs.name) return;
     if (lieu && !initial && bridge?.projets.creerDossierVps) {
       setErreurVps(null);
       const r = await bridge.projets.creerDossierVps(lieu, folder);
       if (!r.ok) return setErreurVps(r.message);
     }
     const project: Project = {
-      id: initial?.id ?? identifiant(name, projects),
-      name: name.trim(),
+      id: initial?.id ?? identifiant(nom, projects),
+      name: nom,
       subtitle: subtitle.trim(),
       brief: brief.trim(),
       previewUrl: previewUrl.trim().replace(/^https?:\/\//, ""),
       status,
       pinned,
-      folder,
+      folder: dossier,
       ...(lieu ? { lieu } : {}),
+      ...(depotClone ? { depot: depotClone } : {}),
       roleIds: initial?.roleIds ?? ["principal"],
       files: [],
       updatedAt: new Date().toISOString(),
@@ -117,7 +160,44 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
           <p className="m-0 text-ui text-texte-principal">{nomLieu(lieu, serveurs)}</p>
         </Champ>
       )}
-      {surVps ? (
+      {!initial && !surVps && clonable && (
+        <Onglets<Source>
+          libelle="D’où vient le projet"
+          onglets={[
+            { id: "dossier", label: `Dossier de ${poste.ce}`, icone: <Icon name="folder-open-01" size={16} /> },
+            { id: "github", label: "Dépôt GitHub", icone: <Icon name="git-branch-01" size={16} /> },
+          ]}
+          valeur={source}
+          onChange={choisirSource}
+          className="self-start"
+        />
+      )}
+      {depuisGithub ? (
+        <div data-source-github className="flex flex-col gap-4">
+          <Champ
+            label="Dépôt GitHub"
+            erreur={essai ? (erreurs.depot ?? erreurClone ?? undefined) : undefined}
+            aide={`Public, ou privé si git est déjà connecté à ton compte GitHub sur ${poste.ce}. L’app ne demande ni ne garde aucun jeton.`}
+          >
+            <Input
+              size="sm"
+              value={depot}
+              placeholder="propriétaire/dépôt ou https://github.com/…"
+              onChange={(e) => setDepot(e.target.value)}
+              className={cn(CHAMP, "klyra-mono")}
+              autoFocus
+            />
+          </Champ>
+          <Champ label="Où le copier" aide="L’app y clone le dépôt, dans un dossier à son nom. Tes agents travaillent dans cette copie ; tu récupères les nouveautés depuis la page du projet.">
+            <div className="flex flex-wrap items-center gap-2">
+              <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="folder-open-01" size={20} />} onClick={() => void choisirParent()}>
+                Changer de dossier
+              </Bouton>
+              {(parent ?? parDefaut) && <span className="klyra-mono min-w-0 text-ui-xs text-texte-secondaire [overflow-wrap:anywhere]">{court(parent ?? parDefaut ?? "")}</span>}
+            </div>
+          </Champ>
+        </div>
+      ) : surVps ? (
         <Champ label="Dossier sur le VPS" erreur={essai ? (erreurs.folder ?? erreurVps ?? undefined) : undefined} aide="Créé s’il n’existe pas. Les agents du VPS y travaillent.">
           <Input size="sm" value={folder} disabled={!!initial} onChange={(e) => setFolder(e.target.value.trim())} className={cn(CHAMP, "klyra-mono")} />
         </Champ>
@@ -163,7 +243,9 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
       </label>
 
       <div className="flex flex-wrap gap-2">
-        <BoutonPrincipal type="submit">{initial ? "Enregistrer" : "Ajouter le projet"}</BoutonPrincipal>
+        <BoutonPrincipal type="submit" disabled={clonage}>
+          {initial ? "Enregistrer" : depuisGithub ? (clonage ? "Clonage en cours…" : "Cloner et ajouter") : "Ajouter le projet"}
+        </BoutonPrincipal>
         <Bouton variant="blanc" taille="md" onClick={() => onFini(null)}>
           Annuler
         </Bouton>
@@ -193,7 +275,7 @@ export function ProjetsScreen() {
               <span className="font-normal">{aModifier ? "· modifier" : `sur ${poste.ce}`}</span>
             </h1>
             <p className="m-0 text-ui-s text-texte-secondaire">
-              Ouvre un dossier de {poste.ton} pour parcourir ton code et laisser les agents y travailler.
+              Ouvre un dossier de {poste.ton} ou un dépôt GitHub pour parcourir ton code et laisser les agents y travailler.
             </p>
           </div>
           {!formulaire && <BoutonPrincipal href="/projets?nouveau=1">Nouveau projet</BoutonPrincipal>}
@@ -235,7 +317,7 @@ export function ProjetsScreen() {
                 <div className="flex flex-col items-start gap-4 p-4">
                   <div className="flex flex-col gap-1">
                     <p className="m-0 text-ui font-semibold text-texte-principal">Ajoute ton premier projet</p>
-                    <p className="m-0 text-ui-s text-texte-secondaire">Choisis le dossier d’un site ou d’une app : celui qui contient ton code.</p>
+                    <p className="m-0 text-ui-s text-texte-secondaire">Choisis le dossier d’un site ou d’une app, ou un dépôt GitHub : là où est ton code.</p>
                   </div>
                   <ul className="m-0 flex list-none flex-col gap-2 p-0 text-ui-s text-texte-secondaire">
                     <li className="flex items-center gap-2">
@@ -251,7 +333,9 @@ export function ProjetsScreen() {
                       </span>
                     </li>
                   </ul>
-                  <p className="m-0 text-ui-xs text-texte-tertiaire">Tes fichiers restent sur {poste.ton}. Rien n’est déplacé ni copié.</p>
+                  <p className="m-0 text-ui-xs text-texte-tertiaire">
+                    Un dossier de {poste.ton} reste où il est : rien n’est déplacé ni copié. Un dépôt GitHub est cloné sur {poste.ton}.
+                  </p>
                   <BoutonPrincipal href="/projets?nouveau=1">Ajouter un projet</BoutonPrincipal>
                 </div>
               )

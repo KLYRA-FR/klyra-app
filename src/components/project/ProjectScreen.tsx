@@ -12,6 +12,7 @@ import { Icon } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Bouton } from "@/components/ui/Bouton";
 import { ConsignesProjet } from "./ConsignesProjet";
+import { DepotProjet } from "./DepotProjet";
 import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { cn } from "@/lib/cn";
 import { formatListDate } from "@/lib/format";
@@ -135,6 +136,7 @@ export function ProjectScreen() {
           <span className="klyra-mono text-ui-xs text-texte-tertiaire [overflow-wrap:anywhere]">
             {project.folder.replace(/^\/Users\/[^/]+/, "~")}
           </span>
+          <DepotProjet key={`depot-${project.id}`} project={project} />
           <ConsignesProjet key={project.id} project={project} />
           <div className="flex items-center gap-3">
             <Avatar.Group size="sm" aria-label="Agents du projet">
