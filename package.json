@@ -133,7 +133,7 @@
     "test:app-web": "node --test scripts/sortie-vercel.test.mjs",
     "test:origine-telephone": "node --test scripts/origine-telephone.test.mjs",
     "github:preparer": "node scripts/preparer-github.mjs",
-    "test:github-projets": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/github-projets.test.mts && node --test serveur/github.test.mjs && vitest run src/lib/projet-depuis-depot.test.ts src/lib/choix-depot.test.ts src/lib/conversation-projet.test.ts"
+    "test:github-projets": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/github-projets.test.mts electron/github-outils.test.mts && node --test serveur/github.test.mjs && vitest run src/lib/projet-depuis-depot.test.ts src/lib/choix-depot.test.ts src/lib/conversation-projet.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

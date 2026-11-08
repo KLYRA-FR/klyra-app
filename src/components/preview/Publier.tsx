@@ -1,54 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Textarea } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { CHAMP } from "@/components/ui/Champ";
-import { getBridge, type EtatGit, type ResultatPublication } from "@/lib/bridge";
+import { getBridge, type ResultatPublication } from "@/lib/bridge";
+import { nomDepot } from "@/lib/depot-projet";
+import { signalerDepot, useEtatDepot } from "@/lib/etat-depot";
 import { cn } from "@/lib/cn";
 import type { Project } from "@/types/domain";
 
 const STATUTS: Record<string, string> = { M: "Modifié", A: "Ajouté", D: "Supprimé", "?": "Nouveau", R: "Renommé" };
 
 /**
- * Publier un projet : ce qui a changé, le message du commit, puis commit +
- * push de la branche en cours. Sur une branche principale, l'avertissement
- * rappelle que le site peut partir en ligne.
+ * Publier un projet : ce qui a changé, le message du commit, puis commit + envoi de la branche en cours.
+ * Un dépôt ouvert depuis GitHub passe par la connexion GitHub de sa machine (PC ou VPS) ; un dossier de ce PC,
+ * par le git du poste. Sur une branche principale, l'avertissement rappelle que le site peut partir en ligne.
  */
 export function Publier({ project, onFermer }: { project: Project; onFermer: () => void }) {
   const bridge = getBridge();
-  const [etat, setEtat] = useState<EtatGit | null>(null);
+  const { etat, natif, disponible } = useEtatDepot(project);
   const [erreur, setErreur] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [resultat, setResultat] = useState<ResultatPublication | null>(null);
 
-  useEffect(() => {
-    if (!bridge) return;
-    let actif = true;
-    void bridge.git.etat(project.folder).then((r) => {
-      if (!actif) return;
-      if (r.ok) setEtat(r.data);
-      else setErreur(r.message);
-    });
-    return () => {
-      actif = false;
-    };
-  }, [bridge, project.folder]);
-
   const publier = async () => {
     if (!bridge) return;
     setEnvoi(true);
-    const r = await bridge.git.publier(project.folder, message);
+    setErreur(null);
+    const r = natif && bridge.github?.publier ? await bridge.github.publier(project.lieu ?? null, project.folder, message) : await bridge.git.publier(project.folder, message);
     setEnvoi(false);
-    if (r.ok) setResultat(r.data);
-    else setErreur(r.message);
+    if (r.ok) {
+      setResultat(r.data);
+      signalerDepot(project.id);
+    } else setErreur(r.message);
   };
 
   const principale = etat?.branche === "main" || etat?.branche === "master";
-  const rien = !!etat && etat.fichiers.length === 0 && etat.enAvance === 0;
+  const rien = !!etat && etat.fichiers.length === 0 && etat.enAvance === 0 && etat.suivie;
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col bg-fond-surface">
@@ -60,13 +52,13 @@ export function Publier({ project, onFermer }: { project: Project; onFermer: () 
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        {!bridge && <p className="m-0 text-ui-s text-texte-secondaire">Publier marche dans l’app de bureau.</p>}
+        {(!bridge || !disponible) && <p className="m-0 text-ui-s text-texte-secondaire">{bridge ? "Publier marche pour un dépôt de ce PC, ou ouvert depuis GitHub." : "Publier marche dans l’app de bureau."}</p>}
         {erreur && (
           <p role="alert" className="m-0 text-ui-s text-texte-erreur">
             {erreur}
           </p>
         )}
-        {bridge && !etat && !erreur && <p className="m-0 text-ui-s text-texte-tertiaire">Lecture du dépôt…</p>}
+        {bridge && disponible && !etat && !erreur && <p className="m-0 text-ui-s text-texte-tertiaire">Lecture du dépôt…</p>}
 
         {etat && !etat.depot && (
           <p className="m-0 text-ui-s text-texte-secondaire">Ce dossier n’est pas un dépôt git : il n’y a rien à publier.</p>
@@ -78,7 +70,7 @@ export function Publier({ project, onFermer }: { project: Project; onFermer: () 
               {resultat.ok ? `C’est poussé sur ${resultat.branche}${resultat.commit ? ` (${resultat.commit})` : ""}.` : "La publication n’est pas allée au bout."}
             </p>
             {resultat.ok && principale && (
-              <p className="m-0 text-ui-s text-texte-secondaire">Sur la branche principale, Vercel met le site en ligne dans quelques minutes.</p>
+              <p className="m-0 text-ui-s text-texte-secondaire">Sur la branche principale, un site relié à ce dépôt peut se mettre en ligne dans quelques minutes.</p>
             )}
             <pre className="klyra-mono m-0 max-h-[240px] overflow-auto rounded-md border border-bordure-subtile bg-fond-page p-3 text-ui-2xs whitespace-pre-wrap text-texte-secondaire">
               {resultat.sortie}
@@ -145,7 +137,7 @@ export function Publier({ project, onFermer }: { project: Project; onFermer: () 
                     </BoutonPrincipal>
                     <span className="flex items-center gap-1 text-ui-2xs text-texte-tertiaire">
                       <Icon name="upload-01" size={14} />
-                      vers {etat.distant ? etat.distant.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "") : "aucun dépôt distant"}
+                      vers {etat.distant ? nomDepot(project.depot, etat.distant) : "aucun dépôt distant"}
                     </span>
                   </div>
                 </>

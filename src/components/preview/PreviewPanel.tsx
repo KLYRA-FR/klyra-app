@@ -3,26 +3,19 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { EmptyState } from "klyra-ui";
 import { Icon } from "@/components/icons/Icon";
-import { FileTree } from "@/components/project/FileTree";
-import { Bouton } from "@/components/ui/Bouton";
 import { Onglets, type Onglet } from "@/components/ui/Onglets";
-import { useArbreProjet } from "@/lib/arbre-projet";
 import { cn } from "@/lib/cn";
-import { useModifiedFiles } from "@/lib/workspace";
 import type { Chat, Project } from "@/types/domain";
-import { ouvrirFichier } from "@/components/project/Visionneuse";
 import { ApercuSite } from "./ApercuSite";
-import { Publier } from "./Publier";
-import { VueModifies } from "./VueModifies";
 import { PanneauNavigateur } from "@/components/chat/navigateur/PanneauNavigateur";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 
-type PreviewTab = "apercu" | "code" | "fichiers" | "taches" | "navigateur";
+/* Une conversation de projet a le panneau d'un chat d'agent (PanneauLateral : aperçu, Git, fichiers…) ;
+   ce panneau-ci reste aux autres conversations d'équipe (routines, workflows, sans projet). */
+type PreviewTab = "apercu" | "taches" | "navigateur";
 
 const TABS: Onglet<PreviewTab>[] = [
   { id: "apercu", label: "Aperçu", icone: <Icon name="globe-01" size={16} /> },
-  { id: "code", label: "Modifié", icone: <Icon name="code-01" size={16} /> },
-  { id: "fichiers", label: "Fichiers", icone: <Icon name="file-code" size={16} /> },
   { id: "taches", label: "Tâches", icone: <Icon name="list" size={16} /> },
   { id: "navigateur", label: "Navigateur", icone: <Icon name="computer" size={16} /> },
 ];
@@ -71,7 +64,7 @@ interface PreviewPanelProps {
   adresseDemandee?: { url: string; n: number } | null;
 }
 
-/** Panneau de droite d'une conversation de projet : le vrai site en aperçu, ses fichiers, et Publier. */
+/** Panneau de droite des conversations d'équipe hors projet : l'aperçu d'un site, les tâches, le navigateur de ses agents. */
 export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: PreviewPanelProps) {
   const [tab, setTab] = useState<PreviewTab>("apercu");
   /* Un agent passe la main à la personne sur une page : le Navigateur s'affiche. */
@@ -82,7 +75,6 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
     if (activiteNavigateur === "attente") setTab("navigateur");
   }
   const [largeur, setLargeur] = useLargeur();
-  const [publier, setPublier] = useState(false);
   const panneau = useRef<HTMLElement>(null);
   /* Lien cliqué dans la conversation : l'aperçu passe devant (rendu suivant, sans effet). */
   const [derniereDemande, setDerniereDemande] = useState(0);
@@ -138,18 +130,7 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
       </div>
 
       <div className="flex items-center gap-2 px-4 py-3">
-        <Onglets libelle="Vues du projet" onglets={TABS} valeur={tab} onChange={setTab} etiquettes="large" />
-        <Bouton
-          variant="sombre"
-          taille="compact"
-          iconeGauche={<Icon name="upload-01" size={16} />}
-          title="Publier : commit et push sur git"
-          className="ml-auto"
-          disabled={!project}
-          onClick={() => setPublier(true)}
-        >
-          <span className="sr-only @md:not-sr-only">Publier</span>
-        </Bouton>
+        <Onglets libelle="Vues de la conversation" onglets={TABS} valeur={tab} onChange={setTab} etiquettes="large" />
       </div>
 
       {/* Gardé monté derrière les autres onglets : ses pages ne se rechargent pas. */}
@@ -160,32 +141,12 @@ export function PreviewPanel({ project, chat, modifiedLabel, adresseDemandee }: 
           <PanneauNavigateur chat={chat} />
         </div>
       )}
-      {tab !== "apercu" && tab !== "navigateur" && project && (
+      {tab === "taches" && (
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-          {tab === "fichiers" && <ArbreProjet project={project} />}
-          {tab === "code" && <VueModifies project={project} />}
-          {tab === "taches" && <TachesChat chat={chat} />}
+          <TachesChat chat={chat} />
         </div>
       )}
-
-      {publier && project && <Publier project={project} onFermer={() => setPublier(false)} />}
     </aside>
-  );
-}
-
-function ArbreProjet({ project }: { project: Project }) {
-  const arbre = useArbreProjet(project);
-  const modified = useModifiedFiles(project.id);
-  if (arbre.erreur) return <p className="m-0 p-3 text-ui-s text-texte-erreur">Dossier illisible : {arbre.erreur}</p>;
-  return (
-    <FileTree
-      key={project.id}
-      nodes={arbre.noeuds}
-      contenu={arbre.contenu}
-      charger={arbre.charger}
-      modified={modified}
-      onOuvrir={(chemin) => ouvrirFichier({ projectId: project.id, chemin })}
-    />
   );
 }
 

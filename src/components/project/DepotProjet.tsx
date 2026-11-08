@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
-import { getBridge, type EtatGit } from "@/lib/bridge";
+import { useEtatDepot } from "@/lib/etat-depot";
 import { nomDepot, resumeCourt, resumeDepot } from "@/lib/depot-projet";
 import type { Project } from "@/types/domain";
 
@@ -13,40 +13,18 @@ import type { Project } from "@/types/domain";
  * Jamais l'adresse brute du distant : elle peut porter un identifiant.
  */
 export function DepotProjet({ project, compact = false }: { project: Project; compact?: boolean }) {
-  const git = getBridge()?.git;
-  const github = getBridge()?.github;
-  const natif = !!project.githubConnecte && !!github;
-  const [etat, setEtat] = useState<EtatGit | null>(null);
+  const { etat, disponible, recuperer: recupererDepot } = useEtatDepot(project);
   const [enCours, setEnCours] = useState(false);
   const [retour, setRetour] = useState<{ ok: boolean; message: string } | null>(null);
-  const disponible = natif || (!project.lieu && !!git?.recuperer);
-
-  useEffect(() => {
-    if (!disponible || (!git && !natif)) return;
-    let actif = true;
-    void (natif ? github!.etatDepot(project.lieu ?? null, project.folder) : git!.etat(project.folder)).then((r) => actif && r.ok && setEtat(r.data));
-    return () => {
-      actif = false;
-    };
-  }, [disponible, git, github, natif, project.folder, project.lieu]);
 
   if (!disponible || !etat?.depot || !etat.distant) return null;
 
   const recuperer = async () => {
     setEnCours(true);
     setRetour(null);
-    if (natif) {
-      const r = await github!.recuperer(project.lieu ?? null, project.folder);
-      setEnCours(false);
-      if (!r.ok) return setRetour({ ok: false, message: r.message });
-      setEtat(r.data); setRetour({ ok: true, message: "Nouveautés récupérées." });
-      return;
-    }
-    const r = await git!.recuperer!(project.folder);
+    const r = await recupererDepot();
     setEnCours(false);
-    if (!r.ok) return setRetour({ ok: false, message: r.message });
-    setEtat(r.data.etat);
-    setRetour({ ok: r.data.ok, message: r.data.message });
+    setRetour(r);
   };
 
   /* Dans le panneau du projet : la branche et ce qui attend, sur une ligne. */

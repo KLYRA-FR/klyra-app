@@ -1,5 +1,20 @@
 # Journal du projet — app KLYRA
 
+## 8 novembre 2026 — Espace projet, lots 4 et 5 : onglet Git, GitHub pour l'écran et pour les agents
+
+Suite des lots 1 à 3 (« va jusqu'au bout »).
+
+- **Onglet Git** dans le panneau d'une conversation de projet (à la place de « Modifié ») : le dépôt et sa branche, « Récupérer », les fichiers changés (un clic montre avant / après, ligne à ligne ; « Voir » ouvre le fichier dans la visionneuse), « Publier ». Sur un dépôt ouvert depuis GitHub : l'état des tests de la branche (échecs avec leur lien), les pull requests ouvertes et les derniers commits, lus avec la connexion GitHub de la machine. Les liens ouvrent github.com dans le navigateur. Une autre branche s'ouvre toujours comme un projet à part (on ne change jamais la branche d'un clone).
+- **Publier** passe par la connexion GitHub de la machine du projet, donc marche aussi sur un VPS : commit puis envoi de la branche, signé du compte GitHub connecté quand la machine n'a pas d'identité git (adresse noreply), sans crochets du dépôt ni `--force`. Si GitHub refuse, l'app dit pourquoi (la branche a avancé : récupérer d'abord ; sinon branche protégée ou droits) et le commit reste sur la machine. L'adresse brute du dépôt distant n'est plus montrée, et l'avertissement ne parle plus de Vercel.
+- **État du dépôt partagé** (`useEtatDepot`) : la ligne de branche du panneau, la fiche du projet, l'onglet Git et Publier lisent le même état, relu après un geste, au retour de la fenêtre (au plus toutes les 15 s) et quand un agent du projet finit.
+- **Statut git fiable** : `git status -z` (les noms accentués et les espaces étaient mal lus), branches à points (« release-1.2 »), fichiers renommés avec leur ancien chemin.
+- **Outils GitHub pour les agents** : `github_activite` (PR ouvertes, tests, derniers commits) et `github_pull_request` (description, fichiers, avis, tests), en lecture, dans une conversation d'un projet ouvert depuis GitHub, sur le PC comme sur un VPS. Le dépôt vient de la conversation enregistrée, jamais de l'agent ; l'agent ne reçoit jamais le jeton. C'est la réponse au « gh n'est pas connecté sur ce serveur » de Cicco. Pas d'écriture (commenter, fusionner) : à demander à la personne.
+- **Bug corrigé** : ouvrir le même dépôt sur le PC puis sur un VPS donnait le même identifiant aux deux projets, et le second écrasait le premier. Les identifiants sont maintenant uniques sur toutes les machines. Un projet déjà écrasé avant ce correctif ne revient pas tout seul : le rouvrir depuis Projets.
+- **Relecture du lot 3** : un envoi par la puce « Dépôt » n'ouvre plus de conversation si l'on a quitté l'écran pendant le clone ; la réponse citée est retirée ; le panneau des conversations d'équipe hors projet montre de nouveau ses tâches (elles n'apparaissaient qu'avec un projet).
+- Code du serveur : 52.
+
+Validation (remplaçant local de `klyra-ui`, comme les lots précédents) : types, lint, tests unitaires (seul échec : `src/lib/telephone/reglages.test.ts`, déjà rouge sur main), `test:serveur`, `test:git`, `test:github-projets` (faux gh, vrais dépôts : différences, publier et son refus, activité, PR, outils des agents sur les deux machines), build, smoke, et dans Electron : `test:projet-github` (onglet Git, différences, tests et PR, publier jusqu'au dépôt de test signé du compte connecté, onglet Git sur le serveur jetable, deux projets pour le même dépôt), `test:conversation`, `test:epingler`, `test:coller`, `test:consignes-projet`, `test:visionneuse`, `test:menu-contextuel`, `test:agents`. Le compte GitHub et l'API restent simulés : à essayer avec un vrai compte.
+
 ## 8 novembre 2026 — Espace projet, lot 3 : un projet s'ouvre comme un chat, puce « Dépôt »
 
 Suite des lots 1 et 2, validé par Corentin (« go pour le lot 3 avec la puce Dépôt »). Décisions prises avec lui : un agent par conversation de projet, le projet rouvre sa dernière conversation.

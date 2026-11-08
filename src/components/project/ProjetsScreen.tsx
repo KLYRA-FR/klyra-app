@@ -41,8 +41,9 @@ type Source = "github" | "dossier";
  * Statut, épingle, brief et aperçu se règlent ensuite (clic droit, « Modifier »).
  */
 function NouveauProjet({ onFini }: { onFini: (id: string | null) => void }) {
-  const projects = useProjects();
-  const { enregistrerProjet } = useWorkspace();
+  // Tous les projets, de toutes les machines : un identifiant reste unique (le même dépôt sur le PC et un VPS).
+  const { enregistrerProjet, state } = useWorkspace();
+  const projects = state.projects;
   const bridge = getBridge();
   // Un nouveau projet va dans l'espace affiché, celui du serveur choisi.
   const [lieu] = useState<string | null>(() => lieuParDefaut());
@@ -87,8 +88,8 @@ function NouveauProjet({ onFini }: { onFini: (id: string | null) => void }) {
 
 /** Un dossier déjà sur la machine : le choisir (ou son chemin sur le VPS), son nom tiré du dossier. */
 function FormulaireDossier({ lieu, onFini }: { lieu: string | null; onFini: (id: string | null) => void }) {
-  const projects = useProjects();
-  const { enregistrerProjet } = useWorkspace();
+  const { enregistrerProjet, state } = useWorkspace();
+  const projects = state.projects;
   const bridge = getBridge();
   const surVps = !!lieu;
   const [folder, setFolder] = useState(() => (lieu ? `${RACINE_VPS}/projet` : ""));

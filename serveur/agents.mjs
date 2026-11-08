@@ -25,6 +25,7 @@ import { CONSIGNE_CERVEAU, avecReperesCerveau } from "./cerveau-outils.mjs";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
 import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe.mjs";
 import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
+import { dossierGithubDeConversation, estOutilGithub, executerOutilGithub, OUTILS_GITHUB } from "./github-outils.mjs";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
 import { lireJsonPartiel } from "./json-partiel.mjs";
 import { finSuiviFond, nouveauSuiviFond, suivreFond } from "./taches-fond.mjs";
@@ -453,9 +454,11 @@ export function creerAgents(options) {
   };
   options.ia?.brancherOutils?.({
     // Les cartes interactives à chaque agent ; l'atelier à l'assistant seul.
-    lister: (appelant) => [...(appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE],
+    // GitHub : seulement dans une conversation d'un projet ouvert depuis GitHub sur ce serveur (cf. github-outils.mjs).
+    lister: (appelant) => [...(appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...(dossierGithubDeConversation(donnees, appelant.conversation, true) ? OUTILS_GITHUB : [])],
     appeler: async (nom, args, appelant) => {
       if (nom === OUTIL_CARTE.name) return appelCarte(args);
+      if (estOutilGithub(nom)) return executerOutilGithub(nom, args, dossierGithubDeConversation(donnees, appelant.conversation, true), githubProjets);
       if (nom !== OUTIL_PROPOSER.name && nom !== OUTIL_EQUIPE.name && nom !== OUTIL_CHOIX.name) return null;
       if (appelant.agent !== "principal") return { texte: "Seul l'assistant crée des agents avec la personne.", erreur: true };
       const cle = CONVERSATION.test(appelant.conversation) ? appelant.conversation : null;

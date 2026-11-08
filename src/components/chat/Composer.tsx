@@ -219,6 +219,14 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const [depotChoisi, setDepotChoisi] = useState("");
   const [ouverture, setOuverture] = useState<string | null>(null);
   const ouvrirChoixDepot = useOuvrirChoixDepot();
+  /* Quitter la conversation pendant le clone : la nouvelle conversation n'est pas ouverte dans son dos. */
+  const monte = useRef(true);
+  useEffect(() => {
+    monte.current = true;
+    return () => {
+      monte.current = false;
+    };
+  }, []);
   const nomDepotChoisi = depotChoisi ? nomChoixDepot(depotChoisi, etatEspace.projects) : null;
   const assistant = useRole("principal");
   /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
@@ -407,9 +415,11 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       setAlerte(null);
       setOuverture(nomDepotChoisi ?? "le dépôt");
       void ouvrirChoixDepot(depotChoisi, chat.lieu ?? null).then((r) => {
+        if (!monte.current) return;
         setOuverture(null);
         if (!r.ok) return setAlerte(r.message);
         const id = startChat(r.projet.id, texte, agent.id, pieces);
+        setCitation(null);
         setText("");
         setCurseur(0);
         setFichiers([]);

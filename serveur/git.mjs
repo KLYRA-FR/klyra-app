@@ -1,6 +1,6 @@
 // Généré par scripts/serveur-genere.mjs depuis electron/git.ts : ne pas modifier à la main.
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 function absolu(dossier) {
@@ -20,22 +20,45 @@ function git(cwd, args, delai = 120_000, env) {
         });
     });
 }
+/** La sortie standard seule, telle quelle (ni l'erreur mêlée, ni les fins de ligne retirées). */
+function gitSortie(cwd, args, delai = 120_000) {
+    return new Promise((resolve) => {
+        execFile("git", args, { cwd, timeout: delai, maxBuffer: 16 * 1024 * 1024, windowsHide: true, encoding: "buffer" }, (erreur, stdout) => {
+            resolve({ code: erreur ? (typeof erreur.code === "number" ? erreur.code : 1) : 0, sortie: stdout ?? Buffer.alloc(0) });
+        });
+    });
+}
+/** Les lignes de `git status --porcelain -z` : chemins tels quels (accents, espaces), renommés avec leur ancien chemin. */
+export function lireStatutGit(brut) {
+    const morceaux = brut.split("\0");
+    const tete = morceaux[0]?.startsWith("## ") ? morceaux.shift() : "";
+    const fichiers = [];
+    for (let i = 0; i < morceaux.length; i++) {
+        const l = morceaux[i];
+        if (l.length < 4)
+            continue;
+        const code = l.slice(0, 2);
+        const chemin = l.slice(3);
+        if (code[0] === "R" || code[0] === "C") {
+            fichiers.push({ statut: "R", chemin, ancien: morceaux[++i] ?? "" });
+            continue;
+        }
+        const net = code.trim() || "M";
+        fichiers.push({ statut: net === "??" ? "?" : net.charAt(0), chemin });
+    }
+    return { tete, fichiers };
+}
 export async function etatGit(dossier) {
     const cwd = absolu(dossier);
-    const statut = await git(cwd, ["status", "--porcelain=v1", "-b", "--untracked-files=all"]);
+    const statut = await gitSortie(cwd, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-b", "-z", "--untracked-files=all"]);
     if (statut.code !== 0)
         return { depot: false, branche: null, suivie: false, enAvance: 0, enRetard: 0, fichiers: [], distant: null };
-    const [tete, ...lignes] = statut.sortie.split("\n");
+    const { tete, fichiers } = lireStatutGit(statut.sortie.toString("utf8"));
     // « ## main...origin/main [ahead 2, behind 1] » ou « ## pelin » (pas de branche distante).
-    const m = tete.match(/^## (?:No commits yet on )?([^.\s]+)(?:\.\.\.(\S+))?/);
+    // Une branche peut porter des points (« release-1.2 ») ; « HEAD (no branch) » : aucune.
+    const m = tete.match(/^## (?:No commits yet on |Initial commit on )?(\S+?)(?:\.\.\.(\S+))?(?: \[[^\]]*\])?$/);
     const avance = tete.match(/\[[^\]]*ahead (\d+)/);
     const retard = tete.match(/\[[^\]]*behind (\d+)/);
-    const fichiers = lignes
-        .filter(Boolean)
-        .map((l) => {
-        const code = l.slice(0, 2).trim() || "M";
-        return { statut: code === "??" ? "?" : code.charAt(0), chemin: l.slice(3).replace(/^"|"$/g, "") };
-    });
     const distant = await git(cwd, ["remote", "get-url", "origin"]);
     return {
         depot: true,
@@ -46,6 +69,62 @@ export async function etatGit(dossier) {
         fichiers,
         distant: distant.code === 0 ? distant.sortie : null,
     };
+}
+/** Au-delà, un côté du fichier n'est pas montré. */
+export const DIFF_MAX = 512 * 1024;
+/** Un chemin de `git status`, relatif au dépôt, sans remonter au-dessus ni entrer dans `.git`. */
+export function cheminDansDepot(chemin) {
+    if (typeof chemin !== "string" || !chemin || chemin.length > 4096 || chemin.includes("\0") || path.isAbsolute(chemin) || /^[A-Za-z]:/.test(chemin))
+        throw new Error("Chemin de fichier invalide.");
+    const parties = chemin.split(/[\\/]/);
+    if (parties.some((p) => p === "..") || parties[0] === ".git")
+        throw new Error("Chemin de fichier invalide.");
+    return parties.filter((p) => p && p !== ".").join("/");
+}
+const estBinaire = (b) => b.subarray(0, 8000).includes(0);
+/**
+ * Un fichier changé du dépôt : son contenu au dernier commit et sur le disque, pour le montrer ligne à ligne.
+ * Lecture seule ; jamais un fichier hors du dépôt (lien compris), jamais plus de `DIFF_MAX` octets.
+ */
+export async function diffFichierGit(dossier, chemin, ancien) {
+    const cwd = realpathSync(absolu(dossier));
+    const relatif = cheminDansDepot(chemin);
+    const relatifAvant = ancien === undefined || ancien === null || ancien === "" ? relatif : cheminDansDepot(ancien);
+    let binaire = false;
+    let tropGros = false;
+    const lu = await gitSortie(cwd, ["show", `HEAD:${relatifAvant}`]);
+    let avant = null;
+    if (lu.code === 0) {
+        if (lu.sortie.length > DIFF_MAX)
+            tropGros = true;
+        else if (estBinaire(lu.sortie))
+            binaire = true;
+        else
+            avant = lu.sortie.toString("utf8");
+    }
+    let apres = null;
+    const cible = path.join(cwd, relatif);
+    const reel = existsSync(cible) ? realpathSync(cible) : null;
+    if (reel) {
+        const rel = path.relative(cwd, reel);
+        if (!rel || rel.startsWith("..") || path.isAbsolute(rel))
+            throw new Error("Ce fichier sort du projet : il n’est pas montré.");
+        const info = statSync(reel);
+        if (info.isFile()) {
+            if (info.size > DIFF_MAX)
+                tropGros = true;
+            else {
+                const contenu = readFileSync(reel);
+                if (estBinaire(contenu))
+                    binaire = true;
+                else
+                    apres = contenu.toString("utf8");
+            }
+        }
+    }
+    if (binaire || tropGros)
+        return { chemin: relatif, avant: null, apres: null, binaire, tropGros };
+    return { chemin: relatif, avant, apres, binaire: false, tropGros: false };
 }
 /** Commit de tout ce qui a changé, puis push de la branche en cours. */
 export async function publier(dossier, message) {

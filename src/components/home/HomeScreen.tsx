@@ -116,6 +116,14 @@ export function HomeScreen() {
   const [depot, setDepot] = useState("");
   const [ouverture, setOuverture] = useState<string | null>(null);
   const ouvrirChoixDepot = useOuvrirChoixDepot();
+  /* Quitter l'accueil pendant le clone : la conversation n'est pas ouverte dans son dos. */
+  const monte = useRef(true);
+  useEffect(() => {
+    monte.current = true;
+    return () => {
+      monte.current = false;
+    };
+  }, []);
   // « Écrire à Hugo » depuis l'équipe arrive ici avec ?a=dev.
   const preselected = useSearchParams().get("a");
   const [to, setTo] = useState<RoleId | typeof AUTO>(
@@ -136,6 +144,7 @@ export function HomeScreen() {
     setAlerte(null);
     setOuverture(nomChoixDepot(depot, state.projects) ?? "le dépôt");
     void ouvrirChoixDepot(depot, lieu).then((r) => {
+      if (!monte.current) return;
       setOuverture(null);
       if (!r.ok) return setAlerte(r.message);
       router.push(`/chat?id=${encodeURIComponent(startChat(r.projet.id, message, recipient, pieces))}`);

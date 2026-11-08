@@ -28,6 +28,7 @@
  *   chaque agent pose dans le fil (electron/cartes-interactives.ts).
  * - `serveur/joints-vps.mjs` : les pièces jointes envoyées par le PC pour une conversation du VPS (electron/joints-vps.ts).
  * - `serveur/taches-fond.mjs` : ce qu'un agent a encore en arrière-plan, réponse rendue (electron/taches-fond.ts).
+ * - `serveur/github-outils.mjs` : les outils GitHub des agents, en lecture, sur le dépôt du projet (electron/github-outils.ts).
  * - `serveur/version-code.mjs` : la version du code du serveur (electron/version-serveur.ts), montée ici dès que
  *   `empreinteCodeServeur` change. Le VPS ne se met pas à jour seul : c'est ce numéro qui révèle un serveur en retard.
  *   Conflit de fusion sur ce fichier : relancer ce script, il repart de la plus haute version et écrit un fichier propre.
@@ -87,6 +88,7 @@ const FICHIERS = [
   ["src/lib/planning.ts", "serveur/planning-passages.mjs"],
   ["src/lib/fournisseurs.ts", "serveur/fournisseurs.mjs"],
   ["electron/fils-outils.ts", "serveur/fils-outils.mjs"],
+  ["electron/github-outils.ts", "serveur/github-outils.mjs"],
   ["src/lib/tickets.ts", "serveur/tickets.mjs"],
 ];
 const VERSION = ["electron/version-serveur.ts", "serveur/version-code.mjs"];

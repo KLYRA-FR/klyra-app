@@ -15,7 +15,7 @@ import { useChatMessages, useRole, useWorkspace } from "@/lib/workspace";
 import type { Chat, Project, Rendu, TacheAgent } from "@/types/domain";
 import { ApercuSite } from "@/components/preview/ApercuSite";
 import { Publier } from "@/components/preview/Publier";
-import { VueModifies } from "@/components/preview/VueModifies";
+import { VueGit } from "@/components/project/VueGit";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 import { VueImage } from "./ImageJointe";
 import { PanneauNavigateur } from "./navigateur/PanneauNavigateur";
@@ -27,23 +27,23 @@ import { MenuFichierConversation, MenuLivrable, ouvrirLivrable, SuivisTelecharge
  * Panneau à droite d'une conversation, à onglets : les réglages de l'agent,
  * les fichiers de la conversation, ses tâches, le navigateur de ses agents, et un onglet
  * par image jointe qu'on a ouverte. Dans une conversation de projet, en plus : l'aperçu
- * du site et ce que les agents ont modifié (avec Publier). On ferme un onglet, on le
+ * du site et Git (changements, publier, tests et pull requests sur GitHub). On ferme un onglet, on le
  * rouvre avec « + », on élargit le panneau à la poignée ou on l'agrandit.
  */
 
-export type Onglet = "reglages" | "apercu" | "modifie" | "fichiers" | "taches" | "navigateur";
+export type Onglet = "reglages" | "apercu" | "git" | "fichiers" | "taches" | "navigateur";
 
 const ONGLETS: Record<Onglet, { nom: string; icone: IconName }> = {
   reglages: { nom: "Réglages", icone: "settings" },
   apercu: { nom: "Aperçu", icone: "globe-01" },
-  modifie: { nom: "Modifié", icone: "code-01" },
+  git: { nom: "Git", icone: "git-branch-01" },
   fichiers: { nom: "Fichiers", icone: "folder" },
   taches: { nom: "Tâches", icone: "list" },
   navigateur: { nom: "Navigateur", icone: "computer" },
 };
 /** Tous les onglets, dans leur ordre ; ceux d'un projet n'existent que dans une conversation de projet. */
-const ORDRE: Onglet[] = ["reglages", "apercu", "modifie", "fichiers", "taches", "navigateur"];
-const DU_PROJET: Onglet[] = ["apercu", "modifie"];
+const ORDRE: Onglet[] = ["reglages", "apercu", "git", "fichiers", "taches", "navigateur"];
+const DU_PROJET: Onglet[] = ["apercu", "git"];
 const ordreDe = (projet: boolean) => (projet ? ORDRE : ORDRE.filter((o) => !DU_PROJET.includes(o)));
 
 /** Demande d'ouvrir le panneau sur les réglages de l'agent (clic sur son avatar ou son prénom). */
@@ -631,7 +631,7 @@ export function PanneauLateral({
         ) : (
           <>
             {actif === "reglages" && <ReglagesAgent key={chat.id} chat={chat} />}
-            {actif === "modifie" && projet && <VueModifies project={projet} onPublier={() => setPublier(true)} />}
+            {actif === "git" && projet && <VueGit key={projet.id} project={projet} onPublier={() => setPublier(true)} />}
             {actif === "fichiers" && <Fichiers chat={chat} />}
             {actif === "taches" && <Taches chat={chat} />}
             {actif === "navigateur" && <PanneauNavigateur key={chat.id} chat={chat} />}

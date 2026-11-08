@@ -173,7 +173,7 @@ import {
 } from "./navigateur/navigateur";
 import { absolu, arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
 import { fermerGithubProjets, githubProjets } from "./github";
-import { clonerDepot, dossierClones, etatGit, publier, recupererDepot } from "./git";
+import { clonerDepot, diffFichierGit, dossierClones, etatGit, publier, recupererDepot } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
 import {
   connecterClaudeAi,
@@ -452,10 +452,14 @@ function registerBridge() {
       case "ouvrir": return g.ouvrir(String(corps.depot ?? ""), String(corps.branche ?? ""));
       case "etat-depot": return g.etatDepot(String(corps.dossier ?? ""));
       case "recuperer": return g.recuperer(String(corps.dossier ?? ""));
+      case "diff": return g.diff(String(corps.dossier ?? ""), corps.chemin, corps.ancien);
+      case "publier": return g.publier(String(corps.dossier ?? ""), corps.message);
+      case "activite": return g.activite(String(corps.dossier ?? ""));
+      case "pull-request": return g.pullRequest(String(corps.dossier ?? ""), corps.numero);
       default: throw new Error("Demande GitHub inconnue.");
     }
   };
-  for (const methode of ["etat", "connecter", "deconnecter", "depots", "branches", "ouvrir", "etat-depot", "recuperer"]) {
+  for (const methode of ["etat", "connecter", "deconnecter", "depots", "branches", "ouvrir", "etat-depot", "recuperer", "diff", "publier", "activite", "pull-request"]) {
     composio(`github:${methode}`, (lieu, corps) => github(methode, lieu, (corps ?? {}) as Record<string, unknown>));
   }
   composio("github:navigateur", () => shell.openExternal("https://github.com/login/device"));
@@ -1017,6 +1021,7 @@ function registerBridge() {
     typeof lieu === "string" && lieu ? consignesVps(lieu, jetonServeur(lieu), String(dossier), String(nom), true) : appliquerConsignesProjet(absolu(dossier), String(nom)),
   );
   handle("git:etat", (dossier: string) => etatGit(dossier));
+  handle("git:diff", (dossier: string, chemin: unknown, ancien: unknown) => diffFichierGit(dossier, chemin, ancien));
   /* Un lien local (serveur de dev d'un projet) cliqué dans une conversation : une fenêtre de l'app. */
   handle("fenetres:ouvrir", (url: string) => {
     if (typeof url !== "string" || !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(url)) {

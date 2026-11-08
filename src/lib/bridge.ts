@@ -1,4 +1,4 @@
-import type { EtatGithubProjet, DepotGithubProjet } from "../../electron/github-types";
+import type { ActiviteGithub, DepotGithubProjet, DiffFichierGit, EtatGithubProjet, PullRequestDetail } from "../../electron/github-types";
 import type { ChoixPriseEnMain, PriseEnMain } from "../../electron/prise-en-main-modele";
 
 /**
@@ -214,7 +214,8 @@ export interface EtatGit {
   enAvance: number;
   /** Commits du distant pas encore récupérés, d'après la dernière récupération (absent avant la relance de l'app). */
   enRetard?: number;
-  fichiers: { statut: string; chemin: string }[];
+  /** `ancien` : l'ancien chemin d'un fichier renommé. */
+  fichiers: { statut: string; chemin: string; ancien?: string }[];
   distant: string | null;
 }
 
@@ -365,6 +366,13 @@ export interface KlyraBridge {
     ouvrir: (lieu: string | null, depot: string, branche: string) => Promise<Reponse<ResultatClone>>;
     etatDepot: (lieu: string | null, dossier: string) => Promise<Reponse<EtatGit>>;
     recuperer: (lieu: string | null, dossier: string) => Promise<Reponse<EtatGit>>;
+    /** Un fichier changé d'un clone de cette machine, avant et après (onglet Git). Absent avant la relance de l'app. */
+    diff?: (lieu: string | null, dossier: string, chemin: string, ancien?: string) => Promise<Reponse<DiffFichierGit>>;
+    /** Commit et envoi de la branche en cours, avec la connexion GitHub de la machine. */
+    publier?: (lieu: string | null, dossier: string, message: string) => Promise<Reponse<ResultatPublication>>;
+    /** Pull requests ouvertes, tests de la branche et derniers commits du dépôt. */
+    activite?: (lieu: string | null, dossier: string) => Promise<Reponse<ActiviteGithub>>;
+    pullRequest?: (lieu: string | null, dossier: string, numero: number) => Promise<Reponse<PullRequestDetail>>;
     navigateur: () => Promise<Reponse<void>>;
   };
   /** Le premier lancement de cet ordinateur ; absent avec un preload plus ancien. */
@@ -559,6 +567,8 @@ export interface KlyraBridge {
   git: {
     /** Ce qui a changé dans le dossier d'un projet, et sa branche. */
     etat: (dossier: string) => Promise<Reponse<EtatGit>>;
+    /** Un fichier changé, avant (dernier commit) et après (disque). Absent avant la relance de l'app. */
+    diff?: (dossier: string, chemin: string, ancien?: string) => Promise<Reponse<DiffFichierGit>>;
     /** Commit de tout ce qui a changé, puis push de la branche en cours. */
     publier: (dossier: string, message: string) => Promise<Reponse<ResultatPublication>>;
     /** Là où un dépôt cloné est rangé par défaut (~/KLYRA). Absent avant la relance de l'app. */

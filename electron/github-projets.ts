@@ -4,12 +4,12 @@ import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
-import { etatGit, type EtatGit } from "./git";
+import { diffFichierGit, etatGit, type DiffFichierGit, type EtatGit, type ResultatPublication } from "./git";
 
 /** Connexion au code GitHub, indépendante de Composio (qui ne fournit pas d'identifiants à git).
  * gh est embarqué dans l'app ; ses identifiants ne sont jamais transmis à l'écran ni écrits dans Git.
  * Le même module tourne sur un VPS, avec le chiffrement de son Coffre. */
-import type { EtatGithubProjet, DepotGithubProjet } from "./github-types";
+import type { ActiviteGithub, CommitResume, DepotGithubProjet, EtatGithubProjet, PullRequestDetail, PullRequestResume, ResumeTests } from "./github-types";
 export interface ConnexionGithubProjet { jeton: string; compte: string }
 interface Options {
   racine: string;
@@ -55,6 +55,63 @@ export function infosDepot(r: Record<string, unknown>): Required<Pick<DepotGithu
   }
   const pousse = typeof r.pushed_at === "string" && !Number.isNaN(Date.parse(r.pushed_at)) ? new Date(r.pushed_at).toISOString() : null;
   return { description: texteCourt(r.description, 300), site, langage: texteCourt(r.language, 40), pousseLe: pousse };
+}
+
+const objet = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+const liste = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.map(objet) : []);
+const texte = (v: unknown, max = 200): string => texteCourt(v, max) ?? "";
+const entier = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0);
+const date = (v: unknown): string | null => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+/** Une adresse de github.com seulement : jamais une autre page envoyée à l'écran ou à un agent. */
+const urlGithub = (v: unknown): string | null => {
+  if (typeof v !== "string") return null;
+  try {
+    const u = new URL(v);
+    return u.protocol === "https:" && u.hostname === "github.com" && !u.username && !u.password ? u.href : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Les vérifications d'un commit (check runs) en un état : échec dès qu'une échoue, en cours tant qu'une tourne. */
+export function resumerTests(reponse: unknown): ResumeTests {
+  const runs = liste(objet(reponse).check_runs);
+  let reussis = 0, echecs = 0, enCours = 0;
+  const echouees: ResumeTests["echouees"] = [];
+  for (const r of runs) {
+    if (r.status !== "completed") enCours++;
+    else if (["failure", "timed_out", "cancelled", "action_required", "startup_failure"].includes(String(r.conclusion))) {
+      echecs++;
+      if (echouees.length < 10) echouees.push({ nom: texte(r.name, 120) || "Vérification", url: urlGithub(r.html_url) ?? urlGithub(r.details_url) });
+    } else reussis++;
+  }
+  const total = runs.length;
+  return { etat: !total ? "aucun" : echecs ? "echec" : enCours ? "en-cours" : "reussi", total, reussis, echecs, enCours, echouees };
+}
+
+export function lirePullRequests(reponse: unknown): PullRequestResume[] {
+  return liste(reponse).filter((p) => typeof p.number === "number").map((p) => ({
+    numero: entier(p.number),
+    titre: texte(p.title, 200),
+    auteur: texte(objet(p.user).login, 60),
+    branche: texte(objet(p.head).ref, 255),
+    brouillon: p.draft === true,
+    url: urlGithub(p.html_url) ?? "",
+    majLe: date(p.updated_at),
+  }));
+}
+
+export function lireCommits(reponse: unknown): CommitResume[] {
+  return liste(reponse).filter((c) => typeof c.sha === "string").map((c) => {
+    const commit = objet(c.commit);
+    return {
+      sha: String(c.sha).slice(0, 7),
+      message: texte(String(commit.message ?? "").split("\n")[0], 160),
+      auteur: texte(objet(c.author).login, 60) || texte(objet(commit.author).name, 60),
+      date: date(objet(commit.author).date),
+      url: urlGithub(c.html_url) ?? "",
+    };
+  });
 }
 
 export class GithubProjets {
@@ -252,6 +309,126 @@ export class GithubProjets {
 
   async etatDepot(dossier: string): Promise<EtatGit> {
     return etatGit(await this.dossier(dossier));
+  }
+
+  /** Le dépôt GitHub d'un clone de cette machine, d'après son origine (jamais d'après l'écran ou un agent). */
+  private async depotDe(cible: string): Promise<string> {
+    const origine = (await this.commande("git", ["config", "--get", "remote.origin.url"], this.env(), cible)).trim();
+    const match = origine.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\.git$/);
+    if (!match) throw new Error("Ce projet n’est pas relié à GitHub.");
+    return validerNomDepot(match[1]);
+  }
+
+  /** Une réponse de l'API GitHub (une page), avec le jeton de cette machine. */
+  private async api(endpoint: string, c: ConnexionGithubProjet): Promise<unknown> {
+    return JSON.parse(await this.commande(this.d.gh, ["api", "--method", "GET", endpoint], this.env(c.jeton))) as unknown;
+  }
+
+  /** Un fichier changé, avant et après, pour l'onglet Git. */
+  async diff(dossier: string, chemin: unknown, ancien?: unknown): Promise<DiffFichierGit> {
+    return diffFichierGit(await this.dossier(dossier), chemin, ancien);
+  }
+
+  /**
+   * Commit de ce qui a changé puis envoi de la branche en cours sur GitHub, avec le jeton de cette machine.
+   * Sans identité git sur la machine (un VPS), le commit est signé du compte GitHub connecté (adresse noreply).
+   * Les crochets git du dépôt ne tournent pas (comme au clonage) ; jamais de `--force`.
+   */
+  async publier(dossier: string, message: unknown): Promise<ResultatPublication> {
+    const c = await this.connexion();
+    const cible = await this.dossier(dossier);
+    const nom = await this.depotDe(cible);
+    const texteCommit = typeof message === "string" ? message.trim().slice(0, 5000) : "";
+    const etat = await etatGit(cible);
+    if (!etat.branche) throw new Error("Aucune branche : rien à publier.");
+    const branche = validerBranche(etat.branche);
+    if (etat.fichiers.length && !texteCommit) throw new Error("Écris ce qui change avant de publier.");
+    if (!etat.fichiers.length && etat.enAvance === 0 && etat.suivie) return { ok: true, commit: null, branche, sortie: "Rien à publier : tout est déjà sur GitHub." };
+    const env = this.gitEnv(c.jeton);
+    if (etat.fichiers.length) {
+      const identite = (await this.commande("git", ["config", "user.email"], this.env(), cible).catch(() => "")).trim() ? [] : await this.identite(c);
+      try {
+        await this.commande("git", [...identite, "add", "-A"], env, cible);
+        await this.commande("git", [...identite, "commit", "--no-verify", "-m", texteCommit], env, cible);
+      } catch {
+        throw new Error("Le commit n’a pas abouti sur cette machine (un fichier verrouillé, ou l’identité git). Rien n’a été envoyé.");
+      }
+    }
+    try {
+      await this.commande("git", ["push", ...(etat.suivie ? [] : ["-u"]), "origin", `HEAD:refs/heads/${branche}`], env, cible, 5 * 60_000);
+    } catch {
+      // Pas de sortie de git (elle peut porter une adresse) : on dit ce qu'on sait vérifier.
+      await this.commande("git", ["fetch", "origin", branche], env, cible, 5 * 60_000).catch(() => "");
+      const apres = await etatGit(cible).catch(() => null);
+      throw new Error((apres?.enRetard ?? 0) > 0
+        ? `La branche ${branche} a avancé sur GitHub : récupère les nouveautés, puis publie. Ton commit est gardé ici.`
+        : `GitHub a refusé l’envoi sur ${branche} (branche protégée, ou droits insuffisants sur ${nom}). Ton commit est gardé ici.`);
+    }
+    const sha = (await this.commande("git", ["rev-parse", "--short", "HEAD"], this.env(), cible).catch(() => "")).trim();
+    return { ok: true, commit: sha || null, branche, sortie: `Publié sur ${nom}, branche ${branche}.` };
+  }
+
+  /** Le compte GitHub connecté, pour signer un commit quand la machine n'a pas d'identité git. */
+  private async identite(c: ConnexionGithubProjet): Promise<string[]> {
+    const u = objet(await this.api("/user", c));
+    const login = texte(u.login, 39).replace(/[^A-Za-z0-9-]/g, "") || c.compte;
+    const id = entier(u.id);
+    const email = id ? `${id}+${login}@users.noreply.github.com` : `${login}@users.noreply.github.com`;
+    const nom = texte(u.name, 100).replace(/[<>\n]/g, "") || login;
+    return ["-c", `user.name=${nom}`, "-c", `user.email=${email}`];
+  }
+
+  /**
+   * Ce que GitHub dit du dépôt d'un projet de cette machine : pull requests ouvertes, tests de la branche en
+   * cours, derniers commits. Chaque partie peut manquer (droits, réseau) sans faire échouer les autres.
+   */
+  async activite(dossier: string): Promise<ActiviteGithub> {
+    const c = await this.connexion();
+    const cible = await this.dossier(dossier);
+    const nom = await this.depotDe(cible);
+    const branche = (await etatGit(cible)).branche;
+    const ref = branche ? encodeURIComponent(validerBranche(branche)) : null;
+    const essai = <T,>(f: () => Promise<T>) => f().catch(() => null);
+    const [pulls, tests, commits] = await Promise.all([
+      essai(async () => lirePullRequests(await this.api(`/repos/${nom}/pulls?state=open&sort=updated&direction=desc&per_page=20`, c))),
+      ref ? essai(async () => resumerTests(await this.api(`/repos/${nom}/commits/${ref}/check-runs?per_page=100`, c))) : Promise.resolve(null),
+      essai(async () => lireCommits(await this.api(`/repos/${nom}/commits?per_page=8${ref ? `&sha=${ref}` : ""}`, c))),
+    ]);
+    return { depot: nom, url: `https://github.com/${nom}`, branche, pullRequests: pulls, tests, commits };
+  }
+
+  /** Une pull request du dépôt du projet, en détail : description, fichiers, avis, tests. */
+  async pullRequest(dossier: string, numero: unknown): Promise<PullRequestDetail> {
+    const n = typeof numero === "number" ? numero : Number(numero);
+    if (!Number.isInteger(n) || n < 1 || n > 10_000_000) throw new Error("Numéro de pull request invalide.");
+    const c = await this.connexion();
+    const cible = await this.dossier(dossier);
+    const nom = await this.depotDe(cible);
+    const p = objet(await this.api(`/repos/${nom}/pulls/${n}`, c));
+    const [resume] = lirePullRequests([p]);
+    if (!resume) throw new Error(`La pull request n° ${n} est introuvable sur ${nom}.`);
+    const sha = typeof objet(p.head).sha === "string" ? String(objet(p.head).sha) : null;
+    const essai = <T,>(f: () => Promise<T>) => f().catch(() => null);
+    const [fichiers, avis, tests] = await Promise.all([
+      essai(async () => liste(await this.api(`/repos/${nom}/pulls/${n}/files?per_page=100`, c))),
+      essai(async () => liste(await this.api(`/repos/${nom}/pulls/${n}/reviews?per_page=100`, c))),
+      sha && /^[0-9a-f]{7,64}$/.test(sha) ? essai(async () => resumerTests(await this.api(`/repos/${nom}/commits/${sha}/check-runs?per_page=100`, c))) : Promise.resolve(null),
+    ]);
+    const dernierAvis = new Map<string, string>();
+    for (const a of avis ?? []) if (a.state && a.state !== "COMMENTED" && a.state !== "PENDING") dernierAvis.set(texte(objet(a.user).login, 60), String(a.state));
+    return {
+      ...resume,
+      etat: p.merged === true || p.merged_at ? "fusionnee" : p.state === "closed" ? "fermee" : "ouverte",
+      base: texte(objet(p.base).ref, 255),
+      description: typeof p.body === "string" ? p.body.slice(0, 6000) : "",
+      fusionnable: typeof p.mergeable_state === "string" ? p.mergeable_state : null,
+      commentaires: entier(p.comments) + entier(p.review_comments),
+      ajouts: entier(p.additions),
+      suppressions: entier(p.deletions),
+      fichiers: (fichiers ?? []).slice(0, 100).map((f) => ({ chemin: texte(f.filename, 300), statut: texte(f.status, 20), ajouts: entier(f.additions), suppressions: entier(f.deletions) })),
+      avis: [...dernierAvis].map(([auteur, etat]) => ({ auteur, etat })),
+      tests,
+    };
   }
 
   async recuperer(dossier: string): Promise<EtatGit> {
