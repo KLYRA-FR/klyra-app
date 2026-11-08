@@ -190,8 +190,9 @@ export function lireSouvenirsGraphe(r) {
                 catch {
                     continue;
                 }
+                // `archive/` : souvenirs archivés depuis la page Mémoire, gardés mais hors du graphe.
                 if (st.isDirectory()) {
-                    if (profondeur < 3)
+                    if (profondeur < 3 && nom !== "archive")
                         visiter(chemin, profondeur + 1);
                     continue;
                 }

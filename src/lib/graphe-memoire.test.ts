@@ -124,3 +124,27 @@ describe("recherche dans le graphe", () => {
     expect(segmentsSurlignes("Mémoire", motsDe("memoire"))).toEqual([{ texte: "Mémoire", trouve: true }]);
   });
 });
+
+import { propositionsEntretien } from "./graphe-memoire";
+
+describe("entretien", () => {
+  it("signale doublons d'un même agent et souvenirs obsolètes, sans rien appliquer", () => {
+    const s = sources();
+    s.souvenirs.push(
+      souvenir({ id: "d1", nom: "Outillage", agent: "dev", date: "2026-11-01T00:00:00.000Z", description: "autre" }),
+      souvenir({ id: "d2", nom: "Charte couleurs studio", agent: "designer", description: "palette bleue typographie studio" }),
+      souvenir({ id: "d3", nom: "Charte couleurs studio v2", agent: "designer", description: "palette bleue typographie studio", date: "2026-11-09T00:00:00.000Z" }),
+      souvenir({ id: "d4", nom: "Charte couleurs studio", agent: "dev", description: "palette bleue typographie studio" }),
+      souvenir({ id: "vieux", nom: "Ancien chantier", agent: "camille", date: "2026-06-01T00:00:00.000Z" }),
+    );
+    const g = construireGraphe(s);
+    const { doublons, obsoletes } = propositionsEntretien(g, Date.parse("2026-11-08T12:00:00Z"));
+    const paires = doublons.map((d) => [d.garder.id, d.retirer.id, d.raison.split(" ")[0]]);
+    expect(paires).toContainEqual(["s3", "d1", "Même"]);
+    expect(paires).toContainEqual(["d3", "d2", "Titre"]);
+    // Deux agents différents : pas de fusion proposée.
+    expect(paires.some(([a, b]) => [a, b].includes("d4"))).toBe(false);
+    expect(obsoletes.map((o) => [o.noeud.id, o.raison.split(" ")[0]])).toEqual([["s3", "Remplacé"], ["vieux", "Souvenir"]]);
+    expect(g.noeuds.length).toBe(construireGraphe(s).noeuds.length);
+  });
+});
