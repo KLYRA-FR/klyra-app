@@ -129,6 +129,8 @@ export interface Project {
   lieu?: string | null;
   /** Le dépôt GitHub dont le dossier est un clone (« owner/repo »), quand le projet a été ajouté depuis GitHub. */
   depot?: string;
+  /** Dépôt choisi par la connexion GitHub de cette machine (PC ou VPS). */
+  githubConnecte?: true;
   files: FileNode[];
   updatedAt: string;
 }

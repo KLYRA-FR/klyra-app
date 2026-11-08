@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
 import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe.mjs";
 import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
@@ -47,6 +48,7 @@ import { creerRendus } from "./rendus.mjs";
 import { consigneNavigateurTexte, creerRelaisNavigateur, OUTILS_NAVIGATEUR_LECTURE } from "./navigateur.mjs";
 import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coffre.mjs";
 import { creerCoffreServeur } from "./coffre-serveur.mjs";
+import { creerGithubProjets } from "./github-stockage.mjs";
 import { creerComposioServeur } from "./composio-serveur.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { CONSIGNE_FILS, NOMS_FILS } from "./fils-outils.mjs";
@@ -405,6 +407,7 @@ export function creerAgents(options) {
   const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees, local: coffreServeur });
   options.ia?.surCoffre?.({ actif: () => true, appeler: coffre.appeler });
   /* Les apps de la personne par Composio : la connexion de ce serveur, à lui seul (cf. composio-serveur.mjs). */
+  const githubProjets = creerGithubProjets({ donnees, base: home, racine: path.join(home, "projets", "GitHub"), gh: existsSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "gh")) ? path.join(path.dirname(fileURLToPath(import.meta.url)), "gh") : "gh", chiffrer: coffreServeur.chiffrerTexte, dechiffrer: coffreServeur.dechiffrerTexte });
   const composioServeur = creerComposioServeur({ donnees, coffre: coffreServeur, ...(options.fetch ? { fetch: options.fetch } : {}) });
   options.ia?.surComposio?.(composioServeur.mcp);
   /* Les workflows vivent sur le PC de la personne : les appels lui sont relayés de même (cf. workflows.mjs). */
@@ -1003,6 +1006,7 @@ export function creerAgents(options) {
   }
 
   function fermerTout() {
+    githubProjets.fermer();
     for (const proc of new Set(processus.values())) proc.child.kill("SIGTERM");
     codex.fermer();
     grok.fermer();
@@ -1060,5 +1064,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

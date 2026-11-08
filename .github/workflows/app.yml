@@ -35,7 +35,7 @@ jobs:
         run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: npm pkg set version="$VERSION"
       # next build vérifie aussi les types (ceux des routes sont générés pendant le build).
-      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver
+      - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && pnpm github:preparer
       # Le même certificat à chaque version : macOS garde les autorisations de l'app (cf. scripts/signer-mac.cjs).
       - name: Certificat de signature
         env:
@@ -88,6 +88,7 @@ jobs:
       - run: pnpm build:electron
       - run: pnpm whisper
       - run: pnpm cua-driver
+      - run: pnpm github:preparer
       - run: pnpm exec electron-builder --win --publish never --config.directories.output=dist-app
 
       - name: L'app démarre et affiche l'interface

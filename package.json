@@ -62,7 +62,7 @@
     "test:navigateur-chrome": "electron scripts/test-navigateur-chrome.cjs",
     "test:navigateur-ecran": "node scripts/test-navigateur-ecran.mjs",
     "test:sons": "electron scripts/test-sons.cjs",
-    "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
+    "app": "pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && pnpm github:preparer && electron-builder --mac --publish never --config.directories.output=\"$HOME/.klyra/build\"",
     "whisper": "node scripts/preparer-whisper.mjs",
     "cua-driver": "node scripts/preparer-cua-driver.mjs",
     "test:convex": "vitest run convex",
@@ -126,7 +126,9 @@
     "test:modeles": "vitest run src/lib/maj-modele.test.ts src/lib/modeles-klyra.test.ts",
     "test:automatisations": "vitest run src/lib/telephone/routines-telephone.test.ts src/lib/telephone/workflow-etapes.test.ts",
     "test:app-web": "node --test scripts/sortie-vercel.test.mjs",
-    "test:origine-telephone": "node --test scripts/origine-telephone.test.mjs"
+    "test:origine-telephone": "node --test scripts/origine-telephone.test.mjs",
+    "github:preparer": "node scripts/preparer-github.mjs",
+    "test:github-projets": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/github-projets.test.mts && node --test serveur/github.test.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",
@@ -231,6 +233,15 @@
             "cua-driver",
             "LICENSE.md"
           ]
+        },
+        {
+          "from": "vendor/github/darwin",
+          "to": "github",
+          "filter": [
+            "gh",
+            "gh.exe",
+            "LICENSE"
+          ]
         }
       ]
     },
@@ -262,6 +273,15 @@
           "filter": [
             "cua-driver.exe",
             "LICENSE.md"
+          ]
+        },
+        {
+          "from": "vendor/github/win32",
+          "to": "github",
+          "filter": [
+            "gh",
+            "gh.exe",
+            "LICENSE"
           ]
         }
       ]

@@ -41,6 +41,9 @@ import ts from "typescript";
 import { empreinteCodeServeur } from "./empreinte-serveur.mjs";
 
 const FICHIERS = [
+  ["electron/github-projets.ts", "serveur/github-projets.mjs"],
+  ["electron/github-stockage.ts", "serveur/github-stockage.mjs"],
+  ["electron/git.ts", "serveur/git.mjs"],
   ["electron/routines/schedule.ts", "serveur/horaires.mjs"],
   ["electron/moteurs/codex-protocole.ts", "serveur/codex-protocole.mjs"],
   ["electron/ia-catalogue.ts", "serveur/ia-catalogue.mjs"],

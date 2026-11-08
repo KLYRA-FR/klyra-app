@@ -189,6 +189,17 @@ contextBridge.exposeInMainWorld("klyra", {
     cloner: (depot: string, parent: string | null) => ipcRenderer.invoke("git:cloner", depot, parent),
     recuperer: (dossier: string) => ipcRenderer.invoke("git:recuperer", dossier),
   },
+  github: {
+    etat: (lieu: string | null) => ipcRenderer.invoke("github:etat", lieu),
+    connecter: (lieu: string | null) => ipcRenderer.invoke("github:connecter", lieu),
+    deconnecter: (lieu: string | null) => ipcRenderer.invoke("github:deconnecter", lieu),
+    depots: (lieu: string | null) => ipcRenderer.invoke("github:depots", lieu),
+    branches: (lieu: string | null, depot: string) => ipcRenderer.invoke("github:branches", lieu, { depot }),
+    ouvrir: (lieu: string | null, depot: string, branche: string) => ipcRenderer.invoke("github:ouvrir", lieu, { depot, branche }),
+    etatDepot: (lieu: string | null, dossier: string) => ipcRenderer.invoke("github:etat-depot", lieu, { dossier }),
+    recuperer: (lieu: string | null, dossier: string) => ipcRenderer.invoke("github:recuperer", lieu, { dossier }),
+    navigateur: () => ipcRenderer.invoke("github:navigateur"),
+  },
   systeme: {
     utilisateur: () => ipcRenderer.invoke("systeme:utilisateur"),
     micro: () => ipcRenderer.invoke("systeme:micro"),

@@ -167,6 +167,7 @@ import {
   type GesteHistorique,
 } from "./navigateur/navigateur";
 import { absolu, arbreDossier, cheminDansProjet, lireFichier, pagesDuSite, utilisateurSysteme } from "./projets";
+import { fermerGithubProjets, githubProjets } from "./github";
 import { clonerDepot, dossierClones, etatGit, publier, recupererDepot } from "./git";
 import { adresseWebhook, demarrerWebhooks, ecrireFichierTexte } from "./workflows";
 import {
@@ -183,7 +184,7 @@ import { copierRendu, enregistrerRenduDans, htmlDuRendu, imageJointe, montrerRen
 import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
-import { appelCoffreVps, appelComposioVps, appelEquipeVps, appelEspaceVps, appelWorkflowsVps } from "./equipe-vps";
+import { appelCoffreVps, appelComposioVps, appelGithubVps, appelEquipeVps, appelEspaceVps, appelWorkflowsVps } from "./equipe-vps";
 import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
@@ -431,6 +432,29 @@ function registerBridge() {
     return fn(...args);
   }));
   composio("composio:etat", () => etatAvecLogos());
+  const github = (methode: string, lieu: unknown, corps: Record<string, unknown> = {}) => {
+    if (lieu !== null && lieu !== undefined) {
+      const { origine, jeton } = composioVps(lieu);
+      return appelGithubVps(origine, jeton, methode, corps);
+    }
+    const g = githubProjets();
+    switch (methode) {
+      case "etat": return g.etat();
+      case "connecter": return g.connecter();
+      case "deconnecter": return g.deconnecter();
+      case "depots": return g.depots();
+      case "branches": return g.branches(String(corps.depot ?? ""));
+      case "ouvrir": return g.ouvrir(String(corps.depot ?? ""), String(corps.branche ?? ""));
+      case "etat-depot": return g.etatDepot(String(corps.dossier ?? ""));
+      case "recuperer": return g.recuperer(String(corps.dossier ?? ""));
+      default: throw new Error("Demande GitHub inconnue.");
+    }
+  };
+  for (const methode of ["etat", "connecter", "deconnecter", "depots", "branches", "ouvrir", "etat-depot", "recuperer"]) {
+    composio(`github:${methode}`, (lieu, corps) => github(methode, lieu, (corps ?? {}) as Record<string, unknown>));
+  }
+  composio("github:navigateur", () => shell.openExternal("https://github.com/login/device"));
+
   composio("composio:importer", (contexte) => importerCleComposio(fenetrePrincipale!, contexte));
   composio("composio:saisir", (contexte, cle) => saisirCleComposio(contexte, cle));
   composio("composio:connect:etat", () => composioConnect.etat());
@@ -1588,6 +1612,7 @@ app.on("before-quit", (event) => {
 
 /* Le Whisper gardé en mémoire pour la dictée s'arrête avec l'app. */
 app.on("will-quit", () => {
+  fermerGithubProjets();
   arreterDictee();
   arreterRoutines();
   moteurs.fermer();
