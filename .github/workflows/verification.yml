@@ -27,7 +27,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # github.com répond parfois 504 au téléchargement d'Electron (postinstall) : jusqu'à 4 essais.
+      - name: Dépendances (nouvel essai si GitHub ne répond pas)
+        shell: bash
+        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: pnpm build:electron && pnpm test:composio
       - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif
       - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime
@@ -46,7 +49,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # github.com répond parfois 504 au téléchargement d'Electron (postinstall) : jusqu'à 4 essais.
+      - name: Dépendances (nouvel essai si GitHub ne répond pas)
+        shell: bash
+        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm build:electron
@@ -145,7 +151,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # github.com répond parfois 504 au téléchargement d'Electron (postinstall) : jusqu'à 4 essais.
+      - name: Dépendances (nouvel essai si GitHub ne répond pas)
+        shell: bash
+        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
       - run: pnpm build:electron
       - name: Comptes Claude indépendants sous Windows, sans compte réel
         run: pnpm test:comptes-claude
