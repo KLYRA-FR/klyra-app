@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("klyra", {
     readMeta: () => ipcRenderer.invoke("agents:meta:read"),
     writeMeta: (meta: unknown) => ipcRenderer.invoke("agents:meta:write", meta),
     reveal: (name: string) => ipcRenderer.invoke("agents:reveal", name),
+    cerveau: (lieu: string | null, action: string, args: Record<string, unknown>) => ipcRenderer.invoke("cerveau:appeler", lieu, action, args),
     memoire: (agent: string, contexte: { dossier: string | null; sessionId: string | null }) => ipcRenderer.invoke("agents:memoire", agent, contexte),
     souvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string) => ipcRenderer.invoke("agents:souvenir", agent, contexte, id),
     ecrireSouvenir: (agent: string, contexte: { dossier: string | null; sessionId: string | null }, id: string, contenu: string, attendu: number | null) =>

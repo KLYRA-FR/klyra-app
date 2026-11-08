@@ -18,6 +18,8 @@ import { createServer as creerHttps } from "node:https";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { creerAgents } from "./agents.mjs";
+import { actionCerveau } from "./cerveau-service.mjs";
+import { demarrerVeilleCerveau } from "./cerveau-veille.mjs";
 import { ErreurFichier, creerFichiers } from "./fichiers.mjs";
 import { ErreurJoint } from "./joints.mjs";
 import { JOINT_TAILLE_MAX } from "./joints-vps.mjs";
@@ -710,6 +712,14 @@ export function creerGestionnaire(options) {
        * La mémoire d'un agent de ce VPS, pour le panneau Souvenirs de l'app (comme sur le PC) :
        * GET memoire et souvenir (`?agent=…&dossier=…&session=…&id=…`), POST souvenir-ecrire et souvenir-creer.
        */
+      if (action === "cerveau") {
+        if (req.method !== "POST") return repondre(res, 405, { erreur: "methode" });
+        try {
+          const c = (await lireCorpsRequete(req, Math.max(CORPS_AGENT_MAX, 5_000_000))) ?? {}, args = c.args ?? {};
+          const resultat = c.action === "digital-os-connecter" ? await agents.memoire.connecterDigitalOs() : c.action === "indexer-souvenirs" ? await agents.memoire.indexer(args.agent, args.contexte ?? null, args.projetId) : await actionCerveau(dossier, c.action, args);
+          return repondre(res, 200, { resultat });
+        } catch (e) { return repondre(res, 400, { erreur: "cerveau", message: e instanceof Error ? e.message : "Mémoire indisponible." }); }
+      }
       if (action === "memoire" || action === "souvenir" || action === "souvenir-ecrire" || action === "souvenir-creer") {
         const lecture = action === "memoire" || action === "souvenir";
         if (req.method !== (lecture ? "GET" : "POST")) return repondre(res, 405, { erreur: "methode" });
@@ -917,6 +927,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const fichiers = creerFichiers(home);
   const espace = creerEspace({ donnees: dossier });
   /* Les workflows du serveur tournent ici, PC éteint (cf. workflows-moteur.mjs). */
+  demarrerVeilleCerveau({ donnees: dossier, configClaude: path.join(home, ".claude"), rendus: path.join(home, ".klyra", "rendus"), atelier: path.join(home, "atelier") });
   const workflows = creerMoteurWorkflows({
     donnees: dossier,
     espace,

@@ -17,6 +17,10 @@ import { randomUUID } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ouvrirCerveau } from "./cerveau.mjs";
+import { indexerSouvenirs } from "./cerveau-service.mjs";
+import { connecterDigitalOs } from "./cerveau-dossiers.mjs";
+import { CONSIGNE_CERVEAU, avecReperesCerveau } from "./cerveau-outils.mjs";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
 import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe.mjs";
 import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
@@ -348,6 +352,8 @@ export function creerAgents(options) {
     return m;
   };
   const memoire = {
+    connecterDigitalOs: () => connecterDigitalOs(ouvrirCerveau(donnees), path.join(home, "DIGITAL-OS")),
+    indexer: (agent, contexte, projetId) => indexerSouvenirs(ouvrirCerveau(donnees), agent, memoireDe(agent, contexte), projetId ?? null),
     lire: (agent, contexte) => {
       const m = memoireDe(agent, contexte);
       return m ? lireMemoire(m.portee, m.dossier) : null;
@@ -379,7 +385,7 @@ export function creerAgents(options) {
     const equipe = actifs.length
       ? `Les agents qu'elle a choisis dans « Mes agents » : ${listeAgents(actifs)}. Tu ne confies du travail qu'à eux, en les appelant avec un brief qui se suffit (objectif, contexte et chemins, contraintes, critère de fin, le livrable attendu dans des fichiers et un compte rendu court) ; n'en invente pas d'autre. ${UN_RESPONSABLE} Ne refais pas en parallèle ce que tu as confié. Avant de dire que c'est livré, vérifie par les preuves reçues et un coup d'œil ciblé, sans relire tout le livrable ni refaire un contrôle déjà prouvé, et rends un résultat court : ce qui est livré, où le voir, ce qui a été vérifié, les limites, la décision qui reste.`
       : `Elle n'a encore choisi aucun agent dans « Mes agents » : tu fais le travail toi-même, ou tu dis précisément ce qui manque. N'invente aucun collègue.`;
-    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_FILS} ${CONSIGNE_ATELIER} ${CONSIGNE_EQUIPE} ${CONSIGNE_CARTES}` : ""}`;
+    return `${qui} ${equipe} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_CERVEAU} ${CONSIGNE_FILS} ${CONSIGNE_ATELIER} ${CONSIGNE_EQUIPE} ${CONSIGNE_CARTES}` : ""}`;
   }
 
   function consigneAgent(id) {
@@ -388,7 +394,7 @@ export function creerAgents(options) {
     const equipe = autres.length
       ? `Dans cette app, les agents que la personne a choisis sont : ${listeAgents(autres)}, et son assistant ${assistant ?? "l'assistant"} (principal). Ne confie du travail qu'à eux ; un collègue cité dans ta fiche mais absent ici n'est pas joignable : fais ta part et dis ce qui reste.`
       : `Dans cette app, la personne n'a pas d'autre agent que toi et son assistant ${assistant ?? "l'assistant"} (principal) : un collègue cité dans ta fiche n'est pas joignable ici. Fais ta part et dis ce qui reste.`;
-    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail ${options.ia ? "dans un fil de l'app ou " : ""}en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_FILS} ${CONSIGNE_CARTES}` : ""}`;
+    return `${equipe} Si ta fiche cite des outils d'équipe absents de ta session, ils ne valent pas ici : on confie un travail ${options.ia ? "dans un fil de l'app ou " : ""}en appelant un agent actif. ${LIVRER_EN_FICHIERS} ${CONSIGNE_ARTEFACTS} ${REGLES_COMMUNES}${options.ia ? ` ${CONSIGNE_CERVEAU} ${CONSIGNE_FILS} ${CONSIGNE_CARTES}` : ""}`;
   }
 
   const estActif = (id) => lireEquipe().actifs.some((a) => a.id === id);
@@ -528,6 +534,7 @@ export function creerAgents(options) {
 
   const codex = creerCodex({
     home,
+    donnees,
     version: options.version ?? "1",
     publier,
     consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
@@ -904,13 +911,13 @@ export function creerAgents(options) {
     const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
     const connues = skillsConnues(configClaude, cwd);
     for (const nom of filtre.coupes) connues.delete(nom);
-    const prompt = promptAvecSkill(demande.prompt, demande.skill ?? null, connues);
+    const prompt = avecReperesCerveau(promptAvecSkill(demande.prompt, demande.skill ?? null, connues), donnees, demande.agent ?? "principal", conversation, true);
     const configuration = configurationDe();
     const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
     /* Les pièces jointes de la conversation : ouvertes en lecture dès qu'il y en a (la session repart, reprise, à la première). */
     const dossierJointes = conversation ? joints.dossier(conversation) : null;
     const avecJointes = dossierJointes !== null && existsSync(dossierJointes);
-    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle, avecJointes, compte?.id ?? null]);
+    const signature = JSON.stringify([cwd, demande.agent, demande.effort ?? null, acces === "projet", lireEquipe().empreinte, options.ia?.generation() ?? 0, precharge.noms, configuration, conversation, skillsCle, avecJointes, compte?.id ?? null, "cerveau"]);
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     /* Changer de compte relance Claude Code : la connexion se lit au lancement. */
@@ -950,7 +957,7 @@ export function creerAgents(options) {
         args.push(
           "--allowedTools",
           ...COMMANDES_AUTORISEES,
-          ...(mcp ? [OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
+          ...(mcp ? ["mcp__klyra__cerveau_chercher", "mcp__klyra__cerveau_lire", OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
           // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
