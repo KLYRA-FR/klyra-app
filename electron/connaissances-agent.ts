@@ -124,7 +124,8 @@ function souvenirDe(dossier: string, id: string): Souvenir {
 }
 
 /** Les fichiers `.md` de la mémoire (deux niveaux de dossiers au plus), l'index d'abord puis les plus récents. */
-export function lireMemoire(portee: PorteeMemoire, dossier: string): Memoire {
+export function lireMemoire(portee: PorteeMemoire, dossier: string, options: { limite?: number } = {}): Memoire {
+  const limite = Math.max(1, Math.min(20_000, Math.floor(options.limite ?? MAX_SOUVENIRS)));
   const ids: string[] = [];
   let coupee = false;
   const parcourir = (relatif: string, profondeur: number) => {
@@ -139,7 +140,7 @@ export function lireMemoire(portee: PorteeMemoire, dossier: string): Memoire {
       const id = relatif ? `${relatif}/${e.name}` : e.name;
       if (e.isDirectory() && profondeur < 2) parcourir(id, profondeur + 1);
       else if (e.isFile() && /\.md$/i.test(e.name)) {
-        if (ids.length >= MAX_SOUVENIRS) coupee = true;
+        if (ids.length >= limite) coupee = true;
         else ids.push(id);
       }
     }

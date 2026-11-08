@@ -24,6 +24,7 @@ import { CONSIGNE_ATELIER } from "./atelier-agent";
 import { CONSIGNE_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe";
 import { CONSIGNE_CARTES, OUTIL_CARTE_CLAUDE } from "./cartes-interactives";
 import { CONSIGNE_FILS, TRAVAUX_MAX } from "./fils-outils";
+import { CONSIGNE_CERVEAU, avecReperesCerveau } from "./cerveau-outils";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
 import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
@@ -416,7 +417,7 @@ export function autoriser(requestId: string, demandeId: string, decision: Decisi
 const CONSIGNE_ARTEFACTS = "Où ranger : le code et les sources d'un projet vont dans le dossier du projet (son dépôt Git) ; tes essais hors projet, dans ton dossier de travail. Publie avec publier_artefact (chemin complet du fichier, ou du dossier d'une page avec index.html ; un titre court ; à quoi il sert) chaque fichier qu'on t'a demandé de produire, quel que soit son format (texte, tableur, document, page, image, capture, vidéo, PDF, présentation, petite app), que la demande vienne de la personne ou de l'agent qui t'a confié le travail, et tout rendu qu'elle doit voir : l'app en garde une copie dans Mes artefacts de cet espace, sans la partager à l'équipe. Publie-le avant de dire que c'est livré. Pas pour un fichier de travail intermédiaire ni pour du code source d'un projet. N'ajoute pas de captures ou de vidéos au dépôt d'un projet sans qu'elle le demande : elle les y enregistre elle-même depuis Artefacts.";
 
 export function consignesApp(options: StreamOptions, mcp: string | null): string[] {
-  const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_FILS, CONSIGNE_ARTEFACTS, CONSIGNE_COFFRE,
+  const consignes = [CONSIGNE_PLANNING, ...(mcp ? [CONSIGNE_CERVEAU, CONSIGNE_FILS, CONSIGNE_ARTEFACTS, CONSIGNE_COFFRE,
     composioConnect.serveur() ? CONSIGNE_COMPOSIO_CONNECT : "Pour Composio, commence par composio_etat : seule sa réponse confirme les comptes choisis dans KLYRA. Utilise composio_rechercher puis composio_executer avec leurs schémas. Un service absent, expiré ou refusé se règle dans Marketplace › Composio : ne change pas de compte et ne te rabats pas en silence sur un CLI, un autre MCP ou une connexion du poste. La connexion ne vaut jamais accord pour une action métier ; conserve toutes les règles d'autorisation de la personne.",
   ] : []), options.agent === null ? consigneAssistant(!!mcp) : consigneAgent(options.agent, !!mcp), consigneOrdinateur()];
   // Les consignes KLYRA adoptées par la personne (configuration-klyra.ts), pour Claude Code comme pour Codex.
@@ -882,7 +883,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const precharge = options.agent ? competencesPrechargees(ficheAgent, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
   const connues = skillsConnues(configClaude, cwd);
   for (const nom of filtre.coupes) connues.delete(nom);
-  const prompt = promptAvecSkill(options.prompt, options.skill, connues);
+  // KLYRA_USER_DATA est posé au démarrage (main.ts). Ce module n’importe pas Electron : le banc des routines le charge sans.
+  const prompt = avecReperesCerveau(promptAvecSkill(options.prompt, options.skill, connues), process.env.KLYRA_USER_DATA || null, options.agent ?? "principal", options.chatId ?? "");
   const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
   // Les dossiers des pièces jointes, pour que l'agent puisse les lire.
   const dossiersJoints = [...new Set((options.fichiers ?? []).filter((f) => path.isAbsolute(f) && existsSync(f)).map((f) => path.dirname(f)))].filter(
@@ -890,7 +892,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   );
   // Une pièce jointe hors du projet, en cours de route : l'agent demande à la lire.
   // Mes agents a changé (agent ajouté, désactivé, assistant renommé) : relancé au message suivant, session reprise.
-  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle, compte?.id ?? null]);
+  const signature = JSON.stringify([cwd, options.agent, options.effort ?? null, acces === "projet", generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), signatureNavigateur(), signatureConfiguration(lireReglages().configuration), precharge.noms, skillsCle, compte?.id ?? null, "cerveau"]);
 
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;

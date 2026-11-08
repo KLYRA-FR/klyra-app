@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import os from "node:os";
 import path from "node:path";
 import { app, safeStorage } from "electron";
+import { avecReperesCerveau } from "../cerveau-outils";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
@@ -103,7 +104,7 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
     {
       sessionId: options.sessionId,
       cwd,
-      prompt: promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd, filtre.garder),
+      prompt: avecReperesCerveau(promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd, filtre.garder), app.isReady() ? app.getPath("userData") : null, options.agent ?? "principal", options.chatId ?? ""),
       regles,
       mcp: mcpPourAcp(mcp),
       acces: options.acces ?? "projet",

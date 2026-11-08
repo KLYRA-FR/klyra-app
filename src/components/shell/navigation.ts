@@ -12,4 +12,5 @@ export const NAVIGATION: { href: string; label: string; icon: IconName }[] = [
   { href: "/planning", label: "Planning", icon: "calendar-01" },
   { href: "/routines", label: "Automatisations", icon: "lightning-01" },
   { href: "/artefacts", label: "Artefacts", icon: "artefacts-forme" },
+  { href: "/memoire", label: "Mémoire", icon: "git-branch-01" },
 ];

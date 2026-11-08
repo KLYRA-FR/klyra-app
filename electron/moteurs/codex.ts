@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { app, shell } from "electron";
+import { avecReperesCerveau } from "../cerveau-outils";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { voirFin, voirOutil } from "../ordinateur/apercu";
 import { signatureOrdinateur } from "../ordinateur/pilote";
@@ -400,7 +401,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   try {
     const r = await serveur.requete<{ turn: { id: string } }>("turn/start", {
       threadId,
-      input: [{ type: "text", text: promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd, filtre.garder), text_elements: [] }],
+      input: [{ type: "text", text: avecReperesCerveau(promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd, filtre.garder), app.isReady() ? app.getPath("userData") : null, options.agent ?? "principal", options.chatId ?? ""), text_elements: [] }],
       cwd,
       approvalPolicy: acces.approvalPolicy,
       sandboxPolicy: acces.sandboxPolicy,

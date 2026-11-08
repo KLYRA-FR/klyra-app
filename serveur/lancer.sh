@@ -117,6 +117,11 @@ else
   NODE="$CODE_DIR/node/bin/node"
 fi
 printf '%s' "$NODE" > "$CODE_DIR/node-chemin"
+SQLITE_OPTION=""
+if ! "$NODE" -e 'require("node:sqlite")' >/dev/null 2>&1; then
+  "$NODE" --experimental-sqlite -e 'require("node:sqlite")' >/dev/null 2>&1 || echouer "ce Node ne fournit pas le stockage SQLite requis par la mémoire."
+  SQLITE_OPTION="--experimental-sqlite"
+fi
 
 dire "Téléchargement du serveur KLYRA…"
 curl -fsSL "$SOURCE/klyra-serveur.mjs" -o "$CODE_DIR/klyra-serveur.mjs"
@@ -139,6 +144,15 @@ curl -fsSL "$SOURCE/composio-connect.mjs" -o "$CODE_DIR/composio-connect.mjs"
 curl -fsSL "$SOURCE/ia-catalogue.mjs" -o "$CODE_DIR/ia-catalogue.mjs"
 curl -fsSL "$SOURCE/atelier.mjs" -o "$CODE_DIR/atelier.mjs"
 curl -fsSL "$SOURCE/connaissances-agent.mjs" -o "$CODE_DIR/connaissances-agent.mjs"
+curl -fsSL "$SOURCE/cerveau-types.mjs" -o "$CODE_DIR/cerveau-types.mjs"
+curl -fsSL "$SOURCE/cerveau-sens.mjs" -o "$CODE_DIR/cerveau-sens.mjs"
+curl -fsSL "$SOURCE/cerveau-liens.mjs" -o "$CODE_DIR/cerveau-liens.mjs"
+curl -fsSL "$SOURCE/cerveau.mjs" -o "$CODE_DIR/cerveau.mjs"
+curl -fsSL "$SOURCE/cerveau-ingest.mjs" -o "$CODE_DIR/cerveau-ingest.mjs"
+curl -fsSL "$SOURCE/cerveau-veille.mjs" -o "$CODE_DIR/cerveau-veille.mjs"
+curl -fsSL "$SOURCE/cerveau-service.mjs" -o "$CODE_DIR/cerveau-service.mjs"
+curl -fsSL "$SOURCE/cerveau-dossiers.mjs" -o "$CODE_DIR/cerveau-dossiers.mjs"
+curl -fsSL "$SOURCE/cerveau-outils.mjs" -o "$CODE_DIR/cerveau-outils.mjs"
 curl -fsSL "$SOURCE/skills-par-agent.mjs" -o "$CODE_DIR/skills-par-agent.mjs"
 curl -fsSL "$SOURCE/preparation-fournisseur.mjs" -o "$CODE_DIR/preparation-fournisseur.mjs"
 curl -fsSL "$SOURCE/consommation-ecart.mjs" -o "$CODE_DIR/consommation-ecart.mjs"
@@ -190,7 +204,7 @@ Environment=KLYRA_SERVEUR_NOM=$NOM
 Environment=KLYRA_SERVEUR_PORT=$PORT
 Environment=KLYRA_SERVEUR_HOTE=127.0.0.1
 Environment=KLYRA_SERVEUR_DONNEES=$DONNEES
-ExecStart=$NODE $CODE_DIR/klyra-serveur.mjs
+ExecStart=$NODE $SQLITE_OPTION $CODE_DIR/klyra-serveur.mjs
 Restart=always
 RestartSec=3
 NoNewPrivileges=yes
