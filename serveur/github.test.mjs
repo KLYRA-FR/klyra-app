@@ -12,6 +12,8 @@ test("les routes GitHub sont réservées aux appareils reliés, sans méthode ar
     etat: async () => ({ compte: "fixture", connexion: null, enCours: false, erreur: null }),
     depots: async () => { lectures++; return [{ nom: "fixture/prive", prive: true, branche: "main", archive: false }]; },
     branches: async () => { throw new Error("Dépôt GitHub invalide."); },
+    activite: async (dossier) => ({ depot: "fixture/prive", url: "https://github.com/fixture/prive", branche: "main", pullRequests: [], tests: null, commits: [], dossier }),
+    pullRequest: async (_dossier, numero) => { if (numero !== 3) throw new Error("Numéro de pull request invalide."); return { numero }; },
   } };
   const serveur = await ecouter({ nom: "Fixture", dossier, port: 0, journal: creerJournal(), agents });
   const appel = (route, jeton, method = "POST", corps = {}) => fetch(`http://127.0.0.1:${serveur.port}${route}`, { method, headers: { ...(jeton ? { Authorization: `Bearer ${jeton}` } : {}), "Content-Type": "application/json" }, ...(method === "POST" ? { body: JSON.stringify(corps) } : {}) });
@@ -28,6 +30,12 @@ test("les routes GitHub sont réservées aux appareils reliés, sans méthode ar
     assert.equal((await appel("/klyra/v1/github/depots", jeton, "GET")).status, 405);
     assert.equal((await appel("/klyra/v1/github/arbitraire", jeton)).status, 404);
     assert.equal((await appel("/klyra/v1/github/branches", jeton, "POST", { depot: "../secret" })).status, 400);
+    const activite = await appel("/klyra/v1/github/activite", jeton, "POST", { dossier: "/var/lib/klyra/projets/GitHub/fixture/prive-x" });
+    assert.equal(activite.status, 200);
+    assert.equal((await activite.json()).resultat.dossier, "/var/lib/klyra/projets/GitHub/fixture/prive-x");
+    assert.equal((await appel("/klyra/v1/github/pull-request", jeton, "POST", { dossier: "/x", numero: 3 })).status, 200);
+    assert.equal((await appel("/klyra/v1/github/pull-request", jeton, "POST", { dossier: "/x", numero: "3; ls" })).status, 400);
+    assert.equal((await appel("/klyra/v1/github/activite")).status, 401);
     const vue = await (await appel("/klyra/v1/github/etat", jeton)).json();
     assert.deepEqual(Object.keys(vue.resultat).sort(), ["compte", "connexion", "enCours", "erreur"]);
   } finally { await serveur.fermer(); rmSync(dossier, { recursive: true, force: true }); }

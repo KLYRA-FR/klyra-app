@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
-import { GithubProjets, validerBranche, validerNomDepot } from "./github-projets.ts";
+import { GithubProjets, infosDepot, lireCommits, lirePullRequests, reecritVersAutreDepot, resumerTests, validerBranche, validerNomDepot } from "./github-projets.ts";
 import { creerGithubProjets } from "./github-stockage.ts";
 
 test("les dépôts et branches refusent options, URL, traversées et caractères spéciaux", () => {
@@ -31,8 +31,14 @@ else if (a[0] === 'auth' && a[1] === 'login') {
  setTimeout(() => process.exit(0), 500);
 } else if (a[0] === 'auth' && a[1] === 'token') console.log('jeton-de-test');
 else if (a.includes('/user')) console.log(JSON.stringify({login:'demo'}));
-else if (a.some(x=>x.startsWith('/user/repos'))) console.log(JSON.stringify([[{full_name:'demo/site',private:true,default_branch:'main'}],[{full_name:'org/autre',private:false,default_branch:'dev'}]]));
+else if (a.some(x=>x.startsWith('/user/repos'))) console.log(JSON.stringify([[{full_name:'demo/site',private:true,default_branch:'main',description:'  Le site\\n de démo  ',homepage:'demo.example.com',language:'TypeScript',pushed_at:'2026-11-08T10:00:00Z'}],[{full_name:'org/autre',private:false,default_branch:'dev',homepage:'javascript:alert(1)',description:''}]]));
 else if (a.some(x=>x.includes('/branches'))) console.log(JSON.stringify([[{name:'main'}],[{name:'feat/test'}]]));
+else if (a.some(x=>x.startsWith('/repos/demo/site/pulls?'))) console.log(JSON.stringify([{number:12,title:'Nouvelle page',user:{login:'iris'},head:{ref:'feat/page'},draft:false,html_url:'https://github.com/demo/site/pull/12',updated_at:'2026-11-08T09:00:00Z'},{number:13,title:'Piège',user:{login:'x'},head:{ref:'b'},html_url:'https://evil.example/x'}]));
+else if (a.some(x=>x.includes('/check-runs'))) console.log(JSON.stringify({total_count:3,check_runs:[{name:'lint',status:'completed',conclusion:'success'},{name:'build',status:'completed',conclusion:'failure',html_url:'https://github.com/demo/site/actions/runs/1'},{name:'e2e',status:'in_progress',conclusion:null}]}));
+else if (a.some(x=>x.startsWith('/repos/demo/site/commits?'))) console.log(JSON.stringify([{sha:'abcdef1234567',commit:{message:'Corrige le menu\\n\\nDétails',author:{name:'Iris',date:'2026-11-08T08:00:00Z'}},author:{login:'iris'},html_url:'https://github.com/demo/site/commit/abcdef1'}]));
+else if (a.includes('/repos/demo/site/pulls/12')) console.log(JSON.stringify({number:12,title:'Nouvelle page',user:{login:'iris'},head:{ref:'feat/page',sha:'0123456789abcdef'},base:{ref:'main'},state:'open',draft:false,body:'Ajoute la page.',mergeable_state:'clean',comments:2,review_comments:1,additions:40,deletions:3,html_url:'https://github.com/demo/site/pull/12'}));
+else if (a.some(x=>x.startsWith('/repos/demo/site/pulls/12/files'))) console.log(JSON.stringify([{filename:'src/page.tsx',status:'added',additions:40,deletions:0}]));
+else if (a.some(x=>x.startsWith('/repos/demo/site/pulls/12/reviews'))) console.log(JSON.stringify([{user:{login:'hugo'},state:'COMMENTED'},{user:{login:'hugo'},state:'APPROVED'},{user:{login:'pelin'},state:'CHANGES_REQUESTED'}]));
 else process.exit(1);
 `);
   // .cmd sous Windows ; script exécutable ailleurs. Uniquement des identifiants fictifs.
@@ -47,7 +53,10 @@ test("pagination complète des dépôts privés et organisations, branches et é
   try {
     const g = new GithubProjets({ racine: path.join(b.tmp, "projets"), gh: b.gh, lire: async () => ({ jeton: "secret-fictif", compte: "demo" }), ecrire: async () => {} });
     assert.equal((await g.depots()).length, 2);
-    assert.equal((await g.depots())[0].prive, true);
+    const [site, orga] = await g.depots();
+    assert.equal(site.prive, true);
+    assert.deepEqual([site.description, site.site, site.langage, site.pousseLe], ["Le site de démo", "https://demo.example.com/", "TypeScript", "2026-11-08T10:00:00.000Z"]);
+    assert.deepEqual([orga.description, orga.site, orga.langage, orga.pousseLe], [null, null, null, null], "pas de site en javascript:, rien d'inventé");
     assert.deepEqual(await g.branches("demo/site"), ["main", "feat/test"]);
     assert.equal(JSON.stringify(await g.etat()).includes("secret-fictif"), false);
     await assert.rejects(g.ouvrir("demo/site", "absente"), /n’existe plus/);
@@ -143,4 +152,115 @@ test("la connexion est chiffrée, relue après redémarrage et supprimée à la 
     await relu.deconnecter();
     assert.equal((await relu.etat()).compte, null);
   } finally { b.nettoyer(); }
+});
+
+test("infos d'un dépôt : description sur une ligne, site seulement en http(s) sans identifiant", () => {
+  assert.deepEqual(infosDepot({ description: "Ligne\u0000un\n  deux", homepage: "https://x:y@exemple.fr", language: 3, pushed_at: "pas une date" }), { description: "Ligne un deux", site: null, langage: null, pousseLe: null });
+  assert.equal(infosDepot({ homepage: "http://exemple.fr/page" }).site, "http://exemple.fr/page");
+  assert.equal(infosDepot({ homepage: "file:///etc/passwd" }).site, null);
+  assert.equal(infosDepot({ homepage: "localhost" }).site, null);
+  assert.equal(infosDepot({ description: "a".repeat(400) }).description?.length, 300);
+});
+
+test("résumés de GitHub : tests en un état, adresses de github.com seulement", () => {
+  assert.equal(resumerTests({ check_runs: [] }).etat, "aucun");
+  assert.equal(resumerTests({ check_runs: [{ status: "completed", conclusion: "success" }, { status: "queued" }] }).etat, "en-cours");
+  const echec = resumerTests({ check_runs: [{ status: "completed", conclusion: "failure", name: "build", html_url: "javascript:alert(1)", details_url: "https://github.com/a/b/runs/1" }, { status: "completed", conclusion: "skipped" }] });
+  assert.deepEqual([echec.etat, echec.echecs, echec.reussis, echec.echouees[0].url], ["echec", 1, 1, "https://github.com/a/b/runs/1"]);
+  assert.equal(lirePullRequests([{ number: 1, title: "x", html_url: "https://evil.example/" }])[0].url, "");
+  assert.equal(lireCommits([{ sha: "abcdef0123", commit: { message: "Titre\n\ncorps" } }])[0].message, "Titre");
+});
+
+test("onglet Git et outils : différences, publier avec le compte connecté, activité et pull request", { skip: process.platform === "win32" }, async () => {
+  const b = bac();
+  const homeAvant = process.env.HOME;
+  process.env.HOME = b.home;
+  const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", ...a], { cwd, stdio: "pipe" }).toString().trim();
+  try {
+    const nus = path.join(b.tmp, "nus"); mkdirSync(path.join(nus, "demo"), { recursive: true });
+    const nu = path.join(nus, "demo", "site.git"); git(b.tmp, "init", "--bare", "--initial-branch=main", nu);
+    const auteur = path.join(b.tmp, "auteur"); git(b.tmp, "clone", nu, auteur);
+    writeFileSync(path.join(auteur, "README.md"), "un\n"); git(auteur, "add", "."); git(auteur, "commit", "-m", "un"); git(auteur, "push", "origin", "main");
+    writeFileSync(path.join(b.home, ".gitconfig"), `[url "${pathToFileURL(nus).href}/"]\n insteadOf = https://github.com/\n`);
+    const g = new GithubProjets({ racine: path.join(b.tmp, "projets"), gh: b.gh, lire: async () => ({ jeton: "jeton-fictif", compte: "demo" }), ecrire: async () => {} });
+    const { dossier } = await g.ouvrir("demo/site", "main");
+    writeFileSync(path.join(dossier, "README.md"), "un\ndeux\n");
+    const d = await g.diff(dossier, "README.md");
+    assert.deepEqual([d.avant, d.apres], ["un\n", "un\ndeux\n"]);
+    await assert.rejects(g.diff(b.tmp, "README.md"), /pas un dépôt GitHub/);
+    await assert.rejects(g.publier(dossier, "  "), /Écris ce qui change/);
+    const r = await g.publier(dossier, "Ajoute deux");
+    assert.equal(r.ok, true);
+    assert.equal(git(nu, "log", "-1", "--format=%s|%an|%ae", "main"), "Ajoute deux|demo|demo@users.noreply.github.com");
+    assert.equal((await g.publier(dossier, "")).sortie, "Rien à publier : tout est déjà sur GitHub.");
+    // La branche a avancé sur GitHub : l'envoi est refusé, le commit reste ici, le message le dit.
+    git(auteur, "pull", "-q", "origin", "main"); writeFileSync(path.join(auteur, "autre.md"), "x\n"); git(auteur, "add", "."); git(auteur, "commit", "-m", "ailleurs"); git(auteur, "push", "origin", "main");
+    writeFileSync(path.join(dossier, "ici.md"), "y\n");
+    await assert.rejects(g.publier(dossier, "Ici"), /a avancé sur GitHub/);
+    assert.equal(git(dossier, "log", "-1", "--format=%s"), "Ici");
+    const activite = await g.activite(dossier);
+    assert.equal(activite.depot, "demo/site");
+    assert.deepEqual(activite.pullRequests?.map((p) => [p.numero, p.url]), [[12, "https://github.com/demo/site/pull/12"], [13, ""]]);
+    assert.deepEqual([activite.tests?.etat, activite.tests?.echecs, activite.tests?.enCours], ["echec", 1, 1]);
+    assert.equal(activite.commits?.[0].message, "Corrige le menu");
+    const pr = await g.pullRequest(dossier, 12);
+    assert.deepEqual([pr.etat, pr.base, pr.fichiers.length, pr.commentaires], ["ouverte", "main", 1, 3]);
+    assert.deepEqual(pr.avis, [{ auteur: "hugo", etat: "APPROVED" }, { auteur: "pelin", etat: "CHANGES_REQUESTED" }]);
+    await assert.rejects(g.pullRequest(dossier, "1; rm -rf /"), /invalide/);
+    // Le dossier doit encore pointer vers le dépôt du projet, sans réécriture d'adresse dans sa configuration.
+    await assert.rejects(g.activite(dossier, "autre/depot"), /ne pointe plus vers le dépôt du projet/);
+    assert.equal((await g.activite(dossier, "Demo/Site")).depot, "demo/site");
+    // Rien dans la configuration locale du clone ne décide où part le jeton : adresse réécrite, proxy pour cette
+    // adresse précise (il l'emporterait sur ce que l'app impose), ou la même chose par un fichier inclus.
+    const piege = path.join(b.tmp, "piege.gitconfig");
+    writeFileSync(piege, "[url \"https://github.com/autre/x.git\"]\n insteadOf = https://github.com/demo/site.git\n");
+    for (const [cle, valeur] of [["url.https://github.com/autre/depot.git.insteadOf", "https://github.com/demo/site.git"], ["http.https://github.com/demo/site.git.proxy", "http://127.0.0.1:9"], ["http.sslCAInfo", "/tmp/ca.pem"], ["core.askPass", "/tmp/x"], ["include.path", piege]] as const) {
+      git(dossier, "config", "--local", cle, valeur);
+      await assert.rejects(g.publier(dossier, "Détour", "demo/site"), /change les adresses, le réseau ou les identifiants/, cle);
+      await assert.rejects(g.recuperer(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, cle);
+      await assert.rejects(g.activite(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, cle);
+      git(dossier, "config", "--local", "--unset-all", cle);
+    }
+    assert.equal((await g.activite(dossier, "demo/site")).depot, "demo/site", "configuration nettoyée : de nouveau lisible");
+    // Le fichier de configuration propre à l'arbre de travail compte aussi (`.git/config.worktree`).
+    git(dossier, "config", "--local", "core.repositoryformatversion", "1");
+    git(dossier, "config", "--local", "extensions.worktreeConfig", "true");
+    git(dossier, "config", "--worktree", "http.https://github.com/demo/site.git.proxy", "http://127.0.0.1:9");
+    await assert.rejects(g.publier(dossier, "Détour", "demo/site"), /change les adresses, le réseau ou les identifiants/, "config.worktree");
+    git(dossier, "config", "--worktree", "--unset-all", "http.https://github.com/demo/site.git.proxy");
+    // Dans les réglages de la personne : un réglage HTTP propre à github.com bloque ; une réécriture générale (ici celle du test) reste permise.
+    const global = path.join(b.home, ".gitconfig");
+    const avant = readFileSync(global, "utf8");
+    for (const ajout of [
+      `[http "https://github.com/demo/site.git"]\n proxy = http://127.0.0.1:9\n`,
+      `[http "https://github.com./demo/site.git"]\n proxy = http://127.0.0.1:9\n`,
+      `[url "https://github.com/autre/x.git"]\n insteadOf = https://github.com/demo/site.git\n`,
+      `[includeIf "gitdir:${dossier}/"]\n path = ${path.join(dossier, ".git", "piege.cfg")}\n`,
+    ]) {
+      writeFileSync(path.join(dossier, ".git", "piege.cfg"), `[url "https://github.com/autre/x.git"]\n pushInsteadOf = https://github.com/demo/site.git\n`);
+      writeFileSync(global, `${avant}${ajout}`);
+      await assert.rejects(g.recuperer(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, ajout);
+    }
+    writeFileSync(global, avant);
+    assert.equal((await g.activite(dossier, "demo/site")).depot, "demo/site", "réglages de la personne sans détour : lisible");
+    assert.equal(JSON.stringify([activite, pr]).includes("jeton-fictif"), false);
+  } finally { if (homeAvant === undefined) delete process.env.HOME; else process.env.HOME = homeAvant; b.nettoyer(); }
+});
+
+test("réécritures d'adresse : vers un autre dépôt de github.com, refusées ; vers ssh ou un miroir, permises", () => {
+  const nom = "demo/site";
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/x.git.insteadof https://github.com/demo/site.git"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.pushinsteadof https://github.com/demo/"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.HTTPS://GitHub.com./Autre/X.insteadof https://github.com/demo/site"], nom), true);
+  // Pas de réimplémentation du choix de git : toute règle applicable vers un autre dépôt suffit, même si une autre,
+  // plus précise ou placée avant à égalité (ordre de git), semblerait l'emporter.
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.insteadof https://github.com/", "url.https://github.com/demo/site.git.insteadof https://github.com/demo/site.git"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.pushinsteadof zzz", "url.ssh://git@github.com/.pushinsteadof https://github.com/", "url.https://github.com/autre/.pushinsteadof https://github.com/"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.git@github.com:.insteadof https://github.com/"], nom), false);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/.insteadof git@github.com:"], nom), false);
+  assert.equal(reecritVersAutreDepot(["url.file:///srv/nus/.insteadof https://github.com/"], nom), false);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/demo/site.git.insteadof https://github.com/demo/site.git"], nom), false);
+  // Comme git, la casse compte : une règle que git n'appliquerait pas (« b.GIT ») ne cache pas celle qu'il applique.
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.insteadof https://github.com/demo/", "url.ssh://git@github.com/demo/site.git.insteadof https://github.com/demo/site.GIT"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/x.git.insteadof HTTPS://GITHUB.COM/demo/site.git"], nom), false, "git ne l'applique pas");
 });

@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { DiffFichierGit } from "./github-types";
 
 /**
  * Publier un projet depuis l'app : voir ce qui a changé, puis commit + push
@@ -12,7 +13,11 @@ export interface FichierGit {
   /** « M » modifié, « A » ajouté, « D » supprimé, « ? » nouveau, « R » renommé. */
   statut: string;
   chemin: string;
+  /** Renommé : son ancien chemin. */
+  ancien?: string;
 }
+
+export type { DiffFichierGit };
 
 export interface EtatGit {
   /** Le dossier est-il un dépôt git ? */
@@ -53,22 +58,66 @@ function git(cwd: string, args: string[], delai = 120_000, env?: NodeJS.ProcessE
   });
 }
 
+/** La sortie standard seule, telle quelle (ni l'erreur mêlée, ni les fins de ligne retirées). */
+function gitSortie(cwd: string, args: string[], delai = 120_000): Promise<{ code: number; sortie: Buffer }> {
+  return new Promise((resolve) => {
+    execFile("git", args, { cwd, timeout: delai, maxBuffer: 16 * 1024 * 1024, windowsHide: true, encoding: "buffer" }, (erreur, stdout) => {
+      resolve({ code: erreur ? (typeof erreur.code === "number" ? erreur.code : 1) : 0, sortie: stdout ?? Buffer.alloc(0) });
+    });
+  });
+}
+
+/** Les lignes de `git status --porcelain -z` : chemins tels quels (accents, espaces), renommés avec leur ancien chemin. */
+export function lireStatutGit(brut: string): { tete: string; fichiers: FichierGit[] } {
+  const morceaux = brut.split("\0");
+  const tete = morceaux[0]?.startsWith("## ") ? morceaux.shift()! : "";
+  const fichiers: FichierGit[] = [];
+  for (let i = 0; i < morceaux.length; i++) {
+    const l = morceaux[i];
+    if (l.length < 4) continue;
+    const code = l.slice(0, 2);
+    const chemin = l.slice(3);
+    // Renommé ou copié, dans l'index (« R ») ou seulement dans l'arbre de travail (« R» après `add -N`).
+    if (/[RC]/.test(code)) {
+      fichiers.push({ statut: "R", chemin, ancien: morceaux[++i] ?? "" });
+      continue;
+    }
+    const net = code.trim() || "M";
+    fichiers.push({ statut: net === "??" ? "?" : net.charAt(0), chemin });
+  }
+  return { tete, fichiers };
+}
+
+/**
+ * Le statut ne parle que du dossier du projet, ses chemins relatifs à lui : un projet peut n'être qu'un
+ * sous-dossier d'un dépôt plus grand (git les donne relatifs à la racine du dépôt).
+ */
+export function cheminsDuDossier(fichiers: FichierGit[], prefixe: string): FichierGit[] {
+  if (!prefixe) return fichiers;
+  return fichiers
+    .filter((f) => f.chemin.startsWith(prefixe))
+    .map((f) => {
+      const suite: FichierGit = { statut: f.statut, chemin: f.chemin.slice(prefixe.length) };
+      if (f.ancien?.startsWith(prefixe)) suite.ancien = f.ancien.slice(prefixe.length);
+      else if (f.ancien) suite.statut = "A"; // renommé depuis l'extérieur du projet : nouveau ici
+      return suite;
+    });
+}
+
 export async function etatGit(dossier: string): Promise<EtatGit> {
   const cwd = absolu(dossier);
-  const statut = await git(cwd, ["status", "--porcelain=v1", "-b", "--untracked-files=all"]);
+  const statut = await gitSortie(cwd, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-b", "-z", "--untracked-files=all", "--", "."]);
   if (statut.code !== 0) return { depot: false, branche: null, suivie: false, enAvance: 0, enRetard: 0, fichiers: [], distant: null };
+  const prefixe = (await gitSortie(cwd, ["rev-parse", "--show-prefix"])).sortie.toString("utf8").trim();
 
-  const [tete, ...lignes] = statut.sortie.split("\n");
+  const lu = lireStatutGit(statut.sortie.toString("utf8"));
+  const tete = lu.tete;
+  const fichiers = cheminsDuDossier(lu.fichiers, prefixe);
   // « ## main...origin/main [ahead 2, behind 1] » ou « ## pelin » (pas de branche distante).
-  const m = tete.match(/^## (?:No commits yet on )?([^.\s]+)(?:\.\.\.(\S+))?/);
+  // Une branche peut porter des points (« release-1.2 ») ; « HEAD (no branch) » : aucune.
+  const m = tete.match(/^## (?:No commits yet on |Initial commit on )?(\S+?)(?:\.\.\.(\S+))?(?: \[[^\]]*\])?$/);
   const avance = tete.match(/\[[^\]]*ahead (\d+)/);
   const retard = tete.match(/\[[^\]]*behind (\d+)/);
-  const fichiers = lignes
-    .filter(Boolean)
-    .map((l) => {
-      const code = l.slice(0, 2).trim() || "M";
-      return { statut: code === "??" ? "?" : code.charAt(0), chemin: l.slice(3).replace(/^"|"$/g, "") };
-    });
   const distant = await git(cwd, ["remote", "get-url", "origin"]);
   return {
     depot: true,
@@ -79,6 +128,59 @@ export async function etatGit(dossier: string): Promise<EtatGit> {
     fichiers,
     distant: distant.code === 0 ? distant.sortie : null,
   };
+}
+
+/** Au-delà, un côté du fichier n'est pas montré. */
+export const DIFF_MAX = 512 * 1024;
+
+/** Un chemin de `git status`, relatif au dépôt, sans remonter au-dessus ni entrer dans `.git`. */
+export function cheminDansDepot(chemin: unknown): string {
+  if (typeof chemin !== "string" || !chemin || chemin.length > 4096 || chemin.includes("\0") || path.isAbsolute(chemin) || /^[A-Za-z]:/.test(chemin)) throw new Error("Chemin de fichier invalide.");
+  const parties = chemin.split(/[\\/]/);
+  if (parties.some((p) => p === "..") || parties[0] === ".git") throw new Error("Chemin de fichier invalide.");
+  return parties.filter((p) => p && p !== ".").join("/");
+}
+
+const estBinaire = (b: Buffer) => b.subarray(0, 8000).includes(0);
+
+/**
+ * Un fichier changé du dépôt : son contenu au dernier commit et sur le disque, pour le montrer ligne à ligne.
+ * Lecture seule ; jamais un fichier hors du dépôt (lien compris), jamais plus de `DIFF_MAX` octets.
+ */
+export async function diffFichierGit(dossier: string, chemin: unknown, ancien?: unknown): Promise<DiffFichierGit> {
+  const cwd = realpathSync(absolu(dossier));
+  const relatif = cheminDansDepot(chemin);
+  const relatifAvant = ancien === undefined || ancien === null || ancien === "" ? relatif : cheminDansDepot(ancien);
+  let binaire = false;
+  let tropGros = false;
+
+  // « HEAD:./chemin » : relatif au dossier du projet, même s'il n'est qu'une partie du dépôt.
+  const lu = await gitSortie(cwd, ["show", `HEAD:./${relatifAvant}`]);
+  let avant: string | null = null;
+  if (lu.code === 0) {
+    if (lu.sortie.length > DIFF_MAX) tropGros = true;
+    else if (estBinaire(lu.sortie)) binaire = true;
+    else avant = lu.sortie.toString("utf8");
+  }
+
+  let apres: string | null = null;
+  const cible = path.join(cwd, relatif);
+  const reel = existsSync(cible) ? realpathSync(cible) : null;
+  if (reel) {
+    const rel = path.relative(cwd, reel);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) throw new Error("Ce fichier sort du projet : il n’est pas montré.");
+    const info = statSync(reel);
+    if (info.isFile()) {
+      if (info.size > DIFF_MAX) tropGros = true;
+      else {
+        const contenu = readFileSync(reel);
+        if (estBinaire(contenu)) binaire = true;
+        else apres = contenu.toString("utf8");
+      }
+    }
+  }
+  if (binaire || tropGros) return { chemin: relatif, avant: null, apres: null, binaire, tropGros };
+  return { chemin: relatif, avant, apres, binaire: false, tropGros: false };
 }
 
 /** Commit de tout ce qui a changé, puis push de la branche en cours. */
@@ -92,10 +194,11 @@ export async function publier(dossier: string, message: string): Promise<Resulta
 
   const sorties: string[] = [];
   if (etat.fichiers.length) {
-    const ajout = await git(cwd, ["add", "-A"]);
+    // « -- . » : seulement le dossier du projet, même s'il n'est qu'une partie du dépôt (c'est ce que l'écran a montré).
+    const ajout = await git(cwd, ["add", "-A", "--", "."]);
     sorties.push(ajout.sortie);
     if (ajout.code !== 0) return { ok: false, commit: null, branche: etat.branche, sortie: sorties.join("\n") };
-    const commit = await git(cwd, ["commit", "-m", texte]);
+    const commit = await git(cwd, ["commit", "-m", texte, "--", "."]);
     sorties.push(commit.sortie);
     if (commit.code !== 0) return { ok: false, commit: null, branche: etat.branche, sortie: sorties.join("\n") };
   }

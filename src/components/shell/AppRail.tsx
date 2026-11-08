@@ -8,6 +8,7 @@ import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
+import { useMenuProjet } from "@/components/project/MenuProjet";
 import { colonneTicket } from "@/lib/tickets";
 import { estConversationAgent, FIL, useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
 import { CarteCompteRail } from "./CarteCompte";
@@ -34,7 +35,7 @@ function Entree({ icone, nom }: { icone: IconName; nom: string; active?: boolean
 
 /** Ce que le bouton du rail ouvre à côté de lui. */
 const PANNEAUX = {
-  fichiers: { icone: "layout-left", nom: "Fichiers", cible: "les fichiers du projet" },
+  fichiers: { icone: "layout-left", nom: "Projet", cible: "les conversations et les fichiers du projet" },
   conversations: { icone: "layout-left", nom: "Liste", cible: "les conversations" },
 } as const satisfies Record<string, { icone: IconName; nom: string; cible: string }>;
 
@@ -87,6 +88,7 @@ export function AppRail({
 }) {
   const bouton = panneau ? PANNEAUX[panneau] : null;
   const projects = useProjects();
+  const { ouvrirMenu: ouvrirMenuProjet, menuProjet } = useMenuProjet();
   const currentId = useSearchParams().get("id");
   const pathname = usePathname();
   /* Les tickets à valider : ils t'attendent, leur nombre se pose sur l'entrée Tickets. */
@@ -105,7 +107,9 @@ export function AppRail({
   /* Les projets du rail : les épinglés (sinon les plus récents), et celui qu'on regarde. Tous les autres : Projets. */
   const epingles = projects.filter((p) => p.pinned);
   const choisis = epingles.length ? epingles : [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, RECENTS_MAX);
-  const courant = pathname === "/projet" ? projects.find((p) => p.id === currentId) : undefined;
+  /* Le projet regardé : sa page, ou une de ses conversations (un projet s'ouvre sur sa dernière conversation). */
+  const projetOuvert = pathname === "/projet" ? currentId : pathname === "/chat" ? (chats.find((c) => c.id === currentId)?.projectId ?? null) : null;
+  const courant = projetOuvert ? projects.find((p) => p.id === projetOuvert) : undefined;
   const projetsRail = courant && !choisis.includes(courant) ? [...choisis, courant] : choisis;
 
   return (
@@ -146,15 +150,17 @@ export function AppRail({
             <Entree icone="projets-dossier" nom="Projets" active={pathname === "/projets"} />
           </Link>
         </Infobulle>
+        {menuProjet}
         <div className="flex flex-col items-center gap-1.5 py-1">
           {projetsRail.map((p) => {
-            const actif = pathname === "/projet" && currentId === p.id;
+            const actif = projetOuvert === p.id;
             return (
               <Infobulle key={p.id} texte={p.name} cote="droite">
               <Link
                 href={`/projet?id=${p.id}`}
                 aria-label={p.name}
                 aria-current={actif ? "page" : undefined}
+                onContextMenu={(e) => ouvrirMenuProjet(e, p)}
                 className={cn(
                   "flex size-10 items-center justify-center rounded-md text-ui-s font-semibold no-underline transition-[background-color,box-shadow] duration-[120ms] ease-sortie",
                   "bg-white/10 text-texte-inverse hover:bg-white/16",

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { agentDeConversation } from "@/lib/conversation-projet";
 import { estChatPrincipal, peutRepartir } from "@/lib/contexte";
 import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { ChoixModele } from "./ChoixModele";
@@ -135,6 +136,74 @@ function ChampTitre({ titre, onFin }: { titre: string; onFin: (nouveau: string |
   );
 }
 
+/**
+ * En-tête d'une conversation de projet : celle d'un chat avec un agent (son visage, le modèle, le panneau
+ * de réglages, d'aperçu et de fichiers), avec le titre de la conversation, qu'on renomme et qu'on épingle.
+ */
+function EnTeteProjet({ chat, panneauOuvert, onTogglePanneau, actionExport }: { chat: Chat; panneauOuvert: boolean; onTogglePanneau: () => void; actionExport?: ActionExport }) {
+  const { renommerChat } = useWorkspace();
+  const serveurs = useServeursRelies();
+  const basculerEpingle = useBasculerEpingle();
+  const [edition, setEdition] = useState(false);
+  const options = useRef<HTMLButtonElement>(null);
+  const role = useRole(agentDeConversation(chat));
+  const ici = useTravail(chat.id);
+  const travailleur = useRole(ici?.roleId ?? role.id);
+  const autres = chat.roleIds.length - 1;
+  const etat = ici
+    ? `${travailleur.name} travaille…`
+    : [`${role.name} · ${role.tag}`, autres > 0 && `${autres} autre${autres > 1 ? "s" : ""} agent${autres > 1 ? "s" : ""} mentionné${autres > 1 ? "s" : ""}`, chat.lieu && `sur ${nomLieu(chat.lieu, serveurs)}`]
+        .filter(Boolean)
+        .join(" · ");
+  return (
+    <header className="@container flex items-center gap-3 border-b border-bordure-subtile px-5 py-3">
+      {/* Le visage de l'agent ouvre le panneau, sur ses réglages. */}
+      <button type="button" onClick={ouvrirPanneauAgent} aria-label={`Ouvrir le panneau de ${role.name}`} className="cursor-pointer rounded-full border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bordure-forte">
+        <AgentRond roleId={role.id} taille={32} statut={ici ? { type: "travaille" } : null} fondPastille="surface" />
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        {edition ? (
+          <ChampTitre
+            titre={chat.title}
+            onFin={(nouveau, auClavier) => {
+              if (nouveau !== null) renommerChat(chat.id, nouveau);
+              setEdition(false);
+              if (auClavier) options.current?.focus();
+            }}
+          />
+        ) : (
+          <h1 className="m-0 flex min-w-0 items-center gap-1.5 text-ui font-semibold">
+            <span className="truncate">{chat.title}</span>
+            {estEpinglee(chat) && (
+              <span role="img" aria-label="Épinglée" title="Épinglée" className="flex shrink-0 text-icone-secondaire">
+                <Icon name="pin-01" size={14} />
+              </span>
+            )}
+          </h1>
+        )}
+        <span className={ici ? "klyra-respire truncate text-ui-xs text-texte-secondaire" : "truncate text-ui-xs text-texte-tertiaire"}>{etat}</span>
+      </div>
+      <ChoixModele chat={chat} />
+      {/* Le point : l'agent a des tâches en cours, visibles dans le panneau. */}
+      <span className="relative">
+        <BoutonIcone
+          taille="compact"
+          actif={panneauOuvert}
+          icone={<Icon name="layout-right" size={16} />}
+          libelle={panneauOuvert ? "Fermer le panneau" : "Ouvrir le panneau (réglages, aperçu, fichiers, tâches)"}
+          aria-pressed={panneauOuvert}
+          data-son="panneau"
+          onClick={onTogglePanneau}
+        />
+        {!panneauOuvert && chat.taches?.some((t) => t.statut === "en-cours") && (
+          <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-bleu-k1-500" />
+        )}
+      </span>
+      <MenuConversation bouton={options} onRenommer={() => setEdition(true)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} actionExport={actionExport} />
+    </header>
+  );
+}
+
 export function ChatHeader({ chat, project, previewOpen, onTogglePreview, actionExport }: ChatHeaderProps) {
   const { renommerChat } = useWorkspace();
   const serveurs = useServeursRelies();
@@ -145,6 +214,10 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview, action
 
   if (chat.kind === "direct") {
     return <EnTeteDirect chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} actionExport={actionExport} />;
+  }
+  /* Dans un projet : la conversation se lit comme le chat d'un agent. */
+  if (project) {
+    return <EnTeteProjet key={chat.id} chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} actionExport={actionExport} />;
   }
 
   const roleCount = chat.roleIds.length;
@@ -172,7 +245,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview, action
           </h1>
         )}
         <span className="truncate text-ui-xs text-texte-tertiaire">
-          {project?.name} · {roleCount} {roleCount > 1 ? "agents" : "agent"} dans la conversation
+          {roleCount} {roleCount > 1 ? "agents" : "agent"} dans la conversation
           {chat.lieu ? ` · sur ${nomLieu(chat.lieu, serveurs)}` : ""}
         </span>
       </div>
@@ -193,7 +266,7 @@ export function ChatHeader({ chat, project, previewOpen, onTogglePreview, action
           data-son="panneau"
           onClick={onTogglePreview}
         />
-        <MenuConversation project={project} bouton={options} onRenommer={() => setEdition(chat.id)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} actionExport={actionExport} />
+        <MenuConversation bouton={options} onRenommer={() => setEdition(chat.id)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} actionExport={actionExport} />
       </div>
     </header>
   );

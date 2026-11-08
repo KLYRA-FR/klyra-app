@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input, Textarea } from "klyra-ui";
@@ -13,11 +13,14 @@ import { Onglets } from "@/components/ui/Onglets";
 import { getBridge } from "@/lib/bridge";
 import { lieuParDefaut, nomLieu, useLieuActif, useServeursRelies } from "@/lib/lieux";
 import { cn } from "@/lib/cn";
+import { emplacementProjet } from "@/lib/depot-projet";
 import { formatListDate } from "@/lib/format";
+import { identifiantProjet } from "@/lib/projet-depuis-depot";
 import { poste } from "@/lib/plateforme";
 import { useProjects, useWorkspace } from "@/lib/workspace";
 import type { Project, ProjectStatus } from "@/types/domain";
 
+import { useMenuProjet } from "./MenuProjet";
 import { SelecteurDepotGithub } from "./SelecteurDepotGithub";
 
 const STATUTS: { value: ProjectStatus; label: string }[] = [
@@ -26,60 +29,73 @@ const STATUTS: { value: ProjectStatus; label: string }[] = [
   { value: "livre", label: "Livré" },
 ];
 
-/** « /Users/x/Documents/site » → « ~/Documents/site ». */
-const court = (chemin: string) => chemin.replace(/^\/Users\/[^/]+/, "~");
-
-/** Un identifiant lisible tiré du nom (« klyra-fr »), unique parmi les projets. */
-function identifiant(nom: string, existants: Project[]): string {
-  const base =
-    nom
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "projet";
-  let id = base;
-  for (let i = 2; existants.some((p) => p.id === id); i++) id = `${base}-${i}`;
-  return id;
-}
-
 /** Les projets d'un VPS vivent sous le dossier de l'utilisateur klyra (serveur/lancer.sh, serveur/fichiers.mjs). */
 const RACINE_VPS = "/var/lib/klyra/projets";
 
-/** D'où vient un nouveau projet de ce poste : un dossier déjà là, ou un dépôt GitHub que l'app clone. */
-type Source = "dossier" | "github";
+/** D'où vient un nouveau projet : un dépôt GitHub que l'app clone, ou un dossier déjà là. */
+type Source = "github" | "dossier";
 
-/** Ajouter ou modifier un projet : son dossier sur ce Mac (ou sur un VPS relié), ou un dépôt GitHub cloné ici ; son nom, à quoi il sert. */
-function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini: (id: string | null) => void }) {
-  const projects = useProjects();
-  const { enregistrerProjet } = useWorkspace();
+/**
+ * Ajouter un projet. Depuis GitHub (par défaut quand l'app de bureau le permet) : la liste des dépôts, un clic
+ * et le projet s'ouvre, rien à remplir. Depuis un dossier : le dossier et son nom, rien d'autre.
+ * Statut, épingle, brief et aperçu se règlent ensuite (clic droit, « Modifier »).
+ */
+function NouveauProjet({ onFini }: { onFini: (id: string | null) => void }) {
+  // Tous les projets, de toutes les machines : un identifiant reste unique (le même dépôt sur le PC et un VPS).
+  const { enregistrerProjet, state } = useWorkspace();
+  const projects = state.projects;
   const bridge = getBridge();
-  const monte = useRef(true);
-  useEffect(() => { monte.current = true; return () => { monte.current = false; }; }, []);
   // Un nouveau projet va dans l'espace affiché, celui du serveur choisi.
-  const [lieu] = useState<string | null>(() => (initial ? (initial.lieu ?? null) : lieuParDefaut()));
-  const [folder, setFolder] = useState(() => initial?.folder ?? (lieu ? `${RACINE_VPS}/projet` : ""));
-  const [name, setName] = useState(initial?.name ?? "");
-  const [subtitle, setSubtitle] = useState(initial?.subtitle ?? "");
-  const [brief, setBrief] = useState(initial?.brief ?? "");
-  const [previewUrl, setPreviewUrl] = useState(initial?.previewUrl ?? "");
-  const [status, setStatus] = useState<ProjectStatus>(initial?.status ?? "en-cours");
-  const [pinned, setPinned] = useState(initial?.pinned ?? false);
-  const [essai, setEssai] = useState(false);
-  // Un projet vit sur ce PC ou sur un VPS relié ; on ne le déplace pas après coup (ses chemins en dépendent).
+  const [lieu] = useState<string | null>(() => lieuParDefaut());
   const serveurs = useServeursRelies();
-  const [erreurVps, setErreurVps] = useState<string | null>(null);
-  const surVps = !!lieu;
-  // GitHub : le clone se fait sur la machine choisie, avec sa propre connexion.
-  const [source, setSource] = useState<Source>("dossier");
-  const depuisGithub = source === "github" && !initial;
-  const [depot, setDepot] = useState("");
-  const [branche, setBranche] = useState("");
-  const [clonage, setClonage] = useState(false);
-  const [erreurClone, setErreurClone] = useState<string | null>(null);
   const clonable = !!bridge?.github;
-  const choisirSource = (s: Source) => { setSource(s); setEssai(false); setErreurClone(null); };
-  const choisirDepot = useCallback((nom: string, branche: string) => { setDepot(nom); setBranche(branche); setErreurClone(null); }, []);
+  const [source, setSource] = useState<Source>(clonable ? "github" : "dossier");
+
+  const ouvert = (projet: Project, existant: boolean) => {
+    if (!existant) enregistrerProjet(projet);
+    onFini(projet.id);
+  };
+
+  return (
+    <section aria-label="Nouveau projet" data-nouveau-projet className="klyra-carte-flottante @container flex flex-col gap-5 rounded-lg p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        {clonable && (
+          <Onglets<Source>
+            libelle="D’où vient le projet"
+            onglets={[
+              { id: "github", label: "Dépôt GitHub", icone: <Icon name="git-branch-01" size={16} /> },
+              { id: "dossier", label: lieu ? "Dossier du VPS" : `Dossier de ${poste.ce}`, icone: <Icon name="folder-open-01" size={16} /> },
+            ]}
+            valeur={source}
+            onChange={setSource}
+          />
+        )}
+        {(serveurs.length > 0 || lieu) && (
+          <span className="text-ui-xs text-texte-tertiaire">Sur {nomLieu(lieu, serveurs)} : ses conversations y tournent, ses fichiers y vivent.</span>
+        )}
+        <Bouton variant="discret" taille="compact" className="ml-auto" onClick={() => onFini(null)}>
+          Annuler
+        </Bouton>
+      </div>
+      {source === "github" && clonable ? (
+        <SelecteurDepotGithub lieu={lieu} projets={projects} onOuvert={ouvert} />
+      ) : (
+        <FormulaireDossier lieu={lieu} onFini={onFini} />
+      )}
+    </section>
+  );
+}
+
+/** Un dossier déjà sur la machine : le choisir (ou son chemin sur le VPS), son nom tiré du dossier. */
+function FormulaireDossier({ lieu, onFini }: { lieu: string | null; onFini: (id: string | null) => void }) {
+  const { enregistrerProjet, state } = useWorkspace();
+  const projects = state.projects;
+  const bridge = getBridge();
+  const surVps = !!lieu;
+  const [folder, setFolder] = useState(() => (lieu ? `${RACINE_VPS}/projet` : ""));
+  const [name, setName] = useState("");
+  const [essai, setEssai] = useState(false);
+  const [erreurVps, setErreurVps] = useState<string | null>(null);
 
   const choisir = async () => {
     if (!bridge) return;
@@ -91,7 +107,6 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   };
 
   const erreurs = {
-    depot: depot && branche ? undefined : "Choisis un dépôt GitHub et une branche.",
     folder: surVps
       ? folder.startsWith(`${RACINE_VPS}/`)
         ? undefined
@@ -99,46 +114,30 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
       : folder
         ? undefined
         : `Choisis le dossier du projet sur ${poste.ton}.`,
-    // Depuis GitHub, le nom du dépôt sert de nom s'il n'y en a pas.
-    name: name.trim() || depuisGithub ? undefined : "Donne-lui un nom.",
+    name: name.trim() || (surVps && folder.split("/").filter(Boolean).pop()) ? undefined : "Donne-lui un nom.",
   };
 
-  const enregistrer = async (e: FormEvent) => {
+  const ajouter = async (e: FormEvent) => {
     e.preventDefault();
     setEssai(true);
-    let dossier = folder;
-    let nom = name.trim();
-    let depotClone = initial?.depot;
-    if (depuisGithub) {
-      if (erreurs.depot || !bridge?.github) return;
-      setErreurClone(null);
-      setClonage(true);
-      const r = await bridge.github.ouvrir(lieu, depot, branche);
-      setClonage(false);
-      if (!monte.current || lieuParDefaut() !== lieu) return;
-      if (!r.ok) return setErreurClone(r.message);
-      dossier = r.data.dossier;
-      depotClone = r.data.depot;
-      nom ||= r.data.depot.split("/").pop() ?? r.data.depot;
-    } else if (erreurs.folder || erreurs.name) return;
-    if (lieu && !initial && !depuisGithub && bridge?.projets.creerDossierVps) {
+    if (erreurs.folder || erreurs.name) return;
+    if (lieu && bridge?.projets.creerDossierVps) {
       setErreurVps(null);
       const r = await bridge.projets.creerDossierVps(lieu, folder);
       if (!r.ok) return setErreurVps(r.message);
     }
+    const nom = name.trim() || folder.split("/").filter(Boolean).pop() || "Projet";
     const project: Project = {
-      id: initial?.id ?? identifiant(nom, projects),
+      id: identifiantProjet(nom, projects),
       name: nom,
-      subtitle: subtitle.trim(),
-      brief: brief.trim(),
-      previewUrl: previewUrl.trim().replace(/^https?:\/\//, ""),
-      status,
-      pinned,
-      folder: dossier,
+      subtitle: "",
+      brief: "",
+      previewUrl: "",
+      status: "en-cours",
+      pinned: false,
+      folder,
       ...(lieu ? { lieu } : {}),
-      ...(depotClone ? { depot: depotClone } : {}),
-      ...((depuisGithub || initial?.githubConnecte) ? { githubConnecte: true as const } : {}),
-      roleIds: initial?.roleIds ?? ["principal"],
+      roleIds: ["principal"],
       files: [],
       updatedAt: new Date().toISOString(),
     };
@@ -147,52 +146,77 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
   };
 
   return (
-    <form onSubmit={(e) => void enregistrer(e)} className="klyra-carte-flottante @container flex flex-col gap-5 rounded-lg p-5">
-      {(serveurs.length > 0 || surVps) && (
-        <Champ label="Serveur" aide={initial ? "Un projet reste sur son serveur." : "Celui du menu Serveurs. Ses conversations y tournent, et ses fichiers y vivent."}>
-          <p className="m-0 text-ui text-texte-principal">{nomLieu(lieu, serveurs)}</p>
-        </Champ>
-      )}
-      {!initial && clonable && (
-        <Onglets<Source>
-          libelle="D’où vient le projet"
-          onglets={[
-            { id: "dossier", label: surVps ? "Dossier du VPS" : `Dossier de ${poste.ce}`, icone: <Icon name="folder-open-01" size={16} /> },
-            { id: "github", label: "Dépôt GitHub", icone: <Icon name="git-branch-01" size={16} /> },
-          ]}
-          valeur={source}
-          onChange={(s) => { if (!clonage) choisirSource(s); }}
-          className="self-start"
-        />
-      )}
-      {depuisGithub ? (
-        <div data-source-github className="flex flex-col gap-4">
-          <SelecteurDepotGithub lieu={lieu} depot={depot} branche={branche} onChoix={choisirDepot} disabled={clonage} />
-          {(erreurClone || (essai && erreurs.depot)) && <p role="alert" className="m-0 text-ui-s text-texte-erreur">{erreurClone ?? erreurs.depot}</p>}
-        </div>
-      ) : surVps ? (
+    <form onSubmit={(e) => void ajouter(e)} className="flex flex-col gap-4">
+      {surVps ? (
         <Champ label="Dossier sur le VPS" erreur={essai ? (erreurs.folder ?? erreurVps ?? undefined) : undefined} aide="Créé s’il n’existe pas. Les agents du VPS y travaillent.">
-          <Input size="sm" value={folder} disabled={!!initial} onChange={(e) => setFolder(e.target.value.trim())} className={cn(CHAMP, "klyra-mono")} />
+          <Input size="sm" value={folder} onChange={(e) => setFolder(e.target.value.trim())} className={cn(CHAMP, "klyra-mono")} />
         </Champ>
       ) : (
-      <Champ label="Dossier" erreur={essai ? erreurs.folder : undefined} aide={bridge ? "Les agents travaillent dans ce dossier : ils y lisent et y modifient les fichiers." : "Choisir un dossier marche dans l’app de bureau."}>
-        <div className="flex flex-wrap items-center gap-2">
-          <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="folder-open-01" size={20} />} onClick={() => void choisir()} disabled={!bridge}>
-            {folder ? "Changer de dossier" : "Choisir le dossier…"}
-          </Bouton>
-          {folder && <span className="klyra-mono min-w-0 text-ui-xs text-texte-secondaire [overflow-wrap:anywhere]">{court(folder)}</span>}
-        </div>
-      </Champ>
+        <Champ label="Dossier" erreur={essai ? erreurs.folder : undefined} aide={bridge ? "Les agents travaillent dans ce dossier : ils y lisent et y modifient les fichiers." : "Choisir un dossier marche dans l’app de bureau."}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Bouton variant="blanc" taille="md" iconeGauche={<Icon name="folder-open-01" size={20} />} onClick={() => void choisir()} disabled={!bridge}>
+              {folder ? "Changer de dossier" : "Choisir le dossier…"}
+            </Bouton>
+            {folder && <span className="klyra-mono min-w-0 text-ui-xs text-texte-secondaire [overflow-wrap:anywhere]">{emplacementProjet(folder, null, "")}</span>}
+          </div>
+        </Champ>
       )}
+      <Champ label="Nom" erreur={essai ? erreurs.name : undefined} aide={surVps ? undefined : "Repris du dossier ; modifiable plus tard."}>
+        <Input size="sm" value={name} placeholder="Nom du projet" onChange={(e) => setName(e.target.value)} className={CHAMP} />
+      </Champ>
+      <BoutonPrincipal type="submit" className="self-start">
+        Ajouter le projet
+      </BoutonPrincipal>
+    </form>
+  );
+}
 
+/** Modifier un projet : son nom, ce qu'il est, l'adresse de son aperçu, son statut. Le dossier ne change pas. */
+function FormulaireProjet({ initial, onFini }: { initial: Project; onFini: (id: string | null) => void }) {
+  const { enregistrerProjet } = useWorkspace();
+  const serveurs = useServeursRelies();
+  const [name, setName] = useState(initial.name);
+  const [subtitle, setSubtitle] = useState(initial.subtitle);
+  const [brief, setBrief] = useState(initial.brief);
+  const [previewUrl, setPreviewUrl] = useState(initial.previewUrl);
+  const [status, setStatus] = useState<ProjectStatus>(initial.status);
+  const [pinned, setPinned] = useState(initial.pinned);
+  const [essai, setEssai] = useState(false);
+  const erreurNom = name.trim() ? undefined : "Donne-lui un nom.";
+
+  const enregistrer = (e: FormEvent) => {
+    e.preventDefault();
+    setEssai(true);
+    if (erreurNom) return;
+    enregistrerProjet({
+      ...initial,
+      name: name.trim(),
+      subtitle: subtitle.trim(),
+      brief: brief.trim(),
+      // http:// se lit sans schéma (serveur de dev) ; https:// reste, sinon l'aperçu repartirait en http.
+      previewUrl: previewUrl.trim().replace(/^http:\/\//, ""),
+      status,
+      pinned,
+      updatedAt: new Date().toISOString(),
+    });
+    onFini(initial.id);
+  };
+
+  return (
+    <form onSubmit={enregistrer} className="klyra-carte-flottante @container flex flex-col gap-5 rounded-lg p-5">
+      <Champ label="Emplacement" aide={initial.depot ? `Dépôt GitHub ${initial.depot}. Un projet reste sur sa machine et dans son dossier.` : "Un projet reste sur sa machine et dans son dossier."}>
+        <p title={initial.folder} className={cn("m-0 text-ui-s text-texte-principal [overflow-wrap:anywhere]", !initial.lieu && "klyra-mono")}>
+          {emplacementProjet(initial.folder, initial.lieu, nomLieu(initial.lieu, serveurs))}
+        </p>
+      </Champ>
       <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
-        <Champ label="Nom" erreur={essai ? erreurs.name : undefined}>
+        <Champ label="Nom" erreur={essai ? erreurNom : undefined}>
           <Input size="sm" value={name} placeholder="Nom du projet" onChange={(e) => setName(e.target.value)} className={CHAMP} />
         </Champ>
         <Champ label="En une ligne">
           <Input size="sm" value={subtitle} placeholder="Refonte du site" onChange={(e) => setSubtitle(e.target.value)} className={CHAMP} />
         </Champ>
-        <Champ label="Brief" aide="Ce que les agents doivent savoir du projet : le client, l’objectif, l’échéance." className="@2xl:col-span-2">
+        <Champ label="Brief" aide="Ce que les agents doivent savoir du projet : le client, l’objectif, l’échéance. Pour le code, préfère l’AGENTS.md du projet." className="@2xl:col-span-2">
           <Textarea
             size="sm"
             autoGrow
@@ -202,7 +226,7 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
             className={cn(CHAMP, "min-h-[72px]")}
           />
         </Champ>
-        <Champ label="Aperçu" aide="L’adresse du serveur de dev, si le projet en a un.">
+        <Champ label="Aperçu" aide="L’adresse du site, ou de son serveur de dev.">
           <Input size="sm" value={previewUrl} placeholder="localhost:3002" onChange={(e) => setPreviewUrl(e.target.value)} className={cn(CHAMP, "klyra-mono")} />
         </Champ>
         <Champ label="Statut">
@@ -216,10 +240,8 @@ function FormulaireProjet({ initial, onFini }: { initial: Project | null; onFini
       </label>
 
       <div className="flex flex-wrap gap-2">
-        <BoutonPrincipal type="submit" disabled={clonage}>
-          {initial ? "Enregistrer" : depuisGithub ? (clonage ? "Clonage en cours…" : "Ouvrir le dépôt") : "Ajouter le projet"}
-        </BoutonPrincipal>
-        <Bouton variant="blanc" taille="md" disabled={clonage} onClick={() => onFini(null)}>
+        <BoutonPrincipal type="submit">Enregistrer</BoutonPrincipal>
+        <Bouton variant="blanc" taille="md" onClick={() => onFini(null)}>
           Annuler
         </Bouton>
       </div>
@@ -237,6 +259,7 @@ export function ProjetsScreen() {
   const serveurs = useServeursRelies();
   const aModifier = projects.find((p) => p.id === params.get("modifier")) ?? null;
   const formulaire = params.has("nouveau") || !!aModifier;
+  const { ouvrirMenu, menuProjet } = useMenuProjet();
 
   const fermer = (id: string | null) => router.push(id ? `/projet?id=${id}` : "/projets");
 
@@ -250,13 +273,13 @@ export function ProjetsScreen() {
               <span className="font-normal">{aModifier ? "· modifier" : `sur ${lieu ? nomLieu(lieu, serveurs) : poste.ce}`}</span>
             </h1>
             <p className="m-0 text-ui-s text-texte-secondaire">
-              Ouvre un dossier de {poste.ton} ou un dépôt GitHub pour parcourir ton code et laisser les agents y travailler.
+              Ouvre un dépôt GitHub ou un dossier de {poste.ton} pour parcourir ton code et laisser les agents y travailler.
             </p>
           </div>
           {!formulaire && <BoutonPrincipal href="/projets?nouveau=1">Nouveau projet</BoutonPrincipal>}
         </header>
 
-        {formulaire && <FormulaireProjet key={aModifier?.id ?? "nouveau"} initial={aModifier} onFini={fermer} />}
+        {aModifier ? <FormulaireProjet key={aModifier.id} initial={aModifier} onFini={fermer} /> : formulaire && <NouveauProjet onFini={fermer} />}
 
         {!aModifier && (
           <section aria-label="Projets" className="rounded-3xl border border-bordure-subtile bg-fond-page p-3">
@@ -268,6 +291,7 @@ export function ProjetsScreen() {
                     <li key={p.id}>
                       <Link
                         href={`/projet?id=${p.id}`}
+                        onContextMenu={(e) => ouvrirMenu(e, p)}
                         className="klyra-carte-flottante flex h-full flex-col gap-2 rounded-lg p-4 no-underline"
                       >
                         <span className="flex items-center gap-2">
@@ -278,7 +302,9 @@ export function ProjetsScreen() {
                           <span className="truncate text-ui font-semibold text-texte-principal">{p.name}</span>
                         </span>
                         {p.subtitle && <span className="text-ui-s text-texte-secondaire">{p.subtitle}</span>}
-                        <span className="klyra-mono truncate text-ui-2xs text-texte-tertiaire">{court(p.folder)}</span>
+                        <span title={p.folder} className={cn("truncate text-ui-2xs text-texte-tertiaire", !p.depot && !p.lieu && "klyra-mono")}>
+                          {p.depot ?? emplacementProjet(p.folder, p.lieu, nomLieu(p.lieu, serveurs))}
+                        </span>
                         <span className="mt-auto pt-1 text-ui-2xs text-texte-tertiaire">
                           {chats} chat{chats > 1 ? "s" : ""} · modifié {formatListDate(p.updatedAt).toLowerCase()}
                         </span>
@@ -292,7 +318,7 @@ export function ProjetsScreen() {
                 <div className="flex flex-col items-start gap-4 p-4">
                   <div className="flex flex-col gap-1">
                     <p className="m-0 text-ui font-semibold text-texte-principal">Ajoute ton premier projet</p>
-                    <p className="m-0 text-ui-s text-texte-secondaire">Choisis le dossier d’un site ou d’une app, ou un dépôt GitHub : là où est ton code.</p>
+                    <p className="m-0 text-ui-s text-texte-secondaire">Choisis un de tes dépôts GitHub, ou le dossier d’un site ou d’une app : là où est ton code.</p>
                   </div>
                   <ul className="m-0 flex list-none flex-col gap-2 p-0 text-ui-s text-texte-secondaire">
                     <li className="flex items-center gap-2">
@@ -317,6 +343,7 @@ export function ProjetsScreen() {
             )}
           </section>
         )}
+        {menuProjet}
       </div>
     </div>
   );

@@ -12,7 +12,10 @@ import { nomFichier, tailleLisible } from "@/lib/fichiers";
 import { formatListDate } from "@/lib/format";
 import { poste } from "@/lib/plateforme";
 import { useChatMessages, useRole, useWorkspace } from "@/lib/workspace";
-import type { Chat, Rendu, TacheAgent } from "@/types/domain";
+import type { Chat, Project, Rendu, TacheAgent } from "@/types/domain";
+import { ApercuSite } from "@/components/preview/ApercuSite";
+import { Publier } from "@/components/preview/Publier";
+import { VueGit } from "@/components/project/VueGit";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 import { VueImage } from "./ImageJointe";
 import { PanneauNavigateur } from "./navigateur/PanneauNavigateur";
@@ -23,19 +26,26 @@ import { MenuFichierConversation, MenuLivrable, ouvrirLivrable, SuivisTelecharge
 /**
  * Panneau à droite d'une conversation, à onglets : les réglages de l'agent,
  * les fichiers de la conversation, ses tâches, le navigateur de ses agents, et un onglet
- * par image jointe qu'on a ouverte. On ferme un onglet, on le rouvre avec « + »,
- * on élargit le panneau à la poignée ou on l'agrandit.
+ * par image jointe qu'on a ouverte. Dans une conversation de projet, en plus : l'aperçu
+ * du site et Git (changements, publier, tests et pull requests sur GitHub). On ferme un onglet, on le
+ * rouvre avec « + », on élargit le panneau à la poignée ou on l'agrandit.
  */
 
-export type Onglet = "reglages" | "fichiers" | "taches" | "navigateur";
+export type Onglet = "reglages" | "apercu" | "git" | "fichiers" | "taches" | "navigateur";
 
 const ONGLETS: Record<Onglet, { nom: string; icone: IconName }> = {
   reglages: { nom: "Réglages", icone: "settings" },
+  apercu: { nom: "Aperçu", icone: "globe-01" },
+  git: { nom: "Git", icone: "git-branch-01" },
   fichiers: { nom: "Fichiers", icone: "folder" },
   taches: { nom: "Tâches", icone: "list" },
   navigateur: { nom: "Navigateur", icone: "computer" },
 };
-const ORDRE: Onglet[] = ["reglages", "fichiers", "taches", "navigateur"];
+/** Tous les onglets, dans leur ordre ; ceux d'un projet n'existent que dans une conversation de projet. */
+const ORDRE: Onglet[] = ["reglages", "apercu", "git", "fichiers", "taches", "navigateur"];
+const DU_PROJET: Onglet[] = ["apercu", "git"];
+const ORDRE_AGENT = ORDRE.filter((o) => !DU_PROJET.includes(o));
+const ordreDe = (projet: boolean) => (projet ? ORDRE : ORDRE_AGENT);
 
 /** Demande d'ouvrir le panneau sur les réglages de l'agent (clic sur son avatar ou son prénom). */
 export const OUVRIR_PANNEAU_AGENT = "klyra:panneau-agent";
@@ -50,6 +60,8 @@ const LARGEUR_DEFAUT = 340;
 const LARGEUR_MIN = 296;
 /** Une image s'ouvre à cette largeur au moins, si la conversation garde sa place. */
 const LARGEUR_IMAGE = 560;
+/** L'aperçu d'un site a besoin d'un peu plus de place que les réglages. */
+const LARGEUR_APERCU = 480;
 const CLE = "klyra-panneau-lateral";
 
 export interface EtatPanneau {
@@ -361,8 +373,21 @@ export function PanneauLateral({
   imageActive,
   onChoisirImage,
   onFermerImage,
+  projet,
+  modifiedLabel = null,
+  adresseApercu = null,
+  apercuAMontrer = null,
+  onApercuMontre,
 }: {
   chat: Chat;
+  /** Une conversation de projet : les onglets Aperçu et Modifié. */
+  projet?: Project;
+  modifiedLabel?: string | null;
+  /** Une adresse locale cliquée ou annoncée par un agent : l'onglet Aperçu l'affiche. */
+  adresseApercu?: { url: string; n: number } | null;
+  /** Une demande pas encore montrée : l'onglet Aperçu passe devant, une fois (pas à chaque réouverture du panneau). */
+  apercuAMontrer?: { url: string; n: number } | null;
+  onApercuMontre?: (n: number) => void;
   maximise: boolean;
   onMaximiser: () => void;
   onFermer: () => void;
@@ -376,19 +401,40 @@ export function PanneauLateral({
   onFermerImage: (chemin: string) => void;
 }) {
   const [menuAjout, setMenuAjout] = useState(false);
+  const [publier, setPublier] = useState(false);
   const panneau = useRef<HTMLElement>(null);
-  const fermes = ORDRE.filter((o) => !etat.ouverts.includes(o));
-  const actif = etat.ouverts.includes(etat.actif) ? etat.actif : etat.ouverts[0];
+  const ordre = ordreDe(!!projet);
+  /* Hors d'un projet, les onglets du projet restent dans l'état gardé, sans s'afficher. */
+  const ouverts = etat.ouverts.filter((o) => ordre.includes(o));
+  const fermes = ordre.filter((o) => !ouverts.includes(o));
+  const actif = ouverts.includes(etat.actif) ? etat.actif : ouverts[0];
 
   const fermerOnglet = (o: Onglet) =>
     setEtat((e) => {
-      const ouverts = e.ouverts.filter((x) => x !== o);
-      return { ...e, ouverts, actif: e.actif === o ? (ouverts[0] ?? "reglages") : e.actif };
+      const restants = e.ouverts.filter((x) => x !== o);
+      return { ...e, ouverts: restants, actif: e.actif === o ? (restants.find((x) => ordre.includes(x)) ?? "reglages") : e.actif };
     });
   const ouvrirOnglet = (o: Onglet) => {
     onChoisirImage(null);
     setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === o || e.ouverts.includes(x)), actif: o }));
   };
+
+  /* Une adresse demandée (lien cliqué, site lancé par un agent) : l'onglet Aperçu passe devant. */
+  const demande = projet ? (apercuAMontrer?.n ?? 0) : 0;
+  useEffect(() => {
+    if (!demande) return;
+    onChoisirImage(null);
+    setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "apercu" || e.ouverts.includes(x)), actif: "apercu" }));
+    onApercuMontre?.(demande);
+  }, [demande, setEtat, onChoisirImage, onApercuMontre]);
+
+  /* L'aperçu prend un peu plus de place, sans écraser la conversation. */
+  const surApercu = !imageActive && actif === "apercu";
+  useEffect(() => {
+    if (!surApercu) return;
+    const max = (panneau.current?.parentElement?.clientWidth ?? 1200) - 424;
+    setEtat((s) => (s.largeur >= LARGEUR_APERCU ? s : { ...s, largeur: Math.max(s.largeur, Math.min(LARGEUR_APERCU, max)) }));
+  }, [surApercu, setEtat]);
 
   /* Un agent passe la main à la personne sur une page : le Navigateur s'ouvre de lui-même. */
   const activite = useActiviteNavigateur(chat.id);
@@ -398,10 +444,17 @@ export function PanneauLateral({
     setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "navigateur" || e.ouverts.includes(x)), actif: "navigateur" }));
   }, [activite, setEtat, onChoisirImage]);
 
-  /* Plus aucun onglet : le panneau se ferme. */
+  /* Plus aucun onglet : le panneau se ferme. S'il s'ouvre sans onglet visible ici (on n'avait gardé que ceux
+     d'un projet), il reprend les onglets de cette conversation au lieu de se refermer aussitôt. */
+  const dejaVu = useRef(false);
   useEffect(() => {
-    if (!etat.ouverts.length && !images.length) onFermer();
-  }, [etat.ouverts.length, images.length, onFermer]);
+    if (ouverts.length || images.length) {
+      dejaVu.current = true;
+      return;
+    }
+    if (dejaVu.current) onFermer();
+    else setEtat((e) => ({ ...e, ouverts: ORDRE.filter((o) => ordre.includes(o) || e.ouverts.includes(o)) }));
+  }, [ouverts.length, images.length, onFermer, setEtat, ordre]);
 
   /* Une image a besoin de place : le panneau s'élargit, sans écraser la conversation. */
   useEffect(() => {
@@ -458,7 +511,7 @@ export function PanneauLateral({
       {/* Onglets, et à droite : ajouter, agrandir, fermer. */}
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-bordure-subtile px-2">
         <div role="tablist" aria-label="Onglets du panneau" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-          {etat.ouverts.map((o) => {
+          {ouverts.map((o) => {
             const choisi = !imageActive && o === actif;
             return (
               <div
@@ -582,18 +635,24 @@ export function PanneauLateral({
         />
       </div>
 
-      <div role="tabpanel" className={cn("min-h-0 flex-1", imageActive || actif === "navigateur" ? "flex flex-col" : "overflow-y-auto")}>
+      <div role="tabpanel" className={cn("min-h-0 flex-1", imageActive || actif === "navigateur" || actif === "apercu" ? "flex flex-col" : "overflow-y-auto")}>
+        {/* L'aperçu reste monté derrière les autres onglets : ses pages ne se rechargent pas. */}
+        {projet && ouverts.includes("apercu") && (
+          <ApercuSite key={projet.id} project={projet} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} visible={!imageActive && actif === "apercu"} />
+        )}
         {imageActive ? (
           <VueImage key={imageActive} chemin={imageActive} />
         ) : (
           <>
             {actif === "reglages" && <ReglagesAgent key={chat.id} chat={chat} />}
+            {actif === "git" && projet && <VueGit key={projet.id} project={projet} onPublier={() => setPublier(true)} />}
             {actif === "fichiers" && <Fichiers chat={chat} />}
             {actif === "taches" && <Taches chat={chat} />}
             {actif === "navigateur" && <PanneauNavigateur key={chat.id} chat={chat} />}
           </>
         )}
       </div>
+      {publier && projet && <Publier project={projet} onFermer={() => setPublier(false)} />}
     </aside>
   );
 }

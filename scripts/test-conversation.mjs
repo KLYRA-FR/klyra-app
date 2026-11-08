@@ -1,8 +1,8 @@
 /**
- * Le menu « Plus d’options » d'une conversation d'équipe, dans l'app de bureau
+ * Le menu « Plus d’options » d'une conversation de projet, dans l'app de bureau
  * (export statique), avec de vrais gestes clavier et souris : ouvrir, parcourir,
  * fermer (Échap, Tab, clic ailleurs), renommer (Entrée, clic ailleurs, Échap,
- * titre vide), ouvrir le projet. Le nouveau titre doit survivre à un
+ * titre vide). Le projet rouvre sa dernière conversation ; « + » en ouvre une neuve. Le nouveau titre doit survivre à un
  * redémarrage, sans toucher aux messages, sessions, brouillon ni à la
  * conversation directe. Dossier personnel et données de l'app temporaires.
  * Prérequis : `pnpm build && pnpm build:electron`.
@@ -143,7 +143,7 @@ const etat = (a) =>
       champ: document.querySelector('main header input[aria-label="Nom de la conversation"]') ? { valeur: document.activeElement?.value, selection: document.activeElement?.selectionEnd - document.activeElement?.selectionStart, focus: document.activeElement?.getAttribute("aria-label") } : null,
       brouillon: document.querySelector("main textarea")?.value ?? null,
       messages: document.querySelector("main")?.innerText.includes("Bonjour l’équipe, on refait l’accueil.") && document.querySelector("main")?.innerText.includes("C’est noté, je répartis."),
-      onglet: document.querySelector('[role="tablist"][aria-label="Conversations ouvertes"] [aria-selected="true"]')?.innerText ?? null,
+      onglet: document.querySelector('[data-panneau-projet] [data-conversation="${ID}"]')?.innerText ?? null,
       page: location.pathname + location.search,
     };
   })()`);
@@ -181,20 +181,19 @@ try {
   await app.touche("Enter", ENTREE);
   e = await etat(app);
   verifier(e.ouvert && e.menu && e.focus === "Renommer", "Entrée ouvre le menu, focus sur sa première ligne");
-  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Exporter en Markdown…", "Ouvrir le projet"]), `menu de conversation : ${e.lignes.join(", ")}`);
+  // Dans le projet, « Ouvrir le projet » n'a plus de sens : on y est.
+  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Exporter en Markdown…"]), `menu de conversation : ${e.lignes.join(", ")}`);
   await app.touche("ArrowDown", { vk: 40 });
   const bas = (await etat(app)).focus;
   await app.touche("ArrowDown", { vk: 40 });
   const exporter = (await etat(app)).focus;
-  await app.touche("ArrowDown", { vk: 40 });
-  const projet = (await etat(app)).focus;
   await app.touche("ArrowDown", { vk: 40 });
   const boucle = (await etat(app)).focus;
   await app.touche("End", { vk: 35 });
   const fin = (await etat(app)).focus;
   await app.touche("Home", { vk: 36 });
   const debut = (await etat(app)).focus;
-  verifier(bas === "Épingler" && exporter === "Exporter en Markdown…" && projet === "Ouvrir le projet" && boucle === "Renommer" && fin === "Ouvrir le projet" && debut === "Renommer", "quatre lignes, flèches en boucle, Début et Fin");
+  verifier(bas === "Épingler" && exporter === "Exporter en Markdown…" && boucle === "Renommer" && fin === "Exporter en Markdown…" && debut === "Renommer", "trois lignes, flèches en boucle, Début et Fin");
   await app.touche("Escape", { vk: 27 });
   e = await etat(app);
   verifier(!e.menu && !e.ouvert && e.focus === "Plus d’options", "Échap ferme le menu et rend le focus au bouton");
@@ -239,7 +238,7 @@ try {
     e.titre === "Accueil, version 2" && !e.champ && e.focus === "Plus d’options",
     `Entrée enregistre le nouveau titre et rend le focus au bouton (titre : ${e.titre}, focus : ${e.focus})`,
   );
-  verifier(e.onglet === "Accueil, version 2", "l’onglet de la conversation suit le nouveau titre");
+  verifier(!!e.onglet?.includes("Accueil, version 2"), `la conversation du panneau du projet suit le nouveau titre (${e.onglet})`);
 
   /* Un titre vide ne remplace rien. */
   await app.touche("Enter", ENTREE);
@@ -280,10 +279,14 @@ try {
   e = await etat(app);
   verifier(e.titre === TITRE_FINAL && e.brouillon === BROUILLON && e.messages, "après redémarrage : nouveau titre, brouillon et messages");
 
-  await app.cliquer(BOUTON);
-  await app.cliquer('[role="menu"] [role="menuitem"]:last-child');
+  /* Le projet s'ouvre comme un chat : sur sa dernière conversation ; « + » en ouvre une neuve. */
+  await app.aller("/projet?id=projet-essai");
+  await attendre(800);
+  verifier((await etat(app)).page === `/chat?id=${ID}`, "ouvrir le projet rouvre sa dernière conversation");
+  await app.cliquer('[data-panneau-projet] button[aria-label="Nouvelle conversation"]');
   await attendre(1000);
-  verifier((await etat(app)).page === "/projet?id=projet-essai", "« Ouvrir le projet » mène à la page du projet");
+  e = await etat(app);
+  verifier(e.page === "/projet?id=projet-essai&nouvelle=1" && !!(await app.ev(`document.querySelector('main textarea[aria-label="Message"]')?.placeholder.includes('Projet d’essai')`)), `« + » ouvre une conversation neuve dans le projet (${e.page})`);
 
   /* Projet retiré : renommage et épingle restent disponibles, sans ligne projet grisée. */
   await app.aller("/chat?id=equipe-sans-projet");

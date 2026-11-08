@@ -22,7 +22,7 @@ export const appelComposioVps = (origine: string, jeton: string | null, methode:
 /** Les workflows qui tournent sur un VPS : les lancer, les arrêter, décider d'une approbation. */
 export const appelWorkflowsVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("workflows", origine, jeton, methode, corps);
 
-export const appelGithubVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("github", origine, jeton, methode, corps, methode === "ouvrir" || methode === "recuperer" ? 360_000 : 90_000);
+export const appelGithubVps = (origine: string, jeton: string | null, methode: string, corps: unknown = {}) => appelVps("github", origine, jeton, methode, corps, methode === "ouvrir" || methode === "recuperer" || methode === "publier" ? 360_000 : 90_000);
 
 async function appelVps(route: "github" | "equipe" | "coffre" | "espace" | "composio" | "workflows", origine: string, jeton: string | null, methode: string, corps: unknown, attente = ATTENTE_MS): Promise<unknown> {
   if (!jeton) throw new AgentError("introuvable", "Ce PC n’est plus relié à ce VPS.");

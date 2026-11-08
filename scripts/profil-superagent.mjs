@@ -172,7 +172,8 @@ try {
   verifier(evenements.some((e) => e.work_id === travail && e.type === "commentaire_pr") && evenements.some((e) => e.work_id === travail && e.type === "fin_verification"), `la projection porte les deux événements (${evenements.length})`);
   verifier((apres?.data?.travaux ?? []).length === 3, "les événements GitHub ne créent pas de travail");
 
-  await app.aller(`/projet?id=${PROJET}`);
+  // Une conversation neuve du projet montre sa fiche, ses travaux compris (sinon le projet rouvre sa dernière conversation).
+  await app.aller(`/projet?id=${PROJET}&nouvelle=1`);
   const vu = await app.quand("document.querySelector('main')?.innerText?.includes('Bloqué') || document.querySelector('main')?.innerText?.includes('Fil jetable')");
   const texte = (await app.texte()) ?? "";
   const mentions = ["lien automatique avec OpenBot", "Point 15", "Point 32", "Point 33", "bascule vers le VPS", "Windows hors ligne", "ne la simule pas"];

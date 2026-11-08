@@ -185,6 +185,7 @@ contextBridge.exposeInMainWorld("klyra", {
   },
   git: {
     etat: (dossier: string) => ipcRenderer.invoke("git:etat", dossier),
+    diff: (dossier: string, chemin: string, ancien?: string) => ipcRenderer.invoke("git:diff", dossier, chemin, ancien),
     publier: (dossier: string, message: string) => ipcRenderer.invoke("git:publier", dossier, message),
     dossierClones: () => ipcRenderer.invoke("git:dossier-clones"),
     cloner: (depot: string, parent: string | null) => ipcRenderer.invoke("git:cloner", depot, parent),
@@ -198,7 +199,11 @@ contextBridge.exposeInMainWorld("klyra", {
     branches: (lieu: string | null, depot: string) => ipcRenderer.invoke("github:branches", lieu, { depot }),
     ouvrir: (lieu: string | null, depot: string, branche: string) => ipcRenderer.invoke("github:ouvrir", lieu, { depot, branche }),
     etatDepot: (lieu: string | null, dossier: string) => ipcRenderer.invoke("github:etat-depot", lieu, { dossier }),
-    recuperer: (lieu: string | null, dossier: string) => ipcRenderer.invoke("github:recuperer", lieu, { dossier }),
+    recuperer: (lieu: string | null, dossier: string, depot?: string) => ipcRenderer.invoke("github:recuperer", lieu, { dossier, depot }),
+    diff: (lieu: string | null, dossier: string, chemin: string, ancien?: string) => ipcRenderer.invoke("github:diff", lieu, { dossier, chemin, ancien }),
+    publier: (lieu: string | null, dossier: string, message: string, depot?: string) => ipcRenderer.invoke("github:publier", lieu, { dossier, message, depot }),
+    activite: (lieu: string | null, dossier: string, depot?: string) => ipcRenderer.invoke("github:activite", lieu, { dossier, depot }),
+    pullRequest: (lieu: string | null, dossier: string, numero: number, depot?: string) => ipcRenderer.invoke("github:pull-request", lieu, { dossier, numero, depot }),
     navigateur: () => ipcRenderer.invoke("github:navigateur"),
   },
   systeme: {

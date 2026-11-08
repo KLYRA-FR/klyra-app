@@ -196,6 +196,7 @@ curl -fsSL "$SOURCE/joints.mjs" -o "$CODE_DIR/joints.mjs"
 curl -fsSL "$SOURCE/joints-vps.mjs" -o "$CODE_DIR/joints-vps.mjs"
 curl -fsSL "$SOURCE/fils.mjs" -o "$CODE_DIR/fils.mjs"
 curl -fsSL "$SOURCE/fils-outils.mjs" -o "$CODE_DIR/fils-outils.mjs"
+curl -fsSL "$SOURCE/github-outils.mjs" -o "$CODE_DIR/github-outils.mjs"
 curl -fsSL "$SOURCE/tickets.mjs" -o "$CODE_DIR/tickets.mjs"
 chmod 644 "$CODE_DIR"/*.mjs "$CODE_DIR/node-chemin"
 

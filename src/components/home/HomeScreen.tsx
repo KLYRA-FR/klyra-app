@@ -6,6 +6,8 @@ import { Pieces } from "@/components/chat/Composer";
 import { PucesImages } from "@/components/chat/ImageJointe";
 import { estImage } from "@/lib/fichiers";
 import { PromptBox } from "@/components/chat/PromptBox";
+import { nomChoixDepot, PuceDepot, useOuvrirChoixDepot } from "@/components/chat/PuceDepot";
+import { useLieuActif } from "@/lib/lieux";
 import { useAjoutFichiers } from "@/components/chat/useAjoutFichiers";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
@@ -23,7 +25,7 @@ import { aujourdhui } from "@/lib/dates";
 import { DEBUT_DEMANDE_AGENT, DEBUT_DEMANDE_EQUIPE } from "@/lib/decrire-a-assistant";
 import { deuxiemeBloc, premierBloc } from "@/lib/mouvement";
 import { findMention } from "@/lib/mentions";
-import { useIdDirect, useProjects, useRole, useRoles, useWorkspace } from "@/lib/workspace";
+import { useIdDirect, useRole, useRoles, useWorkspace } from "@/lib/workspace";
 import type { RoleId } from "@/types/domain";
 
 const AUTO = "auto";
@@ -73,7 +75,6 @@ export function HomeScreen() {
   const { assistantANommer, status } = useAgents();
   /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
   const seul = roles.length <= 1;
-  const projects = useProjects();
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
   /* Le nom vient d'être choisi (premier lancement) : l'Accueil revient, prêt à écrire à l'assistant. */
@@ -109,8 +110,20 @@ export function HomeScreen() {
     const r = await bridge.fichiers.choisir();
     if (r.ok) ajouter(r.data);
   };
-  // Sans projet : la demande part en conversation directe (à l'assistant, ou à l'agent choisi).
-  const [projectId, setProjectId] = useState("");
+  // Sans dépôt : la demande part en conversation directe (à l'assistant, ou à l'agent choisi).
+  // Un projet ou un dépôt GitHub choisi : une conversation de ce projet (le dépôt cloné d'abord s'il le faut).
+  const lieu = useLieuActif();
+  const [depot, setDepot] = useState("");
+  const [ouverture, setOuverture] = useState<string | null>(null);
+  const ouvrirChoixDepot = useOuvrirChoixDepot();
+  /* Quitter l'accueil pendant le clone : la conversation n'est pas ouverte dans son dos. */
+  const monte = useRef(true);
+  useEffect(() => {
+    monte.current = true;
+    return () => {
+      monte.current = false;
+    };
+  }, []);
   // « Écrire à Hugo » depuis l'équipe arrive ici avec ?a=dev.
   const preselected = useSearchParams().get("a");
   const [to, setTo] = useState<RoleId | typeof AUTO>(
@@ -118,16 +131,24 @@ export function HomeScreen() {
   );
 
   const submit = () => {
+    if (ouverture) return;
     const recipient = to === AUTO ? findMention(text, roles) : to;
     const message = text.trim() || (fichiers.length > 1 ? "Regarde ces fichiers." : "Regarde ce fichier.");
-    if (!projectId) {
+    if (!depot) {
       const chatId = idDirect(recipient ?? "principal");
       sendMessage(chatId, message, null, fichiers);
       router.push(`/chat?id=${encodeURIComponent(chatId)}`);
       return;
     }
-    const chatId = startChat(projectId, message, recipient, fichiers);
-    router.push(`/chat?id=${chatId}`);
+    const pieces = fichiers;
+    setAlerte(null);
+    setOuverture(nomChoixDepot(depot, state.projects) ?? "le dépôt");
+    void ouvrirChoixDepot(depot, lieu).then((r) => {
+      if (!monte.current) return;
+      setOuverture(null);
+      if (!r.ok) return setAlerte(r.message);
+      router.push(`/chat?id=${encodeURIComponent(startChat(r.projet.id, message, recipient, pieces))}`);
+    });
   };
 
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
@@ -227,16 +248,7 @@ export function HomeScreen() {
             }
             puces={
               <>
-                <PuceSelect
-                  libelle="Projet"
-                  icone={<Icon name="folder" size={16} />}
-                  options={[
-                    { value: "", label: "Sans projet" },
-                    ...projects.map((p) => ({ value: p.id, label: p.name })),
-                  ]}
-                  value={projectId}
-                  onChange={setProjectId}
-                />
+                <PuceDepot lieu={lieu} valeur={depot} onChange={setDepot} disabled={!!ouverture} />
                 <PuceSelect
                   libelle="Écrire à qui ?"
                   icone={<RoleAvatar roleId={to === AUTO ? "principal" : to} size="xs" />}
@@ -247,6 +259,11 @@ export function HomeScreen() {
               </>
             }
           />
+          {ouverture && (
+            <p role="status" className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-secondaire">
+              Ouverture de {ouverture}…
+            </p>
+          )}
           {alerte && (
             <p role="alert" className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-erreur">
               {alerte}

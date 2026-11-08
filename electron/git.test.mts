@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { clonerDepot, clonerVers, etatGit, lireDepotGithub, messageClone, recupererDepot } from "./git.ts";
+import { clonerDepot, clonerVers, diffFichierGit, etatGit, lireDepotGithub, lireStatutGit, messageClone, publier, recupererDepot } from "./git.ts";
 
 /** Un dépôt nu local (le « GitHub » du test) avec un premier commit sur main, et un dossier de travail. */
 function bac() {
@@ -136,4 +136,94 @@ test("clonerDepot : reprend un dossier qui est déjà ce dépôt, ne touche jama
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }
+});
+
+test("lireStatutGit : chemins accentués et espaces tels quels, renommés avec leur ancien chemin", () => {
+  const brut = ["## main...origin/main [ahead 1]", " M src/café.md", "?? docs/mon fichier.txt", "R  nouveau.ts", "ancien.ts", " D vieux.css", "AM ajout.ts", ""].join("\0");
+  const { tete, fichiers } = lireStatutGit(brut);
+  assert.equal(tete, "## main...origin/main [ahead 1]");
+  assert.deepEqual(fichiers, [
+    { statut: "M", chemin: "src/café.md" },
+    { statut: "?", chemin: "docs/mon fichier.txt" },
+    { statut: "R", chemin: "nouveau.ts", ancien: "ancien.ts" },
+    { statut: "D", chemin: "vieux.css" },
+    { statut: "A", chemin: "ajout.ts" },
+  ]);
+});
+
+test("etatGit : une branche à points, des fichiers accentués", async () => {
+  const b = bac();
+  try {
+    const cible = path.join(b.racine, "travail");
+    b.g(b.racine, "clone", b.nu, cible);
+    b.g(cible, "checkout", "-b", "release-1.2");
+    writeFileSync(path.join(cible, "café.md"), "noir\n");
+    const etat = await etatGit(cible);
+    assert.equal(etat.branche, "release-1.2");
+    assert.equal(etat.suivie, false);
+    assert.deepEqual(etat.fichiers, [{ statut: "?", chemin: "café.md" }]);
+  } finally { b.fin(); }
+});
+
+test("diffFichierGit : avant et après d'un fichier, nouveau, supprimé, binaire ; jamais hors du dépôt", async () => {
+  const b = bac();
+  try {
+    const cible = path.join(b.racine, "travail");
+    b.g(b.racine, "clone", b.nu, cible);
+    writeFileSync(path.join(cible, "README.md"), "un\ndeux\n");
+    writeFileSync(path.join(cible, "neuf.txt"), "bonjour\n");
+    writeFileSync(path.join(cible, "image.png"), Buffer.from([137, 80, 78, 71, 0, 0, 0, 13]));
+    const modifie = await diffFichierGit(cible, "README.md");
+    assert.deepEqual([modifie.avant, modifie.apres, modifie.binaire], ["un\n", "un\ndeux\n", false]);
+    const neuf = await diffFichierGit(cible, "neuf.txt");
+    assert.deepEqual([neuf.avant, neuf.apres], [null, "bonjour\n"]);
+    assert.equal((await diffFichierGit(cible, "image.png")).binaire, true);
+    b.g(cible, "rm", "-qf", "README.md");
+    const supprime = await diffFichierGit(cible, "README.md");
+    assert.deepEqual([supprime.avant, supprime.apres], ["un\n", null]);
+    for (const piege of ["../distant.git/config", "/etc/passwd", ".git/config", "a/../../x"]) {
+      await assert.rejects(diffFichierGit(cible, piege), /invalide/, piege);
+    }
+    symlinkSync("/etc/hostname", path.join(cible, "lien"));
+    await assert.rejects(diffFichierGit(cible, "lien"), /sort du projet/);
+  } finally { b.fin(); }
+});
+
+test("un projet qui n'est qu'un sous-dossier d'un dépôt : ses fichiers, relatifs à lui, et leurs différences", async () => {
+  const b = bac();
+  try {
+    const cible = path.join(b.racine, "mono");
+    b.g(b.racine, "clone", b.nu, cible);
+    mkdirSync(path.join(cible, "apps", "site"), { recursive: true });
+    writeFileSync(path.join(cible, "apps", "site", "page.md"), "un\n");
+    b.g(cible, "add", "-A"); b.g(cible, "commit", "-qm", "site");
+    writeFileSync(path.join(cible, "apps", "site", "page.md"), "un\ndeux\n");
+    writeFileSync(path.join(cible, "ailleurs.md"), "hors du projet\n");
+    const projet = path.join(cible, "apps", "site");
+    const etat = await etatGit(projet);
+    assert.deepEqual(etat.fichiers, [{ statut: "M", chemin: "page.md" }]);
+    const d = await diffFichierGit(projet, "page.md");
+    assert.deepEqual([d.avant, d.apres], ["un\n", "un\ndeux\n"]);
+  } finally { b.fin(); }
+});
+
+test("lireStatutGit : un renommage noté dans l'arbre de travail seulement", () => {
+  const { fichiers } = lireStatutGit(["## main", " R neuf.txt", "vieux.txt", ""].join("\0"));
+  assert.deepEqual(fichiers, [{ statut: "R", chemin: "neuf.txt", ancien: "vieux.txt" }]);
+});
+
+test("publier un projet sous-dossier : seulement ses fichiers, ceux que l'écran montre", async () => {
+  const b = bac();
+  try {
+    const cible = path.join(b.racine, "mono2");
+    b.g(b.racine, "clone", b.nu, cible);
+    b.g(cible, "config", "user.name", "Test"); b.g(cible, "config", "user.email", "test@klyra.local");
+    mkdirSync(path.join(cible, "apps", "site"), { recursive: true });
+    mkdirSync(path.join(cible, "packages"), { recursive: true });
+    writeFileSync(path.join(cible, "apps", "site", "x.txt"), "x\n");
+    writeFileSync(path.join(cible, "packages", "y.txt"), "y\n");
+    await publier(path.join(cible, "apps", "site"), "Seulement le site");
+    assert.equal(b.g(cible, "show", "--name-only", "--format=", "HEAD").trim(), "apps/site/x.txt");
+    assert.match(b.g(cible, "status", "--porcelain"), /\?\? packages\//);
+  } finally { b.fin(); }
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { BoutonIcone } from "@/components/ui/Bouton";
@@ -22,6 +22,7 @@ import type { Chat, Citation, Project, Role, RoleId } from "@/types/domain";
 import { PucesImages, VignettePiece } from "./ImageJointe";
 import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
+import { nomChoixDepot, PuceDepot, useOuvrirChoixDepot } from "./PuceDepot";
 import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
 import { useAjoutFichiers } from "./useAjoutFichiers";
 import { useSuggestion } from "./useSuggestion";
@@ -198,7 +199,8 @@ function BandeauReponse({ citation, onRetirer }: { citation: Citation; onRetirer
 /** Composeur sous le fil d'un chat. */
 export function Composer({ chat, project }: { chat: Chat; project: Project | undefined }) {
   const roles = useRoles();
-  const { sendMessage, arreter } = useWorkspace();
+  const { sendMessage, arreter, startChat, state: etatEspace } = useWorkspace();
+  const router = useRouter();
   const travail = useTravail(chat.id);
   // `?brouillon=…` : on arrive avec un message déjà prêt (ex. « Modifier avec un agent » depuis un artefact).
   const brouillon = useSearchParams().get("brouillon");
@@ -209,7 +211,23 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   const [fermee, setFermee] = useState(false);
   const champ = useRef<HTMLTextAreaElement>(null);
   const direct = chat.kind === "direct";
+  /* Une conversation de projet a son agent, comme le chat d'un agent : pas de destinataire à choisir, @ pour en appeler un autre. */
+  const projetConv = chat.kind === "equipe" && !!project;
   const agent = useRole(chat.roleIds[0] ?? "principal");
+  /* Le chat d'un agent : la puce « Dépôt » ouvre, à l'envoi, une conversation de cet agent dans le projet choisi. */
+  const avecDepot = direct && !chat.fil;
+  const [depotChoisi, setDepotChoisi] = useState("");
+  const [ouverture, setOuverture] = useState<string | null>(null);
+  const ouvrirChoixDepot = useOuvrirChoixDepot();
+  /* Quitter la conversation pendant le clone : la nouvelle conversation n'est pas ouverte dans son dos. */
+  const monte = useRef(true);
+  useEffect(() => {
+    monte.current = true;
+    return () => {
+      monte.current = false;
+    };
+  }, []);
+  const nomDepotChoisi = depotChoisi ? nomChoixDepot(depotChoisi, etatEspace.projects) : null;
   const assistant = useRole("principal");
   /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
   const seul = roles.length <= 1;
@@ -388,8 +406,28 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   const submit = () => {
+    if (ouverture) return;
     const recipient = direct ? null : to === AUTO ? findMention(text, roles) : to;
     const texte = text.trim() || (fichiers.length > 1 ? "Regarde ces fichiers." : "Regarde ce fichier.");
+    if (avecDepot && depotChoisi) {
+      /* Un dépôt choisi : une nouvelle conversation de cet agent dans le projet (le dépôt cloné d'abord s'il le faut). */
+      const pieces = fichiers;
+      setAlerte(null);
+      setOuverture(nomDepotChoisi ?? "le dépôt");
+      void ouvrirChoixDepot(depotChoisi, chat.lieu ?? null).then((r) => {
+        if (!monte.current) return;
+        setOuverture(null);
+        if (!r.ok) return setAlerte(r.message);
+        const id = startChat(r.projet.id, texte, agent.id, pieces);
+        setCitation(null);
+        setText("");
+        setCurseur(0);
+        setFichiers([]);
+        setDepotChoisi("");
+        router.push(`/chat?id=${encodeURIComponent(id)}`);
+      });
+      return;
+    }
     sendMessage(chat.id, texte, recipient, fichiers, citation ?? undefined);
     setCitation(null);
     setText("");
@@ -398,10 +436,11 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
     setAlerte(null);
   };
 
+  /* Sans choix, le message va à l'agent de la conversation (le premier de `roleIds`, l'assistant d'ordinaire). */
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: assistant.name, icone: <AgentRond roleId="principal" taille={20} /> },
+    { value: AUTO, label: agent.name, icone: <AgentRond roleId={agent.id} taille={20} /> },
     ...roles
-      .filter((r) => r.id !== "principal")
+      .filter((r) => r.id !== agent.id)
       .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <AgentRond roleId={r.id} taille={20} /> })),
   ];
 
@@ -441,10 +480,22 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
           apresTexte={fichiers.some(estImage) && <PucesImages fichiers={fichiers} />}
           placeholder={
-            direct ? `Écris à ${agent.name}…` : seul ? `Écris à ${assistant.name}…` : "Écris à l’équipe, ou @mentionne un agent…"
+            direct
+              ? nomDepotChoisi
+                ? `Nouvelle conversation avec ${agent.name} dans ${nomDepotChoisi}…`
+                : `Écris à ${agent.name}…`
+              : projetConv
+                ? seul
+                  ? `Écris à ${agent.name}…`
+                  : `Écris à ${agent.name}, ou @mentionne un agent…`
+                : seul
+                  ? `Écris à ${assistant.name}…`
+                  : "Écris à l’équipe, ou @mentionne un agent…"
           }
           puces={
-            direct ? undefined : (
+            avecDepot ? (
+              <PuceDepot lieu={chat.lieu ?? null} valeur={depotChoisi} onChange={setDepotChoisi} disabled={!!ouverture} />
+            ) : direct || projetConv ? undefined : (
               <>
                 <PuceSelect
                   libelle="Destinataire"
@@ -466,6 +517,11 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           }
         />
       </div>
+      {ouverture && (
+        <p role="status" className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-secondaire">
+          Ouverture de {ouverture}…
+        </p>
+      )}
       {deconnecte && (
         <p role="alert" className="mt-2 mb-0 flex flex-wrap items-center gap-x-2 px-1 text-ui-2xs font-medium text-texte-erreur">
           {compte?.installe ? "Claude n’est pas connecté : les agents ne pourront pas répondre." : "Claude Code est introuvable sur ce poste."}

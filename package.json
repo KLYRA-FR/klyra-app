@@ -92,7 +92,7 @@
     "test:comptes-claude": "node --experimental-strip-types --test electron/comptes-claude.test.mts serveur/comptes-claude.test.mjs && vitest run src/components/reglages/sections/Claude.test.tsx src/components/chat/CarteUtilisation.test.tsx src/components/chat/ContenuChoixModele.test.tsx",
     "test:catalogue-agent": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --no-warnings scripts/test-catalogue-agent.mjs",
     "test:skills-codex": "node scripts/test-skills-codex.mjs",
-    "test:consignes-projet": "node --experimental-strip-types --test electron/consignes-projet.test.mts && node scripts/test-consignes-projet.mjs",
+    "test:consignes-projet": "vitest run src/lib/consignes-projet.test.ts && node --experimental-strip-types --test electron/consignes-projet.test.mts && node scripts/test-consignes-projet.mjs",
     "test:workflows": "vitest run src/lib/workflows && node --test serveur/workflows.test.mjs serveur/fils.test.mjs serveur/workflows-moteur.test.mjs",
     "test:workflows:app": "node scripts/test-workflows-agents.mjs",
     "test:fils-serveur": "node scripts/test-fils-serveur.mjs",
@@ -133,7 +133,7 @@
     "test:app-web": "node --test scripts/sortie-vercel.test.mjs",
     "test:origine-telephone": "node --test scripts/origine-telephone.test.mjs",
     "github:preparer": "node scripts/preparer-github.mjs",
-    "test:github-projets": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/github-projets.test.mts && node --test serveur/github.test.mjs"
+    "test:github-projets": "node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/github-projets.test.mts electron/github-outils.test.mts && node --test serveur/github.test.mjs && vitest run src/lib/projet-depuis-depot.test.ts src/lib/choix-depot.test.ts src/lib/conversation-projet.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",

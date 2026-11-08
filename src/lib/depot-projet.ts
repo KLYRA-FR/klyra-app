@@ -32,3 +32,24 @@ export function resumeDepot(etat: Pick<EtatGit, "branche" | "suivie" | "enAvance
   if (etat.suivie && retard === 0 && etat.enAvance === 0 && etat.fichiers.length === 0) parties.push("à jour depuis la dernière récupération");
   return parties.join(" · ");
 }
+
+/**
+ * Où vit un projet, en mots : « Sur VPS Hetzner » pour un serveur (le chemin brut, sous
+ * /var/lib/klyra/projets, ne dit rien à la personne), le dossier avec « ~ » sur ce poste
+ * (/Users/x, /home/x ou C:\Users\x).
+ */
+export function emplacementProjet(folder: string, lieu: string | null | undefined, nomServeur: string): string {
+  if (lieu) return `Sur ${nomServeur}`;
+  return folder.replace(/^(?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)(?=$|[\\/])/, "~");
+}
+
+/** La même chose en une ligne courte, pour le panneau d'un projet : « main · 2 à récupérer · 1 modifié ». */
+export function resumeCourt(etat: Pick<EtatGit, "branche" | "suivie" | "enAvance" | "enRetard" | "fichiers">): string {
+  const parties = [etat.branche ?? "Aucune branche"];
+  if (!etat.suivie) parties.push("pas sur GitHub");
+  if ((etat.enRetard ?? 0) > 0) parties.push(`${etat.enRetard} à récupérer`);
+  if (etat.enAvance > 0) parties.push(`${etat.enAvance} à envoyer`);
+  if (etat.fichiers.length > 0) parties.push(pluriel(etat.fichiers.length, "modifié", "modifiés"));
+  if (parties.length === 1) parties.push("à jour");
+  return parties.join(" · ");
+}
