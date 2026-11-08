@@ -21,7 +21,6 @@ import { ConseilContexte } from "./ConseilContexte";
 import { MessageThread } from "./MessageThread";
 import { MessageExport } from "./MessageExport";
 import { useExporterConversation } from "./useExporterConversation";
-import { OngletsConversations } from "./OngletsConversations";
 import { OngletsFils } from "./OngletsFils";
 import { useImagesOuvertes, VueImage } from "./ImageJointe";
 import { OUVRIR_PANNEAU_AGENT, PanneauLateral, surReglages, usePanneauLateral } from "./PanneauLateral";
@@ -138,13 +137,17 @@ export function ChatScreen() {
   /* Un lien local cliqué dans une conversation de projet : il s'ouvre dans l'aperçu. */
   const [adresseApercu, setAdresseApercu] = useState<{ url: string; n: number } | null>(null);
   const equipe = chat?.kind === "equipe";
+  /* Une conversation de projet se lit comme le chat d'un agent : son en-tête et son panneau (réglages, aperçu,
+     modifié, fichiers, tâches, navigateur). Les autres conversations d'équipe gardent l'aperçu à droite. */
+  const projetConv = equipe && !!project;
+  const avecPanneau = chat?.kind === "direct" || projetConv;
 
-  /* Une image jointe cliquée : un onglet du panneau, ou le panneau de l'aperçu dans une conversation de projet. */
+  /* Une image jointe cliquée : un onglet du panneau, ou le panneau de l'aperçu dans une autre conversation d'équipe. */
   const images = useImagesOuvertes(
     chat?.id ?? "",
     useCallback(() => setPanneauOuvert(true), []),
   );
-  const imageEquipe = equipe ? images.active : null;
+  const imageEquipe = equipe && !projetConv ? images.active : null;
   const { choisir: choisirImage } = images;
 
   /* Un agent annonce l'adresse du site qu'il vient de lancer : l'aperçu l'ouvre tout seul,
@@ -152,9 +155,9 @@ export function ChatScreen() {
   const { enregistrerProjet } = useWorkspace();
   const annonce = useAdresseAnnoncee(chat?.id ?? "");
   const [annonceVue, setAnnonceVue] = useState<string | null>(null);
-  if (equipe && project && annonce && annonce.id !== annonceVue) {
+  if (projetConv && annonce && annonce.id !== annonceVue) {
     setAnnonceVue(annonce.id);
-    setPreviewOpen(true);
+    setPanneauOuvert(true);
     setAdresseApercu((a) => ({ url: annonce.url, n: (a?.n ?? 0) + 1 }));
   }
   useEffect(() => {
@@ -168,12 +171,13 @@ export function ChatScreen() {
     const prendre = (e: Event) => {
       const demande = (e as CustomEvent<DemandeApercu>).detail;
       demande.pris = true;
-      setPreviewOpen(true);
+      if (projetConv) setPanneauOuvert(true);
+      else setPreviewOpen(true);
       setAdresseApercu((a) => ({ url: demande.url, n: (a?.n ?? 0) + 1 }));
     };
     window.addEventListener("klyra:apercu", prendre);
     return () => window.removeEventListener("klyra:apercu", prendre);
-  }, [equipe]);
+  }, [equipe, projetConv]);
 
   /* Un agent passe la main à la personne sur une page du navigateur : le panneau s'ouvre pour qu'elle la voie. */
   const activiteNavigateur = useActiviteNavigateur(chat?.id ?? "");
@@ -259,16 +263,15 @@ export function ChatScreen() {
     <div className="flex h-full min-h-0">
       {/* Panneau agrandi : il prend toute la place, la conversation se cache. */}
       <section aria-label={chat.title} className={maximise ? "hidden" : "relative flex min-w-0 flex-1 flex-col"}>
-        {project && chat.kind === "equipe" && <OngletsConversations key={project.id} project={project} chatId={chat.id} />}
         {chat.kind === "direct" && <OngletsFils roleId={chat.roleIds[0] ?? "principal"} chatId={chat.id} />}
         <ChatHeader
           key={`header-${chat.id}`}
           chat={chat}
           actionExport={exportConversation.action}
           project={project}
-          previewOpen={chat.kind === "direct" ? panneauOuvert : previewOpen || !!imageEquipe}
+          previewOpen={avecPanneau ? panneauOuvert : previewOpen || !!imageEquipe}
           onTogglePreview={() => {
-            if (chat.kind === "direct") setPanneauOuvert((v) => !v);
+            if (avecPanneau) setPanneauOuvert((v) => !v);
             else if (imageEquipe) choisirImage(null);
             else setPreviewOpen((v) => !v);
           }}
@@ -282,16 +285,20 @@ export function ChatScreen() {
       {/* Conversation directe : pas de projet, donc pas d'aperçu. */}
       {/* L'aperçu reste monté derrière l'image : ses onglets et sa page ne se perdent pas. */}
       <div className={imageEquipe ? "hidden" : "contents"}>
-        {previewOpen && chat.kind === "equipe" && <PreviewPanel key={project?.id} project={project} chat={chat} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} />}
+        {previewOpen && equipe && !projetConv && <PreviewPanel key={project?.id} project={project} chat={chat} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} />}
       </div>
       {imageEquipe && (
         <aside aria-label="Image jointe" className="flex w-[min(560px,calc(100%-424px))] min-w-[296px] shrink-0 flex-col border-l border-bordure-subtile bg-fond-surface">
           <VueImage key={imageEquipe} chemin={imageEquipe} onFermer={() => images.fermer(imageEquipe)} />
         </aside>
       )}
-      {panneauOuvert && chat.kind === "direct" && (
+      {panneauOuvert && avecPanneau && (
         <PanneauLateral
+          key={projetConv ? `projet-${project?.id}` : "agent"}
           chat={chat}
+          projet={projetConv ? project : undefined}
+          modifiedLabel={modifiedLabel}
+          adresseApercu={projetConv ? adresseApercu : null}
           maximise={maximise}
           onMaximiser={() => setMaximise((v) => !v)}
           onFermer={fermerPanneau}

@@ -35,7 +35,7 @@ function Entree({ icone, nom }: { icone: IconName; nom: string; active?: boolean
 
 /** Ce que le bouton du rail ouvre à côté de lui. */
 const PANNEAUX = {
-  fichiers: { icone: "layout-left", nom: "Fichiers", cible: "les fichiers du projet" },
+  fichiers: { icone: "layout-left", nom: "Projet", cible: "les conversations et les fichiers du projet" },
   conversations: { icone: "layout-left", nom: "Liste", cible: "les conversations" },
 } as const satisfies Record<string, { icone: IconName; nom: string; cible: string }>;
 

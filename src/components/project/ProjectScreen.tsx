@@ -1,73 +1,52 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Avatar, EmptyState } from "klyra-ui";
+import { EmptyState } from "klyra-ui";
+import { Pieces } from "@/components/chat/Composer";
+import { PucesImages } from "@/components/chat/ImageJointe";
 import { PromptBox } from "@/components/chat/PromptBox";
+import { useAjoutFichiers } from "@/components/chat/useAjoutFichiers";
+import { Icon, type IconName } from "@/components/icons/Icon";
+import { AgentRond } from "@/components/roles/AgentRond";
 import { TravauxProjet } from "@/components/project/TravauxProjet";
-import { BoutonEpingle } from "@/components/chat/BoutonEpingle";
-import { estEpinglee } from "@/lib/epinglage";
-import { Icon } from "@/components/icons/Icon";
-import { RoleAvatar } from "@/components/roles/RoleAvatar";
-import { Bouton } from "@/components/ui/Bouton";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
+import { getBridge } from "@/lib/bridge";
+import { cn } from "@/lib/cn";
+import { derniereConversation } from "@/lib/conversation-projet";
+import { emplacementProjet } from "@/lib/depot-projet";
+import { estImage } from "@/lib/fichiers";
+import { nomLieu, useServeursRelies } from "@/lib/lieux";
+import { useProject, useRole, useRoles, useWorkspace } from "@/lib/workspace";
+import type { Project, RoleId } from "@/types/domain";
 import { ConsignesProjet } from "./ConsignesProjet";
 import { DepotProjet } from "./DepotProjet";
-import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
-import { cn } from "@/lib/cn";
-import { formatListDate } from "@/lib/format";
-import { emplacementProjet } from "@/lib/depot-projet";
-import { nomLieu, useServeursRelies } from "@/lib/lieux";
-import { findMention } from "@/lib/mentions";
-import { poste } from "@/lib/plateforme";
-import { useChatPreview, useProject, useRecentChats, useRole, useRoles, useWorkspace } from "@/lib/workspace";
-import type { Chat, ProjectStatus, RoleId } from "@/types/domain";
+import { useMenuProjet } from "./MenuProjet";
 
-const STATUS: Record<ProjectStatus, { label: string; className: string }> = {
-  "en-cours": { label: "En cours", className: "bg-fond-teinte-bleue text-texte-accent" },
-  "en-revue": { label: "En revue", className: "bg-fond-tag-orange text-texte-accent-orange" },
-  livre: { label: "Livré", className: "bg-fond-surface-grise text-texte-secondaire" },
-};
+/** Pour commencer dans un projet : une phrase posée dans le champ, qu'on relit avant d'envoyer. */
+const SUGGESTIONS: { libelle: string; icone: IconName; texte: string }[] = [
+  { libelle: "Explique-moi ce projet", icone: "help-circle-contained", texte: "Explique-moi ce projet : à quoi il sert, comment il est organisé et comment le lancer." },
+  { libelle: "Lance le site en local", icone: "globe-01", texte: "Lance le site en local et donne-moi son adresse." },
+  { libelle: "Les derniers changements", icone: "clock-backward", texte: "Résume les derniers changements du dépôt (les commits récents) et ce qui reste en cours." },
+];
 
-const AUTO = "auto";
-
-function ChatRow({ chat }: { chat: Chat }) {
-  const preview = useChatPreview(chat.id);
-  return (
-    /* En colonne : l'ancre de l'infobulle de l'épingle ne pose pas de ligne vide (cf. LigneConversation). */
-    <div className="group/conv relative flex flex-col">
-    <Link
-      href={`/chat?id=${chat.id}`}
-      data-conversation={chat.id}
-      className="group flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 no-underline transition-[background-color,border-color,box-shadow] duration-[220ms] ease-sortie group-hover/conv:border-bordure-subtile group-hover/conv:bg-fond-surface group-hover/conv:shadow-ombre-xs"
-    >
-      <RoleAvatar roleId={preview.roleId} size="md" />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-ui font-medium text-texte-principal">{chat.title}</span>
-        <span className="truncate text-ui-s text-texte-tertiaire">{preview.text}</span>
-      </div>
-      <span className="flex min-w-8 shrink-0 items-center justify-end gap-1.5 group-hover/conv:opacity-0 group-has-[:focus-visible]/conv:opacity-0">
-        {estEpinglee(chat) && <span role="img" aria-label="Épinglée" className="flex shrink-0 text-icone-secondaire"><Icon name="pin-01" size={12} /></span>}
-        <span className="klyra-mono text-ui-2xs text-texte-tertiaire">{formatListDate(chat.updatedAt)}</span>
-      </span>
-    </Link>
-    <BoutonEpingle chat={chat} className="right-3" />
-    </div>
-  );
-}
-
-/** Page d'un projet : son brief, un nouveau chat, et les chats en cours. */
+/**
+ * Un projet s'ouvre comme un chat : sur sa dernière conversation (`/chat?id=…`). Sans conversation, ou avec
+ * `&nouvelle=1` (le « + » du panneau), une conversation neuve : la fiche courte du projet, de quoi commencer,
+ * et le champ pour écrire à un agent (l'assistant par défaut). Le premier message crée la conversation.
+ */
 export function ProjectScreen() {
   const router = useRouter();
-  const project = useProject(useSearchParams().get("id"));
-  const roles = useRoles();
-  const serveurs = useServeursRelies();
-  const assistant = useRole("principal");
-  const { startChat, retirerProjet } = useWorkspace();
-  const [retirer, setRetirer] = useState(false);
-  const chats = useRecentChats().filter((c) => c.projectId === project?.id);
-  const [text, setText] = useState("");
-  const [to, setTo] = useState<RoleId | typeof AUTO>(AUTO);
+  const params = useSearchParams();
+  const project = useProject(params.get("id"));
+  const nouvelle = params.has("nouvelle");
+  const { state } = useWorkspace();
+  const derniere = project && !nouvelle ? derniereConversation(state.chats, project.id) : null;
+
+  useEffect(() => {
+    if (derniere) router.replace(`/chat?id=${encodeURIComponent(derniere)}`);
+  }, [derniere, router]);
 
   if (!project) {
     return (
@@ -76,119 +55,112 @@ export function ProjectScreen() {
       </div>
     );
   }
+  if (derniere) return <div className="h-full" />;
+  return <NouvelleConversation key={project.id} project={project} />;
+}
 
-  const status = STATUS[project.status];
-  const submit = () => {
-    const recipient = to === AUTO ? findMention(text, roles) : to;
-    router.push(`/chat?id=${startChat(project.id, text.trim(), recipient)}`);
+function NouvelleConversation({ project }: { project: Project }) {
+  const router = useRouter();
+  const roles = useRoles();
+  const serveurs = useServeursRelies();
+  const { startChat } = useWorkspace();
+  const { ouvrirMenu, menuProjet } = useMenuProjet();
+  const [agentId, setAgentId] = useState<RoleId>("principal");
+  const agent = useRole(agentId);
+  const [text, setText] = useState("");
+  const champ = useRef<HTMLTextAreaElement>(null);
+  const [fichiers, setFichiers] = useState<string[]>([]);
+  const [alerte, setAlerte] = useState<string | null>(null);
+  const { ajouter, coller } = useAjoutFichiers(fichiers, setFichiers, setAlerte);
+  const bridge = getBridge();
+
+  const joindre = async () => {
+    if (!bridge) return setAlerte("Joindre des fichiers marche dans l’app de bureau.");
+    const r = await bridge.fichiers.choisir();
+    if (r.ok) ajouter(r.data);
   };
-  const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: assistant.name, icone: <RoleAvatar roleId="principal" size="xs" /> },
-    ...roles
-      .filter((r) => r.id !== "principal")
-      .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <RoleAvatar roleId={r.id} size="xs" /> })),
-  ];
+  const preRemplir = (debut: string) => {
+    const avant = text.trimEnd();
+    const suite = avant ? `${avant}\n${debut}` : debut;
+    setText(suite);
+    requestAnimationFrame(() => {
+      const el = champ.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(suite.length, suite.length);
+    });
+  };
+  const submit = () => {
+    const message = text.trim() || (fichiers.length > 1 ? "Regarde ces fichiers." : "Regarde ce fichier.");
+    router.push(`/chat?id=${encodeURIComponent(startChat(project.id, message, agentId, fichiers))}`);
+  };
+
+  const options: PuceOption<RoleId>[] = roles.map((r) => ({
+    value: r.id,
+    label: r.id === "principal" ? r.name : `${r.name} · ${r.tag}`,
+    icone: <AgentRond roleId={r.id} taille={20} />,
+  }));
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-[760px] flex-col gap-8 px-8 pt-12 pb-12">
-        <header className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={cn("rounded-pill px-2.5 py-0.5 text-ui-2xs font-medium", status.className)}>{status.label}</span>
-            {project.previewUrl && <span className="klyra-mono text-ui-xs text-texte-tertiaire">{project.previewUrl}</span>}
-            <span className="ml-auto flex gap-1">
-              <Bouton
-                variant="discret"
-                taille="compact"
-                iconeGauche={<Icon name="file-code" size={16} />}
-                onClick={() => router.push(`/projets?modifier=${project.id}`)}
-              >
-                Modifier
-              </Bouton>
-              <Bouton variant="discret" taille="compact" iconeGauche={<Icon name="trash-01" size={16} />} onClick={() => setRetirer(true)}>
-                Retirer
-              </Bouton>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* L'en-tête d'une conversation, avant son premier message. */}
+      <header className="flex items-center gap-3 border-b border-bordure-subtile px-5 py-3">
+        <AgentRond roleId={agent.id} taille={32} fondPastille="surface" />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="m-0 truncate text-ui font-semibold text-texte-principal">Nouvelle conversation</p>
+          <span className="truncate text-ui-xs text-texte-tertiaire">
+            {project.name} · avec {agent.name}
+          </span>
+        </div>
+        <BoutonIcone taille="compact" icone={<Icon name="dot-horizontal" size={16} />} libelle="Options du projet" aria-haspopup="menu" onClick={(e) => ouvrirMenu(e, project)} />
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-[760px] flex-col gap-5 px-8 pt-10 pb-8">
+          <div className="flex flex-col gap-2">
+            {/* Titre KLYRA : semi-gras + regular, même couleur. */}
+            <h1 className="m-0 text-h2 leading-[1] tracking-[-0.05em] text-texte-principal">
+              <span className="font-semibold">{project.name}</span> {project.subtitle && <span className="font-normal">· {project.subtitle}</span>}
+            </h1>
+            {project.brief && <p className="m-0 text-body-s leading-[1.45] text-texte-secondaire">{project.brief}</p>}
+            <span title={project.folder} className={cn(!project.lieu && "klyra-mono", "text-ui-xs text-texte-tertiaire [overflow-wrap:anywhere]")}>
+              {emplacementProjet(project.folder, project.lieu, nomLieu(project.lieu, serveurs))}
             </span>
           </div>
-          {retirer && (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">
-              <span className="flex-1 text-ui-s text-texte-principal">
-                Retirer {project.name} de l’app ? Son dossier reste sur {poste.ton}, rien n’est effacé.
-              </span>
-              <Bouton
-                variant="sombre"
-                taille="compact"
-                onClick={() => {
-                  retirerProjet(project.id);
-                  router.push("/projets");
-                }}
-              >
-                Retirer
-              </Bouton>
-              <Bouton variant="blanc" taille="compact" onClick={() => setRetirer(false)}>
-                Annuler
-              </Bouton>
-            </div>
-          )}
-          {/* Titre KLYRA : semi-gras + regular, même couleur. */}
-          <h1 className="m-0 text-h2 leading-[1] tracking-[-0.05em] text-texte-principal">
-            <span className="font-semibold">{project.name}</span>{" "}
-            {project.subtitle && <span className="font-normal">· {project.subtitle}</span>}
-          </h1>
-          {project.brief && <p className="m-0 text-body-s leading-[1.45] text-texte-secondaire">{project.brief}</p>}
-          <span title={project.folder} className={cn(!project.lieu && "klyra-mono", "text-ui-xs text-texte-tertiaire [overflow-wrap:anywhere]")}>
-            {emplacementProjet(project.folder, project.lieu, nomLieu(project.lieu, serveurs))}
-          </span>
           <DepotProjet key={`depot-${project.id}`} project={project} />
           <ConsignesProjet key={project.id} project={project} />
-          <div className="flex items-center gap-3">
-            <Avatar.Group size="sm" aria-label="Agents du projet">
-              {project.roleIds.map((roleId) => (
-                <RoleAvatar key={roleId} roleId={roleId} size="sm" className="ring-2 ring-fond-surface" />
-              ))}
-            </Avatar.Group>
-            <span className="text-ui-s text-texte-tertiaire">
-              {project.roleIds
-                .map((id) => roles.find((r) => r.id === id)?.name)
-                .filter(Boolean)
-                .join(", ")}
-            </span>
-          </div>
-        </header>
+          <section aria-label="Pour commencer" className="flex flex-wrap gap-2">
+            {SUGGESTIONS.map((s) => (
+              <Bouton key={s.libelle} variant="blanc" taille="compact" iconeGauche={<Icon name={s.icone} size={16} className="text-icone-secondaire" />} onClick={() => preRemplir(s.texte)}>
+                {s.libelle}
+              </Bouton>
+            ))}
+          </section>
+          <TravauxProjet projectId={project.id} />
+        </div>
+      </div>
 
+      <div className="@container mx-auto w-full max-w-[880px] shrink-0 px-5 pt-1 pb-4">
         <PromptBox
+          ref={champ}
           value={text}
           onChange={setText}
           onSubmit={submit}
-          placeholder={`Nouveau chat dans ${project.name}…`}
-          puces={
-            <PuceSelect
-              libelle="Destinataire"
-              icone={<Icon name="users-profiles-01" size={16} />}
-              options={recipientOptions}
-              value={to}
-              onChange={setTo}
-            />
-          }
+          onJoindre={() => void joindre()}
+          onColler={coller}
+          aDesPieces={fichiers.length > 0}
+          pieces={<Pieces fichiers={fichiers} onRetirer={(c) => setFichiers((f) => f.filter((x) => x !== c))} />}
+          apresTexte={fichiers.some(estImage) && <PucesImages fichiers={fichiers} />}
+          placeholder={`Écris à ${agent.name}, dans ${project.name}…`}
+          puces={<PuceSelect libelle="Agent de la conversation" icone={<AgentRond roleId={agentId} taille={20} />} options={options} value={agentId} onChange={setAgentId} />}
         />
-
-        <section aria-labelledby="chats-titre" className="flex flex-col gap-2">
-          <h2 id="chats-titre" className="m-0 px-1 text-ui font-semibold text-texte-principal">
-            Chats du projet
-          </h2>
-          {chats.length > 0 ? (
-            <div data-liste-conversations className="flex flex-col rounded-xl border border-bordure-subtile bg-fond-page p-1.5">
-              {chats.map((chat) => (
-                <ChatRow key={chat.id} chat={chat} />
-              ))}
-            </div>
-          ) : (
-            <p className="m-0 px-1 text-ui text-texte-tertiaire">Pas encore de chat : écris le premier au-dessus.</p>
-          )}
-        </section>
-
-        <TravauxProjet projectId={project.id} />
+        {alerte && (
+          <p role="alert" className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-erreur">
+            {alerte}
+          </p>
+        )}
       </div>
+      {menuProjet}
     </div>
   );
 }

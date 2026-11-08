@@ -74,7 +74,7 @@ const lien = (lettre, zone = NAV) => `${zone} [data-conversation=${q(id(lettre))
 const bouton = (lettre, zone = NAV) => `${zone} [data-epingle=${q(id(lettre))}]`;
 const MENU = '[role="menu"][aria-label="Options de la conversation"]';
 const OPTIONS = 'main header button[aria-label="Plus d’options"]';
-const PROJET = 'main [data-liste-conversations]';
+const PROJET = '[data-panneau-projet] [data-liste-conversations]';
 const present = (sel) => app.ev(`!!document.querySelector(${q(sel)})`);
 const texte = (sel) => app.ev(`document.querySelector(${q(sel)})?.textContent.trim() ?? ''`);
 const focus = (sel) => app.ev(`document.activeElement === document.querySelector(${q(sel)})`);
@@ -276,8 +276,8 @@ try {
   });
   await etape("7 · Menu d’en-tête", async () => {
     await app.charger(fixture(), `/chat?id=${id("D")}`); await menu();
-    verifier(memes(await app.ev(`[...document.querySelectorAll(${q(`${MENU} [role=menuitem]`)})].map(e=>e.innerText.trim().split('\\n')[0])`), ["Renommer", "Épingler", "Exporter en Markdown…", "Ouvrir le projet"]), "menu à quatre lignes dans l’ordre prévu, épingle toujours deuxième");
-    await app.touche("ArrowUp"); verifier((await app.ev("document.activeElement.textContent.trim()")) === "Ouvrir le projet", "flèche haut boucle sur la dernière ligne");
+    verifier(memes(await app.ev(`[...document.querySelectorAll(${q(`${MENU} [role=menuitem]`)})].map(e=>e.innerText.trim().split('\\n')[0])`), ["Renommer", "Épingler", "Exporter en Markdown…"]), "menu à trois lignes dans l’ordre prévu (on est déjà dans le projet), épingle toujours deuxième");
+    await app.touche("ArrowUp"); verifier((await app.ev("document.activeElement.textContent.trim()")) === "Exporter en Markdown…", "flèche haut boucle sur la dernière ligne");
     await app.touche("Home"); await app.touche("ArrowDown"); await app.touche("Enter");
     verifier(!(await present(MENU)) && await focus(OPTIONS), "Entrée ferme le menu et rend le focus au « … »");
     verifier(await present('main header h1 [role="img"][aria-label="Épinglée"] svg[width="14"]'), "épingle 14 px dans l’en-tête");
@@ -289,13 +289,14 @@ try {
     await app.charger();
     const agents = await app.ev(`[...document.querySelectorAll(${q(`${NAV} a[href^='/chat?id=dm-']`)})].map(e=>e.getAttribute('href'))`);
     for (const lettre of ["A", "B", "C"]) await app.aller(`/chat?id=${id(lettre)}`);
-    const tabs = await app.ev(`[...document.querySelectorAll('[role=tablist][aria-label="Conversations ouvertes"] [role=tab]')].map(e=>e.textContent)`), prefs = await stockage();
+    const prefs = await stockage();
     const resultats = await recherche();
     verifier(resultats.length > 0, "la recherche témoin a des résultats avant l’épingle");
     await basculerMenu();
-    verifier(memes(await app.ev(`[...document.querySelectorAll('[role=tablist][aria-label="Conversations ouvertes"] [role=tab]')].map(e=>e.textContent)`), tabs) && memes(await stockage(), prefs), "onglets A, B, C gardés dans leur ordre d’ouverture et brouillon intact");
+    verifier(memes(await stockage(), prefs), "préférences locales et brouillon intacts");
     verifier(memes(await recherche(), resultats), "mêmes résultats de recherche, dans le même ordre");
-    await app.aller("/chat?id=dm-principal"); await app.clic(OPTIONS); verifier((await texte(MENU)) === "Exporter en Markdown…", "conversation directe : export seul, aucun épinglage"); await app.touche("Escape");
+    // Le chat de l'assistant propose aussi « Repartir à zéro » ; jamais d'épingle.
+    await app.aller("/chat?id=dm-principal"); await app.clic(OPTIONS); verifier((await texte(MENU)).includes("Exporter en Markdown…") && !(await texte(MENU)).includes("pingl"), "conversation directe : export, aucun épinglage"); await app.touche("Escape");
     verifier(memes(await app.ev(`[...document.querySelectorAll(${q(`${NAV} a[href^='/chat?id=dm-']`)})].map(e=>e.getAttribute('href'))`), agents), "Mes agents garde son ordre");
     verifier(!(await present(`${NAV} [data-epingle^="dm-"]`)), "aucun bouton d’épingle de conversation directe dans le panneau, y compris à côté des liens d’agents");
     await app.aller("/chat?id=fil-fictif"); await app.clic(OPTIONS); verifier((await texte(MENU)) === "Exporter en Markdown…", "fil : export seul, aucun épinglage"); await app.touche("Escape");

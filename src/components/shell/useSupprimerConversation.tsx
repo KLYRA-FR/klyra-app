@@ -9,7 +9,7 @@ import type { Chat } from "@/types/domain";
 
 /**
  * Supprimer une conversation d'équipe, après confirmation. Un agent y travaille : on propose de l'arrêter
- * d'abord, la suppression se refait ensuite. Supprimée pendant qu'elle est ouverte : retour à l'accueil.
+ * d'abord, la suppression se refait ensuite. Supprimée pendant qu'elle est ouverte : retour à son projet, ou à l'accueil.
  */
 export function useSupprimerConversation(): [(chat: Chat) => Promise<boolean>, ReactNode] {
   const router = useRouter();
@@ -42,7 +42,8 @@ export function useSupprimerConversation(): [(chat: Chat) => Promise<boolean>, R
       annoncer(refus);
       return false;
     }
-    if (chemin === "/chat" && ouverte === chat.id) router.replace("/");
+    // Ouverte : retour au projet (sa conversation suivante), sinon à l'accueil.
+    if (chemin === "/chat" && ouverte === chat.id) router.replace(chat.projectId ? `/projet?id=${encodeURIComponent(chat.projectId)}` : "/");
     annoncer(`Conversation supprimée : ${chat.title}.`);
     return true;
   };

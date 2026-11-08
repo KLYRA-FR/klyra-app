@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { emplacementProjet, nomDepot, resumeDepot } from "@/lib/depot-projet";
+import { emplacementProjet, nomDepot, resumeCourt, resumeDepot } from "@/lib/depot-projet";
 
 describe("nomDepot", () => {
   test("le dépôt noté au clonage d'abord", () => {
@@ -46,4 +46,11 @@ describe("emplacementProjet", () => {
     expect(emplacementProjet("/srv/site", null, "Ce PC")).toBe("/srv/site");
     expect(emplacementProjet("/Users/pelinou", null, "Ce PC")).toBe("~");
   });
+});
+
+test("resumeCourt : la branche et ce qui attend, en quelques mots", () => {
+  const base = { branche: "main", suivie: true, enAvance: 0, enRetard: 0, fichiers: [] };
+  expect(resumeCourt(base)).toBe("main · à jour");
+  expect(resumeCourt({ ...base, enRetard: 2, fichiers: [{ statut: "M", chemin: "a" }] })).toBe("main · 2 à récupérer · 1 modifié");
+  expect(resumeCourt({ ...base, suivie: false, enAvance: 3 })).toBe("main · pas sur GitHub · 3 à envoyer");
 });

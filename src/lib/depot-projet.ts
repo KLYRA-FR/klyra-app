@@ -42,3 +42,14 @@ export function emplacementProjet(folder: string, lieu: string | null | undefine
   if (lieu) return `Sur ${nomServeur}`;
   return folder.replace(/^(?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)(?=$|[\\/])/, "~");
 }
+
+/** La même chose en une ligne courte, pour le panneau d'un projet : « main · 2 à récupérer · 1 modifié ». */
+export function resumeCourt(etat: Pick<EtatGit, "branche" | "suivie" | "enAvance" | "enRetard" | "fichiers">): string {
+  const parties = [etat.branche ?? "Aucune branche"];
+  if (!etat.suivie) parties.push("pas sur GitHub");
+  if ((etat.enRetard ?? 0) > 0) parties.push(`${etat.enRetard} à récupérer`);
+  if (etat.enAvance > 0) parties.push(`${etat.enAvance} à envoyer`);
+  if (etat.fichiers.length > 0) parties.push(pluriel(etat.fichiers.length, "modifié", "modifiés"));
+  if (parties.length === 1) parties.push("à jour");
+  return parties.join(" · ");
+}

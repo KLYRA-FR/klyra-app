@@ -29,8 +29,15 @@ g(TMP, "clone", nu, auteur);
 writeFileSync(path.join(auteur, "README.md"), "# Site de test\n");
 g(auteur, "add", "."); g(auteur, "commit", "-m", "premier"); g(auteur, "push", "origin", "main");
 g(auteur, "branch", "dev"); g(auteur, "push", "origin", "dev");
+// Un second dépôt, ouvert depuis la puce « Dépôt » d'un chat.
+const nuDoc = path.join(NUS, "demo", "doc.git");
+g(TMP, "init", "--bare", "--initial-branch=main", nuDoc);
+const auteurDoc = path.join(TMP, "auteur-doc");
+g(TMP, "clone", nuDoc, auteurDoc);
+writeFileSync(path.join(auteurDoc, "README.md"), "# Documentation\n");
+g(auteurDoc, "add", "."); g(auteurDoc, "commit", "-m", "doc"); g(auteurDoc, "push", "origin", "main");
 for (const home of [HOME, VPS]) writeFileSync(path.join(home, ".gitconfig"), `[url "${pathToFileURL(NUS).href}/"]\n insteadOf = https://github.com/\n`);
-writeFileSync(path.join(BIN, "gh"), `#!${process.execPath}\nconst a=process.argv.slice(2);if(a.some(x=>x.startsWith('/user/repos'))) console.log(JSON.stringify([[{full_name:'demo/site',private:true,default_branch:'main',description:'Site de démonstration',homepage:'demo.example.com',language:'Astro',pushed_at:new Date().toISOString()},{full_name:'demo/inconnu',private:true,default_branch:'main',pushed_at:'2020-01-01T00:00:00Z'}]]));else if(a.some(x=>x.includes('/branches'))) console.log(JSON.stringify([[{name:'main'},{name:'dev'}]]));else process.exit(1);\n`, { mode: 0o700 });
+writeFileSync(path.join(BIN, "gh"), `#!${process.execPath}\nconst a=process.argv.slice(2);if(a.some(x=>x.startsWith('/user/repos'))) console.log(JSON.stringify([[{full_name:'demo/site',private:true,default_branch:'main',description:'Site de démonstration',homepage:'demo.example.com',language:'Astro',pushed_at:new Date().toISOString()},{full_name:'demo/inconnu',private:true,default_branch:'main',pushed_at:'2020-01-01T00:00:00Z'},{full_name:'demo/doc',private:false,default_branch:'main',description:'La documentation',pushed_at:'2019-01-01T00:00:00Z'}]]));else if(a.some(x=>x.includes('/branches'))) console.log(JSON.stringify([[{name:'main'},{name:'dev'}]]));else process.exit(1);\n`, { mode: 0o700 });
 // Le harnais chiffre lui-même le compte fictif. Aucun contournement du coffre dans le code livré.
 const entree = path.join(TMP, "fixture.cjs");
 writeFileSync(entree, `const {app,safeStorage}=require('electron'); const fs=require('node:fs');app.setPath('userData',${JSON.stringify(DONNEES)});app.whenReady().then(()=>{safeStorage.setUsePlainTextEncryption(true);fs.writeFileSync(${JSON.stringify(path.join(DONNEES, "github-projets.json"))},JSON.stringify({version:1,contenu:safeStorage.encryptString(JSON.stringify({compte:'demo',jeton:'jeton-fictif-du-test'})).toString('base64')}));});require(${JSON.stringify(path.join(ROOT, "dist-electron", "main.js"))});`);
@@ -56,7 +63,7 @@ try {
   };
   await nouveau();
   verifier(!await app.ev(`!!document.querySelector('[data-nouveau-projet] form, input[placeholder^="propriétaire/dépôt"]')`), "aucun formulaire ni URL de dépôt à remplir");
-  verifier(await app.ev(`[...document.querySelectorAll('[data-depot]')].map(l=>l.dataset.depot).join()`) === "demo/site,demo/inconnu", "les dépôts récemment modifiés d'abord");
+  verifier(await app.ev(`[...document.querySelectorAll('[data-depot]')].map(l=>l.dataset.depot).join()`) === "demo/site,demo/inconnu,demo/doc", "les dépôts récemment modifiés d'abord");
   const infos = await app.ev(`${ligne("demo/site")}?.innerText ?? ''`);
   verifier(/Site de démonstration/.test(infos) && /Privé · Astro · modifié aujourd’hui/.test(infos), `chaque dépôt montre sa description et ses détails (${infos.replace(/\n/g, " | ")})`);
   await app.saisir('input[aria-label="Rechercher un dépôt"]', "introuvable");
@@ -120,6 +127,33 @@ try {
   await attendre(1200);
   verifier(!lireProjets().some(p => p.id === "site-dev"), "le projet est retiré de l'app");
   verifier(g(cloneDev, "branch", "--show-current").trim() === "dev", "son dossier reste sur la machine");
+
+  /* La puce « Dépôt » du chat d'un agent : un dépôt pas encore ouvert devient un projet, et le message y ouvre une conversation. */
+  await app.aller("/chat?id=dm-principal");
+  await app.quand(`!!document.querySelector('main button[role="combobox"][aria-label="Dépôt"]')`);
+  verifier(await app.ev(`document.querySelector('main button[role="combobox"][aria-label="Dépôt"]')?.innerText.includes('Sans dépôt')`), "le chat d'un agent a une puce « Dépôt », vide au départ");
+  await app.ev(`(() => { const b = document.querySelector('main button[role="combobox"][aria-label="Dépôt"]'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); b.click(); })()`);
+  verifier(await app.quand(`[...document.querySelectorAll('[role="option"]')].some((o) => o.innerText.includes('demo/doc · GitHub'))`, 15000), "la puce liste les projets ouverts et les dépôts GitHub à ouvrir");
+  const options = await app.ev(`[...document.querySelectorAll('[role="option"]')].map((o) => o.innerText.trim())`);
+  verifier(options.includes("site") && !options.some((o) => o.startsWith("demo/site")), `un dépôt déjà ouvert n'apparaît qu'une fois, comme projet (${options.join(" | ")})`);
+  await app.ev(`[...document.querySelectorAll('[role="option"]')].find((o) => o.innerText.includes('demo/doc · GitHub')).click()`);
+  await app.quand(`document.querySelector('main textarea[aria-label="Message"]')?.placeholder.includes('dans doc')`);
+  verifier(await app.ev(`document.querySelector('main textarea[aria-label="Message"]')?.placeholder.includes('Nouvelle conversation')`), "le champ dit qu'une nouvelle conversation s'ouvrira dans ce dépôt");
+  await app.saisir('main textarea[aria-label="Message"]', "Que contient ce dépôt ?");
+  await attendre(300);
+  verifier(await app.ev(`(() => { const b = document.querySelector('main form button[type="submit"]'); if (!b || b.disabled) return false; b.click(); return true; })()`), "le message part d'un clic sur Envoyer");
+  verifier(await app.quand(`location.pathname === '/chat' && !location.search.includes('dm-principal')`, 30000), "l'envoi ouvre une conversation à part");
+  await attendre(1500);
+  const doc = lireProjets().find((p) => p.depot === "demo/doc");
+  verifier(!!doc && doc.githubConnecte === true && doc.subtitle === "La documentation", "le dépôt est devenu un projet, sans formulaire");
+  verifier(readFileSync(path.join(HOME, "KLYRA", "GitHub", "demo", `doc-${suffixe}`, "README.md"), "utf8").includes("Documentation"), "le dépôt est cloné sur la machine de la conversation");
+  const donnees = JSON.parse(readFileSync(path.join(DONNEES, "conversations.json"), "utf8"));
+  const conv = donnees.chats.find((c) => c.projectId === doc?.id);
+  verifier(!!conv && conv.kind === "equipe" && JSON.stringify(conv.roleIds) === '["principal"]', "la conversation appartient au projet, avec l'agent du chat");
+  verifier(donnees.messages.some((m) => m.chatId === conv?.id && m.author.kind === "user" && m.parts.some((p) => p.type === "text" && p.text === "Que contient ce dépôt ?")), "le message part dans la nouvelle conversation");
+  verifier(!donnees.messages.some((m) => m.chatId === "dm-principal" && m.parts.some((p) => p.type === "text" && p.text === "Que contient ce dépôt ?")), "le chat de l'agent n'a pas reçu ce message");
+  verifier(await app.quand(`!!document.querySelector('[data-panneau-projet] [data-conversation=${JSON.stringify(conv?.id ?? "")}]')`), "la conversation apparaît dans le panneau du projet");
+  verifier(await app.quand(`document.querySelector('main header h1') && !!document.querySelector('main header button[aria-label^="Ouvrir le panneau de"]')`), "la conversation de projet a l'en-tête d'un chat d'agent");
 
   for (let i=0;i<50 && !(await fetch(adresse).then(()=>true,()=>false));i++) await attendre(200);
   const code = execFileSync(process.execPath, [fichierServeur, "appairer"], { env: envServeur }).toString().trim();

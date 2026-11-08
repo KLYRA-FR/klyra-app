@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/icons/Icon";
-import { Bouton } from "@/components/ui/Bouton";
+import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { getBridge, type EtatGit } from "@/lib/bridge";
-import { nomDepot, resumeDepot } from "@/lib/depot-projet";
+import { nomDepot, resumeCourt, resumeDepot } from "@/lib/depot-projet";
 import type { Project } from "@/types/domain";
 
 /**
@@ -12,7 +12,7 @@ import type { Project } from "@/types/domain";
  * sa branche, ce qui attend, et « Récupérer les nouveautés » (`git pull --ff-only`, rien n'est écrasé).
  * Jamais l'adresse brute du distant : elle peut porter un identifiant.
  */
-export function DepotProjet({ project }: { project: Project }) {
+export function DepotProjet({ project, compact = false }: { project: Project; compact?: boolean }) {
   const git = getBridge()?.git;
   const github = getBridge()?.github;
   const natif = !!project.githubConnecte && !!github;
@@ -48,6 +48,33 @@ export function DepotProjet({ project }: { project: Project }) {
     setEtat(r.data.etat);
     setRetour({ ok: r.data.ok, message: r.data.message });
   };
+
+  /* Dans le panneau du projet : la branche et ce qui attend, sur une ligne. */
+  if (compact) {
+    return (
+      <section aria-label="Branche du projet" data-depot-barre className="flex flex-col gap-1">
+        <div title={`${nomDepot(project.depot, etat.distant)} · ${resumeDepot(etat)}`} className="flex h-7 items-center gap-2 pr-0.5 pl-2 text-ui-xs text-texte-secondaire">
+          <Icon name="git-branch-01" size={14} className="shrink-0 text-icone-secondaire" />
+          <span className="min-w-0 flex-1 truncate">{resumeCourt(etat)}</span>
+          {etat.suivie && (
+            <BoutonIcone
+              taille="mini"
+              icone={<Icon name="refresh-01" size={14} />}
+              libelle={enCours ? "Récupération…" : "Récupérer les nouveautés"}
+              onClick={() => void recuperer()}
+              disabled={enCours}
+              className="text-icone-secondaire"
+            />
+          )}
+        </div>
+        {retour && (
+          <p role={retour.ok ? "status" : "alert"} className={retour.ok ? "m-0 px-2 text-ui-2xs text-texte-secondaire" : "m-0 px-2 text-ui-2xs text-texte-erreur"}>
+            {retour.message}
+          </p>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section aria-label="Dépôt du projet" data-depot-projet className="flex flex-col gap-2 rounded-md border border-bordure-subtile bg-fond-page p-3">

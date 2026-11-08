@@ -1,5 +1,6 @@
 "use client";
 
+import { agentDeConversation } from "@/lib/conversation-projet";
 import { DIRECT, dansEspace, idDirect, lieuDeConversation, lieuDeHote, lieuParDefaut, lireIdDirect, retenirLieu, useLieuActif } from "./lieux";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
@@ -1725,7 +1726,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       }
 
       // Résumé automatique avant un message à une conversation très lourde : le résumé d'abord, le message attend son tour.
-      const cible = chat.kind === "direct" ? chat.roleIds[0] : (to ?? (chat.roleIds.includes("principal") ? "principal" : chat.roleIds[0]));
+      const cible = chat.kind === "direct" ? chat.roleIds[0] : (to ?? agentDeConversation(chat));
       if (!horsFile && !routineRun && configurationRef.current.resumeAuto && !estCommandeCompacter(text) && resumeAvantEnvoi(chat, cible)) {
         const idFile = idImpose ?? crypto.randomUUID();
         dispatch({ type: "file/ajouter", chatId, message: { id: idFile, text, to, fichiers, ...(citation ? { citation } : {}) } });
@@ -1752,7 +1753,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         ...(routineRun ? { routineRun } : {}),
       };
       dispatch({ type: "message/add", message });
-      const parDefaut = chat.roleIds.includes("principal") ? "principal" : chat.roleIds[0];
+      // Sans mention : l'agent de la conversation (cf. lib/conversation-projet.ts).
+      const parDefaut = agentDeConversation(chat);
       const roleId = chat.kind === "direct" ? chat.roleIds[0] : (to ?? parDefaut);
       // Le message est dans l'état au prochain rendu : l'agent part juste après.
       timers.current.push(setTimeout(() => lancerRef.current(chatId, roleId, message), 0));
@@ -1908,7 +1910,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   const startChat = useCallback((projectId: string, text: string, to: RoleId | null, fichiers: string[] = [], idImpose?: string) => {
     const id = idImpose ?? crypto.randomUUID();
-    const roleIds: RoleId[] = to && to !== "principal" ? ["principal", to] : ["principal"];
+    // Une conversation, un agent : celui à qui l'on écrit d'abord (l'assistant par défaut). D'autres la rejoignent par mention.
+    const roleIds: RoleId[] = [to ?? "principal"];
     const chat: Chat = {
       id,
       kind: "equipe",
@@ -2441,7 +2444,12 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     return { total: r.data.length, nouveaux: r.data.filter((a) => !connus.has(a.url.replace(/\/$/, ""))).length };
   }, [bridge]);
 
-  const enregistrerProjet = useCallback((project: Project) => dispatch({ type: "projet/enregistrer", project }), []);
+  const enregistrerProjet = useCallback((project: Project) => {
+    const action: WorkspaceAction = { type: "projet/enregistrer", project };
+    dispatch(action);
+    // Tout de suite connu : une conversation ouverte dans la foulée (puce Dépôt) prend son lieu.
+    stateRef.current = reducer(stateRef.current, action);
+  }, []);
   const retirerProjet = useCallback((id: string) => dispatch({ type: "projet/supprimer", id }), []);
   const enregistrerProfil = useCallback((user: User) => dispatch({ type: "profil/enregistrer", user }), []);
   const modifierProfil = useCallback((patch: Partial<User>) => dispatch({ type: "profil/modifier", patch }), []);

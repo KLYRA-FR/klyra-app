@@ -1,5 +1,20 @@
 # Journal du projet — app KLYRA
 
+## 8 novembre 2026 — Espace projet, lot 3 : un projet s'ouvre comme un chat, puce « Dépôt »
+
+Suite des lots 1 et 2, validé par Corentin (« go pour le lot 3 avec la puce Dépôt »). Décisions prises avec lui : un agent par conversation de projet, le projet rouvre sa dernière conversation.
+
+- **Ouvrir un projet** (rail, panneau, Projets) rouvre sa dernière conversation. Sans conversation, ou par le « + » du panneau (`&nouvelle=1`) : une conversation neuve, avec la fiche courte du projet (description, dépôt, consignes, trois suggestions qui remplissent le champ, travaux) et le choix de l'agent dans le champ. La page « fiche » intermédiaire disparaît ; « Modifier » et « Retirer » passent dans le « … » et le clic droit.
+- **Une conversation, un agent** : `roleIds[0]` (l'assistant pour les anciennes, qui l'avaient en tête), à qui va tout message sans mention. Une mention fait toujours répondre un autre agent, qui rejoint la conversation sans prendre la place. Plus de puce « Destinataire » dans une conversation de projet.
+- **Même écran qu'un chat d'agent** : en-tête avec son visage (ouvre ses réglages), le titre renommable et épinglable, le choix du modèle et de l'effort, le panneau. Le panneau de droite est celui des chats, avec en plus Aperçu (le site, gardé chargé derrière les autres onglets ; un lien local ou un site lancé par l'agent l'ouvre) et Modifié (avec Publier). Les images s'ouvrent en onglets. Les onglets de conversations au-dessus du fil sont retirés : la liste est dans le panneau de gauche.
+- **Panneau de gauche** : le nom du projet ouvre la liste des projets (et « Tous les projets », « Nouveau projet »), sa branche et « Récupérer » sur une ligne, les conversations du projet (clic droit : épingler, renommer, supprimer…), puis l'arbre des fichiers.
+- **Puce « Dépôt »** dans le chat d'un agent (hors fil) et sur l'Accueil (à la place de « Projet »), comme Claude Desktop : les projets de la machine de la conversation, puis ses dépôts GitHub pas encore ouverts (lus à l'approche de la puce, gardés 5 min). L'envoi ouvre une **nouvelle conversation de cet agent dans ce projet** (le dépôt cloné et enregistré sans formulaire s'il le faut), visible dans le projet ; le chat de l'agent ne reçoit pas le message. Sur un VPS, le clone se fait sur le VPS.
+- Supprimer la conversation ouverte d'un projet ramène au projet, plus à l'accueil.
+- **Limites** : le téléphone affiche toujours les conversations de projet comme avant (un message sans mention y va aussi à l'agent de la conversation, par le PC). Les autres conversations d'équipe (routines, workflows, sans projet) gardent l'aperçu à droite. Publier reste sur ce PC (comme avant).
+- **Reste** : lot 4, l'onglet Git (diff, branches) ; lot 5, PR, tests et commits GitHub, et des outils GitHub pour les agents sans leur donner la clé.
+
+Validation (avec le remplaçant local de `klyra-ui`, voir l'entrée précédente) : types, lint, tests unitaires (seul échec : `src/lib/telephone/reglages.test.ts`, déjà rouge sur main, « visite-guidee »), build, smoke, et dans Electron `test:conversation`, `test:epingler`, `test:coller` (presse-papiers jetable), `test:projet-github` (puce Dépôt comprise, PC puis serveur jetable), `test:consignes-projet`, `test:visionneuse`, `test:menu-contextuel`, `test:agents`. Tests mis à jour pour le nouvel espace (onglets de conversations retirés, menu sans « Ouvrir le projet » dans le projet, image en onglet du panneau) ; `test:epingler` attendait encore un chat de l'assistant sans « Repartir à zéro » (déjà faux sur main), corrigé.
+
 ## 8 novembre 2026 — Espace projet, lots 1 et 2 : ouvrir un dépôt en un clic
 
 Corentin trouvait l'ajout d'un dépôt peu intuitif (« il est censé avoir toutes les infos de lui-même ») et l'espace projet trop éloigné d'un chat. Analyse et refonte proposées en 5 lots ; Corentin a validé les lots 1 et 2.

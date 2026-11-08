@@ -315,14 +315,17 @@ try {
     `relecture après redémarrage : la vignette de chaque image, jamais le chemin complet (${relus}/${joints.length}${fil.includes(COLLAGES) ? ", chemin complet visible" : ""})`,
   );
 
-  /* Une image du fil s'ouvre à droite, sans perdre le panneau de l'aperçu. */
+  /* Une image du fil s'ouvre à droite, dans un onglet du panneau (comme dans le chat d'un agent). */
+  const PANNEAU = 'aside[aria-label="Panneau de la conversation"]';
   await app.ev(`[...document.querySelectorAll('main button[title]')].find((b) => b.title.startsWith(${JSON.stringify(joints[0])})).click()`);
-  await app.quand("document.querySelector('aside[aria-label=\"Image jointe\"] img')?.naturalWidth > 0");
-  verifier(await app.ev("!!document.querySelector('aside[aria-label=\"Image jointe\"] img')"), "conversation de projet : clic sur une image du fil, elle s’ouvre à droite");
+  await app.quand(`document.querySelector(${JSON.stringify(PANNEAU)} + ' [role="tabpanel"] img')?.naturalWidth > 0`);
+  verifier(await app.ev(`!!document.querySelector(${JSON.stringify(PANNEAU)} + ' [role="tabpanel"] img')`), "conversation de projet : clic sur une image du fil, elle s’ouvre à droite, dans le panneau");
   await app.capture("projet-image-ouverte");
-  await app.ev("document.querySelector('aside[aria-label=\"Image jointe\"] button[aria-label=\"Fermer l’image\"]').click()");
-  await app.quand("!document.querySelector('aside[aria-label=\"Image jointe\"]')");
-  verifier(await app.ev("!document.querySelector('aside[aria-label=\"Image jointe\"]')"), "conversation de projet : l’image se referme");
+  const ongletImage = await app.ev(`document.querySelector(${JSON.stringify(PANNEAU)} + ' [role="tab"][aria-selected="true"]')?.innerText.trim()`);
+  await app.ev(`document.querySelector(${JSON.stringify(PANNEAU)} + ' button[aria-label="Fermer l’onglet ${ongletImage}"]')?.click()`);
+  const resteOuverte = () => app.ev(`[...document.querySelectorAll(${JSON.stringify(PANNEAU)} + ' [role="tab"]')].some((t) => t.innerText.trim() === ${JSON.stringify(ongletImage)})`);
+  for (let i = 0; i < 20 && (await resteOuverte()); i++) await attendre(150);
+  verifier(!!ongletImage && !(await resteOuverte()), `conversation de projet : l’image se referme (onglet ${ongletImage})`);
 
   /* 11. Conversation directe : la même chose. */
   await app.aller("/chat?id=dm-principal");
