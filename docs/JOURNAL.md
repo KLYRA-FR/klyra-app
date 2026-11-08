@@ -1,5 +1,13 @@
 # Journal du projet — app KLYRA
 
+## 8 novembre 2026 — Réglages du téléphone : la ligne « Visite guidée » déclarée
+
+`src/lib/telephone/reglages.test.ts` échouait sur main (4046759) : la ligne `visite-guidee` (Réglages › Général › Aide et découverte), ajoutée au catalogue avec la visite guidée, n'avait pas d'état dans `ETATS_LIGNES` (`src/lib/telephone/reglages.ts`).
+
+- Déclarée `sur(RAISONS.ordinateur)`, comme sa voisine `test-prise-en-main` : la visite parcourt les écrans du bureau (montée dans `AppShell`), et sans elle la ligne affiche déjà `SeulementBureau`. Le test n'a pas changé.
+- Rappel : une nouvelle ligne du catalogue des Réglages demande aussi son état sur le téléphone, dans `ETATS_LIGNES`.
+- Vérification : `reglages.test.ts` 24/24 ; `src/lib/telephone` 29 fichiers et 379 tests verts ; `test:mobile` vert (20 + 4). Les 11 fichiers `.tsx` restants de `src/lib/telephone` ne se chargeaient pas dans le conteneur cloud, faute de `klyra-ui` (dépôt privé inaccessible, dépendances installées sans lui). Ils sont à relancer sur un poste qui a `klyra-ui`.
+
 ## 8 novembre 2026 — Reconnexion Composio dans les fils déjà ouverts
 
 Corentin s'est reconnecté à Composio, mais son fil continuait à recevoir « Authentication required ». Les moteurs conservaient l'en-tête OAuth installé au démarrage ; sur le VPS, la génération ne distinguait que connecté/non connecté.
