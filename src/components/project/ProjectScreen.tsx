@@ -30,6 +30,8 @@ const SUGGESTIONS: { libelle: string; icone: IconName; texte: string }[] = [
   { libelle: "Lance le site en local", icone: "globe-01", texte: "Lance le site en local et donne-moi son adresse." },
   { libelle: "Les derniers changements", icone: "clock-backward", texte: "Résume les derniers changements du dépôt (les commits récents) et ce qui reste en cours." },
 ];
+/** Un dépôt ouvert depuis GitHub : ses agents lisent ses pull requests et ses tests (outils github_*). */
+const SUGGESTION_GITHUB = { libelle: "Les pull requests ouvertes", icone: "git-branch-01" as IconName, texte: "Liste les pull requests ouvertes du dépôt, avec l’état de leurs tests et ce qui bloque." };
 
 /**
  * Un projet s'ouvre comme un chat : sur sa dernière conversation (`/chat?id=…`). Sans conversation, ou avec
@@ -130,7 +132,7 @@ function NouvelleConversation({ project }: { project: Project }) {
           <DepotProjet key={`depot-${project.id}`} project={project} />
           <ConsignesProjet key={project.id} project={project} />
           <section aria-label="Pour commencer" className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map((s) => (
+            {[...SUGGESTIONS, ...(project.githubConnecte ? [SUGGESTION_GITHUB] : [])].map((s) => (
               <Bouton key={s.libelle} variant="blanc" taille="compact" iconeGauche={<Icon name={s.icone} size={16} className="text-icone-secondaire" />} onClick={() => preRemplir(s.texte)}>
                 {s.libelle}
               </Bouton>

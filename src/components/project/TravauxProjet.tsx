@@ -126,6 +126,10 @@ export function TravauxProjet({ projectId }: { projectId: string }) {
     });
   };
 
+  /* Rien encore dans le journal pour ce projet : pas de section vide ni de recherche sans objet. */
+  const vide = !!projection && projection.couverture === "ok" && projection.travaux.length === 0 && projection.blocages.length === 0;
+  if (!erreur && !horsApp && (!projection || vide)) return null;
+
   return (
     <section aria-labelledby="travaux-titre" className="flex flex-col gap-3">
       <h2 id="travaux-titre" className="m-0 px-1 text-ui font-semibold text-texte-principal">
@@ -137,9 +141,6 @@ export function TravauxProjet({ projectId }: { projectId: string }) {
       {erreur && <p className="m-0 px-1 text-ui text-texte-secondaire">{erreur}</p>}
       {projection?.couverture === "journal_illisible" && (
         <p className="m-0 px-1 text-ui text-texte-secondaire">Le journal n’a pas pu être lu. Rien n’a été lancé.</p>
-      )}
-      {projection && projection.travaux.length === 0 && projection.couverture === "ok" && (
-        <p className="m-0 px-1 text-ui text-texte-tertiaire">Aucun travail enregistré pour ce projet.</p>
       )}
       {projection && projection.travaux.length > 0 && (
         <div className="flex flex-col gap-2 rounded-xl border border-bordure-subtile bg-fond-page p-3">
@@ -202,7 +203,7 @@ export function TravauxProjet({ projectId }: { projectId: string }) {
           ))}
         </div>
       )}
-      {projection && (
+      {projection && projection.travaux.length > 0 && (
         <form
           className="flex flex-wrap items-center gap-2 px-1"
           onSubmit={(event) => {
