@@ -963,7 +963,7 @@ export function creerAgents(options) {
         args.push(
           "--allowedTools",
           ...COMMANDES_AUTORISEES,
-          ...(mcp ? ["mcp__klyra__cerveau_chercher", "mcp__klyra__cerveau_lire", OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
+          ...(mcp ? ["mcp__klyra__cerveau_chercher", "mcp__klyra__cerveau_lire", "mcp__klyra__memoire_graphe", OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
           // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).

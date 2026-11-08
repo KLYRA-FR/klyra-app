@@ -5,8 +5,10 @@ import path from "node:path";
 import { ouvrirCerveau, sauvegarderCerveau } from "./cerveau.mjs";
 import { cheminSouvenir, lireMemoire } from "./connaissances-agent.mjs";
 import { actionDossier } from "./cerveau-dossiers.mjs";
+import { actionSynchro } from "./cerveau-synchro.mjs";
 import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs.mjs";
-import { accepterLien, annuler, archiver, fusionner, refuserLien, resumeEntretien } from "./graphe-entretien.mjs";
+import { executerGraphe } from "./graphe-agent.mjs";
+import { accepterLien, alleger, annuler, archiver, fusionner, indexMemoires, refuserLien, resumeEntretien } from "./graphe-entretien.mjs";
 import os from "node:os";
 export const PROPRIETAIRE = { agentId: null, projetId: null, proprietaire: true };
 /** Textes expressément choisis dans la boîte de fichiers du poste. Aucune ouverture d'un chemin reçu par HTTP. */
@@ -15,8 +17,8 @@ export function importerDocuments(cerveau, documents, projetId) {
         throw new Error("Importez au plus vingt documents à la fois.");
     let indexes = 0, inchanges = 0;
     for (const d of documents) {
-        if (!d || typeof d.titre !== "string" || !/\.(md|markdown|txt|csv|json|log)$/i.test(d.titre) || typeof d.contenu !== "string" || d.contenu.includes("\0") || typeof d.reference !== "string" || d.reference.length > 1024)
-            throw new Error("Un import doit être un document texte identifié (Markdown, texte, CSV, JSON ou journal).");
+        if (!d || typeof d.titre !== "string" || !/\.(md|markdown|txt|csv|json|log|pdf|png|jpe?g|gif|webp|mp3|flac|ogg|opus|wav)$/i.test(d.titre) || typeof d.contenu !== "string" || d.contenu.includes("\0") || typeof d.reference !== "string" || d.reference.length > 1024)
+            throw new Error("Un import doit être un document identifié (Markdown, texte, CSV, JSON, journal, PDF, image ou son), dont le texte a été lu par l'ordinateur qui l'importe.");
         const origine = `document:${createHash("sha256").update(JSON.stringify([d.reference, projetId])).digest("hex")}`;
         const avant = cerveau.db.prepare("SELECT id FROM connaissance WHERE origine=?").get(origine);
         const liens = avant ? cerveau.note(String(avant.id), PROPRIETAIRE).liens : [];
@@ -70,6 +72,9 @@ export async function indexerSouvenirs(cerveau, agent, memoire, projetId) {
 export function actionCerveau(donnees, action, args) {
     if (action === "graphe-souvenirs")
         return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
+    // Le graphe lu par la personne (téléphone) : comme l'outil memoire_graphe, sans chemin, sans filtre d'agent.
+    if (action === "graphe-lire")
+        return executerGraphe(donnees, args, null);
     if (action.startsWith("graphe-entretien"))
         return entretien(donnees, action, args);
     if (action === "graphe-chercher")
@@ -77,6 +82,8 @@ export function actionCerveau(donnees, action, args) {
     const c = ouvrirCerveau(donnees);
     if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action))
         return actionDossier(c, action, args);
+    if (action === "synchro-exporter" || action === "synchro-appliquer")
+        return actionSynchro(c, action, args);
     const projetId = typeof args.projetId === "string" ? args.projetId : null;
     const portee = typeof args.apercuAgent === "string" && args.apercuAgent ? { agentId: args.apercuAgent, projetId } : { ...PROPRIETAIRE, projetId };
     switch (action) {
@@ -119,7 +126,7 @@ function fichiersPublies(donnees, fichiers) {
 function entretien(donnees, action, args) {
     const r = racinesGraphe(donnees, args.projets);
     switch (action) {
-        case "graphe-entretien": return resumeEntretien(donnees);
+        case "graphe-entretien": return { ...resumeEntretien(donnees), memoires: indexMemoires(r) };
         case "graphe-entretien-refuser":
             refuserLien(donnees, args.cle);
             break;
@@ -135,7 +142,10 @@ function entretien(donnees, action, args) {
         case "graphe-entretien-annuler":
             annuler(donnees, args.id);
             break;
+        case "graphe-entretien-alleger":
+            alleger(r, donnees, args);
+            break;
         default: throw new Error("Action de mémoire inconnue.");
     }
-    return resumeEntretien(donnees);
+    return { ...resumeEntretien(donnees), memoires: indexMemoires(r) };
 }

@@ -97,3 +97,22 @@ test("l’arborescence est paginée même avant l’indexation et les fichiers v
     assert.equal(etatDossier(f.c)!.reperes, 126);
   } finally { f.fermer(); }
 });
+test("PDF, images et sons : leur texte devient cherchable ; un PDF protégé reste un repère qui dit pourquoi", async () => {
+  const f = fixture(), fixtures = path.join(import.meta.dirname, "..", "scripts", "fixtures", "extraction");
+  try {
+    const original = f.ecrire("30_CLIENTS/orion/rapport.pdf", readFileSync(path.join(fixtures, "lo.pdf")));
+    f.ecrire("30_CLIENTS/orion/schema.png", readFileSync(path.join(fixtures, "schema.png")));
+    f.ecrire("30_CLIENTS/orion/protege.pdf", readFileSync(path.join(fixtures, "protege.pdf")));
+    const avant = createHash("sha256").update(readFileSync(original)).digest("hex");
+    await connecterDigitalOs(f.c, f.root); await scannerDossier(f.c);
+    const etat = etatDossier(f.c)!;
+    assert.equal(etat.indexes, 2); assert.equal(etat.reperes, 1);
+    const pdf = f.c.chercher("orion zoe", proprietaire).elements[0];
+    assert.equal(pdf.origine, "DIGITAL-OS/30_CLIENTS/orion/rapport.pdf");
+    assert.match(f.c.lire([pdf.id], proprietaire).elements[0].extrait, /Responsable : Zoé Martin/);
+    assert.equal(f.c.chercher("flux donnees vps", proprietaire).elements[0].origine, "DIGITAL-OS/30_CLIENTS/orion/schema.png");
+    const protege = f.c.chercher("protege.pdf", proprietaire).elements[0];
+    assert.match(f.c.lire([protege.id], proprietaire).elements[0].extrait, /PDF protégé/);
+    assert.equal(createHash("sha256").update(readFileSync(original)).digest("hex"), avant);
+  } finally { f.fermer(); }
+});

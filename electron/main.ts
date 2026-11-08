@@ -6,8 +6,10 @@ import os, { hostname } from "node:os";
 import path from "node:path";
 import { ouvrirCerveau } from "./cerveau";
 import { actionCerveau, indexerSouvenirs } from "./cerveau-service";
+import { extraireFichier, natureDe, TAILLE_EXTRACTION_MAX, texteIndexable } from "./extraction-fichiers";
 import { connecterDigitalOs } from "./cerveau-dossiers";
 import { demarrerVeilleCerveau } from "./cerveau-veille";
+import { creerSynchroCerveau } from "./cerveau-synchro-pc";
 import { appel as appelCerveauVps } from "./fournisseurs-vps";
 import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
@@ -616,6 +618,11 @@ function registerBridge() {
     const sessionId = typeof contexte?.sessionId === "string" ? contexte.sessionId : null;
     return dossierHorsProjet(path.join(os.homedir(), ".klyra", "atelier"), agent === "principal" ? null : agent, sessionId, configClaude(), existsSync);
   };
+  const synchroCerveau = creerSynchroCerveau({
+    donnees: app.getPath("userData"),
+    appeler: async (lieu, action, args) => (await appelCerveauVps(lieu, jetonServeur(lieu), "/klyra/v1/agent/cerveau", "POST", { action, args }, 120_000)).resultat,
+  });
+  if (!SMOKE_TEST && process.env.KLYRA_SANS_VEILLE !== "1") synchroCerveau.demarrer();
   const porteeDe = async (agent: string): Promise<PorteeMemoire | null> => (agent === "principal" ? "auto" : porteeDeLaFiche((await lireFiche(agent))?.content ?? ""));
   const memoireDe = async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
     const portee = await porteeDe(String(agent));
@@ -627,6 +634,10 @@ function registerBridge() {
     return m;
   };
   handle("cerveau:appeler", async (lieu: string | null, action: string, args: Record<string, unknown>) => {
+    // Synchronisation des notes avec un serveur : menée par ce PC (cerveau-synchro-pc.ts), le serveur ne fait que répondre.
+    if (lieu && action === "synchro-etat") return synchroCerveau.vue(lieu);
+    if (lieu && action === "synchro-activer") { const v = synchroCerveau.activer(lieu, args.actif === true); if (args.actif === true) void synchroCerveau.lancer(lieu); return v; }
+    if (lieu && action === "synchro-lancer") { await synchroCerveau.lancer(lieu); return synchroCerveau.vue(lieu); }
     if (action === "sauvegarder" && !lieu) {
       const choix = await dialog.showSaveDialog({ title: "Sauvegarder la mémoire", defaultPath: path.join(app.getPath("documents"), "klyra-memoire.sqlite"), filters: [{ name: "Mémoire KLYRA", extensions: ["sqlite"] }] });
       if (choix.canceled || !choix.filePath) return null;
@@ -638,16 +649,23 @@ function registerBridge() {
       return connecterDigitalOs(ouvrirCerveau(app.getPath("userData")), choix.filePaths[0]);
     }
     if (action === "choisir-documents") {
-      const choix = await dialog.showOpenDialog({ title: "Importer des documents dans la mémoire", properties: ["openFile", "multiSelections"], filters: [{ name: "Documents texte", extensions: ["md", "markdown", "txt", "csv", "json", "log"] }] });
+      const choix = await dialog.showOpenDialog({ title: "Importer des documents dans la mémoire", properties: ["openFile", "multiSelections"], filters: [
+        { name: "Documents, PDF, images et sons", extensions: ["md", "markdown", "txt", "csv", "json", "log", "pdf", "png", "jpg", "jpeg", "gif", "webp", "mp3", "flac", "ogg", "opus", "wav"] },
+      ] });
       if (choix.canceled) return { indexes: 0, inchanges: 0, avertissements: [], annule: true };
       if (choix.filePaths.length > 20) throw new Error("Choisissez au plus vingt fichiers par import.");
       let indexes = 0, inchanges = 0;
       const avertissements: string[] = [];
       for (const fichier of choix.filePaths) {
         try {
-          if (statSync(fichier).size > 2_000_000) throw new Error("Limite de 2 Mo par fichier texte.");
+          // PDF, image, son : ce PC en lit le texte (extraction-fichiers.ts) ; seul ce texte part, jamais le fichier.
+          const lu = natureDe(fichier) ? extraireFichier(fichier) : null;
+          if (natureDe(fichier) && !lu) throw new Error(`Limite de ${TAILLE_EXTRACTION_MAX / 1024 / 1024} Mo pour un PDF, une image ou un son.`);
+          if (lu && !lu.texte) throw new Error(lu.note ?? "Aucun texte lisible dans ce fichier.");
+          if (!lu && statSync(fichier).size > 2_000_000) throw new Error("Limite de 2 Mo par fichier texte.");
           const reference = createHash("sha256").update(realpathSync(fichier)).digest("hex");
-          const corps = { action: "importer-documents", args: { documents: [{ titre: path.basename(fichier), contenu: readFileSync(fichier, "utf8"), reference }], projetId: args.projetId ?? null } };
+          const contenu = lu ? texteIndexable(path.basename(fichier), lu) : readFileSync(fichier, "utf8");
+          const corps = { action: "importer-documents", args: { documents: [{ titre: path.basename(fichier), contenu, reference }], projetId: args.projetId ?? null } };
           const r = lieu ? (await appelCerveauVps(lieu, jetonServeur(lieu), "/klyra/v1/agent/cerveau", "POST", corps, 120_000)).resultat as { indexes: number; inchanges: number } : actionCerveau(app.getPath("userData"), corps.action, corps.args) as { indexes: number; inchanges: number };
           indexes += r.indexes; inchanges += r.inchanges;
         } catch (e) { avertissements.push(`${path.basename(fichier)} : ${e instanceof Error ? e.message : "import impossible"}`); }
