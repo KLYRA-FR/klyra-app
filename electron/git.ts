@@ -194,10 +194,11 @@ export async function publier(dossier: string, message: string): Promise<Resulta
 
   const sorties: string[] = [];
   if (etat.fichiers.length) {
-    const ajout = await git(cwd, ["add", "-A"]);
+    // « -- . » : seulement le dossier du projet, même s'il n'est qu'une partie du dépôt (c'est ce que l'écran a montré).
+    const ajout = await git(cwd, ["add", "-A", "--", "."]);
     sorties.push(ajout.sortie);
     if (ajout.code !== 0) return { ok: false, commit: null, branche: etat.branche, sortie: sorties.join("\n") };
-    const commit = await git(cwd, ["commit", "-m", texte]);
+    const commit = await git(cwd, ["commit", "-m", texte, "--", "."]);
     sorties.push(commit.sortie);
     if (commit.code !== 0) return { ok: false, commit: null, branche: etat.branche, sortie: sorties.join("\n") };
   }

@@ -210,10 +210,18 @@ test("onglet Git et outils : différences, publier avec le compte connecté, act
     // Le dossier doit encore pointer vers le dépôt du projet, sans réécriture d'adresse dans sa configuration.
     await assert.rejects(g.activite(dossier, "autre/depot"), /ne pointe plus vers le dépôt du projet/);
     assert.equal((await g.activite(dossier, "Demo/Site")).depot, "demo/site");
-    git(dossier, "config", "--local", "url.https://github.com/autre/depot.git.insteadOf", "https://github.com/demo/site.git");
-    await assert.rejects(g.publier(dossier, "Détour", "demo/site"), /réécrit des adresses/);
-    await assert.rejects(g.recuperer(dossier, "demo/site"), /réécrit des adresses/);
-    git(dossier, "config", "--local", "--remove-section", "url.https://github.com/autre/depot.git");
+    // Rien dans la configuration locale du clone ne décide où part le jeton : adresse réécrite, proxy pour cette
+    // adresse précise (il l'emporterait sur ce que l'app impose), ou la même chose par un fichier inclus.
+    const piege = path.join(b.tmp, "piege.gitconfig");
+    writeFileSync(piege, "[url \"https://github.com/autre/x.git\"]\n insteadOf = https://github.com/demo/site.git\n");
+    for (const [cle, valeur] of [["url.https://github.com/autre/depot.git.insteadOf", "https://github.com/demo/site.git"], ["http.https://github.com/demo/site.git.proxy", "http://127.0.0.1:9"], ["http.sslCAInfo", "/tmp/ca.pem"], ["core.askPass", "/tmp/x"], ["include.path", piege]] as const) {
+      git(dossier, "config", "--local", cle, valeur);
+      await assert.rejects(g.publier(dossier, "Détour", "demo/site"), /change les adresses, le réseau ou les identifiants/, cle);
+      await assert.rejects(g.recuperer(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, cle);
+      await assert.rejects(g.activite(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, cle);
+      git(dossier, "config", "--local", "--unset-all", cle);
+    }
+    assert.equal((await g.activite(dossier, "demo/site")).depot, "demo/site", "configuration nettoyée : de nouveau lisible");
     assert.equal(JSON.stringify([activite, pr]).includes("jeton-fictif"), false);
   } finally { if (homeAvant === undefined) delete process.env.HOME; else process.env.HOME = homeAvant; b.nettoyer(); }
 });

@@ -268,6 +268,7 @@ export class GithubProjets {
         const cles = [
             ["core.hooksPath", path.join(this.d.racine, ".hooks-desactives")],
             ["core.fsmonitor", "false"],
+            ["core.askPass", ""],
             ["credential.helper", ""],
             ["http.followRedirects", "false"],
             ["http.sslVerify", "true"],
@@ -286,15 +287,18 @@ export class GithubProjets {
     }
     /**
      * Le dépôt d'un clone, vérifié avant de parler à GitHub : son origine doit être le dépôt attendu (celui du projet
-     * enregistré, quand on le connaît), et sa configuration locale ne doit réécrire aucune adresse (`url.*.insteadOf`).
+     * enregistré, quand on le connaît), et sa configuration locale (fichiers inclus compris) ne doit rien régler de ce
+     * qui décide où part le jeton : adresses (`url.*`), HTTP (`http.*` : proxy, TLS, certificats, y compris pour une
+     * adresse précise, qui l'emporterait sur ce que l'app impose), identifiants, `askPass`, inclusions. Un clone de l'app
+     * n'en a aucun ; un agent qui en écrit un bloque l'envoi au lieu de le détourner.
      */
     async depotVerifie(cible, attendu) {
         const nom = await this.depotDe(cible);
         if (typeof attendu === "string" && attendu && attendu.toLowerCase() !== nom.toLowerCase())
             throw new Error("Ce dossier ne pointe plus vers le dépôt du projet : rien n’a été lu ni envoyé.");
-        const reecritures = (await this.commande("git", ["config", "--local", "--get-regexp", "^url\\."], this.env(), cible).catch(() => "")).trim();
-        if (reecritures)
-            throw new Error("La configuration git de ce dossier réécrit des adresses : rien n’est envoyé à GitHub depuis ce dossier.");
+        const reglages = (await this.commande("git", ["config", "--local", "--includes", "--name-only", "--get-regexp", "^(url|http|include|includeif|credential)\\.|^core\\.(askpass|gitproxy|sshcommand)$"], this.env(), cible).catch(() => "")).trim();
+        if (reglages)
+            throw new Error("La configuration git de ce dossier change les adresses, le réseau ou les identifiants : rien n’est envoyé à GitHub depuis ce dossier.");
         return nom;
     }
     async racine(creer) {
@@ -505,7 +509,9 @@ export class GithubProjets {
         const c = await this.connexion();
         const cible = await this.dossier(dossier);
         const nom = await this.depotVerifie(cible, depotAttendu);
-        const branche = validerBranche((await etatGit(cible)).branche ?? "");
+        // La branche suivie sur GitHub (son nom peut différer de la branche locale), sinon la branche locale.
+        const suivie = (await this.commande("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], this.env(), cible).catch(() => "")).trim();
+        const branche = validerBranche(suivie.startsWith("origin/") ? suivie.slice("origin/".length) : ((await etatGit(cible)).branche ?? ""));
         // Le jeton pour la seule récupération ; l'avance rapide, sans lui (elle extrait des fichiers, donc des filtres).
         // git refuse les conflits ; aucun stash, reset ni merge automatique.
         await this.commande("git", ["fetch", `https://github.com/${nom}.git`, `+refs/heads/${branche}:refs/remotes/origin/${branche}`], this.gitEnv(c.jeton), cible, 5 * 60_000);

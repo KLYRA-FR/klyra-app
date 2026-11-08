@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { clonerDepot, clonerVers, diffFichierGit, etatGit, lireDepotGithub, lireStatutGit, messageClone, recupererDepot } from "./git.ts";
+import { clonerDepot, clonerVers, diffFichierGit, etatGit, lireDepotGithub, lireStatutGit, messageClone, publier, recupererDepot } from "./git.ts";
 
 /** Un dépôt nu local (le « GitHub » du test) avec un premier commit sur main, et un dossier de travail. */
 function bac() {
@@ -210,4 +210,20 @@ test("un projet qui n'est qu'un sous-dossier d'un dépôt : ses fichiers, relati
 test("lireStatutGit : un renommage noté dans l'arbre de travail seulement", () => {
   const { fichiers } = lireStatutGit(["## main", " R neuf.txt", "vieux.txt", ""].join("\0"));
   assert.deepEqual(fichiers, [{ statut: "R", chemin: "neuf.txt", ancien: "vieux.txt" }]);
+});
+
+test("publier un projet sous-dossier : seulement ses fichiers, ceux que l'écran montre", async () => {
+  const b = bac();
+  try {
+    const cible = path.join(b.racine, "mono2");
+    b.g(b.racine, "clone", b.nu, cible);
+    b.g(cible, "config", "user.name", "Test"); b.g(cible, "config", "user.email", "test@klyra.local");
+    mkdirSync(path.join(cible, "apps", "site"), { recursive: true });
+    mkdirSync(path.join(cible, "packages"), { recursive: true });
+    writeFileSync(path.join(cible, "apps", "site", "x.txt"), "x\n");
+    writeFileSync(path.join(cible, "packages", "y.txt"), "y\n");
+    await publier(path.join(cible, "apps", "site"), "Seulement le site");
+    assert.equal(b.g(cible, "show", "--name-only", "--format=", "HEAD").trim(), "apps/site/x.txt");
+    assert.match(b.g(cible, "status", "--porcelain"), /\?\? packages\//);
+  } finally { b.fin(); }
 });
