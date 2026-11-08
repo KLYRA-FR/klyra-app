@@ -77,7 +77,8 @@ export function lireStatutGit(brut: string): { tete: string; fichiers: FichierGi
     if (l.length < 4) continue;
     const code = l.slice(0, 2);
     const chemin = l.slice(3);
-    if (code[0] === "R" || code[0] === "C") {
+    // Renommé ou copié, dans l'index (« R ») ou seulement dans l'arbre de travail (« R» après `add -N`).
+    if (/[RC]/.test(code)) {
       fichiers.push({ statut: "R", chemin, ancien: morceaux[++i] ?? "" });
       continue;
     }
@@ -87,12 +88,31 @@ export function lireStatutGit(brut: string): { tete: string; fichiers: FichierGi
   return { tete, fichiers };
 }
 
+/**
+ * Le statut ne parle que du dossier du projet, ses chemins relatifs à lui : un projet peut n'être qu'un
+ * sous-dossier d'un dépôt plus grand (git les donne relatifs à la racine du dépôt).
+ */
+export function cheminsDuDossier(fichiers: FichierGit[], prefixe: string): FichierGit[] {
+  if (!prefixe) return fichiers;
+  return fichiers
+    .filter((f) => f.chemin.startsWith(prefixe))
+    .map((f) => {
+      const suite: FichierGit = { statut: f.statut, chemin: f.chemin.slice(prefixe.length) };
+      if (f.ancien?.startsWith(prefixe)) suite.ancien = f.ancien.slice(prefixe.length);
+      else if (f.ancien) suite.statut = "A"; // renommé depuis l'extérieur du projet : nouveau ici
+      return suite;
+    });
+}
+
 export async function etatGit(dossier: string): Promise<EtatGit> {
   const cwd = absolu(dossier);
-  const statut = await gitSortie(cwd, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-b", "-z", "--untracked-files=all"]);
+  const statut = await gitSortie(cwd, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-b", "-z", "--untracked-files=all", "--", "."]);
   if (statut.code !== 0) return { depot: false, branche: null, suivie: false, enAvance: 0, enRetard: 0, fichiers: [], distant: null };
+  const prefixe = (await gitSortie(cwd, ["rev-parse", "--show-prefix"])).sortie.toString("utf8").trim();
 
-  const { tete, fichiers } = lireStatutGit(statut.sortie.toString("utf8"));
+  const lu = lireStatutGit(statut.sortie.toString("utf8"));
+  const tete = lu.tete;
+  const fichiers = cheminsDuDossier(lu.fichiers, prefixe);
   // « ## main...origin/main [ahead 2, behind 1] » ou « ## pelin » (pas de branche distante).
   // Une branche peut porter des points (« release-1.2 ») ; « HEAD (no branch) » : aucune.
   const m = tete.match(/^## (?:No commits yet on |Initial commit on )?(\S+?)(?:\.\.\.(\S+))?(?: \[[^\]]*\])?$/);
@@ -134,7 +154,8 @@ export async function diffFichierGit(dossier: string, chemin: unknown, ancien?: 
   let binaire = false;
   let tropGros = false;
 
-  const lu = await gitSortie(cwd, ["show", `HEAD:${relatifAvant}`]);
+  // « HEAD:./chemin » : relatif au dossier du projet, même s'il n'est qu'une partie du dépôt.
+  const lu = await gitSortie(cwd, ["show", `HEAD:./${relatifAvant}`]);
   let avant: string | null = null;
   if (lu.code === 0) {
     if (lu.sortie.length > DIFF_MAX) tropGros = true;

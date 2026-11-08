@@ -18,7 +18,7 @@ import { appelCarte, OUTIL_CARTE } from "./cartes-interactives";
 import { estOutilWorkflow, OUTILS_WORKFLOWS, OUTILS_WORKFLOWS_LIBRES } from "./workflows-outils";
 import { estOutilFil, OUTILS_FILS } from "./fils-outils";
 import { OUTILS_CERVEAU, executerCerveau } from "./cerveau-outils";
-import { dossierGithubDeConversation, estOutilGithub, executerOutilGithub, OUTILS_GITHUB, OUTILS_GITHUB_LIBRES } from "./github-outils";
+import { depotGithubDeConversation, estOutilGithub, executerOutilGithub, OUTILS_GITHUB_CLAUDE, outilsGithubPour } from "./github-outils";
 import { githubProjets } from "./github";
 
 /**
@@ -268,8 +268,8 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      /* GitHub : seulement dans une conversation d'un projet ouvert depuis GitHub sur ce PC. */
-      const outilsGithub = dossierGithubDeConversation(app.getPath("userData"), appelant.chatId) ? OUTILS_GITHUB : [];
+      /* GitHub : dans une conversation d'un projet ouvert depuis GitHub sur ce PC (ou qui vient de naître). */
+      const outilsGithub = outilsGithubPour(app.getPath("userData"), appelant.chatId);
       return resultat({ tools: [...OUTILS_CERVEAU, ...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...OUTILS_WORKFLOWS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsComposio, ...outilsGithub, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE] });
     }
     case "tools/call": {
@@ -278,7 +278,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
       if (OUTILS_CERVEAU.some((o) => o.name === nom)) return resultat(executerCerveau(app.getPath("userData"), nom, args, appelant.roleId, appelant.chatId));
       /* GitHub : le dépôt du projet de la conversation, en lecture, avec la connexion de l'app (jamais le jeton). */
       if (estOutilGithub(nom)) {
-        const r = await executerOutilGithub(nom, args, dossierGithubDeConversation(app.getPath("userData"), appelant.chatId), githubProjets());
+        const r = await executerOutilGithub(nom, args, depotGithubDeConversation(app.getPath("userData"), appelant.chatId), githubProjets());
         return texte(r.texte, r.erreur);
       }
       /* Le navigateur de KLYRA : seulement les onglets de la conversation de l'agent (cf. navigateur/). */
@@ -402,5 +402,5 @@ export const OUTILS_APP = () => [
   // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès.
   ...OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`),
   // GitHub : lire le dépôt du projet ne change rien.
-  ...OUTILS_GITHUB_LIBRES.map((o) => `mcp__klyra__${o}`),
+  ...OUTILS_GITHUB_CLAUDE,
 ];

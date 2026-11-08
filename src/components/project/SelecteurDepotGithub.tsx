@@ -123,9 +123,10 @@ export function SelecteurDepotGithub({
     setErreur(null);
     setOuverture(depot.nom);
     const r = await github.ouvrir(lieu, depot.nom, branche);
-    // Fenêtre quittée, ou autre serveur choisi pendant le clone : le projet n'est pas créé ici.
-    if (!monte.current || lieuParDefaut() !== lieu) return;
+    if (!monte.current) return;
     setOuverture(null);
+    // Autre serveur choisi pendant le clone : le projet n'est pas créé ici (le dépôt reste cloné là-bas).
+    if (lieuParDefaut() !== lieu) return setErreur("Le serveur affiché a changé pendant l’ouverture : rouvre le dépôt depuis ce serveur.");
     if (!r.ok) return setErreur(r.message);
     const { projet, existant } = projetDepuisDepot({ depot: { ...depot, nom: r.data.depot }, branche, dossier: r.data.dossier, lieu, projets });
     onOuvert(projet, existant);

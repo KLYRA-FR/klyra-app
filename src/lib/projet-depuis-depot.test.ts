@@ -9,7 +9,7 @@ describe("projetDepuisDepot", () => {
   test("tout vient de GitHub : nom, ligne de description, aperçu, dépôt", () => {
     const { projet: p, existant } = projetDepuisDepot({ depot, branche: "main", dossier: "/home/c/KLYRA/GitHub/KLYRA-FR/klyra-app-abc", lieu: null, projets: [], maintenant: new Date("2026-11-08T12:00:00Z") });
     expect(existant).toBe(false);
-    expect(p).toMatchObject({ id: "klyra-app", name: "klyra-app", subtitle: "Agents IA Klyra", brief: "", previewUrl: "app.klyra.fr", depot: "KLYRA-FR/klyra-app", githubConnecte: true, roleIds: ["principal"] });
+    expect(p).toMatchObject({ id: "klyra-app", name: "klyra-app", subtitle: "Agents IA Klyra", brief: "", previewUrl: "https://app.klyra.fr", depot: "KLYRA-FR/klyra-app", githubConnecte: true, roleIds: ["principal"] });
     expect(p.lieu).toBeUndefined();
   });
   test("sur un serveur : le lieu suit ; sans description ni site : rien d'inventé", () => {

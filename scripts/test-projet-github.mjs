@@ -88,7 +88,7 @@ try {
   verifier(readFileSync(path.join(clone, "README.md"), "utf8").includes("Nouveauté"), "le nouveau commit est bien dans les fichiers");
   await attendre(1200);
   const projet = lireProjets().find(p => p.id === "site");
-  verifier(projet?.githubConnecte === true && projet.depot === "demo/site" && projet.subtitle === "Site de démonstration" && projet.previewUrl === "demo.example.com", "le projet garde le dépôt, sa description et son site");
+  verifier(projet?.githubConnecte === true && projet.depot === "demo/site" && projet.subtitle === "Site de démonstration" && projet.previewUrl === "https://demo.example.com", "le projet garde le dépôt, sa description et son site (en https)");
 
   await nouveau();
   verifier(/Déjà ouvert/.test(await app.ev(`${ligne("demo/site")}?.innerText ?? ''`)), "un dépôt déjà ouvert est signalé");

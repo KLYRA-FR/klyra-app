@@ -60,7 +60,7 @@ export function useEtatDepot(project: Project) {
   /** `git pull --ff-only` (rien n'est écrasé) ; les autres vues du dépôt relisent. */
   const recuperer = useCallback(async (): Promise<{ ok: boolean; message: string }> => {
     if (natif) {
-      const r = await github!.recuperer(project.lieu ?? null, project.folder);
+      const r = await github!.recuperer(project.lieu ?? null, project.folder, project.depot);
       if (!r.ok) return { ok: false, message: r.message };
       setEtat(r.data);
       signalerDepot(project.id);
@@ -72,7 +72,7 @@ export function useEtatDepot(project: Project) {
     setEtat(r.data.etat);
     signalerDepot(project.id);
     return { ok: r.data.ok, message: r.data.message };
-  }, [natif, git, github, project.id, project.folder, project.lieu]);
+  }, [natif, git, github, project.id, project.folder, project.lieu, project.depot]);
 
   return { etat, natif, disponible, relire, recuperer };
 }

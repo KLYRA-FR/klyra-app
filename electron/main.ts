@@ -453,11 +453,11 @@ function registerBridge() {
       case "branches": return g.branches(String(corps.depot ?? ""));
       case "ouvrir": return g.ouvrir(String(corps.depot ?? ""), String(corps.branche ?? ""));
       case "etat-depot": return g.etatDepot(String(corps.dossier ?? ""));
-      case "recuperer": return g.recuperer(String(corps.dossier ?? ""));
+      case "recuperer": return g.recuperer(String(corps.dossier ?? ""), corps.depot);
       case "diff": return g.diff(String(corps.dossier ?? ""), corps.chemin, corps.ancien);
-      case "publier": return g.publier(String(corps.dossier ?? ""), corps.message);
-      case "activite": return g.activite(String(corps.dossier ?? ""));
-      case "pull-request": return g.pullRequest(String(corps.dossier ?? ""), corps.numero);
+      case "publier": return g.publier(String(corps.dossier ?? ""), corps.message, corps.depot);
+      case "activite": return g.activite(String(corps.dossier ?? ""), corps.depot);
+      case "pull-request": return g.pullRequest(String(corps.dossier ?? ""), corps.numero, corps.depot);
       default: throw new Error("Demande GitHub inconnue.");
     }
   };

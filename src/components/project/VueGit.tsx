@@ -91,7 +91,7 @@ function ActiviteDepot({ project, lecture }: { project: Project; lecture: number
   useEffect(() => {
     if (!github?.activite) return;
     let actif = true;
-    void github.activite(project.lieu ?? null, project.folder).then((r) => {
+    void github.activite(project.lieu ?? null, project.folder, project.depot).then((r) => {
       if (!actif) return;
       setRendue(demandee);
       if (r.ok) {
@@ -102,7 +102,7 @@ function ActiviteDepot({ project, lecture }: { project: Project; lecture: number
     return () => {
       actif = false;
     };
-  }, [github, project.lieu, project.folder, demandee]);
+  }, [github, project.lieu, project.folder, project.depot, demandee]);
 
   if (!github?.activite) return null;
   const actualiser = (

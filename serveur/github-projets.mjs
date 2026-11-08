@@ -260,8 +260,42 @@ export class GithubProjets {
         const nom = validerNomDepot(depot);
         return (await this.pages(`/repos/${nom}/branches?per_page=100`)).map((b) => validerBranche(b.name));
     }
+    /**
+     * Git dans un clone, sans jeton : la configuration passée ici l'emporte sur celle du dépôt (qu'un agent peut
+     * écrire) ; ni crochets, ni fsmonitor, ni proxy, ni TLS désactivé. Pour add, commit, merge.
+     */
+    gitEnvLocal(extra = []) {
+        const cles = [
+            ["core.hooksPath", path.join(this.d.racine, ".hooks-desactives")],
+            ["core.fsmonitor", "false"],
+            ["credential.helper", ""],
+            ["http.followRedirects", "false"],
+            ["http.sslVerify", "true"],
+            ["http.proxy", ""],
+            ["http.https://github.com/.sslVerify", "true"],
+            ["http.https://github.com/.proxy", ""],
+            ...extra,
+        ];
+        const env = { ...this.env(), GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_CONFIG_COUNT: String(cles.length) };
+        cles.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
+        return env;
+    }
+    /** La même chose avec le jeton, seulement pour parler à GitHub (clone, fetch, push) : jamais pour une commande qui exécute du contenu du dépôt (filtres, checkout). */
     gitEnv(jeton) {
-        return { ...this.env(), GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_CONFIG_COUNT: "4", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${jeton}`).toString("base64")}`, GIT_CONFIG_KEY_1: "http.followRedirects", GIT_CONFIG_VALUE_1: "false", GIT_CONFIG_KEY_2: "credential.helper", GIT_CONFIG_VALUE_2: "", GIT_CONFIG_KEY_3: "core.hooksPath", GIT_CONFIG_VALUE_3: path.join(this.d.racine, ".hooks-desactives") };
+        return this.gitEnvLocal([["http.https://github.com/.extraheader", `Authorization: Basic ${Buffer.from(`x-access-token:${jeton}`).toString("base64")}`]]);
+    }
+    /**
+     * Le dépôt d'un clone, vérifié avant de parler à GitHub : son origine doit être le dépôt attendu (celui du projet
+     * enregistré, quand on le connaît), et sa configuration locale ne doit réécrire aucune adresse (`url.*.insteadOf`).
+     */
+    async depotVerifie(cible, attendu) {
+        const nom = await this.depotDe(cible);
+        if (typeof attendu === "string" && attendu && attendu.toLowerCase() !== nom.toLowerCase())
+            throw new Error("Ce dossier ne pointe plus vers le dépôt du projet : rien n’a été lu ni envoyé.");
+        const reecritures = (await this.commande("git", ["config", "--local", "--get-regexp", "^url\\."], this.env(), cible).catch(() => "")).trim();
+        if (reecritures)
+            throw new Error("La configuration git de ce dossier réécrit des adresses : rien n’est envoyé à GitHub depuis ce dossier.");
+        return nom;
     }
     async racine(creer) {
         const base = path.resolve(this.d.base ?? path.dirname(this.d.racine));
@@ -358,10 +392,10 @@ export class GithubProjets {
      * Sans identité git sur la machine (un VPS), le commit est signé du compte GitHub connecté (adresse noreply).
      * Les crochets git du dépôt ne tournent pas (comme au clonage) ; jamais de `--force`.
      */
-    async publier(dossier, message) {
+    async publier(dossier, message, depotAttendu) {
         const c = await this.connexion();
         const cible = await this.dossier(dossier);
-        const nom = await this.depotDe(cible);
+        const nom = await this.depotVerifie(cible, depotAttendu);
         const texteCommit = typeof message === "string" ? message.trim().slice(0, 5000) : "";
         const etat = await etatGit(cible);
         if (!etat.branche)
@@ -374,20 +408,27 @@ export class GithubProjets {
         const env = this.gitEnv(c.jeton);
         if (etat.fichiers.length) {
             const identite = (await this.commande("git", ["config", "user.email"], this.env(), cible).catch(() => "")).trim() ? [] : await this.identite(c);
+            // Sans le jeton : add et commit passent par les filtres du dépôt.
+            const local = this.gitEnvLocal();
             try {
-                await this.commande("git", [...identite, "add", "-A"], env, cible);
-                await this.commande("git", [...identite, "commit", "--no-verify", "-m", texteCommit], env, cible);
+                await this.commande("git", [...identite, "add", "-A"], local, cible);
+                await this.commande("git", [...identite, "commit", "--no-verify", "-m", texteCommit], local, cible);
             }
             catch {
                 throw new Error("Le commit n’a pas abouti sur cette machine (un fichier verrouillé, ou l’identité git). Rien n’a été envoyé.");
             }
         }
         try {
-            await this.commande("git", ["push", ...(etat.suivie ? [] : ["-u"]), "origin", `HEAD:refs/heads/${branche}`], env, cible, 5 * 60_000);
+            // Vers l'adresse du dépôt vérifié, jamais vers ce que l'origine du dossier dirait (`pushurl`).
+            await this.commande("git", ["push", `https://github.com/${nom}.git`, `HEAD:refs/heads/${branche}`], env, cible, 5 * 60_000);
+            // Un envoi vers une adresse ne met pas à jour la branche suivie : on la pose, l'état dit « à jour ».
+            await this.commande("git", ["update-ref", `refs/remotes/origin/${branche}`, "HEAD"], this.gitEnvLocal(), cible).catch(() => "");
+            if (!etat.suivie)
+                await this.commande("git", ["branch", "--set-upstream-to", `origin/${branche}`], this.gitEnvLocal(), cible).catch(() => "");
         }
         catch {
             // Pas de sortie de git (elle peut porter une adresse) : on dit ce qu'on sait vérifier.
-            await this.commande("git", ["fetch", "origin", branche], env, cible, 5 * 60_000).catch(() => "");
+            await this.commande("git", ["fetch", `https://github.com/${nom}.git`, `+refs/heads/${branche}:refs/remotes/origin/${branche}`], env, cible, 5 * 60_000).catch(() => "");
             const apres = await etatGit(cible).catch(() => null);
             throw new Error((apres?.enRetard ?? 0) > 0
                 ? `La branche ${branche} a avancé sur GitHub : récupère les nouveautés, puis publie. Ton commit est gardé ici.`
@@ -409,10 +450,10 @@ export class GithubProjets {
      * Ce que GitHub dit du dépôt d'un projet de cette machine : pull requests ouvertes, tests de la branche en
      * cours, derniers commits. Chaque partie peut manquer (droits, réseau) sans faire échouer les autres.
      */
-    async activite(dossier) {
+    async activite(dossier, depotAttendu) {
         const c = await this.connexion();
         const cible = await this.dossier(dossier);
-        const nom = await this.depotDe(cible);
+        const nom = await this.depotVerifie(cible, depotAttendu);
         const branche = (await etatGit(cible)).branche;
         const ref = branche ? encodeURIComponent(validerBranche(branche)) : null;
         const essai = (f) => f().catch(() => null);
@@ -424,13 +465,13 @@ export class GithubProjets {
         return { depot: nom, url: `https://github.com/${nom}`, branche, pullRequests: pulls, tests, commits };
     }
     /** Une pull request du dépôt du projet, en détail : description, fichiers, avis, tests. */
-    async pullRequest(dossier, numero) {
+    async pullRequest(dossier, numero, depotAttendu) {
         const n = typeof numero === "number" ? numero : Number(numero);
         if (!Number.isInteger(n) || n < 1 || n > 10_000_000)
             throw new Error("Numéro de pull request invalide.");
         const c = await this.connexion();
         const cible = await this.dossier(dossier);
-        const nom = await this.depotDe(cible);
+        const nom = await this.depotVerifie(cible, depotAttendu);
         const p = objet(await this.api(`/repos/${nom}/pulls/${n}`, c));
         const [resume] = lirePullRequests([p]);
         if (!resume)
@@ -460,16 +501,15 @@ export class GithubProjets {
             tests,
         };
     }
-    async recuperer(dossier) {
+    async recuperer(dossier, depotAttendu) {
         const c = await this.connexion();
         const cible = await this.dossier(dossier);
-        const origine = (await this.commande("git", ["config", "--get", "remote.origin.url"], this.env(), cible)).trim();
-        const match = origine.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\.git$/);
-        if (!match)
-            throw new Error("Ce projet n’est pas relié à GitHub.");
-        validerNomDepot(match[1]);
+        const nom = await this.depotVerifie(cible, depotAttendu);
+        const branche = validerBranche((await etatGit(cible)).branche ?? "");
+        // Le jeton pour la seule récupération ; l'avance rapide, sans lui (elle extrait des fichiers, donc des filtres).
         // git refuse les conflits ; aucun stash, reset ni merge automatique.
-        await this.commande("git", ["-c", "pull.rebase=false", "pull", "--ff-only", "origin"], this.gitEnv(c.jeton), cible, 5 * 60_000);
+        await this.commande("git", ["fetch", `https://github.com/${nom}.git`, `+refs/heads/${branche}:refs/remotes/origin/${branche}`], this.gitEnv(c.jeton), cible, 5 * 60_000);
+        await this.commande("git", ["merge", "--ff-only", `refs/remotes/origin/${branche}`], this.gitEnvLocal(), cible, 5 * 60_000);
         return etatGit(cible);
     }
 }

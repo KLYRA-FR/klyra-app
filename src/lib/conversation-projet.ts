@@ -14,7 +14,14 @@ export function conversationsDuProjet<T extends Pick<Chat, "projectId" | "kind" 
   return chats.filter((c) => c.kind === "equipe" && c.projectId === projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-/** La conversation qu'ouvre le projet : la dernière où l'on a travaillé, s'il y en a une. */
+/** Une conversation tenue par l'app pour une routine ou un workflow, pas par la personne. */
+const automatique = (id: string) => id.startsWith("routine-") || id.startsWith("wf-");
+
+/**
+ * La conversation qu'ouvre le projet : la dernière où l'on a travaillé, s'il y en a une. Celles d'une routine
+ * ou d'un workflow passent après : une routine horaire ne doit pas prendre la place de la conversation de la personne.
+ */
 export function derniereConversation<T extends Pick<Chat, "id" | "projectId" | "kind" | "updatedAt">>(chats: T[], projectId: string): string | null {
-  return conversationsDuProjet(chats, projectId)[0]?.id ?? null;
+  const liste = conversationsDuProjet(chats, projectId);
+  return (liste.find((c) => !automatique(c.id)) ?? liste[0])?.id ?? null;
 }

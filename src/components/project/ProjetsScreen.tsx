@@ -193,7 +193,8 @@ function FormulaireProjet({ initial, onFini }: { initial: Project; onFini: (id: 
       name: name.trim(),
       subtitle: subtitle.trim(),
       brief: brief.trim(),
-      previewUrl: previewUrl.trim().replace(/^https?:\/\//, ""),
+      // http:// se lit sans schéma (serveur de dev) ; https:// reste, sinon l'aperçu repartirait en http.
+      previewUrl: previewUrl.trim().replace(/^http:\/\//, ""),
       status,
       pinned,
       updatedAt: new Date().toISOString(),

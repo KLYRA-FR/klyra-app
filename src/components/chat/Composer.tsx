@@ -436,10 +436,11 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
     setAlerte(null);
   };
 
+  /* Sans choix, le message va à l'agent de la conversation (le premier de `roleIds`, l'assistant d'ordinaire). */
   const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: assistant.name, icone: <AgentRond roleId="principal" taille={20} /> },
+    { value: AUTO, label: agent.name, icone: <AgentRond roleId={agent.id} taille={20} /> },
     ...roles
-      .filter((r) => r.id !== "principal")
+      .filter((r) => r.id !== agent.id)
       .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <AgentRond roleId={r.id} taille={20} /> })),
   ];
 

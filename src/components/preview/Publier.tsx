@@ -31,7 +31,7 @@ export function Publier({ project, onFermer }: { project: Project; onFermer: () 
     if (!bridge) return;
     setEnvoi(true);
     setErreur(null);
-    const r = natif && bridge.github?.publier ? await bridge.github.publier(project.lieu ?? null, project.folder, message) : await bridge.git.publier(project.folder, message);
+    const r = natif && bridge.github?.publier ? await bridge.github.publier(project.lieu ?? null, project.folder, message, project.depot) : await bridge.git.publier(project.folder, message);
     setEnvoi(false);
     if (r.ok) {
       setResultat(r.data);

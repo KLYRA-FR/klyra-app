@@ -1,5 +1,19 @@
 # Journal du projet — app KLYRA
 
+## 8 novembre 2026 — Espace projet : relecture indépendante, correctifs (PR #244)
+
+Une relecture du diff complet par un autre agent a relevé des points ; tous sont corrigés et testés.
+
+- **Jeton GitHub** : add, commit et l'avance rapide de « Récupérer » passaient par les filtres du dépôt avec le jeton dans leur environnement (un agent pouvait poser un filtre qui le lisait). Le jeton ne part plus qu'avec clone, fetch et push. « Récupérer » devient fetch (avec jeton) puis avance rapide (sans). La configuration imposée l'emporte sur celle du dépôt : ni crochets, ni fsmonitor, ni proxy, ni TLS désactivé.
+- **Le bon dépôt** : l'écran et les outils des agents passent le dépôt du projet enregistré ; un clone dont l'origine a changé, ou dont la configuration locale réécrit des adresses, est refusé ; fetch et push visent l'adresse vérifiée (plus `origin`, que `pushurl` pouvait détourner). Après un envoi, la branche suivie est posée : l'état dit « à jour ».
+- **Outils des agents** : autorisés sans demande sur un VPS comme sur le PC ; listés aussi dans une conversation qui vient de naître (sinon absents de sa première session) ; tout le texte venu de GitHub est présenté comme des données.
+- **Sous-dossier d'un dépôt** : un projet qui n'est qu'une partie d'un dépôt montrait des fichiers d'ailleurs et des différences fausses ; le statut est limité à son dossier. Renommage noté dans l'arbre de travail seulement : bien lu.
+- **Panneau** : il ne saute plus sur Aperçu à chaque réouverture (une adresse demandée est montrée une fois, dans sa conversation) ; ouvert sans onglet visible (seuls ceux d'un projet gardés), il reprend ses onglets au lieu de se refermer.
+- **Petits points** : la liste des dépôts ne reste plus bloquée sur « Ouverture… » si l'on change de serveur ; une routine ou un workflow récents ne prennent plus la place de la conversation de la personne à l'ouverture d'un projet ; le projet ouvert est surligné dans le rail quand on est dans une de ses conversations ; le destinataire par défaut porte le nom de l'agent de la conversation ; le site d'un dépôt garde son https:// dans l'aperçu.
+- Code du serveur : 55.
+
+Validation : types, lint, tous les tests unitaires (verts après l'intégration de main), `test:serveur`, `test:git`, `test:github-projets` (refus d'un autre dépôt et d'une réécriture d'adresse, envoi puis état à jour), build, smoke, et dans Electron `test:projet-github`, `test:conversation`, `test:epingler`, `test:coller`, `test:consignes-projet`, `test:visionneuse`, `test:menu-contextuel`, `test:agents`.
+
 ## 8 novembre 2026 — Espace projet, lots 4 et 5 : onglet Git, GitHub pour l'écran et pour les agents
 
 Suite des lots 1 à 3 (« va jusqu'au bout »).

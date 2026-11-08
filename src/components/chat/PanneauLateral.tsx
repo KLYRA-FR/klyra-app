@@ -44,7 +44,8 @@ const ONGLETS: Record<Onglet, { nom: string; icone: IconName }> = {
 /** Tous les onglets, dans leur ordre ; ceux d'un projet n'existent que dans une conversation de projet. */
 const ORDRE: Onglet[] = ["reglages", "apercu", "git", "fichiers", "taches", "navigateur"];
 const DU_PROJET: Onglet[] = ["apercu", "git"];
-const ordreDe = (projet: boolean) => (projet ? ORDRE : ORDRE.filter((o) => !DU_PROJET.includes(o)));
+const ORDRE_AGENT = ORDRE.filter((o) => !DU_PROJET.includes(o));
+const ordreDe = (projet: boolean) => (projet ? ORDRE : ORDRE_AGENT);
 
 /** Demande d'ouvrir le panneau sur les réglages de l'agent (clic sur son avatar ou son prénom). */
 export const OUVRIR_PANNEAU_AGENT = "klyra:panneau-agent";
@@ -375,6 +376,8 @@ export function PanneauLateral({
   projet,
   modifiedLabel = null,
   adresseApercu = null,
+  apercuAMontrer = null,
+  onApercuMontre,
 }: {
   chat: Chat;
   /** Une conversation de projet : les onglets Aperçu et Modifié. */
@@ -382,6 +385,9 @@ export function PanneauLateral({
   modifiedLabel?: string | null;
   /** Une adresse locale cliquée ou annoncée par un agent : l'onglet Aperçu l'affiche. */
   adresseApercu?: { url: string; n: number } | null;
+  /** Une demande pas encore montrée : l'onglet Aperçu passe devant, une fois (pas à chaque réouverture du panneau). */
+  apercuAMontrer?: { url: string; n: number } | null;
+  onApercuMontre?: (n: number) => void;
   maximise: boolean;
   onMaximiser: () => void;
   onFermer: () => void;
@@ -414,12 +420,13 @@ export function PanneauLateral({
   };
 
   /* Une adresse demandée (lien cliqué, site lancé par un agent) : l'onglet Aperçu passe devant. */
-  const demande = projet ? (adresseApercu?.n ?? 0) : 0;
+  const demande = projet ? (apercuAMontrer?.n ?? 0) : 0;
   useEffect(() => {
     if (!demande) return;
     onChoisirImage(null);
     setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "apercu" || e.ouverts.includes(x)), actif: "apercu" }));
-  }, [demande, setEtat, onChoisirImage]);
+    onApercuMontre?.(demande);
+  }, [demande, setEtat, onChoisirImage, onApercuMontre]);
 
   /* L'aperçu prend un peu plus de place, sans écraser la conversation. */
   const surApercu = !imageActive && actif === "apercu";
@@ -437,10 +444,17 @@ export function PanneauLateral({
     setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "navigateur" || e.ouverts.includes(x)), actif: "navigateur" }));
   }, [activite, setEtat, onChoisirImage]);
 
-  /* Plus aucun onglet : le panneau se ferme. */
+  /* Plus aucun onglet : le panneau se ferme. S'il s'ouvre sans onglet visible ici (on n'avait gardé que ceux
+     d'un projet), il reprend les onglets de cette conversation au lieu de se refermer aussitôt. */
+  const dejaVu = useRef(false);
   useEffect(() => {
-    if (!ouverts.length && !images.length) onFermer();
-  }, [ouverts.length, images.length, onFermer]);
+    if (ouverts.length || images.length) {
+      dejaVu.current = true;
+      return;
+    }
+    if (dejaVu.current) onFermer();
+    else setEtat((e) => ({ ...e, ouverts: ORDRE.filter((o) => ordre.includes(o) || e.ouverts.includes(o)) }));
+  }, [ouverts.length, images.length, onFermer, setEtat, ordre]);
 
   /* Une image a besoin de place : le panneau s'élargit, sans écraser la conversation. */
   useEffect(() => {

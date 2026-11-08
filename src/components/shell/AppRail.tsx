@@ -107,7 +107,9 @@ export function AppRail({
   /* Les projets du rail : les épinglés (sinon les plus récents), et celui qu'on regarde. Tous les autres : Projets. */
   const epingles = projects.filter((p) => p.pinned);
   const choisis = epingles.length ? epingles : [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, RECENTS_MAX);
-  const courant = pathname === "/projet" ? projects.find((p) => p.id === currentId) : undefined;
+  /* Le projet regardé : sa page, ou une de ses conversations (un projet s'ouvre sur sa dernière conversation). */
+  const projetOuvert = pathname === "/projet" ? currentId : pathname === "/chat" ? (chats.find((c) => c.id === currentId)?.projectId ?? null) : null;
+  const courant = projetOuvert ? projects.find((p) => p.id === projetOuvert) : undefined;
   const projetsRail = courant && !choisis.includes(courant) ? [...choisis, courant] : choisis;
 
   return (
@@ -151,7 +153,7 @@ export function AppRail({
         {menuProjet}
         <div className="flex flex-col items-center gap-1.5 py-1">
           {projetsRail.map((p) => {
-            const actif = pathname === "/projet" && currentId === p.id;
+            const actif = projetOuvert === p.id;
             return (
               <Infobulle key={p.id} texte={p.name} cote="droite">
               <Link

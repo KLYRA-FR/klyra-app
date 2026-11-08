@@ -25,7 +25,7 @@ import { CONSIGNE_CERVEAU, avecReperesCerveau } from "./cerveau-outils.mjs";
 import { appelAtelier, CONSIGNE_ATELIER, OUTIL_CHOIX, OUTIL_PROPOSER, OUTILS_ATELIER, SUIVI_VIDE } from "./atelier-agent.mjs";
 import { appelEquipe, CONSIGNE_EQUIPE, EQUIPE_VIDE, OUTIL_EQUIPE, OUTIL_EQUIPE_CLAUDE } from "./atelier-equipe.mjs";
 import { appelCarte, CONSIGNE_CARTES, OUTIL_CARTE, OUTIL_CARTE_CLAUDE } from "./cartes-interactives.mjs";
-import { dossierGithubDeConversation, estOutilGithub, executerOutilGithub, OUTILS_GITHUB } from "./github-outils.mjs";
+import { depotGithubDeConversation, estOutilGithub, executerOutilGithub, OUTILS_GITHUB_CLAUDE, outilsGithubPour } from "./github-outils.mjs";
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
 import { lireJsonPartiel } from "./json-partiel.mjs";
 import { finSuiviFond, nouveauSuiviFond, suivreFond } from "./taches-fond.mjs";
@@ -455,10 +455,10 @@ export function creerAgents(options) {
   options.ia?.brancherOutils?.({
     // Les cartes interactives à chaque agent ; l'atelier à l'assistant seul.
     // GitHub : seulement dans une conversation d'un projet ouvert depuis GitHub sur ce serveur (cf. github-outils.mjs).
-    lister: (appelant) => [...(appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...(dossierGithubDeConversation(donnees, appelant.conversation, true) ? OUTILS_GITHUB : [])],
+    lister: (appelant) => [...(appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsGithubPour(donnees, appelant.conversation, true)],
     appeler: async (nom, args, appelant) => {
       if (nom === OUTIL_CARTE.name) return appelCarte(args);
-      if (estOutilGithub(nom)) return executerOutilGithub(nom, args, dossierGithubDeConversation(donnees, appelant.conversation, true), githubProjets);
+      if (estOutilGithub(nom)) return executerOutilGithub(nom, args, depotGithubDeConversation(donnees, appelant.conversation, true), githubProjets);
       if (nom !== OUTIL_PROPOSER.name && nom !== OUTIL_EQUIPE.name && nom !== OUTIL_CHOIX.name) return null;
       if (appelant.agent !== "principal") return { texte: "Seul l'assistant crée des agents avec la personne.", erreur: true };
       const cle = CONVERSATION.test(appelant.conversation) ? appelant.conversation : null;
@@ -968,6 +968,8 @@ export function creerAgents(options) {
           ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
           // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
           ...(mcp ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
+          // GitHub : lire le dépôt du projet ne change rien (comme sur le PC).
+          ...(mcp ? OUTILS_GITHUB_CLAUDE : []),
           // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
           ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
           // Les fils, sans demander (comme sur le PC) : ouvrir un fil, c'est confier à un agent actif.

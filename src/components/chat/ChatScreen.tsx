@@ -135,7 +135,11 @@ export function ChatScreen() {
   const [maximise, setMaximise] = useState(false);
   const [etatPanneau, setEtatPanneau] = usePanneauLateral();
   /* Un lien local cliqué dans une conversation de projet : il s'ouvre dans l'aperçu. */
-  const [adresseApercu, setAdresseApercu] = useState<{ url: string; n: number } | null>(null);
+  /* La demande garde sa conversation : elle ne suit pas dans une autre. `apercuVu` : la dernière que le panneau a montrée. */
+  const [demandeApercu, setAdresseApercu] = useState<{ url: string; n: number; chatId: string } | null>(null);
+  const [apercuVu, setApercuVu] = useState(0);
+  const adresseApercu = demandeApercu && demandeApercu.chatId === chatId ? demandeApercu : null;
+  const apercuAMontrer = adresseApercu && adresseApercu.n !== apercuVu ? adresseApercu : null;
   const equipe = chat?.kind === "equipe";
   /* Une conversation de projet se lit comme le chat d'un agent : son en-tête et son panneau (réglages, aperçu,
      modifié, fichiers, tâches, navigateur). Les autres conversations d'équipe gardent l'aperçu à droite. */
@@ -158,7 +162,7 @@ export function ChatScreen() {
   if (projetConv && annonce && annonce.id !== annonceVue) {
     setAnnonceVue(annonce.id);
     setPanneauOuvert(true);
-    setAdresseApercu((a) => ({ url: annonce.url, n: (a?.n ?? 0) + 1 }));
+    setAdresseApercu((a) => ({ url: annonce.url, n: (a?.n ?? 0) + 1, chatId: chat?.id ?? "" }));
   }
   useEffect(() => {
     if (!annonce || !project || !equipe) return;
@@ -173,11 +177,11 @@ export function ChatScreen() {
       demande.pris = true;
       if (projetConv) setPanneauOuvert(true);
       else setPreviewOpen(true);
-      setAdresseApercu((a) => ({ url: demande.url, n: (a?.n ?? 0) + 1 }));
+      setAdresseApercu((a) => ({ url: demande.url, n: (a?.n ?? 0) + 1, chatId: chatId ?? "" }));
     };
     window.addEventListener("klyra:apercu", prendre);
     return () => window.removeEventListener("klyra:apercu", prendre);
-  }, [equipe, projetConv]);
+  }, [equipe, projetConv, chatId]);
 
   /* Un agent passe la main à la personne sur une page du navigateur : le panneau s'ouvre pour qu'elle la voie. */
   const activiteNavigateur = useActiviteNavigateur(chat?.id ?? "");
@@ -299,6 +303,8 @@ export function ChatScreen() {
           projet={projetConv ? project : undefined}
           modifiedLabel={modifiedLabel}
           adresseApercu={projetConv ? adresseApercu : null}
+          apercuAMontrer={projetConv ? apercuAMontrer : null}
+          onApercuMontre={setApercuVu}
           maximise={maximise}
           onMaximiser={() => setMaximise((v) => !v)}
           onFermer={fermerPanneau}

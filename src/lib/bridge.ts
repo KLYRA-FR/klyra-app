@@ -365,14 +365,15 @@ export interface KlyraBridge {
     branches: (lieu: string | null, depot: string) => Promise<Reponse<string[]>>;
     ouvrir: (lieu: string | null, depot: string, branche: string) => Promise<Reponse<ResultatClone>>;
     etatDepot: (lieu: string | null, dossier: string) => Promise<Reponse<EtatGit>>;
-    recuperer: (lieu: string | null, dossier: string) => Promise<Reponse<EtatGit>>;
+    /** `depot` : celui du projet enregistré ; le dossier doit encore pointer vers lui. */
+    recuperer: (lieu: string | null, dossier: string, depot?: string) => Promise<Reponse<EtatGit>>;
     /** Un fichier changé d'un clone de cette machine, avant et après (onglet Git). Absent avant la relance de l'app. */
     diff?: (lieu: string | null, dossier: string, chemin: string, ancien?: string) => Promise<Reponse<DiffFichierGit>>;
     /** Commit et envoi de la branche en cours, avec la connexion GitHub de la machine. */
-    publier?: (lieu: string | null, dossier: string, message: string) => Promise<Reponse<ResultatPublication>>;
+    publier?: (lieu: string | null, dossier: string, message: string, depot?: string) => Promise<Reponse<ResultatPublication>>;
     /** Pull requests ouvertes, tests de la branche et derniers commits du dépôt. */
-    activite?: (lieu: string | null, dossier: string) => Promise<Reponse<ActiviteGithub>>;
-    pullRequest?: (lieu: string | null, dossier: string, numero: number) => Promise<Reponse<PullRequestDetail>>;
+    activite?: (lieu: string | null, dossier: string, depot?: string) => Promise<Reponse<ActiviteGithub>>;
+    pullRequest?: (lieu: string | null, dossier: string, numero: number, depot?: string) => Promise<Reponse<PullRequestDetail>>;
     navigateur: () => Promise<Reponse<void>>;
   };
   /** Le premier lancement de cet ordinateur ; absent avec un preload plus ancien. */

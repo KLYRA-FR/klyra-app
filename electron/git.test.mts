@@ -188,3 +188,26 @@ test("diffFichierGit : avant et après d'un fichier, nouveau, supprimé, binaire
     await assert.rejects(diffFichierGit(cible, "lien"), /sort du projet/);
   } finally { b.fin(); }
 });
+
+test("un projet qui n'est qu'un sous-dossier d'un dépôt : ses fichiers, relatifs à lui, et leurs différences", async () => {
+  const b = bac();
+  try {
+    const cible = path.join(b.racine, "mono");
+    b.g(b.racine, "clone", b.nu, cible);
+    mkdirSync(path.join(cible, "apps", "site"), { recursive: true });
+    writeFileSync(path.join(cible, "apps", "site", "page.md"), "un\n");
+    b.g(cible, "add", "-A"); b.g(cible, "commit", "-qm", "site");
+    writeFileSync(path.join(cible, "apps", "site", "page.md"), "un\ndeux\n");
+    writeFileSync(path.join(cible, "ailleurs.md"), "hors du projet\n");
+    const projet = path.join(cible, "apps", "site");
+    const etat = await etatGit(projet);
+    assert.deepEqual(etat.fichiers, [{ statut: "M", chemin: "page.md" }]);
+    const d = await diffFichierGit(projet, "page.md");
+    assert.deepEqual([d.avant, d.apres], ["un\n", "un\ndeux\n"]);
+  } finally { b.fin(); }
+});
+
+test("lireStatutGit : un renommage noté dans l'arbre de travail seulement", () => {
+  const { fichiers } = lireStatutGit(["## main", " R neuf.txt", "vieux.txt", ""].join("\0"));
+  assert.deepEqual(fichiers, [{ statut: "R", chemin: "neuf.txt", ancien: "vieux.txt" }]);
+});

@@ -54,7 +54,8 @@ export function projetDepuisDepot({
       name: nom,
       subtitle: depot.description ?? "",
       brief: "",
-      previewUrl: (depot.site ?? "").replace(/^https?:\/\//, "").replace(/\/$/, ""),
+      // Le site garde son https:// (une adresse sans schéma est lue en http://, celle d'un serveur de dev).
+      previewUrl: (depot.site ?? "").replace(/^http:\/\//, "").replace(/\/$/, ""),
       status: "en-cours",
       pinned: false,
       folder: dossier,

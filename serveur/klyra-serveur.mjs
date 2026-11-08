@@ -643,11 +643,11 @@ export function creerGestionnaire(options) {
           case "branches": resultat = await g.branches(corps.depot); break;
           case "ouvrir": resultat = await g.ouvrir(corps.depot, corps.branche); break;
           case "etat-depot": resultat = await g.etatDepot(corps.dossier); break;
-          case "recuperer": resultat = await g.recuperer(corps.dossier); break;
+          case "recuperer": resultat = await g.recuperer(corps.dossier, corps.depot); break;
           case "diff": resultat = await g.diff(corps.dossier, corps.chemin, corps.ancien); break;
-          case "publier": resultat = await g.publier(corps.dossier, corps.message); break;
-          case "activite": resultat = await g.activite(corps.dossier); break;
-          case "pull-request": resultat = await g.pullRequest(corps.dossier, corps.numero); break;
+          case "publier": resultat = await g.publier(corps.dossier, corps.message, corps.depot); break;
+          case "activite": resultat = await g.activite(corps.dossier, corps.depot); break;
+          case "pull-request": resultat = await g.pullRequest(corps.dossier, corps.numero, corps.depot); break;
           default: return repondre(res, 404, { erreur: "introuvable" });
         }
         return repondre(res, 200, { resultat });

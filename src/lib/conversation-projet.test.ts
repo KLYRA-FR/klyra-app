@@ -26,6 +26,11 @@ describe("conversations d'un projet", () => {
     expect(conversationsDuProjet(liste, "p").map((c) => c.id)).toEqual(["b", "a"]);
     expect(derniereConversation(liste, "p")).toBe("b");
   });
+  test("une routine ou un workflow plus récents ne prennent pas la place de la conversation de la personne", () => {
+    const avecRoutine = [...liste, chat({ id: "routine-r1", updatedAt: "2026-11-09T10:00:00.000Z" }), chat({ id: "wf-w1", updatedAt: "2026-11-09T11:00:00.000Z" })];
+    expect(derniereConversation(avecRoutine, "p")).toBe("b");
+    expect(derniereConversation([chat({ id: "routine-r1" })], "p")).toBe("routine-r1");
+  });
   test("un projet sans conversation : rien à rouvrir", () => {
     expect(derniereConversation(liste, "vide")).toBeNull();
   });

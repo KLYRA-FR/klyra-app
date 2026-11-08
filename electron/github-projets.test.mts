@@ -207,6 +207,13 @@ test("onglet Git et outils : différences, publier avec le compte connecté, act
     assert.deepEqual([pr.etat, pr.base, pr.fichiers.length, pr.commentaires], ["ouverte", "main", 1, 3]);
     assert.deepEqual(pr.avis, [{ auteur: "hugo", etat: "APPROVED" }, { auteur: "pelin", etat: "CHANGES_REQUESTED" }]);
     await assert.rejects(g.pullRequest(dossier, "1; rm -rf /"), /invalide/);
+    // Le dossier doit encore pointer vers le dépôt du projet, sans réécriture d'adresse dans sa configuration.
+    await assert.rejects(g.activite(dossier, "autre/depot"), /ne pointe plus vers le dépôt du projet/);
+    assert.equal((await g.activite(dossier, "Demo/Site")).depot, "demo/site");
+    git(dossier, "config", "--local", "url.https://github.com/autre/depot.git.insteadOf", "https://github.com/demo/site.git");
+    await assert.rejects(g.publier(dossier, "Détour", "demo/site"), /réécrit des adresses/);
+    await assert.rejects(g.recuperer(dossier, "demo/site"), /réécrit des adresses/);
+    git(dossier, "config", "--local", "--remove-section", "url.https://github.com/autre/depot.git");
     assert.equal(JSON.stringify([activite, pr]).includes("jeton-fictif"), false);
   } finally { if (homeAvant === undefined) delete process.env.HOME; else process.env.HOME = homeAvant; b.nettoyer(); }
 });
