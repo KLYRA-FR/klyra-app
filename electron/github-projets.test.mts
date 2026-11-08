@@ -222,6 +222,19 @@ test("onglet Git et outils : différences, publier avec le compte connecté, act
       git(dossier, "config", "--local", "--unset-all", cle);
     }
     assert.equal((await g.activite(dossier, "demo/site")).depot, "demo/site", "configuration nettoyée : de nouveau lisible");
+    // Le fichier de configuration propre à l'arbre de travail compte aussi (`.git/config.worktree`).
+    git(dossier, "config", "--local", "core.repositoryformatversion", "1");
+    git(dossier, "config", "--local", "extensions.worktreeConfig", "true");
+    git(dossier, "config", "--worktree", "http.https://github.com/demo/site.git.proxy", "http://127.0.0.1:9");
+    await assert.rejects(g.publier(dossier, "Détour", "demo/site"), /change les adresses, le réseau ou les identifiants/, "config.worktree");
+    git(dossier, "config", "--worktree", "--unset-all", "http.https://github.com/demo/site.git.proxy");
+    // Dans les réglages de la personne : un réglage HTTP propre à github.com bloque ; une réécriture générale (ici celle du test) reste permise.
+    const global = path.join(b.home, ".gitconfig");
+    const avant = readFileSync(global, "utf8");
+    writeFileSync(global, `${avant}[http "https://github.com/demo/site.git"]\n proxy = http://127.0.0.1:9\n`);
+    await assert.rejects(g.recuperer(dossier, "demo/site"), /change les adresses, le réseau ou les identifiants/, "global propre à github.com");
+    writeFileSync(global, avant);
+    assert.equal((await g.activite(dossier, "demo/site")).depot, "demo/site", "réglages de la personne sans détour : lisible");
     assert.equal(JSON.stringify([activite, pr]).includes("jeton-fictif"), false);
   } finally { if (homeAvant === undefined) delete process.env.HOME; else process.env.HOME = homeAvant; b.nettoyer(); }
 });

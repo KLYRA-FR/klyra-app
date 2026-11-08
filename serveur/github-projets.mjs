@@ -285,19 +285,33 @@ export class GithubProjets {
     gitEnv(jeton) {
         return this.gitEnvLocal([["http.https://github.com/.extraheader", `Authorization: Basic ${Buffer.from(`x-access-token:${jeton}`).toString("base64")}`]]);
     }
+    /** `git config`, avec son code de sortie (1 : rien trouvé ; toute autre erreur compte comme un refus). */
+    configGit(cible, args) {
+        return new Promise((resolve) => execFile("git", args, { env: this.env(), cwd: cible, timeout: 30_000, windowsHide: true }, (e, out) => {
+            const code = e ? (typeof e.code === "number" ? e.code : -1) : 0;
+            resolve({ code, sortie: String(out ?? "") });
+        }));
+    }
     /**
      * Le dépôt d'un clone, vérifié avant de parler à GitHub : son origine doit être le dépôt attendu (celui du projet
-     * enregistré, quand on le connaît), et sa configuration locale (fichiers inclus compris) ne doit rien régler de ce
-     * qui décide où part le jeton : adresses (`url.*`), HTTP (`http.*` : proxy, TLS, certificats, y compris pour une
-     * adresse précise, qui l'emporterait sur ce que l'app impose), identifiants, `askPass`, inclusions. Un clone de l'app
-     * n'en a aucun ; un agent qui en écrit un bloque l'envoi au lieu de le détourner.
+     * enregistré, quand on le connaît). Puis ce qui décide où part le jeton, dans toute la configuration lue par git
+     * (fichiers inclus compris) : dans les fichiers du dépôt (`.git/config`, `.git/config.worktree`), qu'un agent peut
+     * écrire depuis le projet, aucun réglage d'adresses (`url.*`), de réseau (`http.*`), d'identifiants, d'inclusion ni
+     * d'`askPass` ; ailleurs (réglages de la personne, où un proxy d'entreprise ou un gestionnaire d'identifiants sont
+     * normaux), aucun réglage HTTP propre à github.com (il l'emporterait sur ce que l'app impose). Refusé, jamais contourné.
      */
     async depotVerifie(cible, attendu) {
         const nom = await this.depotDe(cible);
         if (typeof attendu === "string" && attendu && attendu.toLowerCase() !== nom.toLowerCase())
             throw new Error("Ce dossier ne pointe plus vers le dépôt du projet : rien n’a été lu ni envoyé.");
-        const reglages = (await this.commande("git", ["config", "--local", "--includes", "--name-only", "--get-regexp", "^(url|http|include|includeif|credential)\\.|^core\\.(askpass|gitproxy|sshcommand)$"], this.env(), cible).catch(() => "")).trim();
-        if (reglages)
+        const r = await this.configGit(cible, ["config", "--includes", "--show-scope", "--name-only", "--get-regexp", "^(url|http|include|includeif|credential)\\.|^core\\.(askpass|gitproxy|sshcommand)$"]);
+        if (r.code !== 0 && r.code !== 1)
+            throw new Error("La configuration git de ce dossier n’a pas pu être vérifiée : rien n’est envoyé à GitHub.");
+        const risques = r.sortie.split("\n").filter(Boolean).filter((ligne) => {
+            const [portee, cle = ""] = ligne.split("\t");
+            return portee === "local" || portee === "worktree" || /^http\.https?:\/\/([^/]*@)?github\.com([:/]|$)/i.test(cle);
+        });
+        if (risques.length)
             throw new Error("La configuration git de ce dossier change les adresses, le réseau ou les identifiants : rien n’est envoyé à GitHub depuis ce dossier.");
         return nom;
     }
