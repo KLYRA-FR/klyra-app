@@ -454,3 +454,60 @@ export function segmentsSurlignes(texte: string, mots: string[]): { texte: strin
   }
   return out;
 }
+
+/* ─── Entretien (phase 3) ──────────────────────────────────────────────── */
+
+export interface Doublon { a: NoeudGraphe; b: NoeudGraphe; garder: NoeudGraphe; retirer: NoeudGraphe; raison: string; confiance: number }
+export interface Obsolete { noeud: NoeudGraphe; raison: string }
+export const JOURS_OBSOLETE = 90;
+
+/**
+ * Ce que l'app signale sans rien appliquer : deux souvenirs d'un même agent qui disent la même chose (même nom,
+ * ou titre et résumé presque identiques ; on propose de garder le plus récent), et les souvenirs obsolètes
+ * (remplacés par un autre, ou souvenir de projet inchangé depuis 90 jours).
+ */
+export function propositionsEntretien(g: Graphe, maintenant = Date.now()): { doublons: Doublon[]; obsoletes: Obsolete[] } {
+  const souvenirs = g.noeuds.filter((n) => n.type === "souvenir");
+  const parId = new Map(souvenirs.map((n) => [n.id, n]));
+  const mots = new Map(souvenirs.map((n) => [n.id, motsCles(`${n.titre} ${n.resume}`)]));
+  const doublons: Doublon[] = [], vus = new Set<string>();
+  const proposer = (a: NoeudGraphe, b: NoeudGraphe, raison: string, confiance: number) => {
+    const cle = cleArete(a.id, b.id);
+    if (vus.has(cle)) return;
+    vus.add(cle);
+    const [garder, retirer] = (a.date ?? "") >= (b.date ?? "") ? [a, b] : [b, a];
+    doublons.push({ a, b, garder, retirer, raison, confiance });
+  };
+  const parCle = new Map<string, NoeudGraphe[]>();
+  for (const n of souvenirs) {
+    const cle = `${n.agent}|${cleNom(n.titre)}`;
+    parCle.set(cle, [...(parCle.get(cle) ?? []), n]);
+  }
+  for (const liste of parCle.values()) for (let i = 1; i < liste.length; i++) proposer(liste[0], liste[i], "Même nom", 1);
+  const index = new Map<string, string[]>();
+  for (const n of souvenirs) for (const m of mots.get(n.id)!) index.set(m, [...(index.get(m) ?? []), n.id]);
+  for (const n of souvenirs) {
+    const a = mots.get(n.id)!;
+    if (a.size < 3) continue;
+    const communs = new Map<string, number>();
+    for (const m of a) for (const autre of index.get(m) ?? []) if (autre > n.id) communs.set(autre, (communs.get(autre) ?? 0) + 1);
+    for (const [autre, nb] of communs) {
+      const o = parId.get(autre)!, b = mots.get(autre)!;
+      if (o.agent !== n.agent || b.size < 3) continue;
+      const j = nb / (a.size + b.size - nb);
+      if (j >= 0.6) proposer(n, o, `Titre et résumé presque identiques (${Math.round(j * 100)} %)`, Math.round(j * 100) / 100);
+    }
+  }
+  const obsoletes: Obsolete[] = [], dejaObsolete = new Set<string>();
+  for (const a of g.aretes) {
+    if (a.type !== "remplace" || !parId.has(a.vers) || dejaObsolete.has(a.vers)) continue;
+    dejaObsolete.add(a.vers);
+    obsoletes.push({ noeud: parId.get(a.vers)!, raison: `Remplacé par « ${g.noeuds.find((n) => n.id === a.de)?.titre ?? "un autre souvenir"} »` });
+  }
+  for (const n of souvenirs) {
+    if (dejaObsolete.has(n.id) || n.sousType !== "project" || !n.date) continue;
+    const jours = Math.floor((maintenant - Date.parse(n.date)) / 86_400_000);
+    if (jours >= JOURS_OBSOLETE) obsoletes.push({ noeud: n, raison: `Souvenir de projet inchangé depuis ${jours} jours` });
+  }
+  return { doublons: doublons.sort((x, y) => y.confiance - x.confiance), obsoletes };
+}
