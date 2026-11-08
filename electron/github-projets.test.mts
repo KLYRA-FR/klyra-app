@@ -252,8 +252,10 @@ test("réécritures d'adresse : vers un autre dépôt de github.com, refusées ;
   assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/x.git.insteadof https://github.com/demo/site.git"], nom), true);
   assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.pushinsteadof https://github.com/demo/"], nom), true);
   assert.equal(reecritVersAutreDepot(["url.HTTPS://GitHub.com./Autre/X.insteadof https://github.com/demo/site"], nom), true);
-  // La plus longue correspondance gagne : une règle plus précise vers le bon dépôt l'emporte.
-  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.insteadof https://github.com/", "url.https://github.com/demo/site.git.insteadof https://github.com/demo/site.git"], nom), false);
+  // Pas de réimplémentation du choix de git : toute règle applicable vers un autre dépôt suffit, même si une autre,
+  // plus précise ou placée avant à égalité (ordre de git), semblerait l'emporter.
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.insteadof https://github.com/", "url.https://github.com/demo/site.git.insteadof https://github.com/demo/site.git"], nom), true);
+  assert.equal(reecritVersAutreDepot(["url.https://github.com/autre/.pushinsteadof zzz", "url.ssh://git@github.com/.pushinsteadof https://github.com/", "url.https://github.com/autre/.pushinsteadof https://github.com/"], nom), true);
   assert.equal(reecritVersAutreDepot(["url.git@github.com:.insteadof https://github.com/"], nom), false);
   assert.equal(reecritVersAutreDepot(["url.https://github.com/.insteadof git@github.com:"], nom), false);
   assert.equal(reecritVersAutreDepot(["url.file:///srv/nus/.insteadof https://github.com/"], nom), false);

@@ -65,26 +65,22 @@ const urlGithub = (v) => {
 };
 /**
  * Une réécriture d'adresse (`url.<base>.insteadOf` / `pushInsteadOf`, lignes de `git config --get-regexp`) qui
- * enverrait `https://github.com/<nom>.git` vers un autre dépôt de github.com, où partirait le jeton. git prend la
- * plus longue correspondance ; une réécriture vers un autre hôte (ssh, miroir) n'emporte pas le jeton et reste permise.
+ * pourrait envoyer `https://github.com/<nom>.git` vers un autre dépôt de github.com, où partirait le jeton.
+ * Pas de réimplémentation du choix de git (plus longue correspondance, ordre des égalités) : toute règle qui
+ * s'applique à cette adresse et mène à un autre dépôt de github.com suffit à refuser. Une réécriture vers un autre
+ * hôte (ssh, miroir, fichier) n'emporte pas le jeton et reste permise.
  */
 export function reecritVersAutreDepot(lignes, nom) {
     const adresse = `https://github.com/${nom}.git`;
-    for (const genre of ["insteadof", "pushinsteadof"]) {
-        let meilleure = null;
-        for (const ligne of lignes) {
-            const m = ligne.match(/^url\.(.+)\.(insteadof|pushinsteadof) (.*)$/i);
-            if (!m || m[2].toLowerCase() !== genre)
-                continue;
-            const [, base, , motif] = m;
-            // Comme git : le motif se compare en respectant la casse (une règle que git n'applique pas ne doit pas en cacher une autre).
-            if (motif && adresse.startsWith(motif) && (!meilleure || motif.length > meilleure.motif.length))
-                meilleure = { base, motif };
-        }
-        if (!meilleure)
+    for (const ligne of lignes) {
+        const m = ligne.match(/^url\.(.+)\.(?:insteadof|pushinsteadof) (.*)$/i);
+        if (!m)
             continue;
-        const reecrite = meilleure.base + adresse.slice(meilleure.motif.length);
-        const vers = reecrite.match(/^https?:\/\/(?:[^/@]*@)?github\.com\.?(?::\d+)?\/+([^?#]+?)(?:\.git)?\/*$/i);
+        const [, base, motif] = m;
+        // Comme git : le motif se compare en respectant la casse.
+        if (!motif || !adresse.startsWith(motif))
+            continue;
+        const vers = (base + adresse.slice(motif.length)).match(/^https?:\/\/(?:[^/@]*@)?github\.com\.?(?::\d+)?\/+([^?#]+?)(?:\.git)?\/*$/i);
         if (vers && vers[1].toLowerCase() !== nom.toLowerCase())
             return true;
     }
