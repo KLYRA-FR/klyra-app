@@ -61,6 +61,8 @@ const FICHIERS = [
   ["electron/cerveau-outils.ts", "serveur/cerveau-outils.mjs"],
   ["electron/graphe-souvenirs.ts", "serveur/graphe-souvenirs.mjs"],
   ["electron/graphe-entretien.ts", "serveur/graphe-entretien.mjs"],
+  ["electron/graphe-regles.ts", "serveur/graphe-regles.mjs"],
+  ["electron/graphe-agent.ts", "serveur/graphe-agent.mjs"],
   ["electron/skills-par-agent.ts", "serveur/skills-par-agent.mjs"],
   ["electron/preparation-fournisseur.ts", "serveur/preparation-fournisseur.mjs"],
   ["electron/consommation-ecart.ts", "serveur/consommation-ecart.mjs"],

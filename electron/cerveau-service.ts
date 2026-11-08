@@ -6,7 +6,7 @@ import { cheminSouvenir, lireMemoire, type PorteeMemoire } from "./connaissances
 import type { NoteCerveau, PorteeCerveau } from "./cerveau-types";
 import { actionDossier } from "./cerveau-dossiers";
 import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs";
-import { accepterLien, annuler, archiver, fusionner, refuserLien, resumeEntretien } from "./graphe-entretien";
+import { accepterLien, alleger, annuler, archiver, fusionner, indexMemoires, refuserLien, resumeEntretien } from "./graphe-entretien";
 import os from "node:os";
 
 export const PROPRIETAIRE: PorteeCerveau = { agentId: null, projetId: null, proprietaire: true };
@@ -96,13 +96,14 @@ function fichiersPublies(donnees: string, fichiers: unknown): string[] {
 function entretien(donnees: string, action: string, args: Record<string, unknown>) {
   const r = racinesGraphe(donnees, args.projets);
   switch (action) {
-    case "graphe-entretien": return resumeEntretien(donnees);
+    case "graphe-entretien": return { ...resumeEntretien(donnees), memoires: indexMemoires(r) };
     case "graphe-entretien-refuser": refuserLien(donnees, args.cle); break;
     case "graphe-entretien-lien": accepterLien(r, donnees, args); break;
     case "graphe-entretien-archiver": archiver(r, donnees, args); break;
     case "graphe-entretien-fusionner": fusionner(r, donnees, args); break;
     case "graphe-entretien-annuler": annuler(donnees, args.id); break;
+    case "graphe-entretien-alleger": alleger(r, donnees, args); break;
     default: throw new Error("Action de mémoire inconnue.");
   }
-  return resumeEntretien(donnees);
+  return { ...resumeEntretien(donnees), memoires: indexMemoires(r) };
 }

@@ -6,7 +6,7 @@ import { ouvrirCerveau, sauvegarderCerveau } from "./cerveau.mjs";
 import { cheminSouvenir, lireMemoire } from "./connaissances-agent.mjs";
 import { actionDossier } from "./cerveau-dossiers.mjs";
 import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs.mjs";
-import { accepterLien, annuler, archiver, fusionner, refuserLien, resumeEntretien } from "./graphe-entretien.mjs";
+import { accepterLien, alleger, annuler, archiver, fusionner, indexMemoires, refuserLien, resumeEntretien } from "./graphe-entretien.mjs";
 import os from "node:os";
 export const PROPRIETAIRE = { agentId: null, projetId: null, proprietaire: true };
 /** Textes expressément choisis dans la boîte de fichiers du poste. Aucune ouverture d'un chemin reçu par HTTP. */
@@ -119,7 +119,7 @@ function fichiersPublies(donnees, fichiers) {
 function entretien(donnees, action, args) {
     const r = racinesGraphe(donnees, args.projets);
     switch (action) {
-        case "graphe-entretien": return resumeEntretien(donnees);
+        case "graphe-entretien": return { ...resumeEntretien(donnees), memoires: indexMemoires(r) };
         case "graphe-entretien-refuser":
             refuserLien(donnees, args.cle);
             break;
@@ -135,7 +135,10 @@ function entretien(donnees, action, args) {
         case "graphe-entretien-annuler":
             annuler(donnees, args.id);
             break;
+        case "graphe-entretien-alleger":
+            alleger(r, donnees, args);
+            break;
         default: throw new Error("Action de mémoire inconnue.");
     }
-    return resumeEntretien(donnees);
+    return { ...resumeEntretien(donnees), memoires: indexMemoires(r) };
 }

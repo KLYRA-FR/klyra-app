@@ -91,7 +91,9 @@ function useRechercheContenu(lieu: string | null, requete: string, projets: { id
 }
 
 interface OperationVue { id: string; type: string; le: string; libelle: string; annuleLe: string | null }
-interface EtatEntretienVue { refuses: string[]; operations: OperationVue[] }
+/** Un MEMORY.md et ce qu'un allègement y changerait (`indexMemoires`, electron/graphe-entretien.ts). */
+interface MemoireVue { id: string; agent: string; date: string; octets: number; octetsApres: number; lignes: number; gardees: number; retirees: number; allege: boolean; utile: boolean }
+interface EtatEntretienVue { refuses: string[]; operations: OperationVue[]; memoires?: MemoireVue[] }
 
 /** Refus de liens et dernières actions d'entretien du lieu affiché ; chaque action relit l'état. */
 function useEntretien(lieu: string | null, projets: { id: string; dossier: string }[], apres: () => void) {
@@ -111,7 +113,8 @@ function useEntretien(lieu: string | null, projets: { id: string; dossier: strin
       setMessage(e instanceof Error ? e.message : "Action impossible.");
     }
   };
-  return { refuses: useMemo(() => new Set(etat.refuses), [etat.refuses]), operations: etat.operations, message, agir };
+  const memoires = useMemo(() => (etat.memoires ?? []).filter((m) => m.utile), [etat.memoires]);
+  return { refuses: useMemo(() => new Set(etat.refuses), [etat.refuses]), operations: etat.operations, memoires, message, agir };
 }
 
 export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGrapheCommun }) {
@@ -155,7 +158,7 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
     const liens = liensDeduits(perimetre, { refuses: entretien.refuses, parNoeud: 3 });
     return { ...p, liens };
   }, [perimetre, entretien.refuses]);
-  const nbEntretien = propositions.doublons.length + propositions.obsoletes.length + propositions.liens.length;
+  const nbEntretien = propositions.doublons.length + propositions.obsoletes.length + propositions.liens.length + entretien.memoires.length;
   const parId = useMemo(() => new Map(perimetre.noeuds.map((n) => [n.id, n])), [perimetre]);
 
   const accepter = async (a: AreteGraphe) => {
@@ -175,6 +178,11 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
     const ok = await demander({ titre: "Archiver ce souvenir ?", confirmer: "Archiver",
       texte: `« ${o.noeud.titre} » part dans le dossier archive, à côté de lui, et sa ligne quitte MEMORY.md : ${nomAgent(o.noeud.agent)} ne le chargera plus. Rien n’est supprimé, et tu pourras annuler.` });
     if (ok) await entretien.agir("archiver", { id: o.noeud.id, attendu: o.noeud.date }, `« ${o.noeud.titre} » archivé.`);
+  };
+  const alleger = async (m: MemoireVue) => {
+    const ok = await demander({ titre: `Alléger le MEMORY.md de ${nomAgent(m.agent)} ?`, confirmer: "Alléger",
+      texte: `${m.retirees} lignes qui pointent vers des souvenirs de projet ou de référence quittent l’index que ${nomAgent(m.agent)} charge à chaque appel (${kio(m.octets)} → ${kio(m.octetsApres)}). Les souvenirs restent dans leurs fichiers : l’agent les retrouve avec l’outil memoire_graphe, que la tête de l’index lui rappelle. Les ${m.gardees} lignes de préférences et de retours restent. Tu pourras annuler tant que le fichier n’a pas changé.` });
+    if (ok) await entretien.agir("alleger", { id: m.id, attendu: m.date }, `MEMORY.md de ${nomAgent(m.agent)} allégé.`);
   };
   const annulerOp = async (op: OperationVue) => {
     const ok = await demander({ titre: "Annuler cette action ?", confirmer: "Annuler l’action", annuler: "Garder", texte: op.libelle });
@@ -260,6 +268,7 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
         </div>
         {entretienOuvert && !courant && (
           <PanneauEntretien propositions={propositions} operations={entretien.operations} parId={parId} nomAgent={nomAgent}
+            memoires={entretien.memoires} alleger={alleger}
             ouvrir={allerA} fermer={() => setEntretienOuvert(false)} fusionner={fusionner} archiver={archiver} accepter={accepter} refuser={refuser} annuler={annulerOp} />
         )}
         {courant && (
@@ -469,8 +478,13 @@ function Section({ titre, nombre, vide, children }: { titre: string; nombre: num
   );
 }
 
-function PanneauEntretien({ propositions, operations, parId, nomAgent, ouvrir, fermer, fusionner, archiver, accepter, refuser, annuler }: {
+function kio(n: number): string {
+  return n < 1024 ? `${n} o` : `${(n / 1024).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Kio`;
+}
+
+function PanneauEntretien({ propositions, operations, memoires, alleger, parId, nomAgent, ouvrir, fermer, fusionner, archiver, accepter, refuser, annuler }: {
   propositions: { doublons: Doublon[]; obsoletes: Obsolete[]; liens: AreteGraphe[] }; operations: OperationVue[];
+  memoires: MemoireVue[]; alleger: (m: MemoireVue) => void;
   parId: Map<string, NoeudGraphe>; nomAgent: (id: string | null) => string; ouvrir: (id: string) => void; fermer: () => void;
   fusionner: (d: Doublon) => void; archiver: (o: Obsolete) => void; accepter: (a: AreteGraphe) => void; refuser: (a: AreteGraphe) => void;
   annuler: (op: OperationVue) => void;
@@ -504,6 +518,17 @@ function PanneauEntretien({ propositions, operations, parId, nomAgent, ouvrir, f
             {lien(o.noeud)}
             <span className="text-ui-xs text-texte-tertiaire">{nomAgent(o.noeud.agent)} · {o.raison}</span>
             <Bouton taille="mini" className="self-start" onClick={() => archiver(o)}>Archiver</Bouton>
+          </li>
+        ))}
+      </Section>
+      <Section titre="MEMORY.md à alléger" nombre={memoires.length} vide="Aucun index trop chargé.">
+        {memoires.map((m) => (
+          <li key={m.id} className={carte}>
+            <span className="font-medium text-texte-principal">{nomAgent(m.agent)}</span>
+            <span className="text-ui-xs text-texte-tertiaire">
+              {m.lignes} lignes, {kio(m.octets)} chargés à chaque appel · {m.retirees} renvoient à des souvenirs de projet ou de référence{m.allege ? " (déjà allégé une fois)" : ""}
+            </span>
+            <Bouton taille="mini" className="self-start" onClick={() => alleger(m)}>Alléger ({kio(m.octets)} → {kio(m.octetsApres)})</Bouton>
           </li>
         ))}
       </Section>
