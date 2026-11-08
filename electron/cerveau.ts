@@ -24,7 +24,8 @@ CREATE INDEX IF NOT EXISTS passage_recherche ON passage(id,note_id,rang);
 CREATE TABLE IF NOT EXISTS terme(mot TEXT NOT NULL, passage_id TEXT NOT NULL REFERENCES passage(id) ON DELETE CASCADE,
  frequence INTEGER NOT NULL, PRIMARY KEY(mot,passage_id));
 CREATE INDEX IF NOT EXISTS terme_passage ON terme(passage_id);
-CREATE INDEX IF NOT EXISTS terme_recherche ON terme(mot,passage_id,frequence);`;
+CREATE INDEX IF NOT EXISTS terme_recherche ON terme(mot,passage_id,frequence);
+CREATE TABLE IF NOT EXISTS note_effacee(id TEXT PRIMARY KEY, le TEXT NOT NULL);`;
 const MOTS_OUTILS = new Set("a au aux avec ce ces cette dans de des du en et est il ils je la le les leur ma mais me mes mon ne nos nous on ou par pas plus pour que qui sa sans se ses son sur ta te tes ton tu un une vos votre vous".split(" "));
 const hashDe = (s: string) => createHash("sha256").update(s).digest("hex");
 const octets = (s: string) => Buffer.byteLength(s, "utf8");
@@ -252,8 +253,13 @@ export class Cerveau {
   }
   oublier(id: unknown, revision: unknown): void {
     const cle = identifiant(id);
-    const r = this.db.prepare("DELETE FROM connaissance WHERE id=? AND revision=?").run(cle, borner(revision, -1, -1, Number.MAX_SAFE_INTEGER));
-    if (!Number(r.changes)) throw new Error("La note est absente ou a changé depuis son ouverture.");
+    this.transaction(() => {
+      const avant = this.db.prepare("SELECT origine FROM connaissance WHERE id=?").get(cle);
+      const r = this.db.prepare("DELETE FROM connaissance WHERE id=? AND revision=?").run(cle, borner(revision, -1, -1, Number.MAX_SAFE_INTEGER));
+      if (!Number(r.changes)) throw new Error("La note est absente ou a changé depuis son ouverture.");
+      // Une note écrite à la main se synchronise entre appareils (cerveau-synchro.ts) : son oubli aussi.
+      if (avant && avant.origine === null) this.db.prepare("INSERT INTO note_effacee(id,le) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET le=excluded.le").run(cle, new Date().toISOString());
+    });
   }
   actualiserSources(prefixe: string, conserves: string[], complet: boolean): void {
     if (!complet) return;

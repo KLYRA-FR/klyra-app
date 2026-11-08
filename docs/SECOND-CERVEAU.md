@@ -2,6 +2,8 @@
 
 La règle : **conserver beaucoup, indexer localement, ne lire chez le modèle que les passages nécessaires**. Le graphe est une vue pour explorer les connaissances ; ce n’est ni le stockage ni le contexte intégral du modèle.
 
+**Depuis le 8 novembre 2026, soir** : PDF, images et sons sont lus (texte des pages d'un PDF, ce qu'une image ou un son dit de lui ; `electron/extraction-fichiers.ts`), les notes écrites à la main se synchronisent entre le PC et un VPS relié (donc entre ordinateurs reliés au même VPS ; `electron/cerveau-synchro.ts`), le téléphone lit la mémoire par l'ordinateur ouvert (Plus › Mémoire), et les agents lisent le graphe des souvenirs avec `memoire_graphe`. Les paragraphes plus bas qui disent ces sources « pas encore connectées » datent d'avant.
+
 **Depuis le 8 novembre 2026** (reprise sur main) : l’index se remplit seul (souvenirs d’agents, textes produits, décisions de conversation, DIGITAL-OS connecté). Les liens naissent du sens (même client, personne, projet ou décision, `[[lien]]`, proximité de formulation) ; un lien coché à la main reste, un lien automatique décoché ne revient pas. La recherche mêle les mots et ce sens. Aucun modèle n’est appelé pour ça : empreinte locale, le corpus ne quitte pas la machine. « Sauvegarder la mémoire » copie le fichier SQLite. Le bouton « Garder en mémoire » reste pour un passage précis.
 
 Le code est dans `/var/lib/klyra/atelier/principal/klyra-memoire`, branche `prototype/memoire-a07e528f`. Cette V2 est construite et testée dans une app Electron avec un profil jetable. **Elle n’a pas été déployée dans l’app installée ni sur le serveur en production. Aucune donnée réelle de Corentin n’a été importée.**

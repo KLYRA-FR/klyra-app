@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
+import { extraireFichier, natureDe } from "./extraction-fichiers";
 
 /**
  * Les souvenirs de chaque agent, lus là où Claude Code les écrit, pour le graphe de la page Mémoire.
@@ -219,6 +220,7 @@ export interface TrouveContenu { chemin: string; extrait: string; occurrences: n
 const TEXTES = /\.(md|markdown|txt|csv|json|html?|log)$/i;
 const cacheTextes = new Map<string, { mtime: number; texte: string; plat: string }>();
 const CACHE_MAX = 4000;
+const platsExtraits = new WeakMap<object, string>();
 
 export function aplatir(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -229,6 +231,14 @@ export function motsRecherche(requete: unknown): string[] {
   return [...new Set(aplatir(requete.slice(0, 300)).split(/[^a-z0-9_-]+/).filter((m) => m.length >= 2))].slice(0, 12);
 }
 function lireTexte(chemin: string): { texte: string; plat: string } | null {
+  // PDF, image, son publiés : leur texte lisible (extraction-fichiers.ts, qui a son propre cache).
+  if (natureDe(chemin)) {
+    const e = extraireFichier(chemin);
+    if (!e?.texte) return null;
+    let plat = platsExtraits.get(e);
+    if (plat === undefined) { plat = aplatir(e.texte); platsExtraits.set(e, plat); }
+    return { texte: e.texte, plat };
+  }
   let st;
   try { st = statSync(chemin); } catch { cacheTextes.delete(chemin); return null; }
   if (!st.isFile() || st.size > TAILLE_MAX) return null;
@@ -263,7 +273,7 @@ export function chercherContenu(r: RacinesSouvenirs, requete: unknown, fichiers:
   const home = reel(r.home);
   const chemins = new Set(lireSouvenirsGraphe(r).souvenirs.map((s) => s.chemin));
   for (const f of Array.isArray(fichiers) ? fichiers.slice(0, 2000) : []) {
-    if (typeof f !== "string" || !TEXTES.test(f)) continue;
+    if (typeof f !== "string" || (!TEXTES.test(f) && !natureDe(f))) continue;
     const vrai = reel(f);
     if (vrai && home && sous(home, vrai)) chemins.add(vrai);
   }

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { lireSouvenirsGraphe, type RacinesSouvenirs, type SouvenirGraphe } from "./graphe-souvenirs";
+import { dossiersSouvenirs, lireSouvenirsGraphe, type RacinesSouvenirs, type SouvenirGraphe } from "./graphe-souvenirs";
 
 /**
  * Entretien du graphe commun : ce que la personne accepte d'un clic (lien suggéré écrit dans un souvenir,
@@ -12,7 +12,7 @@ import { lireSouvenirsGraphe, type RacinesSouvenirs, type SouvenirGraphe } from 
 
 export interface OperationEntretien {
   id: string;
-  type: "lien" | "archive" | "fusion";
+  type: "lien" | "archive" | "fusion" | "allege";
   le: string;
   libelle: string;
   /** Contenus remplacés (pour annuler), avec l'empreinte du contenu écrit. */
@@ -147,6 +147,91 @@ export function fusionner(r: RacinesSouvenirs, donnees: string, a: Record<string
     ecrire(garder.chemin, avant);
     throw e;
   }
+}
+
+/* ─── MEMORY.md allégé ─────────────────────────────────────────────────── */
+
+/** Tête d'un MEMORY.md allégé : lue à chaque appel, elle dit à l'agent où sont les autres souvenirs. */
+export const MARQUEUR_ALLEGE = "> Index allégé par KLYRA : les autres souvenirs restent dans ce dossier. Pour les retrouver, appelle l’outil memoire_graphe (sans argument : ta liste ; souvenir : son texte et ses liens ; requete : une recherche).";
+/** En dessous (lignes retirées, octets gagnés), on ne propose pas d'alléger : le gain ne vaut pas le changement. */
+export const LIGNES_RETIREES_MIN = 4;
+export const OCTETS_GAGNES_MIN = 500;
+const GARDEES_MAX = 25;
+/** Types de souvenirs dont la ligne reste dans l'index : la façon de travailler de la personne et ses retours. */
+const TYPES_GARDES = new Set(["user", "feedback"]);
+
+/**
+ * Le MEMORY.md allégé : les lignes qui pointent vers un souvenir de type `project` ou `reference` partent
+ * (le souvenir reste dans son fichier, `memoire_graphe` le retrouve) ; celles de `user` et `feedback`, d'un type
+ * inconnu ou vers un fichier absent restent (25 au plus), comme le texte libre. Un titre resté vide part.
+ */
+export function memoireAllegee(texte: string, types: Map<string, string | null>): { texte: string; gardees: number; retirees: number } {
+  const lignes = texte.replace(/\r\n/g, "\n").split("\n").filter((l) => l.trim() !== MARQUEUR_ALLEGE);
+  let gardees = 0, retirees = 0;
+  const restent: string[] = [];
+  for (const l of lignes) {
+    const m = /\]\((?:\.\/)?([^)\s]+\.md)\)/.exec(l);
+    const fichier = m ? path.basename(m[1]) : null;
+    if (!fichier || !types.has(fichier)) { restent.push(l); continue; }
+    const type = types.get(fichier) ?? null;
+    if ((type === null || TYPES_GARDES.has(type)) && gardees < GARDEES_MAX) { restent.push(l); gardees++; }
+    else retirees++;
+  }
+  // Un titre suivi d'un autre titre (ou de rien) n'annonce plus rien.
+  const propres: string[] = [];
+  for (let i = 0; i < restent.length; i++) {
+    if (/^#{2,6}\s/.test(restent[i])) {
+      const suite = restent.slice(i + 1).find((x) => x.trim() !== "");
+      if (suite === undefined || /^#{1,6}\s/.test(suite)) continue;
+    }
+    propres.push(restent[i]);
+  }
+  const titre = propres.findIndex((l) => /^#\s/.test(l));
+  propres.splice(titre >= 0 ? titre + 1 : 0, 0, ...(titre >= 0 ? ["", MARQUEUR_ALLEGE] : [MARQUEUR_ALLEGE, ""]));
+  return { texte: `${propres.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+/, "").replace(/\s+$/, "")}\n`, gardees, retirees };
+}
+
+export interface IndexMemoire {
+  /** Identifiant du dossier (empreinte de son chemin réel), jamais le chemin. */
+  id: string; agent: string; date: string; octets: number; octetsApres: number; lignes: number; gardees: number; retirees: number; allege: boolean;
+  /** Assez de lignes retirées et d'octets gagnés pour le proposer. */
+  utile: boolean;
+}
+const idDossier = (dossier: string) => `memoire:${createHash("sha256").update(dossier).digest("hex").slice(0, 16)}`;
+function indexDe(r: RacinesSouvenirs) {
+  const souvenirs = lireSouvenirsGraphe(r).souvenirs;
+  return dossiersSouvenirs(r).flatMap((d) => {
+    const chemin = path.join(d.dossier, "MEMORY.md");
+    if (!existsSync(chemin)) return [];
+    let texte: string, st;
+    try { texte = lire(chemin); st = statSync(chemin); } catch { return []; }
+    const types = new Map(souvenirs.filter((s) => path.dirname(s.chemin) === d.dossier).map((s) => [path.basename(s.chemin), s.type]));
+    return [{ d, chemin, texte, date: st.mtime.toISOString(), allege: memoireAllegee(texte, types) }];
+  });
+}
+/** Les MEMORY.md de chaque agent et ce qu'un allègement y changerait, pour l'écran de l'entretien. */
+export function indexMemoires(r: RacinesSouvenirs): IndexMemoire[] {
+  return indexDe(r).map(({ d, texte, date, allege }) => {
+    const octets = Buffer.byteLength(texte, "utf8"), octetsApres = Buffer.byteLength(allege.texte, "utf8");
+    return {
+      id: idDossier(d.dossier), agent: d.agent, date, octets, octetsApres,
+      lignes: texte.split("\n").filter((l) => l.trim()).length, gardees: allege.gardees, retirees: allege.retirees,
+      allege: texte.includes(MARQUEUR_ALLEGE),
+      utile: allege.retirees >= LIGNES_RETIREES_MIN && octets - octetsApres >= OCTETS_GAGNES_MIN,
+    };
+  });
+}
+/** Écrit le MEMORY.md allégé (refusé s'il a changé depuis l'affichage), noté pour l'annuler. */
+export function alleger(r: RacinesSouvenirs, donnees: string, a: Record<string, unknown>): OperationEntretien {
+  const cible = indexDe(r).find((x) => idDossier(x.d.dossier) === a.id);
+  if (!cible) throw new Error("Ce MEMORY.md n'existe plus à cet endroit.");
+  if (cible.date !== a.attendu) throw new Error("Ce MEMORY.md a changé depuis l'affichage : relis le graphe avant d'agir.");
+  if (!cible.allege.retirees || Buffer.byteLength(cible.allege.texte, "utf8") >= Buffer.byteLength(cible.texte, "utf8")) throw new Error("Rien à alléger dans ce MEMORY.md.");
+  ecrire(cible.chemin, cible.allege.texte);
+  return noter(donnees, {
+    type: "allege", libelle: `MEMORY.md de ${cible.d.agent} allégé (${cible.allege.retirees} lignes)`,
+    ecrits: [{ chemin: cible.chemin, avant: cible.texte, apres: empreinte(cible.allege.texte) }], deplaces: [],
+  });
 }
 
 /** Annule une action : seulement si les fichiers sont restés tels que l'action les a laissés. */

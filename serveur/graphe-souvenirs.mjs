@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
+import { extraireFichier, natureDe } from "./extraction-fichiers.mjs";
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ID_PROJET = /^[a-zA-Z0-9_.:@-]{1,160}$/;
 const FICHIERS_MAX = 5000;
@@ -217,6 +218,7 @@ export function lireSouvenirsGraphe(r) {
 const TEXTES = /\.(md|markdown|txt|csv|json|html?|log)$/i;
 const cacheTextes = new Map();
 const CACHE_MAX = 4000;
+const platsExtraits = new WeakMap();
 export function aplatir(s) {
     return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
@@ -227,6 +229,18 @@ export function motsRecherche(requete) {
     return [...new Set(aplatir(requete.slice(0, 300)).split(/[^a-z0-9_-]+/).filter((m) => m.length >= 2))].slice(0, 12);
 }
 function lireTexte(chemin) {
+    // PDF, image, son publiés : leur texte lisible (extraction-fichiers.ts, qui a son propre cache).
+    if (natureDe(chemin)) {
+        const e = extraireFichier(chemin);
+        if (!e?.texte)
+            return null;
+        let plat = platsExtraits.get(e);
+        if (plat === undefined) {
+            plat = aplatir(e.texte);
+            platsExtraits.set(e, plat);
+        }
+        return { texte: e.texte, plat };
+    }
     let st;
     try {
         st = statSync(chemin);
@@ -275,7 +289,7 @@ export function chercherContenu(r, requete, fichiers = [], limite = 200) {
     const home = reel(r.home);
     const chemins = new Set(lireSouvenirsGraphe(r).souvenirs.map((s) => s.chemin));
     for (const f of Array.isArray(fichiers) ? fichiers.slice(0, 2000) : []) {
-        if (typeof f !== "string" || !TEXTES.test(f))
+        if (typeof f !== "string" || (!TEXTES.test(f) && !natureDe(f)))
             continue;
         const vrai = reel(f);
         if (vrai && home && sous(home, vrai))

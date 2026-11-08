@@ -8,6 +8,7 @@ import { FournisseurReseau } from "./BandeauReseau";
 import { useCompte, useSocketOuvert } from "@/lib/compte";
 import { AgentsTelephone } from "./AgentsTelephone";
 import { ArtefactsTelephone } from "./ArtefactsTelephone";
+import { MemoireTelephone } from "./MemoireTelephone";
 import { EcranPoste, PlusTelephone } from "./ListesTelephone";
 import { ReglagesTelephone } from "./ReglagesTelephone";
 import { AutomatisationsTelephone } from "./EcransAutomatisations";
@@ -47,6 +48,7 @@ function ecran(pathname: string): ReactNode {
   if (pathname === "/serveurs") return <ServeursTelephone />;
   if (pathname === "/routines") return <AutomatisationsTelephone />;
   if (pathname === "/artefacts") return <ArtefactsTelephone />;
+  if (pathname === "/memoire") return <MemoireTelephone />;
   if (pathname === "/projet" || pathname === "/fichiers") return <ProjetTelephone />;
   if (pathname === "/tickets") return <TicketsTelephone />;
   if (pathname === "/marketplace") {
