@@ -3,6 +3,7 @@ import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { Cerveau } from "./cerveau";
 import type { SourceDossier } from "./cerveau-types";
+import { extraireContenu, natureDe, TAILLE_EXTRACTION_MAX, texteIndexable } from "./extraction-fichiers";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS dossier_source(
  id TEXT PRIMARY KEY,nom TEXT NOT NULL,racine TEXT NOT NULL,etat TEXT NOT NULL,scan TEXT,
@@ -81,14 +82,14 @@ export async function scannerDossier(c: Cerveau, options: { forcer?: boolean; ar
   c.db.prepare("UPDATE dossier_source SET etat='indexation',scan=?,debut=?,fin=NULL,message='' WHERE id='digital-os'").run(scan, new Date().toISOString());
   publierProgression(c, compteurs);
   const sauver = (rel: string, genre: string, etat: string, taille: number, mtime: number, noteId: string | null = null) => c.db.prepare("INSERT INTO dossier_fichier VALUES('digital-os',?,?,?,?,?,?,?) ON CONFLICT(source_id,relatif) DO UPDATE SET genre=excluded.genre,etat=excluded.etat,taille=excluded.taille,mtime=excluded.mtime,note_id=excluded.note_id,scan=excluded.scan").run(rel, genre, etat, taille, mtime, noteId, scan);
-  const garderRepere = (rel: string, etat: string, taille: number, mtime: number) => {
+  const garderRepere = (rel: string, etat: string, taille: number, mtime: number, raison = "") => {
     const origine = prefixe + rel;
     const avant = c.db.prepare("SELECT id FROM connaissance WHERE origine=?").get(origine);
     const id = avant ? String(avant.id) : `dos-${cle(origine).slice(0, 32)}`;
     const liens = avant ? c.db.prepare("SELECT b AS id FROM connexion WHERE a=? UNION SELECT a AS id FROM connexion WHERE b=?").all(id, id).map((r) => String(r.id)) : [];
     const long = `DIGITAL-OS · repère / ${rel}`;
     const titre = long.length <= 180 ? long : `${long.slice(0, 96)}…${long.slice(-80)}`;
-    const contenu = `[Repère de fichier — contenu non extrait]\nChemin : DIGITAL-OS/${rel}\nÉtat : ${etat}. Taille du fichier : ${taille} octets.\nCe repère confirme seulement la présence du fichier dans la source ; il ne permet aucune conclusion sur son contenu.`;
+    const contenu = `[Repère de fichier — contenu non extrait]\nChemin : DIGITAL-OS/${rel}\nÉtat : ${etat}. Taille du fichier : ${taille} octets.${raison ? `\n${raison}` : ""}\nCe repère confirme seulement la présence du fichier dans la source ; il ne permet aucune conclusion sur son contenu.`;
     const r = c.garder({ id, titre, contenu, projetId: null, liens, source: null, creeLe: "", modifieLe: "" }, { origine, agentId: "principal" });
     sauver(rel, "fichier", etat, taille, mtime, r.note.id); conserves.push(r.note.id); compteurs.reperes++;
   };
@@ -112,14 +113,19 @@ export async function scannerDossier(c: Cerveau, options: { forcer?: boolean; ar
         if (stat.isSymbolicLink()) { sauver(id, "lien", "lien-non-suivi", 0, 0); compteurs.reperes++; continue; }
         const avant = c.db.prepare("SELECT * FROM dossier_fichier WHERE source_id='digital-os' AND relatif=?").get(id);
         const texte = TEXTES.has(path.extname(e.name).toLowerCase()) || /^(README|LICENSE|MAKEFILE|DOCKERFILE)$/i.test(e.name);
-        if (!texte || stat.size > 2_000_000) { garderRepere(id, stat.size > 2_000_000 ? "volume-non-indexe" : "repere-seul", stat.size, stat.mtimeMs); continue; }
+        const nature = texte ? null : natureDe(e.name);
+        const limite = nature ? TAILLE_EXTRACTION_MAX : 2_000_000;
+        if ((!texte && !nature) || stat.size > limite) { garderRepere(id, stat.size > limite ? "volume-non-indexe" : "repere-seul", stat.size, stat.mtimeMs); continue; }
         if (!options.forcer && avant?.etat === "indexe" && Number(avant.mtime) === stat.mtimeMs && Number(avant.taille) === stat.size && typeof avant.note_id === "string") {
           const note = c.db.prepare("SELECT id FROM connaissance WHERE id=? AND obsolete=0").get(avant.note_id);
           if (note) { sauver(id, "fichier", "indexe", stat.size, stat.mtimeMs, avant.note_id); conserves.push(avant.note_id); compteurs.inchanges++; continue; }
         }
         const reel = await realpath(fichier);
         if (!reel.startsWith(racine + path.sep)) throw new Error("Hors source");
-        const contenu = await readFile(reel, "utf8");
+        // PDF, image, son : leur texte lisible ; sans texte (scanné, protégé, sans étiquette), un repère qui dit pourquoi.
+        const extrait = nature ? extraireContenu(e.name, await readFile(reel)) : null;
+        if (nature && !extrait?.texte) { garderRepere(id, "repere-seul", stat.size, stat.mtimeMs, extrait?.note ?? ""); continue; }
+        const contenu = extrait ? texteIndexable(e.name, extrait) : await readFile(reel, "utf8");
         if (signatureConfidentielle(contenu)) { sauver(id, "fichier", "protege", stat.size, stat.mtimeMs); compteurs.proteges++; continue; }
         if (!contenu.trim() || contenu.includes("\0")) { garderRepere(id, "repere-seul", stat.size, stat.mtimeMs); continue; }
         const origine = prefixe + id;

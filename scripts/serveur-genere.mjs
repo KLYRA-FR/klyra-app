@@ -50,6 +50,7 @@ const FICHIERS = [
   ["electron/ia-catalogue.ts", "serveur/ia-catalogue.mjs"],
   ["electron/atelier.ts", "serveur/atelier.mjs"],
   ["electron/connaissances-agent.ts", "serveur/connaissances-agent.mjs"],
+  ["electron/extraction-fichiers.ts", "serveur/extraction-fichiers.mjs"],
   ["electron/cerveau-types.ts", "serveur/cerveau-types.mjs"],
   ["electron/cerveau-sens.ts", "serveur/cerveau-sens.mjs"],
   ["electron/cerveau-liens.ts", "serveur/cerveau-liens.mjs"],

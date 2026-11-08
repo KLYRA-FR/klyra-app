@@ -75,6 +75,10 @@ test("réimporter un texte modifié ne réutilise pas une citation périmée, m�
     importerDocuments(c, [{ ...d, contenu: "Nouvelle version vanille" }], null);
     assert.deepEqual(c.lire([avant.id], p).elements, []);
     assert.equal(c.chercher("vanille", p).elements.length, 1);
-    assert.throws(() => importerDocuments(c, [{ ...d, titre: "binaire.pdf" }], null), /texte/);
+    assert.throws(() => importerDocuments(c, [{ ...d, titre: "binaire.exe" }], null), /document identifié/);
+    assert.throws(() => importerDocuments(c, [{ ...d, titre: "brut.pdf", contenu: "%PDF\0binaire" }], null), /document identifié/);
+    // Un PDF arrive sous forme de texte, lu par l'ordinateur qui l'importe.
+    assert.equal(importerDocuments(c, [{ titre: "rapport.pdf", contenu: "PDF « rapport.pdf » : texte des pages.\n\nProjet Orion", reference: "pdf-choisi" }], null).indexes, 1);
+    assert.equal(c.chercher("orion", p).elements[0].titre, "rapport.pdf");
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });

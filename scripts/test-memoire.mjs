@@ -75,7 +75,7 @@ try {
   verifier(await app.quand("document.querySelectorAll('[data-note]').length===1 && document.querySelectorAll('.memoire-lien').length===0"), "oublier retire la note et ses connexions");
   await cliquer("Sources"); await cliquer("Indexer ces souvenirs");
   verifier(await app.quand("document.querySelector('.cerveau-retour')?.textContent.includes('1 souvenirs indexés')"), "la mémoire intégrée existante est indexée depuis son dossier résolu");
-  await cliquer("Importer des documents texte");
+  await cliquer("Importer des documents");
   verifier(await app.quand("document.querySelector('.cerveau-retour')?.textContent.includes('1 documents indexés')"), "l’import texte utilise le vrai traitement de fichiers du poste sur un fichier de test choisi");
   verifier(readFileSync(documentTexte, "utf8").includes("photovoltaïques"), "le document texte original est conservé");
   await cliquer("Connecter DIGITAL-OS"); await cliquer("Indexer le dossier");

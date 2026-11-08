@@ -3,6 +3,7 @@ import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { Cerveau } from "./cerveau";
 import { contientSecret, texteAGarder } from "./cerveau-sens";
+import { extraireFichier, natureDe, texteIndexable } from "./extraction-fichiers";
 import type { NoteCerveau, SourceCerveau } from "./cerveau-types";
 
 const TEXTES = new Set(".md .markdown .txt .csv".split(" "));
@@ -89,14 +90,18 @@ export async function ingererDossierAgent(cerveau: Cerveau, racine: string, agen
       const id = rel ? `${rel}/${e.name}` : e.name;
       if (e.isSymbolicLink()) continue;
       if (e.isDirectory()) { await visiter(id, profondeur + 1); continue; }
-      if (!e.isFile() || !TEXTES.has(path.extname(e.name).toLowerCase())) continue;
+      const extrait = natureDe(e.name) !== null;
+      if (!e.isFile() || (!TEXTES.has(path.extname(e.name).toLowerCase()) && !extrait)) continue;
       try {
         const fichier = path.join(reel, id);
         const st = await lstat(fichier);
-        if (!st.isFile() || st.size === 0 || st.size > 2_000_000) continue;
+        if (!st.isFile() || st.size === 0 || (!extrait && st.size > 2_000_000)) continue;
         const cible = await realpath(fichier);
         if (cible !== reel && !cible.startsWith(reel + path.sep)) continue;
-        const contenu = await readFile(cible, "utf8");
+        // PDF, image, son : leur texte lisible (cf. extraction-fichiers.ts), relu seulement s'ils ont changé.
+        const lu = extrait ? extraireFichier(cible) : null;
+        if (extrait && !lu?.texte) continue;
+        const contenu = lu ? texteIndexable(e.name, lu) : await readFile(cible, "utf8");
         const r = ingererTexte(cerveau, { titre: `${agent} · ${e.name}`.slice(0, 180), contenu, origine: `${prefixe}:${id}`, agentId: agent, projetId });
         if (!r) continue;
         if (r.inchange) inchanges++; else indexes++;

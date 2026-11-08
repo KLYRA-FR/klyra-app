@@ -15,7 +15,7 @@ export function importerDocuments(cerveau: Cerveau, documents: unknown, projetId
   if (!Array.isArray(documents) || documents.length > 20) throw new Error("Importez au plus vingt documents à la fois.");
   let indexes = 0, inchanges = 0;
   for (const d of documents) {
-    if (!d || typeof d.titre !== "string" || !/\.(md|markdown|txt|csv|json|log)$/i.test(d.titre) || typeof d.contenu !== "string" || d.contenu.includes("\0") || typeof d.reference !== "string" || d.reference.length > 1024) throw new Error("Un import doit être un document texte identifié (Markdown, texte, CSV, JSON ou journal).");
+    if (!d || typeof d.titre !== "string" || !/\.(md|markdown|txt|csv|json|log|pdf|png|jpe?g|gif|webp|mp3|flac|ogg|opus|wav)$/i.test(d.titre) || typeof d.contenu !== "string" || d.contenu.includes("\0") || typeof d.reference !== "string" || d.reference.length > 1024) throw new Error("Un import doit être un document identifié (Markdown, texte, CSV, JSON, journal, PDF, image ou son), dont le texte a été lu par l'ordinateur qui l'importe.");
     const origine = `document:${createHash("sha256").update(JSON.stringify([d.reference, projetId])).digest("hex")}`;
     const avant = cerveau.db.prepare("SELECT id FROM connaissance WHERE origine=?").get(origine);
     const liens = avant ? cerveau.note(String(avant.id), PROPRIETAIRE).liens : [];
