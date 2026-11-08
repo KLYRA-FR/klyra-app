@@ -218,6 +218,11 @@ export function reponseAutorisationAcp(params, decision) {
 const ID_SESSION = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ARRET_MAX_MS = 5000;
 const FACTURATION_MAX_MS = 15_000;
+/** Une requête de mise en place (session, mode, modèle) : Grok qui ne répond pas ne doit pas laisser la réponse « réfléchir » sans fin. */
+const DELAI_REQUETE_MS = 90_000;
+/** Une réponse sans aucun signe de Grok depuis ce temps est arrêtée (une autorisation en attente ne compte pas). */
+const INACTIVITE_MAX_MS = 10 * 60_000;
+const VEILLE_PAS_MS = 15_000;
 /** Le client ACP de Grok : un `grok agent stdio` gardé ouvert, une session de Grok par conversation. */
 export function creerClientAcp(o) {
     let child = null;
@@ -232,9 +237,11 @@ export function creerClientAcp(o) {
     const enCours = new Map();
     const parRequete = new Map();
     const ecrire = (message) => child?.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
-    function requete(method, params) {
+    function requete(method, params, ms = DELAI_REQUETE_MS) {
         if (!child)
             return Promise.reject(new Error("Grok n’est pas lancé."));
+        if (ms > 0)
+            return requeteBornee(method, params, ms);
         const id = ++suivant;
         return new Promise((resolve, reject) => {
             attentes.set(id, { resolve: resolve, reject });
@@ -249,7 +256,7 @@ export function creerClientAcp(o) {
         return new Promise((resolve, reject) => {
             const delai = setTimeout(() => {
                 attentes.delete(id);
-                reject(new Error(`Grok n’a pas répondu à « ${method} ».`));
+                reject(new Error(`Grok n’a pas répondu à « ${method} » en ${Math.round(ms / 1000)} s. Relance ton message.`));
             }, ms);
             attentes.set(id, {
                 resolve: (v) => {
@@ -273,8 +280,10 @@ export function creerClientAcp(o) {
         for (const a of attentes.values())
             a.reject(new Error(erreur));
         attentes.clear();
-        for (const r of enCours.values())
+        for (const r of enCours.values()) {
+            clearInterval(r.veille);
             r.tour.finir(null, erreur);
+        }
         enCours.clear();
         parRequete.clear();
     }
@@ -321,11 +330,15 @@ export function creerClientAcp(o) {
             if (s && typeof update.currentModeId === "string")
                 s.mode = update.currentModeId;
         }
+        if (r)
+            r.derniere = Date.now();
         r?.tour.update(update);
     }
     /** Une demande de Grok : une autorisation (montrée, ou accordée d'office en accès complet) ; le reste est refusé. */
     function demande(rpcId, method, params) {
         const r = typeof params.sessionId === "string" ? enCours.get(params.sessionId) : undefined;
+        if (r)
+            r.derniere = Date.now();
         if (method === "session/request_permission" && r) {
             if (r.acces === "tout")
                 return ecrire({ id: rpcId, result: reponseAutorisationAcp(params, "oui") });
@@ -448,11 +461,22 @@ export function creerClientAcp(o) {
             noterOptions(sessionId, r?.configOptions);
             session.effort = d.effort;
         }
-        const reponse = { requestId, tour: new TourAcp(sessionId, emit), acces: d.acces, emit, demandes: new Map() };
+        const reponse = { requestId, tour: new TourAcp(sessionId, emit), acces: d.acces, emit, demandes: new Map(), derniere: Date.now() };
         enCours.set(sessionId, reponse);
         parRequete.set(requestId, sessionId);
         const id = sessionId;
-        requete("session/prompt", { sessionId, prompt: [{ type: "text", text: d.prompt }] })
+        reponse.veille = setInterval(() => {
+            // Attendre ton accord n'est pas un silence de Grok.
+            if (reponse.demandes.size > 0)
+                reponse.derniere = Date.now();
+            if (Date.now() - reponse.derniere < INACTIVITE_MAX_MS)
+                return;
+            ecrire({ method: "session/cancel", params: { sessionId: id } });
+            terminer(id, reponse, null, `Grok ne répond plus depuis ${Math.round(INACTIVITE_MAX_MS / 60_000)} min : la réponse est arrêtée. Relance ton message.`);
+        }, VEILLE_PAS_MS);
+        reponse.veille.unref?.();
+        // Un tour peut durer longtemps : pas de délai sur le prompt, la veille ci-dessus s'en charge.
+        requete("session/prompt", { sessionId, prompt: [{ type: "text", text: d.prompt }] }, 0)
             .then((r) => terminer(id, reponse, r))
             .catch((error) => terminer(id, reponse, null, error instanceof Error ? error.message : String(error)));
     }
@@ -460,6 +484,7 @@ export function creerClientAcp(o) {
         if (enCours.get(sessionId) === r)
             enCours.delete(sessionId);
         parRequete.delete(r.requestId);
+        clearInterval(r.veille);
         for (const [id, attente] of r.demandes) {
             ecrire({ id: attente.rpcId, result: { outcome: { outcome: "cancelled" } } });
             r.emit({ type: "autorisation-fin", id, accepte: false });
