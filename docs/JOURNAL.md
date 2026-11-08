@@ -7,6 +7,13 @@ Le graphe reprend les gestes attendus d’Obsidian : tous les nœuds peuvent êt
 Le clic conserve la cible de l’appui malgré la capture du pointeur : il ouvre bien la fiche, tandis qu’un glisser ou un geste annulé ne l’ouvre pas. Le détail se superpose sur fenêtre étroite ; navigation au clavier et préférence de mouvement réduit prises en charge. Le placement est visuel : aucun souvenir n’est modifié.
 
 Validation locale : build, types, lint (avertissements existants hors du correctif), 14 tests unitaires du graphe et de la physique, 7 tests de sources/entretien et 72 contrôles dans la vraie app Electron sur plus de 600 nœuds, dont souris, toucher, zoom, détails, recherche, périmètre privé et entretien sur données fictives.
+## 8 novembre 2026 — Réglages du téléphone : la ligne « Visite guidée » déclarée
+
+`src/lib/telephone/reglages.test.ts` échouait sur main (4046759) : la ligne `visite-guidee` (Réglages › Général › Aide et découverte), ajoutée au catalogue avec la visite guidée, n'avait pas d'état dans `ETATS_LIGNES` (`src/lib/telephone/reglages.ts`).
+
+- Déclarée `sur(RAISONS.ordinateur)`, comme sa voisine `test-prise-en-main` : la visite parcourt les écrans du bureau (montée dans `AppShell`), et sans elle la ligne affiche déjà `SeulementBureau`. Le test n'a pas changé.
+- Rappel : une nouvelle ligne du catalogue des Réglages demande aussi son état sur le téléphone, dans `ETATS_LIGNES`.
+- Vérification : `reglages.test.ts` 24/24 ; `src/lib/telephone` 29 fichiers et 379 tests verts ; `test:mobile` vert (20 + 4). Les 11 fichiers `.tsx` restants de `src/lib/telephone` ne se chargeaient pas dans le conteneur cloud, faute de `klyra-ui` (dépôt privé inaccessible, dépendances installées sans lui). Ils sont à relancer sur un poste qui a `klyra-ui`.
 
 ## 8 novembre 2026 — Reconnexion Composio dans les fils déjà ouverts
 
