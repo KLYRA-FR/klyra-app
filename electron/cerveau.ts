@@ -12,14 +12,17 @@ CREATE TABLE IF NOT EXISTS connaissance(id TEXT PRIMARY KEY, titre TEXT NOT NULL
  revision INTEGER NOT NULL, cree_le TEXT NOT NULL, modifie_le TEXT NOT NULL, octets INTEGER NOT NULL, obsolete INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS connaissance_portee ON connaissance(projet_id,agent_id,modifie_le);
 CREATE INDEX IF NOT EXISTS connaissance_hash ON connaissance(hash);
+CREATE INDEX IF NOT EXISTS connaissance_recherche ON connaissance(id,obsolete,agent_id,projet_id,titre,revision,origine,modifie_le);
 CREATE TABLE IF NOT EXISTS connexion(a TEXT NOT NULL REFERENCES connaissance(id) ON DELETE CASCADE,
  b TEXT NOT NULL REFERENCES connaissance(id) ON DELETE CASCADE, PRIMARY KEY(a,b), CHECK(a<>b));
 CREATE TABLE IF NOT EXISTS passage(id TEXT PRIMARY KEY, note_id TEXT NOT NULL REFERENCES connaissance(id) ON DELETE CASCADE,
  rang INTEGER NOT NULL, texte TEXT NOT NULL, debut INTEGER NOT NULL, fin INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS passage_note ON passage(note_id,rang);
+CREATE INDEX IF NOT EXISTS passage_recherche ON passage(id,note_id,rang);
 CREATE TABLE IF NOT EXISTS terme(mot TEXT NOT NULL, passage_id TEXT NOT NULL REFERENCES passage(id) ON DELETE CASCADE,
  frequence INTEGER NOT NULL, PRIMARY KEY(mot,passage_id));
 CREATE INDEX IF NOT EXISTS terme_passage ON terme(passage_id);
+CREATE INDEX IF NOT EXISTS terme_recherche ON terme(mot,passage_id,frequence);
 PRAGMA user_version=1;`;
 const MOTS_OUTILS = new Set("a au aux avec ce ces cette dans de des du en et est il ils je la le les leur ma mais me mes mon ne nos nous on ou par pas plus pour que qui sa sans se ses son sur ta te tes ton tu un une vos votre vous".split(" "));
 const hashDe = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -171,12 +174,24 @@ export class Cerveau {
     const mots = [...new Set(termesCerveau(String(requete ?? "").slice(0, 1000)))].slice(0, 20);
     if (!mots.length) return sortieBornee([], budget);
     const f = this.filtre(portee);
-    const lignes = this.db.prepare(`SELECT p.id,p.note_id,p.texte,p.debut,p.fin,n.titre,n.revision,n.agent_id,n.projet_id,n.origine,COUNT(DISTINCT t.mot) AS couverture,SUM(t.frequence) AS score
-      FROM terme t JOIN passage p ON p.id=t.passage_id JOIN connaissance n ON n.id=p.note_id
-      WHERE t.mot IN (${mots.map(() => "?").join(",")}) AND ${f.sql}
-      GROUP BY p.id ORDER BY couverture DESC,CASE WHEN n.origine LIKE 'dossier:%:90_ARCHIVES/%' OR n.origine LIKE 'dossier:%/90_ARCHIVES/%' THEN 1 ELSE 0 END,CASE WHEN n.titre LIKE 'DIGITAL-OS · repère /%' THEN 1 ELSE 0 END,score DESC,n.modifie_le DESC,p.rang,p.id LIMIT 60`).all(...mots, ...f.valeurs);
+    // Classer sur des index de métadonnées, avant de charger le texte des passages retenus.
+    // La clé unique (mot,passage_id) rend COUNT(*) équivalent à COUNT(DISTINCT mot).
+    const lignes = this.db.prepare(`WITH scores AS MATERIALIZED (
+      SELECT passage_id,COUNT(*) AS couverture,SUM(frequence) AS score FROM terme INDEXED BY terme_recherche
+      WHERE mot IN (${mots.map(() => "?").join(",")}) GROUP BY passage_id)
+      SELECT p.id,p.note_id FROM scores s
+      JOIN passage p INDEXED BY passage_recherche ON p.id=s.passage_id
+      JOIN connaissance n INDEXED BY connaissance_recherche ON n.id=p.note_id
+      WHERE ${f.sql}
+      ORDER BY s.couverture DESC,CASE WHEN n.origine LIKE 'dossier:%:90_ARCHIVES/%' OR n.origine LIKE 'dossier:%/90_ARCHIVES/%' THEN 1 ELSE 0 END,CASE WHEN n.titre LIKE 'DIGITAL-OS · repère /%' THEN 1 ELSE 0 END,s.score DESC,n.modifie_le DESC,p.rang,p.id LIMIT 60`).all(...mots, ...f.valeurs);
     const parNote = new Map<string, number>();
-    const elements = lignes.filter((r) => { const id = String(r.note_id), n = parNote.get(id) ?? 0; parNote.set(id, n + 1); return n < 2; }).slice(0, 12).map((r) => this.pointeur(r, true));
+    const lire = this.db.prepare(`SELECT p.id,p.note_id,p.texte,p.debut,p.fin,n.titre,n.revision,n.agent_id,n.projet_id,n.origine
+      FROM passage p JOIN connaissance n ON n.id=p.note_id WHERE p.id=? AND ${f.sql}`);
+    const elements = lignes.filter((r) => { const id = String(r.note_id), n = parNote.get(id) ?? 0; parNote.set(id, n + 1); return n < 2; }).slice(0, 12).flatMap((r) => {
+      // Revalider la portée et l’existence : un indexeur concurrent peut avoir remplacé un passage.
+      const actuel = lire.get(String(r.id), ...f.valeurs);
+      return actuel ? [this.pointeur(actuel, true)] : [];
+    });
     const resultat = sortieBornee(elements, budget);
     if (lignes.length >= 60 || elements.length < lignes.length) resultat.tronque = true;
     // Recalcule la taille après le marqueur de troncature (true est plus court que false).

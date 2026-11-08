@@ -48,6 +48,8 @@ Les contenus sont divisés en passages de **1 800 octets UTF-8 au plus**, sans c
 
 L’index inversé utilise les tables et index SQLite ordinaires. Il ne nécessite pas FTS5, absent du Node 22 livré sur ce VPS lors du contrôle. Il normalise les accents et classe les passages selon les mots trouvés et leur présence dans les titres. Il évite qu’un seul document occupe tous les résultats.
 
+Le classement lit des index couvrant les termes et les métadonnées, puis charge le texte des seuls passages retenus. Il ne trie pas les corps des documents. Ces index occupent du disque supplémentaire ; leur création sur une base déjà volumineuse peut prendre du temps à la première ouverture. La portée et l’existence de chaque passage sont revérifiées avant de charger son texte.
+
 La recherche est **lexicale** : elle ne comprend pas les synonymes, les paraphrases ou les contradictions comme le ferait une recherche sémantique. Elle ne génère ni faits, ni résumés, ni relations supposées. Les liens du graphe restent explicites.
 
 Les imports inchangés ne reconstruisent pas leurs passages. Une réindexation complète d’un dossier de souvenirs écarte des recherches les fichiers qui ont disparu de cette source, en conservant leur ancienne copie dans la base. Une lecture porte donc sur une **version indexée**, pas sur une garantie de mise à jour instantanée du fichier original.
