@@ -5,7 +5,9 @@ import { Cerveau, ouvrirCerveau, sauvegarderCerveau } from "./cerveau";
 import { cheminSouvenir, lireMemoire, type PorteeMemoire } from "./connaissances-agent";
 import type { NoteCerveau, PorteeCerveau } from "./cerveau-types";
 import { actionDossier } from "./cerveau-dossiers";
+import { actionSynchro } from "./cerveau-synchro";
 import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs";
+import { executerGraphe } from "./graphe-agent";
 import { accepterLien, alleger, annuler, archiver, fusionner, indexMemoires, refuserLien, resumeEntretien } from "./graphe-entretien";
 import os from "node:os";
 
@@ -53,10 +55,13 @@ export async function indexerSouvenirs(cerveau: Cerveau, agent: string, memoire:
 }
 export function actionCerveau(donnees: string, action: string, args: Record<string, unknown>) {
   if (action === "graphe-souvenirs") return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
+  // Le graphe lu par la personne (téléphone) : comme l'outil memoire_graphe, sans chemin, sans filtre d'agent.
+  if (action === "graphe-lire") return executerGraphe(donnees, args, null);
   if (action.startsWith("graphe-entretien")) return entretien(donnees, action, args);
   if (action === "graphe-chercher") return chercherContenu(racinesGraphe(donnees, args.projets), args.requete, fichiersPublies(donnees, args.fichiers));
   const c = ouvrirCerveau(donnees);
   if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action)) return actionDossier(c, action, args);
+  if (action === "synchro-exporter" || action === "synchro-appliquer") return actionSynchro(c, action, args);
   const projetId = typeof args.projetId === "string" ? args.projetId : null;
   const portee = typeof args.apercuAgent === "string" && args.apercuAgent ? { agentId: args.apercuAgent, projetId } : { ...PROPRIETAIRE, projetId };
   switch (action) {

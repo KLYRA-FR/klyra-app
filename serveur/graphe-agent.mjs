@@ -1,5 +1,5 @@
 // Généré par scripts/serveur-genere.mjs depuis electron/graphe-agent.ts : ne pas modifier à la main.
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { cleNom, construireGraphe, libelleRelation, liensDeduits, visiblePour, voisins } from "./graphe-regles.mjs";
@@ -27,7 +27,7 @@ export const OUTIL_GRAPHE = {
     },
 };
 /** Projets de ce lieu : `conversations.json` sur le PC (sans `lieu`), l'espace du serveur sur un VPS. */
-export function projetsDuLieu(donnees, serveur) {
+export function projetsDuLieu(donnees, serveur = !existsSync(path.join(donnees, "conversations.json"))) {
     const garder = (v) => {
         const p = v;
         if (!p || typeof p.id !== "string" || (!serveur && p.lieu))
@@ -63,7 +63,7 @@ export function racinesLieu(donnees, serveur, projets = projetsDuLieu(donnees, s
 }
 /** Le graphe tel que la page Mémoire le montre « vu par » cet agent : souvenirs, agents, projets, liens suggérés. */
 export function grapheVuPar(souvenirs, projets, agent, refuses = []) {
-    const agents = [...new Set(souvenirs.map((s) => s.agent).concat(agent))].map((id) => ({ id, nom: id }));
+    const agents = [...new Set(souvenirs.map((s) => s.agent).concat(agent ? [agent] : []))].map((id) => ({ id, nom: id }));
     const complet = construireGraphe({ souvenirs, fils: [], fichiers: [], projets: projets.map((p) => ({ id: p.id, nom: p.nom, date: null })), agents });
     const g = visiblePour(complet, agent);
     return { noeuds: g.noeuds, aretes: [...g.aretes, ...liensDeduits(g, { refuses: new Set(refuses), parNoeud: 5 })] };
@@ -94,8 +94,12 @@ export function trouverSouvenir(g, designation, agent) {
     const memes = souvenirs.filter((n) => cleNom(n.titre) === cle || (n.chemin && cleNom(path.basename(n.chemin)) === cle));
     return memes.find((n) => n.agent === agent) ?? memes[0] ?? null;
 }
+/**
+ * `agent` : l'agent qui appelle l'outil (il ne voit pas le privé des autres) ; null : la personne elle-même
+ * (page Mémoire, téléphone), qui voit tout, et dont la liste sans `agent` réunit tous les agents.
+ */
 export function executerGraphe(donnees, args, agent, serveur = false) {
-    const moi = /^[a-z0-9][a-z0-9-]{0,63}$/.test(agent) ? agent : "principal";
+    const moi = agent === null ? null : /^[a-z0-9][a-z0-9-]{0,63}$/.test(agent) ? agent : "principal";
     const budget = budgetDe(args.budgetOctets);
     const projets = projetsDuLieu(donnees, serveur), racines = racinesLieu(donnees, serveur, projets);
     const lecture = lireSouvenirsGraphe(racines);
@@ -140,7 +144,7 @@ export function executerGraphe(donnees, args, agent, serveur = false) {
             if (n && !resultats.has(n.id))
                 resultats.set(n.id, { n, ou: "contenu", extrait: court(t.extrait, 200), score: 1 + Math.min(0.9, t.occurrences / 100) });
         }
-        const tries = [...resultats.values()].sort((a, b) => b.score - a.score || (a.n.agent === moi ? -1 : 0) - (b.n.agent === moi ? -1 : 0) || String(b.n.date).localeCompare(String(a.n.date)));
+        const tries = [...resultats.values()].sort((a, b) => b.score - a.score || (moi && a.n.agent === moi ? -1 : 0) - (moi && b.n.agent === moi ? -1 : 0) || String(b.n.date).localeCompare(String(a.n.date)));
         return borner({ requete: args.requete.slice(0, 300), total: tries.length }, "resultats", tries.slice(0, 30).map((r) => ({ id: r.n.id, nom: r.n.titre, agent: r.n.agent, type: r.n.sousType ?? null, trouveDans: r.ou, extrait: r.extrait })), budget);
     }
     const cible = typeof args.agent === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(args.agent) ? args.agent : moi;
@@ -149,10 +153,10 @@ export function executerGraphe(donnees, args, agent, serveur = false) {
         if (a.type !== "produit-par")
             for (const id of [a.de, a.vers])
                 liensDe.set(id, (liensDe.get(id) ?? 0) + 1);
-    const siens = g.noeuds.filter((n) => n.type === "souvenir" && n.agent === cible).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const siens = g.noeuds.filter((n) => n.type === "souvenir" && (cible === null || n.agent === cible)).sort((a, b) => String(b.date).localeCompare(String(a.date)));
     const autres = new Map();
     for (const n of g.noeuds)
-        if (n.type === "souvenir" && n.agent && n.agent !== cible)
+        if (n.type === "souvenir" && n.agent && cible !== null && n.agent !== cible)
             autres.set(n.agent, (autres.get(n.agent) ?? 0) + 1);
     return borner({ agent: cible, total: siens.length, autresAgents: Object.fromEntries(autres), ...(lecture.tronque ? { lectureIncomplete: true } : {}) }, "souvenirs", siens.map((n) => ({ ...ligne(n), liens: liensDe.get(n.id) ?? 0 })), budget);
 }

@@ -123,3 +123,15 @@ test("MEMORY.md allégé : garde préférences et retours, retire projet et réf
     assert.equal(readFileSync(path.join(b.dev, "MEMORY.md"), "utf8"), index);
   } finally { b.fin(); }
 });
+
+test("vu par la personne (téléphone, page) : tous les agents, le privé compris ; projets lus d'après le lieu", () => {
+  const b = banc();
+  try {
+    const r = executerGraphe(b.donnees, {}, null) as { agent: string | null; total: number; souvenirs: { nom: string }[] };
+    assert.equal(r.agent, null);
+    assert.equal(r.total, 5);
+    assert.ok(r.souvenirs.some((s) => s.nom === "Carnet privé"));
+    const lu = executerGraphe(b.donnees, { souvenir: "Carnet privé" }, null) as { trouve: boolean };
+    assert.equal(lu.trouve, true);
+  } finally { b.fin(); }
+});

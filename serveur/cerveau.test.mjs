@@ -8,7 +8,7 @@ import { creerAgents } from "./agents.mjs";
 import { creerIa } from "./ia.mjs";
 import { CHEMIN_APPAIRER, creerCode, creerJournal, ecouter } from "./klyra-serveur.mjs";
 import { ouvrirCerveau } from "./cerveau.mjs";
-import { importerDocuments } from "./cerveau-service.mjs";
+import { actionCerveau, importerDocuments } from "./cerveau-service.mjs";
 
 const note = { id: "doc-test", titre: "Note du serveur", contenu: "Une connaissance durable et ciblée.", projetId: null, liens: [], source: null, creeLe: "", modifieLe: "" };
 test("API authentifiée : le stockage est sur le serveur, les métadonnées sont paginées et le contenu se lit à la demande", async () => {
@@ -80,5 +80,20 @@ test("réimporter un texte modifié ne réutilise pas une citation périmée, m�
     // Un PDF arrive sous forme de texte, lu par l'ordinateur qui l'importe.
     assert.equal(importerDocuments(c, [{ titre: "rapport.pdf", contenu: "PDF « rapport.pdf » : texte des pages.\n\nProjet Orion", reference: "pdf-choisi" }], null).indexes, 1);
     assert.equal(c.chercher("orion", p).elements[0].titre, "rapport.pdf");
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
+test("synchronisation : un PC envoie ses notes au serveur par ses actions, un second PC les reçoit", async () => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "cerveau-synchro-"));
+  try {
+    const { synchroniser, ETAT_VIDE } = await import("./cerveau-synchro.mjs");
+    const vps = path.join(tmp, "vps"), pc1 = ouvrirCerveau(path.join(tmp, "pc1")), pc2 = ouvrirCerveau(path.join(tmp, "pc2"));
+    // Comme le pont du PC : un aller-retour JSON vers la route du serveur.
+    const appeler = async (action, args) => JSON.parse(JSON.stringify(actionCerveau(vps, action, JSON.parse(JSON.stringify(args)))));
+    const note = pc1.garder({ id: "", titre: "Client Acme", contenu: "Livraison le vendredi", projetId: null, liens: [], source: null, creeLe: "", modifieLe: "" }).note;
+    const e1 = await synchroniser(pc1, appeler, { ...ETAT_VIDE, actif: true });
+    assert.equal(e1.dernier.envoyees, 1);
+    await synchroniser(pc2, appeler, { ...ETAT_VIDE, actif: true });
+    assert.equal(pc2.note(note.id, { proprietaire: true, agentId: null, projetId: null }).contenu, "Livraison le vendredi");
+    assert.throws(() => actionCerveau(vps, "synchro-inconnue", {}), /inconnue/);
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });

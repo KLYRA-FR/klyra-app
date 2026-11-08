@@ -9,6 +9,7 @@ import { actionCerveau, indexerSouvenirs } from "./cerveau-service";
 import { extraireFichier, natureDe, TAILLE_EXTRACTION_MAX, texteIndexable } from "./extraction-fichiers";
 import { connecterDigitalOs } from "./cerveau-dossiers";
 import { demarrerVeilleCerveau } from "./cerveau-veille";
+import { creerSynchroCerveau } from "./cerveau-synchro-pc";
 import { appel as appelCerveauVps } from "./fournisseurs-vps";
 import { pathToFileURL } from "node:url";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet";
@@ -613,6 +614,11 @@ function registerBridge() {
     const sessionId = typeof contexte?.sessionId === "string" ? contexte.sessionId : null;
     return dossierHorsProjet(path.join(os.homedir(), ".klyra", "atelier"), agent === "principal" ? null : agent, sessionId, configClaude(), existsSync);
   };
+  const synchroCerveau = creerSynchroCerveau({
+    donnees: app.getPath("userData"),
+    appeler: async (lieu, action, args) => (await appelCerveauVps(lieu, jetonServeur(lieu), "/klyra/v1/agent/cerveau", "POST", { action, args }, 120_000)).resultat,
+  });
+  if (!SMOKE_TEST && process.env.KLYRA_SANS_VEILLE !== "1") synchroCerveau.demarrer();
   const porteeDe = async (agent: string): Promise<PorteeMemoire | null> => (agent === "principal" ? "auto" : porteeDeLaFiche((await lireFiche(agent))?.content ?? ""));
   const memoireDe = async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
     const portee = await porteeDe(String(agent));
@@ -624,6 +630,10 @@ function registerBridge() {
     return m;
   };
   handle("cerveau:appeler", async (lieu: string | null, action: string, args: Record<string, unknown>) => {
+    // Synchronisation des notes avec un serveur : menée par ce PC (cerveau-synchro-pc.ts), le serveur ne fait que répondre.
+    if (lieu && action === "synchro-etat") return synchroCerveau.vue(lieu);
+    if (lieu && action === "synchro-activer") { const v = synchroCerveau.activer(lieu, args.actif === true); if (args.actif === true) void synchroCerveau.lancer(lieu); return v; }
+    if (lieu && action === "synchro-lancer") { await synchroCerveau.lancer(lieu); return synchroCerveau.vue(lieu); }
     if (action === "sauvegarder" && !lieu) {
       const choix = await dialog.showSaveDialog({ title: "Sauvegarder la mémoire", defaultPath: path.join(app.getPath("documents"), "klyra-memoire.sqlite"), filters: [{ name: "Mémoire KLYRA", extensions: ["sqlite"] }] });
       if (choix.canceled || !choix.filePath) return null;

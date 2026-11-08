@@ -5,7 +5,7 @@ import { appelerCerveau } from "@/lib/cerveau-pont";
 
 type Entree = { nom: string; relatif: string; genre: string; etat: string; noteId: string | null; taille: number };
 type Dossier = { relatif: string; entrees: Entree[]; total: number; suite: number | null };
-const etiquettes: Record<string, string> = { indexe: "Texte indexé", "repere-seul": "Pièce repérée · contenu non extrait", "volume-non-indexe": "Repère · texte supérieur à 2 Mo", protege: "Contenu protégé · non indexé", technique: "Copie technique · non indexée", "lien-non-suivi": "Lien non suivi", "non-indexe": "Pas encore indexé", catalogue: "Dossier", erreur: "Lecture impossible" };
+const etiquettes: Record<string, string> = { indexe: "Texte indexé (PDF, image ou son : ce qui s’en lit)", "repere-seul": "Pièce repérée · contenu non extrait", "volume-non-indexe": "Repère · fichier trop volumineux (2 Mo pour un texte, 40 Mo pour un PDF, une image ou un son)", protege: "Contenu protégé · non indexé", technique: "Copie technique · non indexée", "lien-non-suivi": "Lien non suivi", "non-indexe": "Pas encore indexé", catalogue: "Dossier", erreur: "Lecture impossible" };
 export function DigitalOsSource({ lieu, onActualiser, onExplorer }: { lieu: string | null; onActualiser: () => Promise<void>; onExplorer: (id: string) => void }) {
   const [source, setSource] = useState<SourceDossier | null>(null), [dossier, setDossier] = useState<Dossier | null>(null);
   const [erreur, setErreur] = useState(""), [attente, setAttente] = useState(false), [forcer, setForcer] = useState(false);

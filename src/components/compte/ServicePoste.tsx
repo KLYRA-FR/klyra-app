@@ -12,6 +12,7 @@ import { useGestesAtelier } from "@/lib/poste/gestes/atelier";
 import { useGestesAutomatisations } from "@/lib/poste/gestes/automatisations";
 import { useGestesFichiers } from "@/lib/poste/gestes/fichiers";
 import { useGestesFil } from "@/lib/poste/gestes/fil";
+import { useGestesMemoire } from "@/lib/poste/gestes/memoire";
 import { useGestesPlanning } from "@/lib/poste/gestes/planning";
 import { useGestesReglages } from "@/lib/poste/gestes/reglages";
 
@@ -72,6 +73,7 @@ export function ServicePoste({ actif }: { actif: boolean }) {
     ...useGestesArtefacts(),
     ...useGestesReglages(),
     ...useGestesPlanning(),
+    ...useGestesMemoire(),
   };
   /* Les gestes changent à chaque rendu (ils lisent l'état) : la boucle lit toujours les derniers. */
   const courants = useRef(gestes);

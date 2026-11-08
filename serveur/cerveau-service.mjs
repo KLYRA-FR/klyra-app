@@ -5,7 +5,9 @@ import path from "node:path";
 import { ouvrirCerveau, sauvegarderCerveau } from "./cerveau.mjs";
 import { cheminSouvenir, lireMemoire } from "./connaissances-agent.mjs";
 import { actionDossier } from "./cerveau-dossiers.mjs";
+import { actionSynchro } from "./cerveau-synchro.mjs";
 import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs.mjs";
+import { executerGraphe } from "./graphe-agent.mjs";
 import { accepterLien, alleger, annuler, archiver, fusionner, indexMemoires, refuserLien, resumeEntretien } from "./graphe-entretien.mjs";
 import os from "node:os";
 export const PROPRIETAIRE = { agentId: null, projetId: null, proprietaire: true };
@@ -70,6 +72,9 @@ export async function indexerSouvenirs(cerveau, agent, memoire, projetId) {
 export function actionCerveau(donnees, action, args) {
     if (action === "graphe-souvenirs")
         return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
+    // Le graphe lu par la personne (téléphone) : comme l'outil memoire_graphe, sans chemin, sans filtre d'agent.
+    if (action === "graphe-lire")
+        return executerGraphe(donnees, args, null);
     if (action.startsWith("graphe-entretien"))
         return entretien(donnees, action, args);
     if (action === "graphe-chercher")
@@ -77,6 +82,8 @@ export function actionCerveau(donnees, action, args) {
     const c = ouvrirCerveau(donnees);
     if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action))
         return actionDossier(c, action, args);
+    if (action === "synchro-exporter" || action === "synchro-appliquer")
+        return actionSynchro(c, action, args);
     const projetId = typeof args.projetId === "string" ? args.projetId : null;
     const portee = typeof args.apercuAgent === "string" && args.apercuAgent ? { agentId: args.apercuAgent, projetId } : { ...PROPRIETAIRE, projetId };
     switch (action) {
