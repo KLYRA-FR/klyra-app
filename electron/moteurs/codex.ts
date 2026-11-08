@@ -102,7 +102,16 @@ interface Reponse {
   emit: (event: AgentEvent) => void;
   /** Les demandes d'autorisation en attente de ta réponse, par identifiant montré à l'interface. */
   demandes: Map<string, { rpcId: number | string; method: string; params: Params }>;
+  /** Dernier signe de Codex (notification, demande). */
+  derniere: number;
+  veille?: ReturnType<typeof setInterval>;
 }
+
+/** Une requête de Codex qui ne répond pas ne doit pas laisser la réponse « réfléchir » sans fin. */
+const DELAI_REQUETE_MS = 90_000;
+/** Une réponse sans aucun signe de Codex depuis ce temps est arrêtée (une autorisation en attente ne compte pas). */
+const INACTIVITE_MAX_MS = 10 * 60_000;
+const VEILLE_PAS_MS = 15_000;
 
 const ID_AGENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -174,6 +183,7 @@ class ServeurCodex {
     this.fils.clear();
     for (const attente of this.attentes.values()) attente.reject(new Error(erreur));
     this.attentes.clear();
+    for (const r of this.enCours.values()) clearInterval(r.veille);
     for (const r of this.enCours.values()) r.emit({ type: "fin", ok: false, texte: "", erreur: r.tour.arrete ? "Arrêté par toi." : erreur });
     this.enCours.clear();
     this.parRequete.clear();
@@ -191,11 +201,24 @@ class ServeurCodex {
     this.child?.stdin?.write(`${JSON.stringify(message)}\n`);
   }
 
-  requete<T>(method: string, params: Params): Promise<T> {
+  requete<T>(method: string, params: Params, ms: number = DELAI_REQUETE_MS): Promise<T> {
     if (!this.child) return Promise.reject(new Error("Codex n’est pas lancé."));
     const id = ++this.suivant;
     return new Promise<T>((resolve, reject) => {
-      this.attentes.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      const delai = setTimeout(() => {
+        this.attentes.delete(id);
+        reject(new Error(`ChatGPT (Codex) n’a pas répondu à « ${method} » en ${Math.round(ms / 1000)} s. Relance ton message.`));
+      }, ms);
+      this.attentes.set(id, {
+        resolve: (v: unknown) => {
+          clearTimeout(delai);
+          resolve(v as T);
+        },
+        reject: (e: Error) => {
+          clearTimeout(delai);
+          reject(e);
+        },
+      });
       this.ecrire({ id, method, params });
     });
   }
@@ -211,6 +234,7 @@ class ServeurCodex {
     if (this.enCours.get(r.threadId) !== r) return;
     this.enCours.delete(r.threadId);
     this.parRequete.delete(r.requestId);
+    clearInterval(r.veille);
     this.jetons.set(r.threadId, r.tour.jetonsDuFil);
   }
 
@@ -234,6 +258,7 @@ class ServeurCodex {
   private notification(method: string, params: Params) {
     const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
     const r = threadId ? this.enCours.get(threadId) : undefined;
+    if (r) r.derniere = Date.now();
     if (r && !(typeof params.turnId === "string" && r.tour.turnId && params.turnId !== r.tour.turnId)) {
       if (method === "serverRequest/resolved") {
         // Codex a tranché lui-même (tour arrêté) : la carte d'autorisation se ferme.
@@ -251,6 +276,7 @@ class ServeurCodex {
   private demande(rpcId: number | string, method: string, params: Params) {
     const r = typeof params.threadId === "string" ? this.enCours.get(params.threadId) : undefined;
     const carte = autorisationDe(method, params);
+    if (r) r.derniere = Date.now();
     if (carte && r) {
       const id = String(rpcId);
       r.demandes.set(id, { rpcId, method, params });
@@ -359,9 +385,18 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
     if (event.type === "fin") voirFin(chatId);
     emit(event);
   };
-  const reponse: Reponse = { requestId, threadId, tour: new TourCodex(threadId, emitSuivi, serveur.jetons.get(threadId) ?? 0), emit, demandes: new Map() };
+  const reponse: Reponse = { requestId, threadId, tour: new TourCodex(threadId, emitSuivi, serveur.jetons.get(threadId) ?? 0), emit, demandes: new Map(), derniere: Date.now() };
   serveur.enCours.set(threadId, reponse);
   serveur.parRequete.set(requestId, threadId);
+  reponse.veille = setInterval(() => {
+    // Attendre ton accord n'est pas un silence de Codex.
+    if (reponse.demandes.size > 0) reponse.derniere = Date.now();
+    if (Date.now() - reponse.derniere < INACTIVITE_MAX_MS) return;
+    if (reponse.tour.turnId) void serveur.requete("turn/interrupt", { threadId, turnId: reponse.tour.turnId }, 10_000).catch(() => undefined);
+    serveur.finir(reponse);
+    reponse.emit({ type: "fin", ok: false, texte: "", erreur: `ChatGPT ne répond plus depuis ${Math.round(INACTIVITE_MAX_MS / 60_000)} min : la réponse est arrêtée. Relance ton message.`, sessionId: threadId });
+  }, VEILLE_PAS_MS);
+  reponse.veille.unref?.();
   try {
     const r = await serveur.requete<{ turn: { id: string } }>("turn/start", {
       threadId,
