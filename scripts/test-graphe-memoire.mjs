@@ -12,6 +12,8 @@ import path from "node:path";
 import { attendre, lancerApp } from "./pilote-app.mjs";
 
 const NOMBRE = 600;
+const preuves = process.env.KLYRA_GRAPHE_PREUVES;
+if (preuves) mkdirSync(preuves, { recursive: true });
 const tmp = mkdtempSync(path.join(os.tmpdir(), "klyra-graphe-"));
 const maison = path.join(tmp, "maison"), donnees = path.join(tmp, "donnees");
 const souvenir = (nom, description, corps = "", extra = "") => `---\nname: ${nom}\ndescription: ${description}\nmetadata:\n  type: project\n${extra}---\n\n${corps}\n`;
@@ -75,6 +77,7 @@ try {
   verifier(await compter("fil:klyra-fil-test") === 1 && await compter("fichier:rendu-test") === 1, "le fil et le fichier publié sont dans le graphe");
   verifier(await app.ev("['agent:principal','agent:dev','agent:designer'].every(id=>document.querySelector(`[data-noeud=\"${id}\"]`))"), "un repère par agent");
   verifier(await app.ev("document.querySelectorAll('svg[aria-roledescription=graphe] line[stroke-dasharray]').length>0"), "des liens suggérés en pointillé");
+  verifier(await app.ev("getComputedStyle(document.querySelector('svg[aria-roledescription=graphe]').parentElement).backgroundColor !== 'rgba(0, 0, 0, 0)'"), "les styles du build réel donnent un fond sombre au graphe");
 
   // Fluidité : temps d'image pendant un glisser de 40 pas sur 600+ nœuds.
   await app.ev("window.__images=[];(function f(t){window.__images.push(t);if(window.__images.length<400)requestAnimationFrame(f)})(performance.now())");
@@ -88,19 +91,111 @@ try {
   const debutZoom = Date.now();
   for (let i = 0; i < 10; i++) await app.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 500, y: 400, deltaX: 0, deltaY: -100 });
   verifier(Date.now() - debutZoom < 1500, `10 crans de zoom en ${Date.now() - debutZoom} ms`);
-  verifier(await app.quand("document.querySelectorAll('svg[aria-roledescription=graphe] text').length>20"), "les libellés apparaissent en zoomant");
+  // Le nouveau graphe masque les libellés qui se chevaucheraient : vérifier une
+  // vue cadrée et leur taille réelle plutôt que compter tous les titres masqués.
+  await app.ev("document.querySelector('[aria-label=\"Tout voir\"]').click()");
+  for (let i = 0; i < 24 && await app.ev("parseInt(document.querySelector('[aria-label=\"Niveau de zoom\"]').innerText)<100"); i++)
+    await app.ev("document.querySelector('[aria-label=\"Zoomer\"]').click()");
+  verifier(await app.quand("document.querySelectorAll('svg[aria-roledescription=graphe] text').length>1"), "les libellés visibles apparaissent en zoomant sans tous s'empiler");
+  verifier(await app.ev("[...document.querySelectorAll('svg[aria-roledescription=graphe] text')].every(t=>t.getBoundingClientRect().height>=12)"), "les libellés gardent au moins 12 pixels de hauteur à l'écran");
 
-  // Clavier : focus sur le graphe, flèche, panneau.
+  // Clavier : flèches sur le fond pour déplacer, puis navigation entre nœuds.
   await app.ev("document.querySelector('svg[aria-roledescription=graphe]').focus()");
+  const cameraAvant = await app.ev("document.querySelector('[data-camera]').getAttribute('transform')");
+  await app.touche("ArrowRight", "ArrowRight", 39);
+  verifier(await app.ev("document.querySelector('[data-camera]').getAttribute('transform')") !== cameraAvant, "les flèches déplacent le fond comme dans Obsidian");
+  await app.ev("document.querySelector('[data-noeud]').focus()");
   await app.touche("ArrowRight", "ArrowRight", 39);
   verifier(await app.quand("document.querySelector('aside[aria-label=\"Détail de l’élément\"] h2')"), "une flèche choisit un élément et ouvre son détail");
-  await app.ev("document.querySelector('[data-noeud^=\"souvenir:principal:\"]').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:1,clientY:1,pointerId:1}))");
-  await app.ev("document.querySelector('[data-noeud^=\"souvenir:principal:\"]').dispatchEvent(new PointerEvent('pointerup',{bubbles:true,clientX:1,clientY:1,pointerId:1}))");
+  // Un vrai clic système : pointerup est capturé par le SVG, pas par le nœud.
+  await app.ev("document.querySelector('[aria-label=\"Fermer le détail\"]').click();document.querySelector('[aria-label=\"Tout voir\"]').click()");
+  await attendre(250);
+  const cibleCicco = await app.ev("[...document.querySelectorAll('[data-noeud^=\"souvenir:principal:\"]')].find(n=>/fonctionnement-modifications|github-klyra-app/.test(n.textContent)).dataset.noeud");
+  const pointNoeud = (id) => app.ev(`(()=>{const n=[...document.querySelectorAll('[data-noeud]')].find(n=>n.dataset.noeud===${JSON.stringify(id)});const p=new DOMPoint(0,0).matrixTransform(n.getScreenCTM());return {x:p.x,y:p.y}})()`);
+  const positionNoeud = (id) => app.ev(`(()=>{const n=[...document.querySelectorAll('[data-noeud]')].find(n=>n.dataset.noeud===${JSON.stringify(id)});const p=n.transform.baseVal.consolidate().matrix;return {x:p.e,y:p.f}})()`);
+  const clic = async (p) => {
+    await app.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...p });
+    await app.send("Input.dispatchMouseEvent", { type: "mousePressed", ...p, button: "left", clickCount: 1 });
+    await app.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...p, button: "left", clickCount: 1 });
+  };
+  await clic(await pointNoeud(cibleCicco));
   verifier(await app.quand("/fonctionnement-modifications|github-klyra-app/.test(document.querySelector('aside[aria-label=\"Détail de l’élément\"] h2')?.textContent)"), "un clic sur un nœud ouvre son panneau");
   verifier(await app.ev("/Cicco/.test(document.querySelector('aside[aria-label=\"Détail de l’élément\"]').innerText) && /Source/.test(document.querySelector('aside[aria-label=\"Détail de l’élément\"]').innerText)"), "le panneau dit l’agent et la source");
   verifier(await app.ev("/Cite|Cité par/.test(document.querySelector('section[aria-label=\"Voisins\"]').innerText)"), "le panneau liste les voisins reliés par [[…]]");
   await app.touche("Escape", "Escape", 27);
+  verifier(await app.quand("!document.querySelector('aside[aria-label=\"Détail de l’élément\"]')"), "Échap ferme le détail et rend le focus au graphe");
+  await app.ev("document.querySelector('[aria-label=\"Tout voir\"]').click()");
+  await attendre(250);
+  const p0 = await pointNoeud(cibleCicco), monde0 = await positionNoeud(cibleCicco);
+  const cameraGlisser = await app.ev("document.querySelector('[data-camera]').getAttribute('transform')");
+  const voisinId = await app.ev(`(()=>{const l=[...document.querySelectorAll('line[data-de]')].find(l=>l.dataset.de===${JSON.stringify(cibleCicco)} || l.dataset.vers===${JSON.stringify(cibleCicco)});return l.dataset.de===${JSON.stringify(cibleCicco)}?l.dataset.vers:l.dataset.de})()`);
+  const voisinAvant = await positionNoeud(voisinId);
+  await app.send("Input.dispatchMouseEvent", { type: "mousePressed", ...p0, button: "left", clickCount: 1 });
+  for (let i = 1; i <= 12; i++) {
+    await app.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: p0.x + i * 8, y: p0.y + i * 3, buttons: 1 });
+    await attendre(20);
+  }
+  await attendre(400);
+  const tenu = await pointNoeud(cibleCicco), voisinApres = await positionNoeud(voisinId);
+  verifier(Math.hypot(tenu.x - p0.x - 96, tenu.y - p0.y - 36) < 2, "le nœud reste exactement sous la souris pendant le glisser");
+  verifier(await app.ev("document.querySelector('[data-camera]').getAttribute('transform')") === cameraGlisser, "tirer un nœud ne déplace pas la caméra");
+  verifier(Math.hypot(voisinApres.x - voisinAvant.x, voisinApres.y - voisinAvant.y) > 1, "le voisin relié suit le nœud tiré par un ressort");
+  await app.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p0.x + 96, y: p0.y + 36, button: "left", clickCount: 1 });
+  verifier(await app.ev("!document.querySelector('aside[aria-label=\"Détail de l’élément\"]')"), "relâcher après un glisser n'ouvre pas le détail");
+  verifier(await app.quand("document.querySelector('svg[aria-roledescription=graphe]').dataset.simulation==='repos'", 12000), "la simulation finit son amortissement");
+  const repos1 = await positionNoeud(cibleCicco); await attendre(300);
+  const repos2 = await positionNoeud(cibleCicco);
+  verifier(Math.hypot(repos1.x - repos2.x, repos1.y - repos2.y) < 0.01, "la simulation s'arrête une fois amortie");
+  verifier(Math.hypot(repos1.x - monde0.x, repos1.y - monde0.y) > 5, "le graphe adopte sa nouvelle position après le glisser");
+
+  // Zoom ample, bornes, puis retour à une vue utile.
+  for (let i = 0; i < 30; i++) await app.ev("document.querySelector('[aria-label=\"Zoomer\"]').click()");
+  verifier(await app.quand("document.querySelector('[aria-label=\"Niveau de zoom\"]').innerText==='1200 %' && document.querySelector('[aria-label=\"Zoomer\"]').disabled"), "zoom jusqu'à 1200 %, bouton désactivé à la borne");
+  for (let i = 0; i < 35; i++) await app.ev("document.querySelector('[aria-label=\"Dézoomer\"]').click()");
+  verifier(await app.quand("document.querySelector('[aria-label=\"Niveau de zoom\"]').innerText==='4 %' && document.querySelector('[aria-label=\"Dézoomer\"]').disabled"), "dézoom jusqu'à 4 %, bouton désactivé à la borne");
+  await app.ev("document.querySelector('[aria-label=\"Tout voir\"]').click()");
+  await attendre(300);
+  // Pincement à deux doigts et annulation : aucun détail ne s'ouvre par accident.
+  await app.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 2 });
+  const zone = await app.ev("(()=>{const r=document.querySelector('svg[aria-roledescription=graphe]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  const zoomAvantPince = await app.ev("parseInt(document.querySelector('[aria-label=\"Niveau de zoom\"]').innerText)");
+  await app.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: zone.x-50, y: zone.y, id: 1 }, { x: zone.x+50, y: zone.y, id: 2 }] });
+  await app.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: zone.x-100, y: zone.y, id: 1 }, { x: zone.x+100, y: zone.y, id: 2 }] });
+  await attendre(150);
+  const zoomApresPince = await app.ev("parseInt(document.querySelector('[aria-label=\"Niveau de zoom\"]').innerText)");
+  verifier(Math.abs(zoomApresPince / zoomAvantPince - 2) < 0.05, "un pincement à deux doigts double le zoom autour de son centre");
+  await app.send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] });
+  await app.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  verifier(await app.quand("!document.querySelector('svg[aria-roledescription=graphe]').classList.contains('cursor-grabbing') && !document.querySelector('aside[aria-label=\"Détail de l’élément\"]')"), "annuler le geste libère les pointeurs sans ouvrir un détail");
+  await app.ev("document.querySelector('[aria-label=\"Tout voir\"]').click()");
+  await attendre(150);
+  if (preuves) {
+    const capture = await app.send("Page.captureScreenshot", { format: "png" });
+    writeFileSync(path.join(preuves, "01-vue-ensemble.png"), Buffer.from(capture.data, "base64"));
+  }
+  await clic(await pointNoeud(cibleCicco));
+  verifier(await app.quand("document.querySelector('aside[aria-label=\"Détail de l’élément\"] h2')"), "le clic fonctionne encore après déplacement et changement de zoom");
+  if (preuves) {
+    const capture = await app.send("Page.captureScreenshot", { format: "png" });
+    writeFileSync(path.join(preuves, "02-noeud-detail.png"), Buffer.from(capture.data, "base64"));
+  }
+  await app.send("Emulation.setDeviceMetricsOverride", { width: 768, height: 900, deviceScaleFactor: 1, mobile: false });
+  await attendre(150);
+  verifier(await app.ev("(()=>{const p=document.querySelector('aside[aria-label=\"Détail de l’élément\"]');return getComputedStyle(p).position==='absolute' && p.getBoundingClientRect().right<=innerWidth && document.querySelector('svg[aria-roledescription=graphe]').getBoundingClientRect().width>300})()"), "à 768 px, le détail se superpose sans écraser le graphe");
+  await app.send("Emulation.clearDeviceMetricsOverride");
+  await app.touche("Escape", "Escape", 27);
+
   verifier(await app.quand("!document.querySelector('aside[aria-label=\"Détail de l’élément\"]')"), "Échap ferme le détail");
+
+  await app.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  await app.ev("document.querySelector('[aria-label=\"Tout voir\"]').click()");
+  await attendre(150);
+  const pr = await pointNoeud(cibleCicco);
+  await app.send("Input.dispatchMouseEvent", { type: "mousePressed", ...pr, button: "left", clickCount: 1 });
+  await app.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pr.x+30, y: pr.y+10, buttons: 1 });
+  await app.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pr.x+30, y: pr.y+10, button: "left", clickCount: 1 });
+  verifier(await app.quand("document.querySelector('svg[aria-roledescription=graphe]').dataset.simulation==='repos'", 3000), "la préférence de mouvement réduit supprime les oscillations prolongées");
+  await app.send("Emulation.setEmulatedMedia", { features: [] });
 
   // Périmètre : vu par Hugo, le souvenir privé d'Iris disparaît.
   await choisirOption("Vu par", "Vu par Hugo");
@@ -195,6 +290,13 @@ try {
 
   verifier(app.erreurs.length === 0, `aucune exception de rendu (${app.erreurs.join(" | ")})`);
   console.log("Graphe commun vérifié.");
+} catch (e) {
+  if (app && preuves) {
+    const capture = await app.send("Page.captureScreenshot", { format: "png" });
+    writeFileSync(path.join(preuves, "diagnostic.png"), Buffer.from(capture.data, "base64"));
+    console.log("État du graphe", await app.ev("({zoom:document.querySelector('[aria-label=\"Niveau de zoom\"]')?.innerText,libelles:document.querySelectorAll('svg[aria-roledescription=graphe] text').length,detail:document.querySelector('aside[aria-label=\"Détail de l’élément\"] h2')?.textContent})"));
+  }
+  throw e;
 } finally {
   await app?.fermer();
   rmSync(tmp, { recursive: true, force: true });

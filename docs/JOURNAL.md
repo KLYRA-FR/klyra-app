@@ -1,5 +1,13 @@
 # Journal du projet — app KLYRA
 
+## 8 novembre 2026 — Graphe mémoire interactif
+
+Le graphe reprend les gestes attendus d’Obsidian : tous les nœuds peuvent être tirés, leurs voisins suivent par ressorts et répulsion, puis la simulation s’arrête au repos. Glisser le fond déplace la caméra ; molette et pincement zooment autour du curseur de 4 à 1 200 %. Les libellés gardent une taille lisible et évitent de se superposer ; survol et sélection font ressortir les connexions utiles.
+
+Le clic conserve la cible de l’appui malgré la capture du pointeur : il ouvre bien la fiche, tandis qu’un glisser ou un geste annulé ne l’ouvre pas. Le détail se superpose sur fenêtre étroite ; navigation au clavier et préférence de mouvement réduit prises en charge. Le placement est visuel : aucun souvenir n’est modifié.
+
+Validation locale : build, types, lint (avertissements existants hors du correctif), 14 tests unitaires du graphe et de la physique, 7 tests de sources/entretien et 72 contrôles dans la vraie app Electron sur plus de 600 nœuds, dont souris, toucher, zoom, détails, recherche, périmètre privé et entretien sur données fictives.
+
 ## 8 novembre 2026 — Reconnexion Composio dans les fils déjà ouverts
 
 Corentin s'est reconnecté à Composio, mais son fil continuait à recevoir « Authentication required ». Les moteurs conservaient l'en-tête OAuth installé au démarrage ; sur le VPS, la génération ne distinguait que connecté/non connecté.

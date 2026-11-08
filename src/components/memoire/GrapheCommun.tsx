@@ -2,7 +2,7 @@
 
 import { EmptyState, Input } from "klyra-ui";
 import { useRouter } from "next/navigation";
-import { memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject, type WheelEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { couleurAgent } from "@/components/team/AgentVisuel";
@@ -13,13 +13,14 @@ import { useAgents } from "@/lib/agents";
 import { appelerCerveau } from "@/lib/cerveau-pont";
 import { cn } from "@/lib/cn";
 import {
-  cadreDe, chercherNoeuds, cleArete, propositionsEntretien, construireGraphe, fichiersDepuisRendus, filsDepuisChats, filtrerGraphe, FILTRES_VIDES, idFichier, libelleRelation,
-  liensDeduits, motsDe, orphelins, placerGraphe, segmentsSurlignes, visiblePour, voisinDansDirection, voisins,
-  type AreteGraphe, type Doublon, type Obsolete, type ResultatRecherche, type TrouveContenu, type FiltresGraphe, type Graphe, type NoeudGraphe, type Periode, type Position, type SouvenirSource, type TypeNoeud,
+  chercherNoeuds, cleArete, propositionsEntretien, construireGraphe, fichiersDepuisRendus, filsDepuisChats, filtrerGraphe, FILTRES_VIDES, idFichier, libelleRelation,
+  liensDeduits, motsDe, orphelins, segmentsSurlignes, visiblePour, voisins,
+  type AreteGraphe, type Doublon, type Obsolete, type ResultatRecherche, type TrouveContenu, type FiltresGraphe, type Graphe, type NoeudGraphe, type Periode, type SouvenirSource, type TypeNoeud,
 } from "@/lib/graphe-memoire";
 import { renduDansEspace } from "@/lib/rendus-espace";
 import { useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
 import type { RoleTeinte } from "@/types/domain";
+import { GrapheInteractif, type PoigneeGraphe } from "./GrapheInteractif";
 
 export type VueGrapheCommun = "graphe" | "liste";
 
@@ -241,7 +242,7 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
       {fenetre}
       {entretien.message && <p role="status" className="text-ui-s text-texte-secondaire">{entretien.message}</p>}
       {erreur && <p role="status" className="rounded-md border border-bordure-subtile bg-fond-surface-grise px-3 py-2 text-ui-s text-texte-secondaire">{erreur}</p>}
-      <div className="flex min-h-0 flex-1 gap-3">
+      <div className="relative flex min-h-0 flex-1 gap-3">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!charge && !complet.noeuds.length ? (
             <p role="status" className="p-6 text-ui-s text-texte-secondaire">Lecture des mémoires…</p>
@@ -251,7 +252,7 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
                 description={complet.noeuds.length ? "Retire un filtre pour revoir le graphe." : "Les souvenirs des agents, leurs fichiers publiés et leurs fils apparaîtront ici dès qu’ils existent."} />
             </div>
           ) : vue === "graphe" ? (
-            <VueGraphe graphe={graphe} selection={selection} choisir={setSelection} orphelins={seuls} couleur={couleur} surlignes={surlignes} poignee={poignee} />
+            <GrapheInteractif types={TYPE} graphe={graphe} selection={selection} choisir={setSelection} orphelins={seuls} couleur={couleur} surlignes={surlignes} poignee={poignee} />
           ) : (
             <VueListe graphe={surlignes ? { noeuds: graphe.noeuds.filter((n) => surlignes.has(n.id)), aretes: [] } : graphe} selection={selection} choisir={setSelection} orphelins={seuls} nomAgent={nomAgent} />
           )}
@@ -264,7 +265,7 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
         {courant && (
           <PanneauNoeud accepter={accepter} refuser={refuser} noeud={courant} graphe={graphe} orphelin={seuls.has(courant.id)} nomAgent={nomAgent}
             nomProjet={(id) => projetsApp.find((p) => p.id === id)?.name ?? id}
-            choisir={setSelection} fermer={() => setSelection(null)} ouvrirFil={ouvrirFil} />
+            choisir={allerA} fermer={() => { setSelection(null); requestAnimationFrame(() => document.querySelector<SVGSVGElement>('svg[aria-roledescription="graphe"]')?.focus()); }} ouvrirFil={ouvrirFil} />
         )}
       </div>
     </div>
@@ -283,161 +284,6 @@ function Legende() {
     </ul>
   );
 }
-
-/* ─── Graphe ───────────────────────────────────────────────────────────── */
-
-type Vue = { k: number; x: number; y: number };
-export interface PoigneeGraphe { centrer: (id: string) => void }
-const rayonDe = (n: NoeudGraphe) => (n.type === "agent" ? 18 : n.type === "projet" ? 11 : 7);
-
-function VueGraphe({ graphe, selection, choisir, orphelins, couleur, surlignes, poignee }: {
-  graphe: Graphe; selection: string | null; choisir: (id: string | null) => void; orphelins: Set<string>; couleur: (agent: string | null) => string;
-  surlignes: Set<string> | null; poignee: RefObject<PoigneeGraphe | null>;
-}) {
-  const pos = useMemo(() => placerGraphe({ noeuds: graphe.noeuds, aretes: graphe.aretes.filter((a) => a.type !== "deduit") }), [graphe]);
-  const cadre = useMemo(() => cadreDe(pos), [pos]);
-  const [vue, setVue] = useState<Vue>({ k: 1, x: 0, y: 0 });
-  const svg = useRef<SVGSVGElement>(null);
-  const glisse = useRef<{ x: number; y: number; vue: Vue; bouge: boolean } | null>(null);
-  const centre = { x: cadre.x + cadre.l / 2, y: cadre.y + cadre.h / 2 };
-  const ids = useMemo(() => graphe.noeuds.map((n) => n.id), [graphe]);
-
-  const versSvg = (clientX: number, clientY: number) => {
-    const el = svg.current, ctm = el?.getScreenCTM();
-    if (!el || !ctm) return centre;
-    const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
-    return { x: p.x, y: p.y };
-  };
-  const zoomer = (facteur: number, autour = centre) => setVue((v) => {
-    const k = Math.max(0.3, Math.min(5, v.k * facteur));
-    return { k, x: autour.x - ((autour.x - v.x) * k) / v.k, y: autour.y - ((autour.y - v.y) * k) / v.k };
-  });
-  const centrerSur = (id: string) => {
-    const p = pos[id];
-    if (p) setVue((v) => ({ ...v, x: centre.x - p.x * v.k, y: centre.y - p.y * v.k }));
-  };
-  useImperativeHandle(poignee, () => ({ centrer: centrerSur }));
-  const surRoue = (e: WheelEvent<SVGSVGElement>) => zoomer(e.deltaY < 0 ? 1.15 : 1 / 1.15, versSvg(e.clientX, e.clientY));
-  const surAppui = (e: PointerEvent<SVGSVGElement>) => {
-    glisse.current = { x: e.clientX, y: e.clientY, vue, bouge: false };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const surMouvement = (e: PointerEvent<SVGSVGElement>) => {
-    const g = glisse.current, el = svg.current;
-    if (!g || !el) return;
-    const echelle = cadre.l / Math.max(1, el.clientWidth);
-    const dx = (e.clientX - g.x) * echelle, dy = (e.clientY - g.y) * echelle;
-    if (Math.abs(dx) + Math.abs(dy) > 3 * echelle) g.bouge = true;
-    if (g.bouge) setVue({ ...g.vue, x: g.vue.x + dx, y: g.vue.y + dy });
-  };
-  const surRelache = (e: PointerEvent<SVGSVGElement>) => {
-    const g = glisse.current;
-    glisse.current = null;
-    if (g && !g.bouge) {
-      const id = (e.target as Element).closest("[data-noeud]")?.getAttribute("data-noeud") ?? null;
-      choisir(id);
-    }
-  };
-  const surTouche = (e: KeyboardEvent<SVGSVGElement>) => {
-    const dirs: Record<string, "haut" | "bas" | "gauche" | "droite"> = { ArrowUp: "haut", ArrowDown: "bas", ArrowLeft: "gauche", ArrowRight: "droite" };
-    if (dirs[e.key]) {
-      e.preventDefault();
-      const suivant = selection ? voisinDansDirection(pos, selection, dirs[e.key], ids) : ids[0];
-      if (suivant) { choisir(suivant); centrerSur(suivant); }
-    } else if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomer(1.25); }
-    else if (e.key === "-") { e.preventDefault(); zoomer(1 / 1.25); }
-    else if (e.key === "0") { e.preventDefault(); setVue({ k: 1, x: 0, y: 0 }); }
-    else if (e.key === "Escape" && selection) { e.preventDefault(); choisir(null); }
-  };
-  const actif = selection ? graphe.noeuds.find((n) => n.id === selection) : null;
-
-  return (
-    <div className="relative min-h-[420px] flex-1 overflow-hidden rounded-2xl bg-fond-nuit">
-      <svg
-        ref={svg}
-        role="application"
-        aria-roledescription="graphe"
-        aria-label={`Graphe de la mémoire : ${graphe.noeuds.length} éléments. Flèches pour passer d’un élément à l’autre, + et − pour zoomer, 0 pour recadrer, Échap pour fermer le détail.`}
-        tabIndex={0}
-        viewBox={`${cadre.x} ${cadre.y} ${cadre.l} ${cadre.h}`}
-        className="size-full cursor-grab touch-none select-none outline-none focus-visible:ring-2 focus-visible:ring-focus active:cursor-grabbing"
-        onWheel={surRoue}
-        onPointerDown={surAppui}
-        onPointerMove={surMouvement}
-        onPointerUp={surRelache}
-        onKeyDown={surTouche}
-      >
-        <g transform={`translate(${vue.x} ${vue.y}) scale(${vue.k})`}>
-          <Couche graphe={graphe} pos={pos} selection={selection} orphelins={orphelins} couleur={couleur} libelles={vue.k >= 1.6} surlignes={surlignes} />
-        </g>
-      </svg>
-      <p className="sr-only" aria-live="polite">{actif ? `${TYPE[actif.type].label} : ${actif.titre}` : ""}</p>
-      <div className="absolute right-3 bottom-3 flex gap-1">
-        <BoutonIcone variant="ghost" taille="mini" libelle="Zoomer" icone={<Icon name="zoom-in" size={16} />} onClick={() => zoomer(1.25)} />
-        <BoutonIcone variant="ghost" taille="mini" libelle="Dézoomer" icone={<Icon name="zoom-out" size={16} />} onClick={() => zoomer(1 / 1.25)} />
-        <BoutonIcone variant="ghost" taille="mini" libelle="Tout voir" icone={<Icon name="expand" size={16} />} onClick={() => setVue({ k: 1, x: 0, y: 0 })} />
-      </div>
-    </div>
-  );
-}
-
-/** Le dessin, mémorisé : déplacer ou zoomer ne le recalcule pas (seul le `transform` du groupe change). */
-const Couche = memo(function Couche({ graphe, pos, selection, orphelins, couleur, libelles, surlignes }: {
-  graphe: Graphe; pos: Record<string, Position>; selection: string | null; orphelins: Set<string>; couleur: (agent: string | null) => string; libelles: boolean;
-  surlignes: Set<string> | null;
-}) {
-  const proches = useMemo(() => {
-    const s = new Set<string>();
-    if (selection) for (const a of graphe.aretes) { if (a.de === selection) s.add(a.vers); if (a.vers === selection) s.add(a.de); }
-    return s;
-  }, [graphe, selection]);
-  const trait = (a: AreteGraphe) => {
-    const touche = selection && (a.de === selection || a.vers === selection);
-    if (a.type === "deduit") return { stroke: "rgba(255,255,255,.45)", dash: "4 4", w: touche ? 1.6 : 1, o: touche ? 1 : 0.6 };
-    return { stroke: touche ? "rgba(255,255,255,.85)" : "rgba(255,255,255,.18)", dash: undefined, w: touche ? 1.6 : 1, o: 1 };
-  };
-  return (
-    <>
-      <g aria-hidden>
-        {graphe.aretes.map((a) => {
-          const p = pos[a.de], q = pos[a.vers];
-          if (!p || !q) return null;
-          const t = trait(a);
-          return <line key={`${a.type}|${a.de}|${a.vers}`} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={t.stroke} strokeWidth={t.w} strokeDasharray={t.dash} opacity={t.o} vectorEffect="non-scaling-stroke" />;
-        })}
-      </g>
-      {graphe.noeuds.map((n) => {
-        const p = pos[n.id];
-        if (!p) return null;
-        const r = rayonDe(n), choisi = n.id === selection, trouve = !!surlignes?.has(n.id);
-        const estompe = surlignes ? !trouve && !choisi : !!selection && !choisi && !proches.has(n.id);
-        const montrerTexte = n.type === "agent" || n.type === "projet" || libelles || choisi || proches.has(n.id) || (trouve && surlignes!.size <= 40);
-        return (
-          <g key={n.id} data-noeud={n.id} data-trouve={trouve || undefined} transform={`translate(${p.x} ${p.y})`} opacity={estompe ? 0.35 : 1} className="cursor-pointer">
-            <title>{`${TYPE[n.type].label} · ${n.titre}`}</title>
-            {orphelins.has(n.id) && <circle r={r + 5} fill="none" stroke="var(--color-rouge-500)" strokeDasharray="3 3" strokeWidth={1.2} />}
-            {trouve && <circle r={r + 6} fill="var(--color-bleu-k1-500)" opacity={0.45} />}
-            {choisi && <circle r={r + 8} fill="none" stroke="white" strokeWidth={2} />}
-            {n.type === "agent" && n.agent ? (
-              <foreignObject x={-r} y={-r} width={r * 2} height={r * 2}>
-                <AgentRond roleId={n.agent} taille={r * 2} />
-              </foreignObject>
-            ) : n.type === "projet" ? (
-              <rect x={-r} y={-r} width={r * 2} height={r * 2} rx={4} fill={TYPE.projet.couleur} />
-            ) : (
-              <circle r={r} fill={TYPE[n.type].couleur} stroke={couleur(n.agent)} strokeWidth={3} strokeDasharray={n.prive ? "2 2" : undefined} />
-            )}
-            {montrerTexte && (
-              <text y={r + 14} textAnchor="middle" fill="white" fontSize={n.type === "agent" ? 13 : 11} className="pointer-events-none">
-                {n.titre.length > 32 ? `${n.titre.slice(0, 31)}…` : n.titre}
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </>
-  );
-});
 
 /* ─── Liste ────────────────────────────────────────────────────────────── */
 
@@ -490,7 +336,7 @@ function PanneauNoeud({ noeud, graphe, orphelin, nomAgent, nomProjet, choisir, f
   const titre = useRef<HTMLHeadingElement>(null);
   useEffect(() => { titre.current?.focus({ preventScroll: true }); }, [noeud.id]);
   return (
-    <aside aria-label="Détail de l’élément" className="flex w-[320px] shrink-0 flex-col gap-3 overflow-auto rounded-2xl border border-bordure-subtile bg-fond-surface p-4"
+    <aside aria-label="Détail de l’élément" className="absolute inset-y-0 right-0 z-10 flex w-[min(320px,100%)] shrink-0 flex-col gap-3 overflow-auto rounded-2xl border border-bordure-subtile bg-fond-surface p-4 min-[1000px]:static"
       onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); fermer(); } }}>
       <div className="flex items-start gap-2">
         <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: TYPE[noeud.type].couleur }} aria-hidden />
