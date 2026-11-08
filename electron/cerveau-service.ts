@@ -6,6 +6,7 @@ import { cheminSouvenir, lireMemoire, type PorteeMemoire } from "./connaissances
 import type { NoteCerveau, PorteeCerveau } from "./cerveau-types";
 import { actionDossier } from "./cerveau-dossiers";
 import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs";
+import { accepterLien, annuler, archiver, fusionner, refuserLien, resumeEntretien } from "./graphe-entretien";
 import os from "node:os";
 
 export const PROPRIETAIRE: PorteeCerveau = { agentId: null, projetId: null, proprietaire: true };
@@ -52,6 +53,7 @@ export async function indexerSouvenirs(cerveau: Cerveau, agent: string, memoire:
 }
 export function actionCerveau(donnees: string, action: string, args: Record<string, unknown>) {
   if (action === "graphe-souvenirs") return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
+  if (action.startsWith("graphe-entretien")) return entretien(donnees, action, args);
   if (action === "graphe-chercher") return chercherContenu(racinesGraphe(donnees, args.projets), args.requete, fichiersPublies(donnees, args.fichiers));
   const c = ouvrirCerveau(donnees);
   if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action)) return actionDossier(c, action, args);
@@ -88,4 +90,19 @@ function fichiersPublies(donnees: string, fichiers: unknown): string[] {
     if (Array.isArray(registre)) for (const r of registre) if (r && typeof r.chemin === "string" && !r.dossier) liste.push(r.chemin);
   } catch { /* pas de registre sur ce poste */ }
   return liste;
+}
+
+/** Entretien du graphe : chaque écriture vient d'un clic confirmé à l'écran (cf. graphe-entretien.ts). */
+function entretien(donnees: string, action: string, args: Record<string, unknown>) {
+  const r = racinesGraphe(donnees, args.projets);
+  switch (action) {
+    case "graphe-entretien": return resumeEntretien(donnees);
+    case "graphe-entretien-refuser": refuserLien(donnees, args.cle); break;
+    case "graphe-entretien-lien": accepterLien(r, donnees, args); break;
+    case "graphe-entretien-archiver": archiver(r, donnees, args); break;
+    case "graphe-entretien-fusionner": fusionner(r, donnees, args); break;
+    case "graphe-entretien-annuler": annuler(donnees, args.id); break;
+    default: throw new Error("Action de mémoire inconnue.");
+  }
+  return resumeEntretien(donnees);
 }

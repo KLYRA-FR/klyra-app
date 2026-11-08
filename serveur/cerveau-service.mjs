@@ -6,6 +6,7 @@ import { ouvrirCerveau, sauvegarderCerveau } from "./cerveau.mjs";
 import { cheminSouvenir, lireMemoire } from "./connaissances-agent.mjs";
 import { actionDossier } from "./cerveau-dossiers.mjs";
 import { chercherContenu, lireSouvenirsGraphe } from "./graphe-souvenirs.mjs";
+import { accepterLien, annuler, archiver, fusionner, refuserLien, resumeEntretien } from "./graphe-entretien.mjs";
 import os from "node:os";
 export const PROPRIETAIRE = { agentId: null, projetId: null, proprietaire: true };
 /** Textes expressément choisis dans la boîte de fichiers du poste. Aucune ouverture d'un chemin reçu par HTTP. */
@@ -69,6 +70,8 @@ export async function indexerSouvenirs(cerveau, agent, memoire, projetId) {
 export function actionCerveau(donnees, action, args) {
     if (action === "graphe-souvenirs")
         return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
+    if (action.startsWith("graphe-entretien"))
+        return entretien(donnees, action, args);
     if (action === "graphe-chercher")
         return chercherContenu(racinesGraphe(donnees, args.projets), args.requete, fichiersPublies(donnees, args.fichiers));
     const c = ouvrirCerveau(donnees);
@@ -111,4 +114,28 @@ function fichiersPublies(donnees, fichiers) {
     }
     catch { /* pas de registre sur ce poste */ }
     return liste;
+}
+/** Entretien du graphe : chaque écriture vient d'un clic confirmé à l'écran (cf. graphe-entretien.ts). */
+function entretien(donnees, action, args) {
+    const r = racinesGraphe(donnees, args.projets);
+    switch (action) {
+        case "graphe-entretien": return resumeEntretien(donnees);
+        case "graphe-entretien-refuser":
+            refuserLien(donnees, args.cle);
+            break;
+        case "graphe-entretien-lien":
+            accepterLien(r, donnees, args);
+            break;
+        case "graphe-entretien-archiver":
+            archiver(r, donnees, args);
+            break;
+        case "graphe-entretien-fusionner":
+            fusionner(r, donnees, args);
+            break;
+        case "graphe-entretien-annuler":
+            annuler(donnees, args.id);
+            break;
+        default: throw new Error("Action de mémoire inconnue.");
+    }
+    return resumeEntretien(donnees);
 }

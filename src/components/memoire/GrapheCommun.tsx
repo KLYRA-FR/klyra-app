@@ -2,19 +2,20 @@
 
 import { EmptyState, Input } from "klyra-ui";
 import { useRouter } from "next/navigation";
-import { memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject, type WheelEvent } from "react";
+import { memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject, type WheelEvent } from "react";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { couleurAgent } from "@/components/team/AgentVisuel";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
+import { useConfirmation } from "@/components/ui/Modale";
 import { useAgents } from "@/lib/agents";
 import { appelerCerveau } from "@/lib/cerveau-pont";
 import { cn } from "@/lib/cn";
 import {
-  cadreDe, chercherNoeuds, construireGraphe, fichiersDepuisRendus, filsDepuisChats, filtrerGraphe, FILTRES_VIDES, idFichier, libelleRelation,
+  cadreDe, chercherNoeuds, cleArete, propositionsEntretien, construireGraphe, fichiersDepuisRendus, filsDepuisChats, filtrerGraphe, FILTRES_VIDES, idFichier, libelleRelation,
   liensDeduits, motsDe, orphelins, placerGraphe, segmentsSurlignes, visiblePour, voisinDansDirection, voisins,
-  type AreteGraphe, type ResultatRecherche, type TrouveContenu, type FiltresGraphe, type Graphe, type NoeudGraphe, type Periode, type Position, type SouvenirSource, type TypeNoeud,
+  type AreteGraphe, type Doublon, type Obsolete, type ResultatRecherche, type TrouveContenu, type FiltresGraphe, type Graphe, type NoeudGraphe, type Periode, type Position, type SouvenirSource, type TypeNoeud,
 } from "@/lib/graphe-memoire";
 import { renduDansEspace } from "@/lib/rendus-espace";
 import { useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
@@ -88,6 +89,30 @@ function useRechercheContenu(lieu: string | null, requete: string, projets: { id
   return etat.pour === requete.trim() ? etat : null;
 }
 
+interface OperationVue { id: string; type: string; le: string; libelle: string; annuleLe: string | null }
+interface EtatEntretienVue { refuses: string[]; operations: OperationVue[] }
+
+/** Refus de liens et dernières actions d'entretien du lieu affiché ; chaque action relit l'état. */
+function useEntretien(lieu: string | null, projets: { id: string; dossier: string }[], apres: () => void) {
+  const [etat, setEtat] = useState<EtatEntretienVue>({ refuses: [], operations: [] });
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    let annule = false;
+    appelerCerveau<EtatEntretienVue>(lieu, "graphe-entretien").then((e) => { if (!annule) setEtat(e); }).catch(() => { /* serveur ancien : pas d'entretien */ });
+    return () => { annule = true; };
+  }, [lieu]);
+  const agir = async (action: string, args: Record<string, unknown>, fait: string) => {
+    try {
+      setEtat(await appelerCerveau<EtatEntretienVue>(lieu, `graphe-entretien-${action}`, { ...args, projets }));
+      setMessage(fait);
+      apres();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Action impossible.");
+    }
+  };
+  return { refuses: useMemo(() => new Set(etat.refuses), [etat.refuses]), operations: etat.operations, message, agir };
+}
+
 export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGrapheCommun }) {
   const router = useRouter();
   const projetsApp = useProjects(), chats = useChatsEspace();
@@ -100,6 +125,9 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
   const [suggestions, setSuggestions] = useState(true);
   const [selection, setSelection] = useState<string | null>(null);
   const [requete, setRequete] = useState("");
+  const [entretienOuvert, setEntretienOuvert] = useState(false);
+  const [demander, fenetre] = useConfirmation();
+  const entretien = useEntretien(lieu, dossiers, () => void relire());
   const poignee = useRef<PoigneeGraphe | null>(null);
   const rendusEspace = useMemo(() => state.rendus.filter((r) => renduDansEspace(r.origine, lieu)), [state.rendus, lieu]);
 
@@ -119,8 +147,38 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
   const perimetre = useMemo(() => visiblePour(complet, observateur || null), [complet, observateur]);
   const graphe = useMemo<Graphe>(() => {
     const g = filtrerGraphe(perimetre, filtres);
-    return suggestions ? { noeuds: g.noeuds, aretes: [...g.aretes, ...liensDeduits(g)] } : g;
-  }, [perimetre, filtres, suggestions]);
+    return suggestions ? { noeuds: g.noeuds, aretes: [...g.aretes, ...liensDeduits(g, { refuses: entretien.refuses })] } : g;
+  }, [perimetre, filtres, suggestions, entretien.refuses]);
+  const propositions = useMemo(() => {
+    const p = propositionsEntretien(perimetre);
+    const liens = liensDeduits(perimetre, { refuses: entretien.refuses, parNoeud: 3 });
+    return { ...p, liens };
+  }, [perimetre, entretien.refuses]);
+  const nbEntretien = propositions.doublons.length + propositions.obsoletes.length + propositions.liens.length;
+  const parId = useMemo(() => new Map(perimetre.noeuds.map((n) => [n.id, n])), [perimetre]);
+
+  const accepter = async (a: AreteGraphe) => {
+    const [de, vers] = [parId.get(a.de), parId.get(a.vers)];
+    if (!de || !vers || de.type !== "souvenir" || vers.type !== "souvenir") return;
+    const ok = await demander({ titre: "Écrire ce lien ?", confirmer: "Écrire le lien",
+      texte: `« Voir aussi : [[${vers.titre}]] » sera ajouté à la fin du souvenir « ${de.titre} » (${nomAgent(de.agent)}). Tu pourras annuler tant que le fichier n’a pas changé.` });
+    if (ok) await entretien.agir("lien", { de: de.id, attenduDe: de.date, vers: vers.id }, `Lien écrit dans « ${de.titre} ».`);
+  };
+  const refuser = (a: AreteGraphe) => void entretien.agir("refuser", { cle: cleArete(a.de, a.vers) }, "Suggestion écartée : elle ne reviendra pas.");
+  const fusionner = async (d: Doublon) => {
+    const ok = await demander({ titre: "Fusionner ces deux souvenirs ?", confirmer: "Fusionner",
+      texte: `« ${d.garder.titre} » est gardé et reprend le texte de « ${d.retirer.titre} » sous un titre « Repris de… ». « ${d.retirer.titre} » part dans le dossier archive, à côté, et sa ligne quitte MEMORY.md. Rien n’est supprimé, et tu pourras annuler.` });
+    if (ok) await entretien.agir("fusionner", { garder: d.garder.id, attenduGarder: d.garder.date, retirer: d.retirer.id, attenduRetirer: d.retirer.date }, `« ${d.retirer.titre} » fusionné dans « ${d.garder.titre} ».`);
+  };
+  const archiver = async (o: Obsolete) => {
+    const ok = await demander({ titre: "Archiver ce souvenir ?", confirmer: "Archiver",
+      texte: `« ${o.noeud.titre} » part dans le dossier archive, à côté de lui, et sa ligne quitte MEMORY.md : ${nomAgent(o.noeud.agent)} ne le chargera plus. Rien n’est supprimé, et tu pourras annuler.` });
+    if (ok) await entretien.agir("archiver", { id: o.noeud.id, attendu: o.noeud.date }, `« ${o.noeud.titre} » archivé.`);
+  };
+  const annulerOp = async (op: OperationVue) => {
+    const ok = await demander({ titre: "Annuler cette action ?", confirmer: "Annuler l’action", annuler: "Garder", texte: op.libelle });
+    if (ok) await entretien.agir("annuler", { id: op.id }, "Action annulée.");
+  };
   const seuls = useMemo(() => orphelins(perimetre), [perimetre]);
 
   // Recherche : nom et résumé ici, contenu par le lieu des fichiers ; jamais hors du périmètre affiché.
@@ -170,6 +228,9 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
         <Bouton taille="mini" variant="discret" actif={suggestions} aria-pressed={suggestions} onClick={() => setSuggestions((s) => !s)}>
           Liens suggérés
         </Bouton>
+        <Bouton taille="mini" variant="discret" actif={entretienOuvert} aria-pressed={entretienOuvert} onClick={() => { setSelection(null); setEntretienOuvert((o) => !o); }}>
+          Entretien ({nbEntretien})
+        </Bouton>
         <span className="ml-auto flex items-center gap-2">
           <ListeDeroulante variante="compact" libelle="Vu par" value={observateur}
             options={[{ value: "", label: "Vu par toi (tout)" }, ...roles.map((r) => ({ value: r.id, label: `Vu par ${r.name}` }))]}
@@ -177,6 +238,8 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
           <BoutonIcone taille="mini" libelle="Relire les sources" icone={<Icon name="refresh-01" size={16} />} onClick={() => void relire()} />
         </span>
       </div>
+      {fenetre}
+      {entretien.message && <p role="status" className="text-ui-s text-texte-secondaire">{entretien.message}</p>}
       {erreur && <p role="status" className="rounded-md border border-bordure-subtile bg-fond-surface-grise px-3 py-2 text-ui-s text-texte-secondaire">{erreur}</p>}
       <div className="flex min-h-0 flex-1 gap-3">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -194,8 +257,12 @@ export function GrapheCommun({ lieu, vue }: { lieu: string | null; vue: VueGraph
           )}
           <Legende />
         </div>
+        {entretienOuvert && !courant && (
+          <PanneauEntretien propositions={propositions} operations={entretien.operations} parId={parId} nomAgent={nomAgent}
+            ouvrir={allerA} fermer={() => setEntretienOuvert(false)} fusionner={fusionner} archiver={archiver} accepter={accepter} refuser={refuser} annuler={annulerOp} />
+        )}
         {courant && (
-          <PanneauNoeud noeud={courant} graphe={graphe} orphelin={seuls.has(courant.id)} nomAgent={nomAgent}
+          <PanneauNoeud accepter={accepter} refuser={refuser} noeud={courant} graphe={graphe} orphelin={seuls.has(courant.id)} nomAgent={nomAgent}
             nomProjet={(id) => projetsApp.find((p) => p.id === id)?.name ?? id}
             choisir={setSelection} fermer={() => setSelection(null)} ouvrirFil={ouvrirFil} />
         )}
@@ -414,9 +481,10 @@ function VueListe({ graphe, selection, choisir, orphelins, nomAgent }: {
 
 /* ─── Panneau d'un nœud ────────────────────────────────────────────────── */
 
-function PanneauNoeud({ noeud, graphe, orphelin, nomAgent, nomProjet, choisir, fermer, ouvrirFil }: {
+function PanneauNoeud({ noeud, graphe, orphelin, nomAgent, nomProjet, choisir, fermer, ouvrirFil, accepter, refuser }: {
   noeud: NoeudGraphe; graphe: Graphe; orphelin: boolean; nomAgent: (id: string | null) => string; nomProjet: (id: string) => string;
   choisir: (id: string) => void; fermer: () => void; ouvrirFil: (chatId: string) => void;
+  accepter: (a: AreteGraphe) => void; refuser: (a: AreteGraphe) => void;
 }) {
   const liste = useMemo(() => voisins(graphe, noeud.id), [graphe, noeud.id]);
   const titre = useRef<HTMLHeadingElement>(null);
@@ -447,12 +515,19 @@ function PanneauNoeud({ noeud, graphe, orphelin, nomAgent, nomProjet, choisir, f
         {!liste.length && <p className="text-ui-s text-texte-secondaire">Aucun.</p>}
         <ul className="flex flex-col">
           {liste.map(({ noeud: v, arete, sortant }) => (
-            <li key={`${arete.type}|${v.id}`}>
+            <li key={`${arete.type}|${v.id}`} className="flex flex-col">
               <button type="button" onClick={() => choisir(v.id)} className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-ui-s hover:bg-fond-survol focus-visible:bg-fond-survol focus-visible:outline-none">
                 <span className={cn("size-2 shrink-0 rounded-full", arete.type === "deduit" && "outline-1 outline-offset-1 outline-dashed outline-texte-tertiaire")} style={{ background: TYPE[v.type].couleur }} aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{v.titre}</span>
                 <span className="shrink-0 text-ui-2xs text-texte-tertiaire" title={arete.raison}>{libelleRelation(arete, sortant)}</span>
               </button>
+              {arete.type === "deduit" && (
+                <span className="flex items-center gap-1 pb-1 pl-6">
+                  <span className="flex-1 truncate text-ui-2xs text-texte-tertiaire">{arete.raison}</span>
+                  {noeud.type === "souvenir" && v.type === "souvenir" && <Bouton taille="mini" variant="gris" onClick={() => accepter(sortant ? arete : { ...arete, de: noeud.id, vers: v.id })}>Accepter</Bouton>}
+                  <Bouton taille="mini" variant="discret" onClick={() => refuser(arete)}>Refuser</Bouton>
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -534,5 +609,85 @@ function BarreRecherche({ requete, changer, resultats, enCours, duree, nomAgent,
         </ul>
       )}
     </div>
+  );
+}
+
+/* ─── Entretien ────────────────────────────────────────────────────────── */
+
+function Section({ titre, nombre, vide, children }: { titre: string; nombre: number; vide: string; children: ReactNode }) {
+  return (
+    <section aria-label={titre} className="flex flex-col gap-1.5">
+      <h3 className="text-ui-xs font-medium text-texte-tertiaire">{titre} ({nombre})</h3>
+      {nombre ? <ul className="flex flex-col gap-1.5">{children}</ul> : <p className="text-ui-s text-texte-secondaire">{vide}</p>}
+    </section>
+  );
+}
+
+function PanneauEntretien({ propositions, operations, parId, nomAgent, ouvrir, fermer, fusionner, archiver, accepter, refuser, annuler }: {
+  propositions: { doublons: Doublon[]; obsoletes: Obsolete[]; liens: AreteGraphe[] }; operations: OperationVue[];
+  parId: Map<string, NoeudGraphe>; nomAgent: (id: string | null) => string; ouvrir: (id: string) => void; fermer: () => void;
+  fusionner: (d: Doublon) => void; archiver: (o: Obsolete) => void; accepter: (a: AreteGraphe) => void; refuser: (a: AreteGraphe) => void;
+  annuler: (op: OperationVue) => void;
+}) {
+  const lien = (n: NoeudGraphe) => (
+    <button type="button" onClick={() => ouvrir(n.id)} className="max-w-full truncate text-left font-medium text-texte-principal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none">{n.titre}</button>
+  );
+  const carte = "flex flex-col gap-1 rounded-md border border-bordure-subtile p-2.5 text-ui-s";
+  return (
+    <aside aria-label="Entretien de la mémoire" className="flex w-[340px] shrink-0 flex-col gap-4 overflow-auto rounded-2xl border border-bordure-subtile bg-fond-surface p-4"
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); fermer(); } }}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-ui font-semibold text-texte-principal">Entretien</h2>
+          <p className="text-ui-xs text-texte-secondaire">Ce que l’app propose. Rien ne change sans ton accord, et chaque action s’annule.</p>
+        </div>
+        <BoutonIcone taille="mini" libelle="Fermer l’entretien" icone={<Icon name="x-01" size={16} />} onClick={fermer} />
+      </div>
+      <Section titre="Doublons" nombre={propositions.doublons.length} vide="Aucun doublon repéré.">
+        {propositions.doublons.slice(0, 30).map((d) => (
+          <li key={`${d.a.id}|${d.b.id}`} className={carte}>
+            <span className="flex flex-col">{lien(d.garder)}{lien(d.retirer)}</span>
+            <span className="text-ui-xs text-texte-tertiaire">{nomAgent(d.garder.agent)} · {d.raison}</span>
+            <Bouton taille="mini" className="self-start" onClick={() => fusionner(d)}>Fusionner dans le plus récent</Bouton>
+          </li>
+        ))}
+      </Section>
+      <Section titre="Obsolètes" nombre={propositions.obsoletes.length} vide="Aucun souvenir obsolète repéré.">
+        {propositions.obsoletes.slice(0, 30).map((o) => (
+          <li key={o.noeud.id} className={carte}>
+            {lien(o.noeud)}
+            <span className="text-ui-xs text-texte-tertiaire">{nomAgent(o.noeud.agent)} · {o.raison}</span>
+            <Bouton taille="mini" className="self-start" onClick={() => archiver(o)}>Archiver</Bouton>
+          </li>
+        ))}
+      </Section>
+      <Section titre="Liens suggérés" nombre={propositions.liens.length} vide="Aucune suggestion pour l’instant.">
+        {propositions.liens.slice(0, 40).map((a) => {
+          const de = parId.get(a.de), vers = parId.get(a.vers);
+          if (!de || !vers) return null;
+          const ecrivable = de.type === "souvenir" && vers.type === "souvenir";
+          return (
+            <li key={`${a.de}|${a.vers}`} className={carte}>
+              <span className="flex flex-col">{lien(de)}{lien(vers)}</span>
+              <span className="text-ui-xs text-texte-tertiaire">{a.raison} · confiance {Math.round((a.confiance ?? 0) * 100)} %</span>
+              <span className="flex gap-1">
+                {ecrivable && <Bouton taille="mini" variant="gris" onClick={() => accepter(a)}>Accepter</Bouton>}
+                <Bouton taille="mini" variant="discret" onClick={() => refuser(a)}>Refuser</Bouton>
+              </span>
+            </li>
+          );
+        })}
+      </Section>
+      {operations.length > 0 && (
+        <Section titre="Dernières actions" nombre={operations.length} vide="">
+          {operations.map((op) => (
+            <li key={op.id} className="flex items-center gap-2 text-ui-s">
+              <span className={cn("min-w-0 flex-1 truncate", op.annuleLe && "text-texte-tertiaire line-through")}>{op.libelle}</span>
+              {!op.annuleLe && <Bouton taille="mini" variant="discret" onClick={() => annuler(op)}>Annuler</Bouton>}
+            </li>
+          ))}
+        </Section>
+      )}
+    </aside>
   );
 }

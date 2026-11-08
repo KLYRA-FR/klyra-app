@@ -196,7 +196,8 @@ export function lireSouvenirsGraphe(r: RacinesSouvenirs): LectureSouvenirs {
         const chemin = path.join(dossier, nom);
         let st;
         try { st = statSync(chemin); } catch { continue; }
-        if (st.isDirectory()) { if (profondeur < 3) visiter(chemin, profondeur + 1); continue; }
+        // `archive/` : souvenirs archivés depuis la page Mémoire, gardés mais hors du graphe.
+        if (st.isDirectory()) { if (profondeur < 3 && nom !== "archive") visiter(chemin, profondeur + 1); continue; }
         if (!st.isFile() || !/\.md$/i.test(nom) || /^MEMORY\.md$/i.test(nom) || st.size > TAILLE_MAX) continue;
         const vrai = reel(chemin);
         if (!vrai || !sous(d.dossier, vrai)) continue;

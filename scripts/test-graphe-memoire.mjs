@@ -25,8 +25,16 @@ const iris = path.join(maison, ".klyra", "atelier", "designer", ".claude", "agen
 ecrire(path.join(iris, "brouillon.md"), souvenir("brouillon-iris", "Piste visuelle personnelle", "", "  prive: oui\n"));
 const hugo = path.join(maison, ".klyra", "atelier", "dev", ".claude", "agent-memory", "dev");
 for (let i = 0; i < NOMBRE; i++) {
-  ecrire(path.join(hugo, `essai-${i}.md`), souvenir(`essai-${i}`, `Essai ${i} sujet${i % 40} groupe${i % 40}`, `${i ? `Suite de [[essai-${i - 1}]].` : ""}${i === 250 ? " Les panneaux photovoltaïques du client sont posés." : ""}`));
+  ecrire(path.join(hugo, `essai-${i}.md`), souvenir(`essai-${i}`, `Essai ${i} sujet${i % 40}`, `${i ? `Suite de [[essai-${i - 1}]].` : ""}${i === 250 ? " Les panneaux photovoltaïques du client sont posés." : ""}`));
 }
+// Entretien : un doublon chez Hugo, un souvenir remplacé chez Iris.
+ecrire(path.join(hugo, "doublon-a.md"), souvenir("Déploiement du site", "Procédure de déploiement Vercel du site vitrine", "Étape 1 : vérifier la CI."));
+ecrire(path.join(hugo, "doublon-b.md"), souvenir("Deploiement site", "Procédure de déploiement Vercel du site vitrine", "Étape 2 : fusionner la PR."));
+ecrire(path.join(hugo, "MEMORY.md"), "- [Déploiement](doublon-a.md)\n- [Déploiement bis](doublon-b.md)\n");
+ecrire(path.join(cicco, "relances.md"), souvenir("relances-impayes", "Relances clients impayés Qonto facturation mensuelle"));
+ecrire(path.join(hugo, "qonto.md"), souvenir("qonto-script", "Script relances impayés Qonto facturation"));
+ecrire(path.join(iris, "charte-v1.md"), souvenir("charte-v1", "Ancienne charte"));
+ecrire(path.join(iris, "charte-v2.md"), souvenir("charte-v2", "Charte actuelle", "", "  remplace: charte-v1\n"));
 const empreintes = () => [cicco, iris, hugo].flatMap((d) => readdirSync(d).map((f) => readFileSync(path.join(d, f), "utf8"))).join("\u0000");
 const avant = empreintes();
 
@@ -48,6 +56,8 @@ writeFileSync(path.join(donnees, "conversations.json"), JSON.stringify({
 const serveur = createServer(); await new Promise((r) => serveur.listen(0, "127.0.0.1", r)); const port = serveur.address().port; await new Promise((r) => serveur.close(r));
 let app;
 const verifier = (ok, message) => { assert.ok(ok, message); console.log(`OK ${message}`); };
+const PRIVE = "[...document.querySelectorAll('[data-noeud^=\"souvenir:designer:\"] title')].some(t=>t.textContent.includes('brouillon-iris'))";
+const HUGO = NOMBRE + 3;
 const compter = (prefixe) => app.ev(`document.querySelectorAll('[data-noeud^="${prefixe}"]').length`);
 const choisirOption = async (libelle, option) => {
   await app.ev(`document.querySelector('button[aria-label="${libelle}"]').click()`);
@@ -59,9 +69,9 @@ try {
   app = await lancerApp({ port, env: { HOME: maison, USERPROFILE: maison, KLYRA_USER_DATA: donnees, CLAUDE_CONFIG_DIR: path.join(maison, ".claude"), CODEX_HOME: path.join(maison, ".codex"), KLYRA_SANS_VEILLE: "1" } });
   const t0 = Date.now();
   await app.aller("/memoire");
-  verifier(await app.quand(`document.querySelectorAll('[data-noeud^="souvenir:dev:"]').length===${NOMBRE}`, 30000), `${NOMBRE} souvenirs de Hugo dessinés (${Date.now() - t0} ms après l’ouverture)`);
-  verifier(await compter("souvenir:principal:") === 2, "les 2 souvenirs de Cicco portent son nom d’agent");
-  verifier(await compter("souvenir:designer:") === 1, "le souvenir privé d’Iris est visible pour toi");
+  verifier(await app.quand(`document.querySelectorAll('[data-noeud^="souvenir:dev:"]').length===${HUGO}`, 30000), `${HUGO} souvenirs de Hugo dessinés (${Date.now() - t0} ms après l’ouverture)`);
+  verifier(await compter("souvenir:principal:") === 3, "les 3 souvenirs de Cicco portent son nom d’agent");
+  verifier(await app.ev(PRIVE), "le souvenir privé d’Iris est visible pour toi");
   verifier(await compter("fil:klyra-fil-test") === 1 && await compter("fichier:rendu-test") === 1, "le fil et le fichier publié sont dans le graphe");
   verifier(await app.ev("['agent:principal','agent:dev','agent:designer'].every(id=>document.querySelector(`[data-noeud=\"${id}\"]`))"), "un repère par agent");
   verifier(await app.ev("document.querySelectorAll('svg[aria-roledescription=graphe] line[stroke-dasharray]').length>0"), "des liens suggérés en pointillé");
@@ -94,14 +104,14 @@ try {
 
   // Périmètre : vu par Hugo, le souvenir privé d'Iris disparaît.
   await choisirOption("Vu par", "Vu par Hugo");
-  verifier(await app.quand(`document.querySelectorAll('[data-noeud^="souvenir:designer:"]').length===0 && document.querySelectorAll('[data-noeud^="souvenir:dev:"]').length===${NOMBRE}`), "vu par Hugo, le nœud privé d’Iris n’apparaît pas");
+  verifier(await app.quand(`!(${PRIVE}) && document.querySelectorAll('[data-noeud^="souvenir:dev:"]').length===${HUGO}`), "vu par Hugo, le nœud privé d’Iris n’apparaît pas");
   await choisirOption("Vu par", "Vu par Iris");
-  verifier(await app.quand(`document.querySelectorAll('[data-noeud^="souvenir:designer:"]').length===1`), "vu par Iris, son nœud privé apparaît");
+  verifier(await app.quand(PRIVE), "vu par Iris, son nœud privé apparaît");
   await choisirOption("Vu par", "Vu par toi (tout)");
 
   // Filtres et état vide.
   await choisirOption("Agent", "Cicco");
-  verifier(await app.quand("document.querySelectorAll('[data-noeud^=\"souvenir:\"]').length===2"), "le filtre agent ne garde que Cicco");
+  verifier(await app.quand("document.querySelectorAll('[data-noeud^=\"souvenir:\"]').length===3"), "le filtre agent ne garde que Cicco");
   await choisirOption("Type", "Projets (0)");
   verifier(await app.quand("/Rien ne correspond à ces filtres/.test(document.body.innerText)"), "état vide quand aucun élément ne correspond");
   await choisirOption("Type", "Tous les types");
@@ -111,7 +121,7 @@ try {
   const champ = 'input[aria-label="Rechercher dans la mémoire"]';
   for (const [requete, titre, ou] of [
     ["essai-421", "essai-421", "nom"],
-    ["groupe17 essai 97", "essai-97", "résumé"],
+    ["sujet17 essai 97", "essai-97", "résumé"],
     ["photovoltaique", "essai-250", "contenu"],
     ["palette nocturne", "Maquette du graphe", "contenu"],
     ["mise en ligne immediate", "fonctionnement-modifications", "contenu"],
@@ -145,6 +155,44 @@ try {
   verifier(await app.quand("document.querySelector('aside[aria-label=\"Détail de l’élément\"] h2')"), "un élément de la liste ouvre son détail");
 
   verifier(empreintes() === avant, "aucun fichier de mémoire n’a été modifié");
+  // Entretien : rien ne change sans confirmation, et chaque action s'annule.
+  await app.aller("/memoire");
+  verifier(await app.quand("[...document.querySelectorAll('button')].some(b=>/^Entretien \\(\\d+\\)$/.test(b.innerText.trim()))"), "le bouton Entretien compte les propositions");
+  await app.ev("[...document.querySelectorAll('button')].find(b=>/^Entretien \\(/.test(b.innerText.trim())).click()");
+  const panneau = "document.querySelector('aside[aria-label=\"Entretien de la mémoire\"]')";
+  verifier(await app.quand(`/Déploiement du site/.test(${panneau}?.querySelector('section[aria-label=Doublons]')?.innerText)`), "le doublon de Hugo est signalé");
+  verifier(await app.ev(`/charte-v1/.test(${panneau}.querySelector('section[aria-label=Obsolètes]').innerText) && /Remplacé par « charte-v2 »/.test(${panneau}.innerText)`), "le souvenir remplacé d’Iris est signalé obsolète");
+  const a = path.join(hugo, "doublon-a.md"), b = path.join(hugo, "doublon-b.md");
+  const avantA = readFileSync(a, "utf8"), avantB = readFileSync(b, "utf8");
+  await app.ev(`[...[...${panneau}.querySelectorAll('section[aria-label=Doublons] li')].find(li=>/Déploiement du site/.test(li.innerText)).querySelectorAll('button')].find(b=>b.innerText==='Fusionner dans le plus récent').click()`);
+  verifier(await app.quand("document.querySelector('[role=alertdialog]') && /Fusionner ces deux souvenirs/.test(document.querySelector('[role=alertdialog]').innerText)"), "fusionner demande d’abord une confirmation");
+  verifier(readFileSync(a, "utf8") === avantA && readFileSync(b, "utf8") === avantB, "rien n’est écrit avant la confirmation");
+  assert.ok(await app.cliquer("Fusionner", "document.querySelector('[role=alertdialog]')"));
+  await attendre(800);
+  const fusionne = [a, b].find((f) => { try { return /## Repris de/.test(readFileSync(f, "utf8")); } catch { return false; } });
+  const archive = [a, b].find((f) => f !== fusionne);
+  verifier(!!fusionne && !!archive && readFileSync(path.join(hugo, "archive", path.basename(archive)), "utf8") === (archive === a ? avantA : avantB), "fusion faite : l’un reprend l’autre, l’autre est archivé intact");
+  verifier(!readFileSync(path.join(hugo, "MEMORY.md"), "utf8").includes(path.basename(archive)), "la ligne du souvenir archivé quitte MEMORY.md");
+  await app.cliquer("Annuler");
+  verifier(await app.quand("/Annuler cette action/.test(document.querySelector('[role=alertdialog]')?.innerText)"), "annuler demande confirmation");
+  assert.ok(await app.cliquer("Annuler l’action", "document.querySelector('[role=alertdialog]')"));
+  await attendre(800);
+  verifier(readFileSync(a, "utf8") === avantA && readFileSync(b, "utf8") === avantB, "l’annulation remet les deux souvenirs à l’identique");
+  await app.ev(`[...[...${panneau}.querySelectorAll('section[aria-label=Obsolètes] li')].find(li=>/charte-v1/.test(li.innerText)).querySelectorAll('button')].find(b=>b.innerText==='Archiver').click()`);
+  assert.ok(await app.quand("/Archiver ce souvenir/.test(document.querySelector('[role=alertdialog]')?.innerText)"));
+  assert.ok(await app.cliquer("Archiver", "document.querySelector('[role=alertdialog]')"));
+  verifier(await app.quand(`!/charte-v1/.test(${panneau}.querySelector('section[aria-label=Obsolètes]').innerText)`) && readFileSync(path.join(iris, "archive", "charte-v1.md"), "utf8").includes("Ancienne charte"), "archiver déplace le souvenir dans archive/, sans le supprimer");
+  await app.ev(`[...[...${panneau}.querySelectorAll('section[aria-label="Liens suggérés"] li')].find(li=>[...li.querySelectorAll('button')].some(b=>b.innerText==='Accepter')).querySelectorAll('button')].find(b=>b.innerText==='Accepter').click()`);
+  assert.ok(await app.quand("/Écrire ce lien/.test(document.querySelector('[role=alertdialog]')?.innerText)"));
+  assert.ok(await app.cliquer("Écrire le lien", "document.querySelector('[role=alertdialog]')"));
+  await attendre(800);
+  const ecrits = readdirSync(hugo).filter((f) => f.endsWith(".md")).filter((f) => /Voir aussi : \[\[/.test(readFileSync(path.join(hugo, f), "utf8")));
+  verifier(ecrits.length === 1, `un lien accepté est écrit dans un seul souvenir (${ecrits.join(", ")})`);
+  await app.ev(`[...[...${panneau}.querySelectorAll('section[aria-label="Liens suggérés"] li')][0].querySelectorAll('button')].find(b=>b.innerText==='Refuser').click()`);
+  verifier(await app.quand("/Suggestion écartée/.test(document.body.innerText)"), "un lien refusé est écarté en un clic");
+  const refus = JSON.parse(readFileSync(path.join(donnees, "graphe-entretien.json"), "utf8")).refuses;
+  verifier(refus.length >= 1, `le refus est gardé dans les données de l’app, pas dans un souvenir (${JSON.stringify(refus)})`);
+
   verifier(app.erreurs.length === 0, `aucune exception de rendu (${app.erreurs.join(" | ")})`);
   console.log("Graphe commun vérifié.");
 } finally {
