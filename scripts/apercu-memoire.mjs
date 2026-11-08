@@ -1,0 +1,11 @@
+import { createRequire } from "node:module";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+const require = createRequire(import.meta.url);
+const { build } = require("../node_modules/.pnpm/esbuild@0.27.0/node_modules/esbuild");
+const sortie = path.resolve(process.argv[2] ?? "../apercu-memoire-klyra");
+mkdirSync(sortie, { recursive: true });
+await build({ entryPoints: ["prototypes/memoire/apercu.tsx"], bundle: true, minify: true, jsx: "automatic", external: ["./police.ttf"], outfile: path.join(sortie, "apercu.js"), define: { "process.env.NODE_ENV": '"production"' } });
+cpSync("node_modules/klyra-ui/public/fonts/GoogleSansFlex_24pt-Regular.ttf", path.join(sortie, "police.ttf"));
+writeFileSync(path.join(sortie, "index.html"), '<!doctype html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mémoire — prototype KLYRA-app</title><link rel="stylesheet" href="./apercu.css"></head><body><div id="root"></div><script src="./apercu.js"></script></body></html>');
+console.log(`Aperçu : ${sortie}`);

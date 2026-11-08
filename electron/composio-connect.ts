@@ -78,15 +78,47 @@ export class ComposioConnect {
   #enCours: { annuler: () => void } | null = null;
   #erreur: string | null = null;
   #renouvellement: Promise<void> | null = null;
+  #chargement: Promise<void> | null = null;
+  #revision = 0;
+  #ecritures: Promise<void> = Promise.resolve();
 
   constructor(private readonly d: DependancesConnect) {}
 
   #maintenant() { return this.d.maintenant?.() ?? Date.now(); }
 
   /** À l'ouverture de l'app : relit les jetons et les renouvelle s'il le faut. */
-  async charger(): Promise<void> {
-    this.#jetons = await this.d.lire();
+  charger(): Promise<void> {
+    this.#chargement ??= (async () => {
+      const revision = this.#revision;
+      const jetons = await this.d.lire();
+      if (revision === this.#revision) this.#changer(jetons);
+      await this.renouvelerSiBesoin();
+    })().finally(() => { this.#chargement = null; });
+    return this.#chargement;
+  }
+
+  #changer(jetons: JetonsConnect | null): void {
+    this.#jetons = jetons;
+    this.#revision += 1;
+  }
+
+  #enregistrer(jetons: JetonsConnect | null): Promise<void> {
+    const operation = this.#ecritures.then(async () => {
+      if (this.#jetons === jetons) await this.d.ecrire(jetons);
+    });
+    this.#ecritures = operation.catch(() => {});
+    return operation;
+  }
+
+  /** Numéro opaque : invalide les configurations des moteurs, sans y mettre de secret. */
+  signature(): number { return this.#revision; }
+
+  /** Le relais appelle ceci à chaque requête, y compris pendant un même tour d'agent. */
+  async preparerMcp(): Promise<ReturnType<ComposioConnect["serveur"]>> {
+    if (this.#chargement) await this.#chargement;
+    if (this.#renouvellement) await this.#renouvellement;
     await this.renouvelerSiBesoin();
+    return this.serveur();
   }
 
   etat(): EtatConnect {
@@ -171,8 +203,8 @@ export class ComposioConnect {
         return false;
       }
       const v = await this.#jeton(m.token_endpoint, { grant_type: "authorization_code", code, redirect_uri: redirection, client_id: client.client_id, code_verifier: verificateur, resource: URL_CONNECT });
-      this.#jetons = this.#garder(client.client_id, v, null);
-      await this.d.ecrire(this.#jetons);
+      this.#changer(this.#garder(client.client_id, v, null));
+      await this.#enregistrer(this.#jetons);
       return true;
     } catch (e) {
       this.#erreur = e instanceof Error ? e.message : "La connexion à Composio a échoué.";
@@ -190,16 +222,16 @@ export class ComposioConnect {
 
   /** Des jetons obtenus ailleurs : un VPS n'a pas de navigateur, l'app de la personne se connecte pour lui. */
   async adopter(jetons: JetonsConnect): Promise<void> {
-    this.#jetons = jetons;
+    this.#changer(jetons);
     this.#erreur = null;
-    await this.d.ecrire(jetons);
+    await this.#enregistrer(jetons);
   }
 
   async deconnecter(): Promise<void> {
     this.#enCours?.annuler();
-    this.#jetons = null;
+    this.#changer(null);
     this.#erreur = null;
-    await this.d.ecrire(null);
+    await this.#enregistrer(null);
   }
 
   /** Renouvelle le jeton s'il expire bientôt ; un refus de Composio déconnecte. */
@@ -207,16 +239,20 @@ export class ComposioConnect {
     const j = this.#jetons;
     if (!j || j.expireLe - this.#maintenant() > MARGE_MS) return Promise.resolve();
     this.#renouvellement ??= (async () => {
+      let cible = j;
       try {
         if (!j.renouvellement) throw new Error();
         const m = await this.#metadonnees();
         const v = await this.#jeton(m.token_endpoint, { grant_type: "refresh_token", refresh_token: j.renouvellement, client_id: j.clientId, resource: URL_CONNECT });
-        this.#jetons = this.#garder(j.clientId, v, j);
-        await this.d.ecrire(this.#jetons);
+        if (this.#jetons !== j) return;
+        cible = this.#garder(j.clientId, v, j);
+        this.#changer(cible);
+        await this.#enregistrer(this.#jetons);
       } catch {
-        this.#jetons = null;
+        if (this.#jetons !== cible) return;
+        this.#changer(null);
         this.#erreur = "La session Composio a expiré. Reconnecte-toi.";
-        await this.d.ecrire(null).catch(() => {});
+        await this.#enregistrer(null).catch(() => {});
       } finally {
         this.#renouvellement = null;
       }

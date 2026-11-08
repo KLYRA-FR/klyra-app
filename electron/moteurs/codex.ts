@@ -3,11 +3,12 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { app, shell } from "electron";
+import { avecReperesCerveau } from "../cerveau-outils";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { voirFin, voirOutil } from "../ordinateur/apercu";
 import { signatureOrdinateur } from "../ordinateur/pilote";
 import { signatureNavigateur } from "../navigateur/outils";
-import { espaceComposio } from "../composio";
+import { composioConnect, espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
 import { preparerSessionCodex } from "../preparation-fournisseur";
 import { lireReglages } from "../reglages";
@@ -352,7 +353,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   const serveur = serveurAgent(id, prepare);
   await serveur.demarrer(bin);
   // Mes agents, Composio, les skills ou le navigateur ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur()]);
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur()]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {
@@ -400,7 +401,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   try {
     const r = await serveur.requete<{ turn: { id: string } }>("turn/start", {
       threadId,
-      input: [{ type: "text", text: promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd, filtre.garder), text_elements: [] }],
+      input: [{ type: "text", text: avecReperesCerveau(promptAvecSkillCodex(options.prompt, options.skill, CONFIG_CLAUDE(), cwd, filtre.garder), app.isReady() ? app.getPath("userData") : null, options.agent ?? "principal", options.chatId ?? ""), text_elements: [] }],
       cwd,
       approvalPolicy: acces.approvalPolicy,
       sandboxPolicy: acces.sandboxPolicy,

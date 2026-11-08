@@ -11,6 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import os from "node:os";
 import path from "node:path";
 import { creerClientAcp, emailDeAuth, lireCodeAppareil, mcpPourAcp } from "./acp.mjs";
+import { avecReperesCerveau } from "./cerveau-outils.mjs";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { corpsDeFiche } from "./codex-protocole.mjs";
 import { binaireGere, commande } from "./installation.mjs";
@@ -77,7 +78,7 @@ export function creerGrok(options) {
       {
         sessionId,
         cwd,
-        prompt: promptAvecSkillCodex(demande.prompt, demande.skill ?? null, configClaude, cwd, filtre.garder),
+        prompt: avecReperesCerveau(promptAvecSkillCodex(demande.prompt, demande.skill ?? null, configClaude, cwd, filtre.garder), donnees, demande.agent ?? "principal", demande.conversation ?? "", true),
         regles,
         mcp: mcpPourAcp(options.mcp(demande)),
         acces: demande.acces ?? "projet",

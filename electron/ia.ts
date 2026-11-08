@@ -1,3 +1,4 @@
+import { relayerComposio, serveurRelaisComposio } from "./composio-relais";
 import { app, net, safeStorage } from "electron";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -16,6 +17,7 @@ import { OUTIL_EQUIPE } from "./atelier-equipe";
 import { appelCarte, OUTIL_CARTE } from "./cartes-interactives";
 import { estOutilWorkflow, OUTILS_WORKFLOWS, OUTILS_WORKFLOWS_LIBRES } from "./workflows-outils";
 import { estOutilFil, OUTILS_FILS } from "./fils-outils";
+import { OUTILS_CERVEAU, executerCerveau } from "./cerveau-outils";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -213,6 +215,7 @@ function repondre(res: ServerResponse, statut: number, corps?: unknown) {
 
 async function traiter(req: IncomingMessage, res: ServerResponse) {
   if (req.headers.authorization !== `Bearer ${serveur?.jeton}`) return repondre(res, 401);
+  if (req.url === "/composio") return relayerComposio(req, res, () => composioConnect.preparerMcp(), (input, init) => net.fetch(input instanceof URL ? input.toString() : input as string, init));
   if (req.method !== "POST" || req.url !== "/mcp") return repondre(res, 405);
   const appelant: Appelant = {
     chatId: String(req.headers["x-klyra-chat"] ?? ""),
@@ -263,11 +266,12 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
           ]
         : [];
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
-      return resultat({ tools: [...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...OUTILS_WORKFLOWS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE] });
+      return resultat({ tools: [...OUTILS_CERVEAU, ...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...OUTILS_WORKFLOWS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsComposio, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+      if (OUTILS_CERVEAU.some((o) => o.name === nom)) return resultat(executerCerveau(app.getPath("userData"), nom, args, appelant.roleId, appelant.chatId));
       /* Le navigateur de KLYRA : seulement les onglets de la conversation de l'agent (cf. navigateur/). */
       if (estOutilNavigateur(nom)) return resultat(await executerOutilNavigateur(nom, args, appelant));
       /* Le Coffre : jamais une valeur dans la réponse (cf. coffre-outils.ts). */
@@ -359,7 +363,7 @@ export async function demarrerServeurMcp(): Promise<void> {
  *  S'y ajoutent les MCP directs branchés dans la Marketplace. */
 export function configMcp(appelant: Appelant, composio: string | null = null): string | null {
   if (!serveur) return null;
-  const connect = composioConnect.serveur();
+  const connect = composioConnect.etat().connecte ? serveurRelaisComposio(serveur.url, serveur.jeton) : null;
   // Computer Use : seulement quand le pilote tourne avec ses autorisations (cf. ordinateur/pilote.ts).
   const ordinateur = serveurOrdinateur();
   return JSON.stringify({
@@ -378,6 +382,7 @@ export function configMcp(appelant: Appelant, composio: string | null = null): s
 
 /** Les outils de l'app qu'un agent peut utiliser sans demander, en accès « projet ». */
 export const OUTILS_APP = () => [
+  ...OUTILS_CERVEAU.map((o) => `mcp__klyra__${o.name}`),
   ...(combien ? ["mcp__klyra__demander_ia"] : []),
   ...[...OUTILS_FILS, OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX, OUTIL_CARTE, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT].map((o) => `mcp__klyra__${o.name}`),
   ...OUTILS_ROUTINES.map((o) => `mcp__klyra__${o.name}`),

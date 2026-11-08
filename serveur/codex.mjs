@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
+import { avecReperesCerveau } from "./cerveau-outils.mjs";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { binaireGere } from "./installation.mjs";
 import { lireUtilisationCodex } from "./utilisation.mjs";
@@ -32,6 +33,7 @@ const CONNEXION_MAX_MS = 15 * 60 * 1000;
  */
 export function creerCodex(options) {
   const { home, publier } = options;
+  const donnees = typeof options.donnees === "string" ? options.donnees : null;
   const DELAI_REQUETE = options.delais?.requete ?? DELAI_REQUETE_MS;
   const INACTIVITE_MAX = options.delais?.inactivite ?? INACTIVITE_MAX_MS;
   const VEILLE_PAS = options.delais?.pas ?? VEILLE_PAS_MS;
@@ -291,7 +293,7 @@ export function creerCodex(options) {
     });
     const proc = processusAgent(id, prepare);
     await proc.demarrer(chemin);
-    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms, filtre.coupes]);
+    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms, filtre.coupes, "cerveau"]);
     const reglages = () => {
       const mcp = options.mcp(demande);
       return {
@@ -347,7 +349,7 @@ export function creerCodex(options) {
     try {
       const r = await proc.requete("turn/start", {
         threadId,
-        input: [{ type: "text", text: promptAvecSkillCodex(demande.prompt, demande.skill ?? null, path.join(home, ".claude"), cwd, filtre.garder), text_elements: [] }],
+        input: [{ type: "text", text: avecReperesCerveau(promptAvecSkillCodex(demande.prompt, demande.skill ?? null, path.join(home, ".claude"), cwd, filtre.garder), donnees, demande.agent ?? "principal", demande.conversation ?? "", true), text_elements: [] }],
         cwd,
         approvalPolicy: politique.approvalPolicy,
         sandboxPolicy: politique.sandboxPolicy,

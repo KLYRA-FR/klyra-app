@@ -105,6 +105,8 @@ function fixture() {
     "./cartes-interactives": require(path.join(path.dirname(filename), "cartes-interactives.js")),
     // Module pur : les outils des fils et leur consigne (sans Electron ni disque).
     "./fils-outils": require(path.join(path.dirname(filename), "fils-outils.js")),
+    // Second cerveau : pas de base dans ce banc, le message fictif part tel quel.
+    "./cerveau-outils": { CONSIGNE_CERVEAU: "Second cerveau fictif, sans base.", avecReperesCerveau: (prompt) => prompt },
     // Module pur : les outils du Coffre et leur consigne (sans Electron ni disque).
     "./coffre-definitions": require(path.join(path.dirname(filename), "coffre-definitions.js")),
     // Module pur : la lecture des limites de l'abonnement (rate_limit_event), sans effet.
@@ -156,7 +158,7 @@ function fixture() {
         signature: () => compteComposio,
         creerCapacite: () => `capacite-${compteComposio}`,
       },
-      composioConnect: { serveur: () => connectActif ? { type: "http", url: "https://connect.composio.dev/mcp", headers: {} } : null },
+      composioConnect: { signature: () => connectActif ? 1 : 0, serveur: () => connectActif ? { type: "http", url: "https://connect.composio.dev/mcp", headers: {} } : null },
     },
     "./mes-agents": {
       agentsARefuser: () => [],

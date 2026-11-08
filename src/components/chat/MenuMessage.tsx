@@ -52,6 +52,9 @@ export function MenuMessage({ chat, cible, x, y, onFermer }: { chat: Chat; cible
       <ElementContextuel icone="copy-left" desactive={!texte} onChoisir={() => void navigator.clipboard?.writeText(texte)}>
         Copier le message
       </ElementContextuel>
+      <ElementContextuel icone="git-branch-01" desactive={!texte.trim()} onChoisir={() => router.push(`/memoire?chat=${encodeURIComponent(chat.id)}&message=${encodeURIComponent(message.id)}`)}>
+        Garder en mémoire
+      </ElementContextuel>
       <ElementContextuel icone="align-left" desactive={!passage} onChoisir={() => ajouterAuBrouillon(chat.id, citer(passage))}>
         {selection ? "Citer la sélection" : "Citer dans ma réponse"}
       </ElementContextuel>

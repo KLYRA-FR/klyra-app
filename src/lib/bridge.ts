@@ -407,6 +407,7 @@ export interface KlyraBridge {
      * Ce que sait l'agent (cf. electron/connaissances-agent.ts), dans le dossier de la conversation
      * (`dossier` : celui du projet ; null : son atelier, retrouvé avec la session). Absents avant la relance de l'app.
      */
+    cerveau?: (lieu: string | null, action: string, args: Record<string, unknown>) => Promise<Reponse<unknown>>;
     memoire?: (agent: string, contexte: ContexteConnaissances) => Promise<Reponse<MemoireAgent | null>>;
     souvenir?: (agent: string, contexte: ContexteConnaissances, id: string) => Promise<Reponse<{ contenu: string; modifieLe: number }>>;
     ecrireSouvenir?: (agent: string, contexte: ContexteConnaissances, id: string, contenu: string, attendu: number | null) => Promise<Reponse<{ modifieLe: number }>>;
