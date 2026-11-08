@@ -5,6 +5,8 @@ import { Cerveau, ouvrirCerveau, sauvegarderCerveau } from "./cerveau";
 import { cheminSouvenir, lireMemoire, type PorteeMemoire } from "./connaissances-agent";
 import type { NoteCerveau, PorteeCerveau } from "./cerveau-types";
 import { actionDossier } from "./cerveau-dossiers";
+import { lireSouvenirsGraphe } from "./graphe-souvenirs";
+import os from "node:os";
 
 export const PROPRIETAIRE: PorteeCerveau = { agentId: null, projetId: null, proprietaire: true };
 /** Textes expressément choisis dans la boîte de fichiers du poste. Aucune ouverture d'un chemin reçu par HTTP. */
@@ -49,6 +51,7 @@ export async function indexerSouvenirs(cerveau: Cerveau, agent: string, memoire:
   return { indexes, inchanges, coupee: inventaire.coupee, avertissements };
 }
 export function actionCerveau(donnees: string, action: string, args: Record<string, unknown>) {
+  if (action === "graphe-souvenirs") return lireSouvenirsGraphe(racinesGraphe(donnees, args.projets));
   const c = ouvrirCerveau(donnees);
   if (["digital-os-etat", "digital-os-demarrer", "digital-os-arreter", "digital-os-parcourir"].includes(action)) return actionDossier(c, action, args);
   const projetId = typeof args.projetId === "string" ? args.projetId : null;
@@ -67,4 +70,11 @@ export function actionCerveau(donnees: string, action: string, args: Record<stri
     }
     default: throw new Error("Action de mémoire inconnue.");
   }
+}
+
+/** Où lire les souvenirs de chaque agent : la configuration de Claude Code, les dossiers préparés, les ateliers et les projets. */
+function racinesGraphe(donnees: string, projets: unknown) {
+  const home = os.homedir();
+  const liste = Array.isArray(projets) ? projets.filter((p): p is { id: string; dossier: string } => !!p && typeof p.id === "string" && typeof p.dossier === "string").slice(0, 500) : [];
+  return { donnees, home, configClaude: process.env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"), projets: liste };
 }

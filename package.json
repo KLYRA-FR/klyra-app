@@ -34,6 +34,8 @@
     "test:conversation": "node scripts/test-conversation.mjs",
     "test:cerveau": "node --experimental-sqlite --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/cerveau.test.mts electron/cerveau-dossiers.test.mts electron/cerveau-liens.test.mts && node --experimental-sqlite --test serveur/cerveau.test.mjs",
     "bench:cerveau": "node --experimental-sqlite scripts/bench-cerveau.mjs",
+    "test:graphe": "vitest run src/lib/graphe-memoire.test.ts && node --experimental-strip-types --import ./scripts/resoudre-ts.mjs --test electron/graphe-souvenirs.test.mts",
+    "test:graphe:app": "node scripts/test-graphe-memoire.mjs",
     "test:memoire": "vitest run src/lib/memoire.test.ts && node scripts/test-memoire.mjs",
     "test:epinglage": "vitest run src/lib/epinglage.test.ts",
     "test:epingler": "node scripts/test-epinglage.mjs",

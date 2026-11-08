@@ -32,7 +32,7 @@ const cliquer = async (texte) => { verifier(await app.quand(`[...document.queryS
 const capture = async (nom) => { if (!process.env.KLYRA_TEST_PREUVES) return; mkdirSync(process.env.KLYRA_TEST_PREUVES, { recursive: true }); const r = await app.send("Page.captureScreenshot", { format: "png" }); writeFileSync(path.join(process.env.KLYRA_TEST_PREUVES, `${nom}.png`), Buffer.from(r.data, "base64")); };
 try {
   app = await lancerApp({ port, entree: "scripts/faux-mode-onboarding.cjs", env: { HOME: maison, USERPROFILE: maison, KLYRA_USER_DATA: donnees, CLAUDE_CONFIG_DIR: path.join(maison, ".claude"), CODEX_HOME: path.join(maison, ".codex"), KLYRA_TEST_MODE_JOURNAL: journal, KLYRA_TEST_MEMOIRE_DOCUMENT: documentTexte, KLYRA_TEST_MEMOIRE_DOSSIER: dossierDigitalOs, KLYRA_SANS_VEILLE: "1" } });
-  await app.aller("/memoire");
+  await app.aller("/memoire?vue=notes");
   verifier(await app.quand("document.querySelector('.memoire-app')"), "la page Mémoire est intégrée à klyra-app");
   verifier(await app.ev("[...document.querySelectorAll('a')].some(a=>a.getAttribute('href')==='/memoire')"), "la navigation native contient Mémoire");
   await capture("01-memoire-vide");
@@ -55,14 +55,14 @@ try {
   await app.saisir('.memoire-editeur input:not([type=checkbox])', "Mémoire visuelle");
   await cliquer("Enregistrer la note");
   verifier(await app.quand("document.querySelectorAll('[data-note]').length===1"), "une capture confirmée crée un nœud");
-  verifier(await app.quand("!location.search && !document.querySelector('.memoire-editeur')"), "la capture est consommée après confirmation");
+  verifier(await app.quand("!location.search.includes('message') && !document.querySelector('.memoire-editeur')"), "la capture est consommée après confirmation");
   await app.send("Page.reload");
   await attendre(500);
   verifier(await app.quand("document.querySelectorAll('[data-note]').length===1"), "la note survit au rechargement");
   await app.ev("document.querySelector('[data-note]').dispatchEvent(new MouseEvent('click',{bubbles:true}))"); await attendre(100);
   await cliquer("Revenir au message ↗");
   verifier(await app.quand("location.pathname==='/chat' && !!document.querySelector('[data-message=message-source][data-eclaire]') && document.activeElement?.getAttribute('data-message')==='message-source'"), "le lien retourne au message source exact");
-  await app.aller("/memoire");
+  await app.aller("/memoire?vue=notes");
   await cliquer("+ Nouvelle note"); await app.saisir('.memoire-editeur input:not([type=checkbox])', "Une idée reliée"); await app.saisir('.memoire-editeur textarea', "Une note de test liée explicitement à la première.");
   await app.ev("document.querySelector('.memoire-case input').click()"); await cliquer("Enregistrer la note");
   verifier(await app.quand("document.querySelectorAll('[data-note]').length===2 && document.querySelectorAll('.memoire-lien').length===1"), "une connexion choisie devient une arête du graphe");
@@ -91,7 +91,7 @@ try {
   verifier(await app.quand("document.querySelectorAll('.cerveau-resultat').length===1"), "la recherche retrouve un passage indexé de la mémoire existante");
   await cliquer("2. Lire les passages choisis");
   verifier(await app.quand("document.querySelector('.cerveau-lecture')?.textContent.includes('lentilles')"), "la lecture progressive rend le passage choisi avec sa référence");
-  await app.ev("document.querySelector('.cerveau-lecture').scrollIntoView({block:'center'})"); await attendre(150); await capture("04-contexte-budgete"); await cliquer("Graphe");
+  await app.ev("document.querySelector('.cerveau-lecture').scrollIntoView({block:'center'})"); await attendre(150); await capture("04-contexte-budgete"); await cliquer("Graphe des notes");
   verifier(readFileSync(path.join(memoireExistante, "optique.md"), "utf8").includes("Cette source ne doit pas être modifiée"), "le fichier mémoire source est conservé");
   for (const width of [1440, 768, 390]) {
     await app.send("Emulation.setDeviceMetricsOverride", { width, height: 980, deviceScaleFactor: 1, mobile: false }); await attendre(100);
