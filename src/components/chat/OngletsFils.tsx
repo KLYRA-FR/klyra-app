@@ -178,7 +178,7 @@ export function OngletsFils({ roleId, chatId }: { roleId: RoleId; chatId: string
   const libres = (liste: Chat[]) => liste.filter((c) => !state.travail[c.id]).map((c) => c.id);
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-bordure-subtile px-2">
+    <div className="relative z-30 flex h-11 shrink-0 items-center gap-1 border-b border-bordure-subtile px-2">
       {debord.gauche && <BoutonIcone taille="mini" icone={<Icon name="chevron-left" size={16} />} libelle="Onglets précédents" onClick={() => defiler(-1)} className="text-icone-secondaire" />}
       <div
         ref={bande}
