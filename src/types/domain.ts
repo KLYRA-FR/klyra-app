@@ -131,6 +131,9 @@ export interface Project {
   depot?: string;
   /** Dépôt choisi par la connexion GitHub de cette machine (PC ou VPS). */
   githubConnecte?: true;
+  /** Une branche de travail (`git worktree`) ouverte depuis un autre projet : son id, et la branche (« klyra/menu »). */
+  brancheDe?: string;
+  branche?: string;
   files: FileNode[];
   updatedAt: string;
 }
@@ -195,6 +198,17 @@ export interface Chat {
   departs?: string[];
   /** Repartie à zéro ou effacée : sans session ici, l'agent en ouvre une neuve, un VPS ne reprend pas celle qu'il retient (cf. `sessionNeuve` des options). */
   sessionNeuve?: boolean;
+  /** Mode plan (Claude Code) : les agents préparent un plan sans rien modifier, jusqu'à ce que la personne le lance. */
+  modePlan?: boolean;
+  /** La fenêtre de contexte du modèle de chaque agent (en jetons), lue à la fin de sa dernière réponse. */
+  fenetres?: Record<RoleId, number>;
+  /**
+   * « Revenir à avant ce message » : la session de chaque agent reprend à ce message de Claude Code (son prochain
+   * envoi, dans une copie de la session) ; retiré dès qu'il a servi.
+   */
+  reprises?: Record<RoleId, string>;
+  /** Les fichiers que la personne a remis comme avant (annulation), dits aux agents à leur message suivant. */
+  annulations?: { le: string; fichiers: string[] }[];
 }
 
 /**
@@ -289,6 +303,39 @@ export interface Etape {
   parent: string | null;
   /** Fichier lu ou modifié par l'étape, chemin complet. */
   chemin?: string;
+  /** Une modification de fichier (Write, Edit…) : son diff, et si on peut l'annuler (cf. electron/session-claude.ts). */
+  modif?: ModifEtape;
+  /** Ce qu'une commande a écrit (la fin, comme dans un terminal) : en direct, puis à la fin. */
+  sortie?: string;
+  /** Quand l'étape a commencé et fini (ms) : sa durée. */
+  debut?: number;
+  fin?: number;
+}
+
+/** Ce qu'une étape a changé dans un fichier. */
+export interface ModifEtape {
+  /** Lignes du diff unifié (« @@ … », « +… », « -… », «  … »). */
+  lignes: string[];
+  ajouts: number;
+  retraits: number;
+  /** Le diff a été coupé (trop long pour le fil). */
+  tronque: boolean;
+  /** Le fichier a été créé par cette étape. */
+  cree: boolean;
+  /** L'app a gardé l'avant et l'après : la modification s'annule depuis le fil. */
+  annulable: boolean;
+  /** « gardee » : la personne l'a acceptée ; « annulee » : le fichier est revenu comme avant (date ISO dans `le`). */
+  etat?: "gardee" | "annulee";
+  le?: string;
+}
+
+/** Une question à choix d'un agent (outil AskUserQuestion de Claude Code). */
+export interface QuestionAgent {
+  question: string;
+  /** L'étiquette courte de la question (« Couleur »). */
+  entete: string;
+  options: { libelle: string; description: string }[];
+  multiple: boolean;
 }
 
 export type MessagePart =
@@ -298,6 +345,19 @@ export type MessagePart =
   /** Fichiers joints par l'utilisateur (chemins complets). */
   | { type: "fichiers"; chemins: string[] }
   | { type: "etapes"; etapes: Etape[] }
+  /** Ce que le modèle a réfléchi (résumé), replié dans le fil ; `debut` et `fin` (ms) : combien de temps. */
+  | { type: "reflexion"; texte: string; debut?: number; fin?: number }
+  /** L'agent pose des questions à choix et attend : la personne répond sur la carte. */
+  | {
+      type: "question";
+      id: string;
+      questions: QuestionAgent[];
+      statut: "attente" | "repondue" | "ignoree";
+      /** Question → réponse donnée. */
+      reponses?: Record<string, string>;
+    }
+  /** En mode plan, l'agent propose son plan : la personne le lance, ou dit ce qu'il faut changer. */
+  | { type: "plan"; id: string; plan: string; statut: "attente" | "lance" | "corrige" | "abandonne"; message?: string }
   /** L'agent demande ton accord avant d'utiliser un outil hors de son accès. */
   | {
       type: "autorisation";
@@ -309,6 +369,8 @@ export type MessagePart =
       detail: string;
       description: string;
       statut: "attente" | "acceptee" | "refusee";
+      /** Les règles que « Toujours, dans ce projet » retiendra (« Bash(npm test:*) »). */
+      regles?: string[];
     }
   /** L'agent confie une partie du travail à un collègue. */
   /** `fond` : lancé en arrière-plan ; l'appel répond tout de suite, la passation reste « en cours » jusqu'au retour de l'agent. */
@@ -417,6 +479,8 @@ export interface Message {
   compaction?: boolean;
   /** Résumé lancé par l'app (configuration KLYRA) : avant un message, ou pendant une pause. Sans notification. */
   compactionAuto?: "envoi" | "pause";
+  /** Réponse de Claude Code : son dernier message dans la session (« Revenir à avant » y reprend la conversation). */
+  uuidFin?: string;
   /** Tes réactions à une réponse d'agent (émojis), pour le plaisir : rien n'est envoyé à l'agent. */
   reactions?: string[];
 }

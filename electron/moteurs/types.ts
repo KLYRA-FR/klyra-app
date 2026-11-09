@@ -5,6 +5,7 @@
  */
 
 import type { Utilisation } from "../utilisation";
+import type { CommandeClaude, QuestionAgent } from "../session-claude";
 
 /** Les moteurs que l'app sait lancer : Claude Code, Codex pour ChatGPT, Grok Build pour Grok. */
 export type IdMoteur = "claude" | "codex" | "grok";
@@ -18,7 +19,22 @@ export type AgentEvent =
   | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
   /** L'entrée d'un outil pendant que le modèle l'écrit (la carte de l'atelier), refermée au mieux. */
   | { type: "etape-partielle"; id: string; outil: string; entree: Record<string, unknown> }
-  | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
+  /** `sortie` : la fin de ce qu'une commande a écrit (Bash), comme dans un terminal. */
+  | { type: "etape-fin"; id: string; ok: boolean; apercu: string; sortie?: string }
+  /** La réflexion du modèle, résumée, au fil de l'eau ; `nouveau` : un nouveau bloc de réflexion commence. */
+  | { type: "reflexion"; texte: string; nouveau: boolean }
+  /** L'agent pose des questions à choix (AskUserQuestion) : il attend la réponse de la personne. */
+  | { type: "question"; id: string; questions: QuestionAgent[] }
+  /** En mode plan, l'agent propose son plan (ExitPlanMode) : il attend que la personne le lance ou le corrige. */
+  | { type: "plan"; id: string; plan: string }
+  /** Un fichier modifié par un outil (appel `id`) : son diff, et si l'app peut l'annuler (cf. electron/session-claude.ts). */
+  | { type: "modification"; id: string; chemin: string; lignes: string[]; ajouts: number; retraits: number; tronque: boolean; cree: boolean; annulable: boolean }
+  /** Ce qu'une commande (appel `id`) a écrit jusqu'ici, pendant qu'elle tourne : la fin, remplacée à chaque fois. */
+  | { type: "sortie"; id: string; texte: string }
+  /** Les commandes « / » que la session de Claude Code connaît. */
+  | { type: "commandes"; commandes: CommandeClaude[] }
+  /** La fenêtre de contexte du modèle (en jetons), d'après le résultat du tour. */
+  | { type: "fenetre"; jetons: number }
   /** Les tokens écrits depuis le début (réflexion, texte, outils, sous-agents compris), estimés en direct. */
   | { type: "jetons"; total: number }
   /** Ce que relit chaque appel au modèle dans cette conversation (consignes, outils, échanges), en jetons. */
@@ -26,10 +42,10 @@ export type AgentEvent =
   /** La conversation a été résumée (/compact, ou d'office par Claude Code près de sa limite). */
   | { type: "compacte"; avant: number; apres: number }
   /** L'agent demande ton accord avant d'utiliser un outil hors de son accès. */
-  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
+  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string; /** Les règles que « Toujours » retiendra dans le projet (« Bash(npm test:*) »). */ regles?: string[] }
   /** La demande a reçu sa réponse (de toi, ou d'office en accès complet). */
   | { type: "autorisation-fin"; id: string; accepte: boolean }
-  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur" }
+  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur"; /** Le dernier message de la session pour cette réponse : « Revenir à avant » y reprend la conversation. */ uuidFin?: string }
   /** Un agent lancé en arrière-plan (appel `id`) a fini ou s'est arrêté : sa passation le montre. */
   | { type: "tache-fond"; id: string; statut: "fait" | "erreur" }
   /**
@@ -75,10 +91,23 @@ export interface StreamOptions {
   dossierVps?: string | null;
   /** La skill que la personne a demandée en tête de son message (« /rangement … ») : remise en tête du prompt si elle existe. */
   skill?: string | null;
+  /** Mode plan : l'agent lit et prépare un plan, sans rien modifier, jusqu'à ce que la personne le lance (Claude Code). */
+  plan?: boolean;
+  /**
+   * « Revenir à avant ce message » : la session reprend jusqu'à ce message de Claude Code (un `uuidFin`), dans
+   * une copie (`--resume-session-at`, `--fork-session`) ; la suite est oubliée.
+   */
+  reprendreA?: string | null;
 }
 
 /** Réponse à une demande d'autorisation. « toujours » : accordé pour le reste de la session. */
 export type Decision = "oui" | "toujours" | "non";
+
+/** Ce qui accompagne une réponse : les réponses aux questions de l'agent, ou ce qu'il faut changer à son plan. */
+export interface DetailsDecision {
+  reponses?: Record<string, string>;
+  message?: string;
+}
 
 /** Ouvre une réponse spontanée dans l'interface ; null si elle n'est plus là. */
 export type Spontane = (sessionId: string) => { requestId: string; emit: (event: AgentEvent) => void } | null;
@@ -143,7 +172,7 @@ export interface Moteur {
   /** Arrête une réponse ; sans effet si elle n'est pas à ce moteur. */
   arreter(requestId: string): void;
   /** Transmet ta réponse à une demande d'autorisation ; false si elle n'est pas à ce moteur. */
-  autoriser(requestId: string, demandeId: string, decision: Decision): boolean;
+  autoriser(requestId: string, demandeId: string, decision: Decision, details?: DetailsDecision): boolean;
   /**
    * Les limites de l'abonnement (5 h, semaine), telles que le moteur les donne ; null si on ne les connaît pas.
    * `actualiser` : les redemander (Claude Code : une toute petite requête, qui compte un peu ; Codex : une lecture, gratuite).

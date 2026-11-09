@@ -43,6 +43,7 @@ export function MenuConversation({
   onEpingler,
   actionExport,
   repartir,
+  terminal,
 }: {
   project?: Project;
   /** Le « … » lui-même : l'en-tête y rend le focus après un renommage au clavier. */
@@ -53,6 +54,8 @@ export function MenuConversation({
   actionExport?: ActionExport;
   /** Le chat d'un agent : repartir à zéro, grisé tant que c'est impossible. */
   repartir?: { lancer: () => void; desactivee: boolean; detail?: string };
+  /** La session de Claude Code de la conversation : copier la commande qui la reprend dans un terminal. */
+  terminal?: () => void;
 }) {
   const router = useRouter();
   const [ouvert, setOuvert] = useState(false);
@@ -154,6 +157,11 @@ export function MenuConversation({
             detail={actionExport.vide ? "Pas encore de message" : undefined}
             onClick={() => { fermer(true); actionExport.lancer(bouton.current); }}
           >Exporter en Markdown…</Ligne>}
+          {terminal && <Ligne
+            icone="code-01"
+            detail="Reprend cette session de Claude Code dans un terminal"
+            onClick={() => { fermer(true); terminal(); }}
+          >Copier la commande du terminal</Ligne>}
           {project && (
             <Ligne
               icone="projets-dossier"

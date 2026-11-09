@@ -29,6 +29,28 @@ import { depotGithubDeConversation, estOutilGithub, executerOutilGithub, OUTILS_
 import { ARGS_JUGE, argsEssai, consigneEssai, consigneJuge, definitionEssai, lireSortieImprimee, PILIERS_LISTE, resultatEssai } from "./epreuve.mjs";
 import { lireJsonPartiel } from "./json-partiel.mjs";
 import { finSuiviFond, nouveauSuiviFond, suivreFond } from "./taches-fond.mjs";
+import {
+  ARGS_REFLEXION,
+  commandeLancee,
+  creerControles,
+  creerInstantanes,
+  CROCHET_APRES,
+  CROCHET_AVANT,
+  entreeAvecReponses,
+  fenetreDe,
+  lireCommandes,
+  lirePlan,
+  lireQuestions,
+  lireSortie,
+  lireUsageContexte,
+  morceauReflexion,
+  reponseCrochet,
+  reponsePlan,
+  requeteInitialisation,
+  sortieDe,
+  versCorbeille,
+} from "./session-claude.mjs";
+import { reglesProposees } from "./regles-projet.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
 import { creerJoints } from "./joints.mjs";
 import {
@@ -61,8 +83,11 @@ import { creerRelaisFils } from "./fils.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
 
-/** Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait. */
-const OUTILS_BLOQUANTS = ["AskUserQuestion", "EnterPlanMode"];
+/**
+ * Entrer seul en mode plan reste à la personne. Les questions à choix (AskUserQuestion) arrivent dans le fil de
+ * l'app de bureau ; un message venu d'ailleurs (le téléphone, PC fermé) ne sait pas y répondre : refusées alors.
+ */
+const OUTILS_BLOQUANTS = ["EnterPlanMode"];
 /** Outils de Claude Code sans usage ici (~4 900 jetons à chaque appel) : les mêmes que dans l'app (electron/claude.ts). */
 const OUTILS_HORS_APP = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "PushNotification", "Workflow", "DesignSync", "ReportFindings", "SendToProject", "SendToProjectContext", "ListAgents"];
 const AGENTS_DE_CLAUDE = ["general-purpose", "Explore", "Plan", "statusline-setup", "claude", "claude-code-guide", "output-style-setup"];
@@ -573,6 +598,15 @@ export function creerAgents(options) {
   const processus = new Map();
   const parRequete = new Map();
   const demandes = new Map();
+  /** Les commandes « / » vues dans la dernière session de chaque dossier (comme dans l'app). */
+  const commandesParDossier = new Map();
+  /** Les modifications de fichiers des agents d'ici, gardées pour les annuler depuis l'app (cf. session-claude.mjs). */
+  const instantanes = creerInstantanes(path.join(donnees, "instantanes"), { supprimer: versCorbeille(path.join(donnees, "corbeille-agents")) });
+  try {
+    instantanes.nettoyer(30 * 24 * 3600 * 1000);
+  } catch {
+    /* tant pis : rien n'est perdu, le ménage se refera */
+  }
   /** La dernière utilisation de l'abonnement Claude reçue d'une session (null : aucune encore). */
   let utilisationClaude = null;
   /** Les limites d'un compte supplémentaire, rangées par moteurs.mjs (cf. `claude.surLimitesCompte`). */
@@ -587,13 +621,15 @@ export function creerAgents(options) {
     child.stdin?.write(`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: demandeId, response: reponse } })}\n`);
   }
 
-  function nouveauTour(proc, requestId, acces) {
+  function nouveauTour(proc, requestId, acces, questions = false) {
     let jetons = 0;
     let envoyes = 0;
     let dernier = 0;
     const tour = {
       requestId,
       acces,
+      /* La demande vient de l'app de bureau, qui sait montrer les questions et le plan. */
+      questions,
       finie: false,
       arretee: false,
       activite: false,
@@ -643,6 +679,54 @@ export function creerAgents(options) {
     return tour;
   }
 
+  /** Un appel d'outil vu passer : le plan d'ExitPlanMode y est, et son nom sert à lire son résultat. */
+  function retenirAppel(proc, id, outil, entree) {
+    proc.appels.set(id, { outil, entree });
+    if (proc.appels.size > 200) proc.appels.delete(proc.appels.keys().next().value);
+  }
+
+  /** Les commandes « / » de la session : retenues pour son dossier (l'envoi les reconnaît), montrées à l'écran de l'app. */
+  function noterCommandes(proc, brutes) {
+    if (!Array.isArray(brutes)) return;
+    proc.commandesBrutes = brutes;
+    const commandes = lireCommandes(brutes, proc.terminal);
+    if (!commandes.length) return;
+    proc.commandes = commandes;
+    if (proc.cwd) commandesParDossier.set(path.resolve(proc.cwd), new Set(commandes.map((c) => c.nom)));
+    (proc.tours[0]?.emit ?? proc.dernierEmit)?.({ type: "commandes", commandes });
+  }
+
+  /**
+   * Relit toutes les deux secondes ce qu'écrit une commande au premier plan, jusqu'à son résultat (au plus une
+   * heure) : les 4 derniers Kio, pour ne pas remplir le journal que l'app relit.
+   */
+  function suivreSortie(proc, tour, tache, appel) {
+    let derniere = "";
+    const debut = Date.now();
+    const lire = () => {
+      if (!vivant(proc) || tour.finie || Date.now() - debut > 3600_000) return arreterSortie(proc, appel);
+      void proc.controles
+        .demander({ subtype: "get_task_output", task_id: tache }, 5000)
+        .then((r) => {
+          const texte = lireSortie(r)?.slice(-4096) ?? null;
+          if (texte === null || texte === derniere || !proc.sorties.has(appel)) return;
+          derniere = texte;
+          tour.emit({ type: "sortie", id: appel, texte });
+        })
+        .catch(() => undefined);
+    };
+    /* Claude Code annonce une commande au premier plan après quelques secondes : la première lecture tout de suite. */
+    const minuterie = setInterval(lire, 2000);
+    proc.sorties.set(appel, minuterie);
+    lire();
+  }
+
+  function arreterSortie(proc, appel) {
+    const minuterie = proc.sorties.get(appel);
+    if (minuterie) clearInterval(minuterie);
+    proc.sorties.delete(appel);
+  }
+
   function lireLigne(proc, ligne) {
     if (!ligne.trim()) return;
     let msg;
@@ -653,6 +737,31 @@ export function creerAgents(options) {
     }
     const parent = msg.parent_tool_use_id ?? null;
     const courant = proc.tours[0] ?? null;
+    /* La réponse de Claude Code à une de nos demandes (contexte, sortie, initialisation), comme dans l'app. */
+    if (proc.controles.recevoir(msg)) return;
+    if (msg.type === "system" && msg.subtype === "commands_changed") {
+      noterCommandes(proc, msg.commands);
+      return;
+    }
+    /* Une commande au premier plan : sa sortie est relue chaque seconde (comme dans l'app). */
+    const lancee = commandeLancee(msg);
+    if (lancee && !lancee.fond && courant && !proc.sorties.has(lancee.appel)) suivreSortie(proc, courant, lancee.tache, lancee.appel);
+    /* Avant et après une modification de fichier : l'avant et l'après gardés ici, pour l'annuler depuis l'app. */
+    if (msg.type === "control_request" && msg.request?.subtype === "hook_callback") {
+      const req = msg.request;
+      const conversation = proc.conversation || "sans-conversation";
+      try {
+        if (req.callback_id === CROCHET_AVANT) instantanes.avant(conversation, req.input ?? {});
+        if (req.callback_id === CROCHET_APRES) {
+          const vue = instantanes.apres(conversation, req.input ?? {});
+          if (vue) courant?.emit({ type: "modification", ...vue });
+        }
+      } catch (error) {
+        console.error("Modification non gardée :", error);
+      }
+      ecrire(proc, reponseCrochet(String(msg.request_id ?? "")));
+      return;
+    }
     /* Ce qui tourne en fond : dit même sans réponse ouverte, par la dernière (comme dans electron/claude.ts). */
     const fond = suivreFond(proc.suiviFond, msg, Date.now(), !!courant);
     if (fond) (courant?.emit ?? proc.dernierEmit)?.(fond);
@@ -667,6 +776,11 @@ export function creerAgents(options) {
     }
 
     if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
+      /* Les commandes réservées au terminal ne vont pas au menu « / » de l'app (comme dans l'app). */
+      if (Array.isArray(msg.terminal_slash_commands)) {
+        proc.terminal = new Set(msg.terminal_slash_commands.filter((c) => typeof c === "string"));
+        if (proc.commandesBrutes) noterCommandes(proc, proc.commandesBrutes);
+      }
       proc.sessionId = msg.session_id;
       processus.set(msg.session_id, proc);
       courant?.emit({ type: "session", sessionId: msg.session_id });
@@ -692,6 +806,12 @@ export function creerAgents(options) {
     }
     if (msg.type === "stream_event") {
       const ev = msg.event ?? {};
+      /* La réflexion (résumée) va à l'écran, comme dans l'app. */
+      const reflexion = parent === null ? morceauReflexion(ev) : null;
+      if (reflexion && (reflexion.texte || reflexion.nouveau)) {
+        courant?.emit({ type: "reflexion", ...reflexion });
+        return;
+      }
       const morceau = ev.delta?.text ?? ev.delta?.partial_json ?? "";
       if (morceau) courant?.compter(morceau.length / 4);
       /* La carte de l'atelier s'écrit pendant que le modèle remplit l'outil (comme dans l'app). */
@@ -722,6 +842,8 @@ export function creerAgents(options) {
     if (msg.type === "assistant") {
       const contenu = msg.message?.content ?? [];
       const outils = contenu.filter((b) => b.type === "tool_use" && b.id && b.name);
+      for (const b of outils) retenirAppel(proc, b.id, b.name, b.input ?? {});
+      if (parent === null && typeof msg.uuid === "string") proc.dernierUuid = msg.uuid;
       const tour = parent === null && outils.length ? tourOuSpontane(proc) : courant;
       if (!tour) return;
       if (parent === null) {
@@ -742,7 +864,9 @@ export function creerAgents(options) {
       for (const bloc of msg.message?.content ?? []) {
         if (bloc.type !== "tool_result" || !bloc.tool_use_id) continue;
         const brut = typeof bloc.content === "string" ? bloc.content : JSON.stringify(bloc.content ?? "");
-        courant.emit({ type: "etape-fin", id: bloc.tool_use_id, ok: !bloc.is_error, apercu: brut.slice(0, 400) });
+        arreterSortie(proc, bloc.tool_use_id);
+        const commande = proc.appels.get(bloc.tool_use_id)?.outil === "Bash";
+        courant.emit({ type: "etape-fin", id: bloc.tool_use_id, ok: !bloc.is_error, apercu: brut.slice(0, 400), ...(commande ? { sortie: sortieDe(bloc.content) } : {}) });
       }
       return;
     }
@@ -757,11 +881,32 @@ export function creerAgents(options) {
         return repondre(proc.child, demandeId, false, entree, [], `« ${String(entree.subagent_type)} » n’est pas dans Mes agents. Ne le rappelle pas ; fais le travail toi-même.`);
       }
       const tour = tourOuSpontane(proc);
+      /* Des questions, ou un plan : c'est à la personne de répondre, même en accès complet (comme dans l'app). */
+      if (req.tool_name === "AskUserQuestion" || req.tool_name === "ExitPlanMode") {
+        const appel = typeof req.tool_use_id === "string" ? proc.appels.get(req.tool_use_id) : undefined;
+        const complete = { ...(appel?.entree ?? {}), ...entree };
+        const questions = req.tool_name === "AskUserQuestion" ? lireQuestions(complete) : null;
+        /* Un message venu du téléphone (PC fermé) : il ne sait pas répondre à des questions à choix. */
+        if (req.tool_name === "AskUserQuestion" && (!tour?.questions || !questions)) return repondre(proc.child, demandeId, false, entree, [], "Pose tes questions dans ta réponse : la personne ne peut pas répondre à des choix d'ici.");
+        if (!tour) return repondre(proc.child, demandeId, false, entree);
+        if (!demandes.has(tour.requestId)) demandes.set(tour.requestId, new Map());
+        demandes.get(tour.requestId).set(demandeId, { entree: complete, suggestions: [], genre: questions ? "question" : "plan" });
+        if (questions) return tour.emit({ type: "question", id: demandeId, questions });
+        const plan = lirePlan(complete);
+        if (plan) return tour.emit({ type: "plan", id: demandeId, plan });
+        void proc.controles
+          .demander({ subtype: "get_plan" })
+          .then((r) => r?.content)
+          .catch(() => null)
+          .then((contenu) => tour.emit({ type: "plan", id: demandeId, plan: typeof contenu === "string" && contenu.trim() ? contenu.trim().slice(0, 60_000) : "L’agent propose de passer à l’action, sans avoir écrit de plan." }));
+        return;
+      }
       if ((tour?.acces ?? proc.acces) === "tout") return repondre(proc.child, demandeId, true, entree);
       if (!tour) return repondre(proc.child, demandeId, false, entree);
       if (!demandes.has(tour.requestId)) demandes.set(tour.requestId, new Map());
       demandes.get(tour.requestId).set(demandeId, { entree, suggestions: req.permission_suggestions ?? [] });
-      tour.emit({ type: "autorisation", id: demandeId, outil: req.tool_name ?? "outil", entree, description: req.description ?? "" });
+      const regles = reglesProposees(req.permission_suggestions);
+      tour.emit({ type: "autorisation", id: demandeId, outil: req.tool_name ?? "outil", entree, description: req.description ?? "", ...(regles.length ? { regles } : {}) });
       return;
     }
     if (msg.type === "control_cancel_request" && typeof msg.request_id === "string") {
@@ -781,8 +926,11 @@ export function creerAgents(options) {
       const ok = !courant.arretee && !msg.is_error && msg.subtype === "success";
       const consommation = proc.aCompter.length ? { agent: proc.agent, lignes: proc.aCompter } : undefined;
       proc.aCompter = [];
+      const fenetre = fenetreDe(msg.modelUsage);
+      if (fenetre) courant.emit({ type: "fenetre", jetons: fenetre });
       finirTour(proc, courant, {
         type: "fin",
+        ...(proc.dernierUuid ? { uuidFin: proc.dernierUuid } : {}),
         ok,
         texte: typeof msg.result === "string" ? msg.result : "",
         erreur: ok ? undefined : courant.arretee ? "Arrêté par toi." : (typeof msg.result === "string" && msg.result) || "L’agent s’est arrêté sur une erreur.",
@@ -799,9 +947,21 @@ export function creerAgents(options) {
     /* Le compte choisi pour la conversation : sa connexion, sans le jeton de « connecter-claude » (comme sur le PC). */
     if (compte) env = environnementAvecCompte(env, compte.dossier);
     const child = spawn(bin, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    /* Claude Code fermé pendant qu'on lui écrit : l'écriture échoue, sans faire tomber le serveur. */
+    child.stdin?.on("error", () => undefined);
     /* `cumul` : le `modelUsage` déjà compté ; `aCompter` : ce qu'un tour sans réponse a consommé, rendu au suivant. */
-    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, compte: compte?.id ?? null, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map(), finsDeFond: [], suiviFond: nouveauSuiviFond(), dernierEmit: null };
+    const proc = { child, signature, skills, modele: demande.modele ?? null, acces, compte: compte?.id ?? null, tours: [], sessionId: demande.sessionId, veille: null, fond: 0, agent: demande.agent ?? "principal", cumul: {}, aCompter: [], saisies: new Map(), finsDeFond: [], suiviFond: nouveauSuiviFond(), dernierEmit: null,
+      controles: creerControles((ligne) => {
+        if (!child.stdin?.writableEnded) child.stdin?.write(`${JSON.stringify(ligne)}\n`);
+      }, randomUUID),
+      appels: new Map(), sorties: new Map(), plan: demande.plan === true, dernierUuid: null, commandes: [], cwd, terminal: new Set(), commandesBrutes: null,
+      conversation: typeof demande.conversation === "string" && CONVERSATION.test(demande.conversation) ? demande.conversation : "" };
     if (demande.sessionId) processus.set(demande.sessionId, proc);
+    /* Les rappels autour des modifications de fichiers, et les commandes « / » de la session (comme dans l'app). */
+    void proc.controles
+      .demander(requeteInitialisation(), 60_000)
+      .then((r) => noterCommandes(proc, r?.commands))
+      .catch(() => undefined);
     let tampon = "";
     let stderr = "";
     child.stdout.on("data", (d) => {
@@ -815,6 +975,8 @@ export function creerAgents(options) {
     });
     const finTout = (erreur) => {
       if (proc.veille) clearTimeout(proc.veille);
+      proc.controles.fermer();
+      for (const appel of [...proc.sorties.keys()]) arreterSortie(proc, appel);
       if (proc.sessionId && processus.get(proc.sessionId) === proc) processus.delete(proc.sessionId);
       for (const tour of [...proc.tours]) finirTour(proc, tour, { type: "fin", ok: false, texte: "", erreur: erreur(tour) });
       /* Claude Code fermé : ce qu'il avait en fond s'arrête avec lui. */
@@ -845,6 +1007,9 @@ export function creerAgents(options) {
     if (demande.dossier !== null && demande.dossier !== undefined && (typeof demande.dossier !== "string" || !path.isAbsolute(demande.dossier))) return "Dossier invalide.";
     if (demande.skill !== undefined && demande.skill !== null && (typeof demande.skill !== "string" || !/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(demande.skill))) return "Compétence invalide.";
     if (demande.compteClaude !== undefined && demande.compteClaude !== null && !idCompteSupplementaire(demande.compteClaude)) return "Compte Claude invalide.";
+    if (demande.plan !== undefined && typeof demande.plan !== "boolean") return "Mode plan invalide.";
+    if (demande.questions !== undefined && typeof demande.questions !== "boolean") return "Demande invalide.";
+    if (demande.reprendreA !== undefined && demande.reprendreA !== null && (typeof demande.reprendreA !== "string" || !/^[0-9a-f-]{36}$/.test(demande.reprendreA) || !demande.sessionId)) return "Reprise invalide.";
     return null;
   }
 
@@ -917,6 +1082,8 @@ export function creerAgents(options) {
     const precharge = demande.agent ? competencesPrechargees(fiche, configClaude, cwd, filtre.garder) : { noms: [], texte: null };
     const connues = skillsConnues(configClaude, cwd);
     for (const nom of filtre.coupes) connues.delete(nom);
+    /* Une commande « / » de Claude Code vue dans la dernière session de ce dossier se demande comme une skill. */
+    for (const nom of commandesParDossier.get(path.resolve(cwd)) ?? []) if (!filtre.coupes.includes(nom)) connues.add(nom);
     const prompt = avecReperesCerveau(promptAvecSkill(demande.prompt, demande.skill ?? null, connues), donnees, demande.agent ?? "principal", conversation, true);
     const configuration = configurationDe();
     const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
@@ -927,13 +1094,16 @@ export function creerAgents(options) {
     const ouvert = demande.sessionId ? processus.get(demande.sessionId) : undefined;
     let proc;
     /* Changer de compte relance Claude Code : la connexion se lit au lancement. */
-    if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && ouvert.compte === (compte?.id ?? null) && (ouvert.signature === signature || ouvert.tours.length)) {
+    if (ouvert && vivant(ouvert) && !demande.reprendreA && ouvert.skills === skillsCle && ouvert.compte === (compte?.id ?? null) && (ouvert.signature === signature || ouvert.tours.length)) {
       proc = ouvert;
       if ((demande.modele ?? null) !== proc.modele) {
         controle(proc, { subtype: "set_model", ...(demande.modele ? { model: demande.modele } : {}) });
         proc.modele = demande.modele ?? null;
       }
-      if (modeDe(acces) !== modeDe(proc.acces)) controle(proc, { subtype: "set_permission_mode", mode: modeDe(acces) });
+      /* Le mode plan se met et s'enlève en route, comme l'accès (comme dans l'app). */
+      const plan = demande.plan === true;
+      if (plan !== proc.plan || (!plan && modeDe(acces) !== modeDe(proc.acces))) controle(proc, { subtype: "set_permission_mode", mode: plan ? "plan" : modeDe(acces) });
+      proc.plan = plan;
       proc.acces = acces;
     } else {
       if (ouvert && vivant(ouvert)) ouvert.child.stdin?.end();
@@ -952,7 +1122,9 @@ export function creerAgents(options) {
         "--permission-prompts",
         "host",
         "--permission-mode",
-        modeDe(acces),
+        demande.plan === true ? "plan" : modeDe(acces),
+        // La réflexion du modèle, résumée : l'écran la montre repliée (comme dans l'app).
+        ...ARGS_REFLEXION,
         "--disallowedTools",
         ...OUTILS_BLOQUANTS,
         ...OUTILS_HORS_APP,
@@ -979,22 +1151,40 @@ export function creerAgents(options) {
       if (avecJointes) args.push("--add-dir", dossierJointes);
       if (demande.agent) args.push("--agent", demande.agent);
       if (demande.sessionId) args.push("--resume", demande.sessionId);
+      /* « Revenir à avant ce message » : la conversation reprend à ce point, dans une copie de la session. */
+      if (demande.sessionId && demande.reprendreA) args.push("--resume-session-at", demande.reprendreA, "--fork-session");
       if (demande.modele) args.push("--model", demande.modele);
       if (demande.effort) args.push("--effort", demande.effort);
       const consigne = demande.agent === null ? consigneAssistant() : consigneAgent(demande.agent);
       args.push("--append-system-prompt", [ici(), consigne, ...(configuration.consignes ? [configuration.consignes] : []), ...(precharge.texte ? [precharge.texte] : [])].join("\n\n"));
       proc = lancer(bin, args, cwd, signature, skillsCle, demande, acces, prepare?.dossier ?? null, compte);
     }
-    ajouterTour(proc, nouveauTour(proc, requestId, acces));
+    ajouterTour(proc, nouveauTour(proc, requestId, acces, demande.questions === true));
     ecrire(proc, { type: "user", message: { role: "user", content: prompt } });
   }
 
-  function autoriser(requestId, demandeId, decision) {
+  function autoriser(requestId, demandeId, decision, details = {}) {
     if (codex.autoriser(requestId, demandeId, decision)) return true;
     if (grok.autoriser(requestId, demandeId, decision)) return true;
     const enCours = parRequete.get(requestId);
     const demande = demandes.get(requestId)?.get(demandeId);
     if (!enCours || !demande || !["oui", "toujours", "non"].includes(decision)) return false;
+    /* Des réponses à des questions, ou un plan lancé ou à corriger (comme dans l'app). */
+    if (demande.genre) {
+      let accepte = decision !== "non";
+      const ecrireReponse = (reponse) => enCours.proc.child.stdin?.write(`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: demandeId, response: reponse } })}\n`);
+      if (demande.genre === "question") {
+        const entree = accepte ? entreeAvecReponses(demande.entree, details.reponses) : null;
+        accepte = !!entree;
+        ecrireReponse(entree ? { behavior: "allow", updatedInput: entree } : { behavior: "deny", message: "La personne n’a pas répondu à ces questions. Continue sans, ou pose-les dans ta réponse." });
+      } else {
+        ecrireReponse(reponsePlan(accepte, demande.entree, modeDe(enCours.tour.acces ?? enCours.proc.acces), typeof details.message === "string" ? details.message : ""));
+        if (accepte) enCours.proc.plan = false;
+      }
+      demandes.get(requestId)?.delete(demandeId);
+      enCours.tour.emit({ type: "autorisation-fin", id: demandeId, accepte });
+      return true;
+    }
     const regles = decision === "toujours" ? demande.suggestions.map((r) => ({ ...r, destination: "localSettings" })) : [];
     repondre(enCours.proc.child, demandeId, decision !== "non", demande.entree, regles);
     demandes.get(requestId)?.delete(demandeId);
@@ -1015,6 +1205,34 @@ export function creerAgents(options) {
       if (!tour.finie) proc.child.kill("SIGTERM");
     }, 5000);
     return true;
+  }
+
+  /** Annule des modifications de fichiers d'une conversation d'ici (les appels d'outil désignés par l'app). */
+  function annulerModifications(conversation, ids, forcer) {
+    if (typeof conversation !== "string" || !Array.isArray(ids)) return { fichiers: [] };
+    return instantanes.annuler(conversation, ids.filter((i) => typeof i === "string").slice(0, 2000), forcer === true);
+  }
+
+  /** La place prise dans le contexte d'une session ouverte d'ici, ou null. */
+  async function usageContexte(sessionId) {
+    const proc = typeof sessionId === "string" ? processus.get(sessionId) : null;
+    if (!proc || !vivant(proc)) return null;
+    try {
+      return lireUsageContexte(await proc.controles.demander({ subtype: "get_context_usage", detail: "summary" }));
+    } catch {
+      return null;
+    }
+  }
+
+  /** La fin de ce qu'a écrit une commande lancée en fond dans une session ouverte d'ici. */
+  async function sortieTache(sessionId, tache) {
+    const proc = typeof sessionId === "string" ? processus.get(sessionId) : null;
+    if (!proc || !vivant(proc) || typeof tache !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(tache)) return null;
+    try {
+      return lireSortie(await proc.controles.demander({ subtype: "get_task_output", task_id: tache }));
+    } catch {
+      return null;
+    }
   }
 
   function fermerTout() {
@@ -1076,5 +1294,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, annulerModifications, usageContexte, sortieTache, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

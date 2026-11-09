@@ -19,7 +19,22 @@ export type CibleMessage = { message: Message; selection: string };
  * un fil pour un agent (le passage cité attend dans son composeur, rien n'est envoyé) et, sur
  * une réponse d'agent, créer une branche ou réessayer.
  */
-export function MenuMessage({ chat, cible, x, y, onFermer }: { chat: Chat; cible: CibleMessage; x: number; y: number; onFermer: (rendreFocus?: boolean) => void }) {
+export function MenuMessage({
+  chat,
+  cible,
+  x,
+  y,
+  onFermer,
+  onRevenirAvant,
+}: {
+  chat: Chat;
+  cible: CibleMessage;
+  x: number;
+  y: number;
+  onFermer: (rendreFocus?: boolean) => void;
+  /** « Revenir à avant ce message » (un message de la personne suivi d'autres) : ouvre la fenêtre du choix. */
+  onRevenirAvant?: (messageId: string) => void;
+}) {
   const router = useRouter();
   const roles = useRoles();
   const { creerFil, brancher, reessayer } = useWorkspace();
@@ -71,6 +86,19 @@ export function MenuMessage({ chat, cible, x, y, onFermer }: { chat: Chat; cible
             </ElementContextuel>
           ))}
         </SousMenuContextuel>
+      )}
+      {!auteur && onRevenirAvant && (
+        <>
+          <SeparateurContextuel />
+          <ElementContextuel
+            icone="clock-backward"
+            desactive={!!travail}
+            detail={travail ? "L’agent travaille : arrête-le d’abord" : "Les fichiers, la conversation, ou les deux"}
+            onChoisir={() => onRevenirAvant(message.id)}
+          >
+            Revenir à avant ce message
+          </ElementContextuel>
+        </>
       )}
       {auteur && texte && (
         <>

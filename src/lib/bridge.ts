@@ -124,13 +124,20 @@ export type AgentEvent =
   | { type: "etape"; id: string; outil: string; entree: Record<string, unknown>; parent: string | null }
   /** L'entrée d'un outil pendant que le modèle l'écrit (la carte de l'atelier), refermée au mieux. */
   | { type: "etape-partielle"; id: string; outil: string; entree: Record<string, unknown> }
-  | { type: "etape-fin"; id: string; ok: boolean; apercu: string }
+  | { type: "etape-fin"; id: string; ok: boolean; apercu: string; sortie?: string }
+  | { type: "reflexion"; texte: string; nouveau: boolean }
+  | { type: "question"; id: string; questions: QuestionAgent[] }
+  | { type: "plan"; id: string; plan: string }
+  | { type: "modification"; id: string; chemin: string; lignes: string[]; ajouts: number; retraits: number; tronque: boolean; cree: boolean; annulable: boolean }
+  | { type: "sortie"; id: string; texte: string }
+  | { type: "commandes"; commandes: CommandeClaude[] }
+  | { type: "fenetre"; jetons: number }
   | { type: "jetons"; total: number }
   | { type: "contexte"; jetons: number }
   | { type: "compacte"; avant: number; apres: number }
-  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string }
+  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string; regles?: string[] }
   | { type: "autorisation-fin"; id: string; accepte: boolean }
-  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur" }
+  | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur"; uuidFin?: string }
   /** Un agent lancé en arrière-plan (appel `id`) a fini ou s'est arrêté : sa passation le montre. */
   | { type: "tache-fond"; id: string; statut: "fait" | "erreur" }
   /**
@@ -315,6 +322,57 @@ export interface StreamOptions {
   dossierVps?: string | null;
   /** La skill demandée en tête du message (« /rangement … ») : remise devant le contexte si elle existe. */
   skill?: string | null;
+  /** Mode plan (Claude Code) : l'agent prépare un plan sans rien modifier, jusqu'à ce que la personne le lance. */
+  plan?: boolean;
+  /** « Revenir à avant ce message » : la session reprend jusqu'à ce message de Claude Code, dans une copie. */
+  reprendreA?: string | null;
+}
+
+/** Une question à choix d'un agent (AskUserQuestion, cf. electron/session-claude.ts). */
+export interface QuestionAgent {
+  question: string;
+  entete: string;
+  options: { libelle: string; description: string }[];
+  multiple: boolean;
+}
+
+/** Une commande « / » que la session de Claude Code connaît. */
+export interface CommandeClaude {
+  nom: string;
+  description: string;
+  indice: string;
+}
+
+/** La place prise dans la fenêtre de contexte, et par quoi (cf. `get_context_usage`). */
+export interface UsageContexte {
+  total: number;
+  max: number;
+  categories: { id: string; nom: string; jetons: number; genre: string }[];
+}
+
+/** Une session de Claude Code d'un projet, lancée hors de l'app (cf. electron/sessions-terminal.ts). */
+export interface SessionTerminal {
+  id: string;
+  titre: string;
+  modifieLe: number;
+  deLApp: boolean;
+}
+export interface MessageSession {
+  auteur: "personne" | "agent";
+  texte: string;
+  le: string;
+}
+
+/** Les autorisations retenues d'un projet, dans `.claude/settings.local.json`. */
+export interface ReglesProjet {
+  allow: string[];
+  ask: string[];
+  deny: string[];
+}
+
+/** Ce qu'une annulation de modifications a fait de chaque fichier. */
+export interface ResultatAnnulation {
+  fichiers: { chemin: string; etat: "annule" | "conflit" | "impossible" | "deja"; raison?: string }[];
 }
 
 /** Ce qu'un agent peut faire sans demander (cf. electron/claude.ts). */
@@ -466,7 +524,15 @@ export interface KlyraBridge {
     ) => Promise<Reponse<ResultatCas>>;
     cancel: (requestId: string) => Promise<Reponse<void>>;
     /** Ta réponse à une demande d'autorisation d'un agent. */
-    autoriser: (requestId: string, demandeId: string, decision: "oui" | "toujours" | "non") => Promise<Reponse<boolean>>;
+    autoriser: (requestId: string, demandeId: string, decision: "oui" | "toujours" | "non", details?: { reponses?: Record<string, string>; message?: string }) => Promise<Reponse<boolean>>;
+    /** Annule des modifications de fichiers (appels d'outil) d'une conversation, sur la machine où l'agent a travaillé. */
+    annulerModifications?: (chatId: string, ids: string[], forcer: boolean, lieu?: string | null) => Promise<Reponse<ResultatAnnulation>>;
+    /** La place prise dans le contexte d'une session ouverte (null : pas de session ouverte). */
+    contexte?: (sessionId: string, lieu?: string | null) => Promise<Reponse<UsageContexte | null>>;
+    /** Ce qu'écrit une commande lancée en fond (sa tâche), pendant qu'elle tourne. */
+    sortie?: (sessionId: string, tache: string, lieu?: string | null) => Promise<Reponse<string | null>>;
+    /** La commande qui reprend la session d'une conversation dans un terminal. */
+    commandeTerminal?: (agent: string, contexte: { dossier: string | null; sessionId: string; lieu: string | null }) => Promise<Reponse<string>>;
     stream: (requestId: string, options: StreamOptions) => Promise<Reponse<null>>;
     onEvent: (callback: (requestId: string, event: AgentEvent) => void) => () => void;
     /** L'agent reprend la parole de lui-même (une tâche de fond s'est terminée) : une nouvelle réponse. */
@@ -498,6 +564,18 @@ export interface KlyraBridge {
     /** Un niveau de l'arborescence : la racine, ou le dossier `relatif` du projet. */
     /** `lieu` : un projet sur un VPS relié (son origine) ; absent, un dossier de ce PC. */
     arbre: (dossier: string, relatif?: string, lieu?: string | null) => Promise<Reponse<FileNode[]>>;
+    /** Tous les fichiers du projet (chemins relatifs), pour la complétion « @ ». */
+    fichiers?: (dossier: string, lieu?: string | null) => Promise<Reponse<{ fichiers: string[]; coupe: boolean }>>;
+    /** Les autorisations retenues du projet (« Toujours, dans ce projet »), et en retirer une. */
+    regles?: (dossier: string, lieu?: string | null) => Promise<Reponse<ReglesProjet>>;
+    /** Une branche de travail du projet (`git worktree`, branche neuve « klyra/<nom> »), sur sa machine. */
+    brancheTravail?: (dossier: string, nom: string, lieu?: string | null) => Promise<Reponse<{ dossier: string; branche: string }>>;
+    /** Retire le dossier d'une branche de travail (s'il n'a rien de non publié) ; la branche reste. */
+    retirerBrancheTravail?: (dossier: string, lieu?: string | null) => Promise<Reponse<boolean>>;
+    /** Les sessions de Claude Code lancées dans ce projet hors de l'app (terminal…), et les messages de l'une d'elles. */
+    sessionsTerminal?: (dossier: string, lieu?: string | null) => Promise<Reponse<SessionTerminal[]>>;
+    sessionTerminal?: (dossier: string, id: string, lieu?: string | null) => Promise<Reponse<MessageSession[]>>;
+    retirerRegle?: (dossier: string, liste: "allow" | "ask" | "deny", regle: string, lieu?: string | null) => Promise<Reponse<ReglesProjet>>;
     /** Crée le dossier d’un nouveau projet sur le VPS ; rend son chemin. */
     creerDossierVps?: (lieu: string, dossier: string) => Promise<Reponse<string>>;
     /** Les pages du site (routes Next), pour les suggestions de la barre d'adresse de l'aperçu. */

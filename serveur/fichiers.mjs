@@ -7,6 +7,10 @@
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { appliquerConsignesProjet, etatConsignesProjet } from "./consignes-projet.mjs";
+import { listerFichiersProjet } from "./liste-fichiers.mjs";
+import { lireReglesProjet, retirerRegleProjet } from "./regles-projet.mjs";
+import { creerBrancheTravail, retirerBrancheTravail } from "./branche-travail.mjs";
+import { lireSessionTerminal, listerSessionsTerminal } from "./sessions-terminal.mjs";
 
 const IGNORES = new Set(["node_modules", ".git", ".next", "dist", "dist-electron", "out", "build", ".turbo", ".vercel", ".cache", "coverage", ".DS_Store"]);
 const IMAGES = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp"]);
@@ -95,5 +99,51 @@ export function creerFichiers(home) {
     return complet;
   }
 
-  return { arbre, lire, creerDossier, ecrireTexte, consignes, ecrireConsignes, racine: racineKlyra };
+  /** Tous les fichiers d'un projet (chemins relatifs), pour la complétion « @ » de l'app. */
+  function liste(dossier) {
+    return listerFichiersProjet(dossierProjet(dossier));
+  }
+
+  /** Les autorisations retenues d'un projet (« Toujours, dans ce projet »), et en retirer une. */
+  function regles(dossier) {
+    return lireReglesProjet(dossierProjet(dossier));
+  }
+  function retirerRegle(dossier, liste, regle) {
+    try {
+      return retirerRegleProjet(dossierProjet(dossier), liste, regle);
+    } catch (erreur) {
+      throw new ErreurFichier(erreur instanceof Error ? erreur.message : "Réglages illisibles.");
+    }
+  }
+
+  /** Une branche de travail (`git worktree`) d'un projet d'ici, ou la retirer. */
+  async function branche(dossier, nom) {
+    try {
+      return await creerBrancheTravail(dossierProjet(dossier), String(nom ?? ""));
+    } catch (erreur) {
+      throw new ErreurFichier(erreur instanceof Error ? erreur.message : "Branche de travail impossible.");
+    }
+  }
+  async function retirerBranche(dossier) {
+    try {
+      await retirerBrancheTravail(dossierProjet(dossier));
+      return true;
+    } catch (erreur) {
+      throw new ErreurFichier(erreur instanceof Error ? erreur.message : "Retrait impossible.");
+    }
+  }
+
+  /** Les sessions de Claude Code lancées dans ce projet hors de l'app (terminal…), et leurs messages. */
+  function sessions(dossier) {
+    return listerSessionsTerminal(path.join(home, ".claude"), dossierProjet(dossier));
+  }
+  function session(dossier, id) {
+    try {
+      return lireSessionTerminal(path.join(home, ".claude"), dossierProjet(dossier), String(id ?? ""));
+    } catch (erreur) {
+      throw new ErreurFichier(erreur instanceof Error ? erreur.message : "Session illisible.");
+    }
+  }
+
+  return { arbre, liste, regles, retirerRegle, branche, retirerBranche, sessions, session, lire, creerDossier, ecrireTexte, consignes, ecrireConsignes, racine: racineKlyra };
 }
