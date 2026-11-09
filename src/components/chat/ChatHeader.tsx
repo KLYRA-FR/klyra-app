@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
-import { agentDeConversation } from "@/lib/conversation-projet";
+import { agentDeConversation, estAutomatique } from "@/lib/conversation-projet";
 import { estChatPrincipal, peutRepartir } from "@/lib/contexte";
 import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { ChoixModele } from "./ChoixModele";
@@ -15,7 +15,7 @@ import type { ActionExport } from "./useExporterConversation";
 import { useBasculerEpingle } from "./BoutonEpingle";
 import { estEpinglee } from "@/lib/epinglage";
 import { useAgentOccupe, useChatMessages, useRole, useTravail, useWorkspace } from "@/lib/workspace";
-import type { Chat, Project } from "@/types/domain";
+import type { Chat } from "@/types/domain";
 import { getBridge } from "@/lib/bridge";
 import { annoncer } from "@/lib/annonces";
 import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
@@ -40,7 +40,6 @@ function useCommandeTerminal(chat: Chat): (() => void) | undefined {
 
 interface ChatHeaderProps {
   chat: Chat;
-  project: Project | undefined;
   previewOpen: boolean;
   onTogglePreview: () => void;
   actionExport?: ActionExport;
@@ -162,7 +161,11 @@ function ChampTitre({ titre, onFin }: { titre: string; onFin: (nouveau: string |
  * En-tête d'une conversation de projet : celle d'un chat avec un agent (son visage, le modèle, le panneau
  * de réglages, d'aperçu et de fichiers), avec le titre de la conversation, qu'on renomme et qu'on épingle.
  */
-function EnTeteProjet({ chat, panneauOuvert, onTogglePanneau, actionExport }: { chat: Chat; panneauOuvert: boolean; onTogglePanneau: () => void; actionExport?: ActionExport }) {
+/**
+ * En-tête d'une conversation d'équipe (dans un projet, ou tenue par une routine ou un workflow) : elle se lit
+ * comme le chat de son agent, le premier de `roleIds`.
+ */
+function EnTeteEquipe({ chat, panneauOuvert, onTogglePanneau, actionExport }: { chat: Chat; panneauOuvert: boolean; onTogglePanneau: () => void; actionExport?: ActionExport }) {
   const { renommerChat } = useWorkspace();
   const serveurs = useServeursRelies();
   const basculerEpingle = useBasculerEpingle();
@@ -175,7 +178,12 @@ function EnTeteProjet({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
   const autres = chat.roleIds.length - 1;
   const etat = ici
     ? `${travailleur.name} travaille…`
-    : [`${role.name} · ${role.tag}`, autres > 0 && `${autres} autre${autres > 1 ? "s" : ""} agent${autres > 1 ? "s" : ""} mentionné${autres > 1 ? "s" : ""}`, chat.lieu && `sur ${nomLieu(chat.lieu, serveurs)}`]
+    : [
+        `${role.name} · ${role.tag}`,
+        // Dans une routine en chaîne ou un workflow, les autres agents y travaillent sans qu'on les ait mentionnés.
+        autres > 0 && `${autres} autre${autres > 1 ? "s" : ""} agent${autres > 1 ? "s" : ""}${estAutomatique(chat.id) ? "" : ` mentionné${autres > 1 ? "s" : ""}`}`,
+        chat.lieu && `sur ${nomLieu(chat.lieu, serveurs)}`,
+      ]
         .filter(Boolean)
         .join(" · ");
   return (
@@ -227,70 +235,10 @@ function EnTeteProjet({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
   );
 }
 
-export function ChatHeader({ chat, project, previewOpen, onTogglePreview, actionExport }: ChatHeaderProps) {
-  const { renommerChat } = useWorkspace();
-  const serveurs = useServeursRelies();
-  const basculerEpingle = useBasculerEpingle();
-  /* La conversation dont le titre est en cours de renommage. */
-  const [edition, setEdition] = useState<string | null>(null);
-  const options = useRef<HTMLButtonElement>(null);
-
+export function ChatHeader({ chat, previewOpen, onTogglePreview, actionExport }: ChatHeaderProps) {
   if (chat.kind === "direct") {
     return <EnTeteDirect chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} actionExport={actionExport} />;
   }
-  /* Dans un projet : la conversation se lit comme le chat d'un agent. */
-  if (project) {
-    return <EnTeteProjet key={chat.id} chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} actionExport={actionExport} />;
-  }
-
-  const roleCount = chat.roleIds.length;
-  return (
-    <header className="@container flex items-center gap-3 border-b border-bordure-subtile px-5 py-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {edition === chat.id ? (
-          <ChampTitre
-            titre={chat.title}
-            onFin={(nouveau, auClavier) => {
-              if (nouveau !== null) renommerChat(chat.id, nouveau);
-              setEdition(null);
-              // Au clavier, le focus revient au « … » ; un clic ailleurs le laisse où il est allé.
-              if (auClavier) options.current?.focus();
-            }}
-          />
-        ) : (
-          <h1 className="m-0 flex min-w-0 items-center gap-1.5 text-ui font-semibold">
-            <span className="truncate">{chat.title}</span>
-            {estEpinglee(chat) && (
-              <span role="img" aria-label="Épinglée" title="Épinglée" className="flex shrink-0 text-icone-secondaire">
-                <Icon name="pin-01" size={14} />
-              </span>
-            )}
-          </h1>
-        )}
-        <span className="truncate text-ui-xs text-texte-tertiaire">
-          {roleCount} {roleCount > 1 ? "agents" : "agent"} dans la conversation
-          {chat.lieu ? ` · sur ${nomLieu(chat.lieu, serveurs)}` : ""}
-        </span>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1.5">
-        {/* Les visages de la conversation, qui se chevauchent. */}
-        <div aria-label="Agents de la conversation" className="mr-1 hidden -space-x-2 @xl:flex">
-          {chat.roleIds.map((roleId) => (
-            <AgentRond key={roleId} roleId={roleId} taille={26} className="rounded-sm ring-2 ring-fond-surface" />
-          ))}
-        </div>
-        <BoutonIcone
-          taille="compact"
-          actif={previewOpen}
-          icone={<Icon name="layout-right" size={16} />}
-          libelle={previewOpen ? "Masquer l’aperçu" : "Afficher l’aperçu"}
-          aria-pressed={previewOpen}
-          data-son="panneau"
-          onClick={onTogglePreview}
-        />
-        <MenuConversation bouton={options} onRenommer={() => setEdition(chat.id)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} actionExport={actionExport} />
-      </div>
-    </header>
-  );
+  /* Une conversation d'équipe (projet, routine, workflow) se lit comme le chat d'un agent. */
+  return <EnTeteEquipe key={chat.id} chat={chat} panneauOuvert={previewOpen} onTogglePanneau={onTogglePreview} actionExport={actionExport} />;
 }

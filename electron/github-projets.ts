@@ -135,6 +135,29 @@ export function lireCommits(reponse: unknown): CommitResume[] {
   });
 }
 
+/**
+ * Pourquoi la connexion par GitHub CLI n'a pas abouti, d'après ce qu'il a écrit : une phrase pour l'écran,
+ * jamais un code, une adresse ni un jeton. Sans indice, l'annulation ou l'expiration.
+ */
+export function raisonEchecConnexion(sortie: string, expiree = false): string {
+  if (expiree) return "Le code GitHub a expiré avant l’autorisation. Relance la connexion.";
+  const lignes = sortie
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/[\x00-\x1f\x7f]+/g, " ").trim())
+    .filter((l) => l && !/one-time code|Open this URL|Press Enter|copied to clipboard|^!?\s*$/i.test(l));
+  const brut = lignes[lignes.length - 1];
+  if (!brut) return "Connexion GitHub annulée ou expirée. Réessaie.";
+  if (/access[_ ]denied|denied/i.test(brut)) return "L’autorisation a été refusée sur GitHub. Relance la connexion et clique sur « Authorize ».";
+  if (/expired|expir/i.test(brut)) return "Le code GitHub a expiré avant l’autorisation. Relance la connexion.";
+  const propre = brut
+    .replace(/\b(?:gh[opusr]_|github_pat_)[A-Za-z0-9_]+/g, "…")
+    .replace(/https?:\/\/\S+/g, (u) => {
+      try { return new URL(u).host; } catch { return "…"; }
+    })
+    .replace(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/g, "…");
+  return `GitHub CLI n’a pas pu se connecter : ${propre.length > 200 ? `${propre.slice(0, 199)}…` : propre}`;
+}
+
 export class GithubProjets {
   private login: ChildProcess | null = null;
   private vue: EtatGithubProjet = { compte: null, connexion: null, enCours: false, erreur: null };
@@ -191,13 +214,16 @@ export class GithubProjets {
     enfant.stdin?.end("\n");
     let sortie = "";
     let termine = false;
-    const timer = setTimeout(() => enfant.kill(), 16 * 60_000);
-    const fini = async (code: number | null) => {
+    let expiree = false;
+    // Le code de GitHub vaut 15 minutes : au-delà, l'autorisation ne peut plus aboutir.
+    const timer = setTimeout(() => { expiree = true; enfant.kill(); }, 16 * 60_000);
+    const fini = async (code: number | null, lancement?: Error) => {
       if (termine) return;
       termine = true;
       clearTimeout(timer);
       try {
-        if (code !== 0) throw new Error("Connexion GitHub annulée ou expirée. Réessaie.");
+        if (lancement) throw new Error((lancement as NodeJS.ErrnoException).code === "ENOENT" ? "GitHub CLI est introuvable sur cette machine." : "GitHub CLI n’a pas pu démarrer sur cette machine.");
+        if (code !== 0) throw new Error(raisonEchecConnexion(sortie, expiree));
         const jeton = (await this.commande(this.d.gh, ["auth", "token", "--hostname", "github.com"], this.env(undefined, dossier))).trim();
         if (!jeton || /\s/.test(jeton)) throw new Error("Connexion GitHub illisible.");
         const utilisateur = JSON.parse(await this.commande(this.d.gh, ["api", "--method", "GET", "/user"], this.env(jeton))) as { login?: unknown };
@@ -211,7 +237,7 @@ export class GithubProjets {
         if (generation === this.generation) { this.login = null; this.vue.enCours = false; this.vue.connexion = null; }
       }
     };
-    enfant.once("error", () => void fini(1));
+    enfant.once("error", (e) => void fini(1, e));
     enfant.once("close", (code) => void fini(code));
     const lire = (b: Buffer) => {
       sortie = (sortie + b.toString("utf8")).slice(-8000);
