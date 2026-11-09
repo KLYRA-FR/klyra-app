@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { lireValeurDepot, optionsDepot } from "@/lib/choix-depot";
+import { CONNECTER_GITHUB, lireValeurDepot, optionsDepot } from "@/lib/choix-depot";
 import type { Project } from "@/types/domain";
 
 const projet = (p: Partial<Project>): Project => ({ id: "x", name: "x", subtitle: "", status: "en-cours", pinned: false, roleIds: ["principal"], brief: "", previewUrl: "", folder: "/x", files: [], updatedAt: "2026-11-01T00:00:00.000Z", ...p });
@@ -20,8 +20,14 @@ describe("optionsDepot", () => {
   test("sur un VPS : ses projets seulement, et ses dépôts", () => {
     expect(optionsDepot(projets, [depot("KLYRA-FR/klyra-app")], "https://vps.exemple.fr", "pret").map((o) => o.value)).toEqual(["", "projet:vps", "depot:KLYRA-FR/klyra-app"]);
   });
-  test("GitHub en chargement, non connecté ou en erreur : une ligne qui le dit, jamais choisissable", () => {
-    for (const etat of ["charge", "deconnecte", "erreur"] as const) {
+  test("GitHub non connecté : une ligne qui ouvre la connexion, jamais un choix de dépôt", () => {
+    const ligne = optionsDepot([], null, null, "deconnecte").at(-1);
+    expect(ligne).toMatchObject({ value: CONNECTER_GITHUB, type: "connecter" });
+    expect(ligne?.disabled).toBeFalsy();
+    expect(lireValeurDepot(ligne!.value)).toBeNull();
+  });
+  test("GitHub en chargement ou en erreur : une ligne qui le dit, jamais choisissable", () => {
+    for (const etat of ["charge", "erreur"] as const) {
       const info = optionsDepot([], null, null, etat).at(-1);
       expect(info?.type).toBe("info");
       expect(info?.disabled).toBe(true);

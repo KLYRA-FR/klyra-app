@@ -5,7 +5,8 @@ import type { DepotGithubProjet } from "../../../electron/github-types";
 import { Icon } from "@/components/icons/Icon";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { getBridge } from "@/lib/bridge";
-import { lireValeurDepot, optionsDepot } from "@/lib/choix-depot";
+import { CONNECTER_GITHUB, lireValeurDepot, optionsDepot } from "@/lib/choix-depot";
+import { ModaleConnexionGithub } from "@/components/project/ConnexionGithub";
 import { projetDepuisDepot } from "@/lib/projet-depuis-depot";
 import { useWorkspace } from "@/lib/workspace";
 import type { Project } from "@/types/domain";
@@ -26,6 +27,8 @@ export function PuceDepot({ lieu, valeur, onChange, disabled }: { lieu: string |
   const { projects } = useWorkspace().state;
   const [lecture, setLecture] = useState<LectureDepots | null>(() => LECTURES.get(cle(lieu)) ?? null);
   const enCours = useRef(false);
+  /** La connexion GitHub de la machine, demandée depuis la liste quand elle manque. */
+  const [connexion, setConnexion] = useState(false);
 
   const charger = useCallback(() => {
     if (!github || enCours.current) return;
@@ -57,14 +60,27 @@ export function PuceDepot({ lieu, valeur, onChange, disabled }: { lieu: string |
     value: o.value,
     label: o.label,
     disabled: o.disabled,
-    icone: <Icon name={o.type === "depot" ? "git-branch-01" : o.type === "info" ? "clock-01" : "folder"} size={16} className="text-icone-secondaire" />,
+    icone: <Icon name={o.type === "depot" ? "git-branch-01" : o.type === "info" ? "clock-01" : o.type === "connecter" ? "link" : "folder"} size={16} className="text-icone-secondaire" />,
   }));
+
+  const choisir = (v: string) => {
+    if (v !== CONNECTER_GITHUB) return onChange(v);
+    setConnexion(true);
+  };
+  const connecte = useCallback(() => {
+    LECTURES.delete(cle(lieu));
+    setConnexion(false);
+    charger();
+  }, [lieu, charger]);
 
   return (
     /* La liste GitHub se lit quand on s'approche de la puce (pointeur ou clavier), pas à chaque conversation ouverte. */
-    <span data-puce-depot className="contents" onPointerDownCapture={charger} onFocusCapture={charger}>
-      <ListeDeroulante variante="puce" libelle="Dépôt" options={options} value={valeur} onChange={onChange} largeurListe={300} disabled={disabled} />
-    </span>
+    <>
+      <span data-puce-depot className="contents" onPointerDownCapture={charger} onFocusCapture={charger}>
+        <ListeDeroulante variante="puce" libelle="Dépôt" options={options} value={valeur} onChange={choisir} largeurListe={300} disabled={disabled} />
+      </span>
+      {connexion && <ModaleConnexionGithub lieu={lieu} onFermer={() => setConnexion(false)} onConnecte={connecte} />}
+    </>
   );
 }
 

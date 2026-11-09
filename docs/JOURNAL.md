@@ -1,5 +1,17 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Connecter GitHub : une seule connexion, demandée de partout
+
+Retour de Corentin après une installation chez une nouvelle personne (Mac) : la carte GitHub de la Marketplace menait à Composio, la puce « Dépôt » restait grisée même Composio connecté, et dans Projets « rien ne se passe ». Le dépôt et les dépôts listés viennent de la connexion de KLYRA (GitHub CLI embarqué), pas de Composio ni du terminal : c'était voulu, mais rien ne le disait ni ne menait à elle, et la page d'autorisation ne s'ouvrait pas seule (il fallait trouver le code puis cliquer « Ouvrir GitHub »).
+
+- **La page GitHub s'ouvre d'elle-même** dès que le code arrive (une fois par code), avec « Copier le code », « Rouvrir la page GitHub » et l'adresse en clair. Composant commun `src/components/project/ConnexionGithub.tsx` (`CodeGithub`, `useConnexionGithub`, `ModaleConnexionGithub`), utilisé dans Projets, la puce et la Marketplace.
+- **Puce « Dépôt »** : la ligne grisée « GitHub n’est pas connecté (Projets › Nouveau projet) » devient « Connecter GitHub pour voir tes dépôts… », qui ouvre la connexion sur place ; une fois autorisé, la fenêtre se ferme et la liste se relit.
+- **Marketplace, carte GitHub** : le pied est la connexion de KLYRA (Connecter, compte connecté, Détails / Changer de compte), la ligne du dessous les outils des agents (par Composio, ou l'ancien jeton). Composio reste nécessaire pour les outils GitHub des agents ; il ne donne toujours pas les dépôts.
+- **Un échec de GitHub CLI est dit en clair** (`raisonEchecConnexion`, PC et VPS) : refus sur GitHub, code expiré, ou la dernière ligne de GitHub CLI (sans code, adresse ni jeton) au lieu de « annulée ou expirée ». Si la personne revoit un échec, la phrase affichée dira maintenant pourquoi.
+- **Non vérifié** : la cause exacte du « rien ne se passe » sur ce Mac n'a pas pu être reproduite (le conteneur de test n'atteint pas github.com ; GitHub CLI 2.103.3 lu dans ses sources : le code et l'adresse sont bien écrits comme l'app les lit). L'autorisation avec un vrai compte reste à refaire chez la personne.
+
+Validation : types, lint, `test:github-projets` (raison d'un échec, faux gh qui refuse), `src/lib` en entier (1 150), build, smoke, `test:serveur`, et dans Electron `test:projet-github` (0 échec) et **nouveau** `test:connexion-github` (faux gh, profil jetable : la puce, le code, la page ouverte une fois, le refus puis « Réessayer », la fenêtre qui se ferme, les dépôts dans la puce, la carte de la Marketplace, « Changer de compte », annuler, puis Projets). `klyra-ui` installé depuis un clone du dépôt, jamais committé.
+
 ## 9 novembre 2026 — Une conversation comme dans Claude Code Desktop : les 14 points
 
 Demande de Corentin : reprendre dans klyra-app ce qui manquait par rapport à l'onglet Code de Claude Desktop (« go pour tout ça, fais en un plan et implémente tout parfaitement »). Le protocole a d'abord été relevé en vrai, Claude Code 2.1.319 face à un faux fournisseur : réflexion (`thinking_delta`, lisible avec `--thinking-display summarized`), `AskUserQuestion` et sa réponse `answers`, `ExitPlanMode` (le plan est dans l'appel, pas dans la demande d'accord), rappels `hook_callback` déclarés par `initialize`, `get_task_output` (même au premier plan), `get_context_usage`, commandes de la réponse à `initialize`, `--resume-session-at` + `--fork-session`. Tout passe par un module pur commun (`electron/session-claude.ts`, généré pour le serveur) : PC et VPS font la même chose.

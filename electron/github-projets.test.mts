@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
-import { GithubProjets, infosDepot, lireCommits, lirePullRequests, reecritVersAutreDepot, resumerTests, validerBranche, validerNomDepot } from "./github-projets.ts";
+import { GithubProjets, infosDepot, lireCommits, lirePullRequests, raisonEchecConnexion, reecritVersAutreDepot, resumerTests, validerBranche, validerNomDepot } from "./github-projets.ts";
 import { creerGithubProjets } from "./github-stockage.ts";
 
 test("les dépôts et branches refusent options, URL, traversées et caractères spéciaux", () => {
@@ -14,6 +14,18 @@ test("les dépôts et branches refusent options, URL, traversées et caractères
   for (const b of ["-main", "../main", "main.lock", "a//b", "main:a", "a\\b", "a..b", "a@{b", "/main", "main."]) assert.throws(() => validerBranche(b));
   assert.equal(validerNomDepot("Organisation/Repo.test"), "Organisation/Repo.test");
   assert.equal(validerBranche("feat/écran"), "feat/écran");
+});
+
+test("l'échec de la connexion est dit en clair, sans code, adresse ni jeton", () => {
+  assert.equal(raisonEchecConnexion(""), "Connexion GitHub annulée ou expirée. Réessaie.");
+  assert.equal(raisonEchecConnexion("! First copy your one-time code: ABCD-1234\nOpen this URL to continue in your web browser: https://github.com/login/device\n"), "Connexion GitHub annulée ou expirée. Réessaie.");
+  assert.match(raisonEchecConnexion("! First copy your one-time code: ABCD-1234\nfailed to authenticate via web browser: access_denied\n"), /refusée sur GitHub/);
+  assert.match(raisonEchecConnexion("failed to authenticate via web browser: expired_token\n"), /expiré/);
+  assert.match(raisonEchecConnexion("", true), /expiré/);
+  const r = raisonEchecConnexion("\x1b[31mfailed to authenticate via web browser: Post \"https://user:secret@github.com/login/device/code?x=1\": dial tcp: lookup github.com: no such host gho_abcDEF123 WXYZ-9876\x1b[0m\n");
+  assert.match(r, /^GitHub CLI n’a pas pu se connecter : failed to authenticate via web browser: Post/);
+  assert.match(r, /no such host/);
+  for (const secret of ["secret", "gho_", "WXYZ-9876", "/login/device", "\x1b"]) assert.equal(r.includes(secret), false, secret);
 });
 
 function bac() {
@@ -24,7 +36,10 @@ function bac() {
   writeFileSync(fichierGh, `
 const a = process.argv.slice(2);
 if (a[0] === '--version') console.log('gh version test');
-else if (a[0] === 'auth' && a[1] === 'login') {
+else if (a[0] === 'auth' && a[1] === 'login' && require('node:fs').existsSync(${JSON.stringify(path.join(tmp, 'refus'))})) {
+ process.stderr.write('! First copy your one-time code: ABCD-1234\\nOpen this URL to continue in your web browser: https://github.com/login/device\\n');
+ setTimeout(() => { process.stderr.write('failed to authenticate via web browser: dial tcp: lookup github.com: no such host\\n'); process.exit(1); }, 100);
+} else if (a[0] === 'auth' && a[1] === 'login') {
  require('node:fs').writeFileSync(${JSON.stringify(path.join(tmp, 'dernier-login'))}, process.env.GH_CONFIG_DIR);
  require('node:fs').writeFileSync(require('node:path').join(process.env.GH_CONFIG_DIR, 'sentinelle'), 'identifiant-fictif');
  process.stderr.write('First copy your one-time code: ABCD-1234\\n');
@@ -85,6 +100,13 @@ test("l'autorisation enregistre le compte, puis retire les identifiants temporai
     await new Promise(r => setTimeout(r, 600));
     assert.equal((await g.etat()).compte, null);
     assert.equal((await g.etat()).enCours, false);
+    // GitHub CLI échoue : la raison arrive à l'écran, la connexion reste vide.
+    writeFileSync(path.join(b.tmp, "refus"), "");
+    await g.connecter();
+    for (let i = 0; i < 100 && (await g.etat()).enCours; i++) await new Promise(r => setTimeout(r, 20));
+    const vue2 = await g.etat();
+    assert.equal(vue2.compte, null);
+    assert.equal(vue2.erreur, "GitHub CLI n’a pas pu se connecter : failed to authenticate via web browser: dial tcp: lookup github.com: no such host");
   } finally { b.nettoyer(); }
 });
 

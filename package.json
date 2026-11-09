@@ -119,6 +119,7 @@
     "test:repartir-a-zero": "node scripts/test-repartir-a-zero.mjs",
     "test:fichiers": "vitest run src/lib/fichiers.test.tsx",
     "test:projet-github": "node scripts/test-projet-github.mjs",
+    "test:connexion-github": "node scripts/test-connexion-github.mjs",
     "test:git": "node --experimental-strip-types --test electron/git.test.mts && vitest run src/lib/depot-projet.test.ts",
     "test:telechargement": "vitest run src/lib/telechargement.test.ts",
     "test:projets-telephone": "vitest run src/lib/telephone/dossiers.test.ts src/lib/telephone/gestes-fichiers.test.ts src/lib/telephone/ecrans.test.tsx",
