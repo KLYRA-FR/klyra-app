@@ -58,6 +58,17 @@ async function prompt(id, { sessionId, prompt }) {
   const demande = prompt.map((b) => b.text ?? "").join("\n");
   s.vus.push(demande);
   const fin = (stopReason) => ecrire({ id, result: { stopReason } });
+  if (demande.includes("PERMISSIONAPP")) {
+    /* Deux outils MCP qui demandent l'accord : un outil libre de l'app, puis une action Composio. */
+    const options = [
+      { optionId: "oui-une-fois", name: "Allow", kind: "allow_once" },
+      { optionId: "non", name: "Reject", kind: "reject_once" },
+    ];
+    const app = await demander("session/request_permission", { sessionId, toolCall: { toolCallId: "t4", title: "klyra__ouvrir_fil", kind: "other", rawInput: { titre: "Essai" } }, options });
+    const composio = await demander("session/request_permission", { sessionId, toolCall: { toolCallId: "t5", title: "composio__COMPOSIO_MULTI_EXECUTE_TOOL", kind: "other", rawInput: { tools: [] } }, options });
+    texte(sessionId, `App : ${app.outcome?.optionId}, Composio : ${composio.outcome?.optionId}`);
+    return fin("end_turn");
+  }
   if (demande.includes("OUTIL")) {
     update(sessionId, { sessionUpdate: "tool_call", toolCallId: "t1", title: "ls -la", kind: "execute", status: "pending", rawInput: { command: "ls -la" } });
     update(sessionId, { sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed", content: [{ type: "content", content: { type: "text", text: "fichier.txt" } }] });

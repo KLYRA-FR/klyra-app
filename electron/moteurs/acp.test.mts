@@ -125,6 +125,13 @@ test("le client ACP face au faux Grok : réponse, session reprise, outils, autor
     assert.equal((autorisee.find((e) => e.type === "autorisation") as { outil: string }).outil, "Edit");
     assert.equal((autorisee.at(-1) as { texte: string }).texte, "Réponse : oui-toujours");
 
+    /* Accès « projet » : un outil libre de l'app passe sans carte ; une action Composio attend la tienne. */
+    const libres = await repondre("r4b", demande("PERMISSIONAPP", { sessionId: session, signature: "s2", libres: ["mcp__klyra__ouvrir_fil"] }), (e) => {
+      if (e.type === "autorisation") assert.equal(client.autoriser("r4b", e.id, "oui"), true);
+    });
+    assert.deepEqual(libres.filter((e) => e.type === "autorisation").map((e) => (e as { outil: string }).outil), ["mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL"]);
+    assert.equal((libres.at(-1) as { texte: string }).texte, "App : oui-une-fois, Composio : oui-une-fois");
+
     /* Accès complet : nouvelle session en always-approve, l'autorisation est accordée d'office. */
     const toutes = await repondre("r5", demande("AUTORISATION", { acces: "tout", signature: "s3" }));
     assert.ok(!toutes.some((e) => e.type === "autorisation"));

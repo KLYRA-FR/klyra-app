@@ -11,6 +11,14 @@ Le test passait toutes les étapes de la visite puis échouait sur « aucun appe
 
 Validation : `klyra-ui` installé depuis un clone git du vrai dépôt (le téléchargement de l'archive par pnpm est refusé, 403 ; pointeur local dans `package.json` le temps des tests, jamais committé). `pnpm build` et `build:electron`, échec reproduit avant correctif (`actual: [ 'moteurs:compte' ]`), puis `xvfb-run -a node scripts/test-visite-guidee.mjs --no-sandbox` vert trois fois (52 contrôles), `test-memoire` (57), `test-mode-onboarding` (21), `test-prise-en-main` (29), `electron/prise-en-main.test.mts` (7), ESLint des deux scripts. Aucun code de l'app touché : ni typecheck ni smoke relancés.
 
+## 9 novembre 2026 — Composio et outils MCP : les mêmes outils libres pour Grok, la recherche de Composio sans carte
+
+Suite de « ChatGPT : les outils MCP de l'app ne sont plus refusés d'office » (même jour, plus bas), qui règle Codex. Ma PR faisait la même correction pour Codex en parallèle : la version de main est gardée (vérifiée avec le vrai Codex, outils libres approuvés d'avance dans `mcp_servers`). Ce qui reste de la mienne :
+
+- **Grok, PC et VPS** : en accès « projet », une demande `session/request_permission` pour un outil libre (`TourDemande.libres` : `OUTILS_APP` sur le PC, `outilsLibres` de `serveur/agents.mjs` sur le VPS) est accordée sans carte, comme pour Claude Code et Codex. Le reste garde sa carte ; accès complet : tout accordé, comme avant.
+- **Composio** : chercher une action et lire son schéma (`OUTILS_COMPOSIO_LIBRES` : `COMPOSIO_SEARCH_TOOLS`, `COMPOSIO_GET_TOOL_SCHEMAS`, dans `composio-relais.ts`) sont des outils libres pour les trois moteurs en accès « projet ». Exécuter une action (`COMPOSIO_MULTI_EXECUTE_TOOL`) suit la règle de l'accès : carte avec Codex et Grok, le mode auto en juge avec Claude Code.
+- Tests : `acp.test.mts` + `scripts/faux-acp.mjs` (outil libre sans carte, action Composio avec carte), `test:moteurs`, `test:serveur`, `test:composio`. **Pas vérifié** : les noms des outils de recherche de Composio Connect contre le vrai serveur (repris de sa documentation), et `test:composio:runtime` (Electron absent).
+
 ## 9 novembre 2026 — ChatGPT : les outils de l'app ne sont plus refusés (« user rejected MCP tool call »)
 
 Retour de Corentin : Cicco (assistant, ChatGPT GPT-6.1-Sol) ne pouvait créer aucune routine ni aucun workflow ; chaque outil KLYRA (`cerveau_chercher`, `lister_workflows`, `construire_workflow`, `mettre_a_jour_fil`…) revenait en « user rejected MCP tool call ».
