@@ -42,6 +42,8 @@ const depart = {
     { id: "dm-principal", kind: "direct", projectId: null, title: "Principal", roleIds: ["principal"], updatedAt: il_y_a(30), sessions: { principal: "session-directe" }, luJusqua: "m3" },
     // Son projet a été retiré de l'app : la conversation reste.
     { id: "equipe-sans-projet", kind: "equipe", projectId: "projet-retire", title: "Ancienne conversation", roleIds: ["principal"], updatedAt: il_y_a(90), sessions: {}, luJusqua: null },
+    // Une routine sans projet : sa conversation se lit comme le chat de son agent.
+    { id: "routine-essai", kind: "equipe", projectId: null, title: "Veille du matin", roleIds: ["principal"], updatedAt: il_y_a(120), sessions: {}, luJusqua: null },
   ],
   messages: [
     { id: "m1", chatId: ID, author: { kind: "user" }, createdAt: il_y_a(6), parts: [{ type: "text", text: "Bonjour l’équipe, on refait l’accueil." }] },
@@ -295,6 +297,28 @@ try {
   const enfants = await app.ev(`document.querySelector('[role="menu"][aria-label="Options de la conversation"]')?.children.length`);
   verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Exporter en Markdown…"]) && enfants === 3, `sans projet : renommage, épingle et export (${e.lignes.join(", ")})`);
   await app.touche("Escape", { vk: 27 });
+
+  /* Routine (ou workflow) sans projet : l'en-tête et le panneau du chat d'un agent, sans destinataire à choisir. */
+  await app.aller("/chat?id=routine-essai");
+  await attendre(400);
+  const routine = await app.ev(`(() => {
+    const entete = document.querySelector('main header');
+    const panneau = document.querySelector('[aria-label="Panneau de la conversation"]');
+    return {
+      visage: !!entete?.querySelector('button[aria-label^="Ouvrir le panneau de "]'),
+      modele: !!entete?.querySelector('[data-avatar-agent]'),
+      ancien: /agents? dans la conversation/.test(entete?.innerText ?? "") || !!entete?.querySelector('button[aria-label$="l’aperçu"]'),
+      onglets: panneau ? [...panneau.querySelectorAll('[role="tablist"] [role="tab"]')].map((t) => t.innerText.trim()) : null,
+      destinataire: !!document.querySelector('main button[aria-label^="Destinataire"], main [aria-label="Destinataire"]'),
+      invite: document.querySelector('main textarea[aria-label="Message"]')?.placeholder ?? "",
+    };
+  })()`);
+  verifier(routine.visage && routine.modele && !routine.ancien, `routine : l’en-tête du chat d’un agent (${JSON.stringify(routine)})`);
+  verifier(
+    !!routine.onglets && routine.onglets.includes("Réglages") && !routine.onglets.includes("Aperçu") && !routine.onglets.includes("Git"),
+    `routine : le panneau du chat (Réglages…), sans aperçu ni Git hors projet (${routine.onglets?.join(", ")})`,
+  );
+  verifier(!routine.destinataire && routine.invite.startsWith("Écris à "), `routine : pas de destinataire à choisir, on écrit à son agent (${routine.invite})`);
 
   await app.aller("/chat?id=dm-principal");
   await app.cliquer(BOUTON);

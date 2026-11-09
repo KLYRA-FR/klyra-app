@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { agentDeConversation, conversationsDuProjet, derniereConversation } from "@/lib/conversation-projet";
-import type { Chat } from "@/types/domain";
+import { agentDeConversation, agentsAutomatisation, conversationsDuProjet, derniereConversation, sansAssistantImpose } from "@/lib/conversation-projet";
+import type { Chat, Message } from "@/types/domain";
 
 const chat = (p: Partial<Chat>): Chat => ({ id: "c", kind: "equipe", projectId: "p", title: "", roleIds: ["principal"], updatedAt: "2026-11-01T00:00:00.000Z", sessions: {}, luJusqua: null, ...p });
 
@@ -33,5 +33,31 @@ describe("conversations d'un projet", () => {
   });
   test("un projet sans conversation : rien à rouvrir", () => {
     expect(derniereConversation(liste, "vide")).toBeNull();
+  });
+});
+
+describe("conversations de routine et de workflow", () => {
+  test("l'agent qui travaille en tête, sans l'assistant imposé ; une conversation existante garde son agent", () => {
+    expect(agentsAutomatisation("veille", ["veille", "redac"])).toEqual(["veille", "redac"]);
+    expect(agentsAutomatisation("redac", ["redac"], ["veille"])).toEqual(["veille", "redac"]);
+    expect(agentsAutomatisation("veille", [])).toEqual(["veille"]);
+  });
+
+  const reponse = (chatId: string, roleId: string): Pick<Message, "chatId" | "author"> => ({ chatId, author: { kind: "role", roleId } });
+  test("les anciennes, où l'assistant n'a jamais répondu, prennent pour agent le premier qui y a répondu", () => {
+    const [r] = sansAssistantImpose([chat({ id: "routine-r1", projectId: null, roleIds: ["principal", "veille", "redac"] })], [
+      { chatId: "routine-r1", author: { kind: "user" } },
+      reponse("routine-r1", "redac"),
+      reponse("routine-r1", "veille"),
+    ]);
+    expect(r.roleIds).toEqual(["redac", "veille"]);
+    const [w] = sansAssistantImpose([chat({ id: "wf-w1", roleIds: ["principal", "dev"] })], []);
+    expect(w.roleIds).toEqual(["dev"]);
+  });
+  test("l'assistant reste en tête s'il y a répondu ; les conversations de la personne ne bougent pas", () => {
+    const liste = [chat({ id: "routine-r1", roleIds: ["principal", "veille"] }), chat({ id: "c1", roleIds: ["principal", "dev"] }), chat({ id: "routine-r2", roleIds: ["principal"] })];
+    const apres = sansAssistantImpose(liste, [reponse("routine-r1", "principal"), reponse("c1", "dev")]);
+    expect(apres.map((c) => c.roleIds)).toEqual([["principal", "veille"], ["principal", "dev"], ["principal"]]);
+    expect(apres[1]).toBe(liste[1]);
   });
 });

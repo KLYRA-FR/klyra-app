@@ -1,5 +1,16 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Routines et workflows : leur conversation se lit comme le chat d'un agent
+
+Question de Corentin : pourquoi une routine ou un workflow ouvre-t-il une « conversation d'équipe », si différente des Chats ? Réponse : `Chat.kind` ne connaît que `direct` (une par agent, hors projet) et `equipe` (tout le reste) ; une routine en chaîne ou rangée dans un projet (`routine-<id>`) et tout workflow (`wf-<id>`) tombent donc en `equipe`. Le 08/11, seules les conversations de projet avaient été alignées sur le chat d'un agent ; celles des routines et workflows sans projet avaient gardé l'ancien écran (« N agents dans la conversation », `PreviewPanel` avec un Aperçu vide hors projet, puce « Destinataire »). Demande : faire comme pour les projets.
+
+- **Même écran que le chat d'un agent** pour toute conversation d'équipe : `EnTeteEquipe` (ex-`EnTeteProjet` : visage de l'agent qui ouvre ses réglages, titre renommable, `ChoixModele`, panneau) et `PanneauLateral` (Réglages, Fichiers, Tâches, Navigateur ; Aperçu et Git seulement dans un projet). `PreviewPanel` est supprimé. Hors projet, un lien local s'ouvre comme ailleurs (plus d'aperçu pour le prendre).
+- **Composeur** : plus de puce « Destinataire » ni de « Écris à l'équipe » ; « Écris à <agent>, ou @mentionne un agent… », et sous le champ « <agent> te répond » au lieu de « l'assistant répartit le travail » (faux depuis le 08/11 aussi dans un projet).
+- **Le bon agent** : les deux créations mettaient l'assistant en tête de `roleIds`, donc un message sans mention allait à lui et l'en-tête montrait son visage. Désormais l'agent qui travaille est en tête (`agentsAutomatisation`, `src/lib/conversation-projet.ts`) et l'assistant n'y entre que mentionné. Les anciennes conversations `routine-…`/`wf-…` où l'assistant n'a jamais répondu sont remises en ordre au chargement (`sansAssistantImpose`) : le premier agent qui y a répondu prend la tête, l'assistant en sort ; rien d'autre ne bouge, aucun message touché.
+- **Pas fait (proposé à Corentin, à décider)** : ranger une routine dans un fil de son agent plutôt que dans une conversation à part, et chaque étape d'un workflow dans le fil de son agent, la page Workflows restant le suivi d'ensemble. Le téléphone n'est pas touché.
+
+Validation (remplaçant local de `klyra-ui`, jamais committé, comme les sessions précédentes) : types (écran et Electron ; seule erreur, `site/app/layout.tsx`, sans rapport), ESLint des fichiers touchés, vitest (116 fichiers, 1 284 tests, dont 3 nouveaux pour la remise en ordre), build, smoke, et dans Electron `test:conversation` (nouveau cas : une routine sans projet a l'en-tête et le panneau d'un chat, pas de destinataire), `test:epingler` (80/80), `test:menu-contextuel` (74/74), `test-annulation`, `test-conseil-contexte`, `test-atelier-equipe`. `scripts/test-export.mjs` (hors CI) a 18 échecs, les mêmes sur main avant ce changement.
+
 ## 9 novembre 2026 — ChatGPT : les outils de l'app ne sont plus refusés (« user rejected MCP tool call »)
 
 Retour de Corentin : Cicco (assistant, ChatGPT GPT-6.1-Sol) ne pouvait créer aucune routine ni aucun workflow ; chaque outil KLYRA (`cerveau_chercher`, `lister_workflows`, `construire_workflow`, `mettre_a_jour_fil`…) revenait en « user rejected MCP tool call ».

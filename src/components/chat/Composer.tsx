@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons/Icon";
 import { AgentRond } from "@/components/roles/AgentRond";
 import { BoutonIcone } from "@/components/ui/Bouton";
-import { PuceSelect, type PuceOption } from "@/components/ui/PuceSelect";
 import { getBridge } from "@/lib/bridge";
 import { garderBrouillon, lireBrouillons, prendreDemandeEcriture, surBrouillon } from "@/lib/brouillons";
 import { cn } from "@/lib/cn";
@@ -61,8 +60,6 @@ export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer:
     </div>
   );
 }
-
-const AUTO = "auto";
 
 const normaliser = (s: string) =>
   s
@@ -206,14 +203,13 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   // `?brouillon=…` : on arrive avec un message déjà prêt (ex. « Modifier avec un agent » depuis un artefact).
   const brouillon = useSearchParams().get("brouillon");
   const [text, setText] = useState(() => brouillon ?? lireBrouillons()[chat.id]?.text ?? "");
-  const [to, setTo] = useState<RoleId | typeof AUTO>(AUTO);
   const [curseur, setCurseur] = useState(0);
   const [actif, setActif] = useState(0);
   const [fermee, setFermee] = useState(false);
   const champ = useRef<HTMLTextAreaElement>(null);
   const direct = chat.kind === "direct";
-  /* Une conversation de projet a son agent, comme le chat d'un agent : pas de destinataire à choisir, @ pour en appeler un autre. */
-  const projetConv = chat.kind === "equipe" && !!project;
+  /* Une conversation d'équipe (projet, routine, workflow) a son agent, comme le chat d'un agent : pas de destinataire
+     à choisir, @ pour en appeler un autre. */
   const agent = useRole(chat.roleIds[0] ?? "principal");
   /* Le chat d'un agent : la puce « Dépôt » ouvre, à l'envoi, une conversation de cet agent dans le projet choisi.
      Un fil neuf : elle le fait travailler dans ce projet (cf. lib/dossier-conversation.ts) ; ensuite, son dossier est figé. */
@@ -233,8 +229,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   /* Un fil déjà posé dans un projet : le dire sous le champ. */
   const projetDuFil = chat.fil?.dossier ? etatEspace.projects.find((p) => p.id === chat.fil?.projetId) : undefined;
   const nomDepotChoisi = depotChoisi ? nomChoixDepot(depotChoisi, etatEspace.projects) : null;
-  const assistant = useRole("principal");
-  /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
+  /* Un seul agent actif : personne d'autre à mentionner. */
   const seul = roles.length <= 1;
   const bridge = getBridge();
   const { compte } = useCompteClaude();
@@ -412,7 +407,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
 
   const submit = () => {
     if (ouverture) return;
-    const recipient = direct ? null : to === AUTO ? findMention(text, roles) : to;
+    const recipient = direct ? null : findMention(text, roles);
     const texte = text.trim() || (fichiers.length > 1 ? "Regarde ces fichiers." : "Regarde ce fichier.");
     if (avecDepot && depotChoisi) {
       /* Un dépôt choisi : une nouvelle conversation de cet agent dans le projet (le dépôt cloné d'abord s'il le faut). */
@@ -449,14 +444,6 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
     setFichiers([]);
     setAlerte(null);
   };
-
-  /* Sans choix, le message va à l'agent de la conversation (le premier de `roleIds`, l'assistant d'ordinaire). */
-  const recipientOptions: PuceOption<RoleId | typeof AUTO>[] = [
-    { value: AUTO, label: agent.name, icone: <AgentRond roleId={agent.id} taille={20} /> },
-    ...roles
-      .filter((r) => r.id !== agent.id)
-      .map((r) => ({ value: r.id, label: `${r.name} · ${r.tag}`, icone: <AgentRond roleId={r.id} taille={20} /> })),
-  ];
 
   return (
     <div ref={zone} className="@container mx-auto w-full max-w-[880px] px-5 pt-1 pb-4">
@@ -500,36 +487,14 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
                   ? `Écris à ${agent.name}, qui travaillera dans ${nomDepotChoisi}…`
                   : `Nouvelle conversation avec ${agent.name} dans ${nomDepotChoisi}…`
                 : `Écris à ${agent.name}…`
-              : projetConv
-                ? seul
-                  ? `Écris à ${agent.name}…`
-                  : `Écris à ${agent.name}, ou @mentionne un agent…`
-                : seul
-                  ? `Écris à ${assistant.name}…`
-                  : "Écris à l’équipe, ou @mentionne un agent…"
+              : seul
+                ? `Écris à ${agent.name}…`
+                : `Écris à ${agent.name}, ou @mentionne un agent…`
           }
           puces={
             avecDepot ? (
               <PuceDepot lieu={chat.lieu ?? null} valeur={depotChoisi} onChange={setDepotChoisi} disabled={!!ouverture} />
-            ) : direct || projetConv ? undefined : (
-              <>
-                <PuceSelect
-                  libelle="Destinataire"
-                  icone={<Icon name="users-profiles-01" size={16} />}
-                  options={recipientOptions}
-                  value={to}
-                  onChange={setTo}
-                />
-                {/* Label gris du design system (k-label--gris) : le projet du chat.
-                    Masqué quand la colonne est étroite : le panneau du projet le montre déjà. */}
-                {project && (
-                  <span className="hidden h-8 items-center gap-1.5 rounded-xs bg-fond-surface-grise px-2.5 text-ui-s font-medium text-texte-principal @lg:inline-flex">
-                    <Icon name="folder" size={16} className="text-icone-secondaire" />
-                    {project.name}
-                  </span>
-                )}
-              </>
-            )
+            ) : undefined
           }
         />
       </div>
@@ -556,7 +521,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           ? "Ton message attendra que l’agent ait fini · le carré l’arrête."
           : direct
             ? `${agent.name} travaille dans ${projetDuFil ? `le dossier de ${projetDuFil.name}` : "son propre dossier"} · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`
-            : `${seul ? `${assistant.name} te répond` : `Sans mention, ${assistant.name} répartit le travail`} · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`}
+            : `${seul ? "" : "Sans mention, "}${agent.name} te répond · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`}
       </p>
     </div>
   );
