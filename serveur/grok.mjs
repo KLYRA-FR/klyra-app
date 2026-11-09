@@ -23,7 +23,7 @@ const CODE_MAX_MS = 30_000;
 /**
  * @param {{ home: string, donnees: string, version: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
  *   consigne: (agent: string | null) => string, consignesKlyra?: () => string | null, mcp: (demande: object) => string | null,
- *   generation: () => string, skillsParAgent?: () => object | null, grok?: string | null }} options
+ *   generation: () => string, skillsParAgent?: () => object | null, libres?: (demande: object) => string[], grok?: string | null }} options
  */
 export function creerGrok(options) {
   const { home, donnees, publier } = options;
@@ -82,6 +82,7 @@ export function creerGrok(options) {
         regles,
         mcp: mcpPourAcp(options.mcp(demande)),
         acces: demande.acces ?? "projet",
+        libres: options.libres?.(demande) ?? [],
         modele: demande.modele ?? null,
         effort: demande.effort ?? null,
         signature: JSON.stringify([demande.agent ?? null, options.generation(), consignesKlyra, skills.noms, filtre.coupes, cwd]),
