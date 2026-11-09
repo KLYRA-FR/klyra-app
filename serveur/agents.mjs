@@ -77,6 +77,7 @@ import { CONSIGNE_COFFRE, creerRelaisCoffre, OUTILS_COFFRE_LIBRES } from "./coff
 import { creerCoffreServeur } from "./coffre-serveur.mjs";
 import { creerGithubProjets } from "./github-stockage.mjs";
 import { creerComposioServeur } from "./composio-serveur.mjs";
+import { OUTILS_COMPOSIO_LIBRES } from "./composio-relais.mjs";
 import { creerRelaisWorkflows, OUTILS_WORKFLOWS_LIBRES } from "./workflows.mjs";
 import { CONSIGNE_FILS, NOMS_FILS } from "./fils-outils.mjs";
 import { creerRelaisFils } from "./fils.mjs";
@@ -564,8 +565,9 @@ export function creerAgents(options) {
   }
 
   /**
-   * Les outils de l'app qu'un agent appelle sans demander, en accès « projet » : `--allowedTools` de Claude Code,
-   * et les outils approuvés d'avance pour Codex (`mcpPourCodex`). Comme `OUTILS_APP` sur le PC.
+   * Les outils de l'app qu'un agent appelle sans demander, en accès « projet », quel que soit son moteur :
+   * `--allowedTools` de Claude Code, approuvés d'avance pour Codex (`mcpPourCodex`), accordés d'office pour Grok.
+   * Comme `OUTILS_APP` sur le PC.
    */
   function outilsLibres(demande) {
     const assistant = demande.agent === null || demande.agent === undefined;
@@ -587,6 +589,8 @@ export function creerAgents(options) {
       ...OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`),
       // Les fils, sans demander (comme sur le PC) : ouvrir un fil, c'est confier à un agent actif.
       ...NOMS_FILS.map((o) => `mcp__klyra__${o}`),
+      // Composio : chercher une action et lire son schéma ; l'exécuter suit la règle de l'accès (comme sur le PC).
+      ...OUTILS_COMPOSIO_LIBRES,
     ];
   }
 
@@ -614,6 +618,7 @@ export function creerAgents(options) {
     consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
     consignesKlyra: () => lireEquipe().configuration.consignes,
     mcp: mcpIa,
+    libres: outilsLibres,
     generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.signature()}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.grok !== undefined ? { grok: options.grok } : {}),

@@ -2,6 +2,13 @@
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 const DESTINATION = "https://connect.composio.dev/mcp";
+/**
+ * Les outils de Composio Connect qui ne font que chercher une action et lire son schéma : aucun compte de la
+ * personne n'est lu ni changé. En accès « projet », tous les moteurs les utilisent sans carte (Claude Code par
+ * `--allowedTools`, Codex et Grok accordés d'office). Exécuter une action (`COMPOSIO_MULTI_EXECUTE_TOOL`),
+ * gérer les connexions ou le bac à sable distant suivent la règle de l'accès.
+ */
+export const OUTILS_COMPOSIO_LIBRES = ["mcp__composio__COMPOSIO_SEARCH_TOOLS", "mcp__composio__COMPOSIO_GET_TOOL_SCHEMAS"];
 const MAX_CORPS = 25 * 1024 * 1024;
 /** La configuration remise aux agents porte seulement le secret du relais local, jamais le jeton OAuth.
  * Elle reste valable pendant un long tour et à travers une reconnexion de Composio. */
