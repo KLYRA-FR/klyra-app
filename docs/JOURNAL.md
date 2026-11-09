@@ -1,5 +1,16 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — CI des pull requests plus rapide
+
+Corentin trouvait l'attente des tests verts trop longue et demandait s'il pouvait pousser directement sur `main`. Non : chaque push sur `main` publie une mise à jour à toutes les apps installées et déploie Convex en production (`app.yml`), alors que la vraie batterie de tests ne tourne que sur les PR. On a accéléré les PR à la place.
+
+- **Mesure de départ** (PR #247) : le job Ubuntu prenait 11 min, tout à la suite ; Mac 2 min, Windows 2 min 30. Seul Ubuntu limitait.
+- **Ubuntu découpé en 5 jobs parallèles** (`verification.yml`) : build/types/lint/smoke (le nom du job reste « Build, types, lint et smoke test »), process principal et règles (sans export de Next), parcours dans l'app « agents et modèles », parcours dans l'app « GitHub, navigateur, coffre, Composio », Computer Use sous Linux. Attendu : environ 4 à 5 min au lieu de 11, à confirmer sur la première PR. Aucun test retiré (vérifié étape par étape contre l'ancien fichier).
+- **Mac et Windows seulement si la PR les concerne** (job `changements`, liste des fichiers lue par l'API) : `electron/`, `serveur/`, `scripts/`, `resources/`, `agents-equipe/`, `src/lib/`, `src/data/`, `.github/`, les trois composants testés sous Windows, les fichiers de paquets, de config et les verrous. Une PR qui ne touche qu'aux écrans, à Convex, au site ou à la doc les saute. Liste illisible : tout tourne.
+- **« Vérification terminée »** : un job qui réunit les autres (réussi si chacun a réussi ou a été sauté). C'est la vérification à exiger dans la protection de `main`, et ce qui permet la fusion automatique.
+- **Caches** : action commune `.github/actions/preparer` (pnpm, Node, binaire d'Electron en cache par système et architecture, installation avec nouveaux essais), utilisée par toutes les vérifications et par `app.yml`, qui remplit donc le cache d'Electron depuis `main` pour Windows et Linux ; `vendor/cua-driver` en cache (Linux et Windows, empreintes revérifiées par `pnpm cua-driver`) ; ESLint en cache par contenu (`pnpm lint` écrit `.eslintcache`, ignoré par git ; en CI, utile dès le deuxième push d'une PR).
+- **À faire par Corentin dans GitHub** : Settings › General › « Allow auto-merge » ; Settings › Branches (ou Rules) › règle de `main` : exiger « Vérification terminée » (et retirer les anciens noms s'ils y sont). Puis, sur une PR, « Enable auto-merge » : elle se fusionne seule dès que tout est vert.
+
 ## 8 novembre 2026 — Espace projet : relecture indépendante, correctifs (PR #244)
 
 Une relecture du diff complet par un autre agent a relevé des points ; tous sont corrigés et testés.

@@ -1,7 +1,13 @@
-# À chaque pull request vers main : installe, construit et vérifie que l'app
-# s'affiche, sur Ubuntu. Ne publie rien et n'utilise aucun secret.
-# Le test complet sur Mac et Windows (app installable, Whisper) tourne à la
-# publication, après la fusion (app.yml).
+# À chaque pull request vers main : installe, construit et vérifie l'app sur
+# Ubuntu, avec les tests propres à Mac et Windows. Ne publie rien et n'utilise
+# aucun secret. Le test complet sur Mac et Windows (app installable, Whisper)
+# tourne à la publication, après la fusion (app.yml).
+#
+# Les tests Ubuntu sont répartis en jobs qui tournent en même temps (ils
+# s'enchaînaient en un seul job d'environ 11 minutes). Mac et Windows ne
+# tournent que si la PR touche à ce qu'ils vérifient (job « changements »).
+# « Vérification terminée » réunit le tout : c'est la vérification à exiger
+# dans la protection de main (un job sauté y compte comme réussi).
 name: Vérification
 
 on:
@@ -16,49 +22,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  composio-mac:
-    name: Composio, coffre et MCP sous Mac
-    runs-on: macos-15-intel
-    timeout-minutes: 15
+  # Mac et Windows vérifient le process principal, le serveur, les scripts et
+  # les règles de src/lib (chemins, fins de ligne, trousseaux, Computer Use) :
+  # une PR qui ne touche qu'aux écrans, à Convex, au site ou à la doc s'en passe.
+  # Liste des fichiers illisible : on fait tout tourner.
+  changements:
+    name: Ce que la PR touche
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      pull-requests: read
+    outputs:
+      plateformes: ${{ steps.filtre.outputs.plateformes }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
-      - name: Dépendances (nouvel essai si GitHub ne répond pas)
-        shell: bash
-        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
-      - run: pnpm build:electron && pnpm test:composio
-      - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif
-      - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime
-      - name: Jetons de session du compte d'équipe, trousseau du Mac
-        timeout-minutes: 3
-        run: env -u ELECTRON_RUN_AS_NODE pnpm test:jetons-compte
+      - id: filtre
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! fichiers=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename'); then
+            echo "::warning::Liste des fichiers illisible : Mac et Windows tournent."
+            echo "plateformes=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          motif='^(electron|serveur|scripts|resources|agents-equipe|src/lib|src/data|\.github)/'
+          motif+='|^src/components/(reglages/sections/Claude|chat/CarteUtilisation|chat/ContenuChoixModele)'
+          motif+='|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig[^/]*\.json|vitest\.config\.[a-z]+|[a-z-]+\.lock\.json)$'
+          if printf '%s\n' "$fichiers" | grep -qE "$motif"; then
+            echo "plateformes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Seulement des écrans, Convex, le site ou la doc : Mac et Windows sautés."
+            echo "plateformes=false" >> "$GITHUB_OUTPUT"
+          fi
 
   verifier:
     name: Build, types, lint et smoke test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/preparer
+      # ESLint ne relit que les fichiers changés depuis le dernier passage (cache par contenu, pnpm lint).
+      - name: Cache d'ESLint
+        uses: actions/cache@v4
         with:
-          node-version: 22
-          cache: pnpm
-      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
-      - name: Dépendances (nouvel essai si GitHub ne répond pas)
-        shell: bash
-        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
+          path: .eslintcache
+          key: eslint-${{ hashFiles('pnpm-lock.yaml', 'eslint.config.mjs') }}-${{ github.sha }}
+          restore-keys: eslint-${{ hashFiles('pnpm-lock.yaml', 'eslint.config.mjs') }}-
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm build:electron
       # Après le build : les types des routes sont générés par next build.
-      - run: pnpm test:github-projets
       - run: pnpm typecheck
+      # Ubuntu 24.04 bloque le bac à sable de Chromium (espaces de noms
+      # utilisateur) : on le rouvre pour les tests dans Electron, sans toucher à l'app.
+      - name: Autoriser le bac à sable d'Electron
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: L'app démarre et affiche l'interface
+        run: |
+          KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
+            timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron .
+
+  # Tests du process principal, du serveur et des règles : pas besoin de l'export de Next.
+  process-principal:
+    name: Process principal, serveur et règles
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparer
+      - run: pnpm build:electron
+      - run: pnpm test:github-projets
       - name: Origine du téléphone, le 502 du tunnel se relance
         run: pnpm test:origine-telephone
       - name: Composio, API et sélection de comptes simulées
@@ -67,17 +99,10 @@ jobs:
         run: pnpm test:mcp-oauth
       - name: Comptes Claude indépendants, sans compte réel
         run: pnpm test:comptes-claude
-      - name: Composio, IPC natif et serveur MCP réels, sans fournisseur externe
-        run: |
-          timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif --no-sandbox
-          timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime --no-sandbox
-          timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:interface --no-sandbox
       - name: Noms et extensions des fichiers Windows et Unix
         run: pnpm test:fichiers
       - name: Projet depuis GitHub, clonage et récupération (dépôt local, sans réseau)
         run: pnpm test:git
-      - name: Choix GitHub, clone sur PC et VPS (GitHub simulé, vrais dépôts Git)
-        run: xvfb-run -a pnpm test:projet-github -- --no-sandbox
       - name: Mises à jour de l'app, fiche de secours et relances (sans réseau)
         run: pnpm test:maj
       # Les fonctions Convex (comptes, équipe) sur un backend en mémoire : aucun déploiement touché.
@@ -87,23 +112,16 @@ jobs:
         run: pnpm test:modeles
       - name: Artefacts (rendus des agents, lecture de claude.ai) et dossier de chaque agent
         run: pnpm exec vitest run src/lib/rendus.test.ts && node --experimental-strip-types --test electron/artefacts-liste.test.mts electron/atelier.test.mts electron/document-isole.test.mts
-
-      # Ubuntu 24.04 bloque le bac à sable de Chromium (espaces de noms
-      # utilisateur) : on le rouvre pour ce test, sans toucher à l'app.
+      - name: Computer Use, relais entre les agents et le pilote
+        run: pnpm test:relais
+      - name: Computer Use local, aperçu d'une fenêtre (sans le pilote)
+        run: pnpm test:apercu-fenetre
+      - name: Routines, échéances et moteur (dossiers temporaires, sans agent)
+        run: pnpm test:routines
+      - name: Moteurs des agents (registre, traduction de Codex) et changement de fournisseur
+        run: pnpm test:moteurs && pnpm test:fournisseurs
       - name: Autoriser le bac à sable d'Electron
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: L'app démarre et affiche l'interface
-        run: |
-          KLYRA_SMOKE_TEST=1 KLYRA_USER_DATA="$RUNNER_TEMP/klyra" \
-            timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron .
-      - name: Conversation d'équipe, menu « Plus d’options » et renommage
-        run: timeout 180 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:conversation
-      - name: Mise à jour des modèles KLYRA déjà installés, vrais gestes
-        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:maj-modeles
-      - name: Agents actifs, bibliothèque locale et assistant renommé (profils fictifs)
-        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:agents
-      - name: Premier lancement guidé, fournisseur local simulé et reprise après fermeture
-        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:onboarding
       - name: Journal de consommation et rattrapage de l'historique
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm exec electron scripts/test-consommation.cjs
       - name: Jetons de session du compte d'équipe (écriture ratée, entrée illisible)
@@ -117,23 +135,70 @@ jobs:
         run: |
           printf '#!/bin/sh\nexec "%s" --no-sandbox "$@"\n' "$(command -v google-chrome)" > "$RUNNER_TEMP/chrome" && chmod +x "$RUNNER_TEMP/chrome"
           KLYRA_CHROME_PATH="$RUNNER_TEMP/chrome" timeout 240 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur-chrome
-      - name: Navigateur de KLYRA, l'onglet du panneau dans l'app
-        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur-ecran
       - name: Coffre, secrets chiffrés et outils des agents (profil temporaire)
         run: timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:coffre
-      - name: Coffre, Réglages et carte sécurisée dans l'app
-        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:coffre-ecran
-      - name: Computer Use, relais entre les agents et le pilote
-        run: pnpm test:relais
-      - name: Computer Use local, aperçu d'une fenêtre (sans le pilote)
-        run: pnpm test:apercu-fenetre
-      - name: Routines, échéances et moteur (dossiers temporaires, sans agent)
-        run: pnpm test:routines
+
+  # Parcours dans l'app construite (export de Next chargé par Electron), en deux moitiés.
+  app-agents:
+    name: Parcours dans l'app, agents et modèles
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparer
+      - run: pnpm build && pnpm build:electron
+      - name: Autoriser le bac à sable d'Electron
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Conversation d'équipe, menu « Plus d’options » et renommage
+        run: timeout 180 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:conversation
+      - name: Mise à jour des modèles KLYRA déjà installés, vrais gestes
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:maj-modeles
+      - name: Agents actifs, bibliothèque locale et assistant renommé (profils fictifs)
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:agents
+      - name: Premier lancement guidé, fournisseur local simulé et reprise après fermeture
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:onboarding
       - name: Transport du parcours routines (preload et moteur réels, hôte et agent fictifs)
         run: node scripts/routines-browser-fixture.cjs --self-test
-      - name: Moteurs des agents (registre, traduction de Codex) et changement de fournisseur
-        run: pnpm test:moteurs && pnpm test:fournisseurs
-      # Le vrai pilote (cua-driver épinglé) ; openbox, parce que le clic au premier plan veut un gestionnaire de fenêtres.
+
+  app-outils:
+    name: Parcours dans l'app, GitHub, navigateur, coffre et Composio
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparer
+      - run: pnpm build && pnpm build:electron
+      - name: Autoriser le bac à sable d'Electron
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Choix GitHub, clone sur PC et VPS (GitHub simulé, vrais dépôts Git)
+        run: xvfb-run -a pnpm test:projet-github -- --no-sandbox
+      - name: Composio, IPC natif et serveur MCP réels, sans fournisseur externe
+        run: |
+          timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif --no-sandbox
+          timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime --no-sandbox
+          timeout 180 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:interface --no-sandbox
+      - name: Navigateur de KLYRA, l'onglet du panneau dans l'app
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:navigateur-ecran
+      - name: Coffre, Réglages et carte sécurisée dans l'app
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:coffre-ecran
+
+  ordinateur-linux:
+    name: Computer Use sous Linux, pilote, outils MCP, clic et frappe
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparer
+      - run: pnpm build:electron
+      # Le pilote épinglé, gardé d'une exécution à l'autre ; pnpm cua-driver revérifie ses empreintes.
+      - name: cua-driver en cache
+        uses: actions/cache@v4
+        with:
+          path: vendor/cua-driver
+          key: cua-driver-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('cua-driver.lock.json', 'scripts/preparer-cua-driver.mjs') }}
+      - name: Autoriser le bac à sable d'Electron
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # openbox, parce que le clic au premier plan veut un gestionnaire de fenêtres.
       - name: Computer Use, pilote, outils MCP, clic et frappe
         run: |
           sudo apt-get update
@@ -141,23 +206,33 @@ jobs:
           pnpm cua-driver
           timeout 150 xvfb-run -a -s "-screen 0 1600x1000x24" sh -c 'openbox & sleep 2; env -u ELECTRON_RUN_AS_NODE pnpm test:ordinateur'
 
+  composio-mac:
+    name: Composio, coffre et MCP sous Mac
+    needs: changements
+    if: needs.changements.outputs.plateformes == 'true'
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparer
+      - run: pnpm build:electron && pnpm test:composio
+      - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif
+      - run: env -u ELECTRON_RUN_AS_NODE pnpm test:composio:runtime
+      - name: Jetons de session du compte d'équipe, trousseau du Mac
+        timeout-minutes: 3
+        run: env -u ELECTRON_RUN_AS_NODE pnpm test:jetons-compte
+
   # Les mêmes tests sous Windows : dossier de l'app dans %APPDATA%, chemins en \, fins de ligne CRLF,
   # et Computer Use pour de vrai (cua-driver épinglé : outils MCP, capture, clic, frappe).
   windows:
     name: Consommation et Computer Use sous Windows
+    needs: changements
+    if: needs.changements.outputs.plateformes == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
-      - name: Dépendances (nouvel essai si GitHub ne répond pas)
-        shell: bash
-        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
+      - uses: ./.github/actions/preparer
       - run: pnpm build:electron
       - name: Comptes Claude indépendants sous Windows, sans compte réel
         run: pnpm test:comptes-claude
@@ -197,6 +272,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Le test des sons a échoué sous Windows." }
       - name: Routines sous Windows (fichier, verrou, fuseaux)
         run: pnpm test:routines
+      - name: cua-driver en cache
+        uses: actions/cache@v4
+        with:
+          path: vendor/cua-driver
+          key: cua-driver-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('cua-driver.lock.json', 'scripts/preparer-cua-driver.mjs') }}
       - run: pnpm cua-driver
       - name: Computer Use, pilote, outils MCP, clic et frappe
         shell: pwsh
@@ -204,3 +284,21 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           pnpm exec electron scripts/test-ordinateur.cjs
           if ($LASTEXITCODE -ne 0) { throw "Le test Computer Use a échoué sous Windows." }
+
+  # Une seule vérification à exiger dans la protection de main (et pour la fusion automatique).
+  # Réussie si chaque job a réussi ou a été sauté exprès (Mac et Windows non concernés).
+  terminee:
+    name: Vérification terminée
+    if: always()
+    needs: [changements, verifier, process-principal, app-agents, app-outils, ordinateur-linux, composio-mac, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Tous les jobs ont réussi
+        env:
+          RESULTATS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Résultats : $RESULTATS"
+          for r in $RESULTATS; do
+            case "$r" in success|skipped) ;; *) echo "::error::Un job a fini en « $r »."; exit 1 ;; esac
+          done

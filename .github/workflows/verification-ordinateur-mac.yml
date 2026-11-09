@@ -31,15 +31,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : installé ici, jusqu'à 4 essais.
-      - name: Dépendances (nouvel essai si GitHub ne répond pas)
-        shell: bash
-        run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
+      - uses: ./.github/actions/preparer
       - run: pnpm build && pnpm build:electron && pnpm whisper && pnpm cua-driver && pnpm github:preparer
       # Sur une PR, electron-builder ne signe rien : on force la signature ad hoc (aucun certificat ni secret ici),
       # pour que scripts/signer-mac.cjs tourne comme à la publication, avec son « codesign --deep ».
