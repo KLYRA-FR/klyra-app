@@ -6,7 +6,7 @@ import { app, shell } from "electron";
 import { avecReperesCerveau } from "../cerveau-outils";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { voirFin, voirOutil } from "../ordinateur/apercu";
-import { signatureOrdinateur } from "../ordinateur/pilote";
+import { OUTILS_ORDINATEUR_LECTURE, serveurOrdinateur, signatureOrdinateur } from "../ordinateur/pilote";
 import { signatureNavigateur } from "../navigateur/outils";
 import { composioConnect, espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
@@ -14,7 +14,7 @@ import { preparerSessionCodex } from "../preparation-fournisseur";
 import { lireReglages } from "../reglages";
 import { configMcp, OUTILS_APP } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
-import { accesCodex, accordeDOffice, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
+import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, outilsLibresCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
 import { binaireGere, commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation";
 import { lireUtilisationCodex, type Utilisation } from "../utilisation";
 import type { AgentEvent, CompteMoteur, Decision, ModeleMoteur, Moteur, Progression, StreamOptions } from "./types";
@@ -101,9 +101,6 @@ interface Reponse {
   threadId: string;
   tour: TourCodex;
   emit: (event: AgentEvent) => void;
-  /** L'accès de ce message, et les outils de l'app accordés sans carte en accès « projet » (comme pour Claude Code). */
-  acces: NonNullable<StreamOptions["acces"]>;
-  libres: string[];
   /** Les demandes d'autorisation en attente de ta réponse, par identifiant montré à l'interface. */
   demandes: Map<string, { rpcId: number | string; method: string; params: Params }>;
   /** Dernier signe de Codex (notification, demande). */
@@ -282,7 +279,6 @@ class ServeurCodex {
     const carte = autorisationDe(method, params);
     if (r) r.derniere = Date.now();
     if (carte && r) {
-      if (accordeDOffice(r.acces, carte.outil, r.libres)) return this.ecrire({ id: rpcId, result: reponseAutorisation(method, params, "oui") });
       const id = String(rpcId);
       r.demandes.set(id, { rpcId, method, params });
       r.emit({ type: "autorisation", id, ...carte });
@@ -343,6 +339,8 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
 
 async function demarrerTour(requestId: string, options: StreamOptions, emit: (event: AgentEvent) => void, bin: string, cwd: string) {
   const acces = accesCodex(options.acces ?? "projet");
+  /* Les outils MCP que Codex appelle sans demander : les mêmes que pour Claude Code (`--allowedTools`, cf. claude.ts). */
+  const libres = outilsLibresCodex(options.acces ?? "projet", () => [...OUTILS_APP(), ...(serveurOrdinateur() ? OUTILS_ORDINATEUR_LECTURE : [])]);
   /* Les skills de Claude, que Codex ne lit pas de lui-même (cf. connaissances-agent.ts) : le dossier préparé
      de cet agent n'a que les allumées. La consigne garde le texte préchargé et le chemin du fichier. */
   const filtre = filtreSkills(lireReglages().skillsParAgent, options.agent, CONFIG_CLAUDE(), cwd);
@@ -357,7 +355,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
   const serveur = serveurAgent(id, prepare);
   await serveur.demarrer(bin);
   // Mes agents, Composio, les skills ou le navigateur ont changé : le fil est rechargé avec les consignes et les outils à jour.
-  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur()]);
+  const signature = JSON.stringify([options.agent, generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur(), libres]);
   const reglages = () => {
     const mcp = configMcp({ chatId: options.chatId ?? "", roleId: options.agent ?? "principal", routineRun: options.routineRun }, espaceComposio.creerCapacite());
     return {
@@ -365,7 +363,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
       approvalPolicy: acces.approvalPolicy,
       sandbox: acces.sandbox,
       developerInstructions: consigne(options, mcp, skills.texte),
-      config: { mcp_servers: mcpPourCodex(mcp) },
+      config: { mcp_servers: mcpPourCodex(mcp, libres) },
       ...(options.modele ? { model: options.modele } : {}),
     };
   };
@@ -390,16 +388,7 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
     if (event.type === "fin") voirFin(chatId);
     emit(event);
   };
-  const reponse: Reponse = {
-    requestId,
-    threadId,
-    tour: new TourCodex(threadId, emitSuivi, serveur.jetons.get(threadId) ?? 0),
-    emit,
-    acces: options.acces ?? "projet",
-    libres: OUTILS_APP(),
-    demandes: new Map(),
-    derniere: Date.now(),
-  };
+  const reponse: Reponse = { requestId, threadId, tour: new TourCodex(threadId, emitSuivi, serveur.jetons.get(threadId) ?? 0), emit, demandes: new Map(), derniere: Date.now() };
   serveur.enCours.set(threadId, reponse);
   serveur.parRequete.set(requestId, threadId);
   reponse.veille = setInterval(() => {

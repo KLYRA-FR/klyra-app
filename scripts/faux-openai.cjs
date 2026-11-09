@@ -3,6 +3,8 @@
  * ni dépense. Réponses scriptées d'après le dernier message de la personne :
  * - « COMMANDE » : Codex lance `touch klyra-essai.txt` en demandant l'accord (exec_command) ;
  * - « LENT » : la réponse commence et ne finit jamais (pour l'arrêter) ;
+ * - « OUTIL_MCP <serveur> <outil> » : Codex appelle cet outil MCP (`OUTIL_MCP2` : deux fois de suite), puis
+ *   répond « Outil : » et ce que l'outil a rendu (ou son refus) ;
  * - après le résultat d'une commande : « Commande faite » ;
  * - sinon : « Bonjour de ChatGPT ».
  * Chaque requête est gardée telle quelle dans `requetes`.
@@ -47,6 +49,24 @@ function repondre(corps, res, n) {
   const demande = derniereDemande(corps);
   if (demande.includes("LIMITES")) for (const [nom, valeur] of Object.entries(LIMITES)) res.setHeader(nom, valeur);
   sse(res, [{ type: "response.created", response: { id } }]);
+  const mcp = /OUTIL_MCP(2?) (\S+) (\S+)/.exec(demande);
+  if (mcp) {
+    // Les sorties d'outil depuis le dernier message de la personne.
+    const entree = corps.input ?? [];
+    let i = entree.length - 1;
+    while (i >= 0 && !(entree[i].type === "message" && entree[i].role === "user")) i--;
+    const sorties = entree.slice(i + 1).filter((e) => e.type === "function_call_output");
+    if (sorties.length < (mcp[1] ? 2 : 1)) {
+      // Codex présente les outils d'un serveur MCP sous l'espace de noms `mcp__<serveur>` (vérifié avec Codex 0.166).
+      const appel = { type: "function_call", id: `fc_${id}`, call_id: `call_${id}`, namespace: `mcp__${mcp[2]}`, name: mcp[3], arguments: JSON.stringify({ q: "essai" }) };
+      sse(res, [{ type: "response.output_item.done", output_index: 0, item: appel }, fini(id)]);
+      return res.end();
+    }
+    const sortie = sorties.at(-1).output;
+    const lu = Array.isArray(sortie) ? sortie.map((c) => c.text ?? "").join(" ") : String(sortie);
+    sse(res, [...texte(`msg_${id}`, ["Outil : ", lu]), fini(id)]);
+    return res.end();
+  }
   if (JSON.stringify(corps.input ?? []).includes("function_call_output")) {
     sse(res, [...texte(`msg_${id}`, ["Commande ", "faite"]), fini(id)]);
     return res.end();

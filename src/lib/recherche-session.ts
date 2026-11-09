@@ -5,12 +5,11 @@ import type { Requete } from "./recherche";
 
 /**
  * Ce que la fenêtre de recherche partage avec le reste de l'app, le temps que
- * l'app reste ouverte : si elle est ouverte (le bouton du rail), et la requête
- * du dernier résultat ouvert (le fil y surligne les mots trouvés). Rien n'est
- * écrit sur le disque.
+ * l'app reste ouverte : si elle est ouverte, et la requête du dernier résultat
+ * ouvert (le fil y surligne les mots trouvés). Rien n'est écrit sur le disque.
  */
 
-/** Ouvre la fenêtre de recherche (bouton du rail) ; `basculer` la ferme si elle est ouverte (⌘K). */
+/** Ouvre la fenêtre de recherche ; `basculer` la ferme si elle est ouverte (⌘K, `useRaccourciRecherche`). */
 export function ouvrirRecherche(basculer = false) {
   window.dispatchEvent(new CustomEvent("klyra:recherche", { detail: { basculer } }));
 }

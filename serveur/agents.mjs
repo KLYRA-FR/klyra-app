@@ -540,10 +540,12 @@ export function creerAgents(options) {
   }
 
   /**
-   * Les outils de l'app qu'un agent utilise sans carte en accès « projet », quel que soit son moteur :
-   * `--allowedTools` de Claude Code, accordés d'office pour Codex et Grok (comme sur le PC, `OUTILS_APP`).
+   * Les outils de l'app qu'un agent appelle sans demander, en accès « projet », quel que soit son moteur :
+   * `--allowedTools` de Claude Code, approuvés d'avance pour Codex (`mcpPourCodex`), accordés d'office pour Grok.
+   * Comme `OUTILS_APP` sur le PC.
    */
-  function outilsLibres(assistant, configuration) {
+  function outilsLibres(demande) {
+    const assistant = demande.agent === null || demande.agent === undefined;
     return [
       "mcp__klyra__cerveau_chercher",
       "mcp__klyra__cerveau_lire",
@@ -553,7 +555,7 @@ export function creerAgents(options) {
       OUTIL_CARTE_CLAUDE,
       ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : []),
       // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
-      ...(configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
+      ...(configurationDe().navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
       // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
       ...OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`),
       // GitHub : lire le dépôt du projet ne change rien (comme sur le PC).
@@ -566,7 +568,6 @@ export function creerAgents(options) {
       ...OUTILS_COMPOSIO_LIBRES,
     ];
   }
-  const libresPour = (demande) => outilsLibres((demande.agent ?? null) === null, configurationDe());
 
   const codex = creerCodex({
     home,
@@ -577,7 +578,7 @@ export function creerAgents(options) {
     consignesKlyra: () => lireEquipe().configuration.consignes,
     estActif,
     mcp: mcpIa,
-    libres: libresPour,
+    outilsLibres,
     generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.signature()}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.codex !== undefined ? { codex: options.codex } : {}),
@@ -592,7 +593,7 @@ export function creerAgents(options) {
     consigne: (agent) => `${ici()}\n\n${agent === null ? consigneAssistant() : consigneAgent(agent)}`,
     consignesKlyra: () => lireEquipe().configuration.consignes,
     mcp: mcpIa,
-    libres: libresPour,
+    libres: outilsLibres,
     generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.signature()}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.grok !== undefined ? { grok: options.grok } : {}),
@@ -916,7 +917,6 @@ export function creerAgents(options) {
 
     const acces = demande.acces ?? "projet";
     /* Le serveur MCP sait qui l'appelle : l'agent, et la conversation (publication, atelier suivi). */
-    const assistant = demande.agent === null;
     const conversation = typeof demande.conversation === "string" && CONVERSATION.test(demande.conversation) ? demande.conversation : "";
     const mcp = mcpIa(demande);
     /* Les skills, comme dans l'app (cf. electron/connaissances-agent.ts) : celles que la fiche précharge,
@@ -992,11 +992,7 @@ export function creerAgents(options) {
         reglagesSession(PERMISSIONS_AGENTS, filtre.coupes),
       ];
       if (acces === "projet")
-        args.push(
-          "--allowedTools",
-          ...COMMANDES_AUTORISEES,
-          ...(mcp ? outilsLibres(assistant, configuration) : []),
-        );
+        args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? outilsLibres(demande) : []));
       if (mcp) args.push("--mcp-config", mcp);
       if (avecJointes) args.push("--add-dir", dossierJointes);
       if (demande.agent) args.push("--agent", demande.agent);

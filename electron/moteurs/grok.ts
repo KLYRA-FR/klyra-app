@@ -11,7 +11,7 @@ import { configMcp, OUTILS_APP } from "../ia";
 import { estActif, generation } from "../mes-agents";
 import { signatureNavigateur } from "../navigateur/outils";
 import { voirFin, voirOutil } from "../ordinateur/apercu";
-import { signatureOrdinateur } from "../ordinateur/pilote";
+import { OUTILS_ORDINATEUR_LECTURE, serveurOrdinateur, signatureOrdinateur } from "../ordinateur/pilote";
 import { lireReglages } from "../reglages";
 import { lireUtilisationGrok, type Utilisation } from "../utilisation";
 import { creerClientAcp, emailDeAuth, mcpPourAcp } from "./acp";
@@ -108,7 +108,8 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
       regles,
       mcp: mcpPourAcp(mcp),
       acces: options.acces ?? "projet",
-      libres: OUTILS_APP(),
+      // Les mêmes outils libres que pour Claude Code et Codex (cf. codex.ts).
+      libres: [...OUTILS_APP(), ...(serveurOrdinateur() ? OUTILS_ORDINATEUR_LECTURE : [])],
       modele: options.modele,
       effort: options.effort,
       signature: JSON.stringify([options.agent, generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur(), cwd]),

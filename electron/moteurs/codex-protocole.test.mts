@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accesCodex, accordeDOffice, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.ts";
+import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, outilsLibresCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.ts";
 import type { AgentEvent } from "./types.ts";
 
 const FIL = "01a19ce0-267e-77d0-8959-69fa1039a617";
@@ -26,6 +26,27 @@ test("les serveurs MCP de l'app passent dans le format de Codex", () => {
     local: { command: "node", args: ["s.js"] },
   });
   assert.deepEqual(mcpPourCodex(null), {});
+});
+
+test("les outils libres de l'app sont approuvés d'avance pour Codex, tous en accès complet", () => {
+  const config = JSON.stringify({ mcpServers: { klyra: { type: "http", url: "http://127.0.0.1:1/mcp" }, ordinateur: { command: "cua" }, linear: { url: "https://mcp.linear.app/mcp" } } });
+  const libres = ["mcp__klyra__cerveau_chercher", "mcp__klyra__creer_routine", "mcp__klyra__cerveau_chercher", "mcp__ordinateur__capture", "Bash(git status)", "mcp__klyra__"];
+  // Accès « Projet » : outil par outil, seulement ceux de la liste, rangés sous leur serveur.
+  assert.deepEqual(mcpPourCodex(config, libres), {
+    klyra: { url: "http://127.0.0.1:1/mcp", tools: { cerveau_chercher: { approval_mode: "approve" }, creer_routine: { approval_mode: "approve" } } },
+    ordinateur: { command: "cua", args: [], tools: { capture: { approval_mode: "approve" } } },
+    linear: { url: "https://mcp.linear.app/mcp" },
+  });
+  // Accès complet : Codex refuserait tout appel MCP (« approval policy is never ») sans cette approbation.
+  for (const serveur of Object.values(mcpPourCodex(config, "tout"))) assert.equal(serveur.default_tools_approval_mode, "approve");
+  // Accès « Demander » : rien d'approuvé d'avance, chaque appel passe par une carte.
+  assert.equal(JSON.stringify(mcpPourCodex(config, [])).includes("approv"), false);
+  let lus = 0;
+  const liste = () => (lus++, ["mcp__klyra__cerveau_lire"]);
+  assert.equal(outilsLibresCodex("tout", liste), "tout");
+  assert.deepEqual(outilsLibresCodex("demander", liste), []);
+  assert.deepEqual(outilsLibresCodex("projet", liste), ["mcp__klyra__cerveau_lire"]);
+  assert.equal(lus, 1);
 });
 
 test("la fiche d'un agent perd son en-tête YAML", () => {
@@ -99,67 +120,42 @@ test("les demandes d'autorisation deviennent des cartes, et ta réponse repart d
   assert.deepEqual(reponseAutorisation("item/permissions/requestApproval", { permissions }, "non"), { permissions: {}, scope: "turn" });
 });
 
-test("l'accord pour un outil MCP (Composio, outils de l'app) devient une carte, plus un refus d'office", () => {
-  // Le formulaire que Codex 0.167 envoie avant un outil MCP qui ne se dit pas en lecture seule.
-  const formulaire = {
-    threadId: "fil",
-    turnId: "tour",
-    serverName: "composio",
-    mode: "form",
-    message: "Allow the composio MCP server to run tool \"COMPOSIO_MULTI_EXECUTE_TOOL\"?",
-    requestedSchema: { type: "object", properties: {} },
-    _meta: {
-      codex_approval_kind: "mcp_tool_call",
-      persist: ["session", "always"],
-      tool_name: "COMPOSIO_MULTI_EXECUTE_TOOL",
-      tool_params: { tools: [{ tool_slug: "GMAIL_FETCH_EMAILS", arguments: { query: "from:thomas" } }] },
-    },
-  };
-  assert.deepEqual(autorisationDe("mcpServer/elicitation/request", formulaire), {
-    outil: "mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL",
-    entree: { tools: [{ tool_slug: "GMAIL_FETCH_EMAILS", arguments: { query: "from:thomas" } }] },
-    description: "Utiliser « COMPOSIO_MULTI_EXECUTE_TOOL » (composio)",
+/* L'accord avant un appel d'outil MCP, tel que Codex 0.166 l'envoie (relevé sur le vrai programme). */
+const ACCORD_MCP = {
+  threadId: FIL,
+  turnId: "01a1bf3e-7f7a-7dd1-9ecd-298fa3c3ff4a",
+  serverName: "klyra",
+  mode: "form",
+  _meta: {
+    codex_approval_kind: "mcp_tool_call",
+    persist: ["session", "always"],
+    tool_description: "Lance un workflow enregistré.",
+    tool_params: { id: "brief-du-matin" },
+    tool_params_display: [{ name: "id", value: "brief-du-matin", display_name: "id" }],
+  },
+  message: 'Allow the klyra MCP server to run tool "lancer_workflow"?',
+  requestedSchema: { type: "object", properties: {} },
+};
+
+test("l'accord avant un appel d'outil MCP devient une carte, comme pour Claude Code", () => {
+  assert.deepEqual(autorisationDe("mcpServer/elicitation/request", ACCORD_MCP), {
+    outil: "mcp__klyra__lancer_workflow",
+    entree: { id: "brief-du-matin" },
+    description: "Lance un workflow enregistré.",
   });
-  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", formulaire, "oui"), { action: "accept", content: null, _meta: null });
-  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", formulaire, "toujours"), { action: "accept", content: null, _meta: { persist: "session" } });
-  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", formulaire, "non"), { action: "decline", content: null, _meta: null });
-  // Un autre formulaire d'un serveur MCP (pas un accord) reste refusé d'office.
-  assert.equal(autorisationDe("mcpServer/elicitation/request", { serverName: "composio", _meta: null, message: "Ton nom ?" }), null);
+  // Sans le nom de l'outil dans la question : le serveur seul, la carte reste lisible.
+  const sansNom = autorisationDe("mcpServer/elicitation/request", { ...ACCORD_MCP, message: "Autre texte", _meta: { codex_approval_kind: "mcp_tool_call" } });
+  assert.deepEqual(sansNom, { outil: "mcp__klyra", entree: {}, description: "Utiliser un outil de klyra" });
+  // Un vrai formulaire d'un serveur MCP n'est pas un accord : refusé d'office, comme avant.
+  assert.equal(autorisationDe("mcpServer/elicitation/request", { ...ACCORD_MCP, _meta: null }), null);
+  assert.equal(autorisationDe("mcpServer/elicitation/request", { ...ACCORD_MCP, mode: "url", _meta: { autre: true } }), null);
 
-  // La même demande quand Codex passe par une question (formulaires MCP coupés chez lui).
-  const question = {
-    threadId: "fil",
-    turnId: "tour",
-    itemId: "appel",
-    questions: [
-      {
-        id: "mcp_tool_call_approval_appel",
-        header: "Approve app tool call?",
-        question: "Allow the klyra MCP server to run tool \"ouvrir_fil\"?",
-        isOther: false,
-        isSecret: false,
-        options: [{ label: "Allow" }, { label: "Allow for this session" }, { label: "Cancel" }],
-      },
-    ],
-  };
-  assert.deepEqual(autorisationDe("item/tool/requestUserInput", question), { outil: "mcp__klyra__ouvrir_fil", entree: {}, description: "Utiliser « ouvrir_fil » (klyra)" });
-  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", question, "oui"), { answers: { mcp_tool_call_approval_appel: { answers: ["Allow"] } } });
-  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", question, "toujours"), { answers: { mcp_tool_call_approval_appel: { answers: ["Allow for this session"] } } });
-  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", question, "non"), { answers: { mcp_tool_call_approval_appel: { answers: ["Cancel"] } } });
-  // « Pour cette session » pas proposé : un simple accord.
-  const sansSession = { ...question, questions: [{ ...question.questions[0], options: [{ label: "Allow" }, { label: "Cancel" }] }] };
-  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", sansSession, "toujours"), { answers: { mcp_tool_call_approval_appel: { answers: ["Allow"] } } });
-  // Une vraie question de l'agent n'est pas une carte : il la pose dans sa réponse.
-  assert.equal(autorisationDe("item/tool/requestUserInput", { questions: [{ id: "couleur", question: "Bleu ou vert ?" }] }), null);
-});
-
-test("accordé sans carte : tout en accès complet, les outils libres de l'app en accès projet, rien en accès demander", () => {
-  const libres = ["mcp__klyra__ouvrir_fil", "mcp__composio__COMPOSIO_SEARCH_TOOLS"];
-  assert.equal(accordeDOffice("tout", "mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL", libres), true);
-  assert.equal(accordeDOffice("projet", "mcp__klyra__ouvrir_fil", libres), true);
-  assert.equal(accordeDOffice("projet", "mcp__composio__COMPOSIO_SEARCH_TOOLS", libres), true);
-  assert.equal(accordeDOffice("projet", "mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL", libres), false);
-  assert.equal(accordeDOffice("demander", "mcp__klyra__ouvrir_fil", libres), false);
+  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", ACCORD_MCP, "oui"), { action: "accept", content: {}, _meta: null });
+  // « Toujours » : pour la session de Codex, jamais `always` (écrit dans sa configuration).
+  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", ACCORD_MCP, "toujours"), { action: "accept", content: {}, _meta: { persist: "session" } });
+  const sansSession = { ...ACCORD_MCP, _meta: { ...ACCORD_MCP._meta, persist: ["always"] } };
+  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", sansSession, "toujours"), { action: "accept", content: {}, _meta: null });
+  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", ACCORD_MCP, "non"), { action: "decline", content: null, _meta: null });
 });
 
 test("ce que l'app ne sait pas montrer est refusé d'office, sans bloquer Codex", () => {

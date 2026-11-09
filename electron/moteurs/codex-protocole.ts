@@ -26,17 +26,40 @@ export function accesCodex(acces: Acces) {
 
 type ServeurMcp = { type?: string; url?: string; headers?: Record<string, string>; command?: string; args?: string[]; env?: Record<string, string> };
 
-/** Les serveurs MCP de l'app (format `--mcp-config` de Claude Code, cf. ia.ts) en `mcp_servers` de Codex. */
-export function mcpPourCodex(config: string | null): Record<string, Record<string, unknown>> {
+/**
+ * Ce que Codex appelle sans demander, parmi les outils MCP : tout en accès complet, sinon la liste des outils
+ * libres (`mcp__serveur__outil`, les mêmes que l'`--allowedTools` de Claude Code), rien en accès « Demander ».
+ */
+export type OutilsLibres = "tout" | readonly string[];
+
+/** Les outils libres pour un accès : `tout` en accès complet, `libres` en accès « Projet », aucun en accès « Demander ». */
+export function outilsLibresCodex(acces: Acces, libres: () => readonly string[]): OutilsLibres {
+  return acces === "tout" ? "tout" : acces === "projet" ? libres() : [];
+}
+
+/**
+ * Les serveurs MCP de l'app (format `--mcp-config` de Claude Code, cf. ia.ts) en `mcp_servers` de Codex.
+ * Codex demande l'accord avant chaque appel d'outil MCP (`mcpServer/elicitation/request`), et le refuse
+ * en accès complet (« approval policy is never ») : les outils libres sont approuvés d'avance
+ * (`default_tools_approval_mode`, ou `tools.<outil>.approval_mode`), les autres passent par une carte.
+ * Vérifié avec Codex 0.166.
+ */
+export function mcpPourCodex(config: string | null, libres: OutilsLibres = []): Record<string, Record<string, unknown>> {
   if (!config) return {};
   const { mcpServers = {} } = JSON.parse(config) as { mcpServers?: Record<string, ServeurMcp> };
   return Object.fromEntries(
-    Object.entries(mcpServers).map(([nom, s]) => [
-      nom,
-      s.url
-        ? { url: s.url, ...(s.headers ? { http_headers: s.headers } : {}) }
-        : { command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) },
-    ]),
+    Object.entries(mcpServers).map(([nom, s]) => {
+      const prefixe = `mcp__${nom}__`;
+      const outils = libres === "tout" ? [] : [...new Set(libres.filter((o) => o.startsWith(prefixe) && o.length > prefixe.length).map((o) => o.slice(prefixe.length)))];
+      return [
+        nom,
+        {
+          ...(s.url ? { url: s.url, ...(s.headers ? { http_headers: s.headers } : {}) } : { command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) }),
+          ...(libres === "tout" ? { default_tools_approval_mode: "approve" } : {}),
+          ...(outils.length ? { tools: Object.fromEntries(outils.map((o) => [o, { approval_mode: "approve" }])) } : {}),
+        },
+      ];
+    }),
   );
 }
 
@@ -178,64 +201,9 @@ export class TourCodex {
   }
 }
 
-/* ─── L'accord pour un outil MCP ───────────────────────────────── */
-
-/*
- * Hors accès complet, Codex demande ton accord avant chaque outil MCP qui ne se dit pas en lecture seule
- * (Composio, la plupart des outils de l'app). Il le demande par un formulaire MCP marqué
- * `_meta.codex_approval_kind = "mcp_tool_call"` (`mcpServer/elicitation/request`), ou, si cette voie
- * est coupée chez lui, par une question `item/tool/requestUserInput` dont l'id commence par
- * `mcp_tool_call_approval`. Refuser ce formulaire d'office, c'était refuser chaque appel
- * (« user rejected MCP tool call »). Lu dans le code de Codex 0.167 (`core/src/mcp_tool_call.rs`,
- * `protocol/src/mcp_approval_meta.rs`).
- */
-const ACCORD_MCP = "mcp_tool_call";
-const QUESTION_ACCORD_MCP = "mcp_tool_call_approval";
-/** Les réponses que Codex reconnaît à sa question (elles ne se traduisent pas). */
-const REPONSES_ACCORD_MCP = { oui: "Allow", toujours: "Allow for this session", non: "Cancel" } as const;
-
-const objet = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
-const texte = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
-
-/** Le formulaire de Codex est-il une demande d'accord pour un outil MCP ? */
-export function estAccordMcp(params: Record<string, unknown>): boolean {
-  return objet(params._meta).codex_approval_kind === ACCORD_MCP;
-}
-
-/** La question de Codex qui demande l'accord pour un outil MCP, s'il y en a une. */
-function questionAccordMcp(params: Record<string, unknown>): { id: string; question: string; options: string[] } | null {
-  const questions = Array.isArray(params.questions) ? params.questions.map(objet) : [];
-  const q = questions.find((x) => texte(x.id).startsWith(QUESTION_ACCORD_MCP));
-  if (!q) return null;
-  const options = Array.isArray(q.options) ? q.options.map((o) => texte(objet(o).label)).filter(Boolean) : [];
-  return { id: texte(q.id), question: texte(q.question), options };
-}
-
-/** La carte d'un outil MCP : son nom comme pour Claude Code (`mcp__serveur__outil`), et ce qu'il recevra. */
-function carteOutilMcp(serveur: string, outil: string, titre: string, entree: Record<string, unknown>) {
-  const nom = titre || outil || "un outil";
-  return {
-    outil: serveur && outil ? `mcp__${serveur}__${outil}` : "MCP",
-    entree,
-    description: serveur ? `Utiliser « ${nom} » (${serveur})` : `Utiliser « ${nom} »`,
-  };
-}
-
 /** Une demande de Codex qui attend ta réponse, en carte d'autorisation ; null pour celles que l'app refuse d'office. */
 export function autorisationDe(method: string, params: Record<string, unknown>): { outil: string; entree: Record<string, unknown>; description: string } | null {
   switch (method) {
-    case "mcpServer/elicitation/request": {
-      if (!estAccordMcp(params)) return null;
-      const meta = objet(params._meta);
-      return carteOutilMcp(texte(params.serverName), texte(meta.tool_name), texte(meta.tool_title), objet(meta.tool_params));
-    }
-    case "item/tool/requestUserInput": {
-      const q = questionAccordMcp(params);
-      if (!q) return null;
-      // Sans formulaire, Codex ne donne que sa phrase : « Allow the composio MCP server to run tool "X"? ».
-      const lu = /the (.+?) MCP server to run tool "(.+)"\?$/.exec(q.question) ?? /to run tool "(.+)"\?$/.exec(q.question);
-      return lu?.length === 3 ? carteOutilMcp(lu[1], lu[2], "", {}) : carteOutilMcp("", lu?.[1] ?? "", "", {});
-    }
     case "item/commandExecution/requestApproval": {
       const commande = typeof params.command === "string" ? params.command : "";
       return { outil: "Bash", entree: { command: commande }, description: String(params.reason ?? commande) || "Lancer une commande" };
@@ -244,17 +212,34 @@ export function autorisationDe(method: string, params: Record<string, unknown>):
       return { outil: "Edit", entree: { file_path: params.grantRoot ?? "" }, description: String(params.reason ?? "") || "Modifier des fichiers" };
     case "item/permissions/requestApproval":
       return { outil: "Permissions", entree: { permissions: params.permissions }, description: String(params.reason ?? "") || "Plus d’accès (réseau ou fichiers)" };
+    case "mcpServer/elicitation/request": {
+      const meta = accordOutilMcp(params);
+      if (!meta) return null;
+      const serveur = String(params.serverName ?? "");
+      const outil = outilDeLaDemande(params.message);
+      const entree = meta.tool_params && typeof meta.tool_params === "object" && !Array.isArray(meta.tool_params) ? (meta.tool_params as Record<string, unknown>) : {};
+      const description = typeof meta.tool_description === "string" && meta.tool_description ? meta.tool_description : `Utiliser un outil de ${serveur}`;
+      return { outil: outil ? `mcp__${serveur}__${outil}` : `mcp__${serveur}`, entree, description };
+    }
     default:
       return null;
   }
 }
 
 /**
- * Une carte accordée sans te la montrer : tout en accès complet ; en accès « projet », les outils de l'app
- * que Claude Code reçoit sans demander (`libres`, cf. `OUTILS_APP`). Le reste attend ta réponse.
+ * La demande d'accord avant un appel d'outil MCP : Codex la pose en formulaire MCP (« elicitation »),
+ * marquée `_meta.codex_approval_kind`. Les autres formulaires d'un serveur MCP restent refusés d'office.
  */
-export function accordeDOffice(acces: Acces, outil: string, libres: readonly string[]): boolean {
-  return acces === "tout" || (acces === "projet" && libres.includes(outil));
+function accordOutilMcp(params: Record<string, unknown>): Record<string, unknown> | null {
+  const meta = params._meta;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+  return (meta as Record<string, unknown>).codex_approval_kind === "mcp_tool_call" ? (meta as Record<string, unknown>) : null;
+}
+
+/** Le nom de l'outil, que Codex ne donne que dans sa question (« Allow the klyra MCP server to run tool "lire" ? »). */
+function outilDeLaDemande(message: unknown): string | null {
+  const m = typeof message === "string" ? /run tool "([^"]{1,128})"/.exec(message) : null;
+  return m ? m[1] : null;
 }
 
 /** La réponse à envoyer à Codex pour une demande d'autorisation. */
@@ -265,24 +250,18 @@ export function reponseAutorisation(method: string, params: Record<string, unkno
       : { permissions: params.permissions ?? {}, scope: decision === "toujours" ? "session" : "turn" };
   }
   if (method === "mcpServer/elicitation/request") {
-    // « Toujours » : pour cet outil, le temps de la session de Codex (`persist`), rien d'écrit dans sa configuration.
     if (decision === "non") return { action: "decline", content: null, _meta: null };
-    return { action: "accept", content: null, _meta: decision === "toujours" ? { persist: "session" } : null };
-  }
-  if (method === "item/tool/requestUserInput") {
-    const q = questionAccordMcp(params);
-    if (!q) return { answers: {} };
-    const voulue = REPONSES_ACCORD_MCP[decision];
-    // « Pour cette session » n'est pas toujours proposé : un simple accord à la place.
-    const reponse = q.options.length && !q.options.includes(voulue) ? REPONSES_ACCORD_MCP.oui : voulue;
-    return { answers: { [q.id]: { answers: [reponse] } } };
+    // « Toujours » : pour la session seulement (jamais `always`, que Codex écrirait dans sa configuration).
+    const persist = (accordOutilMcp(params)?.persist as unknown[] | undefined) ?? [];
+    return { action: "accept", content: {}, _meta: decision === "toujours" && Array.isArray(persist) && persist.includes("session") ? { persist: "session" } : null };
   }
   return { decision: decisionCodex(decision) };
 }
 
 /**
  * Ce que l'app répond d'office aux demandes qu'elle ne sait pas montrer : questions en cours de route
- * (l'agent les pose dans sa réponse, comme à un collègue), formulaires MCP, outils du client.
+ * (l'agent les pose dans sa réponse, comme à un collègue), formulaires MCP (sauf l'accord avant un appel
+ * d'outil, qui devient une carte : `autorisationDe`), outils du client.
  */
 export function reponseDOffice(method: string): { result: unknown } | { error: { code: number; message: string } } {
   switch (method) {
