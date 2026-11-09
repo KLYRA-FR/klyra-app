@@ -70,6 +70,15 @@ describe("echangesPourSuggestion", () => {
     expect(echanges?.map((e) => e.texte).join(" ")).not.toContain("/Users/corentin");
   });
 
+  it("rien d'avant « Repartir à zéro »", () => {
+    const avant = { ...message("user", "MOT-SECRET d'avant"), createdAt: "2026-11-09T10:00:00.000Z" };
+    const reponse = { ...message("agent", "Noté."), createdAt: "2026-11-09T10:00:01.000Z" };
+    const apres = { ...message("user", "Autre sujet"), createdAt: "2026-11-09T11:00:00.000Z" };
+    const fin = { ...message("agent", "D'accord."), createdAt: "2026-11-09T11:00:01.000Z" };
+    const echanges = echangesPourSuggestion([avant, reponse, apres, fin], "2026-11-09T10:30:00.000Z");
+    expect(echanges?.map((e) => e.texte)).toEqual(["Autre sujet", "D'accord."]);
+  });
+
   it("rien autour d'un secret", () => {
     expect(echangesPourSuggestion([message("user", "Voici la clé sk-ant-abcdefghijklmnop1234"), message("agent", "Rangée.")])).toBeNull();
   });

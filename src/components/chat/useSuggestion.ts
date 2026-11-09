@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { getBridge } from "@/lib/bridge";
 import { useReglages } from "@/lib/reglages";
 import { echangesPourSuggestion, peutSuggerer, reponseVientDeFinir, Suggesteur } from "@/lib/suggestion";
-import { useChatMessages, useFile, useTravail } from "@/lib/workspace";
+import { useChat, useChatMessages, useFile, useTravail } from "@/lib/workspace";
 
 /**
  * La réponse suggérée dans le champ d'une conversation : demandée quand la
@@ -13,6 +13,8 @@ import { useChatMessages, useFile, useTravail } from "@/lib/workspace";
  */
 export function useSuggestion(chatId: string, texte: string) {
   const messages = useChatMessages(chatId);
+  /* Le dernier « Repartir à zéro » : la suggestion ne relit rien d'avant. */
+  const depart = useChat(chatId)?.departs?.at(-1) ?? null;
   const travail = useTravail(chatId);
   const file = useFile(chatId);
   const { reglages } = useReglages();
@@ -56,9 +58,9 @@ export function useSuggestion(chatId: string, texte: string) {
     // Décidé alors, une fois : vider le champ plus tard ne la redemande pas.
     vueEnCours.current = null;
     if (!dernier || !peutSuggerer(messages, { actives, occupe, texte })) return;
-    const echanges = echangesPourSuggestion(messages);
+    const echanges = echangesPourSuggestion(messages, depart);
     if (echanges) s.lancer(`${chatId}:${dernier.id}`, echanges);
-  }, [chatId, dernier, messages, actives, occupe, texte, suggesteur]);
+  }, [chatId, dernier, messages, actives, occupe, texte, suggesteur, depart]);
 
   /* Toute frappe efface la suggestion et arrête la demande en cours ; le réglage coupé aussi. */
   useEffect(() => {

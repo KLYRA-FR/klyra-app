@@ -8,6 +8,8 @@ import { UtilisationRail } from "@/components/chat/CarteUtilisation";
 import { Icon, type IconName } from "@/components/icons/Icon";
 import { Infobulle } from "@/components/ui/Infobulle";
 import { cn } from "@/lib/cn";
+import { raccourciDuSysteme } from "@/lib/plateforme";
+import { ouvrirRecherche, useRechercheOuverte } from "@/lib/recherche-session";
 import { useMenuProjet } from "@/components/project/MenuProjet";
 import { colonneTicket } from "@/lib/tickets";
 import { estConversationAgent, FIL, useChatsEspace, useProjects, useWorkspace } from "@/lib/workspace";
@@ -95,6 +97,8 @@ export function AppRail({
   const { travail } = useWorkspace().state;
   const chats = useChatsEspace();
   const router = useRouter();
+  /* La recherche dans les conversations (⌘K) : son bouton dit si la fenêtre est ouverte. */
+  const rechercheOuverte = useRechercheOuverte();
   /* Quitter les chats puis revenir par le rail : on retrouve l'agent et le fil laissés, pas l'accueil. */
   useEffect(() => {
     const id = pathname === "/chat" ? currentId : null;
@@ -142,6 +146,19 @@ export function AppRail({
             </Infobulle>
           );
         })}
+
+        <Infobulle texte={`Rechercher (${raccourciDuSysteme("⌘K")})`} cote="droite">
+          <button
+            type="button"
+            aria-label="Rechercher"
+            aria-haspopup="dialog"
+            aria-expanded={rechercheOuverte}
+            onClick={() => ouvrirRecherche()}
+            className={entree(rechercheOuverte)}
+          >
+            <Entree icone="search-01" nom="Rechercher" active={rechercheOuverte} />
+          </button>
+        </Infobulle>
 
         {SEPARATEUR}
         {/* Les projets : une tuile par projet du rail, ses deux lettres ; la liste complète est dans Projets. */}

@@ -37,8 +37,9 @@ const masques = (t: string) => t.split("•••").length - 1;
  * Les derniers échanges, prêts à partir : textes seuls, chemins réduits.
  * null si l'un d'eux contient un secret (on ne suggère rien autour d'un secret).
  */
-export function echangesPourSuggestion(messages: readonly Message[]): EchangeSuggestion[] | null {
-  const recents = messages.filter((m) => !m.compaction && !m.compactionAuto && texteDe(m)).slice(-ECHANGES_MAX);
+export function echangesPourSuggestion(messages: readonly Message[], depart: string | null = null): EchangeSuggestion[] | null {
+  /* Après « Repartir à zéro », ce qui précède le départ n'est plus relu par personne : la suggestion non plus. */
+  const recents = messages.filter((m) => (!depart || m.createdAt > depart) && !m.compaction && !m.compactionAuto && texteDe(m)).slice(-ECHANGES_MAX);
   const echanges: EchangeSuggestion[] = [];
   for (const m of recents) {
     const brut = texteDe(m).slice(0, TEXTE_ECHANGE_MAX);
