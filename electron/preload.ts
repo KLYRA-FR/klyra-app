@@ -88,8 +88,13 @@ contextBridge.exposeInMainWorld("klyra", {
     annulerSuggestion: (id: string) => ipcRenderer.invoke("claude:suggestion:annuler", id),
     essayer: (requestId: string, brouillon: unknown, cas: unknown, contexte?: unknown) => ipcRenderer.invoke("claude:essayer", requestId, brouillon, cas, contexte),
     cancel: (requestId: string) => ipcRenderer.invoke("claude:cancel", requestId),
-    autoriser: (requestId: string, demandeId: string, decision: string) =>
-      ipcRenderer.invoke("claude:autoriser", requestId, demandeId, decision),
+    autoriser: (requestId: string, demandeId: string, decision: string, details?: unknown) =>
+      ipcRenderer.invoke("claude:autoriser", requestId, demandeId, decision, details),
+    annulerModifications: (chatId: string, ids: string[], forcer: boolean, lieu?: string | null) =>
+      ipcRenderer.invoke("claude:annuler-modifications", chatId, ids, forcer, lieu ?? null),
+    contexte: (sessionId: string, lieu?: string | null) => ipcRenderer.invoke("claude:contexte", sessionId, lieu ?? null),
+    commandeTerminal: (agent: string, contexte: unknown) => ipcRenderer.invoke("claude:commande-terminal", agent, contexte),
+    sortie: (sessionId: string, tache: string, lieu?: string | null) => ipcRenderer.invoke("claude:sortie", sessionId, tache, lieu ?? null),
     stream: (requestId: string, options: unknown) => ipcRenderer.invoke("claude:stream", requestId, options),
     onEvent: (callback: (requestId: string, event: unknown) => void) => {
       const listener = (_e: unknown, requestId: string, event: unknown) => callback(requestId, event);
@@ -126,6 +131,13 @@ contextBridge.exposeInMainWorld("klyra", {
     dossierExiste: (dossier: string) => ipcRenderer.invoke("projets:dossier-existe", dossier),
     choisirDossier: () => ipcRenderer.invoke("projets:choisir-dossier"),
     arbre: (dossier: string, relatif?: string, lieu?: string | null) => ipcRenderer.invoke("projets:arbre", dossier, relatif, lieu),
+    fichiers: (dossier: string, lieu?: string | null) => ipcRenderer.invoke("projets:fichiers", dossier, lieu ?? null),
+    regles: (dossier: string, lieu?: string | null) => ipcRenderer.invoke("projets:regles", dossier, lieu ?? null),
+    brancheTravail: (dossier: string, nom: string, lieu?: string | null) => ipcRenderer.invoke("projets:branche-travail", dossier, nom, lieu ?? null),
+    sessionsTerminal: (dossier: string, lieu?: string | null) => ipcRenderer.invoke("projets:sessions-terminal", dossier, lieu ?? null),
+    sessionTerminal: (dossier: string, id: string, lieu?: string | null) => ipcRenderer.invoke("projets:session-terminal", dossier, id, lieu ?? null),
+    retirerBrancheTravail: (dossier: string, lieu?: string | null) => ipcRenderer.invoke("projets:branche-travail:retirer", dossier, lieu ?? null),
+    retirerRegle: (dossier: string, liste: string, regle: string, lieu?: string | null) => ipcRenderer.invoke("projets:regles:retirer", dossier, liste, regle, lieu ?? null),
     creerDossierVps: (lieu: string, dossier: string) => ipcRenderer.invoke("projets:creer-dossier-vps", lieu, dossier),
     pages: (dossier: string) => ipcRenderer.invoke("projets:pages", dossier),
     lireFichier: (dossier: string, relatif: string, lieu?: string | null) => ipcRenderer.invoke("projets:lire-fichier", dossier, relatif, lieu),

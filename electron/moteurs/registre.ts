@@ -1,4 +1,4 @@
-import type { AgentEvent, Decision, IdMoteur, Moteur, Spontane, StreamOptions } from "./types";
+import type { AgentEvent, Decision, DetailsDecision, IdMoteur, Moteur, Spontane, StreamOptions } from "./types";
 
 /**
  * Les moteurs de l'app, et celui qui fait chaque réponse. Une réponse en cours n'est qu'à
@@ -21,8 +21,8 @@ export function creerRegistre(liste: Moteur[], parDefaut: IdMoteur) {
     arreter(requestId: string): void {
       for (const m of liste) m.arreter(requestId);
     },
-    autoriser(requestId: string, demandeId: string, decision: Decision): boolean {
-      return liste.some((m) => m.autoriser(requestId, demandeId, decision));
+    autoriser(requestId: string, demandeId: string, decision: Decision, details?: DetailsDecision): boolean {
+      return liste.some((m) => m.autoriser(requestId, demandeId, decision, details));
     },
     fermer(): void {
       for (const m of liste) m.fermer?.();

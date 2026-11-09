@@ -17,7 +17,7 @@ import { fournisseur, moteurDuMessage } from "@/lib/fournisseurs";
 import { requeteRetenue } from "@/lib/recherche-session";
 import { DEPART_ROUTINE } from "@/lib/message-routine";
 import { resumeFond, useFonds, type FondAgent, type TacheFond } from "@/lib/fond-agents";
-import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
+import { texteDe, useChat, useChatMessages, useFile, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse, Reactions } from "./ActionsReponse";
 import { MenuMessage, type CibleMessage } from "./MenuMessage";
@@ -25,6 +25,8 @@ import { useDansAtelierEquipe } from "./atelier-equipe/ouvrir";
 import { BarreAtelier } from "./CarteAtelier";
 import { BarreEquipe } from "./CarteEquipe";
 import { MessagePartView } from "./MessageParts";
+import { FenetreRevenirAvant, ModificationsReponse, SortieCommande } from "./SessionParts";
+import { getBridge } from "@/lib/bridge";
 import { RailMessages } from "./RailMessages";
 
 /** Deux messages du même auteur à moins de 5 min d'écart forment un groupe : un seul nom, un seul rond. */
@@ -134,14 +136,15 @@ function EnTravail({
   roleId: RoleId;
   travail: Travail;
   vide: boolean;
-  attente: boolean;
+  /** L'agent attend : ton accord (une autorisation) ou ta réponse (des questions, un plan). */
+  attente: "accord" | "reponse" | null;
 }) {
   const role = useRole(roleId);
   const chrono = useChrono(travail.debut);
   return (
     <div aria-live="polite" className="flex h-6 items-center gap-1.5 text-ui-xs text-texte-tertiaire">
       <span className="klyra-respire font-medium text-texte-secondaire">
-        {attente ? `${role.name} attend ton accord` : vide ? `${role.name} réfléchit…` : `${role.name} travaille…`}
+        {attente === "accord" ? `${role.name} attend ton accord` : attente === "reponse" ? `${role.name} attend ta réponse` : vide ? `${role.name} réfléchit…` : `${role.name} travaille…`}
       </span>
       {chrono && <span>{chrono}</span>}
       {!!travail.jetons && <span>· {travail.jetons.toLocaleString("fr-FR")} tokens</span>}
@@ -149,15 +152,48 @@ function EnTravail({
   );
 }
 
-/** Une tâche de fond, et depuis combien de temps elle tourne. */
-function LigneFond({ tache }: { tache: TacheFond }) {
+/** La sortie d'une commande lancée en fond, relue toutes les deux secondes tant qu'elle est ouverte. */
+function SortieFond({ chat, roleId, tache }: { chat: Chat; roleId: RoleId; tache: string }) {
+  const [texte, setTexte] = useState<string | null>(null);
+  const session = chat.sessions[roleId] ?? null;
+  useEffect(() => {
+    const lire = getBridge()?.claude.sortie;
+    if (!lire || !session) return;
+    let actif = true;
+    const relire = () => void lire(session, tache, chat.lieu ?? null).then((r) => actif && r.ok && r.data !== null && setTexte(r.data));
+    relire();
+    const id = setInterval(relire, 2000);
+    return () => {
+      actif = false;
+      clearInterval(id);
+    };
+  }, [session, tache, chat.lieu]);
+  if (!session) return null;
+  return <SortieCommande texte={texte ?? ""} enCours lignesMax={14} />;
+}
+
+/** Une tâche de fond, et depuis combien de temps elle tourne ; une commande montre sa sortie d'un clic. */
+function LigneFond({ tache, chat, roleId }: { tache: TacheFond; chat?: Chat; roleId?: RoleId }) {
   const chrono = useChrono(tache.debut);
+  const [voir, setVoir] = useState(false);
   return (
-    <li className="flex min-w-0 items-baseline gap-1.5">
-      <span aria-hidden="true" className="size-1 shrink-0 translate-y-[-2px] rounded-full bg-icone-secondaire" />
-      <span className="truncate">{tache.description}</span>
-      {chrono && <span className="shrink-0 tabular-nums">{chrono}</span>}
+    <li className="flex min-w-0 flex-col gap-1">
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span aria-hidden="true" className="size-1 shrink-0 translate-y-[-2px] rounded-full bg-icone-secondaire" />
+        <span className="truncate">{tache.description}</span>
+        {chrono && <span className="shrink-0 tabular-nums">{chrono}</span>}
+        {tache.genre === "commande" && chat && roleId && <BoutonSortie voir={voir} onClick={() => setVoir((v) => !v)} />}
+      </span>
+      {voir && chat && roleId && <SortieFond chat={chat} roleId={roleId} tache={tache.id} />}
     </li>
+  );
+}
+
+function BoutonSortie({ voir, onClick }: { voir: boolean; onClick: () => void }) {
+  return (
+    <button type="button" aria-expanded={voir} onClick={onClick} className="shrink-0 cursor-pointer rounded-2xs border-0 bg-transparent px-1 py-0 text-ui-2xs text-texte-secondaire hover:text-texte-principal">
+      {voir ? "Masquer la sortie" : "Voir la sortie"}
+    </button>
   );
 }
 
@@ -166,9 +202,10 @@ function LigneFond({ tache }: { tache: TacheFond }) {
  * en fond tourne encore (une capture, un build…) ; puis « Iris reprend » quand l'un d'eux revient et
  * qu'elle s'y remet. Sans cette ligne, rien ne bouge à l'écran pendant qu'elle travaille.
  */
-function EnFond({ fond }: { fond: FondAgent }) {
+function EnFond({ fond, chat }: { fond: FondAgent; chat: Chat }) {
   const role = useRole(fond.roleId);
   const seule = fond.taches.length === 1 ? fond.taches[0] : null;
+  const [voir, setVoir] = useState(false);
   const chrono = useChrono(fond.reprise ? null : (seule?.debut ?? null));
   const resume = resumeFond(fond.taches);
   return (
@@ -189,11 +226,17 @@ function EnFond({ fond }: { fond: FondAgent }) {
               : `· ${resume} en cours`}
         </span>
         {chrono && <span className="shrink-0 tabular-nums">· {chrono}</span>}
+        {seule?.genre === "commande" && !fond.reprise && <BoutonSortie voir={voir} onClick={() => setVoir((v) => !v)} />}
       </div>
+      {voir && seule && !fond.reprise && (
+        <div className="pl-5">
+          <SortieFond chat={chat} roleId={fond.roleId} tache={seule.id} />
+        </div>
+      )}
       {!seule && !fond.reprise && fond.taches.length > 1 && (
         <ul className="m-0 flex list-none flex-col gap-0.5 p-0 pl-5">
           {fond.taches.map((t) => (
-            <LigneFond key={t.id} tache={t} />
+            <LigneFond key={t.id} tache={t} chat={chat} roleId={fond.roleId} />
           ))}
         </ul>
       )}
@@ -231,7 +274,9 @@ function RoleMessage({
   onAction: (label: string, roleId: RoleId) => void;
 }) {
   const role = useRole(roleId);
-  const { repondreAutorisation, repondreCoffre } = useWorkspace();
+  const { repondreAutorisation, repondreCoffre, repondreQuestion, repondrePlan, state } = useWorkspace();
+  /* Le dossier du projet : les chemins des fichiers modifiés s'y lisent en relatif. */
+  const dossier = chat.kind === "equipe" ? (state.projects.find((p) => p.id === chat.projectId)?.folder ?? null) : null;
   // Conversation directe : l'avatar et le prénom ouvrent le panneau de l'agent.
   const panneau = chat.kind === "direct";
   const enCours = message.statut === "en-cours";
@@ -292,6 +337,8 @@ function RoleMessage({
             etatEquipe={(id) => equipes.get(id)}
             choix={{ actif: derniere && repondu === null && !enCours, repondu, onRepondre: (texte) => onAction(texte, roleId) }}
             onAutorisation={(demandeId, decision) => repondreAutorisation(message.id, demandeId, decision)}
+            onQuestion={(demandeId, reponses) => repondreQuestion(message.id, demandeId, reponses)}
+            onPlan={(demandeId, lancer, texte) => repondrePlan(message.id, demandeId, lancer, texte)}
             onCoffre={(etapeId, etat, texte) => {
               repondreCoffre(message.id, etapeId, etat);
               onAction(texte, roleId);
@@ -302,9 +349,16 @@ function RoleMessage({
         {enCours && travail && <EnTravail
             roleId={roleId}
             travail={travail}
-            vide={visibles.length === 0}
-            attente={message.parts.some((p) => p.type === "autorisation" && p.statut === "attente")}
+            vide={visibles.every((p) => p.type === "reflexion")}
+            attente={
+              message.parts.some((p) => p.type === "autorisation" && p.statut === "attente")
+                ? "accord"
+                : message.parts.some((p) => (p.type === "question" || p.type === "plan") && p.statut === "attente")
+                  ? "reponse"
+                  : null
+            }
           />}
+        {!enCours && <ModificationsReponse message={message} dossier={dossier} />}
         {message.statut === "erreur" && (
           <p role="alert" className="m-0 max-w-[680px] rounded-md border border-bordure-erreur bg-fond-surface px-3 py-2 text-ui-s text-texte-erreur [overflow-wrap:anywhere]">
             {message.erreur ?? "L’agent s’est arrêté sur une erreur."}
@@ -429,6 +483,8 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   const nomAgent = useRole(chat?.roleIds[0] ?? "principal").name;
   const { sendMessage, marquerLu } = useWorkspace();
   const menu = useMenuContextuel<CibleMessage>();
+  /* « Revenir à avant ce message » : la fenêtre du choix, pour ce message. */
+  const [retour, setRetour] = useState<string | null>(null);
   const zone = useRef<HTMLDivElement>(null);
   const enBas = useRef(true);
   /* Arrivé sur un message par la recherche : on y reste, même si un agent écrit, jusqu'au prochain geste dans le fil. */
@@ -437,10 +493,31 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   /* On reste collé en bas tant que l'on n'est pas remonté lire plus haut. */
   const dernier = messages[messages.length - 1];
   const taille = dernier ? JSON.stringify(dernier.parts).length : 0;
+  /* Ton message envoyé : on revient en bas pour le voir, et la réponse qui suit, même si tu lisais plus haut
+     (un diff déplié, une carte cliquée). */
+  const enAttente = useFile(chatId);
+  const dernierEnvoi = `${messages.findLast((m) => m.author.kind === "user")?.id ?? ""}|${enAttente.at(-1)?.id ?? ""}`;
+  const envoiVu = useRef(dernierEnvoi);
+  useEffect(() => {
+    if (dernierEnvoi === envoiVu.current) return;
+    envoiVu.current = dernierEnvoi;
+    enBas.current = true;
+    ancre.current = false;
+  }, [dernierEnvoi]);
   useEffect(() => {
     const el = zone.current;
     if (el && enBas.current) el.scrollTop = el.scrollHeight;
-  }, [messages.length, taille, travail, fonds.length]);
+  }, [messages.length, taille, travail, fonds.length, dernierEnvoi]);
+  /* Le fil change de hauteur (la file d'attente, la réponse citée, le mode plan sous le champ) : collé en bas, il y reste. */
+  useEffect(() => {
+    const el = zone.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const suivre = new ResizeObserver(() => {
+      if (enBas.current) el.scrollTop = el.scrollHeight;
+    });
+    suivre.observe(el);
+    return () => suivre.disconnect();
+  }, []);
 
   const annonce = useRef<HTMLParagraphElement>(null);
   useArriveeRecherche(chatId, { zoneRef: zone, enBasRef: enBas, ancreRef: ancre, annonceRef: annonce });
@@ -554,7 +631,7 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
             <SeparateurDepart key={d} nom={nomAgent} />
           ))}
           {fonds.map((f) => (
-            <EnFond key={f.roleId} fond={f} />
+            <EnFond key={f.roleId} fond={f} chat={chat} />
           ))}
         </div>
       </div>
@@ -567,8 +644,10 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
           x={menu.menu.x}
           y={menu.menu.y}
           onFermer={menu.fermer}
+          onRevenirAvant={messages.at(-1)?.id === menu.menu.cible.message.id ? undefined : setRetour}
         />
       )}
+      {retour && <FenetreRevenirAvant chat={chat} messageId={retour} onFermer={() => setRetour(null)} />}
       <p ref={annonce} aria-live="polite" className="sr-only" />
     </div>
   );

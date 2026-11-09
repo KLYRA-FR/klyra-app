@@ -7,7 +7,7 @@ import { PRINCIPAL } from "@/data/agents";
 import { Bouton } from "@/components/ui/Bouton";
 import { createMockWorkspace, type MockWorkspace } from "@/data/mock";
 import { AgentsProvider, useAgents } from "@/lib/agents";
-import { getBridge, type Acces, type AgentEvent } from "@/lib/bridge";
+import { getBridge, type Acces, type AgentEvent, type ResultatAnnulation } from "@/lib/bridge";
 import { rendezVousEntre } from "@/lib/agenda-equipe";
 import { identiteAffichee, type Identite, type ProfilCompte } from "@/lib/identite";
 import { libelleEtape } from "@/lib/etapes";
@@ -20,6 +20,9 @@ import { lireCarte, OUTIL_CARTE_CLAUDE, reponseNette } from "../../electron/cart
 import { lireDemandeSecret } from "../../electron/coffre-regles";
 import { contexteFil, texteAttente, texteFilOuvert, texteRetourFil } from "../../electron/fils-outils";
 import { finTacheDeFond, sansFondOrphelin } from "./passation-fond";
+import { ajouterReflexion, fermerReflexion, majEtape, marquerModifs, modificationsDepuis, noteAnnulations, retourAvant, sessionsApresRetour, sortieGardee } from "./session-agent";
+import { cleCommandes, noterCommandes } from "./commandes-claude";
+import { ajouterAuBrouillon } from "./brouillons";
 import { noterReponse, poserFond, poserFondParReponse } from "./fond-agents";
 import { lirePublication, publierRendu, renduDeLOrigine, renduDepuisServeur, typeDeRendu } from "@/lib/rendus";
 import { renduDansEspace } from "@/lib/rendus-espace";
@@ -215,6 +218,10 @@ type WorkspaceAction =
   | { type: "chat/repartir"; id: string; le: string }
   | { type: "message/add"; message: Message }
   | { type: "message/update"; id: string; patch: (message: Message) => Message }
+  /** « Revenir à avant ce message » : ces messages quittent la conversation. */
+  | { type: "messages/retirer"; ids: string[] }
+  /** « Envoyer maintenant » : ce message de la file part le premier. */
+  | { type: "file/premier"; chatId: string; id: string }
   | { type: "travail/debut"; chatId: string; travail: Travail }
   | { type: "travail/fin"; chatId: string; messageId?: string }
   | { type: "travail/jetons"; chatId: string; total: number }
@@ -413,6 +420,10 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
         ...state,
         messages: state.messages.map((m) => (m.id === action.id ? action.patch(m) : m)),
       };
+    case "messages/retirer": {
+      const ids = new Set(action.ids);
+      return { ...state, messages: state.messages.filter((m) => !ids.has(m.id)) };
+    }
     case "travail/debut":
       return {
         ...state,
@@ -441,6 +452,12 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
           [action.chatId]: [...(state.file[action.chatId] ?? []), action.message],
         },
       };
+    case "file/premier": {
+      const file = state.file[action.chatId] ?? [];
+      const message = file.find((m) => m.id === action.id);
+      if (!message) return state;
+      return { ...state, file: { ...state.file, [action.chatId]: [message, ...file.filter((m) => m.id !== action.id)] } };
+    }
     case "file/retirer":
       return {
         ...state,
@@ -724,6 +741,28 @@ interface WorkspaceApi {
   changerCategories: (categories: Categorie[]) => void;
   /** Ta réponse à une demande d'autorisation d'un agent. */
   repondreAutorisation: (messageId: string, demandeId: string, decision: "oui" | "toujours" | "non") => void;
+  /** Tes réponses aux questions à choix d'un agent (question → réponse) ; null : tu n'y réponds pas. */
+  repondreQuestion: (messageId: string, demandeId: string, reponses: Record<string, string> | null) => void;
+  /** Le plan d'un agent : lancé (il sort du mode plan et s'y met), ou à corriger (ce qu'il faut changer). */
+  repondrePlan: (messageId: string, demandeId: string, lancer: boolean, message: string) => void;
+  /** Le mode plan d'une conversation (Claude Code) : les agents préparent un plan avant de rien modifier. */
+  basculerPlan: (chatId: string, actif?: boolean) => void;
+  /** Remet des fichiers comme avant ces modifications (appels d'outil), sur la machine de la conversation. */
+  annulerModifications: (chatId: string, ids: string[], forcer?: boolean) => Promise<ResultatAnnulation>;
+  /** Accepte des modifications : elles restent, la carte ne les propose plus à la revue. */
+  garderModifications: (messageId: string, ids: string[]) => void;
+  /**
+   * « Revenir à avant ce message » (de la personne) : les fichiers modifiés depuis reviennent comme avant, et/ou
+   * la conversation reprend d'avant lui (les messages suivants retirés, son texte remis dans le champ).
+   */
+  revenirAvant: (chatId: string, messageId: string, choix: { fichiers: boolean; conversation: boolean; forcer?: boolean }) => Promise<ResultatAnnulation | null>;
+  /** Interrompt l'agent qui travaille et envoie tout de suite ce message de la file. */
+  envoyerMaintenant: (chatId: string, id: string) => void;
+  /**
+   * Reprend dans l'app une session de Claude Code lancée au terminal dans ce projet : une conversation de
+   * l'assistant qui garde cette session (la suite s'y écrit), avec ses messages déjà échangés. Renvoie son id.
+   */
+  reprendreSessionTerminal: (projectId: string, session: { id: string; titre: string }, messages: { auteur: "personne" | "agent"; texte: string; le: string }[]) => string;
   /** La carte de l'atelier d'un agent : la couleur choisie, l'épreuve, les ajouts, puis l'agent créé depuis elle. */
   marquerAtelier: (messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => void;
   /** La carte de l'atelier d'une équipe : les couleurs, les membres laissés de côté, puis les agents créés depuis elle. */
@@ -1070,6 +1109,10 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       if (chat.amorce) lignes.push(`[Conversation reprise jusqu’ici]\n${chat.amorce}`);
     }
     if (depuis.length) lignes.push(`${jamaisRepondu ? "[La conversation jusqu’ici]" : "[Depuis ta dernière réponse]"}\n${depuis.join("\n\n")}`);
+    // Des fichiers remis comme avant par la personne depuis sa dernière réponse : il ne doit pas croire son travail encore là.
+    const derniereReponse = fil.findLast((m) => m.author.kind === "role" && m.author.roleId === roleId && m.statut !== "en-cours");
+    const annulees = noteAnnulations(chat, derniereReponse?.createdAt ?? null);
+    if (annulees) lignes.push(annulees);
     // Le retour d'un fil arrive au nom de l'agent qui l'a fait, pas de la personne.
     const de = messageUtilisateur.author.kind === "role" ? `Retour du fil, de ${nom(messageUtilisateur.author.roleId)}` : `Message de ${personne.name}`;
     // « Répondre » : l'agent sait à quel message on répond.
@@ -1189,8 +1232,51 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "texte":
           maj((m) => ({
             ...m,
-            parts: ajouterTexte(m.parts, event.delta, event.nouveauBloc),
+            parts: ajouterTexte(fermerReflexion(m.parts, Date.now()), event.delta, event.nouveauBloc),
           }));
+          break;
+        case "reflexion":
+          maj((m) => ({ ...m, parts: ajouterReflexion(m.parts, event.texte, event.nouveau, Date.now()) }));
+          break;
+        case "question":
+          pousserAuTelephone({
+            evenement: "accord",
+            titre: `${rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent"} te pose une question`,
+            corps: event.questions[0]?.question ?? "",
+            lien: lienMessage(chatId, messageId),
+          });
+          maj((m) => ({ ...m, parts: [...fermerReflexion(m.parts, Date.now()), { type: "question", id: event.id, questions: event.questions, statut: "attente" }] }));
+          break;
+        case "plan":
+          pousserAuTelephone({
+            evenement: "accord",
+            titre: `${rolesRef.current.find((r) => r.id === roleId)?.name ?? "L’agent"} propose un plan`,
+            corps: event.plan.replace(/[#*`>_]/g, "").replace(/\s+/g, " ").slice(0, 140),
+            lien: lienMessage(chatId, messageId),
+          });
+          maj((m) => ({ ...m, parts: [...fermerReflexion(m.parts, Date.now()), { type: "plan", id: event.id, plan: event.plan, statut: "attente" }] }));
+          break;
+        case "modification":
+          maj((m) => ({
+            ...m,
+            parts: majEtape(m.parts, event.id, (e) => ({
+              ...e,
+              chemin: e.chemin ?? event.chemin,
+              modif: { lignes: event.lignes, ajouts: event.ajouts, retraits: event.retraits, tronque: event.tronque, cree: event.cree, annulable: event.annulable },
+            })),
+          }));
+          break;
+        case "sortie":
+          maj((m) => ({ ...m, parts: majEtape(m.parts, event.id, (e) => ({ ...e, sortie: sortieGardee(event.texte) })) }));
+          break;
+        case "commandes": {
+          const chat = stateRef.current.chats.find((c) => c.id === chatId);
+          const projet = chat?.kind === "equipe" ? stateRef.current.projects.find((p) => p.id === chat.projectId) : undefined;
+          noterCommandes(cleCommandes(chat?.lieu, projet?.folder, roleId), event.commandes);
+          break;
+        }
+        case "fenetre":
+          dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, fenetres: { ...c.fenetres, [roleId]: event.jetons } }) });
           break;
         case "etape": {
           const chemin = event.entree.file_path ?? event.entree.notebook_path;
@@ -1200,6 +1286,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             libelle: libelleEtape(event.outil, event.entree, rolesRef.current),
             statut: "en-cours",
             parent: event.parent,
+            debut: Date.now(),
             ...(typeof chemin === "string" ? { chemin } : {}),
           };
           const taches = event.outil === "TodoWrite" ? lireTaches(event.entree) : null;
@@ -1211,7 +1298,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             });
           maj((m) => ({
             ...m,
-            parts: ajouterEtape(m.parts, etape, rolesRef.current, event.entree),
+            parts: ajouterEtape(fermerReflexion(m.parts, Date.now()), etape, rolesRef.current, event.entree),
           }));
           break;
         }
@@ -1264,7 +1351,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
         case "etape-fin":
           maj((m) => ({
             ...m,
-            parts: finirEtape(m.parts, event.id, event.ok),
+            parts: majEtape(finirEtape(m.parts, event.id, event.ok), event.id, (e) => ({ ...e, fin: Date.now(), ...(event.sortie !== undefined ? { sortie: sortieGardee(event.sortie) } : {}) })),
           }));
           if (!event.ok) outilsWorkflows().abandonner({ chatId, roleId }, event.id);
           break;
@@ -1291,6 +1378,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
                 detail: typeof detail === "string" ? detail : "",
                 description: event.description,
                 statut: "attente",
+                ...(event.regles?.length ? { regles: event.regles } : {}),
               },
             ],
           }));
@@ -1302,7 +1390,11 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             parts: m.parts.map((p) =>
               p.type === "autorisation" && p.id === event.id && p.statut === "attente"
                 ? { ...p, statut: event.accepte ? "acceptee" : "refusee" }
-                : p,
+                : p.type === "question" && p.id === event.id && p.statut === "attente"
+                  ? { ...p, statut: event.accepte ? "repondue" : "ignoree" }
+                  : p.type === "plan" && p.id === event.id && p.statut === "attente"
+                    ? { ...p, statut: event.accepte ? "lance" : "abandonne" }
+                    : p,
             ),
           }));
           break;
@@ -1311,11 +1403,18 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           maj((m) => {
             const aDuTexte = m.parts.some((p) => p.type === "text" && p.text.trim());
             // Une carte restée en cours d'écriture (réponse arrêtée avant la fin de l'outil) n'est pas gardée.
-            const finies = m.parts.filter((p) => !((p.type === "atelier-agent" || p.type === "atelier-equipe" || p.type === "carte") && p.provisoire));
+            const finies = fermerReflexion(
+              m.parts
+                .filter((p) => !((p.type === "atelier-agent" || p.type === "atelier-equipe" || p.type === "carte") && p.provisoire))
+                // Une question ou un plan restés sans réponse : l'agent est passé à autre chose.
+                .map((p): MessagePart => (p.type === "question" && p.statut === "attente" ? { ...p, statut: "ignoree" } : p.type === "plan" && p.statut === "attente" ? { ...p, statut: "abandonne" } : p)),
+              Date.now(),
+            );
             const parts = !aDuTexte && event.texte ? ajouterTexte(finies, event.texte, true) : finies;
+            const repere = event.uuidFin ? { uuidFin: event.uuidFin } : {};
             return event.ok
-              ? { ...m, parts, statut: "fait" }
-              : { ...m, parts, statut: "erreur", erreur: event.erreur };
+              ? { ...m, ...repere, parts, statut: "fait" }
+              : { ...m, ...repere, parts, statut: "erreur", erreur: event.erreur };
           });
           if (event.sessionId) {
             const sessionId = event.sessionId;
@@ -1590,12 +1689,27 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
           effort: stateRef.current.chats.find((c) => c.id === chatId)?.effort ?? null,
           // Claude : le compte choisi pour la conversation (choix du modèle) ; absent : celui des agents.
           ...compteDe(stateRef.current.chats.find((c) => c.id === chatId), moteur),
+          // Mode plan et « Revenir à avant ce message » : seulement avec Claude Code.
+          ...(moteur === PAR_DEFAUT && stateRef.current.chats.find((c) => c.id === chatId)?.modePlan ? { plan: true } : {}),
+          ...(moteur === PAR_DEFAUT && chat.sessions[roleId] && chat.reprises?.[roleId] ? { reprendreA: chat.reprises[roleId] } : {}),
           acces: accesDuServeur(stateRef.current, chat.lieu),
           fichiers: messageUtilisateur.parts.flatMap((p) => (p.type === "fichiers" ? p.chemins : [])),
           chatId,
           ...(messageUtilisateur.routineRun ? { routineRun: messageUtilisateur.routineRun } : {}),
         });
       };
+      // La reprise demandée ne sert qu'une fois : la session copiée la remplace.
+      if (chat.reprises?.[roleId]) {
+        dispatch({
+          type: "chat/update",
+          id: chatId,
+          patch: (c) => {
+            const reprises = { ...c.reprises };
+            delete reprises[roleId];
+            return { ...c, reprises };
+          },
+        });
+      }
       void demarrer().then((r) => {
           if (!r.ok)
             ecouteurs.current.get(messageId)?.({
@@ -1937,6 +2051,44 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     titrer(id, text);
     return id;
   }, [titrer]);
+
+  const reprendreSessionTerminal = useCallback(
+    (projectId: string, session: { id: string; titre: string }, echanges: { auteur: "personne" | "agent"; texte: string; le: string }[]) => {
+      // Déjà reprise : la même conversation, pas une deuxième.
+      const deja = stateRef.current.chats.find((c) => c.projectId === projectId && c.sessions.principal === session.id);
+      if (deja) return deja.id;
+      const id = crypto.randomUUID();
+      const maintenant = new Date().toISOString();
+      const chat: Chat = {
+        id,
+        kind: "equipe",
+        projectId,
+        title: chatTitle(session.titre),
+        roleIds: ["principal"],
+        updatedAt: echanges.at(-1)?.le ?? maintenant,
+        sessions: { principal: session.id },
+        luJusqua: echanges.at(-1)?.le ?? maintenant,
+        lieu: stateRef.current.projects.find((p) => p.id === projectId)?.lieu ?? null,
+      };
+      dispatch({ type: "chat/add", chat });
+      stateRef.current = { ...stateRef.current, chats: [chat, ...stateRef.current.chats] };
+      for (const m of echanges) {
+        dispatch({
+          type: "message/add",
+          message: {
+            id: crypto.randomUUID(),
+            chatId: id,
+            author: m.auteur === "personne" ? { kind: "user" } : { kind: "role", roleId: "principal" },
+            createdAt: m.le,
+            parts: [{ type: "text", text: m.texte }],
+            ...(m.auteur === "agent" ? { statut: "fait" as const } : {}),
+          },
+        });
+      }
+      return id;
+    },
+    [],
+  );
 
   const arreter = useCallback(
     (chatId: string) => {
@@ -2564,6 +2716,112 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     [bridge],
   );
 
+  const repondreQuestion = useCallback(
+    (messageId: string, demandeId: string, reponses: Record<string, string> | null) => {
+      if (!bridge) return;
+      if (reponses) jouer("validation");
+      dispatch({
+        type: "message/update",
+        id: messageId,
+        patch: (m) => ({
+          ...m,
+          parts: m.parts.map((p) => (p.type === "question" && p.id === demandeId ? { ...p, statut: reponses ? "repondue" : "ignoree", ...(reponses ? { reponses } : {}) } : p)),
+        }),
+      });
+      void bridge.claude.autoriser(messageId, demandeId, reponses ? "oui" : "non", reponses ? { reponses } : undefined);
+    },
+    [bridge],
+  );
+
+  const repondrePlan = useCallback(
+    (messageId: string, demandeId: string, lancer: boolean, message: string) => {
+      if (!bridge) return;
+      if (lancer) jouer("validation");
+      const chatId = stateRef.current.messages.find((m) => m.id === messageId)?.chatId;
+      dispatch({
+        type: "message/update",
+        id: messageId,
+        patch: (m) => ({
+          ...m,
+          parts: m.parts.map((p) => (p.type === "plan" && p.id === demandeId ? { ...p, statut: lancer ? "lance" : "corrige", ...(lancer ? {} : { message }) } : p)),
+        }),
+      });
+      // Le plan lancé : l'agent sort du mode plan, la conversation aussi.
+      if (lancer && chatId) dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, modePlan: false }) });
+      void bridge.claude.autoriser(messageId, demandeId, lancer ? "oui" : "non", lancer ? undefined : { message });
+    },
+    [bridge],
+  );
+
+  const basculerPlan = useCallback((chatId: string, actif?: boolean) => {
+    dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, modePlan: actif ?? !c.modePlan }) });
+  }, []);
+
+  const annulerModifications = useCallback(
+    async (chatId: string, ids: string[], forcer = false): Promise<ResultatAnnulation> => {
+      const chat = stateRef.current.chats.find((c) => c.id === chatId);
+      const annuler = bridge?.claude.annulerModifications;
+      if (!chat || !annuler || !ids.length) return { fichiers: [] };
+      const r = await annuler(chatId, ids, forcer, chat.lieu ?? null);
+      if (!r.ok) throw new Error(r.message);
+      const resultat = r.data ?? { fichiers: [] };
+      const revenus = new Set(resultat.fichiers.filter((f) => f.etat === "annule" || f.etat === "deja").map((f) => f.chemin));
+      if (!revenus.size) return resultat;
+      const le = new Date().toISOString();
+      const demandes = new Set(ids);
+      for (const m of stateRef.current.messages) {
+        if (m.chatId !== chatId) continue;
+        const touches = new Set(m.parts.flatMap((p) => (p.type === "etapes" ? p.etapes.filter((e) => demandes.has(e.id) && e.chemin && revenus.has(e.chemin)).map((e) => e.id) : [])));
+        if (touches.size) dispatch({ type: "message/update", id: m.id, patch: (x) => ({ ...x, parts: marquerModifs(x.parts, touches, "annulee", le) }) });
+      }
+      // Les agents le sauront à leur prochain message (cf. construirePrompt).
+      dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, annulations: [...(c.annulations ?? []), { le, fichiers: [...revenus] }].slice(-20) }) });
+      return resultat;
+    },
+    [bridge],
+  );
+
+  const garderModifications = useCallback((messageId: string, ids: string[]) => {
+    const le = new Date().toISOString();
+    dispatch({ type: "message/update", id: messageId, patch: (m) => ({ ...m, parts: marquerModifs(m.parts, new Set(ids), "gardee", le) }) });
+  }, []);
+
+  const revenirAvant = useCallback(
+    async (chatId: string, messageId: string, choix: { fichiers: boolean; conversation: boolean; forcer?: boolean }): Promise<ResultatAnnulation | null> => {
+      const { chats, messages, travail } = stateRef.current;
+      const chat = chats.find((c) => c.id === chatId);
+      if (!chat || travail[chatId]) return null;
+      const fil = messages.filter((m) => m.chatId === chatId);
+      let resultat: ResultatAnnulation | null = null;
+      if (choix.fichiers) {
+        const { ids } = modificationsDepuis(fil, messageId);
+        resultat = ids.length ? await annulerModifications(chatId, ids, choix.forcer === true) : { fichiers: [] };
+        // Un fichier qui a changé depuis : rien d'autre ne bouge, la personne choisit (forcer ou laisser).
+        if (resultat.fichiers.some((f) => f.etat === "conflit")) return resultat;
+      }
+      if (choix.conversation) {
+        const retour = retourAvant(chat, stateRef.current.messages, messageId);
+        if (!retour) return resultat;
+        dispatch({ type: "messages/retirer", ids: retour.retires });
+        dispatch({ type: "chat/update", id: chatId, patch: (c) => ({ ...c, ...sessionsApresRetour(c, retour.reprises), updatedAt: new Date().toISOString() }) });
+        if (retour.texte.trim()) ajouterAuBrouillon(chatId, retour.texte);
+      }
+      return resultat;
+    },
+    [annulerModifications],
+  );
+
+  const envoyerMaintenant = useCallback(
+    (chatId: string, id: string) => {
+      if (!stateRef.current.file[chatId]?.some((m) => m.id === id)) return;
+      dispatch({ type: "file/premier", chatId, id });
+      const travail = stateRef.current.travail[chatId];
+      // L'agent s'arrête là où il en est (ce qu'il a fait reste) ; le message part dès qu'il a rendu la main.
+      if (travail && bridge) void bridge.claude.cancel(travail.messageId);
+    },
+    [bridge],
+  );
+
   const marquerAtelier = useCallback((messageId: string, etapeId: string, patch: PatchAtelier | ((part: PartAtelier) => PatchAtelier)) => {
     dispatch({
       type: "message/update",
@@ -2989,6 +3247,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirAcces,
       moteurDuServeur,
       repondreAutorisation,
+      repondreQuestion,
+      repondrePlan,
+      basculerPlan,
+      annulerModifications,
+      garderModifications,
+      revenirAvant,
+      envoyerMaintenant,
+      reprendreSessionTerminal,
       marquerAtelier,
       marquerEquipe,
       repondreCarte,
@@ -3051,6 +3317,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       choisirAcces,
       moteurDuServeur,
       repondreAutorisation,
+      repondreQuestion,
+      repondrePlan,
+      basculerPlan,
+      annulerModifications,
+      garderModifications,
+      revenirAvant,
+      envoyerMaintenant,
+      reprendreSessionTerminal,
       marquerAtelier,
       marquerEquipe,
       repondreCarte,

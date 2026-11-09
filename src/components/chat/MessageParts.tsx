@@ -28,6 +28,9 @@ import { CarteInteractive } from "./CarteInteractive";
 import type { EtatEquipe } from "@/lib/atelier-equipe";
 import { CarteCoffre } from "./CarteCoffre";
 import { PastilleExtension } from "./PastilleExtension";
+import { CartePlan, CarteQuestions, Compte, DiffLignes, ReflexionView, SortieCommande } from "./SessionParts";
+import { duree } from "@/lib/session-agent";
+import { regleEnMots } from "@/lib/regles-autorisation";
 import type {
   ChangedFile,
   DeliverableOption,
@@ -142,6 +145,8 @@ export function EtapesView({ etapes, enCours }: { etapes: Etape[]; enCours: bool
     .filter(Boolean)
     .join(" · ");
   if (!propres.length) return null;
+  /* Une commande qui tourne : sa sortie se lit en direct, même replié. */
+  const commande = enCours && derniere?.statut === "en-cours" && derniere.outil === "Bash" ? derniere : null;
 
   return (
     <div className="flex max-w-[680px] flex-col gap-1">
@@ -162,25 +167,65 @@ export function EtapesView({ etapes, enCours }: { etapes: Etape[]; enCours: bool
           <span className="truncate">{resume}</span>
         )}
       </button>
+      {!ouvert && commande?.sortie && (
+        <div className="ml-[11px] border-l border-bordure-subtile pl-3">
+          <SortieCommande texte={commande.sortie} enCours lignesMax={8} />
+        </div>
+      )}
       {ouvert && (
         <ol className="m-0 ml-[11px] flex list-none flex-col gap-0.5 border-l border-bordure-subtile p-0 pl-3">
           {propres.map((etape) => (
-            <li key={etape.id} className="flex min-w-0 items-center gap-2 py-0.5 text-ui-xs text-texte-secondaire">
-              <Icon
-                name={etape.statut === "en-cours" ? "loader-01" : iconeEtape(etape.outil)}
-                size={14}
-                className={cn(
-                  "shrink-0",
-                  etape.statut === "en-cours" && "animate-spin text-icone-accent [animation-duration:1.5s]",
-                  etape.statut === "erreur" ? "text-texte-erreur" : "text-icone-secondaire",
-                )}
-              />
-              <span className={cn("truncate", etape.statut === "erreur" && "text-texte-erreur")}>{etape.libelle}</span>
-            </li>
+            <LigneEtape key={etape.id} etape={etape} enCours={enCours} />
           ))}
         </ol>
       )}
     </div>
+  );
+}
+
+/** Le temps d'une étape terminée (une commande, surtout), affiché au-delà de 2 s. */
+function tempsEtape(etape: Etape): string | null {
+  if (!etape.debut || !etape.fin || etape.fin - etape.debut < 2000) return null;
+  return duree(etape.fin - etape.debut);
+}
+
+/** Une étape : un clic montre le diff d'une modification ou la sortie d'une commande. */
+function LigneEtape({ etape, enCours }: { etape: Etape; enCours: boolean }) {
+  const detail = !!etape.modif || (etape.outil === "Bash" && etape.sortie !== undefined);
+  /* Une commande qui tourne montre sa sortie d'elle-même. */
+  const [ouvert, setOuvert] = useState(false);
+  const enDirect = enCours && etape.statut === "en-cours" && etape.outil === "Bash" && !!etape.sortie;
+  const visible = ouvert || enDirect;
+  const temps = tempsEtape(etape);
+  const contenu = (
+    <>
+      <Icon
+        name={etape.statut === "en-cours" ? "loader-01" : iconeEtape(etape.outil)}
+        size={14}
+        className={cn(
+          "shrink-0",
+          etape.statut === "en-cours" && "animate-spin text-icone-accent [animation-duration:1.5s]",
+          etape.statut === "erreur" ? "text-texte-erreur" : "text-icone-secondaire",
+        )}
+      />
+      <span className={cn("truncate", etape.statut === "erreur" && "text-texte-erreur", etape.modif?.etat === "annulee" && "line-through")}>{etape.libelle}</span>
+      {etape.modif && <Compte ajouts={etape.modif.ajouts} retraits={etape.modif.retraits} />}
+      {temps && <span className="shrink-0 tabular-nums text-texte-tertiaire">{temps}</span>}
+      {detail && <Icon name="chevron-down" size={12} className={cn("shrink-0 text-icone-secondaire transition-transform duration-[220ms] ease-sortie", !visible && "-rotate-90")} />}
+    </>
+  );
+  return (
+    <li className="flex min-w-0 flex-col gap-1 py-0.5 text-ui-xs text-texte-secondaire" data-etape={etape.outil}>
+      {detail ? (
+        <button type="button" aria-expanded={visible} onClick={() => setOuvert((v) => !v)} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-2xs border-0 bg-transparent p-0 text-left text-ui-xs text-texte-secondaire hover:text-texte-principal">
+          {contenu}
+        </button>
+      ) : (
+        <span className="flex min-w-0 items-center gap-2">{contenu}</span>
+      )}
+      {visible && etape.modif && <DiffLignes modif={etape.modif} />}
+      {visible && !etape.modif && etape.sortie !== undefined && <SortieCommande texte={etape.sortie} enCours={etape.statut === "en-cours"} />}
+    </li>
   );
 }
 
@@ -224,8 +269,8 @@ export function CarteAutorisation({
         <Bouton variant="sombre" taille="compact" onClick={() => onRepondre?.("oui")}>
           Autoriser
         </Bouton>
-        <Bouton variant="blanc" taille="compact" onClick={() => onRepondre?.("toujours")}>
-          Toujours, dans ce projet
+        <Bouton variant="blanc" taille="compact" title={part.regles?.length ? `Retenu dans le projet : ${part.regles.join(", ")}` : undefined} onClick={() => onRepondre?.("toujours")}>
+          {part.regles?.length === 1 ? `Toujours : ${regleEnMots(part.regles[0])}` : "Toujours, dans ce projet"}
         </Bouton>
         <Bouton variant="blanc" taille="compact" onClick={() => onRepondre?.("non")}>
           Refuser
@@ -475,6 +520,8 @@ export function MessagePartView({
   etapesDe = () => 0,
   nomAgent = "L’agent",
   onAutorisation,
+  onQuestion,
+  onPlan,
   remplacee = false,
   messageId = "",
   chatId = "",
@@ -494,6 +541,10 @@ export function MessagePartView({
   /** Le prénom de l'agent, pour ses demandes d'autorisation. */
   nomAgent?: string;
   onAutorisation?: (demandeId: string, decision: "oui" | "toujours" | "non") => void;
+  /** Tes réponses aux questions à choix de l'agent ; null : tu passes. */
+  onQuestion?: (demandeId: string, reponses: Record<string, string> | null) => void;
+  /** Le plan de l'agent : lancé, ou à corriger. */
+  onPlan?: (demandeId: string, lancer: boolean, message: string) => void;
   /** Une proposition d'agent suivie d'une autre dans la même conversation. */
   remplacee?: boolean;
   messageId?: string;
@@ -520,6 +571,12 @@ export function MessagePartView({
       return <CarteAutorisation part={part} nomAgent={nomAgent} onRepondre={(d) => onAutorisation?.(part.id, d)} />;
     case "etapes":
       return <EtapesView etapes={part.etapes} enCours={enCours} />;
+    case "reflexion":
+      return <ReflexionView part={part} enCours={enCours} />;
+    case "question":
+      return <CarteQuestions part={part} nomAgent={nomAgent} onRepondre={(r) => onQuestion?.(part.id, r)} />;
+    case "plan":
+      return <CartePlan part={part} nomAgent={nomAgent} onRepondre={(lancer, message) => onPlan?.(part.id, lancer, message)} />;
     case "passation":
       return <PassationView roleId={part.roleId} consigne={part.consigne} statut={part.statut} etapes={etapesDe(part.etapeId)} />;
     case "proposition-agent":

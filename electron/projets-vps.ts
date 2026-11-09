@@ -1,6 +1,8 @@
 import { net } from "electron";
 import type { EtatConsignesProjet } from "./consignes-projet";
 import { contenuFichier, type ContenuFichier, type Noeud } from "./projets";
+import type { ReglesProjet } from "./regles-projet";
+import type { MessageSession, SessionTerminal } from "./sessions-terminal";
 
 /**
  * Les projets d'un VPS relié : l'arbre et les octets viennent du serveur (serveur/fichiers.mjs),
@@ -40,6 +42,40 @@ export async function arbreVps(origine: string, jeton: string | null, dossier: s
   const json = await appel(origine, jeton, `/klyra/v1/fichiers/arbre?${requete(dossier, relatif)}`);
   if (!Array.isArray(json.noeuds)) throw new Error("Réponse illisible du VPS.");
   return (json.noeuds as Noeud[]).filter((n) => typeof n?.name === "string" && typeof n.path === "string" && (n.kind === "dossier" || n.kind === "fichier"));
+}
+
+/** Tous les fichiers d'un projet du VPS (chemins relatifs), pour la complétion « @ » du composeur. */
+export async function fichiersVps(origine: string, jeton: string | null, dossier: string): Promise<{ fichiers: string[]; coupe: boolean }> {
+  const json = await appel(origine, jeton, `/klyra/v1/fichiers/liste?${requete(dossier)}`);
+  if (!Array.isArray(json.fichiers)) throw new Error("Réponse illisible du VPS.");
+  return { fichiers: (json.fichiers as unknown[]).filter((f): f is string => typeof f === "string"), coupe: json.coupe === true };
+}
+
+/** Les autorisations retenues d'un projet du VPS ; `retirer` : en retire une. */
+export async function reglesVps(origine: string, jeton: string | null, dossier: string, retirer?: { liste: string; regle: string }): Promise<ReglesProjet> {
+  const json = await appel(origine, jeton, `/klyra/v1/fichiers/regles?${requete(dossier)}`, retirer ? "POST" : "GET", retirer);
+  const r = (json.regles ?? {}) as Partial<ReglesProjet>;
+  const liste = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return { allow: liste(r.allow), ask: liste(r.ask), deny: liste(r.deny) };
+}
+
+/** Une branche de travail d'un projet du VPS (`git worktree`), ou la retirer. */
+export async function brancheVps(origine: string, jeton: string | null, dossier: string, demande: { nom: string } | { retirer: true }): Promise<{ dossier: string; branche: string } | null> {
+  const json = await appel(origine, jeton, `/klyra/v1/fichiers/branche?${requete(dossier)}`, "POST", demande);
+  if ("retirer" in demande) return null;
+  const b = (json.branche ?? {}) as { dossier?: unknown; branche?: unknown };
+  if (typeof b.dossier !== "string" || typeof b.branche !== "string") throw new Error("Réponse illisible du VPS.");
+  return { dossier: b.dossier, branche: b.branche };
+}
+
+/** Les sessions de Claude Code d'un projet du VPS lancées hors de l'app ; avec `id` : les messages de l'une d'elles. */
+export async function sessionsTerminalVps(origine: string, jeton: string | null, dossier: string): Promise<SessionTerminal[]> {
+  const json = await appel(origine, jeton, `/klyra/v1/fichiers/sessions?${requete(dossier)}`);
+  return Array.isArray(json.sessions) ? (json.sessions as SessionTerminal[]).filter((s) => typeof s?.id === "string" && typeof s.titre === "string") : [];
+}
+export async function sessionTerminalVps(origine: string, jeton: string | null, dossier: string, id: string): Promise<MessageSession[]> {
+  const json = await appel(origine, jeton, `/klyra/v1/fichiers/session?${requete(dossier)}&id=${encodeURIComponent(id)}`);
+  return Array.isArray(json.messages) ? (json.messages as MessageSession[]).filter((m) => (m?.auteur === "personne" || m?.auteur === "agent") && typeof m.texte === "string") : [];
 }
 
 export async function lireFichierVps(origine: string, jeton: string | null, dossier: string, relatif: string): Promise<ContenuFichier> {
