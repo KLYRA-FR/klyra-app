@@ -372,9 +372,12 @@ app.whenReady().then(async () => {
     const attendreMcp = async () => { for (let i = 0; i < 100 && !terminerMcp; i++) await pause(20); verifier(!!terminerMcp, "autorisation en attente du navigateur"); };
     verifier(await ev("document.querySelectorAll('input[type=password]').length === 0"), "Apps en direct : aucun champ de jeton");
 
-    // GitHub passe par Composio : sa carte lance la connexion Composio, sans jeton.
-    await cible('[data-app-mcp="github"] button');
-    await attendre("document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Autorise dans le navigateur…')", "GitHub : connexion Composio en cours");
+    // GitHub : le pied de la carte est la connexion de KLYRA (dépôts, projets), absente de ce pont ; les outils
+    // des agents passent par Composio, sur la ligne du dessous, sans jeton.
+    verifier((await carteMcp("github")).includes("Outils des agents"), "GitHub : les outils des agents sont une ligne à part");
+    verifier(await ev("[...document.querySelectorAll('[data-app-mcp=\"github\"] button')].some((b) => b.innerText.trim() === 'Connecter par Composio')"), "GitHub : « Connecter par Composio » pour les outils des agents");
+    await cliquer("Connecter par Composio", '[data-app-mcp="github"] button');
+    await attendre("document.querySelector('[data-app-mcp=\"github\"]')?.innerText.includes('Composio : autorise dans le navigateur…')", "GitHub : connexion Composio en cours");
     verifier(connectJournal.filter((n) => n === "connecter").length === 3 && !mcpJournal.some((j) => j.nom === "connecter") && !(await ev("document.querySelector('[role=dialog]')")), "GitHub : la connexion Composio s’ouvre, pas de fenêtre de jeton");
     for (let i = 0; i < 100 && !terminerConnect; i++) await pause(20);
     terminerConnect(true);

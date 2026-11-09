@@ -7,6 +7,7 @@ import type { DepotGithubProjet, EtatGithubProjet } from "../../../electron/gith
 import { Icon } from "@/components/icons/Icon";
 import { CHAMP } from "@/components/ui/Champ";
 import { Bouton, BoutonIcone } from "@/components/ui/Bouton";
+import { CodeGithub } from "./ConnexionGithub";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { lieuParDefaut } from "@/lib/lieux";
 import { depotsTrouves, detailsDepot, projetDepuisDepot, projetDuDepot } from "@/lib/projet-depuis-depot";
@@ -143,7 +144,7 @@ export function SelecteurDepotGithub({
               GitHub · <span className="font-medium text-texte-principal">{etat.compte}</span>
             </>
           ) : (
-            "Connecte GitHub pour retrouver tes dépôts publics et privés."
+            "Connecte GitHub pour retrouver tes dépôts publics et privés. C’est la connexion de KLYRA, à part de Composio et du terminal."
           )}
         </p>
         {etat?.compte ? (
@@ -160,26 +161,7 @@ export function SelecteurDepotGithub({
         )}
       </div>
 
-      {etat?.enCours && (
-        <div role="status" className="flex flex-col gap-2 rounded-md bg-fond-surface-grise p-4">
-          {etat.connexion ? (
-            <>
-              <p className="m-0 text-ui-s text-texte-principal">
-                Sur GitHub, saisis ce code et autorise GitHub CLI, utilisé par KLYRA pour accéder à ton code :{" "}
-                <strong className="klyra-mono select-all tabular-nums">{etat.connexion.code}</strong>
-              </p>
-              <Bouton variant="blanc" taille="md" className="self-start" onClick={() => void github?.navigateur()}>
-                Ouvrir GitHub
-              </Bouton>
-            </>
-          ) : (
-            <p className="m-0 text-ui-s text-texte-secondaire">Préparation de la connexion GitHub…</p>
-          )}
-          <Bouton variant="discret" taille="compact" className="self-start" onClick={() => void connexion(true)}>
-            Annuler la connexion
-          </Bouton>
-        </div>
-      )}
+      {etat?.enCours && <CodeGithub code={etat.connexion?.code ?? null} onAnnuler={() => void connexion(true)} />}
 
       {chargement && !etat?.enCours && (
         <p role="status" className="m-0 text-ui-s text-texte-secondaire">

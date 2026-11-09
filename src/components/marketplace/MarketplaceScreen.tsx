@@ -17,11 +17,12 @@ import { cn } from "@/lib/cn";
 import { useComposio, type ComposioApiInterface } from "@/lib/composio";
 import { compteComposioActif, nomCompteComposio, statutCompteComposio } from "@/lib/composio-vues";
 import { ConnexionComposio } from "./ConnexionComposio";
+import { ModaleConnexionGithub, useConnexionGithub } from "@/components/project/ConnexionGithub";
 
 /** Les apps connues, dans l'ordre de la grille ; l'adresse du serveur reste côté Electron. */
 /** Les apps en direct. `composio` : l'app passe par Composio (son serveur MCP n'ouvre pas l'inscription OAuth) ; les autres s'autorisent dans le navigateur. */
 const APPS: { id: string; nom: string; description: string; via?: "composio" }[] = [
-  { id: "github", nom: "GitHub", description: "Dépôts, issues et pull requests.", via: "composio" },
+  { id: "github", nom: "GitHub", description: "Tes dépôts ouverts en projets, et les issues et pull requests pour tes agents.", via: "composio" },
   { id: "linear", nom: "Linear", description: "Tickets, projets et cycles." },
   { id: "supabase", nom: "Supabase", description: "Bases, tables et fonctions." },
   { id: "neon", nom: "Neon", description: "Bases Postgres et leurs branches." },
@@ -332,6 +333,10 @@ function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
   const [demander, confirmation] = useConfirmation();
   const persos = liste.filter((m) => !m.app);
+  /* GitHub : la connexion de KLYRA (dépôts, projets, onglet Git) sur la machine affichée ; Composio garde les outils des agents. */
+  const lieu = useLieuActif();
+  const github = useConnexionGithub(lieu);
+  const [connexionGithub, setConnexionGithub] = useState(false);
 
   const autoriser = async (cle: string, entree: EntreeConnexion) => {
     if (!pont || attente) return;
@@ -377,19 +382,43 @@ function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
     </>;
   };
 
-  /** GitHub passe par Composio : un ancien jeton reste utilisable jusqu'à ce qu'on le retire. */
-  const piedComposio = (branche: McpDirect | undefined): ReactNode => {
+  /**
+   * GitHub, deux connexions qui ne se remplacent pas : celle de KLYRA (le pied de la carte : dépôts, projets, puce
+   * « Dépôt », onglet Git), par l'autorisation GitHub, et les outils des agents (la ligne du dessous), par Composio
+   * (le serveur MCP de GitHub n'ouvre pas l'inscription) ; un ancien jeton reste utilisable jusqu'à ce qu'on le retire.
+   */
+  const piedGithub = (): ReactNode => {
+    if (!github.disponible) return <span className="text-ui-xs text-texte-tertiaire">Dans l’app de bureau.</span>;
+    const etat = github.etat;
+    if (etat?.compte && !etat.enCours) return <>
+      <span className="flex min-w-0 items-center gap-2">
+        <Pastille texte="Connecté" ton="ok" />
+        <span className="truncate text-ui-xs text-texte-secondaire">{etat.compte}</span>
+      </span>
+      <Bouton variant="discret" taille="mini" disabled={github.occupe} onClick={() => setConnexionGithub(true)}>Détails</Bouton>
+    </>;
+    if (etat?.enCours) return <>
+      <span role="status" className="text-ui-xs text-texte-secondaire">Autorise sur GitHub…</span>
+      <Bouton taille="mini" onClick={() => setConnexionGithub(true)}>Voir le code</Bouton>
+    </>;
+    return <Bouton disabled={!etat || github.occupe} onClick={() => setConnexionGithub(true)}>Connecter</Bouton>;
+  };
+  const outilsGithub = (branche: McpDirect | undefined): ReactNode => {
+    const libelle = <span className="text-ui-xs text-texte-tertiaire">Outils des agents</span>;
     if (branche) return <>
-      <Pastille texte="Connecté par jeton" ton="neutre" />
-      <Bouton variant="discret" taille="mini" disabled={!!attente} onClick={() => void retirer(branche)}>Retirer…</Bouton>
+      {libelle}
+      <span className="flex items-center gap-1">
+        <Pastille texte="Par jeton" ton="neutre" />
+        <Bouton variant="discret" taille="mini" disabled={!!attente} onClick={() => void retirer(branche)}>Retirer…</Bouton>
+      </span>
     </>;
-    if (!composio.pont) return <span className="text-ui-xs text-texte-tertiaire">Dans l’app de bureau.</span>;
-    if (composio.etat?.connecte) return <Pastille texte="Par Composio" ton="ok" />;
+    if (!composio.pont) return null;
+    if (composio.etat?.connecte) return <>{libelle}<Pastille texte="Par Composio" ton="ok" /></>;
     if (composio.etat?.enCours) return <>
-      <span role="status" className="text-ui-xs text-texte-secondaire">Autorise dans le navigateur…</span>
-      <Bouton taille="mini" onClick={() => void composio.annuler()}>Annuler</Bouton>
+      <span role="status" className="text-ui-xs text-texte-secondaire">Composio : autorise dans le navigateur…</span>
+      <Bouton variant="discret" taille="mini" onClick={() => void composio.annuler()}>Annuler</Bouton>
     </>;
-    return <Bouton disabled={!composio.etat} onClick={() => void composio.connecter()}>Connecter</Bouton>;
+    return <>{libelle}<Bouton variant="discret" taille="mini" disabled={!composio.etat} onClick={() => void composio.connecter()}>Connecter par Composio</Bouton></>;
   };
 
   return (
@@ -402,8 +431,9 @@ function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
         {APPS.map((a) => {
           const branche = liste.find((m) => m.app === a.id);
           if (a.via === "composio") {
-            const note = branche ? `${a.description} Passe maintenant par Composio : retire le jeton pour l’utiliser.` : `${a.description} Par Composio : tes agents te donnent un lien à valider la première fois.`;
-            return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={note} erreur={branche ? "" : composio.erreur || (composio.etat?.enCours ? "" : composio.etat?.erreur ?? "")} pied={piedComposio(branche)} />;
+            const erreurComposio = branche ? "" : composio.erreur || (composio.etat?.enCours ? "" : composio.etat?.erreur ?? "");
+            const erreurGithub = github.etat?.enCours ? "" : github.erreur ?? "";
+            return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={a.description} erreur={erreurGithub || erreurComposio} pied={piedGithub()} detail={outilsGithub(branche)} />;
           }
           return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={a.description} erreur={erreurs[a.id]} pied={pied(a.id, branche, { app: a.id })} />;
         })}
@@ -419,13 +449,16 @@ function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
         </button>
       </div>
       {autre && pont && <AutreServeurMcp onFermer={() => setAutre(false)} onAjoute={(l) => { setListe(l); setAutre(false); }} />}
+      {connexionGithub && <ModaleConnexionGithub lieu={lieu} onFermer={() => { setConnexionGithub(false); github.relire(); }} />}
       {confirmation}
     </section>
   );
 }
 
-function CarteApp({ id, logo, nom, description, erreur, pied }: {
+function CarteApp({ id, logo, nom, description, erreur, pied, detail }: {
   id?: string; logo?: string; nom: string; description: string; erreur?: string; pied: ReactNode;
+  /** Une seconde connexion, sous le pied (les outils GitHub des agents). */
+  detail?: ReactNode;
 }) {
   return (
     <div data-app-mcp={id} className="klyra-carte-flottante flex min-h-[132px] flex-col justify-between gap-3 rounded-lg p-4">
@@ -438,6 +471,7 @@ function CarteApp({ id, logo, nom, description, erreur, pied }: {
       </div>
       {erreur && <Erreur>{erreur}</Erreur>}
       <div className="flex items-center justify-between gap-2">{pied}</div>
+      {detail && <div className="-mt-1 flex items-center justify-between gap-2 border-t border-bordure-subtile pt-2">{detail}</div>}
     </div>
   );
 }
