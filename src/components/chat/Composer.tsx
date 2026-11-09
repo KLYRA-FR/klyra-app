@@ -273,7 +273,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
 
   const { ajouter, coller } = useAjoutFichiers(fichiers, setFichiers, setAlerte);
   /* La réponse suggérée en fin de réponse d'agent (texte fantôme, Tab l'insère). Pas avec des pièces jointes. */
-  const suggestion = useSuggestion(chat.id, text);
+  const suggestion = useSuggestion(chat, text);
 
   /* Glisser des fichiers sur toute la conversation (la section qui contient le composeur). */
   useEffect(() => {

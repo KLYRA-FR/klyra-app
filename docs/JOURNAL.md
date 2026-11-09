@@ -11,6 +11,16 @@ Question de Corentin : pourquoi une routine ou un workflow ouvre-t-il une « con
 
 Validation (remplaçant local de `klyra-ui`, jamais committé, comme les sessions précédentes) : types (écran et Electron ; seule erreur, `site/app/layout.tsx`, sans rapport), ESLint des fichiers touchés, vitest (116 fichiers, 1 284 tests, dont 3 nouveaux pour la remise en ordre), build, smoke, et dans Electron `test:conversation` (nouveau cas : une routine sans projet a l'en-tête et le panneau d'un chat, pas de destinataire), `test:epingler` (80/80), `test:menu-contextuel` (74/74), `test-annulation`, `test-conseil-contexte`, `test-atelier-equipe`. `scripts/test-export.mjs` (hors CI) a 18 échecs, les mêmes sur main avant ce changement.
 
+## 9 novembre 2026 — « Repartir à zéro » : la réponse suggérée n'envoie plus l'ancienne conversation
+
+`scripts/test-repartir-a-zero.mjs` échouait sur `main` à « le modèle ne reçoit rien de ce qui précède le départ ». La requête fautive était la réponse suggérée dans le champ (`claude:suggestion`) : à la fin de la première réponse après un départ, elle partait avec les quatre derniers échanges, y compris ceux d'avant le départ.
+
+- `echangesPourSuggestion` (`src/lib/suggestion.ts`) prend la conversation et écarte tout ce qui précède le dernier « Repartir à zéro » (`estAvantDepart`, la même règle que `construirePrompt`). Sans échange depuis le départ, aucune demande.
+- `useSuggestion` reçoit la conversation (depuis `Composer`) et annule la suggestion montrée ou en cours quand on repart à zéro.
+- La règle est notée dans CLAUDE.md (« Repartir à zéro ») et couverte par un test de `src/lib/suggestion.test.ts`.
+
+Validation : types, lint, `src/lib/suggestion.test.ts` et `contexte.test.ts`, build, smoke, et `test:repartir-a-zero` avec le vrai Claude Code (2.1.319) face au faux fournisseur : tout est bon avec le correctif ; le même parcours sur le code de `main` échoue bien à ce point. `klyra-ui` (dépôt privé) n'était pas accessible : remplaçant local, jamais committé, comme les sessions précédentes.
+
 ## 9 novembre 2026 — `test-visite-guidee` remis au vert : lire le compte n'est pas se connecter
 
 Le test passait toutes les étapes de la visite puis échouait sur « aucun appel de génération, installation ou connexion » avec `moteurs:compte` (une fois, parfois deux), sur main aussi.
