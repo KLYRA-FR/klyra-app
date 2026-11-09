@@ -250,6 +250,7 @@ contextBridge.exposeInMainWorld("klyra", {
   },
   mcp: {
     lister: () => ipcRenderer.invoke("mcp:lister"),
+    poste: () => ipcRenderer.invoke("mcp:poste"),
     connecter: (entree: unknown) => ipcRenderer.invoke("mcp:connecter", entree),
     annuler: () => ipcRenderer.invoke("mcp:annuler"),
     ajouter: (entree: unknown) => ipcRenderer.invoke("mcp:ajouter", entree),
