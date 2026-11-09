@@ -8,7 +8,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
+import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, outilsLibresCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
 import { avecReperesCerveau } from "./cerveau-outils.mjs";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { binaireGere } from "./installation.mjs";
@@ -28,7 +28,7 @@ const CONNEXION_MAX_MS = 15 * 60 * 1000;
 /**
  * @param {{ home: string, version: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
  *   consigne: (agent: string | null) => string, consignesKlyra?: () => string | null, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
- *   skillsParAgent?: () => object | null,
+ *   skillsParAgent?: () => object | null, outilsLibres?: (demande: object) => string[],
  *   codex?: string | null, delais?: { requete?: number, inactivite?: number, pas?: number } }} options
  */
 export function creerCodex(options) {
@@ -279,6 +279,8 @@ export function creerCodex(options) {
     if (!chemin) throw new Error("ChatGPT n’est pas installé sur ce VPS : installe Codex dans Réglages du serveur › Fournisseurs.");
     const acces = demande.acces ?? "projet";
     const politique = accesCodex(acces);
+    /* Les outils MCP que Codex appelle sans demander : les mêmes que pour Claude Code sur ce VPS (agents.mjs). */
+    const libres = outilsLibresCodex(acces, () => options.outilsLibres?.(demande) ?? []);
     /* Les consignes KLYRA adoptées sur le PC (reçues avec l'équipe), données aussi à Codex, comme `consignesApp` dans l'app. */
     const consignesKlyra = options.consignesKlyra?.() ?? null;
     /* Les skills de Claude sur ce VPS : le dossier préparé de cet agent n'a que les allumées. */
@@ -293,7 +295,7 @@ export function creerCodex(options) {
     });
     const proc = processusAgent(id, prepare);
     await proc.demarrer(chemin);
-    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms, filtre.coupes, "cerveau"]);
+    const signature = JSON.stringify([demande.agent, options.generation(), consignesKlyra, skills.noms, filtre.coupes, "cerveau", libres]);
     const reglages = () => {
       const mcp = options.mcp(demande);
       return {
@@ -301,7 +303,7 @@ export function creerCodex(options) {
         approvalPolicy: politique.approvalPolicy,
         sandbox: politique.sandbox,
         developerInstructions: [demande.agent ? ficheDe(demande.agent) : null, options.consigne(demande.agent), consignesKlyra, skills.texte, CONSIGNE_CODEX].filter(Boolean).join("\n\n"),
-        config: { mcp_servers: mcpPourCodex(mcp) },
+        config: { mcp_servers: mcpPourCodex(mcp, libres) },
         ...(demande.modele ? { model: demande.modele } : {}),
       };
     };
