@@ -99,7 +99,7 @@
     "test:fils-serveur": "node scripts/test-fils-serveur.mjs",
     "test:terminal": "node --experimental-strip-types --test electron/terminal.test.mts && node --test serveur/terminal.test.mjs && vitest run src/lib/terminal.test.ts",
     "test:mcp-sante": "node --experimental-strip-types --test electron/mcp-sante.test.mts && node --test serveur/mcp-sante.test.mjs && vitest run src/lib/sante-mcp.test.ts",
-    "test:mcp-sante-ecran": "node scripts/test-mcp-sante-ecran.mjs",
+    "test:mcp-sante-ecran": "vitest run src/components/shell/AppRail.test.tsx",
     "test:terminal-ecran": "node scripts/test-terminal-ecran.mjs",
     "test:terminal-poste": "electron scripts/test-terminal-poste.cjs",
     "test:session-claude": "node --experimental-strip-types --test electron/session-claude.test.mts && vitest run src/lib/session-agent.test.ts",
