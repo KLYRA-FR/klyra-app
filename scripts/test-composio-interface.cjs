@@ -108,6 +108,7 @@ let terminerMcp = null;
 ipcMain.handle("fixture:mcp", async (_event, nom, arg) => {
   mcpJournal.push({ nom, entree: clone(arg ?? null) });
   if (nom === "lister") return { ok: true, data: clone(mcpListe) };
+  if (nom === "poste") return { ok: true, data: [{ id: "mcp:outil-perso", nom: "outil-perso", detail: "mcp.exemple.dev" }] };
   if (nom === "connecter") {
     const ancien = arg.remplace ? mcpListe.find((m) => m.id === arg.remplace) : null;
     const url = ancien?.url ?? APPS_MCP[arg.app] ?? arg.url;
@@ -383,6 +384,7 @@ app.whenReady().then(async () => {
 
     // Un ancien jeton reste connecté, et passe à l'autorisation sans être perdu avant la fin.
     verifier((await carteMcp("linear")).includes("Connecté par jeton"), "Linear : l’ancien jeton reste connecté et signalé");
+    verifier(await ev("document.body.innerText.includes('outil-perso') && document.body.innerText.includes('Sur ce poste')"), "Sur ce poste : un serveur ajouté hors de la Marketplace a sa carte");
     await cible('button[aria-label="Plus d’options pour Linear"]'); await cliquer("Passer à l’autorisation", '[role="menuitem"]');
     await attendreMcp();
     verifier(mcpJournal.some((j) => j.nom === "connecter" && j.entree.remplace === "mcp_ancien") && mcpListe.some((m) => m.id === "mcp_ancien" && m.connexion === "jeton"), "Linear : autorisation demandée, l’ancien jeton gardé jusqu’au retour");

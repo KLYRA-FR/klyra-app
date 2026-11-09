@@ -1,5 +1,13 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Marketplace : ce qui est branché hors de la Marketplace
+
+Demande de Yanis : un MCP ajouté à la main (l'exemple : Sunra) n'apparaissait pas dans les Apps en direct, qui ne listaient que `mcp-direct.json`.
+
+- Les serveurs MCP de `~/.claude.json` et Sunra connecté en ligne de commande ont maintenant une carte « Sur ce poste », en lecture seule.
+- Sunra n'est pas un serveur MCP après un simple `sunra login` (CLI et skill) : il est repéré par sa skill. Un autre outil en ligne de commande s'ajoute dans `OUTILS_POSTE`.
+- Reste à faire : les serveurs de portée projet, et le même affichage pour un VPS.
+
 ## 9 novembre 2026 — Une conversation comme dans Claude Code Desktop : les 14 points
 
 Demande de Corentin : reprendre dans klyra-app ce qui manquait par rapport à l'onglet Code de Claude Desktop (« go pour tout ça, fais en un plan et implémente tout parfaitement »). Le protocole a d'abord été relevé en vrai, Claude Code 2.1.319 face à un faux fournisseur : réflexion (`thinking_delta`, lisible avec `--thinking-display summarized`), `AskUserQuestion` et sa réponse `answers`, `ExitPlanMode` (le plan est dans l'appel, pas dans la demande d'accord), rappels `hook_callback` déclarés par `initialize`, `get_task_output` (même au premier plan), `get_context_usage`, commandes de la réponse à `initialize`, `--resume-session-at` + `--fork-session`. Tout passe par un module pur commun (`electron/session-claude.ts`, généré pour le serveur) : PC et VPS font la même chose.
