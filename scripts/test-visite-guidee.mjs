@@ -95,7 +95,15 @@ try {
   await app.quand("document.getElementById('revoir-visite-guidee')");
   verifier(await app.ev("!document.querySelector('.visite-dialogue')"), "une visite terminée ne réapparaît pas au prochain lancement");
   assert.deepEqual(fichiers(), avant, "visite sans modification des agents, conversations, accès ni onboarding");
-  const interdits = readFileSync(journal, "utf8").split("\n").filter((c) => /^(prise-en-main:ecrire|agents:mes:assistant|agents:meta:write|claude:(stream|run)|moteurs:(installer|connecter|cle|compte))/.test(c));
+  /* Lire un état est permis : le rail relit les fournisseurs et leur compte (`moteurs:liste`, `moteurs:compte`,
+     `claude:compte`) à chaque lancement, donc après chaque rechargement de ce test, visite ou pas. Interdits :
+     les écritures du profil, ce qui génère, installe ou connecte (`moteurs:connecter` couvre `-cle`). */
+  const GESTES_INTERDITS = new RegExp("^(" + [
+    "prise-en-main:ecrire", "agents:mes:assistant", "agents:meta:write", "agents:installer", "maj:installer",
+    "claude:(stream|run|essayer|titre|suggestion|connexion|comptes:(connexion|code)|utilisation:actualiser)",
+    "moteurs:(installer|mettre-a-jour|connecter)", "mcp:connecter", "composio:(connecter|connect:(vps:)?connecter)", "github:connecter",
+  ].join("|") + ")");
+  const interdits = readFileSync(journal, "utf8").split("\n").filter((c) => GESTES_INTERDITS.test(c));
   assert.deepEqual(interdits, [], "aucun appel de génération, installation ou connexion");
   verifier(app.erreurs.length === 0, `aucune exception dans l’interface : ${app.erreurs.join('; ')}`);
   console.log("VISITE VÉRIFIÉE — onze pages, navigation, reprise, clavier, responsive et profil préservé.");
