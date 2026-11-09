@@ -103,6 +103,7 @@
     "test:equipe-serveur": "electron scripts/test-equipe-serveur.cjs",
     "test:moteurs": "node --experimental-strip-types --test electron/moteurs/registre.test.mts electron/moteurs/codex-protocole.test.mts electron/moteurs/installation.test.mts electron/moteurs/acp.test.mts electron/utilisation.test.mts",
     "test:moteur-codex": "electron scripts/test-moteur-codex.cjs",
+    "test:codex-mcp": "node scripts/test-codex-mcp.mjs",
     "test:moteur-grok": "electron scripts/test-moteur-grok.cjs",
     "test:fournisseurs": "vitest run src/lib/fournisseurs.test.ts",
     "test:contexte": "vitest run src/lib/contexte.test.ts",

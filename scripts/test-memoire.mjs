@@ -105,7 +105,8 @@ try {
   await cliquer("Enregistrer la note");
   verifier(await app.quand("document.querySelector('[role=alert]')?.textContent.includes('Impossible d’enregistrer') && document.querySelector('.memoire-editeur textarea')?.value==='Texte à préserver en cas d’échec.'"), "un conflit de version garde le formulaire et affiche une erreur");
   verifier(app.erreurs.length === 0, `aucune exception de rendu (${app.erreurs.length})`);
-  const appels = readFileSync(journal, "utf8").split("\n").filter((c) => /^(claude:(stream|run)|moteurs:(installer|connecter|cle|compte))/.test(c));
+  // `moteurs:compte` permis : une lecture d'état que le rail fait à chaque lancement (`moteurs:connecter` couvre `-cle`).
+  const appels = readFileSync(journal, "utf8").split("\n").filter((c) => /^(claude:(stream|run)|moteurs:(installer|connecter))/.test(c));
   verifier(appels.length === 0, "aucun appel à un modèle, installation ou connexion de compte");
   console.log("Parcours Mémoire terminé.");
 } finally { await app?.fermer(); rmSync(tmp, { recursive: true, force: true }); }

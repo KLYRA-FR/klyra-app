@@ -283,6 +283,8 @@ export interface TourDemande {
   regles: string;
   mcp: McpAcp[];
   acces: Acces;
+  /** Les outils de l'app accordés sans carte en accès « projet », comme pour Claude Code (`mcp__klyra__…`). */
+  libres?: string[];
   modele?: string | null;
   effort?: string | null;
   /** Ce qui a configuré la session : changée, la session est rechargée avec les serveurs MCP à jour. */
@@ -293,6 +295,7 @@ interface Reponse {
   requestId: string;
   tour: TourAcp;
   acces: Acces;
+  libres: string[];
   emit: (event: AgentEvent) => void;
   demandes: Map<string, { rpcId: number | string; params: Json }>;
   /** Dernier signe de Grok (mise à jour, demande, réponse). */
@@ -415,10 +418,11 @@ export function creerClientAcp(o: OptionsAcp) {
     const r = typeof params.sessionId === "string" ? enCours.get(params.sessionId) : undefined;
     if (r) r.derniere = Date.now();
     if (method === "session/request_permission" && r) {
-      if (r.acces === "tout") return ecrire({ id: rpcId, result: reponseAutorisationAcp(params, "oui") });
+      const carte = autorisationAcp(params);
+      if (r.acces === "tout" || (r.acces === "projet" && r.libres.includes(carte.outil))) return ecrire({ id: rpcId, result: reponseAutorisationAcp(params, "oui") });
       const id = String(rpcId);
       r.demandes.set(id, { rpcId, params });
-      r.emit({ type: "autorisation", id, ...autorisationAcp(params) });
+      r.emit({ type: "autorisation", id, ...carte });
       return;
     }
     if (method === "session/request_permission") return ecrire({ id: rpcId, result: { outcome: { outcome: "cancelled" } } });
@@ -541,7 +545,7 @@ export function creerClientAcp(o: OptionsAcp) {
       session.effort = d.effort;
     }
 
-    const reponse: Reponse = { requestId, tour: new TourAcp(sessionId, emit), acces: d.acces, emit, demandes: new Map(), derniere: Date.now() };
+    const reponse: Reponse = { requestId, tour: new TourAcp(sessionId, emit), acces: d.acces, libres: d.libres ?? [], emit, demandes: new Map(), derniere: Date.now() };
     enCours.set(sessionId, reponse);
     parRequete.set(requestId, sessionId);
     const id = sessionId;
