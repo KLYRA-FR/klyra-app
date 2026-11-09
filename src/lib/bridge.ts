@@ -58,6 +58,32 @@ export type ResultatConnexionMcp =
   | { statut: "sans-oauth"; liste: McpDirect[] };
 import type { Routine as RoutineMoteur, RoutineInput, RoutinePatch, RoutineRun, RunReport } from "@/types/routines";
 
+/** L'état d'un serveur MCP d'un agent (cf. electron/mcp-sante.ts). */
+export type EtatMcp = "connecte" | "authentification" | "echec" | "attente" | "inconnu";
+export interface EntreeSanteMcp {
+  agent: string;
+  mcp: string;
+  etat: EtatMcp;
+  /** Reconnectable par le navigateur (serveur distant). */
+  distant: boolean;
+  /** Depuis quand il est dans cet état (ms). */
+  depuis: number;
+}
+/** La veille d'une machine : ce PC (`lieu` null) ou un VPS relié. */
+export interface SanteMcpLieu {
+  lieu: string | null;
+  sante: { entrees: EntreeSanteMcp[]; verifieLe: number | null; enCours: boolean; erreurs: { agent: string; message: string }[] } | null;
+  erreur: string | null;
+}
+export interface ReconnexionMcp {
+  id: string;
+  agent: string;
+  mcp: string;
+  etat: "attente" | "connecte" | "echec";
+  lien: string | null;
+  message: string;
+}
+
 /** Un terminal interactif ouvert par un agent (cf. electron/terminal.ts, `SessionVue`). */
 export interface TerminalAgent {
   id: string;
@@ -924,6 +950,19 @@ export interface KlyraBridge {
     taille: (id: string, cols: number, rows: number, lieu?: string | null) => Promise<Reponse<boolean>>;
     fermer: (id: string, lieu?: string | null) => Promise<Reponse<boolean>>;
   };
+  /** La veille des serveurs MCP des agents (cf. electron/mcp-veille.ts). Absente avant la relance de l'app. */
+  santeMcp?: {
+    /** La dernière lecture ; `verifier` : relit tout maintenant (ce PC et chaque VPS relié). */
+    sante: (verifier?: boolean) => Promise<Reponse<SanteMcpLieu[]>>;
+    reconnecter: (lieu: string | null, agent: string, mcp: string) => Promise<Reponse<ReconnexionMcp | null>>;
+    suivre: (lieu: string | null, id: string) => Promise<Reponse<ReconnexionMcp | null>>;
+    /** L'adresse de retour collée : droit au login, jamais gardée. */
+    retour: (lieu: string | null, id: string, adresse: string) => Promise<Reponse<ReconnexionMcp | null>>;
+    annuler: (lieu: string | null, id: string) => Promise<Reponse<boolean>>;
+    surSante: (callback: (sante: unknown) => void) => () => void;
+    /** Un clic sur la notification d'une connexion à reprendre. */
+    surOuvrir: (callback: () => void) => () => void;
+  };
   /** Le navigateur de KLYRA (cf. electron/navigateur/). Absent avant la relance de l'app. */
   navigateur?: {
     etat: () => Promise<Reponse<OngletNavigateur[]>>;
@@ -1021,6 +1060,7 @@ export interface PreferencesNotifications {
   agentErreur: boolean;
   workflow: boolean;
   majPrete: boolean;
+  mcpDefaut: boolean;
 }
 
 export interface PreferencesSons {

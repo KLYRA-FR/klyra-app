@@ -26,6 +26,8 @@ export interface PreferencesNotifications {
   agentErreur: boolean;
   workflow: boolean;
   majPrete: boolean;
+  /** Un serveur MCP d'un agent passe en défaut (connexion expirée, erreur) : cf. mcp-sante.ts. */
+  mcpDefaut: boolean;
 }
 
 /** Les thèmes des sons de l'app (src/lib/sons/themes.ts). */
@@ -56,10 +58,10 @@ export interface Reglages {
   suggestions: { actives: boolean };
 }
 
-export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "majPrete";
+export type EvenementNotification = "agentFini" | "agentErreur" | "workflow" | "majPrete" | "mcpDefaut";
 
 const PAR_DEFAUT: Reglages = {
-  notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
+  notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true, mcpDefaut: true },
   computerUse: { actif: false },
   navigateur: { agents: true, moteur: "integre" },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },

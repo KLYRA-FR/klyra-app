@@ -141,7 +141,7 @@ export const SECTIONS: SectionReglages[] = [
       { id: "notifications-systeme", titre: "Notifications du système", mots: "alertes bannieres activer couper" },
       { id: "pastille", titre: "Pastille sur l’icône", mots: "dock badge barre des taches clignoter" },
       { id: "son", titre: "Son", mots: "silencieux bruit" },
-      { id: "evenements", titre: "Par événement", mots: "agent fini erreur workflow mise a jour" },
+      { id: "evenements", titre: "Par événement", mots: "agent fini erreur workflow mise a jour connexion mcp expiree reconnecter" },
       { id: "essai-notification", titre: "Essayer", mots: "test" },
       { id: "son-fin-tache", titre: "Émettre un son à la fin d’une tâche", mots: "sons agent fini termine" },
       { id: "sons-actions", titre: "Sons des actions", mots: "theme desactive silence chaleureux mecanique petillant clavier verre bois clics loquets gouttes bulles touches envoi interface clic menu fenetre onglet microinteractions" },

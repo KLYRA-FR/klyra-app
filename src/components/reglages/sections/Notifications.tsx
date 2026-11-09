@@ -13,6 +13,7 @@ const EVENEMENTS: { cle: keyof PreferencesNotifications; libelle: string; descri
   { cle: "agentErreur", libelle: "Un agent s’est arrêté sur une erreur", description: "Il n’a pas pu finir : la conversation dit pourquoi." },
   { cle: "workflow", libelle: "Un workflow te prévient", description: "Les étapes « Notification » de tes workflows." },
   { cle: "majPrete", libelle: "Une mise à jour est prête", description: "Clique sur la notification pour l’installer tout de suite." },
+  { cle: "mcpDefaut", libelle: "Une connexion d’agent a expiré", description: "Un service branché à un agent (MCP) demande de se reconnecter, avant que l’agent bute dessus." },
 ];
 
 export function Notifications() {

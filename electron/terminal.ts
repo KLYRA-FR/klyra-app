@@ -364,10 +364,14 @@ export function creerTerminaux(options: OptionsTerminaux) {
     return { donnees: s.sortie.slice(reprise ? 0 : d - s.base), position: s.base + s.sortie.length, reprise, fini: s.fini, code: s.code };
   }
 
-  /** Ce que la personne tape dans le panneau : droit au PTY, jamais noté. */
-  function saisir(idSession: unknown, donnees: unknown): boolean {
+  /**
+   * Ce que la personne tape dans le panneau : droit au PTY, jamais noté. `secret` : masqué aussi dans la sortie si
+   * la commande le répète (l'adresse de retour d'un OAuth, cf. mcp-sante.ts).
+   */
+  function saisir(idSession: unknown, donnees: unknown, o: { secret?: boolean } = {}): boolean {
     const s = trouver(idSession);
     if (!s || s.fini || typeof donnees !== "string" || !donnees || donnees.length > 64 * 1024) return false;
+    if (o.secret === true && !s.secrets.includes(donnees)) s.secrets.push(donnees);
     ecrire(s, donnees);
     return true;
   }
@@ -402,6 +406,8 @@ export function creerTerminaux(options: OptionsTerminaux) {
 
   return {
     executer,
+    /** Ouvre une session pour l'app elle-même (la reconnexion d'un MCP), pas pour un agent. */
+    ouvrir,
     lister,
     flux,
     saisir,
