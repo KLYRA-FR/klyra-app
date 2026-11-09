@@ -172,6 +172,8 @@ jobs:
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Choix GitHub, clone sur PC et VPS (GitHub simulé, vrais dépôts Git)
         run: xvfb-run -a pnpm test:projet-github -- --no-sandbox
+      - name: Connecter GitHub depuis Projets, la puce « Dépôt » et la Marketplace (GitHub CLI simulé)
+        run: timeout 180 xvfb-run -a pnpm test:connexion-github -- --no-sandbox
       - name: Composio, IPC natif et serveur MCP réels, sans fournisseur externe
         run: |
           timeout 120 xvfb-run -a env -u ELECTRON_RUN_AS_NODE pnpm test:composio:natif --no-sandbox
