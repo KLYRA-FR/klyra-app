@@ -1,5 +1,13 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — « Toujours » tient sa promesse avec Codex
+
+Sur le VPS, Codex demandait l'accord à chaque commande. Deux causes : son bac à sable ne démarre pas (Ubuntu 24 bloque les espaces de noms utilisateur, `kernel.apparmor_restrict_unprivileged_userns = 1`, d'où `bwrap: setting up uid map: Permission denied`), donc en accès « Projet » chaque commande échoue puis demande à repartir hors du bac à sable ; et « Toujours, dans ce projet » répondait `acceptForSession`, qui ne couvre que la commande exacte, pour la session.
+
+- « Toujours » sur une commande accepte maintenant la règle que Codex propose (`proposedExecpolicyAmendment` → `acceptWithExecpolicyAmendment`) : Codex la garde dans le CODEX_HOME de l'agent (`rules/default.rules`), et une commande qui commence ainsi passe ensuite sans demander, hors du bac à sable (règle `allow`, d'après la doc d'OpenAI), dans tous les projets de cet agent sur cette machine.
+- Le bouton dit ce qu'il fait : « Toujours pour « sed -n » », ou « Toujours, dans cette conversation » sans règle proposée (`toujours` de l'événement `autorisation`, copié sur la carte et vers le téléphone, sans chemin). Claude Code garde « Toujours, dans ce projet ».
+- PC et VPS : `codex-protocole.ts`, régénéré en `serveur/codex-protocole.mjs` (code du serveur v65).
+- Reste : le bac à sable lui-même sur un VPS Ubuntu 24 (profil AppArmor pour le bwrap de Codex, à décider) ; en attendant, « Tout accepter » est le réglage sans demande. Pas essayé avec un vrai Codex dans l'app : tests du protocole et de la copie.
 ## 9 novembre 2026 — Marketplace : ce qui est branché hors de la Marketplace
 
 Demande de Yanis : un MCP ajouté à la main (l'exemple : Sunra) n'apparaissait pas dans les Apps en direct, qui ne listaient que `mcp-direct.json`.

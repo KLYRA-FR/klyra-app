@@ -129,6 +129,15 @@ describe("ce que fait l'agent", () => {
   test("accord, réponse qui s'écrit, collègue, étape, réflexion", () => {
     const accord = activiteDe([message([{ type: "autorisation", id: "a1", outil: "Bash", libelle: "Lance pnpm build", detail: "pnpm build", description: "", statut: "attente" }])], travail, 0);
     expect(accord).toMatchObject({ etat: "accord", roleId: "hugo", messageId: "m1", accord: { id: "a1", libelle: "Lance pnpm build" } });
+    expect(accord?.etat === "accord" && "toujours" in accord.accord).toBe(false);
+    /* Codex dit ce que « Toujours » garde (une règle sur un début de commande) : le téléphone montre le même bouton, sans chemin. */
+    const regle = activiteDe(
+      [message([{ type: "autorisation", id: "a2", outil: "Bash", libelle: "Lance sed", detail: "sed", description: "", toujours: `Toujours pour « cat ${DOSSIER}/a »`, statut: "attente" }])],
+      travail,
+      0,
+      DOSSIER,
+    );
+    expect(regle).toMatchObject({ etat: "accord", accord: { id: "a2", toujours: "Toujours pour « cat a »" } });
     expect(activiteDe([message([{ type: "text", text: "Je regarde" }])], travail, 0)?.etat).toBe("ecrit");
     expect(activiteDe([message([{ type: "passation", etapeId: "p", roleId: "iris", consigne: "", statut: "en-cours" }])], travail, 0)?.etat).toBe("collegue");
     expect(activiteDe([message([{ type: "etapes", etapes: [{ id: "1", outil: "Read", libelle: `Lit ${DOSSIER}/a.md`, statut: "en-cours", parent: null }] }])], travail, 0, DOSSIER)).toMatchObject({

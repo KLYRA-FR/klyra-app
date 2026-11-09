@@ -30,7 +30,7 @@ export interface DemandeAccord {
   conversationOrigine: string;
   roleId: string;
   messageId: string;
-  accord: { id: string; libelle: string; detail: string; description: string };
+  accord: { id: string; libelle: string; detail: string; description: string; toujours?: string };
 }
 
 type Reponse = { etat: "accuse"; decision: Decision } | { etat: "erreur"; message: string; delai: boolean; decision: Decision };
@@ -54,6 +54,8 @@ export function CarteAccordChat({ demande, compacte = false, titre }: { demande:
   const [menu, setMenu] = useState(false);
   const [detail, setDetail] = useState(false);
   const agent = nom(demande.roleId);
+  /* Claude Code garde l'accord dans le projet ; Codex dit le sien (une règle sur un début de commande, ou cette conversation). */
+  const toujours = demande.accord.toujours || "Toujours, dans ce projet";
   const fige = reponse?.etat === "accuse";
   const impossible = !ouvert || horsLigne;
   const bloque = occupe || impossible;
@@ -146,7 +148,7 @@ export function CarteAccordChat({ demande, compacte = false, titre }: { demande:
                   Autoriser
                 </Bouton>
                 <Bouton variant="blanc" className="h-11 w-full text-body-s" disabled={bloque} onClick={() => void repondre("toujours")}>
-                  Toujours, dans ce projet
+                  {toujours}
                 </Bouton>
                 <Bouton variant="blanc" className="h-11 w-full text-body-s" disabled={bloque} onClick={() => void repondre("non")}>
                   Refuser
@@ -164,7 +166,7 @@ export function CarteAccordChat({ demande, compacte = false, titre }: { demande:
           onFermer={() => setMenu(false)}
           actions={[
             { libelle: "Autoriser", icone: "check-01", desactivee: bloque, note: raison ?? undefined, onChoisir: () => void repondre("oui") },
-            { libelle: "Toujours, dans ce projet", icone: "shield-check", desactivee: bloque, note: `${agent} ne te le demandera plus ici`, onChoisir: () => void repondre("toujours") },
+            { libelle: toujours, icone: "shield-check", desactivee: bloque, note: demande.accord.toujours ? undefined : `${agent} ne te le demandera plus ici`, onChoisir: () => void repondre("toujours") },
             { libelle: "Refuser", icone: "x-01", desactivee: bloque, onChoisir: () => void repondre("non") },
             { libelle: "Ouvrir le fil sur la demande", icone: "message-square", separateurAvant: true, onChoisir: () => router.push(lien) },
           ]}
