@@ -1,5 +1,17 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Veille des connexions MCP des agents, et « Reconnecter » sans terminal
+
+Demande de Corentin (fil Cicco « Contrôle régulier des connexions MCP ») : le 09/11, Camille n'a pas pu lister les factures Qualion, le MCP Qonto était en « Needs authentication » et la reconnexion demandait un terminal. Il faut être prévenu avant, et reconnecter en un clic.
+
+- **Contrôle régulier** : au lancement de l'app (après 30 s) puis toutes les heures, `claude mcp list` avec le dossier préparé de chaque agent actif, sur ce PC et sur chaque VPS relié ; le VPS vérifie aussi seul toutes les heures (code du serveur v67). Seuls le nom, l'état et la date de changement sont gardés.
+- **Alerte** : une notification du système par changement d'état (« Connexion à reprendre : qonto-mcp »), jamais redite au lancement suivant ; interrupteur « Une connexion d'agent a expiré » dans Réglages › Notifications. La pastille « Connexion » du rail reste tant qu'un MCP est en défaut ; elle ouvre la fenêtre « Connexions des agents » (MCP, agent, machine, depuis quand, « Vérifier maintenant »).
+- **Reconnecter** : `claude mcp login <nom> --no-browser` dans un terminal du module PTY (PR #258) ; la fenêtre montre le lien, Corentin se connecte dans son navigateur et colle l'adresse de la page localhost qui ne s'ouvre pas ; l'app la tape dans le PTY, revérifie, et dit « Reconnecté » seulement si le MCP est « Connected ». Sur ce PC, la connexion peut finir seule (localhost joignable).
+- **Secrets** : l'adresse de retour (code à usage unique) va droit au PTY, masquée dans sa sortie, et n'est ni journalisée, ni gardée, ni renvoyée ; le champ se vide à l'envoi. La cible d'un MCP (commande, URL) n'est jamais lue au-delà de son type.
+- **Limites** : pas sous Windows ; les dossiers `preparation-comptes/<compte>/<agent>` (compte Claude supplémentaire) ne sont pas encore vérifiés ; un MCP lancé par commande (stdio) en échec est signalé sans bouton ; un agent jamais lancé sur une machine n'a pas de dossier préparé, donc rien à vérifier.
+- **À trancher (design)** : la fréquence (1 h), la place de l'alerte (pastille du rail au-dessus de « Mettre à jour », en rouge erreur) et l'icône (`lock-01`) ; une vérification juste avant qu'un agent démarre, non faite.
+- Tests : `pnpm test:mcp-sante` (dont le vrai Claude Code 2.1.319 face à un faux serveur OAuth, s'il est installé), `xvfb-run -a pnpm test:mcp-sante-ecran -- --no-sandbox`.
+
 ## 9 novembre 2026 — Terminal interactif pour les agents, et onglet Terminal du panneau
 
 Demande de Corentin (fil Cicco) : Camille avait échoué sur `claude mcp login … --no-browser` (« stdin isn't a terminal ») et renvoyé la commande. Les agents ont maintenant un vrai terminal, sans limite sur les commandes, et Corentin le voit et y tape dans le panneau.

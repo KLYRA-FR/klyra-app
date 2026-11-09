@@ -14,7 +14,7 @@
 import { creerEquipe } from "./equipe.mjs";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,6 +84,7 @@ import { CONSIGNE_FILS, NOMS_FILS } from "./fils-outils.mjs";
 import { creerRelaisFils } from "./fils.mjs";
 import { creerCodex } from "./codex.mjs";
 import { creerGrok } from "./grok.mjs";
+import { creerReconnexions, creerVeilleMcp, ID_AGENT as ID_AGENT_MCP, listerMcp } from "./mcp-sante.mjs";
 
 /**
  * Entrer seul en mode plan reste à la personne. Les questions à choix (AskUserQuestion) arrivent dans le fil de
@@ -445,6 +446,47 @@ export function creerAgents(options) {
     dossierDefaut: (a) => dossierParDefaut(dossierHorsProjet(atelier, a.agent === "principal" ? null : a.agent, null, path.join(home, ".claude"), existsSync)),
     secret: (variable) => coffreServeur.valeurPourAgents(variable),
   });
+  /*
+   * La veille des serveurs MCP des agents d'ici (cf. mcp-sante.mjs) : `claude mcp list` avec le dossier préparé de
+   * chaque agent actif, toutes les heures et au lancement ; « Reconnecter » passe par un terminal ci-dessus.
+   * L'état gardé (`donnees/mcp-sante.json`) n'a que des noms, des états et des dates.
+   */
+  const dossiersMcp = () => {
+    const actifs = new Set(["principal", ...lireEquipe().actifs.map((a) => a.id).filter((id) => typeof id === "string")]);
+    const racine = path.join(donnees, "preparation");
+    let noms = [];
+    try {
+      noms = readdirSync(racine, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      return [];
+    }
+    return noms.filter((n) => actifs.has(n) && ID_AGENT_MCP.test(n)).map((agent) => ({
+      agent,
+      dossier: path.join(racine, agent),
+      cwd: dossierParDefaut(dossierHorsProjet(atelier, agent === "principal" ? null : agent, null, path.join(home, ".claude"), existsSync)),
+    }));
+  };
+  const fichierMcp = path.join(donnees, "mcp-sante.json");
+  const veilleMcp = creerVeilleMcp({
+    agents: dossiersMcp,
+    lister: (d) => listerMcp(trouverClaude(), d),
+    lire: () => {
+      try {
+        return JSON.parse(readFileSync(fichierMcp, "utf8"));
+      } catch {
+        return null;
+      }
+    },
+    ecrire: (etat) => {
+      try {
+        writeFileSync(fichierMcp, JSON.stringify(etat), { mode: 0o600 });
+      } catch {
+        /* Rien d'écrit : la veille reprendra de zéro au prochain lancement. */
+      }
+    },
+  });
+  if (options.veilleMcp !== false) veilleMcp.demarrer();
+  const reconnexionsMcp = creerReconnexions({ terminaux, veille: veilleMcp, agents: dossiersMcp, claude: trouverClaude });
   /* Les apps de la personne par Composio : la connexion de ce serveur, à lui seul (cf. composio-serveur.mjs). */
   const githubProjets = creerGithubProjets({ donnees, base: home, racine: path.join(home, "projets", "GitHub"), gh: existsSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "gh")) ? path.join(path.dirname(fileURLToPath(import.meta.url)), "gh") : "gh", chiffrer: coffreServeur.chiffrerTexte, dechiffrer: coffreServeur.dechiffrerTexte });
   const composioServeur = creerComposioServeur({ donnees, coffre: coffreServeur, ...(options.fetch ? { fetch: options.fetch } : {}) });
@@ -1266,6 +1308,8 @@ export function creerAgents(options) {
   }
 
   function fermerTout() {
+    veilleMcp.arreter();
+    reconnexionsMcp.fermerTout();
     terminaux.fermerTout();
     githubProjets.fermer();
     for (const proc of new Set(processus.values())) proc.child.kill("SIGTERM");
@@ -1325,5 +1369,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, annulerModifications, usageContexte, sortieTache, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, terminaux, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, annulerModifications, usageContexte, sortieTache, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, terminaux, veilleMcp, reconnexionsMcp, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

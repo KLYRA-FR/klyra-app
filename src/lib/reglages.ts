@@ -12,7 +12,7 @@ import { SKILLS_PAR_DEFAUT, validerSkillsParAgent, type SkillsParAgent } from ".
  */
 
 export const REGLAGES_PAR_DEFAUT: Reglages = {
-  notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true },
+  notifications: { actives: true, pastille: true, son: true, agentFini: true, agentErreur: true, workflow: true, majPrete: true, mcpDefaut: true },
   computerUse: { actif: false },
   navigateur: { agents: true, moteur: "integre" },
   sons: { finDeTache: true, theme: "chaleureux", volume: 0.7 },

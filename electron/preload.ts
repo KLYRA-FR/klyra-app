@@ -451,6 +451,24 @@ contextBridge.exposeInMainWorld("klyra", {
     taille: (id: string, cols: number, rows: number, lieu?: string | null) => ipcRenderer.invoke("terminal:taille", id, cols, rows, lieu ?? null),
     fermer: (id: string, lieu?: string | null) => ipcRenderer.invoke("terminal:fermer", id, lieu ?? null),
   },
+  /* La veille des serveurs MCP des agents (cf. electron/mcp-veille.ts), ce PC (`lieu` null) ou un VPS relié. */
+  santeMcp: {
+    sante: (verifier?: boolean) => ipcRenderer.invoke("mcp-sante:sante", verifier === true),
+    reconnecter: (lieu: string | null, agent: string, mcp: string) => ipcRenderer.invoke("mcp-sante:reconnecter", lieu, agent, mcp),
+    suivre: (lieu: string | null, id: string) => ipcRenderer.invoke("mcp-sante:suivre", lieu, id),
+    retour: (lieu: string | null, id: string, adresse: string) => ipcRenderer.invoke("mcp-sante:retour", lieu, id, adresse),
+    annuler: (lieu: string | null, id: string) => ipcRenderer.invoke("mcp-sante:annuler", lieu, id),
+    surSante: (callback: (sante: unknown) => void) => {
+      const listener = (_e: unknown, sante: unknown) => callback(sante);
+      ipcRenderer.on("mcp-sante:sante", listener);
+      return () => ipcRenderer.removeListener("mcp-sante:sante", listener);
+    },
+    surOuvrir: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on("mcp-sante:ouvrir", listener);
+      return () => ipcRenderer.removeListener("mcp-sante:ouvrir", listener);
+    },
+  },
   navigateur: {
     etat: () => ipcRenderer.invoke("navigateur:etat"),
     ouvrir: (chatId: string, url?: string) => ipcRenderer.invoke("navigateur:ouvrir", chatId, url),

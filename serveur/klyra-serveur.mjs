@@ -874,6 +874,23 @@ export function creerGestionnaire(options) {
       if (action === "terminal-saisir") return repondre(res, 200, { ok: agents.terminaux?.saisir(corps.id, corps.donnees) ?? false });
       if (action === "terminal-taille") return repondre(res, 200, { ok: agents.terminaux?.taille(corps.id, corps.cols, corps.rows) ?? false });
       if (action === "terminal-fermer") return repondre(res, 200, { ok: agents.terminaux?.fermer(corps.id) ?? false });
+      /*
+       * La veille des serveurs MCP des agents d'ici (cf. mcp-sante.mjs) : l'état (vérifié de nouveau si `verifier`),
+       * « Reconnecter » (le lien d'autorisation), son suivi, l'adresse de retour collée par la personne, l'abandon.
+       * L'adresse de retour porte un code à usage unique : jamais dans le journal, ni dans une réponse ou une erreur.
+       */
+      if (action.startsWith("mcp-")) {
+        if (!agents.veilleMcp || !agents.reconnexionsMcp) return repondre(res, 404, { erreur: "introuvable" });
+        try {
+          if (action === "mcp-sante") return repondre(res, 200, { sante: corps.verifier === true ? await agents.veilleMcp.verifier({ forcer: corps.forcer === true }) : agents.veilleMcp.etat() });
+          if (action === "mcp-reconnecter") return repondre(res, 200, { reconnexion: await agents.reconnexionsMcp.demarrer(corps.agent, corps.mcp) });
+          if (action === "mcp-suivre") return repondre(res, 200, { reconnexion: await agents.reconnexionsMcp.suivre(corps.id) });
+          if (action === "mcp-retour") return repondre(res, 200, { reconnexion: await agents.reconnexionsMcp.retour(corps.id, corps.adresse) });
+          if (action === "mcp-annuler") return repondre(res, 200, { ok: agents.reconnexionsMcp.annuler(corps.id) });
+        } catch (erreur) {
+          return repondre(res, 400, { erreur: "mcp", message: erreur instanceof Error ? erreur.message : "Demande refusée." });
+        }
+      }
       /* Le PC rend le résultat d'un outil du navigateur de KLYRA demandé par un agent d'ici (cf. navigateur.mjs). */
       if (action === "navigateur") return repondre(res, 200, { ok: agents.navigateur?.repondre(requestId, corps.resultat) ?? false });
       /*

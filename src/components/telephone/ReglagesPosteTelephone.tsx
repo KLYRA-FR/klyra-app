@@ -321,6 +321,7 @@ const EVENEMENTS: { cle: keyof PreferencesNotifications; libelle: string }[] = [
   { cle: "agentErreur", libelle: "Un agent s’est arrêté sur une erreur" },
   { cle: "workflow", libelle: "Un workflow te prévient" },
   { cle: "majPrete", libelle: "Une mise à jour est prête" },
+  { cle: "mcpDefaut", libelle: "Une connexion d’agent a expiré" },
 ];
 
 function ContenuNotifications({ n, finDeTache, relancer }: { n: PreferencesNotifications; finDeTache: boolean; relancer: () => void }) {

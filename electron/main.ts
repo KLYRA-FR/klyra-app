@@ -227,6 +227,7 @@ import {
 import { competencesVps, creerSouvenirVps, diagnosticVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
 import type { AjoutFiche } from "./atelier-agent";
 import { essayerVps } from "./epreuve-vps";
+import { annulerReconnexionMcp, arreterVeilleMcp, demarrerVeilleMcp, derniereSanteMcp, reconnecterMcp, retourReconnexionMcp, santeMcp, suivreReconnexionMcp } from "./mcp-veille";
 import { annulerDistant, autoriserDistant, brancherAgentsDistants, demandeAgentsVps, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, jetonsEcrits, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
@@ -853,6 +854,15 @@ function registerBridge() {
     if (origine) return demandeAgentsVps(origine, "terminal-fermer", { id }).then((r) => (r as { ok?: unknown }).ok === true);
     return terminaux.fermer(id);
   });
+  /*
+   * La veille des serveurs MCP des agents (cf. mcp-veille.ts) : l'état de ce PC et des VPS reliés, et
+   * « Reconnecter » sur la machine de l'agent (`lieu`). L'adresse de retour collée part droit au PTY du login.
+   */
+  handle("mcp-sante:sante", (verifier?: unknown) => (verifier === true ? santeMcp({ verifier: true, forcer: true }) : derniereSanteMcp()));
+  handle("mcp-sante:reconnecter", (lieu: unknown, agent: unknown, mcp: unknown) => reconnecterMcp(lieuTerminal(lieu), agent, mcp));
+  handle("mcp-sante:suivre", (lieu: unknown, id: unknown) => suivreReconnexionMcp(lieuTerminal(lieu), id));
+  handle("mcp-sante:retour", (lieu: unknown, id: unknown, adresse: unknown) => retourReconnexionMcp(lieuTerminal(lieu), id, adresse));
+  handle("mcp-sante:annuler", (lieu: unknown, id: unknown) => annulerReconnexionMcp(lieuTerminal(lieu), id));
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
     /* Une conversation sur un VPS relié : l'agent tourne là-bas. Les routines restent sur ce PC. */
@@ -1785,6 +1795,8 @@ void app.whenReady().then(async () => {
   void demarrerRoutines();
 
   void demarrerServeurMcp();
+  /* La veille des serveurs MCP des agents (ce PC et les VPS reliés) : au lancement, puis toutes les heures. */
+  if (!SMOKE_TEST && process.env.KLYRA_SANS_VEILLE_MCP !== "1") demarrerVeilleMcp();
   if (!SMOKE_TEST && process.env.KLYRA_SANS_VEILLE !== "1") {
     demarrerVeilleCerveau({
       donnees: app.getPath("userData"),
@@ -1827,6 +1839,7 @@ app.on("before-quit", (event) => {
 
 /* Le Whisper gardé en mémoire pour la dictée s'arrête avec l'app. */
 app.on("will-quit", () => {
+  arreterVeilleMcp();
   terminaux.fermerTout();
   fermerGithubProjets();
   arreterDictee();

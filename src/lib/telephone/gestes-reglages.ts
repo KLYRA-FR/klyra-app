@@ -48,7 +48,7 @@ export interface DepsReglages {
   changerModele: (id: string, modele: string) => Promise<void>;
 }
 
-const NOTIFICATIONS: (keyof PreferencesNotifications)[] = ["actives", "pastille", "son", "agentFini", "agentErreur", "workflow", "majPrete"];
+const NOTIFICATIONS: (keyof PreferencesNotifications)[] = ["actives", "pastille", "son", "agentFini", "agentErreur", "workflow", "majPrete", "mcpDefaut"];
 
 /** Un changement enregistré se relit : ce qui n'a pas pris est dit au téléphone, pas tu. */
 function verifier(ok: boolean) {

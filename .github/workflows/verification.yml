@@ -122,6 +122,8 @@ jobs:
         run: pnpm test:moteurs && pnpm test:fournisseurs
       - name: Terminal interactif des agents (vrai PTY, vrai serveur KLYRA local)
         run: pnpm test:terminal
+      - name: Veille des MCP des agents et reconnexion (vrai PTY, faux Claude Code, vrai serveur KLYRA local)
+        run: pnpm test:mcp-sante
       - name: Autoriser le bac à sable d'Electron
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Journal de consommation et rattrapage de l'historique
@@ -189,6 +191,8 @@ jobs:
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:coffre-ecran
       - name: Terminal interactif dans le panneau, agent d'un vrai serveur KLYRA local
         run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:terminal-ecran
+      - name: Veille des MCP des agents, pastille et Reconnecter dans l'app (vrai serveur KLYRA local)
+        run: timeout 240 xvfb-run -a -s "-screen 0 1440x900x24" env -u ELECTRON_RUN_AS_NODE pnpm test:mcp-sante-ecran
 
   ordinateur-linux:
     name: Computer Use sous Linux, pilote, outils MCP, clic et frappe
