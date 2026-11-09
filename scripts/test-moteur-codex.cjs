@@ -113,6 +113,37 @@ async function principal() {
     assert.equal(refuse.at(-1).type, "fin");
     ok("autorisation refusée : rien ne tourne, la réponse se termine");
 
+    /* 4 bis. Les outils de l'app (serveur MCP local) : Codex demande l'accord avant chaque appel MCP, et le refuse
+       en accès complet. Libre en accès « Projet » (comme `--allowedTools` de Claude Code), une carte sinon. */
+    await require(path.join(DIST, "ia.js")).demarrerServeurMcp();
+    const refusMcp = /rejected|requires approval/i;
+    const outilMcp = (evenements) => evenements.find((e) => e.type === "etape-fin" && evenements.some((x) => x.type === "etape" && x.id === e.id && x.outil.startsWith("mcp__klyra__")));
+    const libre = await reponse(codex, "r4b", { prompt: "OUTIL_MCP klyra cerveau_chercher", acces: "projet" }, (e) => {
+      if (e.type === "autorisation") codex.autoriser("r4b", e.id, "non");
+    });
+    assert.ok(!libre.some((e) => e.type === "autorisation"), "un outil libre de l’app a demandé l’accord");
+    assert.ok(outilMcp(libre), "l’outil de l’app n’a pas été appelé");
+    assert.doesNotMatch(outilMcp(libre).apercu, refusMcp);
+    ok("accès Projet : un outil libre de l’app (cerveau_chercher) tourne sans carte");
+    const demande = await reponse(codex, "r4c", { prompt: "OUTIL_MCP klyra cerveau_chercher", acces: "demander" }, (e) => {
+      if (e.type === "autorisation") codex.autoriser("r4c", e.id, "oui");
+    });
+    const carteMcp = demande.find((e) => e.type === "autorisation");
+    assert.equal(carteMcp?.outil, "mcp__klyra__cerveau_chercher");
+    assert.deepEqual(demande.find((e) => e.type === "autorisation-fin"), { type: "autorisation-fin", id: carteMcp.id, accepte: true });
+    assert.doesNotMatch(outilMcp(demande).apercu, refusMcp);
+    ok("accès Demander : la carte porte l’outil de l’app ; acceptée, il tourne");
+    const lancer = await reponse(codex, "r4d", { prompt: "OUTIL_MCP klyra lancer_workflow", acces: "projet" }, (e) => {
+      if (e.type === "autorisation") codex.autoriser("r4d", e.id, "non");
+    });
+    assert.equal(lancer.find((e) => e.type === "autorisation")?.outil, "mcp__klyra__lancer_workflow");
+    assert.match(outilMcp(lancer).apercu, /rejected/);
+    ok("accès Projet : lancer un workflow demande l’accord ; refusé, il ne tourne pas");
+    const complet = await reponse(codex, "r4e", { prompt: "OUTIL_MCP klyra cerveau_chercher", acces: "tout" });
+    assert.ok(!complet.some((e) => e.type === "autorisation"));
+    assert.doesNotMatch(outilMcp(complet).apercu, refusMcp);
+    ok("accès complet : l’outil de l’app tourne (Codex le refusait : « approval policy is never »)");
+
     /* 5. Arrêt en cours de réponse. */
     const debut = Date.now();
     const arretee = await reponse(codex, "r5", { prompt: "LENT" }, (e, tous) => {

@@ -1,5 +1,16 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — ChatGPT : les outils de l'app ne sont plus refusés (« user rejected MCP tool call »)
+
+Retour de Corentin : Cicco (assistant, ChatGPT GPT-6.1-Sol) ne pouvait créer aucune routine ni aucun workflow ; chaque outil KLYRA (`cerveau_chercher`, `lister_workflows`, `construire_workflow`, `mettre_a_jour_fil`…) revenait en « user rejected MCP tool call ».
+
+- **Cause** (relevée avec le vrai Codex 0.166, faux fournisseur) : Codex demande l'accord avant **chaque** appel d'outil MCP, par un formulaire MCP (`mcpServer/elicitation/request`, `_meta.codex_approval_kind: "mcp_tool_call"`, nom de l'outil seulement dans la question). L'app refusait d'office tout formulaire MCP (`reponseDOffice`) : Codex le lisait comme un refus de la personne. En accès complet (`approvalPolicy: "never"`), Codex ne demande pas : il refuse tout appel MCP (« MCP tool call requires approval, but approval policy is never »). Aucun outil MCP ne marchait donc avec ChatGPT, à aucun accès, sur le PC comme sur un VPS. (L'accès « Tout », d'abord proposé comme contournement, ne l'était pas.)
+- **A. Outils libres approuvés d'avance**, comme l'`--allowedTools` de Claude Code : `mcpPourCodex(config, libres)` pose `tools.<outil>.approval_mode = "approve"` sur chaque outil libre de son serveur (accès « Projet » : `OUTILS_APP` et la lecture de l'ordinateur sur le PC, `outilsLibres` sur le VPS, extrait de la liste de Claude Code pour être partagé), `default_tools_approval_mode = "approve"` sur tous les serveurs en accès complet (comme Claude Code, qui y accorde tout), rien en « Demander ». La liste entre dans la signature du fil : changer d'accès recharge le fil (`thread/resume` applique la nouvelle approbation, vérifié dans les deux sens).
+- **B. Les autres outils : une carte d'autorisation**, la même que pour Claude Code (`mcp__serveur__outil`, son entrée, sa description). Autoriser = `accept` ; « Toujours » = `persist: "session"` (vérifié : le second appel passe sans demande ; jamais `always`, que Codex écrirait dans sa configuration) ; Refuser = `decline`. Les vrais formulaires d'un serveur MCP restent refusés d'office. Sur le VPS, l'accès complet accorde d'office (inchangé).
+- Code du serveur : 61.
+
+Validation : `pnpm test:moteurs` (43, un sauté selon la plateforme comme avant ; cas relevés sur le vrai Codex), **nouveau** `pnpm test:codex-mcp` (vrai Codex 0.166, `serveur/codex.mjs`, petit serveur MCP : outil libre sans carte, carte acceptée, refusée, « toujours », accès Demander, accès complet ; échoue sur l'ancien code), `test:moteur-codex` étendu (Electron, adaptateur compilé du PC, vrai serveur MCP de l'app : `cerveau_chercher` libre en Projet, carte en Demander, `lancer_workflow` demande en Projet, accès complet), suite node de `test:serveur` (79 + 20), génération du serveur vérifiée, `tsc` d'Electron, ESLint des fichiers touchés. Sans `klyra-ui` dans ce conteneur (dépôt privé refusé) : ni export Next ni `test:smoke` ; aucun écran touché. **Non vérifié** : un vrai compte ChatGPT, un vrai VPS. **Hors de ce travail** : Grok n'a pas été revu (protocole ACP, autorisations à part).
+
 ## 8 novembre 2026 — Espace projet : relecture indépendante, correctifs (PR #244)
 
 Une relecture du diff complet par un autre agent a relevé des points ; tous sont corrigés et testés.
