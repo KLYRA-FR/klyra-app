@@ -44,6 +44,13 @@ export interface McpDirect {
   aReconnecter: boolean;
 }
 
+/** Branché sur ce poste hors de la Marketplace (cf. electron/mcp-poste.ts), en lecture seule. */
+export interface ServeurPoste {
+  id: string;
+  nom: string;
+  detail: string;
+}
+
 /** Le résultat d'une connexion d'un MCP direct par le navigateur. */
 export type ResultatConnexionMcp =
   | { statut: "connecte" | "annule"; liste: McpDirect[] }
@@ -685,6 +692,7 @@ export interface KlyraBridge {
   /** Les MCP directs de la Marketplace (cf. electron/mcp-direct.ts). Le jeton ne revient jamais. */
   mcp?: {
     lister: () => Promise<Reponse<McpDirect[]>>;
+    poste: () => Promise<Reponse<ServeurPoste[]>>;
     /** Ouvre la page d'autorisation du serveur dans le navigateur et attend le retour. `remplace` : reconnecter une entrée. */
     connecter: (entree: { app?: string | null; nom?: string; url?: string; remplace?: string }) => Promise<Reponse<ResultatConnexionMcp>>;
     annuler: () => Promise<Reponse<void>>;

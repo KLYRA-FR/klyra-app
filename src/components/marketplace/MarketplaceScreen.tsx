@@ -12,7 +12,7 @@ import { CHAMP, Champ } from "@/components/ui/Champ";
 import { ListeDeroulante } from "@/components/ui/ListeDeroulante";
 import { Modale, useConfirmation } from "@/components/ui/Modale";
 import { ancreReglage, Erreur, Pastille } from "@/components/reglages/ui";
-import { getBridge, type EtatConnect, type McpDirect, type VueCompteComposio, type VueServiceComposio } from "@/lib/bridge";
+import { getBridge, type EtatConnect, type McpDirect, type ServeurPoste, type VueCompteComposio, type VueServiceComposio } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { useComposio, type ComposioApiInterface } from "@/lib/composio";
 import { compteComposioActif, nomCompteComposio, statutCompteComposio } from "@/lib/composio-vues";
@@ -310,29 +310,33 @@ function ServiceComposio({ service, api, choisir, retirer }: {
 function useMcpDirects() {
   const pont = getBridge()?.mcp;
   const [liste, setListe] = useState<McpDirect[]>([]);
+  const [poste, setPoste] = useState<ServeurPoste[]>([]);
   const relire = useCallback(async () => {
     if (!pont) return;
     const l = await pont.lister();
     if (l.ok) setListe(l.data);
+    const p = await pont.poste().catch(() => null);
+    if (p?.ok) setPoste(p.data);
   }, [pont]);
   useEffect(() => {
     const debut = window.setTimeout(() => void relire(), 0);
     window.addEventListener("focus", relire);
     return () => { window.clearTimeout(debut); window.removeEventListener("focus", relire); };
   }, [relire]);
-  return { pont, liste, setListe };
+  return { pont, liste, setListe, poste };
 }
 
 type EntreeConnexion = { app?: string; nom?: string; url?: string; remplace?: string };
 
 function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
-  const { pont, liste, setListe } = useMcpDirects();
+  const { pont, liste, setListe, poste } = useMcpDirects();
   const [autre, setAutre] = useState(false);
   /** La carte dont l'autorisation attend le navigateur. */
   const [attente, setAttente] = useState<string | null>(null);
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
   const [demander, confirmation] = useConfirmation();
   const persos = liste.filter((m) => !m.app);
+  const duPoste = poste.filter((s) => !liste.some((m) => m.nom.toLowerCase() === s.nom.toLowerCase()));
   /* GitHub : la connexion de KLYRA (dépôts, projets, onglet Git) sur la machine affichée ; Composio garde les outils des agents. */
   const lieu = useLieuActif();
   const github = useConnexionGithub(lieu);
@@ -438,6 +442,7 @@ function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
           return <CarteApp key={a.id} id={a.id} logo={a.id} nom={a.nom} description={a.description} erreur={erreurs[a.id]} pied={pied(a.id, branche, { app: a.id })} />;
         })}
         {persos.map((m) => <CarteApp key={m.id} nom={m.nom} description={new URL(m.url).host} erreur={erreurs[m.id]} pied={pied(m.id, m, null)} />)}
+        {duPoste.map((s) => <CarteApp key={s.id} nom={s.nom} description={s.detail} pied={<Pastille texte="Sur ce poste" ton="neutre" />} />)}
         <button
           type="button"
           disabled={!pont || !!attente}

@@ -1,5 +1,13 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Marketplace : ce qui est branché hors de la Marketplace
+
+Demande de Yanis : un MCP ajouté à la main (l'exemple : Sunra) n'apparaissait pas dans les Apps en direct, qui ne listaient que `mcp-direct.json`.
+
+- Les serveurs MCP de `~/.claude.json` et Sunra connecté en ligne de commande ont maintenant une carte « Sur ce poste », en lecture seule.
+- Sunra n'est pas un serveur MCP après un simple `sunra login` (CLI et skill) : il est repéré par sa skill. Un autre outil en ligne de commande s'ajoute dans `OUTILS_POSTE`.
+- Reste à faire : les serveurs de portée projet, et le même affichage pour un VPS.
+
 ## 9 novembre 2026 — Routines et workflows : leur conversation se lit comme le chat d'un agent
 
 Question de Corentin : pourquoi une routine ou un workflow ouvre-t-il une « conversation d'équipe », si différente des Chats ? Réponse : `Chat.kind` ne connaît que `direct` (une par agent, hors projet) et `equipe` (tout le reste) ; une routine en chaîne ou rangée dans un projet (`routine-<id>`) et tout workflow (`wf-<id>`) tombent donc en `equipe`. Le 08/11, seules les conversations de projet avaient été alignées sur le chat d'un agent ; celles des routines et workflows sans projet avaient gardé l'ancien écran (« N agents dans la conversation », `PreviewPanel` avec un Aperçu vide hors projet, puce « Destinataire »). Demande : faire comme pour les projets.
