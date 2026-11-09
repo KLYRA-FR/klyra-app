@@ -62,7 +62,7 @@ describe("peutSuggerer", () => {
 describe("echangesPourSuggestion", () => {
   it("garde les derniers textes, chemins réduits, auteurs nommés", () => {
     const fil = Array.from({ length: 6 }, (_, i) => message(i % 2 ? "agent" : "user", `Message ${i} /Users/corentin/projet/a.ts`));
-    const echanges = echangesPourSuggestion(fil);
+    const echanges = echangesPourSuggestion({}, fil);
     expect(echanges).toHaveLength(4);
     expect(echanges?.[0].texte).toContain("Message 2");
     expect(echanges?.[0].auteur).toBe("moi");
@@ -70,17 +70,18 @@ describe("echangesPourSuggestion", () => {
     expect(echanges?.map((e) => e.texte).join(" ")).not.toContain("/Users/corentin");
   });
 
-  it("rien d'avant « Repartir à zéro »", () => {
-    const avant = { ...message("user", "MOT-SECRET d'avant"), createdAt: "2026-11-09T10:00:00.000Z" };
-    const reponse = { ...message("agent", "Noté."), createdAt: "2026-11-09T10:00:01.000Z" };
-    const apres = { ...message("user", "Autre sujet"), createdAt: "2026-11-09T11:00:00.000Z" };
-    const fin = { ...message("agent", "D'accord."), createdAt: "2026-11-09T11:00:01.000Z" };
-    const echanges = echangesPourSuggestion([avant, reponse, apres, fin], "2026-11-09T10:30:00.000Z");
-    expect(echanges?.map((e) => e.texte)).toEqual(["Autre sujet", "D'accord."]);
+  it("rien autour d'un secret", () => {
+    expect(echangesPourSuggestion({}, [message("user", "Voici la clé sk-ant-abcdefghijklmnop1234"), message("agent", "Rangée.")])).toBeNull();
   });
 
-  it("rien autour d'un secret", () => {
-    expect(echangesPourSuggestion([message("user", "Voici la clé sk-ant-abcdefghijklmnop1234"), message("agent", "Rangée.")])).toBeNull();
+  it("rien d'avant le dernier « Repartir à zéro », comme pour l'agent", () => {
+    const premier = message("user", "Avant un premier départ");
+    const avant = [message("user", "Retiens MOT-SECRET"), message("agent", "Retenu.")];
+    const depart = new Date(Date.parse(avant[1].createdAt) + 1000).toISOString();
+    const apres = [message("user", "Autre sujet"), message("agent", "D'accord.")];
+    const echanges = echangesPourSuggestion({ departs: [premier.createdAt, depart] }, [premier, ...avant, ...apres]);
+    expect(echanges?.map((e) => e.texte)).toEqual(["Autre sujet", "D'accord."]);
+    expect(echangesPourSuggestion({ departs: [depart] }, avant)).toEqual([]);
   });
 });
 

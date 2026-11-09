@@ -6,8 +6,9 @@
  * modèle est dans electron/claude.ts (`suggererReponse`), les règles du texte
  * dans electron/suggestion.ts.
  */
-import type { Message, MessagePart } from "@/types/domain";
+import type { Chat, Message, MessagePart } from "@/types/domain";
 import { ECHANGES_MAX, TEXTE_ECHANGE_MAX, type EchangeSuggestion } from "../../electron/suggestion";
+import { estAvantDepart } from "./contexte";
 import { sansCheminNiSecret } from "./copie-compte";
 
 export type { EchangeSuggestion };
@@ -35,11 +36,12 @@ const masques = (t: string) => t.split("•••").length - 1;
 
 /**
  * Les derniers échanges, prêts à partir : textes seuls, chemins réduits.
+ * Rien d'avant le dernier « Repartir à zéro » (même règle que `construirePrompt`) :
+ * une conversation oubliée ne repart jamais vers le modèle.
  * null si l'un d'eux contient un secret (on ne suggère rien autour d'un secret).
  */
-export function echangesPourSuggestion(messages: readonly Message[], depart: string | null = null): EchangeSuggestion[] | null {
-  /* Après « Repartir à zéro », ce qui précède le départ n'est plus relu par personne : la suggestion non plus. */
-  const recents = messages.filter((m) => (!depart || m.createdAt > depart) && !m.compaction && !m.compactionAuto && texteDe(m)).slice(-ECHANGES_MAX);
+export function echangesPourSuggestion(chat: Pick<Chat, "departs">, messages: readonly Message[]): EchangeSuggestion[] | null {
+  const recents = messages.filter((m) => !estAvantDepart(chat, m) && !m.compaction && !m.compactionAuto && texteDe(m)).slice(-ECHANGES_MAX);
   const echanges: EchangeSuggestion[] = [];
   for (const m of recents) {
     const brut = texteDe(m).slice(0, TEXTE_ECHANGE_MAX);
