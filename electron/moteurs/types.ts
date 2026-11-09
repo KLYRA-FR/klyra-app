@@ -42,7 +42,17 @@ export type AgentEvent =
   /** La conversation a été résumée (/compact, ou d'office par Claude Code près de sa limite). */
   | { type: "compacte"; avant: number; apres: number }
   /** L'agent demande ton accord avant d'utiliser un outil hors de son accès. */
-  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string; /** Les règles que « Toujours » retiendra dans le projet (« Bash(npm test:*) »). */ regles?: string[] }
+  | {
+      type: "autorisation";
+      id: string;
+      outil: string;
+      entree: Record<string, unknown>;
+      description: string;
+      /** Les règles que « Toujours » retiendra dans le projet (« Bash(npm test:*) »), pour Claude Code. */
+      regles?: string[];
+      /** Ce que « Toujours » veut dire pour ce moteur, s'il le dit lui-même (Codex : une règle sur un début de commande, ou cette conversation). */
+      toujours?: string;
+    }
   /** La demande a reçu sa réponse (de toi, ou d'office en accès complet). */
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur"; /** Le dernier message de la session pour cette réponse : « Revenir à avant » y reprend la conversation. */ uuidFin?: string }

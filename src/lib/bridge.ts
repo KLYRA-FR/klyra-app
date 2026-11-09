@@ -135,7 +135,17 @@ export type AgentEvent =
   | { type: "jetons"; total: number }
   | { type: "contexte"; jetons: number }
   | { type: "compacte"; avant: number; apres: number }
-  | { type: "autorisation"; id: string; outil: string; entree: Record<string, unknown>; description: string; regles?: string[] }
+  | {
+      type: "autorisation";
+      id: string;
+      outil: string;
+      entree: Record<string, unknown>;
+      description: string;
+      /** Les règles que « Toujours » retiendra dans le projet (« Bash(npm test:*) »), pour Claude Code. */
+      regles?: string[];
+      /** Ce que « Toujours » veut dire pour ce moteur, s'il le dit lui-même (Codex : une règle sur un début de commande, ou cette conversation). */
+      toujours?: string;
+    }
   | { type: "autorisation-fin"; id: string; accepte: boolean }
   | { type: "fin"; ok: boolean; texte: string; erreur?: string; costUsd?: number; sessionId?: string; silencieux?: boolean; /** Un VPS a déjà rapporté la réponse de ce fil à son lanceur (PC fermé) : l'app ne la rapporte pas. */ retourFil?: "serveur"; uuidFin?: string }
   /** Un agent lancé en arrière-plan (appel `id`) a fini ou s'est arrêté : sa passation le montre. */

@@ -96,6 +96,7 @@ export type PartieCompte =
       libelle: string;
       detail: string;
       description: string;
+      toujours?: string;
       statut: "attente" | "acceptee" | "refusee";
     }
   | { type: "passation"; roleId: string; statut: "en-cours" | "fait" | "erreur"; consigne?: string; etapes?: number }
@@ -162,6 +163,7 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
         libelle: net(part.libelle, 200),
         detail: net(part.detail, 1000),
         description: net(part.description, 400),
+        ...(part.toujours ? { toujours: net(part.toujours, 80) } : {}),
         statut: part.statut,
       };
     case "passation": {
@@ -290,7 +292,7 @@ export type Activite =
       roleId: string;
       messageId: string;
       depuis: string;
-      accord: { id: string; libelle: string; detail: string; description: string };
+      accord: { id: string; libelle: string; detail: string; description: string; toujours?: string };
     }
   | { etat: "ecrit" | "collegue" | "reflechit" | "question"; roleId: string; messageId: string; depuis: string }
   | { etat: "etape"; roleId: string; messageId: string; depuis: string; libelle: string }
@@ -361,6 +363,7 @@ export function activiteDe(duFil: Message[], travail: TravailCopie | null, nonLu
           libelle: sansCheminNiSecret(accord.libelle, dossier).slice(0, 200),
           detail: sansCheminNiSecret(accord.detail, dossier).slice(0, 600),
           description: sansCheminNiSecret(accord.description, dossier).slice(0, 300),
+          ...(accord.toujours ? { toujours: sansCheminNiSecret(accord.toujours, dossier).slice(0, 80) } : {}),
         },
       };
     }

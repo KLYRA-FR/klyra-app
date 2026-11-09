@@ -111,9 +111,20 @@ test("les demandes d'autorisation deviennent des cartes, et ta réponse repart d
     outil: "Bash",
     entree: { command: "rm -rf build" },
     description: "Nettoyer",
+    toujours: "Toujours, dans cette conversation",
   });
   assert.equal(autorisationDe("item/tool/requestUserInput", {}), null);
   assert.deepEqual(reponseAutorisation("item/commandExecution/requestApproval", {}, "toujours"), { decision: "acceptForSession" });
+  /* Codex propose une règle : « Toujours » la garde (plus de demande pour ce début de commande), et le bouton le dit. */
+  const regle = { command: "sed -n '1,210p' a.ts", proposedExecpolicyAmendment: ["sed", "-n"] };
+  assert.equal(autorisationDe("item/commandExecution/requestApproval", regle)?.toujours, "Toujours pour « sed -n »");
+  assert.deepEqual(reponseAutorisation("item/commandExecution/requestApproval", regle, "toujours"), {
+    decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ["sed", "-n"] } },
+  });
+  assert.deepEqual(reponseAutorisation("item/commandExecution/requestApproval", regle, "oui"), { decision: "accept" });
+  assert.deepEqual(reponseAutorisation("item/commandExecution/requestApproval", { proposedExecpolicyAmendment: [] }, "toujours"), { decision: "acceptForSession" });
+  const longue = autorisationDe("item/commandExecution/requestApproval", { proposedExecpolicyAmendment: ["x".repeat(60)] })?.toujours ?? "";
+  assert.equal(longue, `Toujours pour « ${"x".repeat(40)}… »`);
   assert.deepEqual(reponseAutorisation("item/fileChange/requestApproval", {}, "non"), { decision: "decline" });
   const permissions = { network: { enabled: true }, fileSystem: null };
   assert.deepEqual(reponseAutorisation("item/permissions/requestApproval", { permissions }, "oui"), { permissions, scope: "turn" });
@@ -142,10 +153,11 @@ test("l'accord avant un appel d'outil MCP devient une carte, comme pour Claude C
     outil: "mcp__klyra__lancer_workflow",
     entree: { id: "brief-du-matin" },
     description: "Lance un workflow enregistré.",
+    toujours: "Toujours, dans cette conversation",
   });
   // Sans le nom de l'outil dans la question : le serveur seul, la carte reste lisible.
   const sansNom = autorisationDe("mcpServer/elicitation/request", { ...ACCORD_MCP, message: "Autre texte", _meta: { codex_approval_kind: "mcp_tool_call" } });
-  assert.deepEqual(sansNom, { outil: "mcp__klyra", entree: {}, description: "Utiliser un outil de klyra" });
+  assert.deepEqual(sansNom, { outil: "mcp__klyra", entree: {}, description: "Utiliser un outil de klyra", toujours: "Toujours, dans cette conversation" });
   // Un vrai formulaire d'un serveur MCP n'est pas un accord : refusé d'office, comme avant.
   assert.equal(autorisationDe("mcpServer/elicitation/request", { ...ACCORD_MCP, _meta: null }), null);
   assert.equal(autorisationDe("mcpServer/elicitation/request", { ...ACCORD_MCP, mode: "url", _meta: { autre: true } }), null);

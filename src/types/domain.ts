@@ -373,6 +373,8 @@ export type MessagePart =
       /** La commande, le fichier ou l'adresse concernés. */
       detail: string;
       description: string;
+      /** Le texte du bouton « Toujours », quand le moteur ne garde pas l'accord pour le projet (Codex). */
+      toujours?: string;
       statut: "attente" | "acceptee" | "refusee";
       /** Les règles que « Toujours, dans ce projet » retiendra (« Bash(npm test:*) »). */
       regles?: string[];

@@ -1,5 +1,13 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — « Toujours » tient sa promesse avec Codex
+
+Sur le VPS, Codex demandait l'accord à chaque commande. Deux causes : son bac à sable ne démarre pas (Ubuntu 24 bloque les espaces de noms utilisateur, `kernel.apparmor_restrict_unprivileged_userns = 1`, d'où `bwrap: setting up uid map: Permission denied`), donc en accès « Projet » chaque commande échoue puis demande à repartir hors du bac à sable ; et « Toujours, dans ce projet » répondait `acceptForSession`, qui ne couvre que la commande exacte, pour la session.
+
+- « Toujours » sur une commande accepte maintenant la règle que Codex propose (`proposedExecpolicyAmendment` → `acceptWithExecpolicyAmendment`) : Codex la garde dans le CODEX_HOME de l'agent (`rules/default.rules`), et une commande qui commence ainsi passe ensuite sans demander, hors du bac à sable (règle `allow`, d'après la doc d'OpenAI), dans tous les projets de cet agent sur cette machine.
+- Le bouton dit ce qu'il fait : « Toujours pour « sed -n » », ou « Toujours, dans cette conversation » sans règle proposée (`toujours` de l'événement `autorisation`, copié sur la carte et vers le téléphone, sans chemin). Claude Code garde « Toujours, dans ce projet ».
+- PC et VPS : `codex-protocole.ts`, régénéré en `serveur/codex-protocole.mjs` (code du serveur v65).
+- Reste : le bac à sable lui-même sur un VPS Ubuntu 24 (profil AppArmor pour le bwrap de Codex, à décider) ; en attendant, « Tout accepter » est le réglage sans demande. Pas essayé avec un vrai Codex dans l'app : tests du protocole et de la copie.
 ## 9 novembre 2026 — Routines et workflows : leur conversation se lit comme le chat d'un agent
 
 Question de Corentin : pourquoi une routine ou un workflow ouvre-t-il une « conversation d'équipe », si différente des Chats ? Réponse : `Chat.kind` ne connaît que `direct` (une par agent, hors projet) et `equipe` (tout le reste) ; une routine en chaîne ou rangée dans un projet (`routine-<id>`) et tout workflow (`wf-<id>`) tombent donc en `equipe`. Le 08/11, seules les conversations de projet avaient été alignées sur le chat d'un agent ; celles des routines et workflows sans projet avaient gardé l'ancien écran (« N agents dans la conversation », `PreviewPanel` avec un Aperçu vide hors projet, puce « Destinataire »). Demande : faire comme pour les projets.

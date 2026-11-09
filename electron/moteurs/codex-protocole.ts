@@ -74,6 +74,30 @@ export function decisionCodex(decision: Decision): "accept" | "acceptForSession"
   return decision === "oui" ? "accept" : decision === "toujours" ? "acceptForSession" : "decline";
 }
 
+/**
+ * La règle que Codex propose pour ne plus demander une commande de ce genre (`proposedExecpolicyAmendment` :
+ * le début de la commande, mot par mot) ; null s'il n'en propose pas.
+ */
+export function regleProposee(params: Record<string, unknown>): string[] | null {
+  const r = params.proposedExecpolicyAmendment;
+  return Array.isArray(r) && r.length > 0 && r.every((m) => typeof m === "string" && m.length > 0) ? (r as string[]) : null;
+}
+
+const DEBUT_REGLE = 40;
+
+/**
+ * Ce que « Toujours » veut dire pour cette demande. Avec une règle proposée, Codex la garde dans le dossier
+ * de l'agent (`rules/default.rules` de son CODEX_HOME) : toute commande qui commence ainsi passe ensuite sans
+ * demander, hors du bac à sable, dans tous ses projets sur cette machine. Sans règle, l'accord ne vaut que
+ * pour cette conversation (`acceptForSession`), et pour une commande, seulement celle-ci.
+ */
+function libelleToujours(method: string, params: Record<string, unknown>): string {
+  const regle = method === "item/commandExecution/requestApproval" ? regleProposee(params) : null;
+  if (!regle) return "Toujours, dans cette conversation";
+  const debut = regle.join(" ");
+  return `Toujours pour « ${debut.length > DEBUT_REGLE ? `${debut.slice(0, DEBUT_REGLE)}…` : debut} »`;
+}
+
 const APERCU = 600;
 const court = (texte: string) => (texte.length > APERCU ? `${texte.slice(0, APERCU)}…` : texte);
 
@@ -202,16 +226,20 @@ export class TourCodex {
 }
 
 /** Une demande de Codex qui attend ta réponse, en carte d'autorisation ; null pour celles que l'app refuse d'office. */
-export function autorisationDe(method: string, params: Record<string, unknown>): { outil: string; entree: Record<string, unknown>; description: string } | null {
+export function autorisationDe(
+  method: string,
+  params: Record<string, unknown>,
+): { outil: string; entree: Record<string, unknown>; description: string; toujours: string } | null {
+  const toujours = libelleToujours(method, params);
   switch (method) {
     case "item/commandExecution/requestApproval": {
       const commande = typeof params.command === "string" ? params.command : "";
-      return { outil: "Bash", entree: { command: commande }, description: String(params.reason ?? commande) || "Lancer une commande" };
+      return { outil: "Bash", entree: { command: commande }, description: String(params.reason ?? commande) || "Lancer une commande", toujours };
     }
     case "item/fileChange/requestApproval":
-      return { outil: "Edit", entree: { file_path: params.grantRoot ?? "" }, description: String(params.reason ?? "") || "Modifier des fichiers" };
+      return { outil: "Edit", entree: { file_path: params.grantRoot ?? "" }, description: String(params.reason ?? "") || "Modifier des fichiers", toujours };
     case "item/permissions/requestApproval":
-      return { outil: "Permissions", entree: { permissions: params.permissions }, description: String(params.reason ?? "") || "Plus d’accès (réseau ou fichiers)" };
+      return { outil: "Permissions", entree: { permissions: params.permissions }, description: String(params.reason ?? "") || "Plus d’accès (réseau ou fichiers)", toujours };
     case "mcpServer/elicitation/request": {
       const meta = accordOutilMcp(params);
       if (!meta) return null;
@@ -219,7 +247,7 @@ export function autorisationDe(method: string, params: Record<string, unknown>):
       const outil = outilDeLaDemande(params.message);
       const entree = meta.tool_params && typeof meta.tool_params === "object" && !Array.isArray(meta.tool_params) ? (meta.tool_params as Record<string, unknown>) : {};
       const description = typeof meta.tool_description === "string" && meta.tool_description ? meta.tool_description : `Utiliser un outil de ${serveur}`;
-      return { outil: outil ? `mcp__${serveur}__${outil}` : `mcp__${serveur}`, entree, description };
+      return { outil: outil ? `mcp__${serveur}__${outil}` : `mcp__${serveur}`, entree, description, toujours };
     }
     default:
       return null;
@@ -255,6 +283,8 @@ export function reponseAutorisation(method: string, params: Record<string, unkno
     const persist = (accordOutilMcp(params)?.persist as unknown[] | undefined) ?? [];
     return { action: "accept", content: {}, _meta: decision === "toujours" && Array.isArray(persist) && persist.includes("session") ? { persist: "session" } : null };
   }
+  const regle = method === "item/commandExecution/requestApproval" && decision === "toujours" ? regleProposee(params) : null;
+  if (regle) return { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: regle } } };
   return { decision: decisionCodex(decision) };
 }
 

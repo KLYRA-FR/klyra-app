@@ -308,7 +308,7 @@ function PartieFil({
             conversationOrigine: contexte.origine,
             roleId: message.auteurId ?? "principal",
             messageId: message.origine,
-            accord: { id: partie.id, libelle: partie.libelle, detail: partie.detail, description: partie.description },
+            accord: { id: partie.id, libelle: partie.libelle, detail: partie.detail, description: partie.description, toujours: partie.toujours },
           }}
         />
       ) : (

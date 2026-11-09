@@ -231,6 +231,9 @@ function LigneEtape({ etape, enCours }: { etape: Etape; enCours: boolean }) {
 
 /* ─── Demande d'autorisation ───────────────────────────────────── */
 
+/** Claude Code garde l'accord dans le projet ; un autre moteur dit le sien (`toujours`). */
+export const TOUJOURS_PAR_DEFAUT = "Toujours, dans ce projet";
+
 /**
  * L'agent demande ton accord : ce qu'il veut faire, la commande exacte, et
  * tes trois réponses. Une fois répondue, la carte se résume en une ligne.
@@ -270,7 +273,7 @@ export function CarteAutorisation({
           Autoriser
         </Bouton>
         <Bouton variant="blanc" taille="compact" title={part.regles?.length ? `Retenu dans le projet : ${part.regles.join(", ")}` : undefined} onClick={() => onRepondre?.("toujours")}>
-          {part.regles?.length === 1 ? `Toujours : ${regleEnMots(part.regles[0])}` : "Toujours, dans ce projet"}
+          {part.toujours || (part.regles?.length === 1 ? `Toujours : ${regleEnMots(part.regles[0])}` : TOUJOURS_PAR_DEFAUT)}
         </Bouton>
         <Bouton variant="blanc" taille="compact" onClick={() => onRepondre?.("non")}>
           Refuser

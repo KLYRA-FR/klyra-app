@@ -1378,6 +1378,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
                 libelle,
                 detail: typeof detail === "string" ? detail : "",
                 description: event.description,
+                ...(event.toujours ? { toujours: event.toujours } : {}),
                 statut: "attente",
                 ...(event.regles?.length ? { regles: event.regles } : {}),
               },
