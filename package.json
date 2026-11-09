@@ -16,7 +16,7 @@
     "agents:equipe": "node scripts/agents-equipe.mjs",
     "start:desktop": "pnpm build && pnpm build:electron && env -u ELECTRON_RUN_AS_NODE electron .",
     "test:smoke": "pnpm build && pnpm build:electron && env -u ELECTRON_RUN_AS_NODE KLYRA_SMOKE_TEST=1 electron .",
-    "lint": "eslint && node scripts/serveur-genere.mjs --verifier",
+    "lint": "eslint --cache --cache-strategy content --cache-location .eslintcache && node scripts/serveur-genere.mjs --verifier",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "test:agents": "node scripts/test-agents.mjs",
     "test:onboarding": "node --experimental-strip-types --test electron/prise-en-main.test.mts && node scripts/test-prise-en-main.mjs && node scripts/test-mode-onboarding.mjs && node scripts/test-visite-guidee.mjs",

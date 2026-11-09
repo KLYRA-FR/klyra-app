@@ -1,0 +1,26 @@
+# Préparation commune des jobs de vérification : pnpm, Node 22 (store pnpm
+# en cache), binaire d'Electron en cache, puis les dépendances.
+# À appeler après actions/checkout (l'action est lue dans le dépôt).
+name: Préparer
+description: pnpm, Node, Electron en cache et dépendances installées
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+    # Sans ce cache, le zip d'Electron est retéléchargé à chaque installation
+    # (l'installation prenait une minute sur Mac). Clé : le verrou, où est la version d'Electron.
+    - name: Electron en cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.os == 'macOS' && '~/Library/Caches/electron' || runner.os == 'Windows' && '~/AppData/Local/electron/Cache' || '~/.cache/electron' }}
+        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
+    # github.com répond parfois 502 ou 504 au téléchargement d'Electron (au premier require, ou au postinstall sur Mac) : jusqu'à 4 essais.
+    - name: Dépendances (nouvel essai si GitHub ne répond pas)
+      shell: bash
+      run: for i in 1 2 3 4; do pnpm install --frozen-lockfile && node -e "require('electron')" && exit 0; [ $i -lt 4 ] && echo "::warning::pnpm install a échoué, nouvel essai dans $((i * 15)) s" && sleep $((i * 15)); done; exit 1
