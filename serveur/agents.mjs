@@ -563,6 +563,33 @@ export function creerAgents(options) {
     });
   }
 
+  /**
+   * Les outils de l'app qu'un agent appelle sans demander, en accès « projet » : `--allowedTools` de Claude Code,
+   * et les outils approuvés d'avance pour Codex (`mcpPourCodex`). Comme `OUTILS_APP` sur le PC.
+   */
+  function outilsLibres(demande) {
+    const assistant = demande.agent === null || demande.agent === undefined;
+    return [
+      "mcp__klyra__cerveau_chercher",
+      "mcp__klyra__cerveau_lire",
+      "mcp__klyra__memoire_graphe",
+      OUTIL_IA,
+      OUTIL_PUBLIER,
+      OUTIL_CARTE_CLAUDE,
+      ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : []),
+      // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
+      ...(configurationDe().navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
+      // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
+      ...OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`),
+      // GitHub : lire le dépôt du projet ne change rien (comme sur le PC).
+      ...OUTILS_GITHUB_CLAUDE,
+      // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
+      ...OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`),
+      // Les fils, sans demander (comme sur le PC) : ouvrir un fil, c'est confier à un agent actif.
+      ...NOMS_FILS.map((o) => `mcp__klyra__${o}`),
+    ];
+  }
+
   const codex = creerCodex({
     home,
     donnees,
@@ -572,6 +599,7 @@ export function creerAgents(options) {
     consignesKlyra: () => lireEquipe().configuration.consignes,
     estActif,
     mcp: mcpIa,
+    outilsLibres,
     generation: () => `${lireEquipe().empreinte}|${options.ia?.generation() ?? 0}|${composioServeur.signature()}`,
     skillsParAgent: () => lireEquipe().skillsParAgent,
     ...(options.codex !== undefined ? { codex: options.codex } : {}),
@@ -1049,7 +1077,6 @@ export function creerAgents(options) {
 
     const acces = demande.acces ?? "projet";
     /* Le serveur MCP sait qui l'appelle : l'agent, et la conversation (publication, atelier suivi). */
-    const assistant = demande.agent === null;
     const conversation = typeof demande.conversation === "string" && CONVERSATION.test(demande.conversation) ? demande.conversation : "";
     const mcp = mcpIa(demande);
     /* Les skills, comme dans l'app (cf. electron/connaissances-agent.ts) : celles que la fiche précharge,
@@ -1132,21 +1159,7 @@ export function creerAgents(options) {
         reglagesSession(PERMISSIONS_AGENTS, filtre.coupes),
       ];
       if (acces === "projet")
-        args.push(
-          "--allowedTools",
-          ...COMMANDES_AUTORISEES,
-          ...(mcp ? ["mcp__klyra__cerveau_chercher", "mcp__klyra__cerveau_lire", "mcp__klyra__memoire_graphe", OUTIL_IA, OUTIL_PUBLIER, OUTIL_CARTE_CLAUDE, ...(assistant ? [...OUTILS_ATELIER, OUTIL_EQUIPE_CLAUDE] : [])] : []),
-          // Le navigateur : lire est libre ; ouvrir une page ou y agir suit la règle de l'accès (comme sur le PC).
-          ...(mcp && configuration.navigateur ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
-          // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès (comme sur le PC).
-          ...(mcp ? OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
-          // GitHub : lire le dépôt du projet ne change rien (comme sur le PC).
-          ...(mcp ? OUTILS_GITHUB_CLAUDE : []),
-          // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
-          ...(mcp ? OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`) : []),
-          // Les fils, sans demander (comme sur le PC) : ouvrir un fil, c'est confier à un agent actif.
-          ...(mcp ? NOMS_FILS.map((o) => `mcp__klyra__${o}`) : []),
-        );
+        args.push("--allowedTools", ...COMMANDES_AUTORISEES, ...(mcp ? outilsLibres(demande) : []));
       if (mcp) args.push("--mcp-config", mcp);
       if (avecJointes) args.push("--add-dir", dossierJointes);
       if (demande.agent) args.push("--agent", demande.agent);

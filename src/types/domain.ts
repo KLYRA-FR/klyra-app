@@ -239,6 +239,11 @@ export interface Fil {
   echeance?: string | null;
   /** Le projet concerné, pour filtrer. Pas `Chat.projectId` : le fil apparaîtrait dans les onglets des conversations du projet. */
   projetId?: string | null;
+  /**
+   * Le dossier où le fil travaille, choisi par la puce « Dépôt » avant son premier message (le dossier du projet, sur la
+   * machine du fil) ; absent : l'atelier de l'agent. Figé ensuite : Claude Code retrouve une session par son dossier.
+   */
+  dossier?: { chemin: string; lieu: string | null } | null;
   /** Le rappel d'où vient ce fil (« Confier à un agent »). */
   rappel?: { source: "local" | "compte"; id: string } | null;
   /** Compte les demandes du téléphone appliquées : la copie du compte n'écrase pas un état plus récent. */

@@ -23,6 +23,7 @@ import { PucesImages, VignettePiece } from "./ImageJointe";
 import { PastilleExtension } from "./PastilleExtension";
 import { PromptBox } from "./PromptBox";
 import { nomChoixDepot, PuceDepot, useOuvrirChoixDepot } from "./PuceDepot";
+import { filPeutChoisirDossier } from "@/lib/dossier-conversation";
 import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
 import { useAjoutFichiers } from "./useAjoutFichiers";
 import { useSuggestion } from "./useSuggestion";
@@ -248,7 +249,7 @@ function BandeauReponse({ citation, onRetirer }: { citation: Citation; onRetirer
 /** Composeur sous le fil d'un chat. */
 export function Composer({ chat, project }: { chat: Chat; project: Project | undefined }) {
   const roles = useRoles();
-  const { sendMessage, arreter, startChat, basculerPlan, repartir, state: etatEspace } = useWorkspace();
+  const { sendMessage, arreter, startChat, poserFilDansProjet, basculerPlan, repartir, state: etatEspace } = useWorkspace();
   const messagesChat = useChatMessages(chat.id);
   const router = useRouter();
   const travail = useTravail(chat.id);
@@ -264,8 +265,10 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   /* Une conversation de projet a son agent, comme le chat d'un agent : pas de destinataire à choisir, @ pour en appeler un autre. */
   const projetConv = chat.kind === "equipe" && !!project;
   const agent = useRole(chat.roleIds[0] ?? "principal");
-  /* Le chat d'un agent : la puce « Dépôt » ouvre, à l'envoi, une conversation de cet agent dans le projet choisi. */
-  const avecDepot = direct && !chat.fil;
+  /* Le chat d'un agent : la puce « Dépôt » ouvre, à l'envoi, une conversation de cet agent dans le projet choisi.
+     Un fil neuf : elle le fait travailler dans ce projet (cf. lib/dossier-conversation.ts) ; ensuite, son dossier est figé. */
+  const filNeuf = filPeutChoisirDossier(chat, etatEspace.messages.filter((m) => m.chatId === chat.id).length);
+  const avecDepot = direct && (!chat.fil || filNeuf);
   const [depotChoisi, setDepotChoisi] = useState("");
   const [ouverture, setOuverture] = useState<string | null>(null);
   const ouvrirChoixDepot = useOuvrirChoixDepot();
@@ -277,6 +280,8 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       monte.current = false;
     };
   }, []);
+  /* Un fil déjà posé dans un projet : le dire sous le champ. */
+  const projetDuFil = chat.fil?.dossier ? etatEspace.projects.find((p) => p.id === chat.fil?.projetId) : undefined;
   const nomDepotChoisi = depotChoisi ? nomChoixDepot(depotChoisi, etatEspace.projects) : null;
   const assistant = useRole("principal");
   /* L'assistant seul, sans autre agent : il ne répartit rien, il répond. */
@@ -505,12 +510,21 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
         if (!monte.current) return;
         setOuverture(null);
         if (!r.ok) return setAlerte(r.message);
+        const vider = () => {
+          setCitation(null);
+          setText("");
+          setCurseur(0);
+          setFichiers([]);
+          setDepotChoisi("");
+        };
+        if (chat.fil) {
+          /* Le fil reste ce fil (son onglet, son ticket) : il travaille désormais dans le dossier du projet. */
+          poserFilDansProjet(chat.id, r.projet);
+          sendMessage(chat.id, texte, null, pieces, citation ?? undefined);
+          return vider();
+        }
         const id = startChat(r.projet.id, texte, agent.id, pieces);
-        setCitation(null);
-        setText("");
-        setCurseur(0);
-        setFichiers([]);
-        setDepotChoisi("");
+        vider();
         router.push(`/chat?id=${encodeURIComponent(id)}`);
       });
       return;
@@ -591,7 +605,9 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
           placeholder={
             direct
               ? nomDepotChoisi
-                ? `Nouvelle conversation avec ${agent.name} dans ${nomDepotChoisi}…`
+                ? chat.fil
+                  ? `Écris à ${agent.name}, qui travaillera dans ${nomDepotChoisi}…`
+                  : `Nouvelle conversation avec ${agent.name} dans ${nomDepotChoisi}…`
                 : `Écris à ${agent.name}…`
               : projetConv
                 ? seul
@@ -650,7 +666,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
         {travail
           ? "Ton message attendra que l’agent ait fini · le carré l’arrête."
           : direct
-            ? `${agent.name} travaille dans son propre dossier · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`
+            ? `${agent.name} travaille dans ${projetDuFil ? `le dossier de ${projetDuFil.name}` : "son propre dossier"} · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`
             : `${seul ? `${assistant.name} te répond` : `Sans mention, ${assistant.name} répartit le travail`} · Entrée pour envoyer, Maj + Entrée pour aller à la ligne.`}
       </p>
     </div>
