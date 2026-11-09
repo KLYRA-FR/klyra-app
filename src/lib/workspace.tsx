@@ -1,6 +1,6 @@
 "use client";
 
-import { agentDeConversation } from "@/lib/conversation-projet";
+import { agentDeConversation, agentsAutomatisation, sansAssistantImpose } from "@/lib/conversation-projet";
 import { DIRECT, dansEspace, idDirect, lieuDeConversation, lieuDeHote, lieuParDefaut, lireIdDirect, retenirLieu, useLieuActif } from "./lieux";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { PRINCIPAL } from "@/data/agents";
@@ -240,7 +240,8 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       return {
         ...state,
         // Les fils d'avant les tickets reçoivent leur étape (src/lib/tickets.ts).
-        chats: avecEtapes(action.chats, action.messages),
+        // Les conversations de routine et de workflow ont leur agent en tête (src/lib/conversation-projet.ts).
+        chats: sansAssistantImpose(avecEtapes(action.chats, action.messages), action.messages),
         messages: action.messages,
         routines: action.routines,
         artefacts: action.artefacts,
@@ -2511,14 +2512,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
 
   /* ─── Planning ─────────────────────────────────────────────── */
 
-  /** Lance une routine : sa consigne part à son agent. Une routine en chaîne, ou
-   *  rangée dans un projet, a sa conversation d'équipe, avec tous les agents de la chaîne. */
+  /** Lance une routine : sa consigne part à son agent. Une routine en chaîne, ou rangée dans un projet,
+   *  a sa conversation, qui se lit comme le chat de son agent (en tête), avec les agents de la chaîne. */
   const chatDeRoutine = useCallback(
     (routine: { id: string; nom: string; roleId: RoleId; projectId: string | null; relais?: RelaisRoutine[] }) => {
       const relais = routine.relais ?? [];
       if (!routine.projectId && relais.length === 0) return idDirect(routine.roleId, null, stateRef.current.chats);
       const chatId = `routine-${routine.id}`;
-      const roleIds = [...new Set<RoleId>(["principal", routine.roleId, ...relais.flatMap((l) => [l.de, l.vers])])];
+      const roleIds = agentsAutomatisation(routine.roleId, relais.flatMap((l) => [l.de, l.vers]));
       const existant = stateRef.current.chats.find((c) => c.id === chatId);
       if (!existant) {
         const chat: Chat = {
@@ -2964,7 +2965,8 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             kind: "equipe",
             projectId: wf.projectId,
             title: titre,
-            roleIds: [...new Set<RoleId>(["principal", ...roleIds])],
+            /* Le premier agent qui y travaille en est l'agent ; les suivants la rejoignent. */
+            roleIds: agentsAutomatisation(roleIds[0], roleIds),
             updatedAt: new Date().toISOString(),
             sessions: {},
             luJusqua: null,
