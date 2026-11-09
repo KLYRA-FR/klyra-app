@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { EmptyState } from "klyra-ui";
-import { PreviewPanel } from "@/components/preview/PreviewPanel";
 import { Bouton } from "@/components/ui/Bouton";
 import { BoutonPrincipal } from "@/components/ui/BoutonPrincipal";
 import { useAgents, type AgentLocal } from "@/lib/agents";
@@ -22,7 +21,7 @@ import { MessageThread } from "./MessageThread";
 import { MessageExport } from "./MessageExport";
 import { useExporterConversation } from "./useExporterConversation";
 import { OngletsFils } from "./OngletsFils";
-import { useImagesOuvertes, VueImage } from "./ImageJointe";
+import { useImagesOuvertes } from "./ImageJointe";
 import { OUVRIR_PANNEAU_AGENT, PanneauLateral, surReglages, usePanneauLateral } from "./PanneauLateral";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 import { AtelierEquipe } from "./atelier-equipe/AtelierEquipe";
@@ -120,9 +119,8 @@ export function ChatScreen() {
   const project = useProject(chat?.projectId ?? null);
   const espace = useLieuActif();
   const exportConversation = useExporterConversation(chat, project);
-  const [previewOpen, setPreviewOpen] = useState(true);
   const modifiedLabel = useModifiedLabel(chat?.id ?? "");
-  /* Conversation directe : le panneau de l'agent (réglages, fichiers, tâches) à droite. */
+  /* Le panneau de l'agent (réglages, fichiers, tâches, navigateur ; aperçu et Git dans un projet) à droite. */
   // Sous 1280 px, conversation + panneaux ne tiennent pas : le panneau part fermé.
   const [panneauOuvert, setPanneauOuvert] = useState(() => window.innerWidth >= PANNEAU_MIN_FENETRE);
   useEffect(() => {
@@ -141,17 +139,15 @@ export function ChatScreen() {
   const adresseApercu = demandeApercu && demandeApercu.chatId === chatId ? demandeApercu : null;
   const apercuAMontrer = adresseApercu && adresseApercu.n !== apercuVu ? adresseApercu : null;
   const equipe = chat?.kind === "equipe";
-  /* Une conversation de projet se lit comme le chat d'un agent : son en-tête et son panneau (réglages, aperçu,
-     modifié, fichiers, tâches, navigateur). Les autres conversations d'équipe gardent l'aperçu à droite. */
+  /* Toute conversation se lit comme le chat d'un agent : son en-tête et son panneau. Celle d'un projet a en plus
+     l'aperçu du site et Git ; celle d'une routine ou d'un workflow sans projet, les onglets d'un chat. */
   const projetConv = equipe && !!project;
-  const avecPanneau = chat?.kind === "direct" || projetConv;
 
-  /* Une image jointe cliquée : un onglet du panneau, ou le panneau de l'aperçu dans une autre conversation d'équipe. */
+  /* Une image jointe cliquée : un onglet du panneau. */
   const images = useImagesOuvertes(
     chat?.id ?? "",
     useCallback(() => setPanneauOuvert(true), []),
   );
-  const imageEquipe = equipe && !projetConv ? images.active : null;
   const { choisir: choisirImage } = images;
 
   /* Un agent annonce l'adresse du site qu'il vient de lancer : l'aperçu l'ouvre tout seul,
@@ -170,28 +166,25 @@ export function ChatScreen() {
     if (project.previewUrl !== racine) enregistrerProjet({ ...project, previewUrl: racine });
   }, [annonce, project, equipe, enregistrerProjet]);
 
+  /* Hors d'un projet, pas d'aperçu : le lien s'ouvre comme ailleurs. */
   useEffect(() => {
-    if (!equipe) return;
+    if (!projetConv) return;
     const prendre = (e: Event) => {
       const demande = (e as CustomEvent<DemandeApercu>).detail;
       demande.pris = true;
-      if (projetConv) setPanneauOuvert(true);
-      else setPreviewOpen(true);
+      setPanneauOuvert(true);
       setAdresseApercu((a) => ({ url: demande.url, n: (a?.n ?? 0) + 1, chatId: chatId ?? "" }));
     };
     window.addEventListener("klyra:apercu", prendre);
     return () => window.removeEventListener("klyra:apercu", prendre);
-  }, [equipe, projetConv, chatId]);
+  }, [projetConv, chatId]);
 
   /* Un agent passe la main à la personne sur une page du navigateur : le panneau s'ouvre pour qu'elle la voie. */
   const activiteNavigateur = useActiviteNavigateur(chat?.id ?? "");
   const [attenteVue, setAttenteVue] = useState(false);
   if ((activiteNavigateur === "attente") !== attenteVue) {
     setAttenteVue(activiteNavigateur === "attente");
-    if (activiteNavigateur === "attente") {
-      setPanneauOuvert(true);
-      setPreviewOpen(true);
-    }
+    if (activiteNavigateur === "attente") setPanneauOuvert(true);
   }
   /* Avatar ou prénom de l'agent cliqué : le panneau s'ouvre sur ses réglages. */
   useEffect(() => {
@@ -272,13 +265,8 @@ export function ChatScreen() {
           key={`header-${chat.id}`}
           chat={chat}
           actionExport={exportConversation.action}
-          project={project}
-          previewOpen={avecPanneau ? panneauOuvert : previewOpen || !!imageEquipe}
-          onTogglePreview={() => {
-            if (avecPanneau) setPanneauOuvert((v) => !v);
-            else if (imageEquipe) choisirImage(null);
-            else setPreviewOpen((v) => !v);
-          }}
+          previewOpen={panneauOuvert}
+          onTogglePreview={() => setPanneauOuvert((v) => !v)}
         />
         {!dansEspace(chat.lieu, espace) && <AutreServeur lieu={chat.lieu ?? null} quoi="Cette conversation" />}
         <MessageThread key={chat.id} chatId={chat.id} messageExport={exportConversation.message &&
@@ -286,17 +274,7 @@ export function ChatScreen() {
         <AgentsEnCours chatId={chat.id} />
         {conseilEtComposeur}
       </section>
-      {/* Conversation directe : pas de projet, donc pas d'aperçu. */}
-      {/* L'aperçu reste monté derrière l'image : ses onglets et sa page ne se perdent pas. */}
-      <div className={imageEquipe ? "hidden" : "contents"}>
-        {previewOpen && equipe && !projetConv && <PreviewPanel key={project?.id} project={project} chat={chat} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} />}
-      </div>
-      {imageEquipe && (
-        <aside aria-label="Image jointe" className="flex w-[min(560px,calc(100%-424px))] min-w-[296px] shrink-0 flex-col border-l border-bordure-subtile bg-fond-surface">
-          <VueImage key={imageEquipe} chemin={imageEquipe} onFermer={() => images.fermer(imageEquipe)} />
-        </aside>
-      )}
-      {panneauOuvert && avecPanneau && (
+      {panneauOuvert && (
         <PanneauLateral
           key={projetConv ? `projet-${project?.id}` : "agent"}
           chat={chat}
