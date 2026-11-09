@@ -42,6 +42,7 @@ import { libererPlaceFil } from "@/lib/liberer-place-fil";
 import { executer, type Outils, type Resultat } from "@/lib/workflows/moteur";
 import { creerOutilsWorkflows } from "@/lib/workflows/outils-agents";
 import { extraitMarkdown } from "@/lib/apercu/extrait";
+import { dossierDeConversation, filDansProjet } from "@/lib/dossier-conversation";
 import { texteBrut, type Inline } from "@/lib/apercu/markdown";
 import type { ExecutionWorkflow, SourceExecution, VersionWorkflow, Workflow } from "@/types/workflows";
 import type {
@@ -672,6 +673,8 @@ interface WorkspaceApi {
   creerFil: (roleId: RoleId, titre?: string, lancePar?: { roleId: RoleId; chatId: string } | null, ticket?: ChampsTicket, options?: OptionsFil) => string;
   /** Confie un rappel à un agent : un fil s'ouvre avec le rappel pour brief ; renvoie son id. */
   confierRappel: (rappel: RappelAConfier, roleId: RoleId, idImpose?: string) => string;
+  /** La puce « Dépôt » d'un fil neuf : il travaillera dans le dossier de ce projet (son ticket aussi). */
+  poserFilDansProjet: (chatId: string, projet: Project) => void;
   /** Change le ticket d'un fil : étape (posée exprès), raison, priorité, échéance, projet. */
   majTicket: (chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => void;
   renommerChat: (chatId: string, titre: string) => void;
@@ -1060,6 +1063,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             echeance: chat.fil.echeance,
           }),
         );
+        if (chat.fil.dossier && projetFil) lignes.push(`Tu travailles dans le dossier du projet : ${chat.fil.dossier.chemin}.`);
       } else {
         lignes.push("Conversation en tête-à-tête, hors projet.");
       }
@@ -1577,9 +1581,9 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
             ? { skill: skillEnTete(texteDe(messageUtilisateur)) }
             : {}),
           // Sur un VPS, le dossier du PC n'existe pas : l'agent travaille dans son atelier là-bas.
-          dossier: chat.lieu ? null : chat.kind === "equipe" ? (project?.folder ?? null) : null,
+          // Un fil posé dans un projet par la puce « Dépôt » travaille dans son dossier (cf. lib/dossier-conversation.ts).
+          ...dossierDeConversation(chat, project),
           lieu: chat.lieu ?? null,
-          dossierVps: chat.lieu && chat.kind === "equipe" && project?.lieu === chat.lieu ? project.folder : null,
           sessionId: chat.sessions[roleId] ?? null,
           ...(chat.sessionNeuve && !chat.sessions[roleId] ? { sessionNeuve: true } : {}),
           modele: stateRef.current.chats.find((c) => c.id === chatId)?.modele ?? null,
@@ -2034,6 +2038,14 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
     },
     [creerFil],
   );
+
+  /** La puce « Dépôt » d'un fil neuf : le fil travaillera dans ce projet (son ticket et son dossier), avant son premier message. */
+  const poserFilDansProjet = useCallback((chatId: string, projet: Project) => {
+    const patch = (c: Chat): Chat => (c.fil ? { ...c, fil: filDansProjet(c.fil, projet) } : c);
+    // Le message part juste après : l'envoi lit `stateRef`, pas le prochain rendu.
+    stateRef.current = { ...stateRef.current, chats: stateRef.current.chats.map((c) => (c.id === chatId ? patch(c) : c)) };
+    dispatch({ type: "chat/update", id: chatId, patch });
+  }, []);
 
   const majTicket = useCallback((chatId: string, patch: ChampsTicket & { etape?: EtapeTicket; raison?: string | null }) => {
     const { etape, raison, ...champs } = patch;
@@ -2945,6 +2957,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       repartir,
       creerFil,
       majTicket,
+      poserFilDansProjet,
       confierRappel,
       renommerChat,
       epinglerChat,
@@ -3010,6 +3023,7 @@ function WorkspaceStore({ children }: { children: ReactNode }) {
       repartir,
       creerFil,
       majTicket,
+      poserFilDansProjet,
       confierRappel,
       renommerChat,
       epinglerChat,

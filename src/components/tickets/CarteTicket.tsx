@@ -80,6 +80,8 @@ function Reglages({ chat, colonne }: { chat: Chat & { fil: Fil }; colonne: Colon
             value={fil.projetId ?? ""}
             onChange={(v) => majTicket(chat.id, { projetId: v || null })}
             largeurListe={220}
+            /* Un fil qui travaille dans le dossier de son projet le garde : sa session est liée à ce dossier. */
+            disabled={!!fil.dossier}
           />
         </div>
       )}

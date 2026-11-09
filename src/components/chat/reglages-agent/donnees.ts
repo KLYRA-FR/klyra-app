@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getBridge, type CompetencesAgent, type ContexteConnaissances, type EntreeConsommation, type MemoireAgent } from "@/lib/bridge";
+import { dossierDeConversation } from "@/lib/dossier-conversation";
 import type { Chat, Project } from "@/types/domain";
 
 /*
@@ -15,8 +16,9 @@ import type { Chat, Project } from "@/types/domain";
  */
 export function contexteDe(chat: Chat, projet: Project | undefined, agentId: string): ContexteConnaissances {
   const sessionId = chat.sessions[agentId] ?? null;
-  if (chat.lieu) return { dossier: chat.kind === "equipe" && projet?.lieu === chat.lieu ? projet.folder : null, sessionId, lieu: chat.lieu };
-  return { dossier: chat.kind === "equipe" ? (projet?.folder ?? null) : null, sessionId };
+  const { dossier, dossierVps } = dossierDeConversation(chat, projet);
+  if (chat.lieu) return { dossier: dossierVps, sessionId, lieu: chat.lieu };
+  return { dossier, sessionId };
 }
 
 type Lecture<T> = { etat: "chargement" } | { etat: "pret"; valeur: T } | { etat: "erreur"; message: string } | { etat: "indisponible" };
