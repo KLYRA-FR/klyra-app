@@ -79,7 +79,7 @@ test("commandes, contexte, fenêtre, sortie", () => {
     { nom: "review", description: "Relit", indice: "[pr]" },
     { nom: "init", description: "", indice: "" },
   ]);
-  assert.deepEqual(lireCommandes([{ name: "clear" }, { name: "doctor" }, { name: "security-review" }, { name: "lint" }], new Set(["lint"])).map((c) => c.nom), ["security-review"]);
+  assert.deepEqual(lireCommandes([{ name: "clear" }, { name: "doctor" }, { name: "heapdump" }, { name: "security-review" }, { name: "lint" }], new Set(["lint"])).map((c) => c.nom), ["security-review"]);
   const usage = lireUsageContexte({ totalTokens: 51407, maxTokens: 200000, categories: [{ id: "messages", name: "Messages", tokens: 1200, kind: "used" }, { id: "x", name: "Vide", tokens: 0 }] });
   assert.deepEqual(usage, { total: 51407, max: 200000, categories: [{ id: "messages", nom: "Messages", jetons: 1200, genre: "used" }] });
   assert.equal(lireUsageContexte({}), null);

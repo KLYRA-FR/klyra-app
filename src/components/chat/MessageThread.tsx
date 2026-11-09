@@ -17,7 +17,7 @@ import { fournisseur, moteurDuMessage } from "@/lib/fournisseurs";
 import { requeteRetenue } from "@/lib/recherche-session";
 import { DEPART_ROUTINE } from "@/lib/message-routine";
 import { resumeFond, useFonds, type FondAgent, type TacheFond } from "@/lib/fond-agents";
-import { texteDe, useChat, useChatMessages, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
+import { texteDe, useChat, useChatMessages, useFile, useRole, useRoles, useTravail, useWorkspace, type Travail } from "@/lib/workspace";
 import type { Chat, Message, RoleId } from "@/types/domain";
 import { ActionsReponse, Reactions } from "./ActionsReponse";
 import { MenuMessage, type CibleMessage } from "./MenuMessage";
@@ -493,10 +493,31 @@ export function MessageThread({ chatId, messageExport }: { chatId: string; messa
   /* On reste collé en bas tant que l'on n'est pas remonté lire plus haut. */
   const dernier = messages[messages.length - 1];
   const taille = dernier ? JSON.stringify(dernier.parts).length : 0;
+  /* Ton message envoyé : on revient en bas pour le voir, et la réponse qui suit, même si tu lisais plus haut
+     (un diff déplié, une carte cliquée). */
+  const enAttente = useFile(chatId);
+  const dernierEnvoi = `${messages.findLast((m) => m.author.kind === "user")?.id ?? ""}|${enAttente.at(-1)?.id ?? ""}`;
+  const envoiVu = useRef(dernierEnvoi);
+  useEffect(() => {
+    if (dernierEnvoi === envoiVu.current) return;
+    envoiVu.current = dernierEnvoi;
+    enBas.current = true;
+    ancre.current = false;
+  }, [dernierEnvoi]);
   useEffect(() => {
     const el = zone.current;
     if (el && enBas.current) el.scrollTop = el.scrollHeight;
-  }, [messages.length, taille, travail, fonds.length]);
+  }, [messages.length, taille, travail, fonds.length, dernierEnvoi]);
+  /* Le fil change de hauteur (la file d'attente, la réponse citée, le mode plan sous le champ) : collé en bas, il y reste. */
+  useEffect(() => {
+    const el = zone.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const suivre = new ResizeObserver(() => {
+      if (enBas.current) el.scrollTop = el.scrollHeight;
+    });
+    suivre.observe(el);
+    return () => suivre.disconnect();
+  }, []);
 
   const annonce = useRef<HTMLParagraphElement>(null);
   useArriveeRecherche(chatId, { zoneRef: zone, enBasRef: enBas, ancreRef: ancre, annonceRef: annonce });

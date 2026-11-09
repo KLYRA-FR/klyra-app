@@ -13,7 +13,8 @@
  *  9. la fiche du projet : autorisations retenues (Retirer), sessions du terminal (Reprendre ici), branche de travail ;
  * 10. la commande qui reprend la session dans un terminal.
  * Prérequis : `pnpm build && pnpm build:electron`, Claude Code (KLYRA_CLAUDE_PATH), git.
- *   xvfb-run -a pnpm test:session-claude:app -- --no-sandbox
+ * Avec `KLYRA_TEST_PREUVES=<dossier>` : une capture de chaque moment clé, pour la relecture visuelle.
+ *   xvfb-run -a node scripts/test-session-claude.mjs --no-sandbox
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -89,6 +90,14 @@ const dire = async (texte, n) => {
 const cliquerDans = (selecteur, libelle) =>
   app.ev(`(() => { const z = document.querySelector(${JSON.stringify(selecteur)}); const b = z && [...z.querySelectorAll("button")].find((x) => x.innerText.trim().startsWith(${JSON.stringify(libelle)}) && !x.disabled); if (!b) return false; b.click(); return true; })()`);
 const corps = () => app.ev(`document.body.innerText`);
+/** Une capture pour la relecture visuelle, seulement avec KLYRA_TEST_PREUVES (comme la visite guidée). */
+const capture = async (nom) => {
+  if (!process.env.KLYRA_TEST_PREUVES) return;
+  mkdirSync(process.env.KLYRA_TEST_PREUVES, { recursive: true });
+  await attendre(400);
+  const r = await app.send("Page.captureScreenshot", { format: "png" });
+  writeFileSync(path.join(process.env.KLYRA_TEST_PREUVES, `${nom}.png`), Buffer.from(r.data, "base64"));
+};
 
 try {
   app = await lancerApp({ port: 9391, env });
@@ -100,20 +109,31 @@ try {
   verifier(!(await corps()).includes("Je pèse la question couleur"), "repliée : son texte n'est pas affiché");
   await cliquerDans("[data-reflexion]", "Réflexion");
   verifier(await app.quand(`document.body.innerText.includes("Je pèse la question couleur")`, 3000), "un clic l'ouvre");
+  await capture("01-reflexion-ouverte");
   verifier(typeof reponses()[0]?.uuidFin === "string", "la réponse garde son repère de session (uuidFin)");
   verifier(chat()?.fenetres?.principal > 0, `la fenêtre du modèle est notée (${chat()?.fenetres?.principal})`);
   verifier(await app.quand(`!!document.querySelector("[data-jauge-contexte]")`, 5000), "la jauge du contexte est dans le composeur");
+  if (process.env.KLYRA_TEST_PREUVES) {
+    await app.ev(`document.querySelector("[data-jauge-contexte] button").click()`);
+    await app.quand(`!document.body.innerText.includes("Lecture du détail")`, 5000);
+    verifier(await app.ev(`document.querySelector('[role="dialog"][aria-label="Contexte de la conversation"]').innerText.includes("sur 1 M")`), "la jauge dit la fenêtre en millions (« sur 1 M »)");
+    await capture("02-jauge-contexte");
+    await app.touche("Escape", "Escape", 27);
+  }
 
   /* 2. Question à choix. */
   await ecrire("question logo");
   await entree();
   verifier(await app.quand(`!!document.querySelector('[data-questions="attente"]')`, 60000), "la carte des questions arrive");
   verifier((await corps()).includes("Quelle couleur pour logo ?") && (await corps()).includes("Sam attend ta réponse"), "la question est lisible, Sam attend ta réponse");
+  verifier((await corps()).includes("Te pose une question") && !(await corps()).includes("AskUserQuestion"), "l'étape se dit en mots (« Te pose une question »)");
+  await capture("03-carte-question");
   await app.ev(`[...document.querySelectorAll('[data-questions="attente"] [role="radio"]')].find((b) => b.innerText.includes("Rouge"))?.click()`);
   await attendre(200);
   await cliquerDans('[data-questions="attente"]', "Répondre");
   for (let i = 0; i < 60 && reponses().filter((m) => m.statut === "fait").length < 2; i++) await attendre(1000);
   verifier(await app.quand(`!!document.querySelector('[data-questions="repondue"]')`, 5000), "la carte se résume, répondue");
+  await capture("04-question-repondue");
   verifier(JSON.stringify(reponses()[1]?.parts).includes("Rouge") && reponses()[1]?.parts.some((p) => p.type === "text" && p.text.includes("Rouge")), "le modèle a reçu « Rouge »");
 
   /* 3. Mode plan. */
@@ -125,6 +145,8 @@ try {
   await entree();
   verifier(await app.quand(`!!document.querySelector('[data-plan="attente"]')`, 60000), "le plan arrive dans une carte");
   verifier((await corps()).includes("Plan menu"), "le plan est lisible");
+  verifier((await corps()).includes("Propose son plan") && !(await corps()).includes("ExitPlanMode"), "l'étape se dit en mots (« Propose son plan »)");
+  await capture("05-carte-plan-mode-plan");
   await cliquerDans('[data-plan="attente"]', "Lancer le plan");
   for (let i = 0; i < 60 && reponses().filter((m) => m.statut === "fait").length < 3; i++) await attendre(1000);
   await attendre(800);
@@ -148,10 +170,12 @@ try {
   await app.ev(`(() => { const s = [...document.querySelectorAll("[data-modifications]")].at(-1); s.querySelector("[data-fichier-modifie] button")?.click(); })()`);
   verifier(await app.quand(`!!document.querySelector("[data-modifications] [data-diff]")`, 3000), "un clic sur le fichier montre son diff");
   verifier(await app.ev(`[...document.querySelectorAll("[data-modifications]")].at(-1).innerText.includes("salut note")`), "le diff montre la ligne ajoutée");
+  await capture("06-modifications-diff");
   await app.ev(`(() => { const s = [...document.querySelectorAll("[data-modifications]")].at(-1); [...s.querySelectorAll("button")].find((b) => b.innerText.trim() === "Annuler")?.click(); })()`);
   for (let i = 0; i < 20 && readFileSync(note, "utf8") !== "bonjour note\n"; i++) await attendre(250);
   verifier(readFileSync(note, "utf8") === "bonjour note\n", "« Annuler » remet le fichier comme avant la réponse");
   verifier(await app.quand(`!![...document.querySelectorAll("[data-modifications]")].at(-1).querySelector('[data-fichier-modifie="annulee"]')`, 3000), "la ligne dit « Annulé »");
+  await capture("07-modification-annulee");
   await attendre(800);
   verifier((chat()?.annulations ?? []).some((a) => a.fichiers.includes(note)), "l'annulation est notée pour l'agent");
 
@@ -159,6 +183,11 @@ try {
   await ecrire("commande compte");
   await entree();
   verifier(await app.quand(`[...document.querySelectorAll('[data-sortie="en-cours"]')].some((p) => p.innerText.includes("ligne"))`, 30000), "la sortie de la commande s'affiche pendant qu'elle tourne");
+  verifier(
+    await app.ev(`(() => { const z = document.querySelector('[data-sortie="en-cours"]').getBoundingClientRect(); const f = document.querySelector("form").getBoundingClientRect(); return z.bottom > 0 && z.top < f.top; })()`),
+    "après un diff déplié et « Annuler » plus haut, ton message ramène le fil en bas : la commande qui tourne est à l'écran",
+  );
+  await capture("08-sortie-en-direct");
   for (let i = 0; i < 60 && reponses().filter((m) => m.statut === "fait").length < 6; i++) await attendre(1000);
   const etapeCommande = reponses().at(-1)?.parts.find((p) => p.type === "etapes")?.etapes.find((e) => e.outil === "Bash");
   verifier(etapeCommande?.sortie?.includes("ligne 6") && typeof etapeCommande.debut === "number" && typeof etapeCommande.fin === "number", "la sortie entière et la durée sont gardées avec l'étape");
@@ -171,6 +200,11 @@ try {
   await ecrire("pense vite");
   await entree();
   verifier(await app.quand(`document.body.innerText.includes("Envoyer maintenant")`, 5000), "le message attend dans la file, avec « Envoyer maintenant »");
+  verifier(
+    await app.quand(`(() => { const r = [...document.querySelectorAll('[data-message]')].at(-1).getBoundingClientRect(); const file = [...document.querySelectorAll("p")].find((p) => p.innerText.startsWith("En attente"))?.getBoundingClientRect(); return !!file && r.bottom <= file.top + 2; })()`, 3000),
+    "la file d'attente apparaît : le fil se recale, la réponse en cours reste au-dessus d'elle",
+  );
+  await capture("09-file-envoyer-maintenant");
   await app.cliquer("Envoyer maintenant");
   for (let i = 0; i < 60 && reponses().filter((m) => m.statut && m.statut !== "en-cours").length < 8; i++) await attendre(1000);
   const [arretee, suivante] = reponses().slice(-2);
@@ -184,6 +218,7 @@ try {
   verifier(await app.quand(`[...document.querySelectorAll('[role="menuitem"]')].some((x) => x.innerText.includes("Revenir à avant ce message"))`, 3000), "le clic droit sur un message propose « Revenir à avant ce message »");
   await app.ev(`[...document.querySelectorAll('[role="menuitem"]')].find((x) => x.innerText.includes("Revenir à avant ce message"))?.click()`);
   verifier(await app.quand(`[...document.querySelectorAll('[role="dialog"]')].some((d) => d.innerText.includes("Remettre les fichiers comme avant") && d.innerText.includes("1 fichier modifié"))`, 3000), "la fenêtre propose les fichiers (1 modifié depuis) et la conversation");
+  await capture("10-fenetre-revenir-avant");
   await app.ev(`[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.innerText.trim() === "Revenir")?.click()`);
   for (let i = 0; i < 20 && existsSync(note); i++) await attendre(250);
   await attendre(800);
@@ -201,6 +236,7 @@ try {
   /* 8. « @ » et « / ». */
   await ecrire("regarde @pag");
   verifier(await app.quand(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].some((o) => o.innerText.includes("page.tsx"))`, 8000), "« @ » propose les fichiers du projet");
+  await capture("11-arobase-fichiers");
   await entree();
   await attendre(300);
   verifier((await app.ev(`document.querySelector("textarea").value`)) === "regarde @src/page.tsx ", "Entrée insère « @src/page.tsx »");
@@ -209,11 +245,15 @@ try {
   await ecrire("/");
   const commandes = await app.ev(`[...document.querySelectorAll('[role="listbox"][aria-label="Compétences"] [role="option"]')].map((o) => o.innerText.split("\\n")[0])`);
   verifier(commandes.includes("/plan") && commandes.includes("/compact") && commandes.includes("/clear"), `« / » propose les commandes de l'app (${commandes.slice(0, 6).join(" ")})`);
+  await capture("12-commandes-slash");
   await ecrire("sec");
   verifier(await app.quand(`[...document.querySelectorAll('[role="listbox"][aria-label="Compétences"] [role="option"]')].some((o) => o.innerText.includes("/security-review"))`, 3000), "et celles que la session de Claude Code annonce (/security-review)");
   await app.saisir("textarea", "/");
   await ecrire("doc");
   verifier(!(await app.ev(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].some((o) => o.innerText.includes("/doctor"))`)), "sans celles réservées au terminal (/doctor)");
+  await app.saisir("textarea", "/");
+  await ecrire("heap");
+  verifier(!(await app.ev(`[...document.querySelectorAll('[role="listbox"] [role="option"]')].some((o) => o.innerText.includes("/heapdump"))`)), "ni les commandes de diagnostic de Claude Code (/heapdump)");
   await app.saisir("textarea", "");
 
   /* 10. La commande du terminal. */
@@ -235,11 +275,15 @@ try {
   );
   await app.aller("/projet?id=site&nouvelle=1");
   verifier(await app.quand(`!!document.querySelector("[data-autorisations-projet]") && document.querySelector("[data-autorisations-projet]").innerText.includes("les commandes « npm test… »")`, 10000), "la fiche du projet montre les autorisations retenues, en mots");
+  await app.ev(`document.querySelector("[data-autorisations-projet]").scrollIntoView({ block: "center" })`);
+  await capture("13a-autorisations-projet");
   await cliquerDans("[data-autorisations-projet]", "Retirer");
   for (let i = 0; i < 20 && readFileSync(path.join(PROJET, ".claude", "settings.local.json"), "utf8").includes("npm test"); i++) await attendre(250);
   verifier(!readFileSync(path.join(PROJET, ".claude", "settings.local.json"), "utf8").includes("npm test"), "« Retirer » l'enlève des réglages du projet");
   verifier(await app.quand(`!!document.querySelector("[data-sessions-terminal]") && document.querySelector("[data-sessions-terminal]").innerText.includes("Corrige le pied de page")`, 10000), "les sessions du terminal du projet sont proposées (sans celles de l'app)");
   verifier(!(await app.ev(`document.querySelector("[data-sessions-terminal]").innerText.includes("pense couleur")`)), "celles de l'app n'y sont pas");
+  await app.ev(`document.querySelector("[data-sessions-terminal]").scrollIntoView({ block: "center" })`);
+  await capture("13b-sessions-terminal");
   await cliquerDans("[data-sessions-terminal]", "Reprendre ici");
   await app.quand(`location.search.includes("id=") && !location.pathname.includes("projet")`, 8000);
   await attendre(1000);
@@ -254,6 +298,7 @@ try {
   await app.quand(`!!document.querySelector('[role="dialog"] input')`, 3000);
   await app.saisir('[role="dialog"] input', "essai menu");
   await attendre(200);
+  await capture("14-fenetre-branche");
   await app.ev(`[...document.querySelectorAll('[role="dialog"] button')].find((b) => b.innerText.trim() === "Créer la branche")?.click()`);
   for (let i = 0; i < 30 && !disque().projects.some((p) => p.brancheDe === "site"); i++) await attendre(300);
   const branche = disque().projects.find((p) => p.brancheDe === "site");

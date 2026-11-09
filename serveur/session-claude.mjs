@@ -160,7 +160,7 @@ const NOM_COMMANDE = /^[a-z0-9][a-z0-9:_-]{0,63}$/i;
  */
 export const COMMANDES_HORS_APP = new Set([
     "add-dir", "advisor", "agents", "autocompact", "bug", "clear", "color", "compact", "config", "context", "cost", "doctor", "effort", "exit",
-    "export", "fast", "feedback", "focus", "goal", "help", "hooks", "ide", "import", "install-github-app", "login", "logout", "mcp", "memory",
+    "export", "fast", "feedback", "focus", "goal", "heapdump", "help", "hooks", "ide", "import", "install-github-app", "login", "logout", "mcp", "memory",
     "model", "output-style", "permissions", "privacy-settings", "release-notes", "reload-plugins", "reload-skills", "rename", "resume", "status",
     "statusline", "terminal-setup", "theme", "upgrade", "usage", "vim",
 ]);

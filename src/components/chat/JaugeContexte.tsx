@@ -28,6 +28,9 @@ const NOMS: Record<string, string> = {
   free_space: "Libre",
 };
 
+/** « 15 k », « 1 M » : un million s'écrit en millions. */
+const jetons = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} M` : formaterJetons(n));
+
 /** La fenêtre quand le modèle ne l'a pas encore dite : celle de Claude Code par défaut. */
 const FENETRE_PAR_DEFAUT = 200_000;
 
@@ -87,7 +90,7 @@ export function JaugeContexte({ chat, roleId }: { chat: Chat; roleId: RoleId }) 
         type="button"
         aria-expanded={ouvert}
         aria-controls={ouvert ? id : undefined}
-        title={`Contexte : ${formaterJetons(total)} jetons sur ${formaterJetons(max)} (${pourcent} %)`}
+        title={`Contexte : ${jetons(total)} jetons sur ${jetons(max)} (${pourcent} %)`}
         onClick={() => {
           if (!ouvert) setDetail("lecture");
           setOuvert((v) => !v);
@@ -119,7 +122,7 @@ export function JaugeContexte({ chat, roleId }: { chat: Chat; roleId: RoleId }) 
         >
           <div className="flex flex-col gap-0.5">
             <span className="text-ui-s font-semibold text-texte-principal">
-              {formaterJetons(total)} jetons sur {formaterJetons(max)}
+              {jetons(total)} jetons sur {jetons(max)}
             </span>
             <span className="text-ui-xs text-texte-secondaire">Ce que {role.name} relit à chaque appel dans cette conversation.</span>
           </div>
@@ -131,7 +134,7 @@ export function JaugeContexte({ chat, roleId }: { chat: Chat; roleId: RoleId }) 
                 .map((c) => (
                   <li key={c.id || c.nom} className="flex items-center justify-between gap-3 text-ui-xs">
                     <span className="truncate text-texte-secondaire">{NOMS[c.id] ?? c.nom}</span>
-                    <span className="shrink-0 text-texte-principal tabular-nums">{formaterJetons(c.jetons)}</span>
+                    <span className="shrink-0 text-texte-principal tabular-nums">{jetons(c.jetons)}</span>
                   </li>
                 ))}
             </ul>
