@@ -58,6 +58,27 @@ export type ResultatConnexionMcp =
   | { statut: "sans-oauth"; liste: McpDirect[] };
 import type { Routine as RoutineMoteur, RoutineInput, RoutinePatch, RoutineRun, RunReport } from "@/types/routines";
 
+/** Un terminal interactif ouvert par un agent (cf. electron/terminal.ts, `SessionVue`). */
+export interface TerminalAgent {
+  id: string;
+  conversation: string;
+  agent: string;
+  titre: string;
+  commande: string;
+  dossier: string;
+  ouvertLe: number;
+  fini: boolean;
+  code: number | null;
+}
+
+export interface FluxTerminal {
+  donnees: string;
+  position: number;
+  reprise: boolean;
+  fini: boolean;
+  code: number | null;
+}
+
 export type Reponse<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
 
 export interface AgentFile {
@@ -892,6 +913,16 @@ export interface KlyraBridge {
     /** Copie dans le presse-papiers du système, par le main ; vidé après `delai` ms. */
     copier: (id: string) => Promise<Reponse<{ delai: number }>>;
     surChangement: (callback: () => void) => () => void;
+  };
+  /** Le terminal interactif des agents (cf. electron/terminal.ts), sur ce PC ou sur le VPS (`lieu`). Absent avant la relance de l'app. */
+  terminal?: {
+    lister: (conversation: string, lieu?: string | null) => Promise<Reponse<TerminalAgent[]>>;
+    /** La sortie brute depuis `depuis` ; `reprise` : une partie a été oubliée, tout réafficher. null : terminal fermé. */
+    flux: (id: string, depuis: number, lieu?: string | null) => Promise<Reponse<FluxTerminal | null>>;
+    /** Ce que la personne tape : droit au terminal, jamais noté. */
+    saisir: (id: string, donnees: string, lieu?: string | null) => Promise<Reponse<boolean>>;
+    taille: (id: string, cols: number, rows: number, lieu?: string | null) => Promise<Reponse<boolean>>;
+    fermer: (id: string, lieu?: string | null) => Promise<Reponse<boolean>>;
   };
   /** Le navigateur de KLYRA (cf. electron/navigateur/). Absent avant la relance de l'app. */
   navigateur?: {

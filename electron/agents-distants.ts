@@ -610,7 +610,7 @@ export function annulerDistant(requestId: string): boolean {
  * fichiers, lire la taille du contexte ou la sortie d'une commande. Renvoie la réponse du serveur ; une erreur
  * lisible si le serveur refuse ou ne la connaît pas encore.
  */
-export async function demandeAgentsVps(origine: string, action: "annuler-modifications" | "contexte" | "sortie", corps: Record<string, unknown>): Promise<unknown> {
+export async function demandeAgentsVps(origine: string, action: "annuler-modifications" | "contexte" | "sortie" | "terminaux" | "terminal-flux" | "terminal-saisir" | "terminal-taille" | "terminal-fermer", corps: Record<string, unknown>): Promise<unknown> {
   // `requestId` : la forme que le serveur attend de toute demande d'agent ; il ne désigne ici aucune réponse.
   const r = await requete(origine, `/klyra/v1/agent/${action}`, "POST", { requestId: "demande", ...corps });
   if (r.status === 404) throw new Error("Ce serveur ne sait pas encore le faire : relance la commande d’installation pour le mettre à jour.");

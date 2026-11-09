@@ -3,6 +3,7 @@
 @import "../styles/design-system.css";
 @import "../styles/onboarding.css";
 @import "../styles/visite-guidee.css";
+@import "@xterm/xterm/css/xterm.css";
 
 /* Tailwind doit scanner klyra-ui, sinon les classes de ses composants sont purgées. */
 @source "../../node_modules/klyra-ui/src";
@@ -1151,4 +1152,13 @@ body[data-glisse] iframe {
 .klyra-diff-entete td {
   color: var(--color-texte-tertiaire);
   background: var(--color-fond-survol);
+}
+
+/* Le terminal interactif des agents (onglet Terminal du panneau, xterm.js) : la police et le fond de l'app. */
+.klyra-terminal {
+  font-family: var(--font-mono);
+  background: var(--color-fond-surface);
+}
+.klyra-terminal .xterm-viewport {
+  background-color: var(--color-fond-surface) !important;
 }

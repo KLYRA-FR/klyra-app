@@ -443,6 +443,14 @@ contextBridge.exposeInMainWorld("klyra", {
       return () => ipcRenderer.removeListener("coffre:change", listener);
     },
   },
+  /* Le terminal interactif des agents (onglet Terminal), sur ce PC ou sur le VPS de la conversation. */
+  terminal: {
+    lister: (conversation: string, lieu?: string | null) => ipcRenderer.invoke("terminal:lister", conversation, lieu ?? null),
+    flux: (id: string, depuis: number, lieu?: string | null) => ipcRenderer.invoke("terminal:flux", id, depuis, lieu ?? null),
+    saisir: (id: string, donnees: string, lieu?: string | null) => ipcRenderer.invoke("terminal:saisir", id, donnees, lieu ?? null),
+    taille: (id: string, cols: number, rows: number, lieu?: string | null) => ipcRenderer.invoke("terminal:taille", id, cols, rows, lieu ?? null),
+    fermer: (id: string, lieu?: string | null) => ipcRenderer.invoke("terminal:fermer", id, lieu ?? null),
+  },
   navigateur: {
     etat: () => ipcRenderer.invoke("navigateur:etat"),
     ouvrir: (chatId: string, url?: string) => ipcRenderer.invoke("navigateur:ouvrir", chatId, url),

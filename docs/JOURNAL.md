@@ -1,5 +1,16 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Terminal interactif pour les agents, et onglet Terminal du panneau
+
+Demande de Corentin (fil Cicco) : Camille avait échoué sur `claude mcp login … --no-browser` (« stdin isn't a terminal ») et renvoyé la commande. Les agents ont maintenant un vrai terminal, sans limite sur les commandes, et Corentin le voit et y tape dans le panneau.
+
+- **Quatre outils MCP** (`electron/terminal.ts`, généré en `serveur/terminal.mjs`, code du serveur v66) : `terminal_ouvrir` (commande ou shell, dossier, titre ; rend un id), `terminal_envoyer` (texte, touche, ou `secret` : un secret du Coffre par son nom, jamais en clair), `terminal_lire` (sortie depuis la dernière lecture, ANSI retiré, attend que ça se calme), `terminal_fermer`. Libres en accès « Projet » (PC et VPS), sans validation : voulu par Corentin.
+- **PTY sans dépendance native** : `script` (util-linux sur Linux, BSD sur Mac). Le serveur d'un VPS est livré en .mjs sans npm, node-pty n'y tenait pas. **Windows : pas encore** (l'outil le dit). Redimensionnement : Linux seulement (`stty -F`), sinon 120 × 32.
+- **Garde-fous** : fermeture après 30 min sans activité, 6 terminaux à la fois par poste ou serveur, sortie en mémoire seulement (512 Ko), jamais dans le journal des événements ni sur le disque. Un secret tapé par l'agent est masqué (points de même longueur) dans la sortie de l'agent et de l'écran. Ce que la personne tape va droit au PTY. Chaque terminal appartient à une conversation : l'agent ne voit que les siens.
+- **Écran** : onglet « Terminal » du panneau (`PanneauTerminal`, xterm.js `@xterm/xterm` 6.0.0, MIT, sans dépendance), relu toutes les 150 ms quand il est affiché, liste toutes les 2 s ; il s'ouvre de lui-même quand un agent ouvre un terminal, pastille tant qu'un terminal tourne. IPC `terminal:*` aiguillés par le `lieu`, routes `agent/terminaux`, `agent/terminal-flux`, `-saisir`, `-taille`, `-fermer` du VPS.
+- **À trancher (design)** : l'icône (`code-01` : le set officiel n'a pas d'icône terminal) ; la police (Google Sans Flex, la seule permise, n'est pas à chasse fixe : les colonnes restent alignées par cellule mais l'espacement est irrégulier) ; l'ouverture automatique de l'onglet.
+- Tests : `pnpm test:terminal` (module avec un vrai PTY, vrai serveur KLYRA local, écran), `pnpm test:terminal-poste` (Electron, serveur MCP de l'app, Coffre du PC), `xvfb-run -a pnpm test:terminal-ecran -- --no-sandbox` (après le build : l'app reliée à un vrai serveur local, l'agent du serveur ouvre un terminal qui attend une saisie, l'onglet s'ouvre, la personne tape, l'agent lit). Pas essayé sur Mac ni avec un vrai `claude mcp login`.
+
 ## 9 novembre 2026 — « Toujours » tient sa promesse avec Codex
 
 Sur le VPS, Codex demandait l'accord à chaque commande. Deux causes : son bac à sable ne démarre pas (Ubuntu 24 bloque les espaces de noms utilisateur, `kernel.apparmor_restrict_unprivileged_userns = 1`, d'où `bwrap: setting up uid map: Permission denied`), donc en accès « Projet » chaque commande échoue puis demande à repartir hors du bac à sable ; et « Toujours, dans ce projet » répondait `acceptForSession`, qui ne couvre que la commande exacte, pour la session.
