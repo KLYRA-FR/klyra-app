@@ -418,7 +418,7 @@ function AppsDirectes({ composio }: { composio: EtatComposioConnect }) {
       <span role="status" className="text-ui-xs text-texte-secondaire">Composio : autorise dans le navigateur…</span>
       <Bouton variant="discret" taille="mini" onClick={() => void composio.annuler()}>Annuler</Bouton>
     </>;
-    return <>{libelle}<Bouton variant="discret" taille="mini" disabled={!composio.etat} onClick={() => void composio.connecter()}>Par Composio</Bouton></>;
+    return <>{libelle}<Bouton variant="discret" taille="mini" disabled={!composio.etat} onClick={() => void composio.connecter()}>Connecter par Composio</Bouton></>;
   };
 
   return (
