@@ -864,6 +864,16 @@ export function creerGestionnaire(options) {
       /* Ce qu'écrit une commande lancée en fond par un agent d'ici. */
       if (action === "sortie") return repondre(res, 200, { sortie: await agents.sortieTache(corps.sessionId, corps.tache) });
       if (action === "annuler") return repondre(res, 200, { ok: agents.annuler(requestId) });
+      /*
+       * Le terminal interactif des agents d'ici, pour l'onglet Terminal (cf. terminal.mjs) : les terminaux d'une
+       * conversation, la sortie depuis une position, ce que la personne tape, la taille, la fermeture. Rien de tout
+       * cela ne passe par le journal (que tous les appareils reliés lisent) ni n'est écrit sur le disque.
+       */
+      if (action === "terminaux") return repondre(res, 200, { terminaux: agents.terminaux?.lister(String(corps.conversation ?? "")) ?? [] });
+      if (action === "terminal-flux") return repondre(res, 200, { flux: agents.terminaux?.flux(corps.id, corps.depuis) ?? null });
+      if (action === "terminal-saisir") return repondre(res, 200, { ok: agents.terminaux?.saisir(corps.id, corps.donnees) ?? false });
+      if (action === "terminal-taille") return repondre(res, 200, { ok: agents.terminaux?.taille(corps.id, corps.cols, corps.rows) ?? false });
+      if (action === "terminal-fermer") return repondre(res, 200, { ok: agents.terminaux?.fermer(corps.id) ?? false });
       /* Le PC rend le résultat d'un outil du navigateur de KLYRA demandé par un agent d'ici (cf. navigateur.mjs). */
       if (action === "navigateur") return repondre(res, 200, { ok: agents.navigateur?.repondre(requestId, corps.resultat) ?? false });
       /*

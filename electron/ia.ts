@@ -20,6 +20,9 @@ import { estOutilFil, OUTILS_FILS } from "./fils-outils";
 import { OUTILS_CERVEAU, executerCerveau } from "./cerveau-outils";
 import { depotGithubDeConversation, estOutilGithub, executerOutilGithub, OUTILS_GITHUB_CLAUDE, outilsGithubPour } from "./github-outils";
 import { githubProjets } from "./github";
+import { atelierDe } from "./atelier";
+import { valeurPourAgents } from "./coffre";
+import { creerTerminaux, dossierParDefaut, estOutilTerminal, NOMS_TERMINAL, OUTILS_TERMINAL } from "./terminal";
 
 /**
  * Les autres IA (ChatGPT, Gemini, Mistral…), à côté de Claude : la personne les
@@ -210,6 +213,16 @@ const OUTIL_LIRE_ARTEFACT = {
   },
 };
 
+/**
+ * Le terminal interactif (PTY) des agents de ce PC, vu et tapé par la personne dans l'onglet Terminal du panneau
+ * (cf. terminal.ts, le même module que sur un VPS). Hors d'une conversation, pas de terminal.
+ */
+export const terminaux = creerTerminaux({
+  dossierDefaut: (a) => dossierParDefaut(atelierDe(path.join(app.getPath("home"), ".klyra", "atelier"), a.agent === "principal" ? null : a.agent)),
+  secret: (variable) => valeurPourAgents(variable),
+});
+const appelantTerminal = (a: Appelant) => ({ conversation: a.chatId, agent: a.roleId });
+
 function repondre(res: ServerResponse, statut: number, corps?: unknown) {
   res.writeHead(statut, corps === undefined ? {} : { "Content-Type": "application/json" });
   res.end(corps === undefined ? undefined : JSON.stringify(corps));
@@ -270,7 +283,7 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
       const outilsComposio = composio && await espaceComposio.outils(composio) ? OUTILS_COMPOSIO : [];
       /* GitHub : dans une conversation d'un projet ouvert depuis GitHub sur ce PC (ou qui vient de naître). */
       const outilsGithub = outilsGithubPour(app.getPath("userData"), appelant.chatId);
-      return resultat({ tools: [...OUTILS_CERVEAU, ...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...OUTILS_WORKFLOWS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsComposio, ...outilsGithub, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE] });
+      return resultat({ tools: [...OUTILS_CERVEAU, ...demander, ...OUTILS_FILS, OUTIL_PUBLIER, OUTIL_LIRE_ARTEFACT, ...OUTILS_WORKFLOWS, ...(appelant.roleId === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsComposio, ...outilsGithub, ...(outilsRoutines?.active(appelant) ? OUTILS_ROUTINES : []), ...(navigateurActif() ? OUTILS_NAVIGATEUR : []), ...(serveurOrdinateur() ? [OUTIL_FENETRE_NAVIGATEUR] : []), ...OUTILS_COFFRE, ...(appelant.chatId ? OUTILS_TERMINAL : [])] });
     }
     case "tools/call": {
       const nom = String(msg.params?.name ?? "");
@@ -286,6 +299,12 @@ async function traiter(req: IncomingMessage, res: ServerResponse) {
       /* Le Coffre : jamais une valeur dans la réponse (cf. coffre-outils.ts). */
       if (estOutilCoffre(nom)) {
         const r = await executerOutilCoffre(nom, args, appelant);
+        return texte(r.texte, r.erreur);
+      }
+      /* Le terminal interactif : seulement les terminaux de la conversation de l'agent. */
+      if (estOutilTerminal(nom)) {
+        if (!appelant.chatId) return texte("Le terminal n'existe que dans une conversation.", true);
+        const r = await terminaux.executer(nom, args, appelantTerminal(appelant));
         return texte(r.texte, r.erreur);
       }
       if (nom === OUTIL_FENETRE_NAVIGATEUR.name) {
@@ -401,6 +420,8 @@ export const OUTILS_APP = () => [
   ...(navigateurActif() ? OUTILS_NAVIGATEUR_LECTURE.map((o) => `mcp__klyra__${o}`) : []),
   // Le Coffre : lister, demander et ranger sans demander ; écrire un secret dans un fichier suit l'accès.
   ...OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`),
+  // Le terminal interactif, sans demander : la personne a voulu aucune limite sur les commandes.
+  ...NOMS_TERMINAL.map((o) => `mcp__klyra__${o}`),
   // GitHub : lire le dépôt du projet ne change rien.
   ...OUTILS_GITHUB_CLAUDE,
   // Composio Connect : chercher une action et lire son schéma ; l'exécuter suit la règle de l'accès.

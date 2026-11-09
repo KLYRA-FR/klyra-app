@@ -25,6 +25,9 @@ importers:
       '@postshiba/convex':
         specifier: 0.1.0
         version: 0.1.0(convex-helpers@0.1.131(@standard-schema/spec@1.1.0)(convex@1.48.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)(zod@4.6.7))(convex@1.48.0(react@19.3.0))(react@19.3.0)
+      '@xterm/xterm':
+        specifier: ^6.0.0
+        version: 6.0.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1338,6 +1341,9 @@ packages:
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
     engines: {node: '>=10.0.0'}
+
+  '@xterm/xterm@6.0.0':
+    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -4818,6 +4824,8 @@ snapshots:
       tinyrainbow: 3.2.0
 
   '@xmldom/xmldom@0.8.15': {}
+
+  '@xterm/xterm@6.0.0': {}
 
   abbrev@4.0.0: {}
 

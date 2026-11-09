@@ -130,7 +130,7 @@ import {
 import { ecrirePlanning } from "./planning";
 import { serveursDuPoste } from "./mcp-poste";
 import { ajouterMcpDirect, annulerMcpDirect, chargerMcpDirects, connecterMcpDirect, listerMcpDirects, renouvelerMcpDirects, retirerMcpDirect } from "./mcp-direct";
-import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, testerIa, type Fournisseur } from "./ia";
+import { ajouterIa, brancherRelaisFils, demarrerServeurMcp, FOURNISSEURS, listerIa, retirerIa, terminaux, testerIa, type Fournisseur } from "./ia";
 import { composioConnect, espaceComposio, etatAvecLogos, importerCleComposio, saisirCleComposio, verifierFenetreComposio, annulerComposioVps, connecterComposioVps, connexionVpsEnCours } from "./composio";
 import { demarrerMisesAJour, etatMaj, installerMaintenant, surEtatMaj, verifierMaintenant } from "./maj";
 import { lireConsommation, lireJournal } from "./consommation";
@@ -820,6 +820,38 @@ function registerBridge() {
     const origine = typeof lieu === "string" && lieu ? lieu : null;
     if (origine) return demandeAgentsVps(origine, "sortie", { sessionId, tache }).then((r) => (r as { sortie?: unknown }).sortie ?? null).catch(() => null);
     return sortieTache(sessionId, tache);
+  });
+  /*
+   * Le terminal interactif des agents (onglet Terminal du panneau) : sur ce PC (`terminaux` d'ia.ts) ou sur le VPS
+   * de la conversation, d'après son `lieu`. L'écran relit la sortie depuis sa position ; ce que la personne tape va
+   * droit au PTY, sans journal.
+   */
+  const lieuTerminal = (lieu: unknown) => (typeof lieu === "string" && lieu ? lieu : null);
+  handle("terminal:lister", (conversation: unknown, lieu?: unknown) => {
+    if (typeof conversation !== "string" || !conversation) return [];
+    const origine = lieuTerminal(lieu);
+    if (origine) return demandeAgentsVps(origine, "terminaux", { conversation }).then((r) => (r as { terminaux?: unknown }).terminaux ?? []);
+    return terminaux.lister(conversation);
+  });
+  handle("terminal:flux", (id: unknown, depuis: unknown, lieu?: unknown) => {
+    const origine = lieuTerminal(lieu);
+    if (origine) return demandeAgentsVps(origine, "terminal-flux", { id, depuis }).then((r) => (r as { flux?: unknown }).flux ?? null);
+    return terminaux.flux(id, depuis);
+  });
+  handle("terminal:saisir", (id: unknown, donnees: unknown, lieu?: unknown) => {
+    const origine = lieuTerminal(lieu);
+    if (origine) return demandeAgentsVps(origine, "terminal-saisir", { id, donnees }).then((r) => (r as { ok?: unknown }).ok === true);
+    return terminaux.saisir(id, donnees);
+  });
+  handle("terminal:taille", (id: unknown, cols: unknown, rows: unknown, lieu?: unknown) => {
+    const origine = lieuTerminal(lieu);
+    if (origine) return demandeAgentsVps(origine, "terminal-taille", { id, cols, rows }).then((r) => (r as { ok?: unknown }).ok === true).catch(() => false);
+    return terminaux.taille(id, cols, rows);
+  });
+  handle("terminal:fermer", (id: unknown, lieu?: unknown) => {
+    const origine = lieuTerminal(lieu);
+    if (origine) return demandeAgentsVps(origine, "terminal-fermer", { id }).then((r) => (r as { ok?: unknown }).ok === true);
+    return terminaux.fermer(id);
   });
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
@@ -1795,6 +1827,7 @@ app.on("before-quit", (event) => {
 
 /* Le Whisper gardé en mémoire pour la dictée s'arrête avec l'app. */
 app.on("will-quit", () => {
+  terminaux.fermerTout();
   fermerGithubProjets();
   arreterDictee();
   arreterRoutines();

@@ -19,19 +19,21 @@ import { VueGit } from "@/components/project/VueGit";
 import { useActiviteNavigateur } from "@/lib/navigateur";
 import { VueImage } from "./ImageJointe";
 import { PanneauNavigateur } from "./navigateur/PanneauNavigateur";
+import { PanneauTerminal } from "./terminal/PanneauTerminal";
+import { useTerminauxChat } from "@/lib/terminal";
 import { PastilleExtension } from "./PastilleExtension";
 import { ReglagesAgent } from "./reglages-agent/ReglagesAgent";
 import { MenuFichierConversation, MenuLivrable, ouvrirLivrable, SuivisTelechargement, useTelechargements } from "./TelechargementsFichiers";
 
 /**
  * Panneau à droite d'une conversation, à onglets : les réglages de l'agent,
- * les fichiers de la conversation, ses tâches, le navigateur de ses agents, et un onglet
+ * les fichiers de la conversation, ses tâches, le navigateur et le terminal de ses agents, et un onglet
  * par image jointe qu'on a ouverte. Dans une conversation de projet, en plus : l'aperçu
  * du site et Git (changements, publier, tests et pull requests sur GitHub). On ferme un onglet, on le
  * rouvre avec « + », on élargit le panneau à la poignée ou on l'agrandit.
  */
 
-export type Onglet = "reglages" | "apercu" | "git" | "fichiers" | "taches" | "navigateur";
+export type Onglet = "reglages" | "apercu" | "git" | "fichiers" | "taches" | "navigateur" | "terminal";
 
 const ONGLETS: Record<Onglet, { nom: string; icone: IconName }> = {
   reglages: { nom: "Réglages", icone: "settings" },
@@ -40,9 +42,10 @@ const ONGLETS: Record<Onglet, { nom: string; icone: IconName }> = {
   fichiers: { nom: "Fichiers", icone: "folder" },
   taches: { nom: "Tâches", icone: "list" },
   navigateur: { nom: "Navigateur", icone: "computer" },
+  terminal: { nom: "Terminal", icone: "code-01" },
 };
 /** Tous les onglets, dans leur ordre ; ceux d'un projet n'existent que dans une conversation de projet. */
-const ORDRE: Onglet[] = ["reglages", "apercu", "git", "fichiers", "taches", "navigateur"];
+const ORDRE: Onglet[] = ["reglages", "apercu", "git", "fichiers", "taches", "navigateur", "terminal"];
 const DU_PROJET: Onglet[] = ["apercu", "git"];
 const ORDRE_AGENT = ORDRE.filter((o) => !DU_PROJET.includes(o));
 const ordreDe = (projet: boolean) => (projet ? ORDRE : ORDRE_AGENT);
@@ -444,6 +447,18 @@ export function PanneauLateral({
     setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "navigateur" || e.ouverts.includes(x)), actif: "navigateur" }));
   }, [activite, setEtat, onChoisirImage]);
 
+  /* Un agent ouvre un terminal dans cette conversation : l'onglet Terminal s'ouvre de lui-même, une fois par terminal. */
+  const terminaux = useTerminauxChat(chat.id, chat.lieu ?? null);
+  const terminalEnCours = terminaux.some((t) => !t.fini);
+  const dernierTerminal = terminaux.filter((t) => !t.fini).sort((a, b) => b.ouvertLe - a.ouvertLe)[0]?.id ?? null;
+  const terminalVu = useRef<string | null>(null);
+  useEffect(() => {
+    if (!dernierTerminal || terminalVu.current === dernierTerminal) return;
+    terminalVu.current = dernierTerminal;
+    onChoisirImage(null);
+    setEtat((e) => ({ ...e, ouverts: ORDRE.filter((x) => x === "terminal" || e.ouverts.includes(x)), actif: "terminal" }));
+  }, [dernierTerminal, setEtat, onChoisirImage]);
+
   /* Plus aucun onglet : le panneau se ferme. S'il s'ouvre sans onglet visible ici (on n'avait gardé que ceux
      d'un projet), il reprend les onglets de cette conversation au lieu de se refermer aussitôt. */
   const dejaVu = useRef(false);
@@ -544,6 +559,9 @@ export function PanneauLateral({
                 >
                   {ONGLETS[o].nom}
                 </button>
+                {o === "terminal" && terminalEnCours && (
+                  <span aria-label="Un terminal tourne dans cette conversation" className="klyra-respire size-1.5 rounded-full bg-bleu-k1-500" />
+                )}
                 {o === "navigateur" && activite && (
                   <span
                     aria-label={activite === "attente" ? "Un agent t’attend dans le navigateur" : "Un agent utilise le navigateur"}
@@ -635,7 +653,7 @@ export function PanneauLateral({
         />
       </div>
 
-      <div role="tabpanel" className={cn("min-h-0 flex-1", imageActive || actif === "navigateur" || actif === "apercu" ? "flex flex-col" : "overflow-y-auto")}>
+      <div role="tabpanel" className={cn("min-h-0 flex-1", imageActive || actif === "navigateur" || actif === "terminal" || actif === "apercu" ? "flex flex-col" : "overflow-y-auto")}>
         {/* L'aperçu reste monté derrière les autres onglets : ses pages ne se rechargent pas. */}
         {projet && ouverts.includes("apercu") && (
           <ApercuSite key={projet.id} project={projet} modifiedLabel={modifiedLabel} adresseDemandee={adresseApercu} visible={!imageActive && actif === "apercu"} />
@@ -649,6 +667,7 @@ export function PanneauLateral({
             {actif === "fichiers" && <Fichiers chat={chat} />}
             {actif === "taches" && <Taches chat={chat} />}
             {actif === "navigateur" && <PanneauNavigateur key={chat.id} chat={chat} />}
+            {actif === "terminal" && <PanneauTerminal key={chat.id} chat={chat} />}
           </>
         )}
       </div>

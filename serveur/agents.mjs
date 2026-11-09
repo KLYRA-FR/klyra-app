@@ -52,6 +52,7 @@ import {
 } from "./session-claude.mjs";
 import { reglesProposees } from "./regles-projet.mjs";
 import { dossierHorsProjet } from "./atelier.mjs";
+import { creerTerminaux, dossierParDefaut, estOutilTerminal, NOMS_TERMINAL, OUTILS_TERMINAL } from "./terminal.mjs";
 import { creerJoints } from "./joints.mjs";
 import {
   competencesDeLAgent,
@@ -439,6 +440,11 @@ export function creerAgents(options) {
   const coffreServeur = creerCoffreServeur({ donnees });
   const coffre = creerRelaisCoffre({ publier, ecouteurs: options.ecouteurs ?? (() => 0), home, donnees, local: coffreServeur });
   options.ia?.surCoffre?.({ actif: () => true, appeler: coffre.appeler });
+  /* Le terminal interactif (PTY) des agents d'ici, vu et tapé par la personne dans l'onglet Terminal (cf. terminal.mjs). */
+  const terminaux = creerTerminaux({
+    dossierDefaut: (a) => dossierParDefaut(dossierHorsProjet(atelier, a.agent === "principal" ? null : a.agent, null, path.join(home, ".claude"), existsSync)),
+    secret: (variable) => coffreServeur.valeurPourAgents(variable),
+  });
   /* Les apps de la personne par Composio : la connexion de ce serveur, à lui seul (cf. composio-serveur.mjs). */
   const githubProjets = creerGithubProjets({ donnees, base: home, racine: path.join(home, "projets", "GitHub"), gh: existsSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "gh")) ? path.join(path.dirname(fileURLToPath(import.meta.url)), "gh") : "gh", chiffrer: coffreServeur.chiffrerTexte, dechiffrer: coffreServeur.dechiffrerTexte });
   const composioServeur = creerComposioServeur({ donnees, coffre: coffreServeur, ...(options.fetch ? { fetch: options.fetch } : {}) });
@@ -481,9 +487,13 @@ export function creerAgents(options) {
   options.ia?.brancherOutils?.({
     // Les cartes interactives à chaque agent ; l'atelier à l'assistant seul.
     // GitHub : seulement dans une conversation d'un projet ouvert depuis GitHub sur ce serveur (cf. github-outils.mjs).
-    lister: (appelant) => [...(appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsGithubPour(donnees, appelant.conversation, true)],
+    lister: (appelant) => [...(appelant.agent === "principal" ? [OUTIL_PROPOSER, OUTIL_EQUIPE, OUTIL_CHOIX] : []), OUTIL_CARTE, ...outilsGithubPour(donnees, appelant.conversation, true), ...(CONVERSATION.test(appelant.conversation) ? OUTILS_TERMINAL : [])],
     appeler: async (nom, args, appelant) => {
       if (nom === OUTIL_CARTE.name) return appelCarte(args);
+      if (estOutilTerminal(nom)) {
+        if (!CONVERSATION.test(appelant.conversation)) return { texte: "Le terminal n'existe que dans une conversation.", erreur: true };
+        return terminaux.executer(nom, args, appelant);
+      }
       if (estOutilGithub(nom)) return executerOutilGithub(nom, args, depotGithubDeConversation(donnees, appelant.conversation, true), githubProjets);
       if (nom !== OUTIL_PROPOSER.name && nom !== OUTIL_EQUIPE.name && nom !== OUTIL_CHOIX.name) return null;
       if (appelant.agent !== "principal") return { texte: "Seul l'assistant crée des agents avec la personne.", erreur: true };
@@ -587,6 +597,8 @@ export function creerAgents(options) {
       ...OUTILS_GITHUB_CLAUDE,
       // Lire et construire un workflow ne lancent rien ; le lancer suit la règle de l'accès (comme sur le PC).
       ...OUTILS_WORKFLOWS_LIBRES.map((o) => `mcp__klyra__${o}`),
+      // Le terminal interactif, sans demander (comme sur le PC) : la personne a voulu aucune limite sur les commandes.
+      ...NOMS_TERMINAL.map((o) => `mcp__klyra__${o}`),
       // Les fils, sans demander (comme sur le PC) : ouvrir un fil, c'est confier à un agent actif.
       ...NOMS_FILS.map((o) => `mcp__klyra__${o}`),
       // Composio : chercher une action et lire son schéma ; l'exécuter suit la règle de l'accès (comme sur le PC).
@@ -1254,6 +1266,7 @@ export function creerAgents(options) {
   }
 
   function fermerTout() {
+    terminaux.fermerTout();
     githubProjets.fermer();
     for (const proc of new Set(processus.values())) proc.child.kill("SIGTERM");
     codex.fermer();
@@ -1312,5 +1325,5 @@ export function creerAgents(options) {
   /** Ce que la configuration de Claude Code de ce VPS ajoute à chaque appel (cf. electron/diagnostic-poste.ts), avec ses agents actifs. */
   const diagnostic = () => diagnostiquerPoste(home, lireEquipe().actifs.map((a) => a.id), path.join(home, ".claude"));
 
-  return { etat, envoyer, autoriser, annuler, annulerModifications, usageContexte, sortieTache, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
+  return { etat, envoyer, autoriser, annuler, annulerModifications, usageContexte, sortieTache, recevoirFiches, joints, appelLibre, accesServeur, brancherWorkflows: (m) => { moteurWorkflows = m; }, brancherFils: (f) => { filsLocaux = f; }, equipeServeur, appelerEquipe, coffreServeur, composioServeur, githubProjets, competences, memoire, diagnostic, rendus, navigateur, coffre, workflows, fils, terminaux, essayer, empreinteEquipe, fermerTout, claude, codex, grok };
 }

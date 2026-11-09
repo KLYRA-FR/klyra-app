@@ -33,7 +33,8 @@
  *   `serveur/liste-fichiers.mjs` : les fichiers d'un projet pour la complétion « @ » (electron/liste-fichiers.ts) ;
  *   `serveur/regles-projet.mjs` : les autorisations retenues d'un projet (electron/regles-projet.ts) ;
  *   `serveur/branche-travail.mjs` : les branches de travail d'un projet, `git worktree` (electron/branche-travail.ts) ;
- *   `serveur/sessions-terminal.mjs` : les sessions de Claude Code d'un projet lancées hors de l'app (electron/sessions-terminal.ts).
+ *   `serveur/sessions-terminal.mjs` : les sessions de Claude Code d'un projet lancées hors de l'app (electron/sessions-terminal.ts) ;
+ *   `serveur/terminal.mjs` : le terminal interactif (PTY) des agents, vu dans l'onglet Terminal (electron/terminal.ts).
  * - `serveur/github-outils.mjs` : les outils GitHub des agents, en lecture, sur le dépôt du projet (electron/github-outils.ts).
  * - `serveur/version-code.mjs` : la version du code du serveur (electron/version-serveur.ts), montée ici dès que
  *   `empreinteCodeServeur` change. Le VPS ne se met pas à jour seul : c'est ce numéro qui révèle un serveur en retard.
@@ -88,6 +89,7 @@ const FICHIERS = [
   ["electron/regles-projet.ts", "serveur/regles-projet.mjs"],
   ["electron/branche-travail.ts", "serveur/branche-travail.mjs"],
   ["electron/sessions-terminal.ts", "serveur/sessions-terminal.mjs"],
+  ["electron/terminal.ts", "serveur/terminal.mjs"],
   ["electron/atelier-agent.ts", "serveur/atelier-agent.mjs"],
   ["electron/atelier-equipe.ts", "serveur/atelier-equipe.mjs"],
   ["electron/cartes-interactives.ts", "serveur/cartes-interactives.mjs"],
