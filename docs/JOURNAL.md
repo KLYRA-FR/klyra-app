@@ -1,5 +1,13 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Retrait de la carte « Connexion » du rail
+
+À la demande de Corentin (via Cicco), le rail n’affiche plus la carte blanche avec cadenas, « Connexion » et compteur. `PastilleMcp` et sa fenêtre `ConnexionsAgents.tsx`, devenues sans appelant, sont retirées avec leur écoute des notifications. La pastille de mise à jour, les autres entrées, la Marketplace, GitHub OAuth et Composio restent inchangés. La veille MCP, ses notifications, la bibliothèque de santé et le pont Electron restent en place ; cliquer une notification ne peut plus ouvrir cette fenêtre.
+
+Le scénario de reconnexion par la fenêtre supprimée est remplacé par un test du rendu du rail (`pnpm test:mcp-sante-ecran`) : deux défauts MCP n’affichent aucune carte ni entrée vers la fenêtre, une mise à jour prête reste affichée. Les tests de la veille restent dans `pnpm test:mcp-sante`.
+
+Vérifié par l’auteur : 2 tests du rail, 14 tests de santé MCP, typage (après génération Next), lint, build, compilation Electron et démarrage sur profil isolé réussis. Le build signale l’avertissement CSS existant sur `::highlight(klyra-recherche)`.
+
 ## 9 novembre 2026 — Veille des connexions MCP des agents, et « Reconnecter » sans terminal
 
 Demande de Corentin (fil Cicco « Contrôle régulier des connexions MCP ») : le 09/11, Camille n'a pas pu lister les factures Qualion, le MCP Qonto était en « Needs authentication » et la reconnexion demandait un terminal. Il faut être prévenu avant, et reconnecter en un clic.
