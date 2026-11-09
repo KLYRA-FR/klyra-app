@@ -95,8 +95,11 @@ try {
   await app.quand("document.getElementById('revoir-visite-guidee')");
   verifier(await app.ev("!document.querySelector('.visite-dialogue')"), "une visite terminée ne réapparaît pas au prochain lancement");
   assert.deepEqual(fichiers(), avant, "visite sans modification des agents, conversations, accès ni onboarding");
-  const interdits = readFileSync(journal, "utf8").split("\n").filter((c) => /^(prise-en-main:ecrire|agents:mes:assistant|agents:meta:write|claude:(stream|run)|moteurs:(installer|connecter|cle|compte))/.test(c));
+  /* Lire l'état du compte (`moteurs:compte`) n'est ni une connexion ni une génération : à chaque lancement de l'app,
+     les rechargements du test compris, le rail le lit pour ses anneaux d'utilisation dès qu'un moteur est installé. */
+  const interdits = readFileSync(journal, "utf8").split("\n").filter((c) => /^(prise-en-main:ecrire|agents:mes:assistant|agents:meta:write|claude:(stream|run)|moteurs:(installer|connecter|cle))/.test(c));
   assert.deepEqual(interdits, [], "aucun appel de génération, installation ou connexion");
+  console.log("OK aucun appel de génération, installation ou connexion");
   verifier(app.erreurs.length === 0, `aucune exception dans l’interface : ${app.erreurs.join('; ')}`);
   console.log("VISITE VÉRIFIÉE — onze pages, navigation, reprise, clavier, responsive et profil préservé.");
 } finally {
