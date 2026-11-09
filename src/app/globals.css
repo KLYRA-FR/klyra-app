@@ -1106,3 +1106,49 @@ body[data-glisse] iframe {
   outline-offset: 4px;
   border-radius: 4px;
 }
+
+/* Le diff d'une modification de fichier dans le fil (SessionParts) : numéros figés, lignes ajoutées en vert,
+   retirées en rouge, sans retour à la ligne (le défilement horizontal reste dans la boîte). */
+.klyra-diff table {
+  font-size: var(--text-ui-2xs);
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+}
+.klyra-diff-numero {
+  width: 1%;
+  padding: 0 6px;
+  color: var(--color-texte-tertiaire);
+  text-align: right;
+  white-space: nowrap;
+  user-select: none;
+  vertical-align: top;
+}
+.klyra-diff-texte {
+  padding: 0 8px 0 2px;
+  white-space: pre;
+  color: var(--color-texte-principal);
+}
+.klyra-diff-signe {
+  display: inline-block;
+  width: 1.1em;
+  color: var(--color-texte-tertiaire);
+  user-select: none;
+}
+.klyra-diff-ajout {
+  background: color-mix(in srgb, var(--color-vert-k2-600) 22%, transparent);
+}
+.klyra-diff-ajout .klyra-diff-signe,
+.klyra-diff-plus {
+  color: var(--color-vert-k1-400);
+}
+.klyra-diff-retrait {
+  background: color-mix(in srgb, var(--color-rouge-500) 10%, transparent);
+}
+.klyra-diff-retrait .klyra-diff-signe,
+.klyra-diff-moins {
+  color: var(--color-texte-erreur);
+}
+.klyra-diff-entete td {
+  color: var(--color-texte-tertiaire);
+  background: var(--color-fond-survol);
+}

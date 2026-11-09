@@ -94,6 +94,10 @@ import {
   titrerDemande,
   suggererReponse,
   annulerSuggestion,
+  annulerModifications,
+  oublierModifications,
+  sortieTache,
+  usageContexte,
   type Utilisation,
 } from "./claude";
 import { moteurs } from "./moteurs";
@@ -192,7 +196,11 @@ import { PRIVILEGE_SCHEMA } from "./document-isole";
 import { ouvrirHtml, vignetteHtml } from "./fenetre-document";
 import { appairerServeur, appelerServeur, politiqueContenu, retirerAppareil, type DemandeHttp } from "./appel-serveur";
 import { appelCoffreVps, appelComposioVps, appelGithubVps, appelEquipeVps, appelEspaceVps, appelWorkflowsVps } from "./equipe-vps";
-import { arbreVps, consignesVps, creerDossierVps, ecrireFichierVps, lireFichierVps } from "./projets-vps";
+import { arbreVps, brancheVps, consignesVps, creerDossierVps, ecrireFichierVps, fichiersVps, lireFichierVps, reglesVps, sessionsTerminalVps, sessionTerminalVps } from "./projets-vps";
+import { commandeTerminal, lireSessionTerminal, listerSessionsTerminal } from "./sessions-terminal";
+import { creerBrancheTravail, retirerBrancheTravail } from "./branche-travail";
+import { listerFichiersProjet } from "./liste-fichiers";
+import { lireReglesProjet, retirerRegleProjet, type ListeRegles } from "./regles-projet";
 import { garderJetonServeur, jetonServeur, oublierJetonServeur, originesServeurs } from "./jetons-serveurs";
 import {
   ajouterIaVps,
@@ -218,7 +226,7 @@ import {
 import { competencesVps, creerSouvenirVps, diagnosticVps, ecrireSouvenirVps, memoireVps, souvenirVps } from "./connaissances-vps";
 import type { AjoutFiche } from "./atelier-agent";
 import { essayerVps } from "./epreuve-vps";
-import { annulerDistant, autoriserDistant, brancherAgentsDistants, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
+import { annulerDistant, autoriserDistant, brancherAgentsDistants, demandeAgentsVps, oublierServeur, relierServeur, streamDistant, synchroniserEquipe, type Equipe } from "./agents-distants";
 import { brancherRoutinesVps } from "./routines-vps";
 import { adresseConvex, ecrireJeton, enregistrerProtocole, jetonsEcrits, lireJeton, prendreLienRejoindre, PROTOCOLE, prendreCode, recevoirLien, recevoirLienRejoindre, retirerJeton, sourcesConvex } from "./compte";
 import { enregistrerCollage } from "./collages";
@@ -623,6 +631,12 @@ function registerBridge() {
     appeler: async (lieu, action, args) => (await appelCerveauVps(lieu, jetonServeur(lieu), "/klyra/v1/agent/cerveau", "POST", { action, args }, 120_000)).resultat,
   });
   if (!SMOKE_TEST && process.env.KLYRA_SANS_VEILLE !== "1") synchroCerveau.demarrer();
+  /* Les modifications de fichiers gardées pour être annulées : un mois, pas plus. */
+  try {
+    oublierModifications(null);
+  } catch (error) {
+    console.error("Nettoyage des modifications gardées :", error);
+  }
   const porteeDe = async (agent: string): Promise<PorteeMemoire | null> => (agent === "principal" ? "auto" : porteeDeLaFiche((await lireFiche(agent))?.content ?? ""));
   const memoireDe = async (agent: string, contexte: { dossier?: string | null; sessionId?: string | null } | null) => {
     const portee = await porteeDe(String(agent));
@@ -769,9 +783,42 @@ function registerBridge() {
     return essayerBrouillon(String(requestId), fiche, demande);
   });
   handle("claude:cancel", (requestId: string) => (annulerDistant(requestId) ? undefined : moteurs.arreter(requestId)));
-  handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision) => {
+  handle("claude:autoriser", (requestId: string, demandeId: string, decision: Decision, details?: unknown) => {
     if (!["oui", "toujours", "non"].includes(decision)) throw new Error("Réponse invalide.");
-    return autoriserDistant(requestId, demandeId, decision) ?? moteurs.autoriser(requestId, demandeId, decision);
+    /* Les réponses aux questions d'un agent, ou ce qu'il faut changer à son plan : du texte, borné. */
+    const d = (details ?? {}) as { reponses?: unknown; message?: unknown };
+    const reponses =
+      d.reponses && typeof d.reponses === "object" && !Array.isArray(d.reponses)
+        ? Object.fromEntries(Object.entries(d.reponses as Record<string, unknown>).slice(0, 8).filter(([, v]) => typeof v === "string").map(([k, v]) => [k.slice(0, 1000), (v as string).slice(0, 2000)]))
+        : undefined;
+    const propres = { ...(reponses ? { reponses } : {}), ...(typeof d.message === "string" ? { message: d.message.slice(0, 4000) } : {}) };
+    return autoriserDistant(requestId, demandeId, decision, propres) ?? moteurs.autoriser(requestId, demandeId, decision, propres);
+  });
+  /*
+   * Annuler des modifications de fichiers faites par les agents d'une conversation : l'écran désigne les appels
+   * d'outil, le fichier et son contenu d'avant viennent de la machine où l'agent a travaillé (ce PC ou son VPS).
+   */
+  handle("claude:annuler-modifications", (chatId: unknown, ids: unknown, forcer: unknown, lieu?: unknown) => {
+    const conversation = typeof chatId === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(chatId) ? chatId : null;
+    const appels = Array.isArray(ids) ? ids.filter((i): i is string => typeof i === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(i)).slice(0, 2000) : [];
+    if (!conversation || !appels.length) throw new Error("Rien à annuler.");
+    const origine = typeof lieu === "string" && lieu ? lieu : null;
+    if (origine) return demandeAgentsVps(origine, "annuler-modifications", { conversation, ids: appels, forcer: forcer === true }).then((r) => (r as { resultat?: unknown }).resultat);
+    return annulerModifications(conversation, appels, forcer === true);
+  });
+  /* La taille du contexte d'une session ouverte, et ce qui la remplit (jauge du composeur). */
+  handle("claude:contexte", (sessionId: unknown, lieu?: unknown) => {
+    if (typeof sessionId !== "string" || !/^[0-9a-f-]{36}$/.test(sessionId)) return null;
+    const origine = typeof lieu === "string" && lieu ? lieu : null;
+    if (origine) return demandeAgentsVps(origine, "contexte", { sessionId }).then((r) => (r as { usage?: unknown }).usage ?? null).catch(() => null);
+    return usageContexte(sessionId);
+  });
+  /* Ce qu'écrit une commande lancée en fond par un agent (sa tâche), pendant qu'elle tourne. */
+  handle("claude:sortie", (sessionId: unknown, tache: unknown, lieu?: unknown) => {
+    if (typeof sessionId !== "string" || !/^[0-9a-f-]{36}$/.test(sessionId) || typeof tache !== "string") return null;
+    const origine = typeof lieu === "string" && lieu ? lieu : null;
+    if (origine) return demandeAgentsVps(origine, "sortie", { sessionId, tache }).then((r) => (r as { sortie?: unknown }).sortie ?? null).catch(() => null);
+    return sortieTache(sessionId, tache);
   });
   /* Réponse en direct : les événements arrivent sur `claude:event`, jusqu'à `fin`. */
   handle("claude:stream", (requestId: string, options: StreamOptions) => {
@@ -955,6 +1002,65 @@ function registerBridge() {
     const rel = typeof relatif === "string" ? relatif : "";
     if (typeof lieu === "string" && lieu) return arbreVps(lieu, jetonServeur(lieu), dossier, rel);
     return arbreDossier(dossier, rel);
+  });
+  /* Tous les fichiers d'un projet, pour la complétion « @ » du composeur (sur sa machine). */
+  handle("projets:fichiers", (dossier: string, lieu?: string | null) => {
+    if (typeof dossier !== "string" || !dossier || !path.isAbsolute(dossier.replace(/^~/, os.homedir()))) throw new Error("Dossier invalide.");
+    if (typeof lieu === "string" && lieu) return fichiersVps(lieu, jetonServeur(lieu), dossier);
+    const local = dossier.startsWith("~") ? path.join(os.homedir(), dossier.slice(1)) : dossier;
+    if (!dossierExiste(local)) throw new Error("Ce dossier n’existe pas sur ce poste.");
+    return listerFichiersProjet(local);
+  });
+  /* Les autorisations retenues d'un projet (« Toujours, dans ce projet ») : les lire, en retirer une. */
+  const dossierLocal = (dossier: unknown): string => {
+    if (typeof dossier !== "string" || !dossier) throw new Error("Dossier invalide.");
+    const local = dossier.startsWith("~") ? path.join(os.homedir(), dossier.slice(1)) : dossier;
+    if (!path.isAbsolute(local) || !dossierExiste(local)) throw new Error("Ce dossier n’existe pas sur ce poste.");
+    return local;
+  };
+  /* Une branche de travail d'un projet (`git worktree`) sur sa machine, ou retirer son dossier. */
+  handle("projets:branche-travail", (dossier: string, nom: string, lieu?: string | null) => {
+    if (typeof nom !== "string") throw new Error("Nom invalide.");
+    if (typeof lieu === "string" && lieu) return brancheVps(lieu, jetonServeur(lieu), String(dossier), { nom });
+    return creerBrancheTravail(dossierLocal(dossier), nom);
+  });
+  handle("projets:branche-travail:retirer", async (dossier: string, lieu?: string | null) => {
+    if (typeof lieu === "string" && lieu) await brancheVps(lieu, jetonServeur(lieu), String(dossier), { retirer: true });
+    else await retirerBrancheTravail(dossierLocal(dossier));
+    return true;
+  });
+  /* Les sessions de Claude Code d'un projet lancées hors de l'app (terminal…), pour les reprendre dans une conversation. */
+  const configDuPoste = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  handle("projets:sessions-terminal", (dossier: string, lieu?: string | null) => {
+    if (typeof lieu === "string" && lieu) return sessionsTerminalVps(lieu, jetonServeur(lieu), String(dossier));
+    return listerSessionsTerminal(configDuPoste(), dossierLocal(dossier));
+  });
+  handle("projets:session-terminal", (dossier: string, id: string, lieu?: string | null) => {
+    if (typeof id !== "string") throw new Error("Session invalide.");
+    if (typeof lieu === "string" && lieu) return sessionTerminalVps(lieu, jetonServeur(lieu), String(dossier), id);
+    return lireSessionTerminal(configDuPoste(), dossierLocal(dossier), id);
+  });
+  /* La commande qui reprend la session d'une conversation dans un terminal (son dossier : le projet, ou l'atelier de l'agent). */
+  handle("claude:commande-terminal", (agent: string, contexte: unknown) => {
+    const c = (contexte ?? {}) as { dossier?: unknown; sessionId?: unknown; lieu?: unknown };
+    const sessionId = typeof c.sessionId === "string" ? c.sessionId : "";
+    if (typeof agent !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(agent)) throw new Error("Agent invalide.");
+    const dossier = typeof c.dossier === "string" && c.dossier ? c.dossier : null;
+    /* Sur un VPS : le dossier du projet là-bas ; hors projet, l'atelier de l'agent sur le serveur, que ce PC ne connaît pas. */
+    if (typeof c.lieu === "string" && c.lieu) {
+      if (!/^[0-9a-f-]{36}$/.test(sessionId)) throw new Error("Session invalide.");
+      return dossier ? commandeTerminal(dossier, sessionId) : `claude --resume ${sessionId}`;
+    }
+    return commandeTerminal(dossierConversation(agent, { dossier, sessionId }), sessionId, process.platform === "win32");
+  });
+  handle("projets:regles", (dossier: string, lieu?: string | null) => {
+    if (typeof lieu === "string" && lieu) return reglesVps(lieu, jetonServeur(lieu), String(dossier));
+    return lireReglesProjet(dossierLocal(dossier));
+  });
+  handle("projets:regles:retirer", (dossier: string, liste: string, regle: string, lieu?: string | null) => {
+    if (!["allow", "ask", "deny"].includes(liste) || typeof regle !== "string") throw new Error("Règle invalide.");
+    if (typeof lieu === "string" && lieu) return reglesVps(lieu, jetonServeur(lieu), String(dossier), { liste, regle });
+    return retirerRegleProjet(dossierLocal(dossier), liste as ListeRegles, regle);
   });
   handle("projets:creer-dossier-vps", (lieu: string, dossier: string) => {
     if (typeof lieu !== "string" || typeof dossier !== "string") throw new Error("Dossier invalide.");

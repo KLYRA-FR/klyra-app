@@ -687,6 +687,18 @@ export function creerGestionnaire(options) {
       const dossierProjet = url.searchParams.get("dossier") ?? "";
       try {
         if (action === "arbre" && req.method === "GET") return repondre(res, 200, { noeuds: await fichiers.arbre(dossierProjet, url.searchParams.get("relatif") ?? "") });
+        if (action === "liste" && req.method === "GET") return repondre(res, 200, fichiers.liste(dossierProjet));
+        if (action === "sessions" && req.method === "GET") return repondre(res, 200, { sessions: fichiers.sessions(dossierProjet) });
+        if (action === "session" && req.method === "GET") return repondre(res, 200, { messages: fichiers.session(dossierProjet, url.searchParams.get("id")) });
+        if (action === "regles" && req.method === "GET") return repondre(res, 200, { regles: fichiers.regles(dossierProjet) });
+        if (action === "branche" && req.method === "POST") {
+          const corps = await lireCorpsRequete(req, CORPS_FICHES_MAX);
+          return repondre(res, 200, corps?.retirer === true ? { retiree: await fichiers.retirerBranche(dossierProjet) } : { branche: await fichiers.branche(dossierProjet, corps?.nom) });
+        }
+        if (action === "regles" && req.method === "POST") {
+          const corps = await lireCorpsRequete(req, CORPS_FICHES_MAX);
+          return repondre(res, 200, { regles: fichiers.retirerRegle(dossierProjet, String(corps?.liste ?? ""), String(corps?.regle ?? "")) });
+        }
         if (action === "lire" && req.method === "GET") return repondre(res, 200, await fichiers.lire(dossierProjet, url.searchParams.get("relatif") ?? ""));
         if (action === "dossier" && req.method === "POST") return repondre(res, 200, { dossier: await fichiers.creerDossier(dossierProjet) });
         if (action === "ecrire" && req.method === "POST") {
@@ -836,7 +848,21 @@ export function creerGestionnaire(options) {
         agents.envoyer(requestId, options);
         return repondre(res, 202, { requestId });
       }
-      if (action === "autoriser") return repondre(res, 200, { ok: agents.autoriser(requestId, String(corps.demandeId ?? ""), String(corps.decision ?? "")) });
+      if (action === "autoriser") {
+        /* Les réponses aux questions d'un agent, ou ce qu'il faut changer à son plan. */
+        const reponses = corps.reponses && typeof corps.reponses === "object" && !Array.isArray(corps.reponses) ? corps.reponses : undefined;
+        const details = { ...(reponses ? { reponses } : {}), ...(typeof corps.message === "string" ? { message: corps.message.slice(0, 4000) } : {}) };
+        return repondre(res, 200, { ok: agents.autoriser(requestId, String(corps.demandeId ?? ""), String(corps.decision ?? ""), details) });
+      }
+      /* Annuler des modifications de fichiers faites par les agents d'ici (les appels d'outil désignés par l'app). */
+      if (action === "annuler-modifications") {
+        if (typeof corps.conversation !== "string" || !Array.isArray(corps.ids)) return repondre(res, 400, { erreur: "demande", message: "Rien à annuler." });
+        return repondre(res, 200, { resultat: agents.annulerModifications(corps.conversation, corps.ids, corps.forcer === true) });
+      }
+      /* La taille du contexte d'une session ouverte d'ici, et ce qui la remplit. */
+      if (action === "contexte") return repondre(res, 200, { usage: await agents.usageContexte(corps.sessionId) });
+      /* Ce qu'écrit une commande lancée en fond par un agent d'ici. */
+      if (action === "sortie") return repondre(res, 200, { sortie: await agents.sortieTache(corps.sessionId, corps.tache) });
       if (action === "annuler") return repondre(res, 200, { ok: agents.annuler(requestId) });
       /* Le PC rend le résultat d'un outil du navigateur de KLYRA demandé par un agent d'ici (cf. navigateur.mjs). */
       if (action === "navigateur") return repondre(res, 200, { ok: agents.navigateur?.repondre(requestId, corps.resultat) ?? false });

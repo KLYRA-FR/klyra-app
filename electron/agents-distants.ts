@@ -572,6 +572,11 @@ export async function streamDistant(origine: string, requestId: string, options:
         ...(options.sessionNeuve ? { sessionNeuve: true } : {}),
         /* `/<skill>` en tête du message : le VPS la remet devant le contexte s'il la connaît. */
         ...(options.skill ? { skill: options.skill } : {}),
+        /* Le mode plan, et « Revenir à avant ce message » (la session reprise à ce point, dans une copie). */
+        ...(options.plan ? { plan: true } : {}),
+        /* L'app de bureau sait montrer les questions à choix d'un agent (le téléphone, PC fermé, non). */
+        questions: true,
+        ...(options.reprendreA ? { reprendreA: options.reprendreA } : {}),
       },
     });
     if (recu.status === 401) throw new Error("Ce PC n’est plus relié à ce VPS. Relance la commande sur le VPS et colle le nouveau lien dans Serveurs.");
@@ -584,10 +589,10 @@ export async function streamDistant(origine: string, requestId: string, options:
 }
 
 /** null : cette réponse ne tourne pas sur un VPS. */
-export function autoriserDistant(requestId: string, demandeId: string, decision: string): Promise<boolean> | null {
+export function autoriserDistant(requestId: string, demandeId: string, decision: string, details?: { reponses?: Record<string, string>; message?: string }): Promise<boolean> | null {
   const origine = enCours.get(requestId);
   if (!origine) return null;
-  return requete(origine, "/klyra/v1/agent/autoriser", "POST", { requestId, demandeId, decision })
+  return requete(origine, "/klyra/v1/agent/autoriser", "POST", { requestId, demandeId, decision, ...(details?.reponses ? { reponses: details.reponses } : {}), ...(details?.message ? { message: details.message } : {}) })
     .then((r) => (r.json as { ok?: boolean } | null)?.ok === true)
     .catch(() => false);
 }
@@ -598,4 +603,19 @@ export function annulerDistant(requestId: string): boolean {
   if (!origine) return false;
   void requete(origine, "/klyra/v1/agent/annuler", "POST", { requestId }).catch(() => undefined);
   return true;
+}
+
+/**
+ * Une demande sur les sessions d'agents d'un VPS (`/klyra/v1/agent/<action>`) : annuler des modifications de
+ * fichiers, lire la taille du contexte ou la sortie d'une commande. Renvoie la réponse du serveur ; une erreur
+ * lisible si le serveur refuse ou ne la connaît pas encore.
+ */
+export async function demandeAgentsVps(origine: string, action: "annuler-modifications" | "contexte" | "sortie", corps: Record<string, unknown>): Promise<unknown> {
+  // `requestId` : la forme que le serveur attend de toute demande d'agent ; il ne désigne ici aucune réponse.
+  const r = await requete(origine, `/klyra/v1/agent/${action}`, "POST", { requestId: "demande", ...corps });
+  if (r.status === 404) throw new Error("Ce serveur ne sait pas encore le faire : relance la commande d’installation pour le mettre à jour.");
+  if (r.status === 401) throw new Error("Ce PC n’est plus relié à ce serveur.");
+  const json = (r.json ?? {}) as { message?: unknown };
+  if (r.status !== 200) throw new Error(typeof json.message === "string" ? json.message : "Le serveur a refusé la demande.");
+  return r.json;
 }

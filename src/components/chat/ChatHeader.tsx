@@ -16,6 +16,27 @@ import { useBasculerEpingle } from "./BoutonEpingle";
 import { estEpinglee } from "@/lib/epinglage";
 import { useAgentOccupe, useChatMessages, useRole, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat } from "@/types/domain";
+import { getBridge } from "@/lib/bridge";
+import { annoncer } from "@/lib/annonces";
+import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
+
+/**
+ * « Copier la commande du terminal » : la conversation a une session de Claude Code (celle de son agent) ;
+ * la commande qui la reprend dans un terminal, dans son dossier, part dans le presse-papiers.
+ */
+function useCommandeTerminal(chat: Chat): (() => void) | undefined {
+  const { state } = useWorkspace();
+  const agent = agentDeConversation(chat);
+  const session = chat.sessions[agent];
+  const pont = getBridge()?.claude.commandeTerminal;
+  if (!session || !pont || moteurDe(chat) !== PAR_DEFAUT) return undefined;
+  const dossier = chat.kind === "equipe" ? (state.projects.find((p) => p.id === chat.projectId)?.folder ?? null) : null;
+  return () =>
+    void pont(agent, { dossier, sessionId: session, lieu: chat.lieu ?? null }).then((r) => {
+      if (!r.ok) return annoncer(r.message);
+      void navigator.clipboard?.writeText(r.data).then(() => annoncer(chat.lieu ? "Commande copiée : à lancer sur le serveur." : "Commande copiée : colle-la dans un terminal."));
+    });
+}
 
 interface ChatHeaderProps {
   chat: Chat;
@@ -33,6 +54,7 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
   const ici = useTravail(chat.id);
   const messages = useChatMessages(chat.id);
   const { repartir } = useWorkspace();
+  const terminal = useCommandeTerminal(chat);
   const rienDepuis = !peutRepartir(chat, messages);
   const actionRepartir = estChatPrincipal(chat)
     ? { lancer: () => repartir(chat.id), desactivee: !!ici || rienDepuis, detail: ici ? `${role.name} travaille` : rienDepuis ? "Rien depuis le dernier départ" : undefined }
@@ -94,7 +116,7 @@ function EnTeteDirect({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
           <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-bleu-k1-500" />
         )}
       </span>
-      {actionExport && <MenuConversation bouton={options} actionExport={actionExport} repartir={actionRepartir} />}
+      {actionExport && <MenuConversation bouton={options} actionExport={actionExport} repartir={actionRepartir} terminal={terminal} />}
     </header>
   );
 }
@@ -152,6 +174,7 @@ function EnTeteEquipe({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
   const role = useRole(agentDeConversation(chat));
   const ici = useTravail(chat.id);
   const travailleur = useRole(ici?.roleId ?? role.id);
+  const terminal = useCommandeTerminal(chat);
   const autres = chat.roleIds.length - 1;
   const etat = ici
     ? `${travailleur.name} travaille…`
@@ -207,7 +230,7 @@ function EnTeteEquipe({ chat, panneauOuvert, onTogglePanneau, actionExport }: { 
           <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-bleu-k1-500" />
         )}
       </span>
-      <MenuConversation bouton={options} onRenommer={() => setEdition(true)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} actionExport={actionExport} />
+      <MenuConversation bouton={options} onRenommer={() => setEdition(true)} epinglee={estEpinglee(chat)} onEpingler={() => basculerEpingle(chat)} actionExport={actionExport} terminal={terminal} />
     </header>
   );
 }

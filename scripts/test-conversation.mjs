@@ -183,19 +183,22 @@ try {
   await app.touche("Enter", ENTREE);
   e = await etat(app);
   verifier(e.ouvert && e.menu && e.focus === "Renommer", "Entrée ouvre le menu, focus sur sa première ligne");
-  // Dans le projet, « Ouvrir le projet » n'a plus de sens : on y est.
-  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Exporter en Markdown…"]), `menu de conversation : ${e.lignes.join(", ")}`);
+  // Dans le projet, « Ouvrir le projet » n'a plus de sens : on y est. La conversation a sa session : la commande du terminal.
+  verifier(JSON.stringify(e.lignes) === JSON.stringify(["Renommer", "Épingler", "Exporter en Markdown…", "Copier la commande du terminal"]), `menu de conversation : ${e.lignes.join(", ")}`);
   await app.touche("ArrowDown", { vk: 40 });
   const bas = (await etat(app)).focus;
   await app.touche("ArrowDown", { vk: 40 });
   const exporter = (await etat(app)).focus;
   await app.touche("ArrowDown", { vk: 40 });
+  // La ligne a un détail sous son libellé : seul le libellé compte.
+  const terminal = (await etat(app)).focus?.split("\n")[0];
+  await app.touche("ArrowDown", { vk: 40 });
   const boucle = (await etat(app)).focus;
   await app.touche("End", { vk: 35 });
-  const fin = (await etat(app)).focus;
+  const fin = (await etat(app)).focus?.split("\n")[0];
   await app.touche("Home", { vk: 36 });
   const debut = (await etat(app)).focus;
-  verifier(bas === "Épingler" && exporter === "Exporter en Markdown…" && boucle === "Renommer" && fin === "Exporter en Markdown…" && debut === "Renommer", "trois lignes, flèches en boucle, Début et Fin");
+  verifier(bas === "Épingler" && exporter === "Exporter en Markdown…" && terminal === "Copier la commande du terminal" && boucle === "Renommer" && fin === "Copier la commande du terminal" && debut === "Renommer", `quatre lignes, flèches en boucle, Début et Fin (${[bas, exporter, terminal, boucle, fin, debut].join(" / ")})`);
   await app.touche("Escape", { vk: 27 });
   e = await etat(app);
   verifier(!e.menu && !e.ouvert && e.focus === "Plus d’options", "Échap ferme le menu et rend le focus au bouton");
@@ -323,7 +326,7 @@ try {
   await app.aller("/chat?id=dm-principal");
   await app.cliquer(BOUTON);
   e = await etat(app);
-  verifier(e.bouton && e.lignes.length === 2 && e.lignes[0].startsWith("Repartir à zéro") && e.lignes[1] === "Exporter en Markdown…", `le chat d’un agent propose de repartir à zéro et l’export (${e.lignes.join(", ")})`);
+  verifier(e.bouton && e.lignes.length === 3 && e.lignes[0].startsWith("Repartir à zéro") && e.lignes[1] === "Exporter en Markdown…" && e.lignes[2] === "Copier la commande du terminal", `le chat d’un agent propose de repartir à zéro, l’export et la commande du terminal (${e.lignes.join(", ")})`);
   await app.touche("Escape", { vk: 27 });
   verifier(app.erreurs.length === 0, `aucune erreur dans la page après redémarrage${app.erreurs.length ? ` (${app.erreurs.join(" | ")})` : ""}`);
 } catch (e) {

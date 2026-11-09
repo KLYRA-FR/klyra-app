@@ -64,6 +64,10 @@ export function libelleEtape(outil: string, entree: Record<string, unknown>, rol
       return `Cherche sur le web « ${court(entree.query, 40)} »`;
     case "TodoWrite":
       return "Met à jour sa liste de tâches";
+    case "AskUserQuestion":
+      return "Te pose une question";
+    case "ExitPlanMode":
+      return "Propose son plan";
     case "Skill":
       return `Suit la compétence « ${court(entree.skill, 40) || "sans nom"} »`;
     case "Agent":
@@ -133,6 +137,10 @@ export function iconeEtape(outil: string): IconName {
       return "search-01";
     case "Bash":
       return "code-01";
+    case "AskUserQuestion":
+      return "help-circle-contained";
+    case "ExitPlanMode":
+      return "list";
     case "WebFetch":
       return "globe-01";
     case "Agent":

@@ -21,6 +21,8 @@ import { nomLieu, useServeursRelies } from "@/lib/lieux";
 import { useProject, useRole, useRoles, useWorkspace } from "@/lib/workspace";
 import type { Project, RoleId } from "@/types/domain";
 import { ConsignesProjet } from "./ConsignesProjet";
+import { AutorisationsProjet } from "./AutorisationsProjet";
+import { SessionsTerminal } from "./SessionsTerminal";
 import { DepotProjet } from "./DepotProjet";
 import { useMenuProjet } from "./MenuProjet";
 
@@ -131,6 +133,8 @@ function NouvelleConversation({ project }: { project: Project }) {
           </div>
           <DepotProjet key={`depot-${project.id}`} project={project} />
           <ConsignesProjet key={project.id} project={project} />
+          <AutorisationsProjet key={`autorisations-${project.id}`} project={project} />
+          <SessionsTerminal key={`sessions-${project.id}`} project={project} />
           <section aria-label="Pour commencer" className="flex flex-wrap gap-2">
             {[...SUGGESTIONS, ...(project.githubConnecte ? [SUGGESTION_GITHUB] : [])].map((s) => (
               <Bouton key={s.libelle} variant="blanc" taille="compact" iconeGauche={<Icon name={s.icone} size={16} className="text-icone-secondaire" />} onClick={() => preRemplir(s.texte)}>

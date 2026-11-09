@@ -224,6 +224,19 @@ function reduire(part: MessagePart, tout: MessagePart[], dossier: string | null,
       };
     case "actions":
       return { type: "actions", actions: part.actions.slice(0, 8).map((a) => ({ label: a.label.slice(0, 80), primary: a.primary })) };
+    // La réflexion reste sur l'ordinateur : le téléphone montre la réponse.
+    case "reflexion":
+      return null;
+    // Questions et plan se répondent depuis l'ordinateur : le téléphone les lit en texte.
+    case "question": {
+      const lignes = part.questions.map((q) => `${q.question}${part.reponses?.[q.question] ? ` → ${part.reponses[q.question]}` : q.options.length ? ` (${q.options.map((o) => o.libelle).join(", ")})` : ""}`);
+      const etat = part.statut === "attente" ? "Question à choix, à répondre depuis l’ordinateur" : part.statut === "repondue" ? "Questions répondues" : "Questions laissées sans réponse";
+      return { type: "text", text: net(`_${etat} :_\n${lignes.join("\n")}`, TEXTE_MAX) };
+    }
+    case "plan": {
+      const etat = part.statut === "attente" ? "Plan proposé, à lancer depuis l’ordinateur" : part.statut === "lance" ? "Plan lancé" : part.statut === "corrige" ? "Plan à corriger" : "Plan laissé de côté";
+      return { type: "text", text: net(`_${etat}_\n\n${part.plan}`, TEXTE_MAX) };
+    }
   }
 }
 

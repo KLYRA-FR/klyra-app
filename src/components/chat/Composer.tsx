@@ -16,7 +16,7 @@ import { moteurDe, PAR_DEFAUT } from "@/lib/fournisseurs";
 import { findMention } from "@/lib/mentions";
 import { surRepondre } from "@/lib/repondre";
 import { commandeEnCours, skillsDemandables, skillsProposees, type SkillProposee } from "@/lib/skills";
-import { useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
+import { useChatMessages, useFile, useRole, useRoles, useTravail, useWorkspace } from "@/lib/workspace";
 import type { Chat, Citation, Project, Role, RoleId } from "@/types/domain";
 import { PucesImages, VignettePiece } from "./ImageJointe";
 import { PastilleExtension } from "./PastilleExtension";
@@ -26,6 +26,11 @@ import { filPeutChoisirDossier } from "@/lib/dossier-conversation";
 import { contexteDe, useCompetencesAgent } from "./reglages-agent/donnees";
 import { useAjoutFichiers } from "./useAjoutFichiers";
 import { useSuggestion } from "./useSuggestion";
+import { JaugeContexte } from "./JaugeContexte";
+import { Bouton } from "@/components/ui/Bouton";
+import { arobaseEnCours, fichiersProposes, mentionFichier } from "@/lib/arobase";
+import { cleCommandes, useCommandesClaude } from "@/lib/commandes-claude";
+import { peutRepartir } from "@/lib/contexte";
 
 /** Les pièces jointes avant l'envoi : une vignette par image, une carte par autre fichier, avec la croix pour l'enlever. */
 export function Pieces({ fichiers, onRetirer }: { fichiers: string[]; onRetirer: (chemin: string) => void }) {
@@ -67,53 +72,85 @@ const normaliser = (s: string) =>
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
 
-/** La mention en cours de frappe juste avant le curseur : « @hu » → « hu ». */
-function mentionEnCours(texte: string, curseur: number): { debut: number; requete: string } | null {
-  const m = texte.slice(0, curseur).match(/(^|\s)@([\p{L}-]*)$/u);
-  if (!m) return null;
-  return { debut: curseur - m[2].length - 1, requete: m[2] };
-}
+/** Ce que « @ » propose : un agent à appeler, ou un fichier du projet à joindre au message. */
+type Arobase = { genre: "agent"; role: Role } | { genre: "fichier"; chemin: string };
 
-/** La liste des agents qui sort du haut du composeur quand on tape « @ ». */
+/** La liste qui sort du haut du composeur quand on tape « @ » : les agents, puis les fichiers du projet. */
 function ListeMentions({
-  roles,
+  items,
   actif,
   onChoisir,
 }: {
-  roles: Role[];
+  items: Arobase[];
   actif: number;
-  onChoisir: (role: Role) => void;
+  onChoisir: (item: Arobase) => void;
 }) {
   return (
     <div
       role="listbox"
-      aria-label="Mentionner un agent"
-      className="absolute right-0 bottom-full left-0 mb-2 max-h-[232px] overflow-y-auto rounded-lg border border-bordure-subtile bg-fond-surface p-1 shadow-ombre-flottante"
+      aria-label="Mentionner un agent ou un fichier"
+      className="absolute right-0 bottom-full left-0 mb-2 max-h-[264px] overflow-y-auto rounded-lg border border-bordure-subtile bg-fond-surface p-1 shadow-ombre-flottante"
     >
-      {roles.map((role, i) => (
+      {items.map((item, i) => (
         <button
-          key={role.id}
+          key={item.genre === "agent" ? `agent:${item.role.id}` : `fichier:${item.chemin}`}
           type="button"
           role="option"
           aria-selected={i === actif}
           // mousedown : le champ garde le focus.
           onMouseDown={(e) => {
             e.preventDefault();
-            onChoisir(role);
+            onChoisir(item);
           }}
           className={cn(
             "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-sm border-0 px-2 text-left",
             i === actif ? "bg-fond-survol" : "bg-transparent hover:bg-fond-survol",
           )}
         >
-          <AgentRond roleId={role.id} taille={22} />
-          <span className="text-ui-s font-medium text-texte-principal">{role.name}</span>
-          <span className="truncate text-ui-xs text-texte-tertiaire">{role.title}</span>
-          <span className="ml-auto shrink-0 text-ui-3xs text-texte-tertiaire">{role.tag}</span>
+          {item.genre === "agent" ? (
+            <>
+              <AgentRond roleId={item.role.id} taille={22} />
+              <span className="text-ui-s font-medium text-texte-principal">{item.role.name}</span>
+              <span className="truncate text-ui-xs text-texte-tertiaire">{item.role.title}</span>
+              <span className="ml-auto shrink-0 text-ui-3xs text-texte-tertiaire">{item.role.tag}</span>
+            </>
+          ) : (
+            <>
+              <PastilleExtension chemin={item.chemin} />
+              <span className="shrink-0 text-ui-s font-medium text-texte-principal">{item.chemin.split("/").at(-1)}</span>
+              <span className="truncate text-ui-xs text-texte-tertiaire">{item.chemin.split("/").slice(0, -1).join("/")}</span>
+            </>
+          )}
         </button>
       ))}
     </div>
   );
+}
+
+/** Les fichiers d'un projet pour « @ » : lus une fois à la première mention, relus après 30 s. */
+const fichiersLus = new Map<string, { le: number; fichiers: string[] }>();
+function useFichiersProjet(dossier: string | null, lieu: string | null, actif: boolean): string[] {
+  const cle = dossier ? `${lieu ?? "pc"}|${dossier}` : null;
+  /* Ce qui a été lu pour quelle clé : une autre conversation ne montre pas les fichiers d'un autre projet. */
+  const [lu, setLu] = useState<{ cle: string; fichiers: string[] } | null>(null);
+  useEffect(() => {
+    if (!actif || !cle || !dossier) return;
+    const deja = fichiersLus.get(cle);
+    if (deja && Date.now() - deja.le < 30_000) return;
+    const lire = getBridge()?.projets.fichiers;
+    if (!lire) return;
+    let vivant = true;
+    void lire(dossier, lieu).then((r) => {
+      if (!r.ok) return;
+      fichiersLus.set(cle, { le: Date.now(), fichiers: r.data.fichiers });
+      if (vivant) setLu({ cle, fichiers: r.data.fichiers });
+    });
+    return () => {
+      vivant = false;
+    };
+  }, [actif, cle, dossier, lieu]);
+  if (!cle) return [];
+  return lu?.cle === cle ? lu.fichiers : (fichiersLus.get(cle)?.fichiers ?? []);
 }
 
 /** La liste des compétences qui sort du haut du composeur quand le message commence par « / ». */
@@ -151,12 +188,15 @@ function ListeSkills({ skills, actif, onChoisir }: { skills: SkillProposee[]; ac
 
 /** Le résumé de la conversation, proposé avec les compétences : une commande que l'app connaît. */
 const COMPACTER: SkillProposee = { nom: "compact", description: "Résume la conversation pour alléger les prochains appels" };
+/** Les commandes de l'app : elles agissent tout de suite, sans rien envoyer à l'agent. */
+const REPARTIR: SkillProposee = { nom: "clear", description: "Repartir à zéro : l’agent oublie la conversation, qui reste lisible" };
+const PLAN: SkillProposee = { nom: "plan", description: "Mode plan : l’agent prépare un plan, sans rien modifier, avant de s’y mettre" };
 
 /** Les messages qui attendent que l'agent ait fini. */
 function FileAttente({ chatId, roleId }: { chatId: string; roleId: RoleId }) {
   const file = useFile(chatId);
   const role = useRole(roleId);
-  const { retirerDeLaFile } = useWorkspace();
+  const { retirerDeLaFile, envoyerMaintenant } = useWorkspace();
   if (!file.length) return null;
   return (
     <div className="mb-2 flex flex-col gap-1 rounded-lg border border-bordure-subtile bg-fond-page p-2">
@@ -167,10 +207,19 @@ function FileAttente({ chatId, roleId }: { chatId: string; roleId: RoleId }) {
         <div key={m.id} className="flex h-8 items-center gap-2 rounded-sm bg-fond-surface px-2.5">
           <Icon name="message-square" size={14} className="shrink-0 text-icone-secondaire" />
           <span className="truncate text-ui-s text-texte-principal">{m.text}</span>
+          {/* L'agent s'arrête là où il en est (ce qu'il a fait reste) et lit ce message tout de suite. */}
+          <button
+            type="button"
+            title={`${role.name} s’arrête là où il en est et lit ce message tout de suite`}
+            onClick={() => envoyerMaintenant(chatId, m.id)}
+            className="ml-auto shrink-0 cursor-pointer rounded-2xs border-0 bg-transparent px-1.5 py-0.5 text-ui-xs font-medium text-texte-secondaire hover:text-texte-principal"
+          >
+            Envoyer maintenant
+          </button>
           <button
             type="button"
             onClick={() => retirerDeLaFile(chatId, m.id)}
-            className="ml-auto shrink-0 cursor-pointer rounded-2xs border-0 bg-transparent px-1.5 py-0.5 text-ui-xs text-texte-tertiaire hover:text-texte-principal"
+            className="shrink-0 cursor-pointer rounded-2xs border-0 bg-transparent px-1.5 py-0.5 text-ui-xs text-texte-tertiaire hover:text-texte-principal"
           >
             Retirer
           </button>
@@ -197,7 +246,8 @@ function BandeauReponse({ citation, onRetirer }: { citation: Citation; onRetirer
 /** Composeur sous le fil d'un chat. */
 export function Composer({ chat, project }: { chat: Chat; project: Project | undefined }) {
   const roles = useRoles();
-  const { sendMessage, arreter, startChat, poserFilDansProjet, state: etatEspace } = useWorkspace();
+  const { sendMessage, arreter, startChat, poserFilDansProjet, basculerPlan, repartir, state: etatEspace } = useWorkspace();
+  const messagesChat = useChatMessages(chat.id);
   const router = useRouter();
   const travail = useTravail(chat.id);
   // `?brouillon=…` : on arrive avec un message déjà prêt (ex. « Modifier avec un agent » depuis un artefact).
@@ -326,14 +376,39 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
      Le résumé de la conversation est une commande de Claude Code seulement. */
   const competences = useCompetencesAgent(agent.id, contexteDe(chat, project, agent.id));
   const avecClaude = moteurDe(chat) === PAR_DEFAUT;
+  /* Les commandes « / » que la session de Claude Code annonce (celles du projet, de la personne, des plugins). */
+  const commandesClaude = useCommandesClaude(cleCommandes(chat.lieu, chat.kind === "equipe" ? project?.folder : null, agent.id));
+  const repartirPossible = peutRepartir(chat, messagesChat);
   const commande = fermee ? null : commandeEnCours(text, curseur);
   const skillsAProposer = useMemo(() => {
     if (commande === null) return [];
     const dispo = competences.etat === "pret" ? skillsDemandables(competences.valeur) : [];
-    return skillsProposees([...dispo.map((s) => ({ nom: s.nom, description: s.description })), ...(avecClaude ? [COMPACTER] : [])], commande);
-  }, [commande, competences, avecClaude]);
+    const deClaude = avecClaude ? commandesClaude.map((c) => ({ nom: c.nom, description: c.description || (c.indice ? `Commande ${c.indice}` : "Commande de Claude Code") })) : [];
+    return skillsProposees(
+      [...(avecClaude ? [PLAN, COMPACTER] : []), ...(repartirPossible ? [REPARTIR] : []), ...dispo.map((s) => ({ nom: s.nom, description: s.description })), ...deClaude],
+      commande,
+    );
+  }, [commande, competences, avecClaude, commandesClaude, repartirPossible]);
+
+  /** `/plan` et `/clear` agissent tout de suite ; le champ se vide. */
+  const commandeDeLApp = (nom: string): boolean => {
+    if (nom === "plan" && avecClaude) {
+      basculerPlan(chat.id);
+      setText("");
+      setCurseur(0);
+      return true;
+    }
+    if (nom === "clear" && repartirPossible && !travail) {
+      repartir(chat.id);
+      setText("");
+      setCurseur(0);
+      return true;
+    }
+    return false;
+  };
 
   const choisirSkill = (skill: SkillProposee) => {
+    if (commandeDeLApp(skill.nom)) return;
     const insere = `/${skill.nom} `;
     const suite = text.slice(curseur).replace(/^\S*/, "").replace(/^\s+/, "");
     setText(insere + suite);
@@ -341,19 +416,23 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
     requestAnimationFrame(() => champ.current?.setSelectionRange(insere.length, insere.length));
   };
 
-  /* Mentions : seulement dans une conversation d'équipe. */
-  const mention = direct || fermee ? null : mentionEnCours(text, curseur);
-  const proposes = useMemo(() => {
+  /* Mentions : un agent dans une conversation d'équipe ; un fichier du projet dès que la conversation en a un. */
+  const dossierProjet = chat.kind === "equipe" ? (project?.folder ?? null) : null;
+  const mention = (direct && !dossierProjet) || fermee ? null : arobaseEnCours(text, curseur);
+  const fichiersProjet = useFichiersProjet(dossierProjet, chat.lieu ?? null, !!mention);
+  const proposes = useMemo((): Arobase[] => {
     if (!mention) return [];
     const q = normaliser(mention.requete);
-    return roles.filter((r) => [r.name, r.tag, r.id].some((n) => normaliser(n).startsWith(q))).slice(0, 7);
-  }, [mention, roles]);
+    const agents: Arobase[] = direct ? [] : roles.filter((r) => [r.name, r.tag, r.id].some((n) => normaliser(n).startsWith(q))).slice(0, 7).map((role) => ({ genre: "agent", role }));
+    const fichiers: Arobase[] = dossierProjet ? fichiersProposes(fichiersProjet, mention.requete, agents.length ? 6 : 8).map((chemin) => ({ genre: "fichier", chemin })) : [];
+    return [...agents, ...fichiers];
+  }, [mention, roles, direct, dossierProjet, fichiersProjet]);
 
-  const choisir = (role: Role) => {
+  const choisir = (item: Arobase) => {
     if (!mention) return;
     const avant = text.slice(0, mention.debut);
     const apres = text.slice(curseur);
-    const insere = `@${role.name} `;
+    const insere = item.genre === "agent" ? `@${item.role.name} ` : `${mentionFichier(item.chemin)} `;
     setText(avant + insere + apres);
     const position = avant.length + insere.length;
     setCurseur(position);
@@ -361,6 +440,12 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
   };
 
   const onToucheAvant = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    /* Maj + Tab : le mode plan, comme dans Claude Code. */
+    if (event.key === "Tab" && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && avecClaude) {
+      event.preventDefault();
+      basculerPlan(chat.id);
+      return true;
+    }
     if (skillsAProposer.length) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -407,6 +492,8 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
 
   const submit = () => {
     if (ouverture) return;
+    const seule = /^\/([a-z]+)\s*$/i.exec(text.trim())?.[1]?.toLowerCase();
+    if (seule && !fichiers.length && commandeDeLApp(seule)) return;
     const recipient = direct ? null : findMention(text, roles);
     const texte = text.trim() || (fichiers.length > 1 ? "Regarde ces fichiers." : "Regarde ce fichier.");
     if (avecDepot && depotChoisi) {
@@ -445,6 +532,10 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
     setAlerte(null);
   };
 
+  const puces = avecDepot ? (
+    <PuceDepot lieu={chat.lieu ?? null} valeur={depotChoisi} onChange={setDepotChoisi} disabled={!!ouverture} />
+  ) : null;
+
   return (
     <div ref={zone} className="@container mx-auto w-full max-w-[880px] px-5 pt-1 pb-4">
       {/* Fichiers glissés au-dessus de la conversation. */}
@@ -459,7 +550,7 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       {travail && <FileAttente chatId={chat.id} roleId={travail.roleId} />}
       <div className="relative">
         {skillsAProposer.length > 0 && <ListeSkills skills={skillsAProposer} actif={Math.min(actif, skillsAProposer.length - 1)} onChoisir={choisirSkill} />}
-        {!skillsAProposer.length && proposes.length > 0 && <ListeMentions roles={proposes} actif={Math.min(actif, proposes.length - 1)} onChoisir={choisir} />}
+        {!skillsAProposer.length && proposes.length > 0 && <ListeMentions items={proposes} actif={Math.min(actif, proposes.length - 1)} onChoisir={choisir} />}
         {citation && <BandeauReponse citation={citation} onRetirer={() => setCitation(null)} />}
         <PromptBox
           ref={champ}
@@ -492,9 +583,24 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
                 : `Écris à ${agent.name}, ou @mentionne un agent…`
           }
           puces={
-            avecDepot ? (
-              <PuceDepot lieu={chat.lieu ?? null} valeur={depotChoisi} onChange={setDepotChoisi} disabled={!!ouverture} />
-            ) : undefined
+            <>
+              {puces}
+              {/* Le mode plan (Claude Code) : l'agent prépare un plan, sans rien modifier, avant de s'y mettre. */}
+              {avecClaude && (
+                <Bouton
+                  variant="discret"
+                  taille="compact"
+                  actif={!!chat.modePlan}
+                  aria-pressed={!!chat.modePlan}
+                  title="Mode plan (Maj + Tab)"
+                  iconeGauche={<Icon name="list" size={16} />}
+                  onClick={() => basculerPlan(chat.id)}
+                >
+                  Plan
+                </Bouton>
+              )}
+              {avecClaude && <JaugeContexte chat={chat} roleId={travail?.roleId ?? agent.id} />}
+            </>
           }
         />
       </div>
@@ -514,6 +620,11 @@ export function Composer({ chat, project }: { chat: Chat; project: Project | und
       {alerte && (
         <p role="alert" className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-erreur">
           {alerte}
+        </p>
+      )}
+      {chat.modePlan && avecClaude && (
+        <p role="status" data-mode-plan className="mt-2 mb-0 px-1 text-ui-2xs font-medium text-texte-accent">
+          Mode plan : {agent.name} prépare un plan sans rien modifier, et tu le lances quand il te va · Maj + Tab pour en sortir.
         </p>
       )}
       <p className="mt-2 px-1 text-ui-2xs text-texte-tertiaire">

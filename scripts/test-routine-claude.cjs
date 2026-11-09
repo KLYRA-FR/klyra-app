@@ -26,11 +26,12 @@ class FauxProcessus extends EventEmitter {
     this.exitCode = null;
     this.signalCode = null;
     this.ecrits = [];
-    this.stdin = {
+    // Comme un vrai stdin : l'app y écoute « error » (un processus fermé pendant une écriture).
+    this.stdin = Object.assign(new EventEmitter(), {
       writableEnded: false,
       write: (texte) => { this.ecrits.push(JSON.parse(texte)); return true; },
       end: () => { this.stdin.writableEnded = true; },
-    };
+    });
   }
 
   recevoir(message) {
@@ -105,6 +106,11 @@ function fixture() {
     "./cartes-interactives": require(path.join(path.dirname(filename), "cartes-interactives.js")),
     // Module pur : les outils des fils et leur consigne (sans Electron ni disque).
     "./fils-outils": require(path.join(path.dirname(filename), "fils-outils.js")),
+    /* Module pur : le protocole des sessions (réflexion, questions, plan, rappels des modifications). Ses instantanés
+       ne sont jamais créés ici : ce profil fictif n'a pas de dossier de données (KLYRA_USER_DATA). */
+    "./session-claude": require(path.join(path.dirname(filename), "session-claude.js")),
+    // Seule la règle d'un « Toujours » dite en mots (`reglesProposees`, pure) sert ici : aucun fichier de projet lu.
+    "./regles-projet": { reglesProposees: require(path.join(path.dirname(filename), "regles-projet.js")).reglesProposees },
     // Second cerveau : pas de base dans ce banc, le message fictif part tel quel.
     "./cerveau-outils": { CONSIGNE_CERVEAU: "Second cerveau fictif, sans base.", avecReperesCerveau: (prompt) => prompt },
     // Module pur : les outils du Coffre et leur consigne (sans Electron ni disque).

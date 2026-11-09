@@ -28,6 +28,12 @@
  *   chaque agent pose dans le fil (electron/cartes-interactives.ts).
  * - `serveur/joints-vps.mjs` : les pièces jointes envoyées par le PC pour une conversation du VPS (electron/joints-vps.ts).
  * - `serveur/taches-fond.mjs` : ce qu'un agent a encore en arrière-plan, réponse rendue (electron/taches-fond.ts).
+ * - `serveur/session-claude.mjs` : ce que l'app lit et demande à Claude Code pendant une conversation (réflexion,
+ *   questions, plan, modifications de fichiers à annuler, sortie des commandes, contexte, commandes « / ») ;
+ *   `serveur/liste-fichiers.mjs` : les fichiers d'un projet pour la complétion « @ » (electron/liste-fichiers.ts) ;
+ *   `serveur/regles-projet.mjs` : les autorisations retenues d'un projet (electron/regles-projet.ts) ;
+ *   `serveur/branche-travail.mjs` : les branches de travail d'un projet, `git worktree` (electron/branche-travail.ts) ;
+ *   `serveur/sessions-terminal.mjs` : les sessions de Claude Code d'un projet lancées hors de l'app (electron/sessions-terminal.ts).
  * - `serveur/github-outils.mjs` : les outils GitHub des agents, en lecture, sur le dépôt du projet (electron/github-outils.ts).
  * - `serveur/version-code.mjs` : la version du code du serveur (electron/version-serveur.ts), montée ici dès que
  *   `empreinteCodeServeur` change. Le VPS ne se met pas à jour seul : c'est ce numéro qui révèle un serveur en retard.
@@ -77,6 +83,11 @@ const FICHIERS = [
   ["electron/epreuve.ts", "serveur/epreuve.mjs"],
   ["electron/json-partiel.ts", "serveur/json-partiel.mjs"],
   ["electron/taches-fond.ts", "serveur/taches-fond.mjs"],
+  ["electron/session-claude.ts", "serveur/session-claude.mjs"],
+  ["electron/liste-fichiers.ts", "serveur/liste-fichiers.mjs"],
+  ["electron/regles-projet.ts", "serveur/regles-projet.mjs"],
+  ["electron/branche-travail.ts", "serveur/branche-travail.mjs"],
+  ["electron/sessions-terminal.ts", "serveur/sessions-terminal.mjs"],
   ["electron/atelier-agent.ts", "serveur/atelier-agent.mjs"],
   ["electron/atelier-equipe.ts", "serveur/atelier-equipe.mjs"],
   ["electron/cartes-interactives.ts", "serveur/cartes-interactives.mjs"],

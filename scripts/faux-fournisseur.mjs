@@ -15,6 +15,11 @@
  *   le prévient de sa fin, il répond « fond terminé » ;
  * - après un résultat d'outil : « fin OK|REFUS … » ; un sous-agent répond « bonjour de <nom> » ;
  * - le retour d'un fil (« [Retour du fil, de … ») : « retour reçu ».
+ * - « pense <mot> » : un bloc de réflexion (thinking), puis « réponse pensée » ;
+ * - « question <mot> » : des questions à choix (AskUserQuestion), puis « fin OK … » avec les réponses ;
+ * - « plan <mot> » : en mode plan, le plan (ExitPlanMode) ;
+ * - « ecris <nom> » : crée `<nom>.txt` dans le dossier de travail ; « modifie <nom> » : y change « bonjour » en « salut » ;
+ * - « commande <mot> » : une commande au premier plan qui écrit une ligne par seconde pendant 6 s.
  * - l'épreuve de l'atelier : l'agent en essai répond d'après la demande (il prend un bug pour lui tant
  *   que sa fiche ne dit pas de passer la main), et le juge rend un verdict JSON.
  * L'entrée de `proposer_agent` et de `construire_workflow` arrive par morceaux, comme d'un vrai modèle
@@ -154,8 +159,8 @@ export async function demarrerFournisseur(agentsSurveilles) {
     // Ne pas reprendre un résultat d'un tour précédent : garder le dernier message utilisateur.
     const dernier = (corps.messages ?? []).findLast((m) => m.role === "user");
     const resultats = Array.isArray(dernier?.content) ? dernier.content.filter((c) => c.type === "tool_result") : [];
-    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre|fond) /m.test(texteDe(m.content)));
-    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre|fond) ([a-z0-9-]+)/m) : null;
+    const consigne = [...(corps.messages ?? [])].reverse().find((m) => m.role === "user" && /^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre|fond|pense|question|plan|ecris|modifie|commande) /m.test(texteDe(m.content)));
+    const ordre = consigne ? texteDe(consigne.content).match(/^(appelle|fil|liste|atelier|choix|equipe|carte|workflow|lance|coffre|fond|pense|question|plan|ecris|modifie|commande) ([a-z0-9-]+)/m) : null;
     requetes.push({
       message: texteDe(dernier?.content ?? ""),
       sousAgent,
@@ -190,6 +195,16 @@ export async function demarrerFournisseur(agentsSurveilles) {
       return [{ type: "tool_use", id, name: outilAgent.name, input: { subagent_type: ordre[2], description: "Essai", prompt: "Dis bonjour.", run_in_background: false } }];
     }
     if (nomOutil && outilFil) return filDemande();
+    /* Les ordres de la session (réflexion, questions, plan, modifications, commande) : seulement au premier tour. */
+    const dossierDeTravail = /Primary working directory: ([^\n"\\]+)/.exec(brut)?.[1]?.trim() ?? null;
+    const aOutil = (nom) => (corps.tools ?? []).some((t) => t.name === nom);
+    if (ordre?.[1] === "pense") return [{ type: "thinking", thinking: `Je pèse la question ${ordre[2]}. Puis je réponds.` }, { type: "text", text: "réponse pensée" }];
+    if (ordre?.[1] === "question" && aOutil("AskUserQuestion"))
+      return [{ type: "tool_use", id, name: "AskUserQuestion", input: { questions: [{ question: `Quelle couleur pour ${ordre[2]} ?`, header: "Couleur", options: [{ label: "Bleu", description: "Le bleu K1" }, { label: "Rouge", description: "Plus vif" }], multiSelect: false }] } }];
+    if (ordre?.[1] === "plan" && (aOutil("ExitPlanMode") || brut.includes("Plan mode"))) return [{ type: "tool_use", id, name: "ExitPlanMode", input: { plan: `# Plan ${ordre[2]}\n1. Lire le code\n2. Corriger` } }];
+    if (ordre?.[1] === "ecris" && dossierDeTravail && aOutil("Write")) return [{ type: "tool_use", id, name: "Write", input: { file_path: `${dossierDeTravail}/${ordre[2]}.txt`, content: `bonjour ${ordre[2]}\n` } }];
+    if (ordre?.[1] === "modifie" && dossierDeTravail && aOutil("Edit")) return [{ type: "tool_use", id, name: "Edit", input: { file_path: `${dossierDeTravail}/${ordre[2]}.txt`, old_string: "bonjour", new_string: "salut" } }];
+    if (ordre?.[1] === "commande" && aOutil("Bash")) return [{ type: "tool_use", id, name: "Bash", input: { command: "for i in 1 2 3 4 5 6; do echo ligne $i; sleep 1; done", description: `Compte ${ordre[2]}` } }];
     if (ordre?.[1] === "fond" && (corps.tools ?? []).some((t) => t.name === "Bash")) {
       return [{ type: "tool_use", id, name: "Bash", input: { command: "sleep 3; echo fini", description: `Capture ${ordre[2]}`, run_in_background: true } }];
     }
@@ -202,6 +217,13 @@ export async function demarrerFournisseur(agentsSurveilles) {
   async function sse(res, blocs) {
     const ev = [{ type: "message_start", message: { id: `msg_${randomUUID()}`, type: "message", role: "assistant", model: "faux", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } } }];
     blocs.forEach((b, i) => {
+      if (b.type === "thinking") {
+        ev.push({ type: "content_block_start", index: i, content_block: { type: "thinking", thinking: "", signature: "" } });
+        for (const mot of b.thinking.split(/(?<= )/)) ev.push({ type: "content_block_delta", index: i, delta: { type: "thinking_delta", thinking: mot } });
+        ev.push({ type: "content_block_delta", index: i, delta: { type: "signature_delta", signature: "faux" } });
+        ev.push({ type: "content_block_stop", index: i });
+        return;
+      }
       ev.push({ type: "content_block_start", index: i, content_block: b.type === "text" ? { type: "text", text: "" } : { type: "tool_use", id: b.id, name: b.name, input: {} } });
       if (b.type === "text") ev.push({ type: "content_block_delta", index: i, delta: { type: "text_delta", text: b.text } });
       else {

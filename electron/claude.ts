@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { enregistrerTourClaude } from "./consommation";
 import { configMcp, OUTILS_APP } from "./ia";
@@ -27,9 +27,36 @@ import { CONSIGNE_FILS, TRAVAUX_MAX } from "./fils-outils";
 import { CONSIGNE_CERVEAU, avecReperesCerveau } from "./cerveau-outils";
 import { consigneKlyra, signatureConfiguration } from "./configuration-klyra";
 import { lireReglages } from "./reglages";
-import type { AgentEvent, CompteMoteur, Decision, Spontane, StreamOptions } from "./moteurs/types";
+import type { AgentEvent, CompteMoteur, Decision, DetailsDecision, Spontane, StreamOptions } from "./moteurs/types";
+import {
+  ARGS_REFLEXION,
+  commandeLancee,
+  creerControles,
+  creerInstantanes,
+  CROCHET_APRES,
+  CROCHET_AVANT,
+  entreeAvecReponses,
+  fenetreDe,
+  lireCommandes,
+  lirePlan,
+  lireQuestions,
+  lireSortie,
+  lireUsageContexte,
+  morceauReflexion,
+  reponseCrochet,
+  reponsePlan,
+  requeteInitialisation,
+  sortieDe,
+  versCorbeille,
+  type CommandeClaude,
+  type Controles,
+  type Instantanes,
+  type ResultatAnnulation,
+  type UsageContexte,
+} from "./session-claude";
 import { binaireGere } from "./moteurs/installation";
 import { lireUtilisation, type Utilisation } from "./utilisation";
+import { reglesProposees } from "./regles-projet";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -230,7 +257,83 @@ export function cancelAgent(requestId: string): void {
 /* ─── Conversation en direct ───────────────────────────────────── */
 
 /** Demandes en attente de réponse, par réponse d'agent. */
-const demandes = new Map<string, Map<string, { entree: Record<string, unknown>; suggestions: unknown[] }>>();
+const demandes = new Map<string, Map<string, { entree: Record<string, unknown>; suggestions: unknown[]; genre?: "question" | "plan" }>>();
+
+/**
+ * La réflexion résumée (`--thinking-display`) : connue de Claude Code depuis la 2.1 au moins (vérifié avec 2.1.120,
+ * 2.1.200, 2.1.250, 2.1.319). Une version plus ancienne refuserait de démarrer avec l'option : elle ne l'a pas.
+ * La version est lue une fois par programme ; illisible, on suppose une version récente.
+ */
+const versions = new Map<string, string | null>();
+function argsReflexion(bin: string): string[] {
+  if (!versions.has(bin)) {
+    try {
+      const r = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 10_000, windowsHide: true, env: environnementAgent() });
+      versions.set(bin, /(\d+)\.(\d+)\.(\d+)/.exec(r.stdout ?? "")?.[0] ?? null);
+    } catch {
+      versions.set(bin, null);
+    }
+  }
+  const [majeure, mineure] = (versions.get(bin) ?? "9.9.9").split(".").map(Number);
+  return majeure > 2 || (majeure === 2 && mineure >= 1) ? ARGS_REFLEXION : [];
+}
+
+/** Une routine ou une étape de workflow : personne ne répond aux questions à choix de l'agent. */
+const sansPersonne = (options: StreamOptions) => !!options.routineRun || /^(wf|routine)-/.test(options.chatId ?? "");
+
+/** Les commandes « / » vues dans la dernière session de chaque dossier : l'envoi les reconnaît en tête d'un message. */
+const commandesParDossier = new Map<string, Set<string>>();
+
+/** Les modifications de fichiers des agents de ce PC, gardées pour les annuler (cf. session-claude.ts). */
+let instantanesPc: Instantanes | null = null;
+function instantanes(): Instantanes | null {
+  const donnees = process.env.KLYRA_USER_DATA;
+  if (!donnees) return null;
+  instantanesPc ??= creerInstantanes(path.join(donnees, "instantanes"), { supprimer: versCorbeille(path.join(donnees, "corbeille-agents")) });
+  return instantanesPc;
+}
+
+/** Annule des modifications de fichiers d'une conversation de ce PC (les appels d'outil désignés par l'écran). */
+export function annulerModifications(chatId: string, ids: string[], forcer: boolean): ResultatAnnulation {
+  const store = instantanes();
+  if (!store) return { fichiers: [] };
+  return store.annuler(chatId, ids, forcer);
+}
+
+/** Oublie les modifications gardées d'une conversation supprimée, ou trop anciennes. */
+export function oublierModifications(chatId: string | null, ageMax = 30 * 24 * 3600 * 1000): void {
+  const store = instantanes();
+  if (!store) return;
+  if (chatId) store.oublier(chatId);
+  else store.nettoyer(ageMax);
+}
+
+/** La place prise dans le contexte d'une session ouverte (sa fenêtre et ce qui la remplit), ou null. */
+export async function usageContexte(sessionId: string): Promise<UsageContexte | null> {
+  const proc = processus.get(sessionId);
+  if (!proc || !vivant(proc)) return null;
+  try {
+    return lireUsageContexte(await proc.controles.demander({ subtype: "get_context_usage", detail: "summary" }));
+  } catch {
+    return null;
+  }
+}
+
+/** La fin de ce qu'a écrit une commande d'une session ouverte (une commande lancée en fond, par son id de tâche). */
+export async function sortieTache(sessionId: string, tache: string): Promise<string | null> {
+  const proc = processus.get(sessionId);
+  if (!proc || !vivant(proc) || !/^[A-Za-z0-9_-]{1,100}$/.test(tache)) return null;
+  try {
+    return lireSortie(await proc.controles.demander({ subtype: "get_task_output", task_id: tache }));
+  } catch {
+    return null;
+  }
+}
+
+/** Les commandes « / » connues pour ce dossier (vues dans sa dernière session). */
+export function commandesConnues(dossier: string): Set<string> {
+  return commandesParDossier.get(path.resolve(dossier)) ?? new Set();
+}
 
 type Acces = NonNullable<StreamOptions["acces"]>;
 
@@ -288,6 +391,22 @@ interface Processus {
   suiviFond: SuiviFond;
   /** La dernière réponse ouverte : ce qui tourne en fond se dit par elle quand aucune n'est ouverte. */
   dernierEmit: ((event: AgentEvent) => void) | null;
+  /** Les demandes de contrôle qui attendent la réponse de Claude Code (contexte, sortie d'une commande). */
+  controles: Controles;
+  /** Les appels d'outil vus, par id (le plan d'ExitPlanMode, le nom de l'outil d'un résultat). */
+  appels: Map<string, { outil: string; entree: Record<string, unknown> }>;
+  /** Les commandes qui tournent au premier plan : leur sortie est relue chaque seconde. */
+  sorties: Map<string, ReturnType<typeof setInterval>>;
+  /** En mode plan (l'agent prépare un plan, sans rien modifier). */
+  plan: boolean;
+  /** Le dernier message de la session lu (son `uuid`) : « Revenir à avant » y reprend. */
+  dernierUuid: string | null;
+  /** Le dossier où il travaille, et les commandes « / » de sa session (sans celles réservées au terminal). */
+  cwd: string;
+  commandes: CommandeClaude[];
+  terminal: Set<string>;
+  /** Les commandes telles que Claude Code les a annoncées, avant le tri (relues quand `init` dit celles du terminal). */
+  commandesBrutes: unknown;
 }
 
 /** Les outils dont l’écran montre l’entrée pendant que le modèle l’écrit : la carte de l’atelier (d'un agent, d'une équipe), le workflow qui se construit. */
@@ -392,11 +511,31 @@ function repondre(child: ChildProcess, demandeId: string, accepte: boolean, entr
   child.stdin?.write(`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: demandeId, response: reponse } })}\n`);
 }
 
-/** Ta réponse à une demande d'autorisation, depuis l'app. */
-export function autoriser(requestId: string, demandeId: string, decision: Decision): boolean {
+function repondreAvec(child: ChildProcess, demandeId: string, reponse: Record<string, unknown>) {
+  child.stdin?.write(`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: demandeId, response: reponse } })}\n`);
+}
+
+/** Ta réponse à une demande d'autorisation, à des questions ou à un plan, depuis l'app. */
+export function autoriser(requestId: string, demandeId: string, decision: Decision, details?: DetailsDecision): boolean {
   const child = running.get(requestId);
   const demande = demandes.get(requestId)?.get(demandeId);
   if (!child || !demande) return false;
+  if (demande.genre) {
+    const enCours = parRequete.get(requestId);
+    let accepte = decision !== "non";
+    if (demande.genre === "question") {
+      const entree = accepte ? entreeAvecReponses(demande.entree, details?.reponses) : null;
+      accepte = !!entree;
+      repondreAvec(child, demandeId, entree ? { behavior: "allow", updatedInput: entree } : { behavior: "deny", message: "La personne n’a pas répondu à ces questions. Continue sans, ou pose-les dans ta réponse." });
+    } else {
+      const proc = enCours?.proc;
+      repondreAvec(child, demandeId, reponsePlan(accepte, demande.entree, modeDe(enCours?.tour.acces ?? proc?.acces ?? "projet"), details?.message ?? ""));
+      if (accepte && proc) proc.plan = false;
+    }
+    demandes.get(requestId)?.delete(demandeId);
+    enCours?.tour.emit({ type: "autorisation-fin", id: demandeId, accepte });
+    return true;
+  }
   // « Toujours » : les règles proposées par Claude Code, gardées dans le projet
   // (.claude/settings.local.json), comme « Ne plus demander » dans VS Code.
   const regles =
@@ -552,6 +691,51 @@ export function finTacheDeFond(msg: Record<string, unknown>): Extract<AgentEvent
   return { type: "tache-fond", id: msg.tool_use_id, statut: msg.status === "completed" ? "fait" : "erreur" };
 }
 
+/** Un appel d'outil vu passer : le plan d'ExitPlanMode y est, et le nom de l'outil sert à lire son résultat. */
+function retenirAppel(proc: Processus, id: string, outil: string, entree: Record<string, unknown>) {
+  proc.appels.set(id, { outil, entree });
+  if (proc.appels.size > 200) proc.appels.delete(proc.appels.keys().next().value!);
+}
+
+/** Les commandes « / » de la session : retenues pour son dossier, et montrées à l'écran. */
+function noterCommandes(proc: Processus, brutes: unknown) {
+  if (!Array.isArray(brutes)) return;
+  proc.commandesBrutes = brutes;
+  const commandes = lireCommandes(brutes, proc.terminal);
+  if (!commandes.length) return;
+  commandesParDossier.set(path.resolve(proc.cwd), new Set(commandes.map((c) => c.nom)));
+  proc.commandes = commandes;
+  (proc.tours[0]?.emit ?? proc.dernierEmit)?.({ type: "commandes", commandes });
+}
+
+/** Relit chaque seconde ce qu'écrit une commande au premier plan, jusqu'à son résultat (au plus une heure). */
+function suivreSortie(proc: Processus, tour: Tour, tache: string, appel: string) {
+  let derniere = "";
+  const debut = Date.now();
+  const lire = () => {
+    if (!vivant(proc) || tour.finie || Date.now() - debut > 3600_000) return arreterSortie(proc, appel);
+    void proc.controles
+      .demander({ subtype: "get_task_output", task_id: tache }, 5000)
+      .then((r) => {
+        const texte = lireSortie(r);
+        if (texte === null || texte === derniere || !proc.sorties.has(appel)) return;
+        derniere = texte;
+        tour.emit({ type: "sortie", id: appel, texte });
+      })
+      .catch(() => undefined);
+  };
+  /* Claude Code annonce une commande au premier plan après quelques secondes : la première lecture tout de suite. */
+  const minuterie = setInterval(lire, 1000);
+  proc.sorties.set(appel, minuterie);
+  lire();
+}
+
+function arreterSortie(proc: Processus, appel: string) {
+  const minuterie = proc.sorties.get(appel);
+  if (minuterie) clearInterval(minuterie);
+  proc.sorties.delete(appel);
+}
+
 function lireLigne(proc: Processus, ligne: string) {
   if (!ligne.trim()) return;
   let msg: Record<string, unknown>;
@@ -562,6 +746,33 @@ function lireLigne(proc: Processus, ligne: string) {
   }
   const parent = (msg.parent_tool_use_id as string | null | undefined) ?? null;
   const courant = proc.tours[0] ?? null;
+  /* La réponse de Claude Code à une de nos demandes (contexte, sortie d'une commande, initialisation). */
+  if (proc.controles.recevoir(msg)) return;
+  /* Les commandes « / » de la session ont changé (une skill trouvée en route…). */
+  if (msg.type === "system" && msg.subtype === "commands_changed") {
+    noterCommandes(proc, msg.commands);
+    return;
+  }
+  /* Une commande au premier plan : sa sortie est relue chaque seconde, l'écran la montre pendant qu'elle tourne. */
+  const lancee = commandeLancee(msg);
+  if (lancee && !lancee.fond && courant && !proc.sorties.has(lancee.appel)) suivreSortie(proc, courant, lancee.tache, lancee.appel);
+  /* Avant et après une modification de fichier : l'app garde l'avant et l'après, pour l'annuler. */
+  if (msg.type === "control_request" && (msg.request as { subtype?: string } | undefined)?.subtype === "hook_callback") {
+    const req = msg.request as { callback_id?: string; input?: Record<string, unknown> };
+    const store = instantanes();
+    const conversation = proc.chatId || "sans-conversation";
+    try {
+      if (store && req.callback_id === CROCHET_AVANT) store.avant(conversation, req.input ?? {});
+      if (store && req.callback_id === CROCHET_APRES) {
+        const vue = store.apres(conversation, req.input ?? {});
+        if (vue) courant?.emit({ type: "modification", ...vue });
+      }
+    } catch (error) {
+      console.error("Modification non gardée :", error);
+    }
+    ecrire(proc, reponseCrochet(String(msg.request_id ?? "")));
+    return;
+  }
   /* Ce qui tourne en fond : dit à l'écran même sans réponse ouverte, par la dernière (« Iris continue en arrière-plan »). */
   const fond = suivreFond(proc.suiviFond, msg, Date.now(), !!courant);
   if (fond) (courant?.emit ?? proc.dernierEmit)?.(fond);
@@ -576,6 +787,11 @@ function lireLigne(proc: Processus, ligne: string) {
   }
 
   if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
+    /* Les commandes réservées au terminal ne vont pas au menu « / » de l'app. */
+    if (Array.isArray(msg.terminal_slash_commands)) {
+      proc.terminal = new Set(msg.terminal_slash_commands.filter((c): c is string => typeof c === "string"));
+      if (proc.commandesBrutes) noterCommandes(proc, proc.commandesBrutes);
+    }
     proc.sessionId = msg.session_id;
     processus.set(msg.session_id, proc);
     courant?.emit({ type: "session", sessionId: msg.session_id });
@@ -606,7 +822,12 @@ function lireLigne(proc: Processus, ligne: string) {
       content_block?: { type?: string; id?: string; name?: string };
       delta?: { type?: string; text?: string; partial_json?: string };
     };
-    // La réflexion est comptée par thinking_tokens, juste au-dessus.
+    // La réflexion est comptée par thinking_tokens, juste au-dessus ; son texte (résumé) va à l'écran.
+    const reflexion = parent === null ? morceauReflexion(ev) : null;
+    if (reflexion && (reflexion.texte || reflexion.nouveau)) {
+      courant?.emit({ type: "reflexion", ...reflexion });
+      return;
+    }
     const morceau = ev.delta?.text ?? ev.delta?.partial_json ?? "";
     if (morceau) courant?.compter(morceau.length / 4);
     /* La carte de l'atelier s'écrit pendant que le modèle remplit l'outil (cf. json-partiel.ts). */
@@ -644,6 +865,8 @@ function lireLigne(proc: Processus, ligne: string) {
       input?: Record<string, unknown>;
     }[];
     const outils = contenu.filter((b) => b.type === "tool_use" && b.id && b.name);
+    for (const b of outils) retenirAppel(proc, b.id!, b.name!, b.input ?? {});
+    if (parent === null && typeof msg.uuid === "string") proc.dernierUuid = msg.uuid;
     // Les agents d'arrière-plan travaillent sans réponse ouverte : on ne les suit que dans une réponse.
     const tour = parent === null && outils.length ? tourOuSpontane(proc) : courant;
     if (!tour) return;
@@ -673,7 +896,9 @@ function lireLigne(proc: Processus, ligne: string) {
     for (const bloc of contenu) {
       if (bloc.type !== "tool_result" || !bloc.tool_use_id) continue;
       const brut = typeof bloc.content === "string" ? bloc.content : JSON.stringify(bloc.content ?? "");
-      courant.emit({ type: "etape-fin", id: bloc.tool_use_id, ok: !bloc.is_error, apercu: brut.slice(0, 400) });
+      arreterSortie(proc, bloc.tool_use_id);
+      const commande = proc.appels.get(bloc.tool_use_id)?.outil === "Bash";
+      courant.emit({ type: "etape-fin", id: bloc.tool_use_id, ok: !bloc.is_error, apercu: brut.slice(0, 400), ...(commande ? { sortie: sortieDe(bloc.content) } : {}) });
     }
     return;
   }
@@ -705,11 +930,31 @@ function lireLigne(proc: Processus, ligne: string) {
       );
     }
     const tour = tourOuSpontane(proc);
+    /* Des questions, ou un plan : c'est à la personne de répondre, même en accès complet. */
+    if (req.tool_name === "AskUserQuestion" || req.tool_name === "ExitPlanMode") {
+      const appel = typeof (req as { tool_use_id?: unknown }).tool_use_id === "string" ? proc.appels.get((req as { tool_use_id: string }).tool_use_id) : undefined;
+      const complete = { ...(appel?.entree ?? {}), ...entree };
+      const questions = req.tool_name === "AskUserQuestion" ? lireQuestions(complete) : null;
+      if (!tour || (req.tool_name === "AskUserQuestion" && !questions)) return repondre(proc.child, demandeId, false, entree);
+      if (!demandes.has(tour.requestId)) demandes.set(tour.requestId, new Map());
+      demandes.get(tour.requestId)!.set(demandeId, { entree: complete, suggestions: [], genre: questions ? "question" : "plan" });
+      if (questions) return tour.emit({ type: "question", id: demandeId, questions });
+      const plan = lirePlan(complete);
+      if (plan) return tour.emit({ type: "plan", id: demandeId, plan });
+      /* Le plan écrit dans son fichier, sans être repris dans l'appel : Claude Code le lit pour nous. */
+      void proc.controles
+        .demander({ subtype: "get_plan" })
+        .then((r) => (r as { content?: unknown } | null)?.content)
+        .catch(() => null)
+        .then((contenu) => tour.emit({ type: "plan", id: demandeId, plan: typeof contenu === "string" && contenu.trim() ? contenu.trim().slice(0, 60_000) : "L’agent propose de passer à l’action, sans avoir écrit de plan." }));
+      return;
+    }
     if ((tour?.acces ?? proc.acces) === "tout") return repondre(proc.child, demandeId, true, entree);
     if (!tour) return repondre(proc.child, demandeId, false, entree);
     if (!demandes.has(tour.requestId)) demandes.set(tour.requestId, new Map());
     demandes.get(tour.requestId)!.set(demandeId, { entree, suggestions: req.permission_suggestions ?? [] });
-    tour.emit({ type: "autorisation", id: demandeId, outil: req.tool_name ?? "outil", entree, description: req.description ?? "" });
+    const regles = reglesProposees(req.permission_suggestions);
+    tour.emit({ type: "autorisation", id: demandeId, outil: req.tool_name ?? "outil", entree, description: req.description ?? "", ...(regles.length ? { regles } : {}) });
     return;
   }
   /* Réponse annulée par Claude Code (l'agent est passé à autre chose). */
@@ -727,8 +972,11 @@ function lireLigne(proc: Processus, ligne: string) {
        la réponse à ton message. Seul compte le résultat d'un tour où l'agent a vraiment répondu. */
     if (!courant.activite && !courant.arretee && msg.subtype === "success" && !msg.is_error && !msg.result) return;
     const ok = !courant.arretee && !msg.is_error && msg.subtype === "success";
+    const fenetre = fenetreDe(msg.modelUsage);
+    if (fenetre) courant.emit({ type: "fenetre", jetons: fenetre });
     finirTour(proc, courant, {
       type: "fin",
+      ...(proc.dernierUuid ? { uuidFin: proc.dernierUuid } : {}),
       ok,
       texte: typeof msg.result === "string" ? msg.result : "",
       erreur: ok
@@ -787,6 +1035,8 @@ const envClaude = (dossier: string | null, compte: { id: string; dossier: string
 
 function lancerProcessus(bin: string, args: string[], cwd: string, signature: string, skills: string, options: StreamOptions, acces: Acces, spontane: Spontane, dossier: string | null, compte: { id: string; dossier: string } | null): Processus {
   const child = spawn(bin, args, { cwd, env: envClaude(dossier, compte), windowsHide: true });
+  /* Claude Code fermé pendant qu'on lui écrit : l'écriture échoue, sans faire tomber l'app. */
+  child.stdin?.on("error", () => undefined);
   const proc: Processus = {
     routineRun: options.routineRun,
     child,
@@ -807,8 +1057,24 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
     finsDeFond: [],
     suiviFond: nouveauSuiviFond(),
     dernierEmit: null,
+    controles: creerControles((ligne) => {
+      if (!child.stdin?.writableEnded) child.stdin?.write(`${JSON.stringify(ligne)}\n`);
+    }, randomUUID),
+    appels: new Map(),
+    sorties: new Map(),
+    plan: options.plan === true,
+    dernierUuid: null,
+    cwd,
+    commandes: [],
+    terminal: new Set(),
+    commandesBrutes: null,
   };
   if (options.sessionId) processus.set(options.sessionId, proc);
+  /* Les rappels autour des modifications de fichiers, et les commandes « / » de la session (réponse d'initialize). */
+  void proc.controles
+    .demander(requeteInitialisation(), 60_000)
+    .then((r) => noterCommandes(proc, (r as { commands?: unknown } | null)?.commands))
+    .catch(() => undefined);
 
   let tampon = "";
   let stderr = "";
@@ -822,6 +1088,8 @@ function lancerProcessus(bin: string, args: string[], cwd: string, signature: st
 
   const finTout = (erreur: (tour: Tour) => string) => {
     if (proc.veille) clearTimeout(proc.veille);
+    proc.controles.fermer();
+    for (const appel of [...proc.sorties.keys()]) arreterSortie(proc, appel);
     if (proc.sessionId && processus.get(proc.sessionId) === proc) processus.delete(proc.sessionId);
     for (const tour of [...proc.tours]) finirTour(proc, tour, { type: "fin", ok: false, texte: "", erreur: erreur(tour) });
     /* Claude Code fermé : ce qu'il avait en fond s'arrête avec lui. */
@@ -855,6 +1123,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   if (options.sessionId !== null && !/^[0-9a-f-]{36}$/.test(options.sessionId)) return echec("Session invalide.");
   if (options.modele && !/^[a-z0-9][a-z0-9.\-]{0,63}$/.test(options.modele)) return echec("Modèle invalide.");
   if (options.effort && !["low", "medium", "high", "xhigh", "max"].includes(options.effort)) return echec("Effort invalide.");
+  if (options.reprendreA && (!options.sessionId || !/^[0-9a-f-]{36}$/.test(options.reprendreA))) return echec("Reprise invalide.");
   /* Le compte Claude choisi pour la conversation : son dossier de connexion, ou une erreur lisible s'il est parti. */
   let compte: { id: string; dossier: string } | null = null;
   if (options.compteClaude) {
@@ -884,6 +1153,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const connues = skillsConnues(configClaude, cwd);
   for (const nom of filtre.coupes) connues.delete(nom);
   // KLYRA_USER_DATA est posé au démarrage (main.ts). Ce module n’importe pas Electron : le banc des routines le charge sans.
+  /* Une commande « / » de Claude Code vue dans la dernière session de ce dossier se demande comme une skill. */
+  for (const nom of commandesConnues(cwd)) if (!filtre.coupes.includes(nom)) connues.add(nom);
   const prompt = avecReperesCerveau(promptAvecSkill(options.prompt, options.skill, connues), process.env.KLYRA_USER_DATA || null, options.agent ?? "principal", options.chatId ?? "");
   const skillsCle = prepare ? `${filtre.coupes.join("\n")}\n${prepare.skills.join("\n")}\n${prepare.catalogue}` : filtre.coupes.join("\n");
   // Les dossiers des pièces jointes, pour que l'agent puisse les lire.
@@ -897,7 +1168,7 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
   const ouvert = options.sessionId ? processus.get(options.sessionId) : undefined;
   let proc: Processus;
   /* Changer de compte relance Claude Code (la connexion se lit au lancement), même en plein travail : jamais deux comptes dans un processus. */
-  if (ouvert && vivant(ouvert) && ouvert.skills === skillsCle && ouvert.compte === (compte?.id ?? null) && (ouvert.signature === signature || (ouvert.tours.length && !options.routineRun && !ouvert.routineRun))) {
+  if (ouvert && vivant(ouvert) && !options.reprendreA && ouvert.skills === skillsCle && ouvert.compte === (compte?.id ?? null) && (ouvert.signature === signature || (ouvert.tours.length && !options.routineRun && !ouvert.routineRun))) {
     /* La conversation a déjà son Claude Code : on lui écrit. Le modèle et l'accès changent en route. */
     proc = ouvert;
     proc.spontane = spontane;
@@ -905,7 +1176,10 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       controle(proc, { subtype: "set_model", ...(options.modele ? { model: options.modele } : {}) });
       proc.modele = options.modele ?? null;
     }
-    if (modeDe(acces) !== modeDe(proc.acces)) controle(proc, { subtype: "set_permission_mode", mode: modeDe(acces) });
+    /* Le mode plan se met et s'enlève en route, comme l'accès. */
+    const plan = options.plan === true;
+    if (plan !== proc.plan || (!plan && modeDe(acces) !== modeDe(proc.acces))) controle(proc, { subtype: "set_permission_mode", mode: plan ? "plan" : modeDe(acces) });
+    proc.plan = plan;
     proc.acces = acces;
   } else {
     /* Un réglage qui demande de relancer Claude Code (l'effort) :
@@ -927,12 +1201,14 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
       "--permission-prompts",
       "host",
       "--permission-mode",
-      modeDe(acces),
-      // Ces outils attendent une réponse que l'app ne sait pas afficher : l'agent bloquerait.
-      // Il pose ses questions dans sa réponse, comme à un collègue.
+      options.plan ? "plan" : modeDe(acces),
+      // La réflexion du modèle, résumée : l'écran la montre repliée (cf. session-claude.ts).
+      ...argsReflexion(bin),
+      // Les questions à choix et le plan arrivent dans le fil (cartes) ; entrer seul en mode plan reste à la personne.
+      // Une routine ou un workflow tourne sans personne devant l'écran : une question à choix y bloquerait l'agent.
       "--disallowedTools",
-      "AskUserQuestion",
       "EnterPlanMode",
+      ...(sansPersonne(options) ? ["AskUserQuestion"] : []),
       ...OUTILS_HORS_APP,
       ...OUTILS_ORDINATEUR_INTERDITS,
       ...refusAgents(cwd),
@@ -947,6 +1223,8 @@ export function streamAgent(requestId: string, options: StreamOptions, emit: (ev
     if (mcp) args.push("--mcp-config", mcp);
     if (options.agent) args.push("--agent", options.agent);
     if (options.sessionId) args.push("--resume", options.sessionId);
+    /* « Revenir à avant ce message » : la conversation reprend à ce point, dans une copie de la session. */
+    if (options.sessionId && options.reprendreA) args.push("--resume-session-at", options.reprendreA, "--fork-session");
     if (options.modele) args.push("--model", options.modele);
     if (options.effort) args.push("--effort", options.effort);
     for (const d of dossiersJoints) args.push("--add-dir", d);

@@ -295,16 +295,19 @@ export interface Telechargement {
 }
 
 /** Ce que `navigateur.ts` veut savoir de Chrome. */
-const rappels = {
-  changement: (_p: PageChrome) => undefined as void,
-  fermeture: (_p: PageChrome) => undefined as void,
-  popup: (_ouvrante: PageChrome, _nouvelle: PageChrome) => undefined as void,
-  telechargement: (_t: Telechargement, _etat: "debut" | "progression" | "fini" | "annule", _recus: number, _total: number) => undefined as void,
+interface Rappels {
+  changement: (page: PageChrome) => void;
+  fermeture: (page: PageChrome) => void;
+  popup: (ouvrante: PageChrome, nouvelle: PageChrome) => void;
+  telechargement: (t: Telechargement, etat: "debut" | "progression" | "fini" | "annule", recus: number, total: number) => void;
   /** Chrome s'est fermé (par la personne, ou pour changer de mode). */
-  fin: (_mode: ModeChrome) => undefined as void,
-};
+  fin: (mode: ModeChrome) => void;
+}
 
-export function brancherChrome(r: Partial<typeof rappels>): void {
+const rien = () => undefined;
+const rappels: Rappels = { changement: rien, fermeture: rien, popup: rien, telechargement: rien, fin: rien };
+
+export function brancherChrome(r: Partial<Rappels>): void {
   Object.assign(rappels, r);
 }
 
