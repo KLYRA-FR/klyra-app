@@ -7,7 +7,7 @@ import { avecReperesCerveau } from "../cerveau-outils";
 import { consignesApp, dossierDeTravail, environnementAgent, pasDansMesAgents } from "../claude";
 import { composioConnect, espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
-import { configMcp } from "../ia";
+import { configMcp, OUTILS_APP } from "../ia";
 import { estActif, generation } from "../mes-agents";
 import { signatureNavigateur } from "../navigateur/outils";
 import { voirFin, voirOutil } from "../ordinateur/apercu";
@@ -108,6 +108,7 @@ function lancer(requestId: string, options: StreamOptions, emit: (event: AgentEv
       regles,
       mcp: mcpPourAcp(mcp),
       acces: options.acces ?? "projet",
+      libres: OUTILS_APP(),
       modele: options.modele,
       effort: options.effort,
       signature: JSON.stringify([options.agent, generation(), espaceComposio.signature(), composioConnect.signature(), options.routineRun ?? null, signatureOrdinateur(), skills.noms, filtre.coupes, signatureNavigateur(), cwd]),

@@ -1,4 +1,4 @@
-import { relayerComposio, serveurRelaisComposio } from "./composio-relais";
+import { OUTILS_COMPOSIO_LIBRES, relayerComposio, serveurRelaisComposio } from "./composio-relais";
 import { app, net, safeStorage } from "electron";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -403,4 +403,6 @@ export const OUTILS_APP = () => [
   ...OUTILS_COFFRE_LIBRES.map((o) => `mcp__klyra__${o}`),
   // GitHub : lire le dépôt du projet ne change rien.
   ...OUTILS_GITHUB_CLAUDE,
+  // Composio Connect : chercher une action et lire son schéma ; l'exécuter suit la règle de l'accès.
+  ...OUTILS_COMPOSIO_LIBRES,
 ];

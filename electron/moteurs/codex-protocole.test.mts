@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.ts";
+import { accesCodex, accordeDOffice, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.ts";
 import type { AgentEvent } from "./types.ts";
 
 const FIL = "01a19ce0-267e-77d0-8959-69fa1039a617";
@@ -97,6 +97,69 @@ test("les demandes d'autorisation deviennent des cartes, et ta réponse repart d
   const permissions = { network: { enabled: true }, fileSystem: null };
   assert.deepEqual(reponseAutorisation("item/permissions/requestApproval", { permissions }, "oui"), { permissions, scope: "turn" });
   assert.deepEqual(reponseAutorisation("item/permissions/requestApproval", { permissions }, "non"), { permissions: {}, scope: "turn" });
+});
+
+test("l'accord pour un outil MCP (Composio, outils de l'app) devient une carte, plus un refus d'office", () => {
+  // Le formulaire que Codex 0.167 envoie avant un outil MCP qui ne se dit pas en lecture seule.
+  const formulaire = {
+    threadId: "fil",
+    turnId: "tour",
+    serverName: "composio",
+    mode: "form",
+    message: "Allow the composio MCP server to run tool \"COMPOSIO_MULTI_EXECUTE_TOOL\"?",
+    requestedSchema: { type: "object", properties: {} },
+    _meta: {
+      codex_approval_kind: "mcp_tool_call",
+      persist: ["session", "always"],
+      tool_name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      tool_params: { tools: [{ tool_slug: "GMAIL_FETCH_EMAILS", arguments: { query: "from:thomas" } }] },
+    },
+  };
+  assert.deepEqual(autorisationDe("mcpServer/elicitation/request", formulaire), {
+    outil: "mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL",
+    entree: { tools: [{ tool_slug: "GMAIL_FETCH_EMAILS", arguments: { query: "from:thomas" } }] },
+    description: "Utiliser « COMPOSIO_MULTI_EXECUTE_TOOL » (composio)",
+  });
+  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", formulaire, "oui"), { action: "accept", content: null, _meta: null });
+  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", formulaire, "toujours"), { action: "accept", content: null, _meta: { persist: "session" } });
+  assert.deepEqual(reponseAutorisation("mcpServer/elicitation/request", formulaire, "non"), { action: "decline", content: null, _meta: null });
+  // Un autre formulaire d'un serveur MCP (pas un accord) reste refusé d'office.
+  assert.equal(autorisationDe("mcpServer/elicitation/request", { serverName: "composio", _meta: null, message: "Ton nom ?" }), null);
+
+  // La même demande quand Codex passe par une question (formulaires MCP coupés chez lui).
+  const question = {
+    threadId: "fil",
+    turnId: "tour",
+    itemId: "appel",
+    questions: [
+      {
+        id: "mcp_tool_call_approval_appel",
+        header: "Approve app tool call?",
+        question: "Allow the klyra MCP server to run tool \"ouvrir_fil\"?",
+        isOther: false,
+        isSecret: false,
+        options: [{ label: "Allow" }, { label: "Allow for this session" }, { label: "Cancel" }],
+      },
+    ],
+  };
+  assert.deepEqual(autorisationDe("item/tool/requestUserInput", question), { outil: "mcp__klyra__ouvrir_fil", entree: {}, description: "Utiliser « ouvrir_fil » (klyra)" });
+  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", question, "oui"), { answers: { mcp_tool_call_approval_appel: { answers: ["Allow"] } } });
+  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", question, "toujours"), { answers: { mcp_tool_call_approval_appel: { answers: ["Allow for this session"] } } });
+  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", question, "non"), { answers: { mcp_tool_call_approval_appel: { answers: ["Cancel"] } } });
+  // « Pour cette session » pas proposé : un simple accord.
+  const sansSession = { ...question, questions: [{ ...question.questions[0], options: [{ label: "Allow" }, { label: "Cancel" }] }] };
+  assert.deepEqual(reponseAutorisation("item/tool/requestUserInput", sansSession, "toujours"), { answers: { mcp_tool_call_approval_appel: { answers: ["Allow"] } } });
+  // Une vraie question de l'agent n'est pas une carte : il la pose dans sa réponse.
+  assert.equal(autorisationDe("item/tool/requestUserInput", { questions: [{ id: "couleur", question: "Bleu ou vert ?" }] }), null);
+});
+
+test("accordé sans carte : tout en accès complet, les outils libres de l'app en accès projet, rien en accès demander", () => {
+  const libres = ["mcp__klyra__ouvrir_fil", "mcp__composio__COMPOSIO_SEARCH_TOOLS"];
+  assert.equal(accordeDOffice("tout", "mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL", libres), true);
+  assert.equal(accordeDOffice("projet", "mcp__klyra__ouvrir_fil", libres), true);
+  assert.equal(accordeDOffice("projet", "mcp__composio__COMPOSIO_SEARCH_TOOLS", libres), true);
+  assert.equal(accordeDOffice("projet", "mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL", libres), false);
+  assert.equal(accordeDOffice("demander", "mcp__klyra__ouvrir_fil", libres), false);
 });
 
 test("ce que l'app ne sait pas montrer est refusé d'office, sans bloquer Codex", () => {

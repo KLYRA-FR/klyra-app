@@ -12,9 +12,9 @@ import { composioConnect, espaceComposio } from "../composio";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "../connaissances-agent";
 import { preparerSessionCodex } from "../preparation-fournisseur";
 import { lireReglages } from "../reglages";
-import { configMcp } from "../ia";
+import { configMcp, OUTILS_APP } from "../ia";
 import { dossierAgents, estActif, generation } from "../mes-agents";
-import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
+import { accesCodex, accordeDOffice, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole";
 import { binaireGere, commande, derniereVersionNpm, estGere, installerDepuisNpm } from "./installation";
 import { lireUtilisationCodex, type Utilisation } from "../utilisation";
 import type { AgentEvent, CompteMoteur, Decision, ModeleMoteur, Moteur, Progression, StreamOptions } from "./types";
@@ -101,6 +101,9 @@ interface Reponse {
   threadId: string;
   tour: TourCodex;
   emit: (event: AgentEvent) => void;
+  /** L'accès de ce message, et les outils de l'app accordés sans carte en accès « projet » (comme pour Claude Code). */
+  acces: NonNullable<StreamOptions["acces"]>;
+  libres: string[];
   /** Les demandes d'autorisation en attente de ta réponse, par identifiant montré à l'interface. */
   demandes: Map<string, { rpcId: number | string; method: string; params: Params }>;
   /** Dernier signe de Codex (notification, demande). */
@@ -279,6 +282,7 @@ class ServeurCodex {
     const carte = autorisationDe(method, params);
     if (r) r.derniere = Date.now();
     if (carte && r) {
+      if (accordeDOffice(r.acces, carte.outil, r.libres)) return this.ecrire({ id: rpcId, result: reponseAutorisation(method, params, "oui") });
       const id = String(rpcId);
       r.demandes.set(id, { rpcId, method, params });
       r.emit({ type: "autorisation", id, ...carte });
@@ -386,7 +390,16 @@ async function demarrerTour(requestId: string, options: StreamOptions, emit: (ev
     if (event.type === "fin") voirFin(chatId);
     emit(event);
   };
-  const reponse: Reponse = { requestId, threadId, tour: new TourCodex(threadId, emitSuivi, serveur.jetons.get(threadId) ?? 0), emit, demandes: new Map(), derniere: Date.now() };
+  const reponse: Reponse = {
+    requestId,
+    threadId,
+    tour: new TourCodex(threadId, emitSuivi, serveur.jetons.get(threadId) ?? 0),
+    emit,
+    acces: options.acces ?? "projet",
+    libres: OUTILS_APP(),
+    demandes: new Map(),
+    derniere: Date.now(),
+  };
   serveur.enCours.set(threadId, reponse);
   serveur.parRequete.set(requestId, threadId);
   reponse.veille = setInterval(() => {

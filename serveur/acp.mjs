@@ -340,11 +340,12 @@ export function creerClientAcp(o) {
         if (r)
             r.derniere = Date.now();
         if (method === "session/request_permission" && r) {
-            if (r.acces === "tout")
+            const carte = autorisationAcp(params);
+            if (r.acces === "tout" || (r.acces === "projet" && r.libres.includes(carte.outil)))
                 return ecrire({ id: rpcId, result: reponseAutorisationAcp(params, "oui") });
             const id = String(rpcId);
             r.demandes.set(id, { rpcId, params });
-            r.emit({ type: "autorisation", id, ...autorisationAcp(params) });
+            r.emit({ type: "autorisation", id, ...carte });
             return;
         }
         if (method === "session/request_permission")
@@ -466,7 +467,7 @@ export function creerClientAcp(o) {
             noterOptions(sessionId, r?.configOptions);
             session.effort = d.effort;
         }
-        const reponse = { requestId, tour: new TourAcp(sessionId, emit), acces: d.acces, emit, demandes: new Map(), derniere: Date.now() };
+        const reponse = { requestId, tour: new TourAcp(sessionId, emit), acces: d.acces, libres: d.libres ?? [], emit, demandes: new Map(), derniere: Date.now() };
         enCours.set(sessionId, reponse);
         parRequete.set(requestId, sessionId);
         const id = sessionId;

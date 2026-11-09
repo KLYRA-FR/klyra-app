@@ -1,5 +1,15 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — Composio et outils MCP avec ChatGPT (Codex) : l'accord n'était plus refusé d'office
+
+Corentin : avec ChatGPT, Cicco n'arrivait pas à lire Gmail par Composio (« user rejected MCP tool call ») alors que Composio était connecté. Cause : hors accès complet, Codex demande ton accord avant chaque outil MCP qui ne se dit pas en lecture seule (Composio, et presque tous les outils de l'app : fils, publier un artefact, cartes…). Il le demande par un formulaire MCP (`mcpServer/elicitation/request`, `_meta.codex_approval_kind = "mcp_tool_call"`) que l'app refusait d'office (`reponseDOffice`). Lu dans le code de Codex 0.167 (`core/src/mcp_tool_call.rs`).
+
+- **Codex (PC et VPS)** : ce formulaire, et sa variante en question (`item/tool/requestUserInput`, id `mcp_tool_call_approval…`, quand Codex coupe les formulaires), deviennent une carte d'autorisation (`autorisationDe`, outil `mcp__serveur__outil`, entrée = ses paramètres). « Autoriser » = `accept`, « Toujours » = `accept` + `persist: "session"` (le temps de la session de Codex, rien d'écrit chez lui), « Refuser » = `decline`. Les autres formulaires MCP restent refusés d'office.
+- **Même règle pour tous les moteurs en accès « projet »** (`accordeDOffice`) : les outils de l'app que Claude Code reçoit sans demander (`OUTILS_APP` sur le PC ; `outilsLibres` de `serveur/agents.mjs`, désormais la seule liste du VPS pour Claude, Codex et Grok) passent sans carte pour Codex et Grok aussi. Le reste attend ta carte ; accès complet : tout accordé.
+- **Composio** : chercher une action et lire son schéma (`OUTILS_COMPOSIO_LIBRES` : `COMPOSIO_SEARCH_TOOLS`, `COMPOSIO_GET_TOOL_SCHEMAS`, dans `composio-relais.ts`) sont libres en accès « projet », pour tous les moteurs. Exécuter une action (`COMPOSIO_MULTI_EXECUTE_TOOL`) demande ton accord avec Codex et Grok ; avec Claude Code, le mode auto en juge, comme avant.
+- Tests : `codex-protocole.test.mts` (formulaire, question, réponses, règle d'accès), `serveur/codex.test.mjs` (faux Codex : outil libre accordé, carte Composio puis accord), `acp.test.mts` + `scripts/faux-acp.mjs` (même chose avec Grok). Passés : `test:moteurs`, `test:serveur` (hors script pnpm), `test:composio`, typecheck d'Electron, lint. Code du serveur : version 61.
+- **Pas vérifié** : avec le vrai Codex (lancer le binaire téléchargé n'a pas été possible dans la session), et `test:composio:runtime` (Electron absent). Avec Claude Code en accès « projet », une action Composio refusée par le mode auto n'a pas été rejouée.
+
 ## 8 novembre 2026 — Espace projet : relecture indépendante, correctifs (PR #244)
 
 Une relecture du diff complet par un autre agent a relevé des points ; tous sont corrigés et testés.

@@ -8,7 +8,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { accesCodex, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
+import { accesCodex, accordeDOffice, autorisationDe, corpsDeFiche, mcpPourCodex, reponseAutorisation, reponseDOffice, TourCodex } from "./codex-protocole.mjs";
 import { avecReperesCerveau } from "./cerveau-outils.mjs";
 import { consigneSkillsCodex, filtreSkills, promptAvecSkillCodex } from "./connaissances-agent.mjs";
 import { binaireGere } from "./installation.mjs";
@@ -28,7 +28,7 @@ const CONNEXION_MAX_MS = 15 * 60 * 1000;
 /**
  * @param {{ home: string, version: string, publier: (requestId: string, event: object, sessionId: string | null) => void,
  *   consigne: (agent: string | null) => string, consignesKlyra?: () => string | null, estActif: (id: string) => boolean, mcp: () => string | null, generation: () => string,
- *   skillsParAgent?: () => object | null,
+ *   skillsParAgent?: () => object | null, libres?: (demande: object) => string[],
  *   codex?: string | null, delais?: { requete?: number, inactivite?: number, pas?: number } }} options
  */
 export function creerCodex(options) {
@@ -138,8 +138,8 @@ export function creerCodex(options) {
     if (carte && r) {
       const id = String(rpcId);
       r.demandes.set(id, { rpcId, method, params });
-      /* Accès complet : accordé d'office, comme pour Claude Code sur le VPS. */
-      if (r.acces === "tout") {
+      /* Accès complet, ou un outil de l'app libre en accès « projet » : accordé d'office, comme pour Claude Code sur le VPS. */
+      if (accordeDOffice(r.acces, carte.outil, r.libres ?? [])) {
         ecrire({ id: rpcId, result: reponseAutorisation(method, params, "oui") });
         r.demandes.delete(id);
         return;
@@ -330,7 +330,7 @@ export function creerCodex(options) {
 
     const emit = (event) => publier(requestId, event, threadId);
     if (emitSession) emit({ type: "session", sessionId: emitSession });
-    const reponse = { requestId, threadId, acces, tour: new TourCodex(threadId, emit, proc.jetons.get(threadId) ?? 0), emit, demandes: new Map(), derniere: Date.now(), veille: null };
+    const reponse = { requestId, threadId, acces, libres: options.libres?.(demande) ?? [], tour: new TourCodex(threadId, emit, proc.jetons.get(threadId) ?? 0), emit, demandes: new Map(), derniere: Date.now(), veille: null };
     proc.enCours.set(threadId, reponse);
     /* Garde-fou : un tour qui ne donne plus signe de vie ne reste pas sur « réfléchit… » : on l'interrompt et on le dit. */
     reponse.veille = setInterval(() => {
