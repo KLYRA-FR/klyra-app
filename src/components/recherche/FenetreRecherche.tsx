@@ -29,8 +29,8 @@ import type { Chat, Role } from "@/types/domain";
 
 /**
  * Rechercher dans les conversations (spec d'Iris, point 6) : une fenêtre
- * par-dessus l'écran, construite comme `Modale`, ouverte par le bouton du rail
- * ou ⌘K (événement `klyra:recherche`). Montée une seule fois : la requête, la
+ * par-dessus l'écran, construite comme `Modale`, ouverte par ⌘K (Ctrl+K sous
+ * Windows ; événement `klyra:recherche`). Montée une seule fois : la requête, la
  * portée et la ligne ouverte restent en mémoire jusqu'à la fermeture de l'app.
  * Elle ne touche ni au composeur ni à la file : choisir un résultat ouvre la
  * conversation sur le message (`/chat?id=…&message=…`, cf. `MessageThread`).
@@ -142,7 +142,7 @@ export function FenetreRecherche() {
     avant.current = null;
   }, []);
 
-  /* Ouverture par le rail ou ⌘K (qui ferme aussi). */
+  /* Ouverture par ⌘K (qui ferme aussi). */
   useEffect(() => {
     const surDemande = (e: Event) => {
       const basculer = (e as CustomEvent<{ basculer?: boolean }>).detail?.basculer;

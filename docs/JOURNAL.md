@@ -1,5 +1,16 @@
 # Journal du projet — app KLYRA
 
+## 9 novembre 2026 — `test:chercher` remis au vert (recherche ouverte par ⌘K seulement)
+
+`scripts/test-recherche.mjs` échouait sur deux contrôles du geste 6 : le bouton « Rechercher » du rail (`aria-haspopup`, `aria-expanded`) et son clic. Ces échecs étaient notés depuis le 03/11 (entrée « Barre des chats et réponses des agents »).
+
+- **Cause** : le bouton a été retiré volontairement par Pelin le 03/11 (`a90e50e`, « Menu : sans recherche (⌘K), sans sélecteur de machine ni Marketplace »). Sur le bureau, la fenêtre de recherche ne s'ouvre plus que par ⌘K (Ctrl+K sous Windows), `useRaccourciRecherche` → `ouvrirRecherche(true)` → événement `klyra:recherche`. Le raccourci reste listé dans Réglages › Général. Le téléphone garde sa propre entrée (`/chats?vue=recherche`). Bouton non remis : c'est un choix de design, pas une erreur.
+- **Test mis à jour** : le geste 6 part de l'accueil, donne le focus à l'entrée Chats du rail, ouvre par Ctrl+K, puis vérifie que le × rend le focus à cette entrée (la règle de la fenêtre : rendre le focus à l'élément qui l'avait). Le reste du geste est inchangé (états vides, compteur, voile, Ctrl+K qui referme). `ouvrir()` ne connaît plus que le raccourci.
+- **Textes corrigés** : commentaires de `FenetreRecherche` et `recherche-session.ts`, et la règle « Recherche dans les conversations » de CLAUDE.md, qui parlaient encore du bouton du rail. Les notes de version déjà publiées (`site/data/changelog.ts`) restent telles quelles.
+- **Reste** : `useRechercheOuverte` (`src/lib/recherche-session.ts`) n'a plus de lecteur depuis le retrait du bouton ; laissé en place.
+
+Validation : avant correctif, `xvfb-run -a node scripts/test-recherche.mjs --no-sandbox` donnait exactement les 2 échecs signalés (185 contrôles OK) ; après, 198 OK et « Tout passe. ». Aussi : types (écran et Electron), ESLint des fichiers touchés, `serveur-genere --verifier`, `test:recherche` (23), build, smoke. `klyra-ui` (dépôt privé) n'était pas accessible dans cette session : tout a tourné avec un remplaçant local (composants et polices), jamais committé, comme les sessions du 08/11. La CI rejoue avec le vrai paquet.
+
 ## 9 novembre 2026 — CI des pull requests plus rapide
 
 Corentin trouvait l'attente des tests verts trop longue et demandait s'il pouvait pousser directement sur `main`. Non : chaque push sur `main` publie une mise à jour à toutes les apps installées et déploie Convex en production (`app.yml`), alors que la vraie batterie de tests ne tourne que sur les PR. On a accéléré les PR à la place.
