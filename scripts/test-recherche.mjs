@@ -320,7 +320,6 @@ const etat = () =>
     const liste = d?.querySelector('[role="listbox"][aria-label="Résultats"]');
     const lb = liste?.getBoundingClientRect();
     const f = document.activeElement;
-    const rail = document.querySelector('button[aria-label="Rechercher"]');
     const lignes = liste
       ? [...liste.querySelectorAll('[role="option"]')].map((o) => {
           const r = o.getBoundingClientRect();
@@ -353,7 +352,6 @@ const etat = () =>
       surChamp: !!champ && f === champ,
       dansFenetre: !!d && d.contains(f),
       focus: f?.getAttribute("aria-label") ?? (esp(f?.innerText).slice(0, 40) || f?.tagName) ?? null,
-      rail: rail ? { haspopup: rail.getAttribute("aria-haspopup"), expanded: rail.getAttribute("aria-expanded") } : null,
       puces,
       lignes,
       messages: lignes.filter((l) => l.message).map((l) => l.message),
@@ -376,10 +374,13 @@ const composeur = () =>
   `);
 const BROUILLONS_ATTENDUS = { [HUGO]: { text: BROUILLON, fichiers: [] } };
 
-async function ouvrir(par = "raccourci") {
-  if (par === "rail") await app.cliquer('button[aria-label="Rechercher"]');
-  else await app.raccourci();
-  if (!(await app.quand(`!!document.querySelector(${q(FENETRE)})`, 2500))) throw new Error(`la fenêtre de recherche ne s’ouvre pas (${par === "rail" ? "bouton Rechercher du rail" : "Ctrl+K"})`);
+/**
+ * Ouvre la fenêtre par Ctrl+K (⌘K sur Mac), le seul chemin de l'app de bureau :
+ * le rail n'a plus de bouton Rechercher depuis le 03/11 (menu allégé, `a90e50e`).
+ */
+async function ouvrir() {
+  await app.raccourci();
+  if (!(await app.quand(`!!document.querySelector(${q(FENETRE)})`, 2500))) throw new Error("la fenêtre de recherche ne s’ouvre pas (Ctrl+K)");
   await attendre(150);
 }
 
@@ -669,13 +670,16 @@ try {
     verifier(c.valeur === BROUILLON && memes(c.brouillons, BROUILLONS_ATTENDUS), `brouillon chez Hugo, gardé dans localStorage["klyra-brouillons"] (${q(c.brouillons)})`);
   });
 
-  await etape("Geste 6 · États vides, bouton du rail, fermeture", async () => {
+  await etape("Geste 6 · États vides, Ctrl+K hors d’un chat, fermeture", async () => {
     await app.aller("/");
+    /* Le focus part d'une entrée du rail (hors de tout champ) : la fenêtre doit le lui rendre. */
+    const ENTREE_CHATS = 'nav[aria-label="Navigation principale"] a[data-visite="/chats"]';
+    const surEntreeChats = () => page(`return !!document.activeElement?.matches(${q(ENTREE_CHATS)});`);
+    await page(`document.querySelector(${q(ENTREE_CHATS)})?.focus(); return true;`);
+    verifier(await surEntreeChats(), `l’entrée Chats du rail a le focus avant l’ouverture (${ENTREE_CHATS})`);
+    await ouvrir();
     let e = await etat();
-    verifier(e.rail?.haspopup === "dialog" && e.rail?.expanded === "false", `bouton « Rechercher » du rail : aria-haspopup="dialog", aria-expanded="false" (${q(e.rail)})`);
-    await ouvrir("rail");
-    e = await etat();
-    verifier(e.modale === "true" && e.rail?.expanded === "true", "un clic sur Rechercher ouvre la fenêtre modale ; aria-expanded passe à true");
+    verifier(e.modale === "true", "Ctrl+K depuis l’accueil ouvre la fenêtre modale");
     verifier(e.surChamp && e.invite === "Rechercher dans les conversations…", `le focus est dans le champ, invite « ${e.invite} »`);
     verifier(e.valeur === "" && contient(e.texte, AIDE) && !e.compteur && e.lignes.length === 0, "requête vide : l’aide s’affiche, sans compteur ni ligne");
     verifier(e.puces.length > 0 && e.puces.every((p) => p.nombre === null) && puceCochee(e) === "Tout", `puces sans nombre tant qu’on n’a pas cherché, Tout choisie (${q(e.puces)})`);
@@ -691,7 +695,7 @@ try {
 
     await app.cliquer('button[aria-label="Fermer la recherche"]');
     e = await etat();
-    verifier(!e.ouverte && e.rail?.expanded === "false" && e.focus === "Rechercher", `le × ferme la fenêtre et rend le focus au bouton du rail (focus : ${e.focus})`);
+    verifier(!e.ouverte && (await surEntreeChats()), `le × ferme la fenêtre et rend le focus à l’entrée Chats du rail, qui l’avait (focus : ${e.focus})`);
 
     const point = await pointNeutre();
     const avant = (await etat()).page;
